@@ -123,6 +123,12 @@ The domain becomes the only way in: the API Gateway URL is turned off, and
 works only there. Create the records as DNS only: a proxy in front (such as
 Cloudflare's orange cloud) would see every request.
 
+API Gateway refuses a request whose headers add up to more than 10 KB, with
+`431 Request Header Fields Too Large`. Browsers send Retainer every cookie set
+on a parent domain, so if another app on that domain stores large cookies
+there (a login token, for example), use a subdomain it doesn't share, or have
+that app keep its cookies on its own host.
+
 ## Shipping new versions
 
 `deploy.sh` ships the package `build.sh` made. Because one version runs at

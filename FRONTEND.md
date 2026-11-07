@@ -185,7 +185,9 @@ person otherwise.
   site Allow sends the person back to (the signed `redirect_uri`'s host).
   Allow posts the choice to `POST /account/oauth/consent`. No other
   site may frame `/app` (`frame-ancestors 'none'`), so the consent page cannot
-  be clickjacked.
+  be clickjacked. `/app` sends only its origin as `Referer`
+  (`Referrer-Policy: strict-origin`), so an OAuth page's long address doesn't
+  push a request past API Gateway's 10 KB header limit.
 - Better Auth's browser client and the passkey plugin load only in accounts
   mode.
 
