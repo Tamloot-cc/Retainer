@@ -24,6 +24,19 @@ resource "aws_vpc" "this" {
   tags = { Name = var.name }
 }
 
+# AWS creates the VPC's main route table and default network ACL with it.
+# Terraform leaves them as they are, but tags them like everything else, so
+# every network resource of this deployment carries Application = name.
+resource "aws_ec2_tag" "vpc_defaults" {
+  for_each = {
+    main_route_table    = aws_vpc.this.main_route_table_id
+    default_network_acl = aws_vpc.this.default_network_acl_id
+  }
+  resource_id = each.value
+  key         = "Application"
+  value       = var.name
+}
+
 # The VPC's default security group allows all traffic between its members.
 # Nothing uses it; strip its rules so nothing can by accident.
 resource "aws_default_security_group" "this" {

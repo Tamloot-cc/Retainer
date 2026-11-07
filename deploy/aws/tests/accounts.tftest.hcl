@@ -191,6 +191,24 @@ run "github_role_cannot_change_its_own_permissions" {
   assert {
     condition = alltrue([
       for statement in jsondecode(aws_iam_role_policy.github_deploy[0].policy).Statement :
+      length(setintersection(
+        keys(merge(values(statement.Condition)...)),
+        ["aws:ResourceTag/Application", "aws:RequestTag/Application", "ec2:CreateAction", "ec2:Vpc"],
+        )) > 0 && alltrue([
+        for key, value in merge(values(statement.Condition)...) :
+        value == "retainer" if endswith(key, "/Application")
+      ])
+      if anytrue([
+        for action in flatten([statement.Action]) :
+        startswith(action, "ec2:") && !startswith(action, "ec2:Describe")
+      ])
+    ])
+    error_message = "The deploy role creates network resources only with the deployment's Application tag and changes only those that carry it."
+  }
+
+  assert {
+    condition = alltrue([
+      for statement in jsondecode(aws_iam_role_policy.github_deploy[0].policy).Statement :
       statement.Resource == aws_iam_role.functions.arn
       if contains(flatten([statement.Action]), "iam:PassRole")
     ])

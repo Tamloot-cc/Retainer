@@ -171,7 +171,9 @@ the [first deployment](#first-deployment):
 1. Set `github_repository = "<owner>/<repo>"` in `terraform.tfvars` and
    apply. This creates a role the workflow assumes. It can manage the
    resources this deployment creates, read and write its Terraform state,
-   and ship code to its functions. The state is where `state-bucket.sh`
+   and ship code to its functions. On the network it can only create
+   resources tagged `Application = <name>` and change those that carry the
+   tag, so other projects in the account and region stay out of reach. The state is where `state-bucket.sh`
    put it; if yours is elsewhere, set `state_bucket` and `state_key` too.
    The role cannot change its own permissions: when an update changes
    them, the workflow stops before applying, and you run `terraform apply`
