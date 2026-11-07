@@ -20,13 +20,30 @@ export type SqlOptions = {
    * carries on with a new connection that does not hold it.
    */
   keepConnections?: boolean;
+  /**
+   * Cancels any statement that runs longer, in milliseconds (accounts spec
+   * 4.8). Set per connection at startup rather than with ALTER ROLE, which
+   * applies only to logins as that role: the container logs in as the owner
+   * and switches role, and the consolidator logs in as the runtime role too.
+   */
+  statementTimeoutMs?: number;
 };
 
+/**
+ * The API's statement timeout: under API Gateway's 29-second request limit,
+ * so one expensive search cannot hold connections past its own request.
+ */
+export const API_STATEMENT_TIMEOUT_MS = 25_000;
+
 export function createSql(databaseUrl: string, options: SqlOptions = {}) {
+  const connection = {
+    ...(options.role ? { role: options.role } : {}),
+    ...(options.statementTimeoutMs ? { statement_timeout: options.statementTimeoutMs } : {}),
+  };
   return postgres(databaseUrl, {
     max: options.max ?? 10,
     onnotice: false,
-    ...(options.role ? { connection: { role: options.role } } : {}),
+    ...(Object.keys(connection).length > 0 ? { connection } : {}),
     ...(options.keepConnections ? { max_lifetime: null } : {}),
   });
 }
@@ -63,6 +80,15 @@ export function createControlSql(config: Config, options: Omit<SqlOptions, 'role
 export function createRuntimeSql(config: Config, options: Omit<SqlOptions, 'role'> = {}) {
   const { url, role } = runtimeConnection(config);
   return createSql(url, { ...options, role });
+}
+
+/**
+ * The API's pool: the runtime role, with the statement timeout. Workers get
+ * a pool of their own without it, since a consolidator pass may run for
+ * minutes (accounts spec 4.8).
+ */
+export function createApiSql(config: Config, options: Pick<SqlOptions, 'max'> = {}) {
+  return createRuntimeSql(config, { ...options, statementTimeoutMs: API_STATEMENT_TIMEOUT_MS });
 }
 
 export type Db = ReturnType<typeof createDb>['db'];

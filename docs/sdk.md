@@ -201,6 +201,11 @@ try {
 }
 ```
 
+The client does not retry by itself. A workspace over its
+[rate limit](rest-api.md#rate-limits) gets a 429 `rate_limited`, whose
+`details.retryAfter` is the number of seconds to wait; a query stopped by the
+server's statement timeout gets a 503 `timeout`.
+
 ## Idempotency and cancellation
 
 `createRecord`, `remember` and `mergeRecords` take an optional idempotency key

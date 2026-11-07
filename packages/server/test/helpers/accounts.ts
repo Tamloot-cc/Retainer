@@ -41,7 +41,13 @@ export type AccountsTestApp = {
   ) => Promise<Response>;
 };
 
-export function startAccountsApp(db: TestDatabase): AccountsTestApp {
+export function startAccountsApp(
+  db: TestDatabase,
+  options: {
+    /** Serves client metadata documents, which come from the internet in production. */
+    fetchClientMetadata?: (input: string | URL | Request) => Promise<Response>;
+  } = {},
+): AccountsTestApp {
   const config = loadConfig({
     DATABASE_URL: db.url,
     RETAINER_AUTH_SECRET: AUTH_SECRET,
@@ -56,6 +62,9 @@ export function startAccountsApp(db: TestDatabase): AccountsTestApp {
     authSql: db.connect({ role: CONTROL_ROLE, max: 4 }),
     clientIp: () => '192.0.2.1',
     rateLimit: false,
+    ...(options.fetchClientMetadata
+      ? { fetchClientMetadata: options.fetchClientMetadata as never }
+      : {}),
     google: {
       verifyIdToken: async () => true,
       getUserInfo: async (token) => {

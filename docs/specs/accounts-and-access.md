@@ -1,8 +1,9 @@
 # Accounts, organizations and access: spec
 
-Status: **proposed** November 6, 2026. Nothing here is built. Better Auth is
-chosen for login after a throwaway test, whose results are in section 12. The
-design is summarized in `ARCHITECTURE.md` 7.3.
+Status: **implemented** November 7, 2026, in the three pull requests of section 6.
+Proposed November 6, 2026; Better Auth was chosen for login after a throwaway test,
+whose results are in section 12. Where building changed the design, the section says
+so under "As built". The design is summarized in `ARCHITECTURE.md` 7.3.
 
 This spec turns Retainer from a server an operator runs into a service people
 sign up for: they log in, create workspaces, invite colleagues and connect
@@ -335,7 +336,10 @@ add a member or create a workspace, as `ARCHITECTURE.md` 7.1 requires.
 | `GET /account/workspaces/:id/members`                           | Anyone with a role in it                     |
 | `PUT`, `DELETE /account/workspaces/:id/members/:userId`         | Workspace admin                              |
 | `GET`, `POST`, `DELETE /account/workspaces/:id/keys`            | Workspace admin                              |
-| `GET`, `DELETE /account/workspaces/:id/connections`             | Workspace admin, or the person who connected |
+| `GET /account/workspaces/:id/connections`                       | All for an admin, their own for others       |
+| `DELETE /account/workspaces/:id/connections/:connectionId`      | Workspace admin, or the person who connected |
+| `GET`, `DELETE /account/connections/...`: your apps             | Signed in; disconnecting as above            |
+| `GET /account/oauth/client`, `POST /account/oauth/consent`      | Signed in, with a role in the workspace      |
 
 **First workspace.** A person with no memberships and no pending invitation
 sees "Name your workspace". `POST /account/workspaces` then creates the
@@ -373,6 +377,15 @@ A large delete can outlast the 30 seconds `deploy.sh` waits for stopped function
 so this run holds the deploy lock (`withPassLock`) as a consolidator pass does, and
 the function's timeout allows for it, as consolidate's 300 seconds does.
 An organization can be deleted only when it has no workspaces left.
+
+_As built:_ `DELETE /account/workspaces/:id` takes the workspace's name in the body
+as confirmation. API keys, sessions, OAuth tokens, the consolidator and invitations
+all skip a workspace being deleted, and it no longer counts toward the workspace
+quota. EventBridge runs the control function hourly to purge, removing each
+workspace in its own statement, and the control function's timeout is now 300
+seconds. A container runs the same purge hourly in its `control` or `all` process.
+The CLI has `workspace restore` and `workspace purge`, and `workspace list` shows
+when a deleted workspace goes for good.
 
 **API keys in the web app** are for agents and integrations only: `read`,
 `write` and `schema:write`. The actor is `agent:<slug of the name>` and cannot
@@ -446,8 +459,7 @@ JWT plugin signing access tokens. Claude's web app connected through them end to
   cookie does not arrive. It redirects to our sign-in page, whose own requests carry
   the cookie and continue to `/app/oauth/consent`. The person picks a workspace there
   through the plugin's `postLogin` step, and `consentReferenceId` ties it to the
-  consent. The page must not be framed (`frame-ancestors 'none'`). The test used one
-  fixed workspace, so a real picker is still to build.
+  consent. The page must not be framed (`frame-ancestors 'none'`).
 - **Tokens.** One-hour JWT access tokens (`at+jwt`, EdDSA) with the workspace as a
   claim, and rotating refresh tokens stored hashed. A rotated refresh token can be
   reused for 30 seconds by default, so that a retry can recover. We keep that.
@@ -463,25 +475,68 @@ JWT plugin signing access tokens. Claude's web app connected through them end to
   client and the person, and its name reads like "Claude for Dana". In the test it
   used the client alone, which would make everyone's Claude the same actor.
 
+_As built,_ where it differs:
+
+- **The picker is on the consent page, not a `postLogin` step.** Better Auth calls
+  `consentReferenceId` with only the person, their session and the scopes, so a
+  `postLogin` choice would have to be stored on the session, where two tabs
+  connecting to two workspaces would race. Instead the consent page lists the
+  person's workspaces and posts the one picked to `POST /account/oauth/consent`,
+  which checks the person's access to it (404 otherwise), then runs Better Auth's
+  consent with the workspace held in an `AsyncLocalStorage` for that request.
+  Outside it, `consentReferenceId` returns a UUID that matches no workspace, so no
+  earlier consent is ever reused and every authorization comes through the picker.
+  Better Auth's own `/oauth2/consent` and `/oauth2/continue` are closed (404), so
+  no consent can be made without a workspace. The guarantees are unchanged.
+- **The consent's `reference_id` is a foreign key to `workspaces`**, deleted with
+  it, and the access token carries the workspace in a `workspace_id` claim.
+- **OAuth tokens work on `/mcp` only**, the resource they are issued for; `/v1`
+  and `/account` refuse them.
+- **Scopes are capped by the current consent too.** `retainer_token_access` returns
+  the consent's scopes, so a token from an earlier connection to the same app and
+  workspace never gets more than the person allowed last time.
+- **Consenting takes the organization lock**, then checks access, while Better Auth
+  writes the consent on its own pool, so a removal or move running at the same
+  time either refuses it or finds it and ends it.
+- **Removing a member ends their grants:** removing someone from a workspace or an
+  organization deletes their consents there and revokes the refresh tokens.
+  Re-adding them does not bring the connection back.
+- **Connected apps** are the consent rows. Settings, Agents lists them (all for an
+  admin, otherwise the person's own), as does Your account, each with Disconnect.
+- **`frame-ancestors 'none'` and `X-Frame-Options: DENY` cover all of `/app`**,
+  not only the consent page.
+- **Claude's metadata document** lists the `jwt-bearer` grant type, which Retainer
+  does not offer. Registration accepts it anyway, and only the authorization code
+  and refresh token grants work.
+- **The authorization server's metadata** is served by the control function at
+  `/.well-known/oauth-authorization-server/account/auth`, and API Gateway routes
+  that path to it.
+
 ### 4.8 Limits
 
 - **Rate.** A per-workspace limit returning `429` with `Retry-After`, in addition
   to the global API Gateway throttle. Start with a counter in an unlogged Postgres
   table, because Postgres is the only dependency. Measure it before launch, and
-  move it if it shows up as contention.
+  move it if it shows up as contention. _As built:_ a fixed one-minute window on
+  `/v1` and `/mcp`, one upsert per request, 600 requests a minute by default in
+  accounts mode and off in key mode, set with `RETAINER_RATE_LIMIT_PER_MINUTE`
+  (`0` turns it off). It has not been measured under load yet.
 - **Time.** A statement timeout on the API's connection pool, below the 29-second
   request limit, so that one expensive search cannot hold connections. It is set in
   `createSql`, not with `ALTER ROLE`, because Postgres applies role settings only at
   login. The container logs in as the owner and switches role, so it would not get
   the timeout, while `consolidate` logs in as the same role, may run for 300 seconds,
   and would. With `RETAINER_ROLE=all` the API and the worker share one pool today, so
-  the API gets its own.
+  the API gets its own. _As built:_ 25 seconds, reported as `503` `timeout`.
 - **Signup.** Open on every install in accounts mode: anyone with a verified Google
   account can create their own organization and workspaces, on a self-hosted server
   too. There is no setting to restrict it, and organizations cannot see each other's
   data. A self-hoster who wants a private install stays in key mode (4.1).
 - **Quotas.** Limits on workspaces and members per organization (4.10). Self-hosted
   installs have none by default, so nothing caps what people who sign up there use.
+  _As built:_ checked under the organization's lock when a workspace is created, an
+  invitation is made or accepted, and refused with `409` `limit_reached`. Operators
+  set them with `retainer org limit`.
 
 ### 4.9 Database credentials
 
@@ -688,7 +743,9 @@ changes nothing for existing installs when it merges.
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Credentials       | Separate database logins for each function (4.9)                                                                                                                                                |
 | 2. Accounts          | Tables and roles, Better Auth with Google, AWS and NAT, sign-in and workspace URLs, self-serve workspaces, members and invitations, API keys in the web app, passkeys, the settings pages (5.1) |
-| 3. Agents and launch | MCP OAuth with the workspace picker, rate and quota limits, the statement timeout, scheduled deletion                                                                                           |
+| 3. Agents and launch | MCP OAuth with the workspace picker, rate and quota limits, the statement timeout, scheduled deletion, the sign-in race (9.2)                                                                   |
+
+All three are built: PR 1, PR 2 (#38) and PR 3 (branch `feat/agents-and-launch`).
 
 **Why these stay apart.** PR 1 is the only one that changes the live deployment in
 every mode, so a problem there should be easy to trace and roll back, and it should
@@ -756,7 +813,7 @@ layer 1; Database, Concurrent and Credentials are layer 2; API and Contract are 
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Unit        | Effective role, the role-to-scope tables, slug suffixes, OAuth scope capping, cookie signature checks                                                                                                                                                                                                                                                         |
 | Database    | The runtime role cannot read account or Better Auth tables; `retainer_session_access` answers only for its own token; expired and revoked sessions; the composite foreign keys; deleting an organization with workspaces fails                                                                                                                                |
-| Concurrent  | Two owners removing each other leave one; two first sign-ins make one user; two accepts of one invitation make one membership; two first workspaces make one organization                                                                                                                                                                                     |
+| Concurrent  | Two owners removing each other leave one; two first sign-ins make one user and both sign in; two accepts of one invitation make one membership; two first workspaces make one organization                                                                                                                                                                    |
 | API         | Every role against every route; an API key on `/account` is refused; a session with a workspace it cannot access gets 404; a forged cookie and a raw token without its signature get 401; header mismatch on a bearer request gets 400; removal applies at the next request                                                                                   |
 | Contract    | Real Better Auth cookies pass the api function's check, so an upgrade that changes the format fails here; no unlisted `SECURITY DEFINER` function exists                                                                                                                                                                                                      |
 | Credentials | The runtime login cannot `SET ROLE` to the owner, and `retainer_control` holds no DDL rights                                                                                                                                                                                                                                                                  |
@@ -778,9 +835,16 @@ deployed install after each Better Auth upgrade that touches OAuth.
    works if it goes to the address of the Google account the person signs in with.
    Teams on Microsoft 365 are the likely gap. Better Auth has a Microsoft provider,
    which can be added without changing the design if they ask.
-2. **Two sign-ins at once.** In the test, two simultaneous first sign-ins for one
-   email made one user as they should, but the second person got a 500. That ran
-   on magic links. Check it with Google, and make it a retry or a clear message.
+2. **Two sign-ins at once.** _Resolved in PR 3._ In the test, two simultaneous first
+   sign-ins for one email made one user as they should, but the second person got a
+   500. With Google the second got Better Auth's `unable to create user` instead, and
+   the web app showed it as an unverified address. Now a sign-in with an ID token
+   runs once more and signs in as the person the other made. A Google redirect
+   cannot run again, because its code works once, so its tab returns to the sign-in
+   page, which says the account was just made in another tab and to sign in again.
+   An unverified address has its own `email_not_verified` code. Better Auth's
+   adapter runs its multi-step writes in a transaction, so a person and their
+   Google link commit together and no sign-in sees one without the other.
 3. **Agent write formats.** In the test Claude called `upsert_record` twice, then
    warned that names are `{first, last}` and emails `{primary, additional[]}`. The
    failed call's error was not logged, but the tool descriptions may need to state
@@ -861,7 +925,17 @@ on a laptop and on a phone. The `Default` organization's first owner was set wit
 `ops.sh member add`. An invited second account accepted, saw only the workspaces it
 was given, and lost access once removed.
 
+**PR 3,** November 7, 2026, in tests against real Postgres with no internet: Claude's
+real metadata document registers, the person picks a workspace at consent in the
+browser (Playwright), and the token reads and writes over `/mcp`. Removal, a lower
+role, a disconnect, a revoked consent and a deleted workspace each end the
+connection at the next request. Concurrent tests cover the rate limit, the quotas,
+deleting a workspace twice, purge against restore, and simultaneous first sign-ins.
+
 **Not tested:** whether the phone used a synced passkey or a cross-device sign-in;
-the rate-limit plugin; a workspace picker at consent;
-`SET LOCAL ROLE` seeding by `retainer_control`; whether Claude falls back to dynamic
-registration.
+Better Auth's sign-in rate-limit plugin; `SET LOCAL ROLE` seeding by
+`retainer_control`; whether Claude falls back to dynamic registration; Claude's web
+app picking a workspace on the deployed site, which needs a person to try it; the
+per-workspace rate limit under real load; purging a large workspace within the
+control function's 300 seconds; simultaneous first sign-ins through Google's real
+redirect, rather than a stubbed code exchange.

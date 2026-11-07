@@ -1,11 +1,14 @@
 import { resolve } from 'node:path';
 import { serveStatic } from '@hono/node-server/serve-static';
+import { OAUTH_SCOPES } from '@retainer/shared';
 import { Hono } from 'hono';
 import { authenticate } from '../auth/middleware.js';
+import { oauthSettings } from '../auth/oauth-token.js';
 import { meRoute, sessionRoutes } from '../auth/session.js';
 import { publicOriginSchema } from '../config.js';
 import type { Sql } from '../db/client.js';
 import { AppError } from '../errors.js';
+import { type RateLimit, rateLimit } from '../http/rate-limit.js';
 import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
 import { mcpRoute } from '../mcp/route.js';
 import { VERSION } from '../version.js';
@@ -28,6 +31,8 @@ export type AppDeps = {
    * reach /v1, and the key-mode sign-in at /auth/session is gone (4.1).
    */
   accountsSecret?: string;
+  /** The per-workspace rate limit on /v1 and /mcp (accounts spec 4.8); none if unset. */
+  rateLimit?: RateLimit;
 };
 
 export function createApp(deps: AppDeps) {
@@ -51,7 +56,9 @@ export function createApp(deps: AppDeps) {
 
   if (!deps.accountsSecret) sessionRoutes(app, deps.sql, publicOrigin);
   const v1 = new Hono<AppEnv>();
+  const limit = rateLimit(deps.sql, deps.rateLimit ?? { limit: 0 });
   v1.use('*', authenticate(deps.sql, { publicOrigin, accountsSecret: deps.accountsSecret }));
+  v1.use('*', limit);
   meRoute(v1, deps.sql);
   webReadRoutes(v1, deps.sql);
   schemaRoutes(v1, deps.sql);
@@ -63,10 +70,40 @@ export function createApp(deps: AppDeps) {
   viewRoutes(v1, deps.sql);
   app.route('/v1', v1);
 
-  mcpRoute(app, deps.sql, publicOrigin);
+  // Accounts mode: apps connect to /mcp over OAuth as well as with API keys
+  // (accounts spec 4.7). The authorization server is Better Auth, under
+  // /account; this function only checks its tokens.
+  const oauth = deps.accountsSecret && publicOrigin ? oauthSettings(publicOrigin) : undefined;
+  if (oauth) {
+    // RFC 9728 protected resource metadata: static, so the API serves it.
+    const metadata = {
+      resource: oauth.resource,
+      authorization_servers: [oauth.issuer],
+      bearer_methods_supported: ['header'],
+      scopes_supported: [...OAUTH_SCOPES],
+      resource_name: 'Retainer',
+    };
+    for (const path of [
+      '/.well-known/oauth-protected-resource',
+      '/.well-known/oauth-protected-resource/mcp',
+    ]) {
+      app.get(path, (c) => {
+        c.header('Cache-Control', 'public, max-age=3600');
+        return c.json(metadata);
+      });
+    }
+  }
+  mcpRoute(app, deps.sql, { publicOrigin, oauth, rateLimit: limit });
 
   if (deps.webDir) {
     const root = resolve(deps.webDir);
+    // No other site may frame the app: the consent page, where a person lets
+    // an app in, must not be clickjacked (accounts spec 4.7).
+    app.use('/app/*', async (c, next) => {
+      await next();
+      c.header('Content-Security-Policy', "frame-ancestors 'none'");
+      c.header('X-Frame-Options', 'DENY');
+    });
     app.get('/app', (c) => c.redirect('/app/'));
     app.use(
       '/app/*',

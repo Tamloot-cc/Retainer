@@ -76,7 +76,8 @@ packages/web/
     style.css           Tailwind theme tokens, light and dark
     api/                SDK client, session transport, workspace context, scope checks,
                         the /account client and Better Auth's browser client
-    accounts/           accounts mode: sign-in, first run, invitations, settings, your account
+    accounts/           accounts mode: sign-in, first run, invitations, settings, your account,
+                        connecting an app over OAuth and the connected apps lists
     auth/               key-mode sign-in screen
     fields/             one folder per field type (6), shared code in common.tsx
     provenance/         actor badges, sourced values, pending markers
@@ -163,15 +164,28 @@ person otherwise.
   base path is read from the address once. Switching workspaces is a full page
   load, so nothing cached crosses over and a tab stays on its workspace.
   `/app/` opens the last workspace used, or the first-run screen ("Name your
-  workspace") for someone with none. `/app/account` and `/app/invite/<token>`
-  are outside any workspace.
+  workspace") for someone with none. `/app/account`, `/app/invite/<token>`
+  and the OAuth pages are outside any workspace.
 - **Requests.** The SDK client sends `X-Retainer-Workspace` with the
   workspace's ID. Inside a workspace the `Session` is the same as in key mode,
   with the person's role as scopes, so `canMutate` and the table above apply
   unchanged.
 - **Settings** (`/app/w/<slug>/settings`) and **Your account** (`/app/account`)
   follow the accounts spec 5.1. Screens show only what the person can do; the
-  server checks every action again.
+  server checks every action again. Organization owners and admins delete the
+  workspace from Settings, Workspace, by typing its name. Connected
+  apps are listed under Settings, Agents (all of them for an admin, otherwise
+  the person's own) and under Your account, each with Disconnect.
+- **Connecting an app** (accounts spec 4.7). An app such as Claude sends the
+  browser to `/app/oauth/sign-in`, which signs the person in if needed and
+  continues the authorization, then to `/app/oauth/consent`. That page names
+  the app, lists the person's workspaces with their role in each, and shows
+  what the app could do in the one picked, which is the app's scopes capped by
+  that role. Any app can register under any name, so the page also names the
+  site Allow sends the person back to (the signed `redirect_uri`'s host).
+  Allow posts the choice to `POST /account/oauth/consent`. No other
+  site may frame `/app` (`frame-ancestors 'none'`), so the consent page cannot
+  be clickjacked.
 - Better Auth's browser client and the passkey plugin load only in accounts
   mode.
 

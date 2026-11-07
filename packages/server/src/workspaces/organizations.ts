@@ -6,6 +6,7 @@ import {
 } from '@retainer/shared';
 import type { Sql } from '../db/client.js';
 import { DEFAULT_ORGANIZATION, getOrganization, type Organization } from '../db/organizations.js';
+import type { OrganizationLimits } from '../db/schema.js';
 import type { Tx } from '../db/tx.js';
 import { getWorkspace } from '../db/workspaces.js';
 import { AppError } from '../errors.js';
@@ -109,6 +110,85 @@ export async function assertKeepsAnOwner(tx: Tx, organizationId: string, userId:
   }
 }
 
+const QUOTA_WORDS: Record<keyof OrganizationLimits, string> = {
+  workspaces: 'workspaces',
+  members: 'people',
+};
+
+/**
+ * Refuses to go past an organization's quota (accounts spec 4.8, 4.10): its
+ * workspaces, not counting those being deleted, or its people. A null limit
+ * means none, which is every organization unless an operator sets one. Call
+ * it holding the organization's lock, so two creations racing for the last
+ * place see each other.
+ */
+export async function assertWithinLimit(
+  tx: Tx,
+  organizationId: string,
+  kind: keyof OrganizationLimits,
+): Promise<void> {
+  const [row] = await tx<{ limit: number | null; used: number }[]>`
+    select (o.limits ->> ${kind})::int as limit,
+      ${
+        kind === 'workspaces'
+          ? tx`(select count(*)::int from workspaces w
+              where w.organization_id = o.id and w.deletion_scheduled_at is null)`
+          : tx`(select count(*)::int from organization_members m where m.organization_id = o.id)`
+      } as used
+    from organizations o where o.id = ${organizationId}`;
+  if (row?.limit != null && row.used >= row.limit) {
+    throw new AppError(
+      409,
+      'limit_reached',
+      `This organization can have at most ${row.limit} ${QUOTA_WORDS[kind]}.`,
+      { limit: row.limit, kind },
+    );
+  }
+}
+
+/** The largest quota: `assertWithinLimit` reads limits as a Postgres `int`. */
+const MAX_LIMIT = 2_147_483_647;
+
+/**
+ * Sets an organization's quotas (4.10): a number, or null for none. Fields
+ * left out keep their value. The billing seam: whatever decides plans writes
+ * here, and Retainer only enforces it.
+ */
+export async function setOrganizationLimits(
+  sql: Sql,
+  input: { organization: string; limits: { [K in keyof OrganizationLimits]?: number | null } },
+): Promise<{ organization: Organization; limits: OrganizationLimits }> {
+  for (const [kind, value] of Object.entries(input.limits)) {
+    if (
+      value !== null &&
+      value !== undefined &&
+      !(Number.isInteger(value) && value >= 0 && value <= MAX_LIMIT)
+    ) {
+      throw new AppError(
+        400,
+        'invalid_request',
+        `the ${kind} limit must be a whole number up to ${MAX_LIMIT}, or none`,
+      );
+    }
+  }
+  return sql.begin(async (tx) => {
+    const organization = await getOrganization(tx, input.organization);
+    await lockOrganization(tx, organization.id);
+    const [row] = await tx<{ limits: OrganizationLimits | null }[]>`
+      select limits from organizations where id = ${organization.id}`;
+    const limits: OrganizationLimits = { ...(row?.limits ?? {}) };
+    for (const kind of ['workspaces', 'members'] as const) {
+      const value = input.limits[kind];
+      if (value === null) delete limits[kind];
+      else if (value !== undefined) limits[kind] = value;
+    }
+    const stored = Object.keys(limits).length > 0 ? limits : null;
+    await tx`update organizations set limits = ${stored ? tx.json(stored) : null}
+      where id = ${organization.id}`;
+    return { organization, limits };
+  });
+}
+
 /** Adds a person who has signed in to an organization, or changes their role. */
 export async function setOrganizationMember(
   sql: Sql,
@@ -188,8 +268,31 @@ export async function moveWorkspace(
     if (organization.id === from) return { organization, removedMembers: 0 };
     const removed = await tx`
       delete from workspace_members where workspace_id = ${workspace.id} returning 1`;
+    // Who may use it changes, so apps connected to it must be connected again.
+    await endGrants(tx, tx`oc.reference_id = ${workspace.id}`);
     await tx`
       update workspaces set organization_id = ${organization.id} where id = ${workspace.id}`;
     return { organization, removedMembers: removed.length };
   });
+}
+
+/**
+ * Ends apps' access to a workspace (accounts spec 4.7): deletes the consents
+ * `where` matches (on `oauth_consents oc`) and revokes their refresh tokens,
+ * so the apps lose access at their next request and cannot regain it
+ * without the person consenting again. Returns how many were ended.
+ */
+export async function endGrants(tx: Tx, where: ReturnType<Sql>): Promise<number> {
+  const [row] = await tx<{ ended: number }[]>`
+    with ended as (
+      delete from oauth_consents oc where ${where}
+      returning oc.client_id, oc.user_id, oc.reference_id
+    ), revoked as (
+      update oauth_refresh_tokens r set revoked = now()
+      from ended e
+      where r.client_id = e.client_id and r.user_id = e.user_id
+        and r.reference_id = e.reference_id and r.revoked is null
+    )
+    select count(*)::int as ended from ended`;
+  return row?.ended ?? 0;
 }

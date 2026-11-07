@@ -40,9 +40,41 @@ request needs no header; one that names another workspace than its key's gets
 
 `/account` holds the routes the web app uses for people: signing in
 (`/account/auth/…`), the person and where they have access (`GET /account`),
-workspaces, members, invitations and API keys. They take only a session
-cookie and refuse an API key, so no agent credential can create a key, add a
-member or create a workspace.
+workspaces, members, invitations, API keys and connected apps. They take only
+a session cookie and refuse an API key or an OAuth token, so no agent
+credential can create a key, add a member or create a workspace.
+
+Deleting a workspace (`DELETE /account/workspaces/:id` with its name as
+`{ "name": "…" }`, for an organization owner or admin) takes effect at once:
+every request to it gets `404`, and its keys and connected apps stop working.
+The data is removed for good 7 days later. Until then an operator can undo it
+with `retainer workspace restore`.
+
+### OAuth
+
+In accounts mode, apps such as Claude's web app can connect to `/mcp` over
+OAuth instead of with a key: the person signs in, picks a workspace and
+allows the app (see [Connecting agents](agents.md#connecting-claudes-web-app-over-oauth)).
+`/mcp` without a credential answers `401` with a `WWW-Authenticate` header
+naming the resource metadata,
+`/.well-known/oauth-protected-resource/mcp`, which points to the
+authorization server under `/account/auth`. OAuth access tokens work on
+`/mcp` only, not on `/v1`.
+
+The token names the workspace, and on every request Retainer checks that the
+connection still exists and what the person's role is now. The app gets the
+scopes it asked for that the role allows, never `admin`, and writes as an
+`agent` actor named after both, such as "Claude for Dana Cohen". Removing the
+person, lowering their role, disconnecting the app or deleting the workspace
+applies at the app's next request.
+
+## Rate limits
+
+Each workspace may make a fixed number of requests a minute to `/v1` and
+`/mcp`, counted across all its keys and connections: 600 in accounts mode and
+no limit in key mode unless the operator sets `RETAINER_RATE_LIMIT_PER_MINUTE`.
+Past it the API answers `429` `rate_limited` with a `Retry-After` header in
+seconds, and `details.retryAfter` with the same number.
 
 ## Errors
 
@@ -56,13 +88,14 @@ Errors are JSON with a stable `code`, a readable `message`, and sometimes
 | Status | Typical codes and meaning                                                                                                                                                                          |
 | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 400    | `invalid_request`: the body or a filter does not have the expected shape                                                                                                                           |
-| 401    | Missing, unknown or revoked key                                                                                                                                                                    |
+| 401    | Missing, unknown or revoked key, or an OAuth token whose connection was removed                                                                                                                    |
 | 403    | The key lacks the scope, or the action needs a `user` actor                                                                                                                                        |
 | 404    | Not found in this workspace (other workspaces' IDs are reported as not found too)                                                                                                                  |
-| 409    | A conflict: a unique value another record holds, an erased handle, or something already decided or retracted                                                                                       |
+| 409    | A conflict: a unique value another record holds, an erased handle, or something already decided or retracted; `limit_reached` when an organization's quota is full                                 |
 | 412    | `stale_write`: the record changed since `expectedUpdatedAt`                                                                                                                                        |
 | 422    | `invalid_values`: field values fail validation (`details.errors` lists each); `invalid_filter`; `invalid_aggregate` (`details.field`, `details.allowed`); `invalid_view`; `idempotency_key_reused` |
-| 503    | The database is unreachable, or `not_configured`: `forget` without `RETAINER_SUPPRESSION_KEY`                                                                                                      |
+| 429    | `rate_limited`: the workspace made too many requests this minute; wait `Retry-After` seconds                                                                                                       |
+| 503    | The database is unreachable; `timeout`: a database query ran past 25 seconds and was stopped; or `not_configured`: `forget` without `RETAINER_SUPPRESSION_KEY`                                     |
 
 `unique_conflict` and `suppressed` also list the field in `details.errors`,
 in the same shape as `invalid_values`, so a client can show every per-field

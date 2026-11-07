@@ -1,8 +1,9 @@
 import { z } from 'zod';
 
 /**
- * Who made a write. Decided by the credential (an API key, or a person's
- * session in accounts mode), never by the caller's payload.
+ * Who made a write. Decided by the credential (an API key, or in accounts
+ * mode a person's session or an app's OAuth token), never by the caller's
+ * payload.
  * Order matters: earlier types win when assertions about the same field
  * disagree (see ACTOR_PRECEDENCE).
  */

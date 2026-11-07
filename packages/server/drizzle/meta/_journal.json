@@ -225,6 +225,48 @@
       "when": 1794062566662,
       "tag": "0031_session_access_by_id",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794076021253,
+      "tag": "0032_rate_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794076021828,
+      "tag": "0033_rate_limits_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794076235398,
+      "tag": "0034_workspace_deletion",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794076589382,
+      "tag": "0035_oauth",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794076590547,
+      "tag": "0036_oauth_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794079507331,
+      "tag": "0037_oauth_consent_scopes",
+      "breakpoints": true
     }
   ]
 }

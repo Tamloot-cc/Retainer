@@ -92,6 +92,15 @@ const configSchema = z
     /** The Google OAuth client people sign in with in accounts mode. */
     RETAINER_GOOGLE_CLIENT_ID: z.preprocess(emptyToUndefined, z.string().optional()),
     RETAINER_GOOGLE_CLIENT_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
+    /**
+     * Requests each workspace may make per minute through /v1 and /mcp, past
+     * which it gets a 429 (accounts spec 4.8). 0 turns it off. Unset: 600 in
+     * accounts mode, where anyone can sign up, and off in key mode.
+     */
+    RETAINER_RATE_LIMIT_PER_MINUTE: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().min(0).optional(),
+    ),
     PORT: z.coerce.number().int().positive().default(8787),
     LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
     /** How often the consolidator runs per workspace (4.2). */
@@ -160,6 +169,29 @@ export function ownerDatabaseUrl(config: Config): string {
     throw new Error('DATABASE_URL is required here: migrations and operator commands need it.');
   }
   return config.DATABASE_URL;
+}
+
+/** Accounts mode's default rate limit per workspace (accounts spec 4.8). */
+export const DEFAULT_RATE_LIMIT_PER_MINUTE = 600;
+
+/**
+ * Requests per minute each workspace may make, or 0 for no limit. A
+ * self-hosted install in key mode that sets nothing behaves as before.
+ */
+export function rateLimitPerMinute(config: Config): number {
+  return (
+    config.RETAINER_RATE_LIMIT_PER_MINUTE ??
+    (accountsMode(config) ? DEFAULT_RATE_LIMIT_PER_MINUTE : 0)
+  );
+}
+
+/**
+ * Where people reach Retainer in accounts mode: `RETAINER_PUBLIC_ORIGIN`, or
+ * this machine's port. `/account` issues OAuth tokens for this origin's `/mcp`
+ * and the API checks them for it, so both must use this one function.
+ */
+export function accountsOrigin(config: Config): string {
+  return config.RETAINER_PUBLIC_ORIGIN ?? `http://localhost:${config.PORT}`;
 }
 
 /** Accounts mode: people sign in with Google or a passkey (accounts spec 4.1). */

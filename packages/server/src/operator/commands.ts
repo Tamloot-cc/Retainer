@@ -5,9 +5,11 @@ import { listOrganizations } from '../db/organizations.js';
 import { listWorkspaces } from '../db/workspaces.js';
 import { AppError } from '../errors.js';
 import { TEMPLATE_NAMES } from '../templates/index.js';
+import { purgeAfter, purgeDeletedWorkspaces, restoreWorkspace } from '../workspaces/deletion.js';
 import {
   createOrganization,
   moveWorkspace,
+  setOrganizationLimits,
   setOrganizationMember,
   setWorkspaceMember,
 } from '../workspaces/organizations.js';
@@ -19,10 +21,13 @@ Workspaces
   retainer workspace create --name <name> [--slug <slug>] [--template <template>] [--org <id|name>]
   retainer workspace list
   retainer workspace move <slug|id> --org <id|name>
+  retainer workspace restore <slug|id>     Undo a deletion within its 7 days
+  retainer workspace purge                 Remove workspaces deleted over 7 days ago now
 
 Organizations and people (accounts mode)
   retainer org create --name <name>
   retainer org list
+  retainer org limit --org <id|name> [--workspaces <n|none>] [--members <n|none>]
   retainer member add --org <id|name> --email <email> --role <owner|admin|member>
   retainer member add --workspace <slug|id> --email <email> --role <viewer|editor|admin>
 
@@ -99,7 +104,10 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
             : workspaces
                 .map(
                   (w) =>
-                    `${w.slug}\t${w.id}\t${w.name}\t${w.templates.map((t) => t.name).join(',') || '-'}`,
+                    `${w.slug}\t${w.id}\t${w.name}\t${w.templates.map((t) => t.name).join(',') || '-'}` +
+                    (w.deletionScheduledAt
+                      ? `\tdeleted, removed for good after ${purgeAfter(new Date(w.deletionScheduledAt)).toISOString()}`
+                      : ''),
                 )
                 .join('\n'),
           workspaces,
@@ -119,6 +127,23 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           moved,
         );
         return 0;
+      }
+      case 'workspace restore': {
+        const workspace = await restoreWorkspace(
+          io.sql,
+          required(rest[0] ?? values.workspace, 'workspace'),
+        );
+        print(`Restored workspace "${workspace.name}" (${workspace.slug}).`, workspace);
+        return 0;
+      }
+      case 'workspace purge': {
+        const report = await purgeDeletedWorkspaces(io.sql);
+        print(
+          `Removed ${report.purged} deleted workspace(s) for good.` +
+            (report.failed > 0 ? ` ${report.failed} could not be removed; see the log.` : ''),
+          report,
+        );
+        return report.failed > 0 ? 1 : 0;
       }
       case 'org create': {
         const organization = await createOrganization(io.sql, {
@@ -142,6 +167,27 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
             )
             .join('\n') || 'No organizations.',
           organizations,
+        );
+        return 0;
+      }
+      case 'org limit': {
+        const limits: { workspaces?: number | null; members?: number | null } = {};
+        for (const kind of ['workspaces', 'members'] as const) {
+          const value = values[kind];
+          if (value !== undefined) limits[kind] = parseLimit(value, kind);
+        }
+        if (Object.keys(limits).length === 0) {
+          throw new AppError(400, 'invalid_request', 'give --workspaces, --members or both');
+        }
+        const set = await setOrganizationLimits(io.sql, {
+          organization: required(values.org, 'org'),
+          limits,
+        });
+        const limitLine = (kind: 'workspaces' | 'members') =>
+          `${kind}: ${set.limits[kind] ?? 'no limit'}`;
+        print(
+          `Limits of "${set.organization.name}"\n  ${limitLine('workspaces')}\n  ${limitLine('members')}`,
+          set,
         );
         return 0;
       }
@@ -225,6 +271,15 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
   }
 }
 
+/** A quota from the command line: a whole number, or `none` for no limit. */
+function parseLimit(value: string, kind: string): number | null {
+  if (value === 'none') return null;
+  if (!/^\d+$/.test(value)) {
+    throw new AppError(400, 'invalid_request', `--${kind} must be a whole number or none`);
+  }
+  return Number(value);
+}
+
 function parse(argv: string[]) {
   return parseArgs({
     args: argv,
@@ -240,6 +295,8 @@ function parse(argv: string[]) {
       actor: { type: 'string' },
       scopes: { type: 'string' },
       id: { type: 'string' },
+      workspaces: { type: 'string' },
+      members: { type: 'string' },
       json: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },

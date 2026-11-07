@@ -72,6 +72,22 @@ export function isKeyAccess(value: unknown): value is KeyAccess {
   return typeof value === 'string' && Object.hasOwn(KEY_ACCESS, value);
 }
 
+/**
+ * What an app connected over OAuth may ask for (accounts spec 4.7): the
+ * scopes an agent's key can have, never `admin`.
+ */
+export const OAUTH_SCOPES = KEY_ACCESS.schema;
+
+/**
+ * The scopes an app gets in a workspace: what its token asked for, capped by
+ * the person's role now. The server applies it on every request and the
+ * consent page shows it.
+ */
+export function cappedScopes(asked: readonly string[], role: WorkspaceRole): Scope[] {
+  const allowed = WORKSPACE_ROLE_SCOPES[role];
+  return OAUTH_SCOPES.filter((scope) => asked.includes(scope) && allowed.includes(scope));
+}
+
 /** The access a key's scopes amount to, for showing it in plain words. */
 export function keyAccessOf(scopes: readonly Scope[]): KeyAccess {
   if (scopes.includes('schema:write') || scopes.includes('admin')) return 'schema';

@@ -12,6 +12,7 @@ import { AppError } from '../errors.js';
 import { idParam, readBody } from '../http/request.js';
 import { errorResponse, toAppError } from '../http/response.js';
 import { type Auth, CLIENT_IP_HEADER } from './auth.js';
+import * as connections from './connections.js';
 import type { Person } from './people.js';
 import * as people from './people.js';
 
@@ -48,15 +49,33 @@ export function createAccountsApp(deps: AccountsDeps) {
     errorResponse(c, new AppError(404, 'not_found', `no route for ${c.req.method} ${c.req.path}`)),
   );
 
-  app.on(['GET', 'POST'], '/account/auth/*', async (c) => {
-    // Better Auth trusts only this header for the client's address, so a
-    // value the client sent is replaced, never passed on.
+  // Better Auth trusts only this header for the client's address, so a
+  // value the client sent is replaced, never passed on.
+  const forwarded = (c: Context) => {
     const headers = new Headers(c.req.raw.headers);
     headers.delete(CLIENT_IP_HEADER);
     const ip = deps.clientIp(c);
     if (ip) headers.set(CLIENT_IP_HEADER, ip);
-    return deps.auth.handler(new Request(c.req.raw, { headers }));
+    return headers;
+  };
+
+  app.on(['GET', 'POST'], '/account/auth/*', async (c) => {
+    // Consent goes through /account/oauth/consent, which checks the
+    // workspace the person picked; Retainer never uses the post-login step.
+    if (CLOSED_AUTH_PATHS.has(c.req.path)) {
+      throw new AppError(404, 'not_found', `no route for ${c.req.method} ${c.req.path}`);
+    }
+    return deps.auth.handler(new Request(c.req.raw, { headers: forwarded(c) }));
   });
+
+  // RFC 8414: OAuth clients find the authorization server's metadata at the
+  // root, with the issuer's path appended (accounts spec 4.6).
+  for (const path of [
+    '/.well-known/oauth-authorization-server/account/auth',
+    '/.well-known/oauth-authorization-server',
+  ]) {
+    app.get(path, (c) => deps.auth.authServerMetadata(c.req.raw));
+  }
 
   const account = new Hono<AccountsEnv>();
   account.use('*', signedIn(deps));
@@ -74,6 +93,10 @@ export function createAccountsApp(deps: AccountsDeps) {
   account.patch('/workspaces/:id', async (c) => {
     const { name } = await readBody(c, named);
     return c.json(await people.renameWorkspace(sql, c.get('person'), idParam(c), name));
+  });
+  account.delete('/workspaces/:id', async (c) => {
+    const { name } = await readBody(c, named);
+    return c.json(await people.deleteWorkspace(sql, c.get('person'), idParam(c), name));
   });
   account.get('/workspaces/:id/members', async (c) =>
     c.json(await people.listWorkspaceMembers(sql, c.get('person'), idParam(c))),
@@ -156,9 +179,68 @@ export function createAccountsApp(deps: AccountsDeps) {
     c.json(await people.acceptInvitation(sql, c.get('person'), c.req.param('token'))),
   );
 
+  // Connecting an app over OAuth (4.7): the consent page's requests.
+  account.get('/oauth/client', async (c) => {
+    const clientId = c.req.query('client_id') ?? '';
+    const [client] = await sql<{ name: string | null; uri: string | null }[]>`
+      select name, uri from oauth_clients where client_id = ${clientId} and disabled is not true`;
+    if (!client)
+      throw new AppError(404, 'not_found', 'This app is not known; start again from it.');
+    return c.json({ clientId, name: client.name ?? clientId, uri: client.uri });
+  });
+  account.post('/oauth/consent', async (c) => {
+    const body = await readBody(
+      c,
+      z.object({
+        oauth_query: z.string().min(1).max(8192),
+        accept: z.boolean(),
+        workspaceId: z.uuid().optional(),
+      }),
+    );
+    const { accept, workspaceId } = body;
+    if (accept && !workspaceId) {
+      throw new AppError(400, 'invalid_request', 'pick the workspace to connect');
+    }
+    const headers = forwarded(c);
+    headers.set('content-type', 'application/json');
+    headers.delete('content-length');
+    const request = new Request(`${deps.publicOrigin}/account/auth/oauth2/consent`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ accept, oauth_query: body.oauth_query }),
+    });
+    if (!accept || !workspaceId) return deps.auth.handler(request);
+    return connections.recordConsent(sql, c.get('person'), workspaceId, () =>
+      deps.auth.consent(request, workspaceId),
+    );
+  });
+
+  // Connected apps (5.1)
+  account.get('/connections', async (c) =>
+    c.json({ connections: await connections.listMyConnections(sql, c.get('person')) }),
+  );
+  account.delete('/connections/:connectionId', async (c) => {
+    await connections.disconnect(sql, c.get('person'), idParam(c, 'connectionId'));
+    return c.body(null, 204);
+  });
+  account.get('/workspaces/:id/connections', async (c) =>
+    c.json(await connections.listWorkspaceConnections(sql, c.get('person'), idParam(c))),
+  );
+  account.delete('/workspaces/:id/connections/:connectionId', async (c) => {
+    const [id, connectionId] = [idParam(c), idParam(c, 'connectionId')];
+    await connections.disconnect(sql, c.get('person'), connectionId, id);
+    return c.body(null, 204);
+  });
+
   app.route('/account', account);
   return app;
 }
+
+/** Better Auth routes Retainer does not expose (see /account/oauth/consent). */
+const CLOSED_AUTH_PATHS = new Set([
+  '/account/auth/oauth2/consent',
+  '/account/auth/oauth2/continue',
+]);
 
 /**
  * Requires a signed-in person who is not disabled, and the web app's CSRF

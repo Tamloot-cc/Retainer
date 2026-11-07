@@ -7,6 +7,7 @@ import { createAccountsServer } from '../src/accounts/index.js';
 import { createApp } from '../src/api/app.js';
 import { CONTROL_ROLE, loadConfig } from '../src/config.js';
 import { createSql, RUNTIME_ROLE } from '../src/db/client.js';
+import { fetchClientMetadata } from '../test/helpers/oauth.js';
 
 /**
  * Accounts mode in the browser (accounts spec 8: Browser layer): the API,
@@ -40,7 +41,9 @@ export const test = base.extend<{
     const owner = createSql(dbUrl.toString()),
       runtime = createSql(dbUrl.toString(), { role: RUNTIME_ROLE }),
       control = createSql(dbUrl.toString(), { role: CONTROL_ROLE }),
-      authControl = createSql(dbUrl.toString(), { role: CONTROL_ROLE });
+      // One connection, as on Lambda, so a Better Auth hook that waits on its
+      // own pool inside a transaction hangs here too.
+      authControl = createSql(dbUrl.toString(), { role: CONTROL_ROLE, max: 1 });
 
     // The origin needs the port, so the server listens before the app exists.
     let handle: (request: Request) => Response | Promise<Response> = () =>
@@ -65,6 +68,8 @@ export const test = base.extend<{
       authSql: authControl,
       clientIp: () => '127.0.0.1',
       rateLimit: false,
+      // Claude's client metadata document, without the internet.
+      fetchClientMetadata: fetchClientMetadata as never,
       google: {
         verifyIdToken: async () => true,
         getUserInfo: async (token) => {
@@ -89,7 +94,9 @@ export const test = base.extend<{
     });
     handle = (request) => {
       const path = new URL(request.url).pathname;
-      return path === '/account' || path.startsWith('/account/')
+      return path === '/account' ||
+        path.startsWith('/account/') ||
+        path.startsWith('/.well-known/oauth-authorization-server')
         ? accountsApp.fetch(request)
         : api.fetch(request);
     };

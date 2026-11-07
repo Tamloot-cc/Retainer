@@ -35,6 +35,7 @@ import {
   Td,
   Tr,
 } from '../ui/index.js';
+import { ConnectedApps } from './connections.js';
 import { type AccountState, useAccount } from './context.js';
 import {
   capital,
@@ -80,8 +81,18 @@ export function SettingsPage() {
     },
     ...(admin
       ? ([
-          { value: 'agents', label: 'Agents', hint: 'API keys your agents and apps connect with' },
-          { value: 'workspace', label: 'Workspace', hint: "This workspace's name" },
+          {
+            value: 'agents',
+            label: 'Agents',
+            hint: 'API keys and apps people connected, such as Claude',
+          },
+          {
+            value: 'workspace',
+            label: 'Workspace',
+            hint: isOrganizationManager(state.organization.role)
+              ? "This workspace's name, and deleting it"
+              : "This workspace's name",
+          },
         ] as const)
       : []),
     ...(showOrganization
@@ -516,6 +527,15 @@ function AgentsTab({ state }: { state: AccountState }) {
           Revoke
         </Button>
       </Dialog>
+      <Panel title="Connected apps">
+        <Stack>
+          <Muted small>
+            Apps people connected by signing in, such as Claude. Each works as the person who
+            connected it, and never does more than they can here.
+          </Muted>
+          <ConnectedApps workspaceId={state.workspace.id} />
+        </Stack>
+      </Panel>
     </Stack>
   );
 }
@@ -623,6 +643,7 @@ function Instructions({ title, children }: { title: string; children: string }) 
 
 function WorkspaceTab({ state }: { state: AccountState }) {
   const [error, setError] = useState('');
+  const canDelete = isOrganizationManager(state.organization.role);
   async function rename(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const name = (e.currentTarget.elements.namedItem('name') as HTMLInputElement).value.trim();
@@ -636,31 +657,113 @@ function WorkspaceTab({ state }: { state: AccountState }) {
     }
   }
   return (
-    <Panel title="Name">
-      <form onSubmit={(e) => void rename(e)}>
-        <Stack>
-          <Label htmlFor="workspace-name">
-            Workspace name
-            <Input
-              id="workspace-name"
-              name="name"
-              required
-              maxLength={200}
-              defaultValue={state.workspace.name}
-            />
-          </Label>
-          <Muted small>
-            Its address stays {window.location.origin}
-            {workspaceHref(state.workspace.slug)}, so links and agents keep working.
-          </Muted>
-          {error ? <Notice error>{error}</Notice> : null}
-          <div>
-            <Button type="submit" variant="primary">
-              Save
-            </Button>
-          </div>
-        </Stack>
-      </form>
+    <Stack>
+      <Panel title="Name">
+        <form onSubmit={(e) => void rename(e)}>
+          <Stack>
+            <Label htmlFor="workspace-name">
+              Workspace name
+              <Input
+                id="workspace-name"
+                name="name"
+                required
+                maxLength={200}
+                defaultValue={state.workspace.name}
+              />
+            </Label>
+            <Muted small>
+              Its address stays {window.location.origin}
+              {workspaceHref(state.workspace.slug)}, so links and agents keep working.
+            </Muted>
+            {error ? <Notice error>{error}</Notice> : null}
+            <div>
+              <Button type="submit" variant="primary">
+                Save
+              </Button>
+            </div>
+          </Stack>
+        </form>
+      </Panel>
+      {canDelete ? <DeleteWorkspace state={state} /> : null}
+    </Stack>
+  );
+}
+
+/**
+ * Deleting a workspace (4.5): for organization owners and admins, who type
+ * its name to confirm. It is gone at once and removed for good 7 days later.
+ */
+function DeleteWorkspace({ state }: { state: AccountState }) {
+  const [open, setOpen] = useState(false),
+    [typed, setTyped] = useState(''),
+    [error, setError] = useState(''),
+    [busy, setBusy] = useState(false);
+  const name = state.workspace.name;
+  const matches = typed.trim() === name.trim();
+  async function remove() {
+    setBusy(true);
+    setError('');
+    try {
+      await accountApi.deleteWorkspace(state.workspace.id, typed);
+      // Starts the app again outside this workspace, which no longer exists.
+      window.location.assign('/app/');
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  }
+  return (
+    <Panel title="Delete workspace">
+      <Stack>
+        <Muted small>
+          Everyone loses access at once, and its API keys and connected apps stop working. Its
+          records, events and history are removed for good after 7 days. Until then, whoever runs
+          this Retainer can bring it back.
+        </Muted>
+        <div>
+          <Button variant="destructive" onClick={() => setOpen(true)}>
+            Delete workspace
+          </Button>
+        </div>
+      </Stack>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) {
+            setTyped('');
+            setError('');
+          }
+        }}
+        title={`Delete ${name}?`}
+        description="Everyone loses access at once. Its data is removed for good after 7 days."
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (matches) void remove();
+          }}
+        >
+          <Stack>
+            <Label htmlFor="delete-workspace-name">
+              Type the workspace's name to confirm
+              <Input
+                id="delete-workspace-name"
+                autoComplete="off"
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                placeholder={name}
+              />
+            </Label>
+            {error ? <Notice error>{error}</Notice> : null}
+            <div>
+              <Button type="submit" variant="destructive" disabled={!matches || busy}>
+                Delete workspace
+              </Button>
+            </div>
+          </Stack>
+        </form>
+      </Dialog>
     </Panel>
   );
 }

@@ -112,6 +112,19 @@ resource "aws_apigatewayv2_route" "control" {
   target    = "integrations/${aws_apigatewayv2_integration.control[0].id}"
 }
 
+# OAuth clients find the authorization server's metadata at the root, with
+# the issuer's path appended (accounts spec 4.6, 4.7). The protected
+# resource's metadata is static and stays with the api function.
+resource "aws_apigatewayv2_route" "oauth_metadata" {
+  for_each = local.accounts ? toset([
+    "GET /.well-known/oauth-authorization-server",
+    "GET /.well-known/oauth-authorization-server/{proxy+}",
+  ]) : toset([])
+  api_id    = aws_apigatewayv2_api.this.id
+  route_key = each.value
+  target    = "integrations/${aws_apigatewayv2_integration.control[0].id}"
+}
+
 resource "aws_lambda_permission" "control" {
   count         = local.accounts ? 1 : 0
   statement_id  = "AllowApiGateway"

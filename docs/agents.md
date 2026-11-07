@@ -7,7 +7,11 @@ defined once, on the server.
 
 Create one API key per agent (see [Self-hosting](self-hosting.md#workspaces-and-api-keys)),
 with an `agent` actor. `read,write` is enough for most agents; add
-`schema:write` if the agent may add fields or apply a template.
+`schema:write` if the agent may add fields or apply a template. In
+[accounts mode](self-hosting.md#accounts-mode), workspace admins create keys
+in the web app under Settings, Agents, and apps that support OAuth, such as
+Claude's web app, can connect without a key
+([below](#connecting-claudes-web-app-over-oauth)).
 
 ```sh
 retainer key create --workspace acme --name "Inbox agent" \
@@ -26,6 +30,28 @@ claude mcp add --transport http retainer https://retainer.example/mcp \
 
 Any client that supports Streamable HTTP with custom headers works the same
 way. The endpoint is stateless: each request is authenticated on its own.
+
+## Connecting Claude's web app over OAuth
+
+In accounts mode, an app that speaks MCP OAuth connects with the person's own
+sign-in instead of a key. In Claude's web app, add a custom connector with the
+URL `https://<your-host>/mcp` and connect it. Claude opens Retainer in the
+browser, where the person:
+
+1. Signs in, if they are not already.
+2. Picks the workspace Claude may use, from the ones they have a role in.
+3. Reviews what Claude may do there and chooses Allow.
+
+Claude then works in that workspace as "Claude for <name>", an `agent` actor,
+so the rules that need a person still apply. It gets what it asked for that the
+person's role allows: a viewer's Claude can only read, and no app can manage
+people or keys. To use another workspace, connect again and pick it.
+
+Connected apps are listed under Your account, and for workspace admins under
+Settings, Agents. Disconnecting one, removing the person, lowering their role
+or deleting the workspace applies at the app's next request. Clients that
+register through dynamic client registration work the same way; Claude
+identifies itself with a client metadata document.
 
 ## Over stdio
 

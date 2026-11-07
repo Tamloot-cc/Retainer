@@ -1,6 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { type Account, authClient, signOutOfAccount, workspaceHref } from '../api/account.js';
 import { Button, Dialog, Input, Label, Muted, Notice, Panel, Stack } from '../ui/index.js';
+import { ConnectedApps } from './connections.js';
 import { shortDate as date, roleWords } from './format.js';
 import { AccountFrame } from './screens.js';
 
@@ -17,6 +18,9 @@ export function YourAccount({ account }: { account: Account }) {
         <Muted small>Your name and email come from your Google account; change them there.</Muted>
       </Panel>
       <Passkeys />
+      <Panel title="Connected apps">
+        <ConnectedApps showWorkspace />
+      </Panel>
       <Panel title="Where you have access">
         {account.organizations.length === 0 ? (
           <Muted>You're not in any workspace yet.</Muted>

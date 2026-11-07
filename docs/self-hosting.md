@@ -86,6 +86,7 @@ when running from source.
 | `RETAINER_GOOGLE_CLIENT_ID`             | —                | Accounts mode: the Google OAuth client people sign in with. Set it with the next one wherever `/account` is served.                                                                                                                                                                                                                                         |
 | `RETAINER_GOOGLE_CLIENT_SECRET`         | —                | Accounts mode: that client's secret.                                                                                                                                                                                                                                                                                                                        |
 | `RETAINER_CONTROL_DATABASE_URL`         | —                | Optional, accounts mode. A login as `retainer_control` for `/account`, with a password you choose, set by the server on start like the runtime login. Without it, `/account` uses the owner's login and switches to `retainer_control`.                                                                                                                     |
+| `RETAINER_RATE_LIMIT_PER_MINUTE`        | 600 or none      | Requests a minute each workspace may make to `/v1` and `/mcp`, across all its keys and connected apps; past it the API answers `429` with `Retry-After`. 600 in accounts mode, none in key mode. `0` turns it off.                                                                                                                                          |
 
 ## The web app
 
@@ -109,7 +110,8 @@ instead, and each workspace has its own address, `/app/w/<slug>/`.
 By default Retainer runs in key mode: everyone, people included, uses an API
 key. In accounts mode people sign in to the web app with Google or a passkey,
 and get a role in each workspace instead of a key. Agents keep using API keys,
-which workspace admins now create in the web app.
+which workspace admins now create in the web app, or connect over OAuth with a
+person's sign-in, as Claude's web app does ([Connecting agents](agents.md#connecting-claudes-web-app-over-oauth)).
 
 Accounts mode is on when `RETAINER_AUTH_SECRET` is set, together with a Google
 OAuth client:
@@ -124,6 +126,15 @@ OAuth client:
 Sign-up is open: anyone with a Google account can sign in and create a
 workspace of their own, in an organization of their own. They see only what
 they create or are invited to.
+
+Nothing limits how many workspaces or members an organization has unless you
+set a quota. Once full, creating a workspace or inviting someone more is
+refused with `limit_reached`; `none` removes a limit:
+
+```sh
+retainer org limit --org Acme --workspaces 3 --members 10
+retainer org limit --org Acme --members none
+```
 
 Workspaces that existed before go into one organization named `Default`, with
 no owner. Give it one once that person has signed in:
@@ -153,8 +164,21 @@ retainer workspace move acme-clinic --org Acme
 retainer member add --workspace acme-clinic --email ben@example.com --role editor
 ```
 
-Removing someone, or lowering their role, applies at their next request. Keys
-they created keep working until an admin revokes them.
+Removing someone, or lowering their role, applies at their next request, and
+so do the apps they connected over OAuth. Keys they created keep working until
+an admin revokes them.
+
+Organization owners and admins delete a workspace from **Settings** by typing
+its name. It disappears at once: its keys, connected apps and members lose
+access. The server removes its data for good 7 days later, checking hourly
+from the `control` (or `all`) process. Until then you can undo it, or remove
+it at once:
+
+```sh
+retainer workspace list                 # marks deleted ones and when they go for good
+retainer workspace restore acme-clinic
+retainer workspace purge                # removes every workspace deleted over 7 days ago
+```
 
 ## Upgrading
 

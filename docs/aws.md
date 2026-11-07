@@ -16,7 +16,7 @@ managed database with point-in-time recovery, and a bill that follows use.
 | REST (`/v1`), MCP (`/mcp`), web app (`/app`) | `<name>-api` Lambda function behind an API Gateway HTTP API                                                  |
 | Consolidator                                 | `<name>-consolidate` function, run by EventBridge every 15 minutes                                           |
 | Migrations and the operator CLI              | `<name>-ops` function, invoked by `deploy.sh` and `ops.sh`                                                   |
-| Sign-in and `/account` (accounts mode only)  | `<name>-control` function, with a NAT gateway for Google sign-in                                             |
+| Sign-in and `/account` (accounts mode only)  | `<name>-control` function, with a NAT gateway; EventBridge runs it hourly to remove deleted workspaces       |
 | Database                                     | RDS PostgreSQL 18, encrypted, private, 14 days of point-in-time backups                                      |
 | Network                                      | A VPC of its own with two private subnets, no internet gateway or NAT, except for `control` in accounts mode |
 | Monitoring                                   | Log groups (30 days), alarms on 5xx, consolidator errors and the database                                    |
@@ -26,9 +26,11 @@ managed database with point-in-time recovery, and a bill that follows use.
 The api, consolidate and ops functions reach only the database, and the
 database only accepts the functions. They make no outbound calls, so they
 have no route to the internet. In [accounts mode](#accounts) the control
-function signs people in with Google, which needs one: it runs in subnets of
-its own whose only way out is a NAT gateway, and the other functions keep
-none.
+function signs people in with Google and reads the client metadata documents
+apps such as Claude identify themselves with, which needs one: it runs in
+subnets of its own whose only way out is a NAT gateway, and the other
+functions keep none. The api function checks OAuth tokens against keys in the
+database, with no call out.
 
 With the defaults, a small deployment costs about $17–20 a month in
 eu-central-1: the `db.t4g.micro` instance (about $14), 20 GB of storage, and
@@ -277,14 +279,15 @@ functions that a failed deploy left stopped.
 
 **Rate limiting.** API Gateway throttles at `api_throttle_rate` requests per
 second (25) with bursts of `api_throttle_burst` (50). In accounts mode
-sign-in also limits each address, counting in the database so the limit
-holds across Lambda instances.
+sign-in also limits each address, and each workspace may make 600 requests a
+minute to `/v1` and `/mcp` before getting `429`s. Both count in the database,
+so the limits hold across Lambda instances.
 
 ## Accounts
 
 In accounts mode people sign in to the web app with Google or a passkey,
-and agents keep their API keys ([Self-hosting](self-hosting.md#accounts-mode)
-explains the roles). It is off until you give Terraform a Google OAuth
+and agents use API keys or connect over OAuth
+([Self-hosting](self-hosting.md#accounts-mode) explains the roles). It is off until you give Terraform a Google OAuth
 client:
 
 1. Deploy once without it, so the public origin exists (`terraform output
@@ -315,21 +318,32 @@ deploy/aws/ops.sh org list
 deploy/aws/ops.sh member add --org Default --email you@example.com --role owner
 ```
 
+Claude's web app then connects to `<public origin>/mcp` as a custom connector
+([Connecting agents](agents.md#connecting-claudes-web-app-over-oauth)).
+
+A workspace deleted from Settings is removed for good 7 days later, by an
+EventBridge rule that runs the control function every hour. Like a
+consolidator pass, the run holds the deploy lock, so a deploy waits for it,
+and the control function's timeout is 300 seconds to allow for a large
+workspace. To undo a deletion within those days:
+`deploy/aws/ops.sh workspace restore <slug>`.
+
 Removing the two variables and applying again turns accounts mode off and
 removes the NAT gateway. People's accounts stay in the database.
 
 ## Limits of this deployment
 
-- A request runs for at most 29 seconds, and bodies are limited to API
+- A request runs for at most 29 seconds, and a database query in it for 25,
+  after which the API answers `503` `timeout`. Bodies are limited to API
   Gateway's 10 MB (Lambda's 6 MB once decoded).
 - The first request to an idle function starts a new instance, which takes
   a second or two.
 - The functions connect to the database over TLS without verifying the
   server's certificate (`sslmode=require`). The database is reachable only
   inside the VPC.
-- MCP clients authenticate with an API key as a bearer token. Clients that
-  only support OAuth, such as connectors added in Claude's web app, cannot
-  connect yet.
+- In key mode, MCP clients authenticate with an API key as a bearer token.
+  Clients that only support OAuth, such as connectors added in Claude's web
+  app, need accounts mode.
 - Accounts mode has one NAT gateway, in one availability zone. If that zone
   fails, signing in stops; everything else keeps working.
 

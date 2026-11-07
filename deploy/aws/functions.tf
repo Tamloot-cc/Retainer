@@ -114,9 +114,11 @@ locals {
     # Accounts mode only; null references while it is off are never used.
     for key, value in {
       control = {
-        handler     = "dist/lambda/control.handler"
-        memory      = 512
-        timeout     = 29
+        handler = "dist/lambda/control.handler"
+        memory  = 512
+        # API Gateway still ends a request at 30 seconds; the scheduled run
+        # that removes deleted workspaces (schedule.tf) may take longer.
+        timeout     = 300
         concurrency = var.control_reserved_concurrency
         env = {
           RETAINER_CONTROL_DATABASE_URL = local.control_database_url

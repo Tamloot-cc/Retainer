@@ -798,6 +798,11 @@ the person, or keeping other people's facts with a "deleted for privacy"
 source, is a possible later refinement.
 
 Workspace deletion cascades through `workspace_id` and removes everything.
+In accounts mode deleting a workspace first only sets `deletion_scheduled_at`:
+every lookup (keys, sessions, OAuth tokens, the consolidator) then treats it
+as gone, an operator can restore it, and 7 days later a scheduled run of the
+control function deletes it for good, one workspace per statement, holding
+the deploy lock like a consolidator pass.
 
 ---
 
@@ -950,7 +955,9 @@ migrations and the operator CLI. What the container does on start
 (migrations, the first-boot key, the search rebuild) the deploy does once
 through `ops`, with the API stopped, so a cold start never migrates and no
 key is printed to the logs. In accounts mode a `control` function serves
-`/account` (7.3).
+`/account` (7.3), and an hourly scheduled run of it removes workspaces whose
+deletion is over 7 days old (2.1); in a container the `control` or `all`
+process does that.
 
 ### 4.1 How memory gets written
 
@@ -1285,8 +1292,9 @@ not built yet; docs/rest-api.md lists every route.
 ### 6.2 MCP
 
 Hosted on the API server at `/mcp` (Streamable HTTP). `@retainer/mcp` is a
-small stdio bridge for local clients that only speak stdio. OAuth for clients
-that cannot use an API key is designed but not built (7.3).
+small stdio bridge for local clients that only speak stdio. In accounts mode,
+clients that cannot use an API key, such as Claude's web app, connect over
+OAuth (7.3); OAuth tokens are accepted on `/mcp` only.
 
 Tools are generic, not one per object. Custom objects would otherwise grow
 the tool list without limit and break clients' tool caching.
@@ -1612,8 +1620,9 @@ docker compose exec retainer retainer key revoke <key-id>
 `key create` prints the key once and stores only its hash. In accounts mode
 people create workspaces and agent keys in the web app (7.3), and the CLI also
 manages organizations and members (`org create`, `org list`, `member add`,
-`workspace move`, and `--org` on `workspace create`). There is no instance-wide
-admin HTTP API.
+`workspace move`, and `--org` on `workspace create`), quotas (`org limit`) and
+deleted workspaces (`workspace restore`, `workspace purge`). There is no
+instance-wide admin HTTP API.
 
 ### 7.2 Per-record access (not in v1)
 
@@ -1628,6 +1637,8 @@ enforcement. Until then, new code keeps that path open:
 1. Every read and write runs as `retainer_app` under RLS. The only
    `SECURITY DEFINER` functions are the API-key lookup,
    `retainer_session_access` (7.3), which returns a person's role in one
+   workspace, `retainer_token_keys` and `retainer_token_access` (7.3), which
+   return the public signing keys and a connected app's person, role and
    workspace, and `retainer_workspaces_due` (4.2), which returns workspace IDs
    only; no read takes a shortcut around RLS, including search and context.
 2. Per-request database context is set in one place (`inWorkspace`).
@@ -1645,11 +1656,11 @@ enforcement. Until then, new code keeps that path open:
 People log in, create workspaces, invite colleagues and connect agents, with no
 operator.
 
-**What is built.** Signing in with Google or a passkey, organizations, roles,
-self-serve workspaces, invitations, agent keys in the web app, the settings pages,
-and the `control` function with its NAT gateway on AWS. Still designed, not built:
-MCP OAuth (and with it `retainer_token_keys` and `retainer_token_access`), deleting a
-workspace from the web app, connected apps, and the per-workspace limits. The reasons and the test results are in
+**What is built.** All of it: signing in with Google or a passkey, organizations,
+roles, self-serve workspaces, invitations, agent keys in the web app, the settings
+pages, the `control` function with its NAT gateway on AWS, MCP OAuth with a
+workspace picker and connected apps, scheduled workspace deletion, and the limits
+below. The reasons, deviations and test results are in
 [docs/specs/accounts-and-access.md](docs/specs/accounts-and-access.md). The workspace
 stays the security boundary: RLS stays keyed on `workspace_id`, records get no
 organization column, and a `Caller` still has exactly one workspace.
@@ -1720,17 +1731,26 @@ the two in 7.2: `retainer_session_access`, `retainer_token_keys` and
 `retainer_token_access`.
 
 **MCP OAuth.** Better Auth's `mcp()` and `cimd()` plugins are the authorization
-server, so clients such as Claude's web app can connect. Access tokens are one-hour
-JWTs that name the workspace chosen at consent. Without internet, `api` reads the
+server, so clients such as Claude's web app can connect. The person picks the
+workspace on the consent page, which checks their access to it before Better Auth
+records the consent with that workspace as its reference. Access tokens are
+one-hour EdDSA JWTs that name the workspace, and work on `/mcp` only. Without internet, `api` reads the
 public signing keys through `retainer_token_keys`, verifies the token, then calls
 `retainer_token_access` for the person's current role and consent. The request's
-scopes are the token's scopes intersected with that role's, so a downgrade, removal or
-revoked consent applies at the next request. The actor is always an `agent`, with an
+scopes are the token's scopes intersected with that role's and the consent's, so a
+downgrade, removal or revoked consent applies at the next request. The actor is always an `agent`, with an
 ID made from the client and the person, so the human-only rules still apply.
+Removing a person from a workspace or organization deletes their consents there,
+and a consent is the connection people see and disconnect in Settings.
 
-**Limits.** A per-workspace rate limit, quotas in `organizations.limits` (null means
-unlimited, as on a self-hosted install), and a statement timeout on the API's
-connection pool.
+**Limits.** A per-workspace rate limit on `/v1` and `/mcp` (600 requests a minute
+in accounts mode by default, off in key mode), counted in an unlogged table and
+answered with `429` and `Retry-After`. Quotas on workspaces and members in
+`organizations.limits`, checked under the organization's lock (null means
+unlimited, as on a self-hosted install). A 25-second statement timeout on the API's
+connection pool, set at connection start, so one slow query cannot hold a
+connection past the 29-second request limit; with `RETAINER_ROLE=all` the API has
+a pool of its own.
 
 ---
 
@@ -1773,8 +1793,10 @@ code.
 
 TypeScript on Node 26, pnpm workspaces, Hono, postgres.js with plain SQL,
 Drizzle for table definitions and drizzle-kit migrations, Zod, the
-official MCP TypeScript SDK, and Better Auth for signing people in (accounts
-mode only, in the `accounts` module). The job queue is Postgres itself (4.2), with
+official MCP TypeScript SDK, and Better Auth with its JWT, MCP and client
+metadata plugins for signing people in and for OAuth (accounts mode only, in the
+`accounts` module). `jose` verifies OAuth access tokens in the API, which does not
+import Better Auth. The job queue is Postgres itself (4.2), with
 no queue library. No LLM SDK.
 The optional web package uses Vite, React 19, TanStack Router/Query, Tailwind
 CSS 4 and shadcn-style UI primitives. Static files are served by Hono at

@@ -235,3 +235,34 @@ test('a sign-out the server refuses says so, and the person stays where they are
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Use a passkey' })).toBeVisible();
 });
+
+test('adding a passkey that also asks for a session finishes, on a one-connection pool', async ({
+  page,
+  context,
+  accounts: a,
+  browserName,
+}) => {
+  test.skip(browserName !== 'chromium', 'The virtual authenticator is Chromium only');
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('WebAuthn.enable');
+  await cdp.send('WebAuthn.addVirtualAuthenticator', {
+    options: {
+      protocol: 'ctap2',
+      transport: 'internal',
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+    },
+  });
+  await a.signIn(context, { email: 'quinn@example.test', name: 'Quinn' });
+  // Better Auth then creates the session inside the registration's
+  // transaction; the session hook must read through that transaction.
+  await page.route('**/account/auth/passkey/verify-registration', async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    await route.continue({ postData: JSON.stringify({ ...body, createSession: true }) });
+  });
+  await page.goto(`${a.url}/app/account`);
+  await page.getByRole('button', { name: 'Add a passkey' }).click();
+  await expect(page.getByText(/added/)).toBeVisible({ timeout: 10_000 });
+});

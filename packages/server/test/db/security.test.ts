@@ -30,6 +30,7 @@ const TENANT_TABLES = [
   'suppressions',
   'deletion_audit_log',
   'views',
+  'workspace_request_counts',
 ];
 
 let app: Sql;
@@ -298,7 +299,13 @@ describe('API-key lookup', () => {
 describe('SECURITY DEFINER functions', () => {
   // Every way around RLS is listed here (ARCHITECTURE.md 7.2, accounts spec
   // 7.4). Adding one means adding it here, on purpose, with a review.
-  const ALLOWED = ['retainer_lookup_api_key', 'retainer_session_access', 'retainer_workspaces_due'];
+  const ALLOWED = [
+    'retainer_lookup_api_key',
+    'retainer_session_access',
+    'retainer_token_access',
+    'retainer_token_keys',
+    'retainer_workspaces_due',
+  ];
 
   it('exist only on the list, each fixing its search_path, runnable only by the runtime role', async () => {
     const rows = await db.owner<{ name: string; config: string[] | null; grantees: string[] }[]>`

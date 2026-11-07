@@ -30,6 +30,14 @@ const ACCOUNT_TABLES = [
   'organization_members',
   'workspace_members',
   'invitations',
+  'jwks',
+  'oauth_clients',
+  'oauth_resources',
+  'oauth_client_resources',
+  'oauth_refresh_tokens',
+  'oauth_access_tokens',
+  'oauth_consents',
+  'oauth_client_assertions',
 ];
 
 async function addUser(email: string, name = email.split('@')[0] ?? email) {

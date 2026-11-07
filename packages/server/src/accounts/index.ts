@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
-import { accountsConfig, type Config } from '../config.js';
+import { accountsConfig, accountsOrigin, type Config } from '../config.js';
 import type { Sql } from '../db/client.js';
-import { createAuth, type GoogleOverrides } from './auth.js';
+import { type AuthOptions, createAuth, type GoogleOverrides } from './auth.js';
 import { createAccountsApp } from './routes.js';
 
 export { CLIENT_IP_HEADER } from './auth.js';
@@ -24,15 +24,17 @@ export function createAccountsServer(input: {
   clientIp: (c: Context) => string | undefined;
   google?: GoogleOverrides;
   rateLimit?: boolean;
+  fetchClientMetadata?: AuthOptions['fetchClientMetadata'];
 }) {
   const { config } = input;
-  const publicOrigin = config.RETAINER_PUBLIC_ORIGIN ?? `http://localhost:${config.PORT}`;
+  const publicOrigin = accountsOrigin(config);
   const auth = createAuth({
     sql: input.authSql,
     config: accountsConfig(config),
     publicOrigin,
     ...(input.google ? { google: input.google } : {}),
     ...(input.rateLimit === undefined ? {} : { rateLimit: input.rateLimit }),
+    ...(input.fetchClientMetadata ? { fetchClientMetadata: input.fetchClientMetadata } : {}),
   });
   return createAccountsApp({ auth, sql: input.sql, publicOrigin, clientIp: input.clientIp });
 }

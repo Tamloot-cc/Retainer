@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { verifySessionCookie } from '../../src/auth/account-session.js';
 import { createApiKey } from '../../src/auth/keys.js';
 import {
@@ -38,6 +38,23 @@ beforeAll(async () => {
   otherWorkspaceId = (await createWorkspace(db.owner, { name: 'Elsewhere' })).id;
 });
 
+/** Starts a Google sign-in the way the web app does: the redirect to Google. */
+async function startGoogleRedirect(): Promise<{ state: string; cookie: string }> {
+  const res = await app.accounts.request(`${ORIGIN}/account/auth/sign-in/social`, {
+    method: 'POST',
+    headers: { origin: ORIGIN, 'content-type': 'application/json' },
+    body: JSON.stringify({ provider: 'google', callbackURL: '/app/', errorCallbackURL: '/app/' }),
+  });
+  expect(res.status).toBe(200);
+  const { url } = (await res.json()) as { url: string };
+  const state = new URL(url).searchParams.get('state') ?? '';
+  const cookie = res.headers
+    .getSetCookie()
+    .map((c) => c.split(';')[0])
+    .join('; ');
+  return { state, cookie };
+}
+
 /** A person in Acme with `role` in its workspace. */
 async function member(
   role: 'viewer' | 'editor' | 'admin',
@@ -62,21 +79,73 @@ describe('signing in with Google', () => {
     expect(link).toEqual({ provider_id: 'google', account_id: 'google-sub-1' });
   });
 
-  it('makes one person when the same first sign-in arrives twice at once', async () => {
+  it('signs every simultaneous first sign-in in as the one person they make', async () => {
     const profile = { sub: 'google-race', email: 'race@example.test' };
-    const results = await Promise.allSettled([app.signIn(profile), app.signIn(profile)]);
-    const signedIn = results.filter((r) => r.status === 'fulfilled');
-    expect(signedIn.length).toBeGreaterThanOrEqual(1);
-    for (const r of results) {
-      if (r.status === 'rejected') expect(String(r.reason)).not.toContain('500');
-    }
+    // Six at once. Without the retry all but one are refused (9.2). Linking
+    // the Google account is slowed down here, so any sign-in that could see
+    // the new person before their link would be refused as unlinked.
+    await db.owner.unsafe(`
+      create function slow_link() returns trigger language plpgsql
+        as $$ begin perform pg_sleep(0.3); return new; end $$;
+      create trigger slow_link before insert on auth_accounts
+        for each row execute function slow_link();`);
+    const results = await Promise.all([1, 2, 3, 4, 5, 6].map(() => app.signIn(profile))).finally(
+      () => db.owner.unsafe('drop trigger slow_link on auth_accounts; drop function slow_link();'),
+    );
+    expect(new Set(results.map((r) => r.userId)).size).toBe(1);
     expect(await db.owner`select 1 from users where email = 'race@example.test'`).toHaveLength(1);
+    expect(
+      await db.owner`select 1 from auth_accounts where account_id = 'google-race'`,
+    ).toHaveLength(1);
   });
 
-  it('refuses an address Google has not verified', async () => {
+  it('sends a tab that loses a simultaneous Google redirect back to sign in again', async () => {
+    const profile = { sub: 'google-redirect-race', email: 'redirect-race@example.test' };
+    // Google's code exchange, which a test cannot reach.
+    const realFetch = globalThis.fetch;
+    const google = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (!url.startsWith('https://oauth2.googleapis.com/token')) return realFetch(input, init);
+      return Response.json({
+        access_token: 'google-access',
+        token_type: 'Bearer',
+        expires_in: 3600,
+        id_token: JSON.stringify({ ...profile, name: 'Racer', email_verified: true }),
+      });
+    });
+    try {
+      const started = await Promise.all([1, 2].map(() => startGoogleRedirect()));
+      const landed = await Promise.all(
+        started.map(({ state, cookie }, i) =>
+          app.accounts.request(
+            `${ORIGIN}/account/auth/callback/google?code=code-${i}&state=${state}`,
+            { headers: { cookie } },
+          ),
+        ),
+      );
+      const places = landed.map((res) => {
+        expect(res.status).toBe(302);
+        const place = new URL(res.headers.get('location') ?? '', ORIGIN);
+        return `${place.pathname}${place.search}`;
+      });
+      // At least one tab is signed in; any other comes back with the code
+      // the sign-in page turns into "sign in again", not "not verified".
+      expect(places).toContain('/app/');
+      for (const place of places) {
+        expect(['/app/', '/app/?error=unable_to_create_user']).toContain(place);
+      }
+    } finally {
+      google.mockRestore();
+    }
+    expect(
+      await db.owner`select 1 from users where email = 'redirect-race@example.test'`,
+    ).toHaveLength(1);
+  });
+
+  it('refuses an address Google has not verified, saying so', async () => {
     await expect(
       app.signIn({ email: 'unverified@example.test', email_verified: false }),
-    ).rejects.toThrow('sign-in failed');
+    ).rejects.toThrow('"code":"email_not_verified"');
     expect(
       await db.owner`select 1 from users where email = 'unverified@example.test'`,
     ).toHaveLength(0);

@@ -12,6 +12,7 @@ import {
   requestedWorkspace,
   WORKSPACE_HEADER,
 } from './account-session.js';
+import { looksLikeJwt, lookupOAuthToken, type OAuthSettings } from './oauth-token.js';
 import { lookupKey, requireWebHeader, SESSION_COOKIE } from './session.js';
 
 const BEARER = /^Bearer\s+(\S+)$/i;
@@ -20,13 +21,19 @@ export type AuthOptions = {
   publicOrigin?: string | undefined;
   /** RETAINER_AUTH_SECRET: accounts mode, where people sign in (4.1). */
   accountsSecret?: string | undefined;
+  /**
+   * Accepts MCP OAuth access tokens for this resource (accounts spec 4.7),
+   * and points a 401 at its metadata so clients can start signing in.
+   */
+  oauth?: OAuthSettings | undefined;
 };
 
 /**
  * Authenticates a request (7, accounts spec 4.4), in this order:
  *
  * 1. `Authorization: Bearer <key>`: an API key, looked up by its hash
- *    through `retainer_lookup_api_key`. It never falls back to a cookie.
+ *    through `retainer_lookup_api_key`, or on /mcp in accounts mode an
+ *    OAuth access token (oauth-token.ts). It never falls back to a cookie.
  * 2. In accounts mode, a person's signed session cookie, for the workspace
  *    `X-Retainer-Workspace` names, checked on every request.
  * 3. The key-mode cookie, which holds a personal API key.
@@ -35,13 +42,21 @@ export type AuthOptions = {
  * from the request body.
  */
 export function authenticate(sql: Sql, options: AuthOptions = {}): MiddlewareHandler<AppEnv> {
-  const { publicOrigin, accountsSecret } = options;
+  const { publicOrigin, accountsSecret, oauth } = options;
+  // RFC 9728: tells an OAuth client where to learn how to get a token.
+  const challenge = (error?: string) => {
+    const params = [
+      ...(error ? [`error="${error}"`] : []),
+      ...(oauth ? [`resource_metadata="${oauth.resourceMetadata}"`] : []),
+    ];
+    return params.length > 0 ? `Bearer ${params.join(', ')}` : 'Bearer';
+  };
   return createMiddleware<AppEnv>(async (c, next) => {
     const authorization = c.req.header('authorization');
     const accountCookie = accountsSecret ? accountSessionCookie(c) : undefined;
     const keyCookie = getCookie(c, SESSION_COOKIE);
     if (authorization === undefined && !accountCookie && !keyCookie) {
-      c.header('www-authenticate', 'Bearer');
+      c.header('www-authenticate', challenge());
       return errorResponse(
         c,
         new AppError(
@@ -56,14 +71,17 @@ export function authenticate(sql: Sql, options: AuthOptions = {}): MiddlewareHan
       if (authorization !== undefined) {
         const key = BEARER.exec(authorization)?.[1];
         if (!key) throw new AppError(401, 'unauthorized', 'send "Authorization: Bearer <key>"');
-        caller = await lookupKey(sql, key);
+        caller =
+          oauth && looksLikeJwt(key)
+            ? await lookupOAuthToken(sql, key, oauth)
+            : await lookupKey(sql, key);
         // A key belongs to one workspace; naming another is a client mistake.
         const named = c.req.header(WORKSPACE_HEADER);
         if (named !== undefined && named !== caller.workspaceId) {
           throw new AppError(
             400,
             'invalid_request',
-            `${WORKSPACE_HEADER} names a workspace this API key does not belong to`,
+            `${WORKSPACE_HEADER} names a workspace this credential does not belong to`,
           );
         }
       } else {
@@ -80,7 +98,7 @@ export function authenticate(sql: Sql, options: AuthOptions = {}): MiddlewareHan
       c.set('caller', caller);
     } catch (error) {
       if (!(error instanceof AppError)) throw error;
-      if (error.status === 401) c.header('www-authenticate', 'Bearer error="invalid_token"');
+      if (error.status === 401) c.header('www-authenticate', challenge('invalid_token'));
       return errorResponse(c, error);
     }
     c.header('Cache-Control', 'no-store');
@@ -110,11 +128,15 @@ const PERSON_NEEDS: Record<ApiKeyScope, string> = {
  * key.
  */
 export function missingScope(
-  caller: Pick<Caller, 'scopes' | 'userId'>,
+  caller: Pick<Caller, 'scopes' | 'userId' | 'connectedBy'>,
   scope: ApiKeyScope,
 ): AppError | undefined {
   const { scopes } = caller;
   if (scopes.includes(scope) || scopes.includes('admin')) return undefined;
-  const message = caller.userId ? PERSON_NEEDS[scope] : `this API key needs the "${scope}" scope`;
+  const message = caller.userId
+    ? PERSON_NEEDS[scope]
+    : caller.connectedBy
+      ? `this connection needs the "${scope}" scope: the person who connected it must allow it and have a role in this workspace that includes it`
+      : `this API key needs the "${scope}" scope`;
   return new AppError(403, 'forbidden', message, { required: scope, scopes });
 }
