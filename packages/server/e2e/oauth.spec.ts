@@ -45,12 +45,19 @@ test('a person connects Claude to the workspace they pick, then disconnects it',
   await expect(page).toHaveURL(/\/app\/oauth\/sign-in\?/);
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
   await a.signIn(context, DANA);
+  const continued = page.waitForRequest(
+    (r) => r.isNavigationRequest() && r.url().includes('/account/auth/oauth2/authorize'),
+  );
   await page.reload();
+  // The page continues the request sending only its origin as Referer, so a
+  // long OAuth address doesn't count twice toward API Gateway's header limit.
+  expect(await (await continued).headerValue('referer')).toBe(`${a.url}/`);
 
   // Signed in: on to consent, which no other site may frame.
   await expect(page).toHaveURL(/\/app\/oauth\/consent\?/);
   const consentPage = await context.request.get(page.url());
   expect(consentPage.headers()['content-security-policy']).toBe("frame-ancestors 'none'");
+  expect(consentPage.headers()['referrer-policy']).toBe('strict-origin');
   await expect(page.getByRole('heading', { name: 'Connect Claude to Retainer' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Allow' })).toBeDisabled();
   await page.getByRole('radio', { name: /Dana Support/ }).check();

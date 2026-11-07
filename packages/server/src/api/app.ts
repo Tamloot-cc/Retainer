@@ -98,11 +98,15 @@ export function createApp(deps: AppDeps) {
   if (deps.webDir) {
     const root = resolve(deps.webDir);
     // No other site may frame the app: the consent page, where a person lets
-    // an app in, must not be clickjacked (accounts spec 4.7).
+    // an app in, must not be clickjacked (accounts spec 4.7). Requests from
+    // the app send only the origin as Referer: an OAuth page's address is
+    // long, and API Gateway refuses headers over 10 KB, which cookies other
+    // apps set on a parent domain can already come close to.
     app.use('/app/*', async (c, next) => {
       await next();
       c.header('Content-Security-Policy', "frame-ancestors 'none'");
       c.header('X-Frame-Options', 'DENY');
+      c.header('Referrer-Policy', 'strict-origin');
     });
     app.get('/app', (c) => c.redirect('/app/'));
     app.use(
