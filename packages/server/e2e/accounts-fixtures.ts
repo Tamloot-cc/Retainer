@@ -41,7 +41,9 @@ export const test = base.extend<{
     const owner = createSql(dbUrl.toString()),
       runtime = createSql(dbUrl.toString(), { role: RUNTIME_ROLE }),
       control = createSql(dbUrl.toString(), { role: CONTROL_ROLE }),
-      authControl = createSql(dbUrl.toString(), { role: CONTROL_ROLE });
+      // One connection, as on Lambda, so a Better Auth hook that waits on its
+      // own pool inside a transaction hangs here too.
+      authControl = createSql(dbUrl.toString(), { role: CONTROL_ROLE, max: 1 });
 
     // The origin needs the port, so the server listens before the app exists.
     let handle: (request: Request) => Response | Promise<Response> = () =>

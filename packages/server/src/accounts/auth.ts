@@ -262,10 +262,23 @@ function betterAuthFor(options: AuthOptions) {
       },
       session: {
         create: {
-          before: async (session) => {
-            const [user] = await sql<{ disabled: boolean }[]>`
-              select disabled_at is not null as disabled from users where id = ${session.userId}`;
-            if (user?.disabled) return false;
+          // Read through Better Auth's adapter, which joins the transaction a
+          // session may be created in (a passkey registration's). A query on
+          // the pool itself would wait for that transaction's connection.
+          before: async (session, ctx) => {
+            const disabled = ctx
+              ? Boolean(
+                  (
+                    (await ctx.context.internalAdapter.findUserById(session.userId)) as {
+                      disabledAt?: Date | null;
+                    } | null
+                  )?.disabledAt,
+                )
+              : (
+                  await sql<{ disabled: boolean }[]>`
+                    select disabled_at is not null as disabled from users where id = ${session.userId}`
+                )[0]?.disabled;
+            if (disabled) return false;
             return { data: session };
           },
         },
