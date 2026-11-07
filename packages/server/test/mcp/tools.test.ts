@@ -167,6 +167,50 @@ describe('connecting', () => {
     expect(JSON.parse(call.result.content[0].text).workspace.name).toBe('Acme Sales');
   });
 
+  it('closes a subscriptions/listen stream at once, since its lists never change', async () => {
+    const meta = {
+      'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientInfo': { name: 'listener', version: '1.0.0' },
+      'io.modelcontextprotocol/clientCapabilities': {},
+    };
+    const res = await t.app.request('/mcp', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${salesAgentKey}`,
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-protocol-version': '2026-07-28',
+        'mcp-method': 'subscriptions/listen',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 7,
+        method: 'subscriptions/listen',
+        params: {
+          notifications: { toolsListChanged: true, promptsListChanged: true },
+          _meta: meta,
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+    // A stream left open never finishes this read; the test would time out.
+    const text = await Promise.race([
+      res.text(),
+      new Promise<string>((_, reject) =>
+        setTimeout(() => reject(new Error('the listen stream stayed open')), 2000),
+      ),
+    ]);
+    const messages = text
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => JSON.parse(line.slice('data: '.length)));
+    expect(messages[0]).toMatchObject({
+      method: 'notifications/subscriptions/acknowledged',
+      params: { notifications: {} },
+    });
+    expect(messages.at(-1)).toMatchObject({ id: 7, result: { resultType: 'complete' } });
+  });
+
   it('lists the tools, none of which takes a workspace', async () => {
     const { tools } = await agent.listTools();
     expect(tools.map((tool) => tool.name).sort()).toEqual(TOOLS);

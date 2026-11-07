@@ -20,7 +20,14 @@ import { registerWriteTools } from './tools/write.js';
 export function createMcpServer(sql: Sql, caller: Caller): McpServer {
   const server = new McpServer(
     { name: 'retainer', title: 'Retainer', version: VERSION, icons: [SERVER_ICON] },
-    { instructions: INSTRUCTIONS },
+    {
+      instructions: INSTRUCTIONS,
+      // The tool and prompt lists are fixed, so there is nothing to listen
+      // for. Advertising changes would invite subscriptions/listen, a stream
+      // that stays open, which a buffered host such as Lambda holds until it
+      // times out.
+      capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } },
+    },
   );
 
   registerSetupTools(server, sql, caller);
