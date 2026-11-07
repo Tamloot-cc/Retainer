@@ -1,0 +1,46 @@
+# Weekly dependency updates. Minor and patch updates come grouped, one PR per
+# ecosystem; each major update gets its own PR. Not covered: .nvmrc (CI's
+# Node), the Lambda runtime in deploy/aws/functions.tf and the RDS
+# db_engine_version, which need a deploy plan.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    # A new release waits three days, so a compromised one is usually pulled first.
+    cooldown:
+      default-days: 3
+    versioning-strategy: increase
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
+
+  # node in docker/Dockerfile, postgres in docker/compose.yml. A Postgres major
+  # also needs the postgres image in .github/workflows/ci.yml, the data move in
+  # docs/self-hosting.md and the RDS upgrade.
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+      day: monday
+  - package-ecosystem: docker-compose
+    directory: /docker
+    schedule:
+      interval: weekly
+      day: monday
+
+  - package-ecosystem: terraform
+    directory: /deploy/aws
+    schedule:
+      interval: monthly
