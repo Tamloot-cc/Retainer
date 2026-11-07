@@ -20,9 +20,14 @@ variable "name" {
 }
 
 variable "tags" {
-  description = "Extra tags for every resource."
+  description = "Extra tags for every resource. Application and ManagedBy are set by this deployment."
   type        = map(string)
   default     = {}
+
+  validation {
+    condition     = !contains(keys(var.tags), "Application") && !contains(keys(var.tags), "ManagedBy")
+    error_message = "Leave Application and ManagedBy out of tags: Application is always name, which the GitHub deploy role's network access depends on."
+  }
 }
 
 variable "package_path" {

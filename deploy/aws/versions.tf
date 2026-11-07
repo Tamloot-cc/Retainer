@@ -21,7 +21,9 @@ provider "aws" {
   region = var.region
 
   default_tags {
-    tags = merge({ Application = var.name, ManagedBy = "terraform" }, var.tags)
+    # Application is always `name`: the GitHub deploy role's network access
+    # depends on it (github.tf).
+    tags = merge(var.tags, { Application = var.name, ManagedBy = "terraform" })
   }
 }
 

@@ -224,3 +224,13 @@ run "github_role_cannot_change_its_own_permissions" {
     error_message = "The deploy role attaches only the functions' VPC policy."
   }
 }
+
+run "tags_cannot_replace_the_application_tag" {
+  command = plan
+
+  variables {
+    tags = { Application = "custom" }
+  }
+
+  expect_failures = [var.tags]
+}
