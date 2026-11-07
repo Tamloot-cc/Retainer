@@ -39,6 +39,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+      # Dependabot may bump only the first FROM of a multi-stage Dockerfile.
+      - name: Both Dockerfile stages use the same Node image
+        run: |
+          tags="$(grep -oE '^FROM .*node:[^ ]+' docker/Dockerfile | grep -oE 'node:[^ ]+' | sort -u)"
+          [ "$(echo "$tags" | wc -l)" -eq 1 ] ||
+            { echo "::error file=docker/Dockerfile::The stages use different Node images: $(echo $tags)"; exit 1; }
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
