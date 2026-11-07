@@ -1,8 +1,9 @@
 # The role the Deploy to AWS workflow assumes to run terraform apply and then
 # deploy.sh. It can manage what this stack creates, scoped by `name` where
-# AWS has names in its ARNs and by region where it has not (EC2, API
-# Gateway). It cannot change its own permissions: an edit to this file is
-# applied by an operator with terraform apply, before the workflow can use it.
+# AWS has names in its ARNs, by the Application tag for the network (EC2),
+# and by region for API Gateway. It cannot change its own permissions: an
+# edit to this file is applied by an operator with terraform apply, before
+# the workflow can use it.
 #
 # Only jobs running in the GitHub Environment `production` of
 # `github_repository` can assume it: the name .github/workflows/deploy-aws.yml
@@ -49,6 +50,18 @@ locals {
   # set otherwise.
   state_bucket = coalesce(var.state_bucket, "${var.name}-terraform-state-${data.aws_caller_identity.current.account_id}")
   state_key    = coalesce(var.state_key, "${var.name}/${var.region}/terraform.tfstate")
+
+  # Network resources carry Application = name (versions.tf, network.tf):
+  # the role creates them only with it and changes only those that have it.
+  ec2_arn = "arn:aws:ec2:${local.arn_scope}"
+  # What each create statement may create. A parent (the VPC of a new
+  # subnet) is never listed, so it must carry the tag (NetworkTagged).
+  network_creates = {
+    NetworkCreate           = { actions = ["CreateVpc", "CreateInternetGateway", "AllocateAddress"], types = ["vpc", "internet-gateway", "elastic-ip"] }
+    NetworkCreateInVpc      = { actions = ["CreateSubnet", "CreateSecurityGroup", "CreateRouteTable"], types = ["subnet", "security-group", "route-table"] }
+    NetworkCreateNatGateway = { actions = ["CreateNatGateway"], types = ["natgateway"] }
+    NetworkCreateRule       = { actions = ["AuthorizeSecurityGroupIngress", "AuthorizeSecurityGroupEgress"], types = ["security-group-rule"] }
+  }
 }
 
 resource "aws_iam_role_policy" "github_deploy" {
@@ -58,7 +71,7 @@ resource "aws_iam_role_policy" "github_deploy" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Sid      = "TerraformState"
         Effect   = "Allow"
@@ -161,31 +174,47 @@ resource "aws_iam_role_policy" "github_deploy" {
         Action   = ["iam:ListOpenIDConnectProviders", "iam:GetOpenIDConnectProvider"]
         Resource = "*"
       },
+      ], [
+      for sid, create in local.network_creates : {
+        Sid       = sid
+        Effect    = "Allow"
+        Action    = [for action in create.actions : "ec2:${action}"]
+        Resource  = [for type in create.types : "${local.ec2_arn}:${type}/*"]
+        Condition = { StringEquals = { "aws:RequestTag/Application" = var.name } }
+      }
+      ], [
       {
-        # EC2 has no names in its ARNs: these are limited to the region.
-        Sid    = "Network"
+        # Tags only as part of creating one of the resources above.
+        Sid       = "NetworkTagOnCreate"
+        Effect    = "Allow"
+        Action    = "ec2:CreateTags"
+        Resource  = "${local.ec2_arn}:*"
+        Condition = { StringEquals = { "ec2:CreateAction" = flatten(values(local.network_creates)[*].actions) } }
+      },
+      {
+        Sid    = "NetworkTagged"
         Effect = "Allow"
         Action = [
-          "ec2:CreateVpc",
-          "ec2:DeleteVpc",
-          "ec2:ModifyVpcAttribute",
+          # As the parent of a new resource: its VPC, subnet, address or group.
           "ec2:CreateSubnet",
-          "ec2:DeleteSubnet",
-          "ec2:ModifySubnetAttribute",
           "ec2:CreateSecurityGroup",
-          "ec2:DeleteSecurityGroup",
+          "ec2:CreateRouteTable",
+          "ec2:CreateNatGateway",
           "ec2:AuthorizeSecurityGroupIngress",
           "ec2:AuthorizeSecurityGroupEgress",
+          "ec2:DeleteVpc",
+          "ec2:ModifyVpcAttribute",
+          "ec2:DeleteSubnet",
+          "ec2:ModifySubnetAttribute",
+          "ec2:DeleteSecurityGroup",
           "ec2:RevokeSecurityGroupIngress",
           "ec2:RevokeSecurityGroupEgress",
           "ec2:ModifySecurityGroupRules",
           "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
           "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
-          "ec2:CreateInternetGateway",
           "ec2:DeleteInternetGateway",
           "ec2:AttachInternetGateway",
           "ec2:DetachInternetGateway",
-          "ec2:CreateRouteTable",
           "ec2:DeleteRouteTable",
           "ec2:CreateRoute",
           "ec2:ReplaceRoute",
@@ -193,17 +222,23 @@ resource "aws_iam_role_policy" "github_deploy" {
           "ec2:AssociateRouteTable",
           "ec2:DisassociateRouteTable",
           "ec2:ReplaceRouteTableAssociation",
-          "ec2:AllocateAddress",
           "ec2:ReleaseAddress",
           "ec2:DisassociateAddress",
-          "ec2:CreateNatGateway",
           "ec2:DeleteNatGateway",
-          "ec2:DeleteNetworkInterface",
           "ec2:CreateTags",
           "ec2:DeleteTags",
         ]
-        Resource  = "*"
-        Condition = { StringEquals = { "aws:RequestedRegion" = var.region } }
+        Resource  = "${local.ec2_arn}:*"
+        Condition = { StringEquals = { "aws:ResourceTag/Application" = var.name } }
+      },
+      {
+        # Lambda creates the functions' network interfaces without tags.
+        # Deleting a security group removes any it left behind in this VPC.
+        Sid       = "FunctionInterfaces"
+        Effect    = "Allow"
+        Action    = ["ec2:DeleteNetworkInterface", "ec2:DetachNetworkInterface"]
+        Resource  = "${local.ec2_arn}:*"
+        Condition = { StringEquals = { "ec2:Vpc" = aws_vpc.this.arn } }
       },
       {
         Sid    = "Database"
@@ -348,6 +383,6 @@ resource "aws_iam_role_policy" "github_deploy" {
         ]
         Resource = "arn:aws:acm:${local.arn_scope}:certificate/*"
       },
-    ]
+    ])
   })
 }
