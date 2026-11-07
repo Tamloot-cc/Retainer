@@ -932,10 +932,16 @@ role, a disconnect, a revoked consent and a deleted workspace each end the
 connection at the next request. Concurrent tests cover the rate limit, the quotas,
 deleting a workspace twice, purge against restore, and simultaneous first sign-ins.
 
+**PR 3 on the live deployment**, November 7, 2026: Claude's web app connected to
+`/mcp` over OAuth. It found the server through the 401 and the metadata routes,
+identified itself with its metadata document (no dynamic registration), sent the
+person through Google sign-in to the consent page, where they picked a workspace,
+and then read the schema and wrote a record. Claude Code connected the same way
+through its claude.ai connector.
+
 **Not tested:** whether the phone used a synced passkey or a cross-device sign-in;
 Better Auth's sign-in rate-limit plugin; `SET LOCAL ROLE` seeding by
-`retainer_control`; whether Claude falls back to dynamic registration; Claude's web
-app picking a workspace on the deployed site, which needs a person to try it; the
+`retainer_control`; whether Claude falls back to dynamic registration; the
 per-workspace rate limit under real load; purging a large workspace within the
 control function's 300 seconds; simultaneous first sign-ins through Google's real
 redirect, rather than a stubbed code exchange.
