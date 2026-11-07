@@ -172,9 +172,14 @@ the [first deployment](#first-deployment):
    apply. This creates a role the workflow assumes. It can manage the
    resources this deployment creates, read and write its Terraform state,
    and ship code to its functions. On the network it can only create
-   resources tagged `Application = <name>` and change those that carry the
-   tag, so other projects in the account and region stay out of reach. The state is where `state-bucket.sh`
-   put it; if yours is elsewhere, set `state_bucket` and `state_key` too.
+   resources tagged `Application = <name>` and change those that carry
+   the tag, so other projects in the account and region stay out of
+   reach. Because of that, two network changes need more than one run:
+   a new VPC is an apply of your own, since AWS creates its defaults
+   untagged; and turning accounts mode off releases the NAT gateway's
+   address only on a second workflow run. The state is where
+   `state-bucket.sh` put it; if yours is elsewhere, set `state_bucket`
+   and `state_key` too.
    The role cannot change its own permissions: when an update changes
    them, the workflow stops before applying, and you run `terraform apply`
    yourself. The role trusts the account's OIDC provider for GitHub

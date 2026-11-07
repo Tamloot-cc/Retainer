@@ -196,7 +196,7 @@ run "github_role_cannot_change_its_own_permissions" {
         ["aws:ResourceTag/Application", "aws:RequestTag/Application", "ec2:CreateAction", "ec2:Vpc"],
         )) > 0 && alltrue([
         for key, value in merge(values(statement.Condition)...) :
-        value == "retainer" if endswith(key, "/Application")
+        value == var.name if endswith(key, "/Application")
       ])
       if anytrue([
         for action in flatten([statement.Action]) :

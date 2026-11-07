@@ -51,23 +51,16 @@ locals {
   state_bucket = coalesce(var.state_bucket, "${var.name}-terraform-state-${data.aws_caller_identity.current.account_id}")
   state_key    = coalesce(var.state_key, "${var.name}/${var.region}/terraform.tfstate")
 
-  # Network resources: every one this stack creates carries Application =
-  # name (default_tags in versions.tf, and network.tf for the VPC's
-  # defaults). The role creates them only with that tag and changes only
-  # those that have it, so other projects' networks in the account and
-  # region stay out of reach. Two cases follow from that:
-  # - A new VPC comes with an untagged default security group, route table
-  #   and network ACL, which the role cannot tag: the first deployment is
-  #   an operator's apply.
-  # - Releasing the NAT gateway's address (accounts mode turned off) takes
-  #   two runs: the first fails detaching it from the deleted gateway, a
-  #   request AWS cannot match to a tag; the second releases it.
-  ec2_arns = "arn:aws:ec2:${local.arn_scope}:*"
-  creating = {
-    StringEquals = { "aws:RequestTag/Application" = var.name, "aws:RequestedRegion" = var.region }
-  }
-  tagged = {
-    StringEquals = { "aws:ResourceTag/Application" = var.name, "aws:RequestedRegion" = var.region }
+  # Network resources carry Application = name (versions.tf, network.tf):
+  # the role creates them only with it and changes only those that have it.
+  ec2_arn = "arn:aws:ec2:${local.arn_scope}"
+  # What each create statement may create. A parent (the VPC of a new
+  # subnet) is never listed, so it must carry the tag (NetworkTagged).
+  network_creates = {
+    NetworkCreate           = { actions = ["CreateVpc", "CreateInternetGateway", "AllocateAddress"], types = ["vpc", "internet-gateway", "elastic-ip"] }
+    NetworkCreateInVpc      = { actions = ["CreateSubnet", "CreateSecurityGroup", "CreateRouteTable"], types = ["subnet", "security-group", "route-table"] }
+    NetworkCreateNatGateway = { actions = ["CreateNatGateway"], types = ["natgateway"] }
+    NetworkCreateRule       = { actions = ["AuthorizeSecurityGroupIngress", "AuthorizeSecurityGroupEgress"], types = ["security-group-rule"] }
   }
 }
 
@@ -78,7 +71,7 @@ resource "aws_iam_role_policy" "github_deploy" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Sid      = "TerraformState"
         Effect   = "Allow"
@@ -181,52 +174,22 @@ resource "aws_iam_role_policy" "github_deploy" {
         Action   = ["iam:ListOpenIDConnectProviders", "iam:GetOpenIDConnectProvider"]
         Resource = "*"
       },
-      {
-        # New network resources, tagged in the same request. Each statement
-        # lists only the resource types the actions create, so a parent
-        # (the VPC of a new subnet) must pass NetworkTagged instead.
-        Sid       = "NetworkCreate"
+      ], [
+      for sid, create in local.network_creates : {
+        Sid       = sid
         Effect    = "Allow"
-        Action    = ["ec2:CreateVpc", "ec2:CreateInternetGateway", "ec2:AllocateAddress"]
-        Resource  = [for type in ["vpc", "internet-gateway", "elastic-ip"] : "arn:aws:ec2:${local.arn_scope}:${type}/*"]
-        Condition = local.creating
-      },
-      {
-        Sid       = "NetworkCreateInVpc"
-        Effect    = "Allow"
-        Action    = ["ec2:CreateSubnet", "ec2:CreateSecurityGroup", "ec2:CreateRouteTable"]
-        Resource  = [for type in ["subnet", "security-group", "route-table"] : "arn:aws:ec2:${local.arn_scope}:${type}/*"]
-        Condition = local.creating
-      },
-      {
-        Sid       = "NetworkCreateNatGateway"
-        Effect    = "Allow"
-        Action    = "ec2:CreateNatGateway"
-        Resource  = "arn:aws:ec2:${local.arn_scope}:natgateway/*"
-        Condition = local.creating
-      },
-      {
-        Sid       = "NetworkCreateRule"
-        Effect    = "Allow"
-        Action    = ["ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress"]
-        Resource  = "arn:aws:ec2:${local.arn_scope}:security-group-rule/*"
-        Condition = local.creating
-      },
+        Action    = [for action in create.actions : "ec2:${action}"]
+        Resource  = [for type in create.types : "${local.ec2_arn}:${type}/*"]
+        Condition = { StringEquals = { "aws:RequestTag/Application" = var.name } }
+      }
+      ], [
       {
         # Tags only as part of creating one of the resources above.
-        Sid      = "NetworkTagOnCreate"
-        Effect   = "Allow"
-        Action   = "ec2:CreateTags"
-        Resource = local.ec2_arns
-        Condition = {
-          StringEquals = {
-            "ec2:CreateAction" = [
-              "CreateVpc", "CreateInternetGateway", "AllocateAddress", "CreateSubnet",
-              "CreateSecurityGroup", "CreateRouteTable", "CreateNatGateway",
-              "AuthorizeSecurityGroupIngress", "AuthorizeSecurityGroupEgress",
-            ]
-          }
-        }
+        Sid       = "NetworkTagOnCreate"
+        Effect    = "Allow"
+        Action    = "ec2:CreateTags"
+        Resource  = "${local.ec2_arn}:*"
+        Condition = { StringEquals = { "ec2:CreateAction" = flatten(values(local.network_creates)[*].actions) } }
       },
       {
         Sid    = "NetworkTagged"
@@ -265,19 +228,17 @@ resource "aws_iam_role_policy" "github_deploy" {
           "ec2:CreateTags",
           "ec2:DeleteTags",
         ]
-        Resource  = local.ec2_arns
-        Condition = local.tagged
+        Resource  = "${local.ec2_arn}:*"
+        Condition = { StringEquals = { "aws:ResourceTag/Application" = var.name } }
       },
       {
         # Lambda creates the functions' network interfaces without tags.
         # Deleting a security group removes any it left behind in this VPC.
-        Sid      = "FunctionInterfaces"
-        Effect   = "Allow"
-        Action   = ["ec2:DeleteNetworkInterface", "ec2:DetachNetworkInterface"]
-        Resource = local.ec2_arns
-        Condition = {
-          StringEquals = { "ec2:Vpc" = aws_vpc.this.arn, "aws:RequestedRegion" = var.region }
-        }
+        Sid       = "FunctionInterfaces"
+        Effect    = "Allow"
+        Action    = ["ec2:DeleteNetworkInterface", "ec2:DetachNetworkInterface"]
+        Resource  = "${local.ec2_arn}:*"
+        Condition = { StringEquals = { "ec2:Vpc" = aws_vpc.this.arn } }
       },
       {
         Sid    = "Database"
@@ -422,6 +383,6 @@ resource "aws_iam_role_policy" "github_deploy" {
         ]
         Resource = "arn:aws:acm:${local.arn_scope}:certificate/*"
       },
-    ]
+    ])
   })
 }
