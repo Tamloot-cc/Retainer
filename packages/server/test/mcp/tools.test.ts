@@ -452,6 +452,7 @@ describe('the log_from_chat guide', () => {
     const prose = body.replace(/\s+/g, ' ');
     expect(prose).toContain('log_event refuses an occurredAt in the future');
     expect(prose).toContain('Add the meeting as a task due that day');
+    expect(prose).toContain('an updated invitation for a moved meeting is a new event');
     expect(prose).toContain("the new record's ID as the participant's recordId");
   });
 });

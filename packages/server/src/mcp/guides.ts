@@ -359,10 +359,12 @@ Where your user got it decides the source:
 - It has not happened yet (a meeting invite, a scheduled call): log_event
   refuses an occurredAt in the future. Log what has happened, the
   invitation, as its own event when it was sent, with its organizer and
-  invitees as participants and an externalId of its own (the calendar
-  event's ID plus ":invite"). Add the meeting as a task due that day, and
-  log the meeting itself once it has happened, under the calendar event's
-  own ID.
+  invitees as participants and an externalId of its own: the calendar
+  event's ID plus ":invite:" and the time this invitation was sent, so an
+  updated invitation for a moved meeting is a new event, not a conflict.
+  Add the meeting as a task due that day, moving its due date when the
+  meeting moves, and log the meeting itself once it has happened, under
+  the calendar event's own ID.
 
 ## 3. Write what you learned
 
