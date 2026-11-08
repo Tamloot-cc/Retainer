@@ -12,6 +12,7 @@ import { z } from 'zod';
 import type { Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
 import { eventHistory, liveFactSource, presentSource, viaOf } from '../memory/events.js';
+import type { Profile } from '../memory/profiles.js';
 import { factsPage } from '../reads/review.js';
 import { findLiveRecord } from '../records/read.js';
 import { references } from '../records/references.js';
@@ -133,12 +134,19 @@ export async function timelinePage(
   tx: Tx,
   workspaceId: string,
   schema: CompiledSchema,
-  recordId: string,
+  target: string | Profile,
   input: TimelineInput,
 ): Promise<TimelinePage> {
-  const record = await findLiveRecord(tx, workspaceId, schema, recordId);
+  // A profile's timeline lists its facts only (personal memory spec 4.4).
+  const profile = typeof target === 'string' ? null : target;
+  const place = (id: string) =>
+    profile ? { profile: profile.alias } : ({ record: id } as { record: string });
+  if (profile && !profile.id) return { ...place(''), items: [], nextCursor: null };
+  const record = profile
+    ? { id: profile.id as string, object_type_id: profile.object.id }
+    : await findLiveRecord(tx, workspaceId, schema, target as string);
   const object = schema.objectsById.get(record.object_type_id);
-  if (!object) throw new AppError(404, 'not_found', `record ${recordId} not found`);
+  if (!object) throw new AppError(404, 'not_found', `record ${record.id} not found`);
 
   const kinds = new Set<TimelineItemKind>(
     input.types ??
@@ -149,6 +157,10 @@ export async function timelinePage(
           ]
         : TIMELINE_ITEM_KINDS),
   );
+  if (profile) {
+    kinds.delete('event');
+    kinds.delete('field_change');
+  }
   const fieldIds = resolveFields(object, input.fields);
   const eventTypeIds = resolveEventTypes(schema, input.eventTypes);
   const binding = createHash('sha256')
@@ -221,7 +233,7 @@ export async function timelinePage(
         and f.deleted_at is null and exists (${liveFactSource(tx, tx`f.id`)}) and ${where}
       order by f.valid_from desc, f.id desc limit ${limit + 1})`);
   }
-  if (branches.length === 0) return { record: record.id, items: [], nextCursor: null };
+  if (branches.length === 0) return { ...place(record.id), items: [], nextCursor: null };
 
   const rows = await tx<
     {
@@ -274,7 +286,7 @@ export async function timelinePage(
     const item = (row.kind === KIND_ORDER.field_change ? values : facts).get(row.id);
     return item ? [item] : [];
   });
-  return { record: record.id, items, nextCursor };
+  return { ...place(record.id), items, nextCursor };
 }
 
 async function presentEvents(tx: Tx, schema: CompiledSchema, ids: string[]) {

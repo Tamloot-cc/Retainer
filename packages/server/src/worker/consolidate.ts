@@ -101,7 +101,7 @@ async function duplicatePairs(
       from facts f
       join records r on r.id = f.record_id and r.deleted_at is null
       where f.workspace_id = ${workspaceId} and f.deleted_at is null and f.superseded_by is null
-        and ${scope}
+        and f.replaced_at is null and ${scope}
         and exists (${liveFactSource(tx, tx`f.id`)})
     ),
     grouped as (

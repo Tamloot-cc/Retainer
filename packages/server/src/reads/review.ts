@@ -1,4 +1,10 @@
-import type { Actor, PresentedFact, ReviewQueue, UnresolvedParticipant } from '@retainer/shared';
+import type {
+  Actor,
+  PresentedFact,
+  ProfileAlias,
+  ReviewQueue,
+  UnresolvedParticipant,
+} from '@retainer/shared';
 import type { Fragment } from 'postgres';
 import { after, page } from '../db/pagination.js';
 import type { Tx } from '../db/tx.js';
@@ -117,9 +123,13 @@ export async function factsPage(
       actor: Actor;
       deleted_at: Date | null;
       superseded_by: string | null;
+      replaced_at: Date | null;
+      record_type: string;
     }[]
-  >`select f.*, f.valid_from::text as stamp from facts f where ${where}
-    ${history ? tx`` : tx`and f.deleted_at is null and f.superseded_by is null and f.valid_to is null and exists(${liveFactSource(tx, tx`f.id`)})`}
+  >`select f.*, f.valid_from::text as stamp,
+      (select r.object_type_id from records r where r.id = f.record_id) as record_type
+    from facts f where ${where}
+    ${history ? tx`` : tx`and f.deleted_at is null and f.superseded_by is null and f.replaced_at is null and f.valid_to is null and exists(${liveFactSource(tx, tx`f.id`)})`}
     and ${after(tx, tx`f.valid_from`, tx`f.id`, cursor, true)} order by f.valid_from desc, f.id desc limit ${limit + 1}`;
   const result = page(rows, limit);
   const ids = result.items.map((r) => r.id);
@@ -131,14 +141,18 @@ export async function factsPage(
         ? {
             status: r.deleted_at
               ? ('retracted' as const)
-              : r.superseded_by
+              : // Replaced stays superseded even once its replacement is erased (4.9).
+                r.superseded_by || r.replaced_at
                 ? ('superseded' as const)
                 : r.valid_to
                   ? ('ended' as const)
                   : ('current' as const),
           }
         : {}),
-      record: r.record_id,
+      // A profile's fact names it by alias (personal memory spec 4.4).
+      ...(schema.objectsById.get(r.record_type)?.profile
+        ? { profile: schema.objectsById.get(r.record_type)?.profile as ProfileAlias }
+        : { record: r.record_id }),
       content: r.content,
       kind: r.kind,
       validFrom: r.valid_from.toISOString(),

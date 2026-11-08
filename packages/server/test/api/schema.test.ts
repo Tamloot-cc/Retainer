@@ -77,7 +77,11 @@ describe('GET /v1/schema', () => {
       isProtected: false,
       description: expect.stringContaining('channel'),
     });
-    expect(res.body.builtIns.map((b: { name: string }) => b.name)).toEqual(['fact', 'comment']);
+    expect(res.body.builtIns.map((b: { name: string }) => b.name)).toEqual([
+      'fact',
+      'comment',
+      'memory',
+    ]);
     const person = objects.find((o) => o.nameSingular === 'person') as never as {
       labelField: string;
       fields: { name: string }[];

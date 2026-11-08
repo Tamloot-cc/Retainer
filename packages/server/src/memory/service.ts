@@ -7,8 +7,10 @@ import type {
 } from '@retainer/shared';
 import { type Caller, canApproveDestructive } from '../caller.js';
 import type { Sql } from '../db/client.js';
+import { lockMemberExclusive } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { claimIdempotencyKey, storeIdempotentResult } from '../idempotency.js';
+import { deletePersonalMemory, type PersonalMemoryCounts } from '../privacy/personal.js';
 import { getRecord } from '../records/read.js';
 import { eventsAmong, withRead, withWrite } from '../records/service.js';
 import { softDeleteRecord } from '../records/write.js';
@@ -23,6 +25,7 @@ import {
 import {
   type FactList,
   listFacts,
+  planRemember,
   type RememberInput,
   type RememberResult,
   rememberFact,
@@ -30,6 +33,7 @@ import {
   retractFact,
 } from './facts.js';
 import { type MoveEventsInput, moveEvents } from './move.js';
+import { recheckPerson } from './profiles.js';
 
 /**
  * Memory writes and reads for one caller, shared by REST and MCP so both
@@ -147,9 +151,12 @@ export async function moveEventsFor(
 }
 
 /**
- * `remember` (6.2). With an idempotency key, the key is claimed in the same
- * transaction as the fact, so a retry, even a concurrent one, returns the
- * original response instead of a second fact and note.
+ * `remember` (6.2). `workspace` and `me` are resolved, with access and
+ * membership checked, before an idempotency key is claimed or replayed
+ * (personal memory spec 4.2). The key is claimed in the same transaction as
+ * the fact, so a retry, even a concurrent one, returns the original response
+ * instead of a second fact and note; a response involving personal memory
+ * is stored private to its person.
  */
 export async function remember(
   sql: Sql,
@@ -159,6 +166,7 @@ export async function remember(
   idempotencyKey?: string,
 ): Promise<RememberResult> {
   return withWrite(sql, caller, async (tx, context) => {
+    const plan = await planRemember(tx, context, recordId, input);
     let claimId: string | undefined;
     if (idempotencyKey !== undefined) {
       const claim = await claimIdempotencyKey(
@@ -166,12 +174,13 @@ export async function remember(
         caller.workspaceId,
         'remember',
         idempotencyKey,
-        rememberRequestHash(recordId, input),
+        rememberRequestHash(plan, input),
+        { personId: context.person?.id, private: plan.private },
       );
       if (claim.kind === 'replay') return claim.result as RememberResult;
       claimId = claim.id;
     }
-    const result = await rememberFact(tx, context, recordId, input);
+    const result = await rememberFact(tx, context, plan, input);
     if (claimId) await storeIdempotentResult(tx, claimId, result);
     return result;
   });
@@ -184,14 +193,50 @@ export async function factsOf(
   limit: number,
 ): Promise<FactList> {
   return withRead(sql, caller, (tx, schema) =>
-    listFacts(tx, caller.workspaceId, schema, recordId, limit),
+    listFacts(
+      tx,
+      { workspaceId: caller.workspaceId, schema, person: caller.person },
+      recordId,
+      limit,
+    ),
   );
 }
 
+/**
+ * Retracts a fact (2.1). `authorize` learns whether it is the caller's own
+ * personal fact before anything changes, and throws to refuse.
+ */
 export async function retractFactFor(
   sql: Sql,
   caller: Caller,
   id: string,
+  authorize?: (personal: boolean) => void,
 ): Promise<{ id: string; deleted: true }> {
-  return withWrite(sql, caller, (tx) => retractFact(tx, caller.workspaceId, id));
+  return withWrite(sql, caller, (tx, context) => retractFact(tx, context, id, authorize));
+}
+
+/**
+ * "Clear all" on Settings → Memory (personal memory spec 4.6): a person
+ * deletes their own personal memory in this workspace. Signed in only: no
+ * API key or OAuth agent can clear it, and it names no one, so nobody can
+ * clear another person's. Any role may, viewers included. It keeps their
+ * membership and their agents' keys. It holds their membership lock
+ * exclusively, as a removal does, so no write of their memory interleaves.
+ */
+export async function clearMyMemory(
+  sql: Sql,
+  caller: Caller,
+): Promise<{ cleared: true; counts: PersonalMemoryCounts }> {
+  const person = caller.person;
+  if (!caller.userId || person?.check.kind !== 'session' || person.id !== caller.userId) {
+    throw forbidden(
+      'only the person can clear their own memory, signed in to the web app; agents cannot clear it',
+    );
+  }
+  return withWrite(sql, caller, async (tx) => {
+    await lockMemberExclusive(tx, caller.workspaceId, person.id);
+    await recheckPerson(tx, caller.workspaceId, person);
+    const counts = await deletePersonalMemory(tx, caller.workspaceId, person.id, caller.actor);
+    return { cleared: true as const, counts };
+  });
 }

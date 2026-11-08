@@ -1,4 +1,10 @@
-import { INTERNAL_NOTE_TYPE_ID } from '@retainer/shared';
+import {
+  HIDDEN_TYPE_IDS,
+  INTERNAL_NOTE_TYPE_ID,
+  MEMBER_PROFILE_TYPE_ID,
+  type ProfileAlias,
+  WORKSPACE_PROFILE_TYPE_ID,
+} from '@retainer/shared';
 import type { Tx } from '../db/tx.js';
 import { loadSchemaState } from './load.js';
 import type { FieldState, ObjectState, SchemaState } from './types.js';
@@ -18,11 +24,14 @@ export type CompiledObject = {
   /** An event type: its records carry `event_records` and links (1.3). */
   isEvent: boolean;
   /**
-   * The internal-note type (6.4). Hidden objects are left out of
-   * `objectsByName`, so every route that resolves an object by name treats
-   * them as absent; record routes check `hidden` through `objectOf`.
+   * The internal-note type (6.4) and the profile types (personal memory
+   * spec 4.1). Hidden objects are left out of `objectsByName`, so every
+   * route that resolves an object by name treats them as absent; record
+   * routes check `hidden` through `objectOf`.
    */
   hidden: boolean;
+  /** For a profile type, the alias agents name its records with. */
+  profile?: ProfileAlias;
   /** Event types only: the core fields, found by role, never by name. */
   core?: { title: FieldState; summary: FieldState };
 };
@@ -51,6 +60,9 @@ export type CompiledSchema = {
   rollUpFieldIds: string[];
   /** The hidden internal-note type, once seeded. */
   internalNote: CompiledObject | undefined;
+  /** The hidden profile types (personal memory spec 4.1), once seeded. */
+  workspaceProfile: CompiledObject | undefined;
+  memberProfile: CompiledObject | undefined;
 };
 
 export function compileSchema(state: SchemaState, version: number): CompiledSchema {
@@ -67,11 +79,19 @@ export function compileSchema(state: SchemaState, version: number): CompiledSche
     eventRelationFieldIds: [],
     rollUpFieldIds: [],
     internalNote: undefined,
+    workspaceProfile: undefined,
+    memberProfile: undefined,
   };
   for (const object of state.objects) {
     if (!object.id) throw new Error('compileSchema needs a persisted schema');
     const activeFields = object.fields.filter((f) => f.status === 'active');
-    const hidden = object.universalId === INTERNAL_NOTE_TYPE_ID;
+    const hidden = HIDDEN_TYPE_IDS.has(object.universalId);
+    const profile =
+      object.universalId === WORKSPACE_PROFILE_TYPE_ID
+        ? ('workspace' as const)
+        : object.universalId === MEMBER_PROFILE_TYPE_ID
+          ? ('me' as const)
+          : undefined;
     const isEvent = object.class === 'event';
     const title = activeFields.find((f) => f.coreRole === 'title');
     const summary = activeFields.find((f) => f.coreRole === 'summary');
@@ -85,6 +105,7 @@ export function compileSchema(state: SchemaState, version: number): CompiledSche
       labelField: object.fields.find((f) => f.universalId === object.labelFieldId),
       isEvent,
       hidden,
+      ...(profile ? { profile } : {}),
       ...(isEvent && title && summary ? { core: { title, summary } } : {}),
     };
     if (object.status === 'active' && !hidden) {
@@ -97,7 +118,9 @@ export function compileSchema(state: SchemaState, version: number): CompiledSche
         else if (field.settings.rollUpEvents) compiled.rollUpFieldIds.push(field.id as string);
       }
     }
-    if (hidden) compiled.internalNote = entry;
+    if (object.universalId === INTERNAL_NOTE_TYPE_ID) compiled.internalNote = entry;
+    if (profile === 'workspace') compiled.workspaceProfile = entry;
+    if (profile === 'me') compiled.memberProfile = entry;
     compiled.objectsById.set(object.id, entry);
     compiled.objectsByUniversalId.set(object.universalId, entry);
     for (const field of object.fields) compiled.fieldOwners.set(field.id as string, entry);

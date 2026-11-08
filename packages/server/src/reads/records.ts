@@ -161,7 +161,7 @@ async function recordCounts(
         where c.record_id = ${recordId} and c.deleted_at is null) as comments,
       (select count(*)::int from facts f
         where f.record_id = ${recordId} and f.deleted_at is null and f.superseded_by is null
-          and f.valid_to is null and exists (${liveFactSource(tx, tx`f.id`)})) as facts,
+          and f.replaced_at is null and f.valid_to is null and exists (${liveFactSource(tx, tx`f.id`)})) as facts,
       (select count(distinct t.id)::int from record_links l
         join records t on t.id = l.source_record_id and t.deleted_at is null
         where l.target_record_id = ${recordId}

@@ -89,6 +89,41 @@ export type BaseEventFieldName = keyof typeof BASE_EVENT_FIELD_IDS;
 export const INTERNAL_NOTE_TYPE_ID = '6d2e9a41-c7f3-4b80-9e15-0a3c8d7f2b56';
 
 /**
+ * The hidden, protected entity types that hold workspace memory and personal
+ * memory (personal and workspace memory spec 4.1). Each has facts only.
+ * Agents name their records with the aliases in `PROFILE_ALIASES`.
+ */
+export const WORKSPACE_PROFILE_TYPE_ID = '2f8b6c1e-94d7-4a35-b0e2-7c5d1a9f3e64';
+export const MEMBER_PROFILE_TYPE_ID = '8a3e5d72-1c6b-4f09-a4d8-e26b0f7c95a1';
+
+/**
+ * What agents pass in place of a record ID for the two memories:
+ * `workspace` for what the business is and how it works, `me` for the
+ * person the agent works for.
+ */
+export const PROFILE_ALIASES = ['workspace', 'me'] as const;
+export type ProfileAlias = (typeof PROFILE_ALIASES)[number];
+
+export function isProfileAlias(value: unknown): value is ProfileAlias {
+  return value === 'workspace' || value === 'me';
+}
+
+/** The profile types: hidden entities with facts only, no fields and a computed label. */
+export const PROFILE_TYPE_IDS: ReadonlySet<string> = new Set([
+  WORKSPACE_PROFILE_TYPE_ID,
+  MEMBER_PROFILE_TYPE_ID,
+]);
+
+/**
+ * Types no client names or lists: describe, queries, views, search and
+ * record routes treat them as absent (6.4, personal memory spec 4.1).
+ */
+export const HIDDEN_TYPE_IDS: ReadonlySet<string> = new Set([
+  INTERNAL_NOTE_TYPE_ID,
+  ...PROFILE_TYPE_IDS,
+]);
+
+/**
  * Built-in columns of every event record, beside its fields. Filterable and
  * sortable in queries and views; written only by `log_event`.
  */

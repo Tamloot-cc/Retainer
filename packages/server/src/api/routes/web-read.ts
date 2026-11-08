@@ -3,9 +3,10 @@ import type { Hono } from 'hono';
 import { requireScope } from '../../auth/middleware.js';
 import type { Sql } from '../../db/client.js';
 import { AppError, notFound } from '../../errors.js';
-import { idParam, limitParam } from '../../http/request.js';
+import { idParam, limitParam, recordParam } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 import { attachedEventPage } from '../../memory/events.js';
+import { resolveTarget } from '../../memory/profiles.js';
 import { assertionById, assertions, enrichedRecord } from '../../reads/records.js';
 import { factsPage, reviewPage } from '../../reads/review.js';
 import { findLiveRecord, getRecord } from '../../records/read.js';
@@ -84,16 +85,32 @@ export function webReadRoutes(app: Hono<AppEnv>, sql: Sql) {
       );
     }),
   );
+  // `workspace` and `me` list workspace and personal memory (personal memory
+  // 4.4, 4.8); `me` before anything was written to it has no facts.
   app.get('/records/:id/facts', requireScope('read'), (c) =>
     withRead(sql, c.get('caller'), async (tx, schema) => {
-      const record = await findLiveRecord(tx, c.get('caller').workspaceId, schema, idParam(c));
+      const caller = c.get('caller');
+      const target = await resolveTarget(
+        tx,
+        { workspaceId: caller.workspaceId, schema, person: caller.person },
+        recordParam(c),
+      );
+      const limit = limitParam(c, 100, 500);
+      if (target.kind === 'profile') {
+        const { alias, id } = target.profile;
+        const page = id
+          ? await factsPage(tx, schema, tx`f.record_id = ${id}`, limit, c.req.query('cursor'))
+          : { facts: [], nextCursor: null };
+        return c.json({ profile: alias, ...page });
+      }
+      const record = await findLiveRecord(tx, caller.workspaceId, schema, target.id);
       return c.json({
         record: record.id,
         ...(await factsPage(
           tx,
           schema,
           tx`f.record_id = ${record.id}`,
-          limitParam(c, 100, 500),
+          limit,
           c.req.query('cursor'),
         )),
       });

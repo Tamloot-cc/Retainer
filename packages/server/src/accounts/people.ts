@@ -20,6 +20,7 @@ import { AppError, forbidden, notFound } from '../errors.js';
 import { SYSTEM_ACTOR } from '../schema-engine/engine.js';
 import { applyTemplate, seedBaseObjects } from '../templates/apply.js';
 import { DELETION_GRACE_DAYS, purgeAfter } from '../workspaces/deletion.js';
+import { endLostMemberships, type Membership, membersOf } from '../workspaces/leaving.js';
 import {
   assertKeepsAnOwner,
   assertWithinLimit,
@@ -407,6 +408,8 @@ export async function removeFromWorkspace(
     // Apps they connected here stop working too, and stay disconnected if
     // they are added back (4.5).
     await endGrants(tx, tx`oc.user_id = ${userId} and oc.reference_id = ${workspace.id}`);
+    // Their personal memory here goes with them (personal memory spec 4.6).
+    await endLostMemberships(tx, [{ workspaceId: workspace.id, userId }], personActor(person));
   });
 }
 
@@ -603,9 +606,13 @@ export async function setOrganizationRole(
     }
     if (current === 'owner' && role !== 'owner')
       await assertKeepsAnOwner(tx, organizationId, userId);
+    const before = await organizationMemberships(tx, organizationId, userId);
     await tx`
       update organization_members set role = ${role}
       where organization_id = ${organizationId} and user_id = ${userId}`;
+    // A member keeps only the workspaces they have a role in: their personal
+    // memory in the others goes (personal memory spec 4.6).
+    await endLostMemberships(tx, before, personActor(person));
   });
 }
 
@@ -623,6 +630,7 @@ export async function removeFromOrganization(
       throw forbidden('Only an owner can remove an owner.');
     }
     if (current === 'owner') await assertKeepsAnOwner(tx, organizationId, userId);
+    const before = await organizationMemberships(tx, organizationId, userId);
     await tx`
       delete from organization_members
       where organization_id = ${organizationId} and user_id = ${userId}`;
@@ -631,8 +639,27 @@ export async function removeFromOrganization(
       tx`oc.user_id = ${userId} and oc.reference_id in
         (select id from workspaces where organization_id = ${organizationId})`,
     );
+    // Their personal memory in every workspace of it goes (personal memory 4.6).
+    await endLostMemberships(tx, before, personActor(person));
   });
 }
+
+/** The workspaces of an organization a person has a role in now. */
+async function organizationMemberships(
+  tx: Tx,
+  organizationId: string,
+  userId: string,
+): Promise<Membership[]> {
+  const rows = await tx<{ id: string }[]>`
+    select id from workspaces where organization_id = ${organizationId}`;
+  const members = await membersOf(
+    tx,
+    rows.map((r) => r.id),
+  );
+  return members.filter((m) => m.userId === userId);
+}
+
+const personActor = (person: Person) => ({ type: 'user' as const, id: person.id });
 
 // ---------------------------------------------------------------------------
 // Invitations (4.5): a link to copy; Retainer sends no email

@@ -5,7 +5,7 @@ import type { Sql } from '../db/client.js';
 import { inWorkspace } from '../db/tx.js';
 import { readWorkspace } from '../db/workspaces.js';
 import { getSchema } from '../schema/compiled.js';
-import { BUILT_INS } from './built-ins.js';
+import { BUILT_INS, memoryBuiltIn } from './built-ins.js';
 import { runSchemaChange, type SchemaChangeResult } from './engine.js';
 import { schemaOperationSchema, stripUniversalIds } from './operations.js';
 import { presentSchema, presentValueFormats } from './present.js';
@@ -35,7 +35,7 @@ export async function describeSchema(sql: Sql, caller: Caller): Promise<SchemaDe
       },
       objects,
       valueFormats: presentValueFormats(objects),
-      builtIns: BUILT_INS,
+      builtIns: [...BUILT_INS, memoryBuiltIn(caller.person ? ['workspace', 'me'] : ['workspace'])],
     };
   });
 }

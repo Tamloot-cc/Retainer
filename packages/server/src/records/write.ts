@@ -1,7 +1,9 @@
-import type { Actor, ActorType } from '@retainer/shared';
+import { type Actor, type ActorType, isProfileAlias } from '@retainer/shared';
+import type { CallerPerson } from '../caller.js';
+import { isUuid } from '../db/ids.js';
 import type { AssertionStatus, ReviewReason } from '../db/schema.js';
 import { jsonValue, type Tx } from '../db/tx.js';
-import { AppError, notFound } from '../errors.js';
+import { AppError, notFound, profileNotSupported } from '../errors.js';
 import { isSuppressed, suppressedOf, suppressibleHandles } from '../privacy/suppression.js';
 import type { CompiledObject, CompiledSchema } from '../schema/compiled.js';
 import { type FieldState, relationTargetIds } from '../schema/types.js';
@@ -16,6 +18,11 @@ export type WriteContext = {
   schema: CompiledSchema;
   /** Agent assertions below this confidence wait for review (rule 2.3). */
   confidenceThreshold: number;
+  /**
+   * The person whose personal memory the credential reaches (personal memory
+   * spec 4.3); `app.user_id` is set to them for the transaction.
+   */
+  person?: CallerPerson | undefined;
 };
 
 export type WriteOptions = {
@@ -104,6 +111,8 @@ export const MAX_MERGE_HOPS = 16;
 
 /** Follows `merged_into_id` to the surviving record (4.2). */
 export async function resolveRecordId(tx: Tx, workspaceId: string, id: string): Promise<string> {
+  if (isProfileAlias(id)) throw profileNotSupported(id);
+  if (!isUuid(id)) throw notFound('record', { id });
   let current = id;
   for (let hops = 0; hops < MAX_MERGE_HOPS; hops++) {
     const [row] = await tx<{ merged_into_id: string | null }[]>`
@@ -142,13 +151,15 @@ export async function lockRecord(tx: Tx, workspaceId: string, id: string): Promi
 /**
  * The object of a record a caller writes. The hidden internal-note type
  * (6.4) resolves as not found: its records change only through `remember`
- * and the fact and privacy lifecycle.
+ * and the fact and privacy lifecycle. A profile (personal memory spec 4.4)
+ * is refused with the tools that take it.
  */
 export function objectOf(
   schema: CompiledSchema,
   record: { id?: string; object_type_id: string },
 ): CompiledObject {
   const object = schema.objectsById.get(record.object_type_id);
+  if (object?.profile) throw profileNotSupported(record.id);
   if (object?.hidden) throw notFound('record', record.id ? { id: record.id } : undefined);
   if (object?.state.status !== 'active') {
     throw new AppError(409, 'object_deleted', 'the object of this record was deleted');
@@ -638,11 +649,13 @@ export async function insertRecord(
   tx: Tx,
   context: WriteContext,
   object: CompiledObject,
+  /** The person an internal note of personal memory is private to (personal memory 4.5). */
+  privateTo: string | null = null,
 ): Promise<LockedRecord> {
   const [row] = await tx<LockedRecord[]>`
-    insert into records (workspace_id, object_type_id, created_by, updated_by)
+    insert into records (workspace_id, object_type_id, created_by, updated_by, private_to_user)
     values (${context.workspaceId}, ${object.id}, ${tx.json(context.actor)},
-      ${tx.json(context.actor)})
+      ${tx.json(context.actor)}, ${privateTo})
     returning id, object_type_id, data, updated_at, deleted_at, merged_into_id`;
   return row as LockedRecord;
 }

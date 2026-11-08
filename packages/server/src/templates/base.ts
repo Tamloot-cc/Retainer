@@ -4,6 +4,8 @@ import {
   BASE_FIELD_IDS,
   BASE_OBJECT_IDS,
   INTERNAL_NOTE_TYPE_ID,
+  MEMBER_PROFILE_TYPE_ID,
+  WORKSPACE_PROFILE_TYPE_ID,
 } from '@retainer/shared';
 import type { SchemaOperation } from '../schema-engine/operations.js';
 
@@ -59,8 +61,9 @@ export const BASE_EVENT_OPERATIONS: SchemaOperation[] = [
 ];
 
 /**
- * The hidden, protected event type of the notes `remember` creates for facts
- * with no source (6.4). It is never named by an operation and never listed.
+ * The hidden, protected types (6.4, personal memory spec 4.1): the event
+ * type of the notes `remember` creates for facts with no source, and the
+ * two profile types. No client operation names them and nothing lists them.
  */
 export const INTERNAL_OPERATIONS: SchemaOperation[] = [
   {
@@ -73,6 +76,33 @@ export const INTERNAL_OPERATIONS: SchemaOperation[] = [
       labelSingular: 'Internal note',
       labelPlural: 'Internal notes',
       description: 'A note remember created for a fact that cites no source.',
+      fields: [],
+    },
+  },
+  // Workspace memory and personal memory (personal memory spec 4.1): hidden,
+  // protected entities that hold facts only. Agents name their records
+  // `workspace` and `me`, never by ID or type name.
+  {
+    op: 'create_object',
+    object: {
+      universalId: WORKSPACE_PROFILE_TYPE_ID,
+      nameSingular: 'workspaceProfile',
+      namePlural: 'workspaceProfiles',
+      labelSingular: 'Workspace memory',
+      labelPlural: 'Workspace memories',
+      description: 'What the business is and how it works, shared by the whole workspace.',
+      fields: [],
+    },
+  },
+  {
+    op: 'create_object',
+    object: {
+      universalId: MEMBER_PROFILE_TYPE_ID,
+      nameSingular: 'memberProfile',
+      namePlural: 'memberProfiles',
+      labelSingular: 'Personal memory',
+      labelPlural: 'Personal memories',
+      description: 'What agents learn about the person they work for, private to that person.',
       fields: [],
     },
   },

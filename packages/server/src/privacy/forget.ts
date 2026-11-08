@@ -202,6 +202,11 @@ export async function forgetRecord(
       and not exists (${liveFactSource(tx, tx`f.id`)})
     returning f.id`;
 
+  // Other people's private facts and quotes resting on what is erased,
+  // before the foreign keys below clear their citations (personal memory
+  // spec 4.6). Nothing comes back: not even a count.
+  await tx`select retainer_erase_private_derivatives(${workspaceId}::uuid, ${erased}::uuid[])`;
+
   await tombstoneEventIdentity(
     tx,
     workspaceId,

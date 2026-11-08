@@ -11,6 +11,17 @@ import { useTestDatabase } from '../helpers/db.js';
 
 const db = useTestDatabase();
 
+/** Tables that hold rows private to one person (personal memory spec 4.2). */
+const PRIVATE_TABLES = [
+  'records',
+  'facts',
+  'fact_sources',
+  'field_assertions',
+  'event_records',
+  'event_links',
+  'idempotency_keys',
+];
+
 const TENANT_TABLES = [
   'object_types',
   'fields',
@@ -72,15 +83,27 @@ describe('roles', () => {
 
 describe('row-level security', () => {
   it('is enabled with a workspace policy on every tenant table', async () => {
-    const rows = await db.owner<{ tablename: string; rowsecurity: boolean; policies: number }[]>`
+    const rows = await db.owner<
+      { tablename: string; rowsecurity: boolean; policies: number; restrictive: string[] }[]
+    >`
       select t.tablename, t.rowsecurity,
         (select count(*)::int from pg_policies p
           where p.schemaname = 'public' and p.tablename = t.tablename
-            and p.roles = '{public}') as policies
+            and p.roles = '{public}' and p.permissive = 'PERMISSIVE') as policies,
+        array(select p.policyname::text from pg_policies p
+          where p.schemaname = 'public' and p.tablename = t.tablename
+            and p.roles = '{public}' and p.permissive = 'RESTRICTIVE'
+          order by 1) as restrictive
       from pg_tables t where t.schemaname = 'public'`;
     const byTable = new Map(rows.map((r) => [r.tablename, r]));
     for (const table of [...TENANT_TABLES, 'workspaces']) {
-      expect(byTable.get(table), table).toMatchObject({ rowsecurity: true, policies: 1 });
+      expect(byTable.get(table), table).toMatchObject({
+        rowsecurity: true,
+        policies: 1,
+        // Personal memory (personal memory spec 4.2): one restrictive policy
+        // on each table that holds private rows, and none elsewhere.
+        restrictive: PRIVATE_TABLES.includes(table) ? ['private_to_user'] : [],
+      });
     }
     // Every table with a workspace_id column is covered.
     const withWorkspace = await db.owner<{ table_name: string }[]>`
@@ -274,6 +297,8 @@ describe('API-key lookup', () => {
         workspace_id: workspaceA,
         scopes: ['read'],
         actor: { type: 'agent', id: 'bot' },
+        acts_for_user: null,
+        acts_for_name: null,
       },
     ]);
   });
@@ -300,6 +325,8 @@ describe('SECURITY DEFINER functions', () => {
   // Every way around RLS is listed here (ARCHITECTURE.md 7.2, accounts spec
   // 7.4). Adding one means adding it here, on purpose, with a review.
   const ALLOWED = [
+    // Personal memory spec 4.6: owned by its own role, not the migration's.
+    'retainer_erase_private_derivatives',
     'retainer_lookup_api_key',
     'retainer_session_access',
     'retainer_token_access',

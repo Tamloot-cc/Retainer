@@ -69,10 +69,15 @@ const named = (state: SchemaState, name: string) =>
   state.objects.find((o) => o.nameSingular === name && o.status === 'active');
 
 describe('planUpgrade', () => {
-  it('adds the event types and the internal-note type a pre-events workspace lacks', () => {
+  it('adds the event types, the internal-note type and the profile types a pre-events workspace lacks', () => {
     const { operations, conflicts, upgraded } = upgrade(legacy, SEED_OPERATIONS);
     expect(conflicts).toEqual([]);
-    expect(created(operations)).toEqual(['conversation', 'internalNote']);
+    expect(created(operations)).toEqual([
+      'conversation',
+      'internalNote',
+      'workspaceProfile',
+      'memberProfile',
+    ]);
     expect(upgraded.objects.filter((o) => o.class === 'event').map((o) => o.universalId)).toEqual([
       BASE_EVENT_TYPE_IDS.conversation,
       INTERNAL_NOTE_TYPE_ID,
@@ -185,7 +190,7 @@ describe('planUpgrade', () => {
     expect(conflicts).toEqual([
       { element: 'conversation', message: expect.stringContaining('already used') },
     ]);
-    expect(created(operations)).toEqual(['internalNote']);
+    expect(created(operations)).toEqual(['internalNote', 'workspaceProfile', 'memberProfile']);
   });
 
   it('adds a missing template field to an existing object, but not to a deleted one', () => {
@@ -272,6 +277,8 @@ describe('protection on upgrade', () => {
       ['protect_field', 'task.status'],
       ['protect_field', 'task.dueDate'],
       ['protect_object', 'internalNote'],
+      ['protect_object', 'workspaceProfile'],
+      ['protect_object', 'memberProfile'],
     ]);
     expect(ops.every((op) => classifyOp(op) === 'additive')).toBe(true);
     // Core fields are protected when created; the lists do not name them.

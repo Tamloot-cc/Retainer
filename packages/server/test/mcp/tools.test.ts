@@ -521,7 +521,11 @@ describe('describe_schema, list_templates and apply_template', () => {
 
   it('lists event types as objects of class "event", and facts as the one built-in', async () => {
     const res = await agent.call('describe_schema');
-    expect(res.body.builtIns.map((b: { name: string }) => b.name)).toEqual(['fact', 'comment']);
+    expect(res.body.builtIns.map((b: { name: string }) => b.name)).toEqual([
+      'fact',
+      'comment',
+      'memory',
+    ]);
     expect(res.body.builtIns[0].writeWith).toContain('remember');
     const objects = res.body.objects as { nameSingular: string; class: string }[];
     const events = objects.filter((o) => o.class === 'event').map((o) => o.nameSingular);

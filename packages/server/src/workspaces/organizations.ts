@@ -10,6 +10,7 @@ import type { OrganizationLimits } from '../db/schema.js';
 import type { Tx } from '../db/tx.js';
 import { getWorkspace } from '../db/workspaces.js';
 import { AppError } from '../errors.js';
+import { endLostMemberships, membersOf } from './leaving.js';
 
 /**
  * Organizations and their members (accounts spec 4.2, 4.5). Operator
@@ -208,10 +209,21 @@ export async function setOrganizationMember(
     if (current?.role === 'owner' && role !== 'owner') {
       await assertKeepsAnOwner(tx, organization.id, user.id);
     }
+    const workspaces = await tx<{ id: string }[]>`
+      select id from workspaces where organization_id = ${organization.id}`;
+    const before = (
+      await membersOf(
+        tx,
+        workspaces.map((w) => w.id),
+      )
+    ).filter((m) => m.userId === user.id);
     await tx`
       insert into organization_members (organization_id, user_id, role)
       values (${organization.id}, ${user.id}, ${role})
       on conflict (organization_id, user_id) do update set role = excluded.role`;
+    // A lower role can end their access to workspaces, and with it their
+    // personal memory there (personal memory spec 4.6).
+    await endLostMemberships(tx, before, OPERATOR_ACTOR);
     return { organization, userId: user.id, role };
   });
 }
@@ -266,12 +278,15 @@ export async function moveWorkspace(
     const from = await lockWorkspaceOrganization(tx, workspace.id);
     if (!from) throw new AppError(404, 'not_found', `workspace "${input.workspace}" not found`);
     if (organization.id === from) return { organization, removedMembers: 0 };
+    const before = await membersOf(tx, [workspace.id]);
     const removed = await tx`
       delete from workspace_members where workspace_id = ${workspace.id} returning 1`;
     // Who may use it changes, so apps connected to it must be connected again.
     await endGrants(tx, tx`oc.reference_id = ${workspace.id}`);
     await tx`
       update workspaces set organization_id = ${organization.id} where id = ${workspace.id}`;
+    // People who lose it lose their personal memory in it (personal memory 4.6).
+    await endLostMemberships(tx, before, OPERATOR_ACTOR);
     return { organization, removedMembers: removed.length };
   });
 }
@@ -296,3 +311,6 @@ export async function endGrants(tx: Tx, where: ReturnType<Sql>): Promise<number>
     select count(*)::int as ended from ended`;
   return row?.ended ?? 0;
 }
+
+/** Who the operator's membership changes are recorded as. */
+const OPERATOR_ACTOR = { type: 'system' as const, id: 'operator' };
