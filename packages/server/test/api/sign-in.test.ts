@@ -402,6 +402,7 @@ describe('/account', () => {
         },
       ],
       invitations: [],
+      providers: ['google'],
     });
   });
 });

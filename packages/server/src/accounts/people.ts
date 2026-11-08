@@ -814,8 +814,10 @@ async function isVerifiedEmail(sql: Sql | Tx, person: Person, email: string): Pr
 }
 
 /**
- * Accepts an invitation. The person's verified Google address must be the
- * invited one, so a forwarded link is useless to anyone else. Accepting
+ * Accepts an invitation. The person's verified address must be the invited
+ * one, so a forwarded link is useless to anyone else. Every provider account
+ * linked to the person verified that address (auth.ts), whichever one they
+ * signed in with this time. Accepting
  * twice is a no-op, and an existing membership keeps its role.
  */
 export async function acceptInvitation(
@@ -829,7 +831,7 @@ export async function acceptInvitation(
     const row = await findInvitation(tx, person, tokenOrId);
     if (!(await isVerifiedEmail(tx, person, row.email))) {
       throw forbidden(
-        `This invitation is for ${row.email}. Sign in with that Google account to accept it.`,
+        `This invitation is for ${row.email}. Sign in with the account for that address to accept it.`,
       );
     }
     if (row.accepted_at) return { organizationId: row.organization_id };

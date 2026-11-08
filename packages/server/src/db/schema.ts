@@ -123,12 +123,15 @@ export const sessions = pgTable(
   (t) => [index('sessions_user_idx').on(t.userId)],
 );
 
-/** A sign-in method linked to a person: their Google account, by subject ID. */
+/**
+ * A sign-in method linked to a person: their Google or Microsoft account, by
+ * the provider's own ID. At most one of each per person (accounts spec 4.4).
+ */
 export const authAccounts = pgTable(
   'auth_accounts',
   {
     id: id(),
-    /** The provider's stable ID for the person (Google's subject). */
+    /** The provider's stable ID for the person: Google's subject, Microsoft's object ID. */
     accountId: text('account_id').notNull(),
     providerId: text('provider_id').notNull(),
     userId: uuid('user_id')
@@ -146,8 +149,9 @@ export const authAccounts = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    index('auth_accounts_user_idx').on(t.userId),
     unique('auth_accounts_provider_account_uq').on(t.providerId, t.accountId),
+    // Also serves lookups by user_id alone.
+    unique('auth_accounts_user_provider_uq').on(t.userId, t.providerId),
   ],
 );
 
@@ -483,7 +487,7 @@ export const invitations = pgTable(
     organizationId: uuid('organization_id')
       .notNull()
       .references(() => organizations.id, { onDelete: 'cascade' }),
-    /** Lowercased; accepting needs a verified Google address that matches. */
+    /** Lowercased; accepting needs a verified address that matches (4.5). */
     email: text('email').notNull(),
     role: text('role').$type<OrganizationRole>().notNull(),
     workspaces: jsonb('workspaces').$type<InvitedWorkspace[]>().notNull().default([]),

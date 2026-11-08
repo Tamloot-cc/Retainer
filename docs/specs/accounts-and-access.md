@@ -62,7 +62,7 @@ cannot be undone, so when unsure, decide first.
 | #   | Decision                                                                                                                         |
 | --- | -------------------------------------------------------------------------------------------------------------------------------- |
 | A1  | Keep the backend and RLS. Clients never talk to the database (3.1).                                                              |
-| A2  | People log in through Better Auth, running in our control function: Google and passkeys only. No passwords and no email sign-in. |
+| A2  | People sign in through Better Auth, in our control function: Google, Microsoft and passkeys. No passwords, and no email sign-in. |
 | A3  | A session is a second way to build a `Caller`. Everything after `authenticate` is unchanged.                                     |
 | A4  | Sessions are Better Auth's: a signed cookie and a raw token in the database. The cookie no longer holds an API key.              |
 | A5  | Organizations own workspaces and members. They are hidden in the UI until someone needs them.                                    |
@@ -170,7 +170,13 @@ A self-hosted install that upgrades sees no change unless it sets those values.
 Accounts mode needs a Google OAuth client, since Google is how a person first signs
 in, so a self-hoster sets up their own in Google Cloud or stays in key mode. Setting
 only one of the two is a configuration error, and the server refuses to start rather
-than quietly running in key mode. Signup is open in accounts mode (4.8), so a
+than quietly running in key mode.
+
+_As built, with Microsoft (9.1):_ the client can be Google's, a Microsoft Entra app
+(`RETAINER_MICROSOFT_CLIENT_ID` and `RETAINER_MICROSOFT_CLIENT_SECRET`), or both. The
+secret with neither is still refused at start, and half of either client is refused
+too. An install with Google alone is unchanged, and Microsoft stays off unless both
+of its settings are present. Signup is open in accounts mode (4.8), so a
 self-hoster who wants a private install stays in key mode.
 In accounts mode `POST /auth/session` returns 404. API keys work for agents in both
 modes.
@@ -219,6 +225,13 @@ A person's identity is their Google account, matched by Google's stable subject 
 not by email. We refuse a sign-in whose address Google has not verified, and
 invitations compare against the verified address. Passkeys attach to that user
 (4.11).
+
+_As built, with Microsoft:_ a person is the Google or Microsoft account they first
+signed in with, matched by the provider's own ID: Google's subject, or Microsoft's
+tenant and object ID (`tid:oid`), as Microsoft recommends. `auth_accounts` has at
+most one account of each provider per person, a unique `(user_id, provider_id)`, so
+another Google or Microsoft account with the same address is refused rather than
+merged in. 4.4 has the rule for joining a second provider.
 
 **Existing data.** The migration creates one `Default` organization and moves
 every existing workspace into it. `bootstrap` does the same on a new container
@@ -312,6 +325,52 @@ place. The client chooses the workspace and never authorizes it. A bearer
 request needs no header, because keys belong to one workspace, and a header
 naming a different workspace is refused with a 400.
 
+**Signing in with Microsoft (9.1).** Better Auth's Microsoft provider, on the
+`common` tenant, so work and school accounts from any Microsoft Entra organization
+and personal accounts (Outlook.com, Hotmail, Live) all sign in. It asks only for
+`openid`, `profile` and `email`, so no organization needs an admin to approve a
+Microsoft Graph permission, and it fetches no photo.
+
+The risk is the address. An organization's admin can put any email address on their
+own users, so a work account's `email` claim proves nothing about who owns the
+mailbox. Retainer, not Better Auth, decides whether a Microsoft address is verified
+(`accounts/microsoft.ts`):
+
+- **Personal accounts** (tenant `9188040d-6c67-4c5b-b112-36a304b66dad`): verified.
+  Microsoft confirms these addresses itself. Its documentation does not say so in as
+  many words, so the live check in section 12 covers it.
+- **Work and school accounts:** verified only with `xms_edov`, the optional claim
+  Microsoft adds when the organization has proven it owns the address's domain. The
+  app registration asks for it. Claims a tenant could influence, or that say nothing
+  about the domain, such as `email_verified` and `verified_primary_email`, are
+  ignored, though Better Auth on its own would read them.
+
+An unverified address is refused: Better Auth creates no person from it (the
+`user.create` hook, `email_not_verified`). The app registration also sets
+`removeUnverifiedEmailClaim`, so Microsoft usually drops such an address before it
+arrives (`email_not_found`). The cost: someone whose organization has not verified
+its email domain with Microsoft cannot sign in with Microsoft, and so cannot accept an
+invitation that way. They can use Google, or their admin can verify the domain.
+
+**Joining a second provider.** Better Auth's account linking is on, with no trusted
+providers. A sign-in from an account no person has yet, with the address of an
+existing person, joins that person only if the provider verified the address and the
+person's own address is verified. Every person's is, since none is created otherwise.
+Anything else is refused as `account_not_linked`, never given a separate person: the
+address must keep leading to the one person it belongs to, since invitations match
+on it. Linking happens only at sign-in. Better Auth's routes to link and unlink
+accounts by hand are closed (404), like its consent routes. Linking never changes the
+person's name or address.
+
+So an address a provider never verified can neither create a person, nor reach an
+existing one, nor accept their invitations. The guarantee rests on the token being
+Microsoft's: after the redirect, Better Auth takes it straight from Microsoft's token
+endpoint over HTTPS; a page that sends an ID token itself gets it checked against
+Microsoft's signing keys, Retainer's client ID as audience, and an issuer naming the
+token's own `tid`. The app registration must never accept mapped claims
+(`acceptMappedClaims`), which would let an organization's admin rewrite claims for
+their own users.
+
 **Session lifetime.** 30 days, with `deferSessionRefresh` on so that reading a
 session writes nothing. The web app refreshes through the control function when it
 loads. `disabled_at` and "sign out everywhere" end all sessions.
@@ -325,6 +384,7 @@ add a member or create a workspace, as `ARCHITECTURE.md` 7.1 requires.
 | Route                                                           | Who                                          |
 | --------------------------------------------------------------- | -------------------------------------------- |
 | `/account/auth/*`: Better Auth's own routes                     | As Better Auth defines them                  |
+| `GET /account/providers`: Google, Microsoft or both             | Anyone, signed in or not                     |
 | `GET /account`: the user, organizations, workspaces, roles      | Signed in                                    |
 | `POST /account/workspaces`                                      | Organization owner or admin                  |
 | `DELETE /account/workspaces/:id`                                | Organization owner or admin                  |
@@ -345,7 +405,7 @@ add a member or create a workspace, as `ARCHITECTURE.md` 7.1 requires.
 sees "Name your workspace". `POST /account/workspaces` then creates the
 organization, owner membership, workspace and seed in one transaction, so there
 are no empty organizations and nothing half-created. The person's name comes
-from Google.
+from Google, or from Microsoft.
 
 **One transaction.** `retainer_control` inserts the account rows and the
 workspace, then runs `SET LOCAL ROLE retainer_app` and sets `app.workspace_id`
@@ -358,7 +418,10 @@ generated suffix, such as `sales-x7k2`. The CLI keeps exact slugs.
 
 **Invitations.** A token is stored hashed and expires after 7 days. Accepting
 requires a verified Google address that matches the invitation, so a forwarded link
-is useless to anyone else. Accepting twice is a no-op. At launch the web app offers
+is useless to anyone else. _As built, with Microsoft:_ a verified address from the
+provider the person signed in with, under the rule in 4.4. The person's address is
+the one every provider linked to them verified, so the check is the same whichever
+way they came in. Accepting twice is a no-op. At launch the web app offers
 "Copy invite link" and Retainer sends no email at all, so it needs no email provider.
 Sending invitations by email can be added later.
 
@@ -401,7 +464,7 @@ be a person. Keys with a `user` actor remain CLI-only.
    │                         │ /account, /.well-known/oauth-authorization-server,
    │                         │ /.well-known/openid-configuration
    │                         ▼
-   │                      control function ──► NAT ──► Google,
+   │                      control function ──► NAT ──► Google, Microsoft,
    │                      (Better Auth,                client metadata
    │                       retainer_control)
    │ /v1, /mcp, /app
@@ -411,8 +474,8 @@ be a person. Keys with a `user` actor remain CLI-only.
    └───► RDS Postgres ◄──────┘
 ```
 
-- **Why the control function has internet.** Google sign-in and client metadata
-  documents both need it, in the same process that writes to the database. Claude
+- **Why the control function has internet.** Google and Microsoft sign-in
+  (`login.microsoftonline.com`) and client metadata documents all need it, in the same process that writes to the database. Claude
   needs the second (4.7), so a design without internet would not serve it. A NAT
   gateway costs roughly $40 a month with its public IP address.
 - **What stays isolated.** The api, consolidate and ops functions keep no route to
@@ -529,7 +592,7 @@ _As built,_ where it differs:
   and would. With `RETAINER_ROLE=all` the API and the worker share one pool today, so
   the API gets its own. _As built:_ 25 seconds, reported as `503` `timeout`.
 - **Signup.** Open on every install in accounts mode: anyone with a verified Google
-  account can create their own organization and workspaces, on a self-hosted server
+  or Microsoft address can create their own organization and workspaces, on a self-hosted server
   too. There is no setting to restrict it, and organizations cannot see each other's
   data. A self-hoster who wants a private install stays in key mode (4.1).
 - **Quotas.** Limits on workspaces and members per organization (4.10). Self-hosted
@@ -570,20 +633,22 @@ come from. Plans, prices and Stripe code stay out of the open repo.
 
 ### 4.11 Sign-in methods, passkeys and MFA
 
-| Method  | Protection                                                                 |
-| ------- | -------------------------------------------------------------------------- |
-| Passkey | Strongest: resists phishing, and uses the device plus a fingerprint or PIN |
-| Google  | As strong as the person's Google account, including its two-step settings  |
+| Method    | Protection                                                                 |
+| --------- | -------------------------------------------------------------------------- |
+| Passkey   | Strongest: resists phishing, and uses the device plus a fingerprint or PIN |
+| Google    | As strong as the person's Google account, including its two-step settings  |
+| Microsoft | As strong as the Microsoft account, including its organization's policies  |
 
 **No email sign-in.** Magic links would make an inbox a way into the account, and
 they would need an email provider. Without them there is one less route to protect
-and one less service to run. The cost is that a person needs a Google account to
-join (section 9).
+and one less service to run. The cost is that a person needs a Google or Microsoft
+account to join (section 9).
 
 **Passkeys** use `@better-auth/passkey`.
 
-- A person adds one after a first sign-in with Google. Signing up with only a passkey
-  stays off, because Google proves the email, and invitations rely on it.
+- A person adds one after a first sign-in with Google or Microsoft. Signing up with
+  only a passkey stays off, because the provider proves the email, and invitations
+  rely on it.
 - `userVerification` is `required`, so a device with no fingerprint, face or PIN is
   refused.
 - Passkeys are tied to the domain (`rpID`). **Choose the permanent domain before
@@ -591,11 +656,11 @@ join (section 9).
   API Gateway URL.
 - They make no outbound calls and add no need for internet.
 
-**Recovery.** Someone who loses a device signs in with Google and removes the old
-passkey. Someone who loses access to Google still has their passkey. Someone who loses
+**Recovery.** Someone who loses a device signs in with Google or Microsoft and removes
+the old passkey. Someone who loses access to those still has their passkey. Someone who loses
 both needs an operator to verify them by hand, so encourage a second passkey.
 
-**Google sign-in stays on after someone adds a passkey.** That keeps recovery simple.
+**Google and Microsoft sign-in stay on after someone adds a passkey.** That keeps recovery simple.
 A setting to turn it off can come later if teams ask.
 
 **No MFA at launch.** Better Auth's two-factor plugin only challenges password
@@ -613,7 +678,7 @@ MFA does not protect API keys on any provider. Scopes and revocation do.
   must move together.
 - Follow its security advisories and update within days. Twelve advisories were
   published on one day, November 3, 2026.
-- Load only Google, JWT, passkey, `mcp()` and `cimd()`. SSO and SCIM have
+- Load only Google, Microsoft, JWT, passkey, `mcp()` and `cimd()`. SSO and SCIM have
   some of its worst advisories, so add them only when a customer needs them, and lock
   down who can register a provider.
 - Never install its `dash()` plugin, which calls Better Auth's own servers.
@@ -653,7 +718,8 @@ Plain words throughout, per the web app's rule. No screen says "RBAC", "scope",
 for someone signed in with Google as well as for an agent.
 
 - **Sign in.** "Continue with Google" and "Use a passkey". Key mode keeps today's
-  screen.
+  screen. _As built:_ "Continue with Microsoft" too, when the server has it; the page
+  asks `GET /account/providers` and shows a button for each provider that is on.
 - **First run.** "Name your workspace", then the existing flow. The word organization
   does not appear.
 - **URLs.** `/app/w/<slug>/...` in accounts mode, and `/app/...` as today in key
@@ -824,9 +890,14 @@ layer 1; Database, Concurrent and Credentials are layer 2; API and Contract are 
 
 Every test except the unit tests uses real Postgres with a fresh cloned database: one
 per file, or one per test in the browser. No test needs the internet, so they use a local fake of Google's OAuth endpoints, or create sessions
-directly through Better Auth. Choose between those when building.
+directly through Better Auth. Choose between those when building. _As built:_ Google
+is faked by trusting the ID token. Microsoft is a local server that signs real tokens
+and serves the keys, authorize and token endpoints, so Better Auth's own Microsoft
+provider and Retainer's address rule run unchanged, and the browser tests really go
+there and back. Concurrent tests cover simultaneous Microsoft sign-ins, joining a
+Google person at once, and Google and Microsoft first sign-ins for one address.
 
-Real Google sign-in and Claude's web app cannot run in CI. Repeat both by hand on a
+Real Google and Microsoft sign-in and Claude's web app cannot run in CI. Repeat both by hand on a
 deployed install after each Better Auth upgrade that touches OAuth.
 
 ## 9. Open questions
@@ -836,7 +907,11 @@ deployed install after each Better Auth upgrade that touches OAuth.
    Teams on Microsoft 365 are the likely gap. _Decided November 8, 2026: add
    Microsoft sign-in_, through Better Auth's Microsoft provider, without changing the
    design. It accepts every Microsoft account: work or school accounts (Entra ID) and
-   personal ones (Outlook, Hotmail).
+   personal ones (Outlook, Hotmail). _Resolved November 8, 2026,_ as 4.4 describes:
+   accounts keyed on `tid:oid`; a work address counts only with `xms_edov`; a second
+   provider joins a person only with a verified matching address, and anything else is
+   refused. Work accounts whose organization has not verified its domain cannot sign in
+   with Microsoft.
 2. **Two sign-ins at once.** _Resolved in PR 3._ In the test, two simultaneous first
    sign-ins for one email made one user as they should, but the second person got a
    500. With Google the second got Better Auth's `unable to create user` instead, and
@@ -846,7 +921,10 @@ deployed install after each Better Auth upgrade that touches OAuth.
    page, which says the account was just made in another tab and to sign in again.
    An unverified address has its own `email_not_verified` code. Better Auth's
    adapter runs its multi-step writes in a transaction, so a person and their
-   Google link commit together and no sign-in sees one without the other.
+   Google link commit together and no sign-in sees one without the other. With
+   Microsoft, the same holds, and a sign-in can also lose the race to link its
+   account to an existing person (`unable to link account`). An ID-token sign-in
+   retries up to twice, once per step another sign-in can finish first.
 3. **Agent write formats.** In the test Claude called `upsert_record` twice, then
    warned that names are `{first, last}` and emails `{primary, additional[]}`. The
    failed call's error was not logged, but the tool descriptions may need to state
@@ -969,7 +1047,18 @@ same token, nine seconds later, got `401`.
   body is checked. An empty body creates no user and no OAuth state; the only row it
   leaves is the counter itself.
 
-**Not tested:** `SET LOCAL ROLE` seeding by `retainer_control`; purging a large
+**Microsoft sign-in**, November 8, 2026, in tests against real Postgres with a local
+fake of Microsoft: personal accounts and verified work accounts sign in, are keyed on
+`tid:oid`, and join a Google person with the same address. An unverified work address,
+even one carrying `email_verified` and `verified_primary_email`, creates no person,
+reaches no existing one and accepts no invitation. A second account from the same
+provider is refused. Simultaneous first sign-ins, and sign-ins joining one person at
+once, end as one person. The browser goes to the fake and back for sign-in, an
+invitation and connecting Claude.
+
+**Not tested:** Microsoft sign-in on the live site, with a personal account and with a
+work account, including that personal addresses arrive verified and work ones carry
+`xms_edov`; `SET LOCAL ROLE` seeding by `retainer_control`; purging a large
 workspace within the control function's 300 seconds, deferred until real workspaces
 exist. Whether Claude falls back to dynamic registration is not listed: Claude uses
 its metadata document, which works, and the fallback cannot be forced from outside.

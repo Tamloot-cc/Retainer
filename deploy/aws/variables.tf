@@ -158,7 +158,7 @@ variable "log_retention_days" {
 # ─── Accounts (docs/aws.md, Accounts) ────────────────────────────────────────
 
 variable "google_client_id" {
-  description = "Google OAuth client ID people sign in with. Setting it, with google_client_secret, turns on accounts mode: the control function, /account, and a NAT gateway for it (about $40 a month). Null keeps key mode."
+  description = "Google OAuth client ID people sign in with. Setting it, with google_client_secret, turns on accounts mode: the control function, /account, and a NAT gateway for it (about $40 a month). The Microsoft client below does the same; with neither, key mode."
   type        = string
   default     = null
 }
@@ -172,6 +172,24 @@ variable "google_client_secret" {
   validation {
     condition     = (var.google_client_secret == null) == (var.google_client_id == null)
     error_message = "Set google_client_id and google_client_secret together, or neither."
+  }
+}
+
+variable "microsoft_client_id" {
+  description = "Application (client) ID of the Microsoft Entra app people sign in with: work, school and personal Microsoft accounts. Setting it, with microsoft_client_secret, turns on Microsoft sign-in, and accounts mode if Google is not set. Null leaves Microsoft sign-in off."
+  type        = string
+  default     = null
+}
+
+variable "microsoft_client_secret" {
+  description = "The Microsoft app's client secret. Set it in terraform.tfvars (gitignored) or TF_VAR_microsoft_client_secret, never in a committed file. Microsoft secrets expire: replace it before then."
+  type        = string
+  default     = null
+  sensitive   = true
+
+  validation {
+    condition     = (var.microsoft_client_secret == null) == (var.microsoft_client_id == null)
+    error_message = "Set microsoft_client_id and microsoft_client_secret together, or neither."
   }
 }
 

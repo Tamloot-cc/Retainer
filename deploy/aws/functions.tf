@@ -42,7 +42,8 @@ resource "aws_iam_role_policy_attachment" "functions_vpc" {
 }
 
 locals {
-  accounts = var.google_client_id != null
+  # Accounts mode: people sign in with Google, Microsoft or both.
+  accounts = var.google_client_id != null || var.microsoft_client_id != null
 
   # random_id does not mark its values sensitive; these do, so no plan or
   # apply prints them.
@@ -120,14 +121,18 @@ locals {
         # that removes deleted workspaces (schedule.tf) may take longer.
         timeout     = 300
         concurrency = var.control_reserved_concurrency
-        env = {
+        env = merge({
           RETAINER_CONTROL_DATABASE_URL = local.control_database_url
           RETAINER_PUBLIC_ORIGIN        = local.public_origin
           RETAINER_AUTH_SECRET          = local.auth_secret
+          RETAINER_DB_POOL_MAX          = tostring(var.control_db_pool_max)
+          }, var.google_client_id != null ? {
           RETAINER_GOOGLE_CLIENT_ID     = var.google_client_id
           RETAINER_GOOGLE_CLIENT_SECRET = var.google_client_secret
-          RETAINER_DB_POOL_MAX          = tostring(var.control_db_pool_max)
-        }
+          } : {}, var.microsoft_client_id != null ? {
+          RETAINER_MICROSOFT_CLIENT_ID     = var.microsoft_client_id
+          RETAINER_MICROSOFT_CLIENT_SECRET = var.microsoft_client_secret
+        } : {})
         network = {
           subnets         = aws_subnet.control[*].id
           security_groups = aws_security_group.control[*].id

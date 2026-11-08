@@ -43,6 +43,7 @@ import {
   KEY_ACCESS_OPTIONS,
   keyAccessWords,
   organizationRoleOptions,
+  providerNames,
   roleLegend,
   WORKSPACE_ROLE_OPTIONS,
 } from './format.js';
@@ -342,6 +343,7 @@ function InviteDialog({
   const [link, setLink] = useState(''),
     [error, setError] = useState(''),
     [role, setRole] = useState<string>(workspace ? 'editor' : 'member');
+  const providers = providerNames(useAccount()?.account.providers ?? []);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const email = (e.currentTarget.elements.namedItem('email') as HTMLInputElement).value.trim();
@@ -370,7 +372,7 @@ function InviteDialog({
         }
       }}
       title={workspace ? `Invite someone to ${workspace.name}` : 'Invite someone'}
-      description="Retainer gives you a link to send them. They sign in with the Google account for that email to accept."
+      description={`Retainer gives you a link to send them. They sign in with the ${providers} account for that email to accept.`}
     >
       {link ? (
         <Stack>

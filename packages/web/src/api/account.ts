@@ -1,5 +1,11 @@
 import { RetainerApiError } from '@retainer/sdk';
-import type { KeyAccess, OrganizationRole, Scope, WorkspaceRole } from '@retainer/shared';
+import type {
+  KeyAccess,
+  OrganizationRole,
+  Scope,
+  SignInProvider,
+  WorkspaceRole,
+} from '@retainer/shared';
 
 /**
  * /account (accounts spec 4.5): the signed-in person, their organizations,
@@ -24,6 +30,8 @@ export type Account = {
   user: { id: string; name: string; email: string };
   organizations: AccountOrganization[];
   invitations: PendingForYou[];
+  /** The providers this server signs people in with. */
+  providers: SignInProvider[];
 };
 
 export type Workspace = { id: string; slug: string; name: string; organizationId: string };
@@ -121,6 +129,8 @@ const org = (id: string) => `/account/organizations/${encodeURIComponent(id)}`;
 export const account = {
   /** The person; 401 when signed out, 404 in key mode. */
   me: () => call<Account>('/account'),
+  /** The providers this server signs people in with; needs no session. */
+  providers: () => call<{ providers: SignInProvider[] }>('/account/providers'),
   createWorkspace: (input: { name: string; template?: string; organizationId?: string }) =>
     call<Workspace>('/account/workspaces', { method: 'POST', body: input }),
   renameWorkspace: (id: string, name: string) =>

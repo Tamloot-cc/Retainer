@@ -2,7 +2,7 @@ import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { type Account, authClient, signOutOfAccount, workspaceHref } from '../api/account.js';
 import { Button, Dialog, Input, Label, Muted, Notice, Panel, Stack } from '../ui/index.js';
 import { ConnectedApps } from './connections.js';
-import { shortDate as date, roleWords } from './format.js';
+import { shortDate as date, providerNames, roleWords } from './format.js';
 import { AccountFrame } from './screens.js';
 
 /** `/app/account`: you, your passkeys and where you have access (accounts spec 5.1). */
@@ -15,9 +15,12 @@ export function YourAccount({ account }: { account: Account }) {
       <Panel title="You">
         <p className="text-sm font-medium">{account.user.name}</p>
         <p className="text-sm text-muted-foreground">{account.user.email}</p>
-        <Muted small>Your name and email come from your Google account; change them there.</Muted>
+        <Muted small>
+          Your name and email come from the {providerNames(account.providers)} account you first
+          signed in with; change them there.
+        </Muted>
       </Panel>
-      <Passkeys />
+      <Passkeys providers={account.providers} />
       <Panel title="Connected apps">
         <ConnectedApps showWorkspace />
       </Panel>
@@ -57,7 +60,7 @@ export function YourAccount({ account }: { account: Account }) {
   );
 }
 
-function Passkeys() {
+function Passkeys({ providers }: { providers: Account['providers'] }) {
   const [passkeys, setPasskeys] = useState<Passkey[] | null>(null),
     [error, setError] = useState(''),
     [stale, setStale] = useState(false),
@@ -105,8 +108,8 @@ function Passkeys() {
     <Panel title="Passkeys">
       <Stack>
         <Muted small>
-          A passkey signs you in with your fingerprint, face or device PIN. Google sign-in keeps
-          working either way.
+          A passkey signs you in with your fingerprint, face or device PIN. Signing in with{' '}
+          {providerNames(providers)} keeps working either way.
         </Muted>
         {passkeys === null ? null : passkeys.length === 0 ? (
           <Muted>You have no passkeys yet.</Muted>

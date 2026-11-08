@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { personalAccount } from '../test/helpers/microsoft.js';
 import { CLAUDE_CLIENT_ID, CLAUDE_REDIRECT } from '../test/helpers/oauth.js';
 import { expect, test } from './accounts-fixtures.js';
 
@@ -145,6 +146,28 @@ test('a failed Google sign-in comes back to the connection, not the home page', 
     expect(url).toContain(`client_id=${encodeURIComponent(CLAUDE_CLIENT_ID)}`);
     expect(url).not.toContain('error=');
   }
+});
+
+test('someone connecting an app signs in with Microsoft and comes back to consent', async ({
+  page,
+  accounts: a,
+}) => {
+  const query = new URLSearchParams({
+    response_type: 'code',
+    client_id: CLAUDE_CLIENT_ID,
+    redirect_uri: CLAUDE_REDIRECT,
+    state: 'from-claude',
+    code_challenge: createHash('sha256').update('verifier').digest('base64url'),
+    code_challenge_method: 'S256',
+    resource: `${a.url}/mcp`,
+  });
+  await page.goto(`${a.url}/account/auth/oauth2/authorize?${query}`);
+  await expect(page).toHaveURL(/\/app\/oauth\/sign-in\?/);
+  a.microsoft?.signInNextAs(personalAccount('mo@outlook.test', 'Mo Personal'));
+  await page.getByRole('button', { name: 'Continue with Microsoft' }).click();
+  // Back from Microsoft on the same request, then on to consent.
+  await expect(page).toHaveURL(/\/app\/oauth\/consent\?/);
+  expect(new URL(page.url()).searchParams.get('client_id')).toBe(CLAUDE_CLIENT_ID);
 });
 
 test('someone with no workspace can still say no, so the app stops waiting', async ({

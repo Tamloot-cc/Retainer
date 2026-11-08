@@ -26,8 +26,9 @@ managed database with point-in-time recovery, and a bill that follows use.
 The api, consolidate and ops functions reach only the database, and the
 database only accepts the functions. They make no outbound calls, so they
 have no route to the internet. In [accounts mode](#accounts) the control
-function signs people in with Google and reads the client metadata documents
-apps such as Claude identify themselves with, which needs one: it runs in
+function signs people in with Google or Microsoft and reads the client
+metadata documents apps such as Claude identify themselves with, which needs
+one: it runs in
 subnets of its own whose only way out is a NAT gateway, and the other
 functions keep none. The api function checks OAuth tokens against keys in the
 database, with no call out.
@@ -232,12 +233,15 @@ the [first deployment](#first-deployment):
    | `OIDC_SUBJECT_PREFIX`          | variable, optional | `github_subject_prefix`                  |
    | `GOOGLE_CLIENT_ID`             | variable, optional | `google_client_id`                       |
    | `GOOGLE_CLIENT_SECRET`         | secret, optional   | `google_client_secret`                   |
+   | `MICROSOFT_CLIENT_ID`          | variable, optional | `microsoft_client_id`                    |
+   | `MICROSOFT_CLIENT_SECRET`      | secret, optional   | `microsoft_client_secret`                |
 
    For example:
 
    ```sh
    gh variable set TF_STATE_BUCKET --env production --body "<bucket>"
    gh secret set GOOGLE_CLIENT_SECRET --env production   # reads the value from stdin
+   gh secret set MICROSOFT_CLIENT_SECRET --env production
    ```
 
    `github_repository` is the repository the workflow runs in. Every other
@@ -272,8 +276,8 @@ snapshot gets a new name:
 
 **Secrets.** Terraform generates the database passwords and
 `RETAINER_SUPPRESSION_KEY`, and in accounts mode `RETAINER_AUTH_SECRET`, and
-keeps them in its state, so treat the state bucket as secret. The Google
-client secret is in it too. Only the ops function gets the password of the
+keeps them in its state, so treat the state bucket as secret. The Google and
+Microsoft client secrets are in it too. Only the ops function gets the password of the
 role that owns the tables. The api and consolidate functions log in as
 `retainer_app`, and the control function as `retainer_control`, each with a
 password of its own, which the ops function sets each time it migrates, so
@@ -300,30 +304,37 @@ so the limits hold across Lambda instances.
 
 ## Accounts
 
-In accounts mode people sign in to the web app with Google or a passkey,
-and agents use API keys or connect over OAuth
-([Self-hosting](self-hosting.md#accounts-mode) explains the roles). It is off until you give Terraform a Google OAuth
-client:
+In accounts mode people sign in to the web app with Google, Microsoft or a
+passkey, and agents use API keys or connect over OAuth
+([Self-hosting](self-hosting.md#accounts-mode) explains the roles and which
+addresses count). It is off until you give Terraform a Google OAuth client, a
+Microsoft Entra app, or both:
 
-1. Deploy once without it, so the public origin exists (`terraform output
+1. Deploy once without them, so the public origin exists (`terraform output
    public_origin`); with a custom domain, attach it first.
-2. In the Google Cloud console, create an OAuth client of type "Web
-   application" and add the redirect URI that
-   `terraform output google_redirect_uri` will print:
-   `<public origin>/account/auth/callback/google`.
-3. Add the client to `terraform.tfvars`, which is gitignored, or pass the
-   secret as `TF_VAR_google_client_secret`:
+2. Set up each provider as [Self-hosting](self-hosting.md#accounts-mode)
+   describes, with the redirect URIs that `terraform output google_redirect_uri`
+   and `terraform output microsoft_redirect_uri` will print:
+   `<public origin>/account/auth/callback/google` and
+   `<public origin>/account/auth/callback/microsoft`.
+3. Add them to `terraform.tfvars`, which is gitignored, or pass the secrets as
+   `TF_VAR_google_client_secret` and `TF_VAR_microsoft_client_secret`:
 
    ```hcl
-   google_client_id     = "1234-abc.apps.googleusercontent.com"
-   google_client_secret = "..."
+   google_client_id        = "1234-abc.apps.googleusercontent.com"
+   google_client_secret    = "..."
+   microsoft_client_id     = "00000000-0000-0000-0000-000000000000"
+   microsoft_client_secret = "..."
    ```
 
 4. `terraform apply`, then `deploy/aws/deploy.sh`. The apply creates the
    control function, its subnets and NAT gateway, and routes `/account` to
    it; the deploy migrates and sets the control function's login.
-5. Publish the OAuth consent screen. While it is in "Testing", only the test
-   users listed there can sign in.
+5. Publish Google's OAuth consent screen. While it is in "Testing", only the
+   test users listed there can sign in.
+
+Adding Microsoft to an install that already has Google, or the reverse, is the
+same `terraform apply` and deploy; people already signed in are not affected.
 
 Existing workspaces go into an organization named `Default` with no owner.
 Once you have signed in, make yourself its owner:

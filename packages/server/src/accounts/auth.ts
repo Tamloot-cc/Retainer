@@ -4,7 +4,7 @@ import { fetchClientMetadataResource } from '@better-auth/cimd/node';
 import { mcp } from '@better-auth/mcp';
 import { oauthProviderAuthServerMetadata } from '@better-auth/oauth-provider';
 import { passkey } from '@better-auth/passkey';
-import { OAUTH_SCOPES } from '@retainer/shared';
+import { OAUTH_SCOPES, type SignInProvider } from '@retainer/shared';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
@@ -13,7 +13,7 @@ import type { GoogleOptions } from 'better-auth/social-providers';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ACCOUNT_COOKIE_PREFIX } from '../auth/account-session.js';
 import { AUTH_BASE_PATH, oauthSettings, WORKSPACE_CLAIM } from '../auth/oauth-token.js';
-import type { AccountsConfig } from '../config.js';
+import { type AccountsConfig, signInProviders } from '../config.js';
 import type { Sql } from '../db/client.js';
 import { isUuid } from '../db/ids.js';
 import {
@@ -32,14 +32,22 @@ import {
   sessions,
   users,
 } from '../db/schema.js';
+import { microsoftAccountKey, microsoftProvider } from './microsoft.js';
 
 /**
  * Better Auth (accounts spec A2, 4.4, 4.11, 4.12). Only this module imports
  * it, and only the code that serves /account loads this module: the API
  * never does (`pnpm lint` checks it).
  *
- * People sign in with Google, or with a passkey they added after a first
- * Google sign-in. There are no passwords and no email sign-in.
+ * People sign in with Google or Microsoft, or with a passkey they added after
+ * a first sign-in with one of them. There are no passwords and no email
+ * sign-in.
+ *
+ * A person is the provider account they first signed in with, matched by the
+ * provider's own ID, never by email. A second provider joins the same person
+ * only when it verified the person's email address (`accountLinking` below),
+ * so an address a provider never verified can neither create a person nor
+ * reach someone else's account or invitations.
  */
 
 /**
@@ -99,6 +107,8 @@ export type AuthOptions = {
   /** Where people reach Retainer, e.g. https://retainer.example. */
   publicOrigin: string;
   google?: GoogleOverrides;
+  /** Tests run a local fake of Microsoft's sign-in service here. */
+  microsoftAuthority?: string;
   /** Off only in tests, which sign in many times from one address. */
   rateLimit?: boolean;
   /**
@@ -135,6 +145,8 @@ export type Auth = {
   consent: (request: Request, workspaceId: string) => Promise<Response>;
   /** RFC 8414 metadata for the authorization server. */
   authServerMetadata: (request: Request) => Promise<Response>;
+  /** The providers people can sign in with here, for the sign-in page. */
+  providers: SignInProvider[];
 };
 
 export function createAuth(options: AuthOptions): Auth {
@@ -148,6 +160,7 @@ export function createAuth(options: AuthOptions): Auth {
     consent: (request, workspaceId) =>
       pickedWorkspace.run(workspaceId, () => auth.handler(request)),
     authServerMetadata: oauthProviderAuthServerMetadata(auth),
+    providers: signInProviders(options.config),
   };
 }
 
@@ -155,34 +168,42 @@ export function createAuth(options: AuthOptions): Auth {
 const SOCIAL_SIGN_IN = `${AUTH_BASE_PATH}/sign-in/social`;
 
 /**
- * Better Auth's answer when creating a person fails. The `user.create`
- * hook refuses unverified addresses with its own code, so this means the
- * database refused the new row.
+ * Better Auth's answers when creating a person, or linking a provider account
+ * to one, fails. The hooks below refuse with codes of their own, so these
+ * mean the database refused the new row.
  */
-const CREATE_FAILED = 'unable to create user';
+const LOST_RACE = new Set(['unable to create user', 'unable to link account']);
 
 /**
- * Two first sign-ins for one Google account at the same moment (a double
- * click, two tabs) both find no person and both create one. The database
- * keeps one, and Better Auth answers the other "unable to create user"
- * (accounts spec 9.2). A sign-in with a Google ID token runs once more: the
- * second run finds the person the first created and signs in as them. A
- * sign-in through Google's redirect cannot, because Google's code works only
- * once; its tab returns to the sign-in page with `unable_to_create_user`,
- * and the page says the account is ready and to sign in again.
+ * Two first sign-ins for one Google or Microsoft account at the same moment
+ * (a double click, two tabs) both find no person and both create one, or both
+ * link the account to the person with its address. The database keeps one,
+ * and Better Auth answers the other "unable to create user" or "unable to
+ * link account" (accounts spec 9.2). A sign-in with an ID token runs again:
+ * the next run finds what the other made and signs in as that person. A sign-in through the provider's redirect cannot, because its code
+ * works only once; its tab returns to the sign-in page with the error, and
+ * the page says the account is ready and to sign in again.
  */
 async function handle(auth: ReturnType<typeof betterAuthFor>, request: Request) {
   const url = new URL(request.url);
-  const retry =
-    request.method === 'POST' && url.pathname === SOCIAL_SIGN_IN ? request.clone() : null;
-  const response = await auth.handler(request);
-  if (!retry || response.status !== 401) return response;
-  const body = (await response
-    .clone()
-    .json()
-    .catch(() => null)) as { message?: string } | null;
-  return body?.message === CREATE_FAILED ? auth.handler(retry) : response;
+  if (request.method !== 'POST' || url.pathname !== SOCIAL_SIGN_IN) return auth.handler(request);
+  // Each lost race means another sign-in committed a step: making the person,
+  // then linking their account. Two retries cover both.
+  let attempt = request;
+  for (let retries = MAX_RETRIES; ; retries--) {
+    const again = retries > 0 ? attempt.clone() : null;
+    const response = await auth.handler(attempt);
+    if (!again || response.status !== 401) return response;
+    const body = (await response
+      .clone()
+      .json()
+      .catch(() => null)) as { message?: string } | null;
+    if (!body?.message || !LOST_RACE.has(body.message)) return response;
+    attempt = again;
+  }
 }
+
+const MAX_RETRIES = 2;
 
 function betterAuthFor(options: AuthOptions) {
   const { config, publicOrigin, sql } = options;
@@ -216,19 +237,37 @@ function betterAuthFor(options: AuthOptions) {
     },
     account: {
       modelName: 'auth_accounts',
-      // A person is their Google account, matched by Google's subject ID.
-      // Another Google account with the same address is not merged in.
-      accountLinking: { enabled: false },
+      accountLinking: {
+        // A sign-in whose account no one has yet, with the address of an
+        // existing person, joins that person only if the provider verified
+        // the address (Microsoft: microsoft.ts) and the person's address is
+        // verified too. No provider is trusted without that. Otherwise it is
+        // refused as `account_not_linked`; a separate person cannot be made,
+        // since that address must keep leading to the one it belongs to.
+        enabled: true,
+        trustedProviders: [],
+        requireLocalEmailVerified: true,
+        allowDifferentEmails: false,
+        // The person keeps the name and address they started with.
+        updateUserInfoOnLink: false,
+      },
     },
     verification: { modelName: 'auth_verifications' },
     emailAndPassword: { enabled: false },
     socialProviders: {
-      google: {
-        clientId: config.google.clientId,
-        clientSecret: config.google.clientSecret,
-        prompt: 'select_account',
-        ...options.google,
-      },
+      ...(config.google
+        ? {
+            google: {
+              clientId: config.google.clientId,
+              clientSecret: config.google.clientSecret,
+              prompt: 'select_account',
+              ...options.google,
+            },
+          }
+        : {}),
+      ...(config.microsoft
+        ? { microsoft: microsoftProvider(config.microsoft, options.microsoftAuthority) }
+        : {}),
     },
     rateLimit: {
       enabled: options.rateLimit ?? true,
@@ -247,16 +286,38 @@ function betterAuthFor(options: AuthOptions) {
     databaseHooks: {
       user: {
         create: {
-          // Invitations compare against the address, so it must be one
-          // Google verified. Addresses are kept lowercase.
+          // Invitations compare against the address, so it must be one the
+          // provider verified. Addresses are kept lowercase.
           before: async (user) => {
             if (!user.emailVerified) {
               throw new APIError('UNAUTHORIZED', {
                 code: 'email_not_verified',
-                message: 'Google has not verified this email address.',
+                message: 'The account you signed in with has not verified this email address.',
               });
             }
             return { data: { ...user, email: user.email.toLowerCase() } };
+          },
+        },
+      },
+      account: {
+        create: {
+          // One Google and one Microsoft account per person, as the database
+          // also requires: another account from the same provider with the
+          // person's address is refused, not merged in. Read through the
+          // adapter, which joins a transaction the account is created in.
+          before: async (account, ctx) => {
+            const existing = ctx
+              ? await ctx.context.internalAdapter.findAccounts(account.userId)
+              : await sql<{ providerId: string }[]>`
+                  select provider_id as "providerId" from auth_accounts
+                  where user_id = ${account.userId}`;
+            if (existing.some((other) => other.providerId === account.providerId)) {
+              throw new APIError('UNAUTHORIZED', {
+                code: 'account_not_linked',
+                message: 'This email address already belongs to a person who signs in another way.',
+              });
+            }
+            return { data: account };
           },
         },
       },
@@ -285,6 +346,7 @@ function betterAuthFor(options: AuthOptions) {
       },
     },
     plugins: [
+      microsoftAccountKey(),
       passkey({
         // Passkeys belong to one domain forever (4.11): the public origin's.
         rpID: origin.hostname,

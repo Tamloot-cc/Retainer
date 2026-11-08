@@ -19,8 +19,11 @@ region = "eu-central-1"
 # (immutable subject claims), set it here:
 # github_subject_prefix = "repo:your-org@123456/Retainer@7890123"
 
-# Accounts mode: people sign in with Google or a passkey (docs/aws.md,
-# Accounts). Adds the control function and a NAT gateway (about $40 a month).
-# The secret belongs here or in TF_VAR_google_client_secret, never in git.
+# Accounts mode: people sign in with Google, Microsoft or a passkey
+# (docs/aws.md, Accounts). Adds the control function and a NAT gateway (about
+# $40 a month). Set Google, Microsoft or both. The secrets belong here or in
+# TF_VAR_google_client_secret and TF_VAR_microsoft_client_secret, never in git.
 # google_client_id     = "1234-abc.apps.googleusercontent.com"
 # google_client_secret = "..."
+# microsoft_client_id     = "00000000-0000-0000-0000-000000000000"
+# microsoft_client_secret = "..."

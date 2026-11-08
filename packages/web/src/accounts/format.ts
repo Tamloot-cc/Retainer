@@ -6,8 +6,9 @@ import {
   ORGANIZATION_ROLES,
   type OrganizationRole,
   type Scope,
+  SIGN_IN_PROVIDER_NAMES,
+  type SignInProvider,
   WORKSPACE_ROLE_DESCRIPTIONS,
-  WORKSPACE_ROLE_SCOPES,
   WORKSPACE_ROLES,
   type WorkspaceRole,
 } from '@retainer/shared';
@@ -78,19 +79,45 @@ export const APP_SCOPE_WORDS: Partial<Record<Scope, string>> = {
   'schema:write': "Add objects and fields to the workspace's structure",
 };
 
+/** "Google", "Microsoft" or "Google or Microsoft", for sentences on the sign-in page. */
+export function providerNames(providers: readonly SignInProvider[]): string {
+  return providers.length
+    ? providers.map((p) => SIGN_IN_PROVIDER_NAMES[p]).join(' or ')
+    : 'Google or Microsoft';
+}
+
 /**
- * Plain words for the error Google's sign-in sends back to the page in
- * `?error=`. `unable_to_create_user` comes when two first sign-ins for one
- * Google account meet (another tab, a double click): the other one made
- * the account, so signing in again works (accounts spec 9.2).
+ * Plain words for the error Google's or Microsoft's sign-in sends back to the
+ * page in `?error=` (accounts spec 4.4, 9.2).
+ *
+ * - `email_not_verified`, `email_not_found`: Retainer only uses an address
+ *   the provider verified. A work Microsoft account's address counts only
+ *   once its organization has proven to Microsoft that it owns the domain.
+ * - `account_not_linked`: someone already signs in with this address another
+ *   way, and this account did not verify the address, or is a second account
+ *   from the same provider.
+ * - `unable_to_create_user`, `unable_to_link_account`: two first sign-ins
+ *   met (another tab, a double click). The other one finished, so signing in
+ *   again works.
  */
 export function signInError(code: string | null): string {
   if (!code) return '';
   switch (code.toLowerCase()) {
     case 'email_not_verified':
-      return 'Google has not verified that email address, so it cannot be used to sign in.';
+    case 'email_not_found':
+      return (
+        'That account has no verified email address, so it cannot be used to sign in. ' +
+        'With a work or school Microsoft account, your IT admin can verify your email ' +
+        'domain with Microsoft; until then, sign in another way.'
+      );
+    case 'account_not_linked':
+      return (
+        'Someone already signs in to Retainer with this email address another way, and this ' +
+        'account cannot be added to theirs. Sign in the way you did before.'
+      );
     case 'unable_to_create_user':
-      return 'Your account was just created in another tab or window. Continue with Google again to sign in.';
+    case 'unable_to_link_account':
+      return 'Your account was just set up in another tab or window. Sign in again.';
     default:
       return 'Signing in did not work. Try again.';
   }

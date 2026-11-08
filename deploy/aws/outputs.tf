@@ -48,5 +48,10 @@ output "github_deploy_role_arn" {
 
 output "google_redirect_uri" {
   description = "Accounts mode: the authorized redirect URI to add to the Google OAuth client."
-  value       = local.accounts ? "${local.public_origin}/account/auth/callback/google" : null
+  value       = var.google_client_id != null ? "${local.public_origin}/account/auth/callback/google" : null
+}
+
+output "microsoft_redirect_uri" {
+  description = "Accounts mode: the Web redirect URI to add to the Microsoft Entra app."
+  value       = var.microsoft_client_id != null ? "${local.public_origin}/account/auth/callback/microsoft" : null
 }

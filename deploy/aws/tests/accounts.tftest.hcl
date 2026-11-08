@@ -150,6 +150,95 @@ run "accounts_mode_gives_only_control_a_route_out" {
   }
 }
 
+run "google_alone_gives_the_control_function_no_microsoft_settings" {
+  command = apply
+
+  variables {
+    google_client_id     = "test-client.apps.googleusercontent.com"
+    google_client_secret = "test-secret"
+  }
+
+  assert {
+    condition = toset(keys(aws_lambda_function.this["control"].environment[0].variables)) == toset([
+      "LOG_LEVEL", "NODE_OPTIONS", "RETAINER_CONTROL_DATABASE_URL", "RETAINER_PUBLIC_ORIGIN",
+      "RETAINER_AUTH_SECRET", "RETAINER_DB_POOL_MAX", "RETAINER_GOOGLE_CLIENT_ID",
+      "RETAINER_GOOGLE_CLIENT_SECRET",
+    ])
+    error_message = "An install with Google alone keeps the control function's settings it had before Microsoft sign-in."
+  }
+
+  assert {
+    condition     = output.microsoft_redirect_uri == null && output.google_redirect_uri == "https://test.execute-api.eu-central-1.amazonaws.com/account/auth/callback/google"
+    error_message = "Only the providers that are set get a redirect URI."
+  }
+}
+
+run "microsoft_alone_turns_on_accounts_mode" {
+  command = apply
+
+  variables {
+    microsoft_client_id     = "00000000-0000-0000-0000-000000000001"
+    microsoft_client_secret = "test-microsoft-secret"
+  }
+
+  assert {
+    condition     = length(aws_nat_gateway.this) == 1 && contains(keys(aws_lambda_function.this), "control")
+    error_message = "Microsoft alone runs accounts mode: the control function and its NAT gateway."
+  }
+
+  assert {
+    condition = (
+      aws_lambda_function.this["control"].environment[0].variables["RETAINER_MICROSOFT_CLIENT_ID"] == "00000000-0000-0000-0000-000000000001" &&
+      !contains(keys(aws_lambda_function.this["control"].environment[0].variables), "RETAINER_GOOGLE_CLIENT_ID")
+    )
+    error_message = "The control function gets the Microsoft client, and no empty Google settings."
+  }
+
+  assert {
+    condition     = issensitive(aws_lambda_function.this["control"].environment[0].variables["RETAINER_MICROSOFT_CLIENT_SECRET"])
+    error_message = "The Microsoft client secret is sensitive, so no plan prints it."
+  }
+
+  assert {
+    condition     = !contains(keys(aws_lambda_function.this["api"].environment[0].variables), "RETAINER_MICROSOFT_CLIENT_SECRET")
+    error_message = "Only the control function holds the Microsoft client secret."
+  }
+
+  assert {
+    condition     = output.microsoft_redirect_uri == "https://test.execute-api.eu-central-1.amazonaws.com/account/auth/callback/microsoft" && output.google_redirect_uri == null
+    error_message = "The Microsoft redirect URI is the control function's callback."
+  }
+}
+
+run "google_and_microsoft_together" {
+  command = apply
+
+  variables {
+    google_client_id        = "test-client.apps.googleusercontent.com"
+    google_client_secret    = "test-secret"
+    microsoft_client_id     = "00000000-0000-0000-0000-000000000001"
+    microsoft_client_secret = "test-microsoft-secret"
+  }
+
+  assert {
+    condition = alltrue([
+      for key in ["RETAINER_GOOGLE_CLIENT_ID", "RETAINER_GOOGLE_CLIENT_SECRET", "RETAINER_MICROSOFT_CLIENT_ID", "RETAINER_MICROSOFT_CLIENT_SECRET"] :
+      contains(keys(aws_lambda_function.this["control"].environment[0].variables), key)
+    ])
+    error_message = "With both set, the control function signs people in with either."
+  }
+}
+
+run "half_a_microsoft_client_is_refused" {
+  command = plan
+
+  variables {
+    microsoft_client_id = "00000000-0000-0000-0000-000000000001"
+  }
+
+  expect_failures = [var.microsoft_client_secret]
+}
+
 run "github_role_cannot_change_its_own_permissions" {
   command = apply
 

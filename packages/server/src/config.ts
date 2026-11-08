@@ -1,3 +1,4 @@
+import { SIGN_IN_PROVIDERS, type SignInProvider } from '@retainer/shared';
 import { z } from 'zod';
 import { LOG_LEVELS } from './log.js';
 
@@ -80,10 +81,10 @@ const configSchema = z
      */
     RETAINER_ROLE: z.enum(['api', 'worker', 'control', 'all']).default('all'),
     /**
-     * Turns on accounts mode (accounts spec 4.1): people sign in with Google
-     * or a passkey. Signs session cookies, so changing it signs everyone out.
-     * The API checks cookies with it; the code that signs people in also
-     * needs the Google client below.
+     * Turns on accounts mode (accounts spec 4.1): people sign in with Google,
+     * Microsoft or a passkey. Signs session cookies, so changing it signs
+     * everyone out. The API checks cookies with it; the code that signs people
+     * in also needs a Google or Microsoft client below.
      */
     RETAINER_AUTH_SECRET: z.preprocess(
       emptyToUndefined,
@@ -92,6 +93,12 @@ const configSchema = z
     /** The Google OAuth client people sign in with in accounts mode. */
     RETAINER_GOOGLE_CLIENT_ID: z.preprocess(emptyToUndefined, z.string().optional()),
     RETAINER_GOOGLE_CLIENT_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
+    /**
+     * The Microsoft app people sign in with in accounts mode: work, school and
+     * personal accounts (tenant `common`). Off unless both are set.
+     */
+    RETAINER_MICROSOFT_CLIENT_ID: z.preprocess(emptyToUndefined, z.string().optional()),
+    RETAINER_MICROSOFT_CLIENT_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
     /**
      * Requests each workspace may make per minute through /v1 and /mcp, past
      * which it gets a 429 (accounts spec 4.8). 0 turns it off. Unset: 600 in
@@ -144,6 +151,17 @@ const configSchema = z
   .refine((config) => !config.RETAINER_GOOGLE_CLIENT_ID || config.RETAINER_AUTH_SECRET, {
     path: ['RETAINER_AUTH_SECRET'],
     message: 'a Google client needs RETAINER_AUTH_SECRET too (accounts mode)',
+  })
+  .refine(
+    (config) => !config.RETAINER_MICROSOFT_CLIENT_ID === !config.RETAINER_MICROSOFT_CLIENT_SECRET,
+    {
+      path: ['RETAINER_MICROSOFT_CLIENT_ID'],
+      message: 'set RETAINER_MICROSOFT_CLIENT_ID and RETAINER_MICROSOFT_CLIENT_SECRET together',
+    },
+  )
+  .refine((config) => !config.RETAINER_MICROSOFT_CLIENT_ID || config.RETAINER_AUTH_SECRET, {
+    path: ['RETAINER_AUTH_SECRET'],
+    message: 'a Microsoft client needs RETAINER_AUTH_SECRET too (accounts mode)',
   });
 
 export type Config = z.infer<typeof configSchema>;
@@ -194,30 +212,48 @@ export function accountsOrigin(config: Config): string {
   return config.RETAINER_PUBLIC_ORIGIN ?? `http://localhost:${config.PORT}`;
 }
 
-/** Accounts mode: people sign in with Google or a passkey (accounts spec 4.1). */
+/** Accounts mode: people sign in with Google, Microsoft or a passkey (accounts spec 4.1). */
 export function accountsMode(config: Config): boolean {
   return config.RETAINER_AUTH_SECRET !== undefined;
 }
 
+export type OAuthClient = { clientId: string; clientSecret: string };
+
 export type AccountsConfig = {
   secret: string;
-  google: { clientId: string; clientSecret: string };
+  /** At least one is set. */
+  google?: OAuthClient;
+  microsoft?: OAuthClient;
 };
 
 /**
  * What signing people in needs. Code that serves /account calls this at
  * startup, so a half-configured install refuses to start instead of quietly
- * running without sign-in.
+ * running without sign-in. Google, Microsoft or both: a person's first
+ * sign-in is through one of them (passkeys come after).
  */
 export function accountsConfig(config: Config): AccountsConfig {
   const secret = config.RETAINER_AUTH_SECRET;
-  const clientId = config.RETAINER_GOOGLE_CLIENT_ID;
-  const clientSecret = config.RETAINER_GOOGLE_CLIENT_SECRET;
-  if (!secret || !clientId || !clientSecret) {
+  const google = client(config.RETAINER_GOOGLE_CLIENT_ID, config.RETAINER_GOOGLE_CLIENT_SECRET);
+  const microsoft = client(
+    config.RETAINER_MICROSOFT_CLIENT_ID,
+    config.RETAINER_MICROSOFT_CLIENT_SECRET,
+  );
+  if (!secret || (!google && !microsoft)) {
     throw new Error(
-      'Accounts mode needs RETAINER_AUTH_SECRET, RETAINER_GOOGLE_CLIENT_ID and ' +
-        'RETAINER_GOOGLE_CLIENT_SECRET. Set all three, or none to stay in key mode.',
+      'Accounts mode needs RETAINER_AUTH_SECRET and a sign-in provider: ' +
+        'RETAINER_GOOGLE_CLIENT_ID and RETAINER_GOOGLE_CLIENT_SECRET, ' +
+        'RETAINER_MICROSOFT_CLIENT_ID and RETAINER_MICROSOFT_CLIENT_SECRET, or both. ' +
+        'Set the secret and at least one provider, or none of them to stay in key mode.',
     );
   }
-  return { secret, google: { clientId, clientSecret } };
+  return { secret, ...(google ? { google } : {}), ...(microsoft ? { microsoft } : {}) };
+}
+
+const client = (clientId?: string, clientSecret?: string): OAuthClient | undefined =>
+  clientId && clientSecret ? { clientId, clientSecret } : undefined;
+
+/** The providers an accounts config turns on, in the sign-in page's order. */
+export function signInProviders(config: AccountsConfig): SignInProvider[] {
+  return SIGN_IN_PROVIDERS.filter((provider) => config[provider]);
 }

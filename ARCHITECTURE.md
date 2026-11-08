@@ -1662,7 +1662,7 @@ enforcement. Until then, new code keeps that path open:
 People log in, create workspaces, invite colleagues and connect agents, with no
 operator.
 
-**What is built.** All of it: signing in with Google or a passkey, organizations,
+**What is built.** All of it: signing in with Google, Microsoft or a passkey, organizations,
 roles, self-serve workspaces, invitations, agent keys in the web app, the settings
 pages, the `control` function with its NAT gateway on AWS, MCP OAuth with a
 workspace picker and connected apps, scheduled workspace deletion, and the limits
@@ -1672,16 +1672,20 @@ stays the security boundary: RLS stays keyed on `workspace_id`, records get no
 organization column, and a `Caller` still has exactly one workspace.
 
 **Two modes.** Key mode, today's behavior, stays the default. Accounts mode starts
-when `RETAINER_AUTH_SECRET` and a Google OAuth client are set. It turns off API key
-sign-in in the web app, and signup is open: anyone with a verified Google account can
-create their own organization, on a self-hosted install too. Agents use API keys in
+when `RETAINER_AUTH_SECRET` and a Google or Microsoft client are set. It turns off API
+key sign-in in the web app, and signup is open: anyone with a verified Google or
+Microsoft address can create their own organization, on a self-hosted install too. Agents use API keys in
 both modes.
 
 **Signing in.** [Better Auth](https://www.better-auth.com), an MIT library, runs in
-our process and keeps its tables in our Postgres. People sign in with Google or a
-passkey. There are no passwords, and no email sign-in, so Retainer stores no password
-and needs no email provider. A person is identified by their Google account, and
-adds passkeys after a first Google sign-in. Passkeys are tied to the domain. MFA is
+our process and keeps its tables in our Postgres. People sign in with Google,
+Microsoft (work, school and personal accounts) or a passkey. There are no passwords,
+and no email sign-in, so Retainer stores no password and needs no email provider. A
+person is identified by the provider account they first signed in with, by the
+provider's own ID, never by email, and adds passkeys after that first sign-in. A
+second provider joins the same person only when it verified the same address; for a
+Microsoft work account that takes the `xms_edov` claim, the organization's proof that
+it owns the domain. Passkeys are tied to the domain. MFA is
 not offered at launch, because Better Auth's plugin only challenges password
 sign-ins.
 
@@ -1716,13 +1720,14 @@ the human-only rules stay a separate check.
 | Organization `admin`  | `admin` in every workspace; creates workspaces and invites |
 | Organization `owner`  | Also billing and deleting the organization                 |
 
-Accepting an invitation needs a verified Google address that matches it. Account
+Accepting an invitation needs a verified address that matches it, from the provider
+the person signed in with. Account
 routes under `/account` take a session cookie only, so an agent's key can never
 create a key, a member or a workspace.
 
 **Where it runs.** On AWS, a `control` function loads Better Auth and serves
 `/account` and the OAuth metadata. It is the only function with internet, through a
-NAT gateway, because Google sign-in and OAuth client metadata need it. The `api`,
+NAT gateway, because Google and Microsoft sign-in and OAuth client metadata need it. The `api`,
 `consolidate` and `ops` functions keep no route to the internet, and `api` does not
 import Better Auth: only an `accounts` module does, and only `index` and
 `lambda/control.ts` import that. In a container with `RETAINER_ROLE=all`, everything runs in one process.

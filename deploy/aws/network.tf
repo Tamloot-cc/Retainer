@@ -3,10 +3,11 @@
 # functions, and they make no outbound calls (Retainer never calls a model or
 # any other service). API Gateway reaches them through Lambda.
 #
-# In accounts mode the control function signs people in with Google, which
-# needs the internet. It runs in private subnets of its own whose only route
-# out is a NAT gateway in a public subnet, so the other functions still have
-# none (accounts spec 4.6).
+# In accounts mode the control function signs people in with Google or
+# Microsoft (login.microsoftonline.com) and fetches OAuth client metadata
+# documents, which needs the internet. It runs in private subnets of its own
+# whose only route out is a NAT gateway in a public subnet, so the other
+# functions still have none (accounts spec 4.6).
 
 data "aws_availability_zones" "available" {
   state = "available"
@@ -85,8 +86,10 @@ resource "aws_vpc_security_group_ingress_rule" "database_from_functions" {
 # ─── Accounts mode: the control function's way out ───────────────────────────
 
 resource "aws_security_group" "control" {
-  count       = local.accounts ? 1 : 0
-  name        = "${var.name}-control"
+  count = local.accounts ? 1 : 0
+  name  = "${var.name}-control"
+  # Also HTTPS for Microsoft sign-in and client metadata (control_https).
+  # Changing a group's description replaces the group, so it stays as is.
   description = "Retainer control function: the database, and HTTPS out for Google sign-in"
   vpc_id      = aws_vpc.this.id
 }
@@ -108,7 +111,7 @@ resource "aws_vpc_security_group_egress_rule" "control_https" {
   ip_protocol       = "tcp"
   from_port         = 443
   to_port           = 443
-  description       = "HTTPS: Google sign-in"
+  description       = "HTTPS: Google and Microsoft sign-in, OAuth client metadata"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "database_from_control" {
