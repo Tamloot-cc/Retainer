@@ -850,7 +850,10 @@ deployed install after each Better Auth upgrade that touches OAuth.
 3. **Agent write formats.** In the test Claude called `upsert_record` twice, then
    warned that names are `{first, last}` and emails `{primary, additional[]}`. The
    failed call's error was not logged, but the tool descriptions may need to state
-   these formats more clearly. _Decided November 8, 2026: state them._
+   these formats more clearly. _Decided November 8, 2026: state them._ _Resolved
+   November 8, 2026:_ `describe_schema` returns `valueFormats`, the format of each
+   field type the workspace uses, such as `full_name` as `{ first, last }`, and a
+   composite value with the wrong shape is refused with that format as `expected`.
 4. **Old personal keys.** Actors like `user:maya` stay separate from new user IDs,
    so a person cannot edit comments written under the old one. _Decided November 8,
    2026: no mapping._ It would only serve backward compatibility.

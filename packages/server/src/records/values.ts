@@ -3,6 +3,7 @@ import {
   isCollectionRelation,
   type ValueError,
   validateFieldValue,
+  valueError,
 } from '@retainer/shared';
 
 export { normalizeFieldValue } from '@retainer/shared';
@@ -45,11 +46,7 @@ export function prepareValues(
       writes.set(field, validateFieldValue(field, value));
     } catch (error) {
       if (!(error instanceof FieldValueError)) throw error;
-      errors.push({
-        field: name,
-        message: error.message,
-        ...(error.allowed ? { allowed: error.allowed } : {}),
-      });
+      errors.push(valueError(name, field.type, error));
     }
   }
 

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { GetPromptResult } from '@modelcontextprotocol/client';
-import { FIELD_TYPES } from '@retainer/shared';
+import { FIELD_TYPES, FIELD_VALUE_FORMATS } from '@retainer/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { GUIDE_NAMES } from '../../src/mcp/guides.js';
 import { schemaOperationSchema } from '../../src/schema-engine/operations.js';
@@ -465,6 +465,21 @@ describe('describe_schema, list_templates and apply_template', () => {
     expect(res.body.error.details.templates).toContain('sales');
   });
 
+  it('states the value format of every field type the schema uses (9.3)', async () => {
+    const res = await agent.call('describe_schema');
+    const objects = res.body.objects as { fields: { type: string }[] }[];
+    const used = new Set(objects.flatMap((o) => o.fields.map((f) => f.type)));
+    expect(Object.keys(res.body.valueFormats).sort()).toEqual([...used].sort());
+    expect(res.body.valueFormats).toMatchObject({
+      full_name: FIELD_VALUE_FORMATS.full_name,
+      emails: FIELD_VALUE_FORMATS.emails,
+      phones: FIELD_VALUE_FORMATS.phones,
+    });
+    const byName = await toolsByName(agent);
+    expect(byName.get('describe_schema')?.description).toContain('valueFormats');
+    expect(JSON.stringify(byName.get('upsert_record')?.inputSchema)).toContain('valueFormats');
+  });
+
   it('returns the same description as GET /v1/schema', async () => {
     const mcp = await agent.call('describe_schema');
     const rest = await t.request('/v1/schema', { key: salesAgentKey });
@@ -544,6 +559,42 @@ describe('upsert_record', () => {
       created: true,
       fields: { emails: 'applied', jobTitle: 'applied' },
     });
+  });
+
+  it('names the expected format when a composite value has the wrong shape (9.3)', async () => {
+    const res = await agent.call('upsert_record', {
+      object: 'person',
+      values: {
+        name: { firstName: 'Dana', lastName: 'Levi' },
+        emails: { primaryEmail: email(), additionalEmails: [] },
+      },
+    });
+    expect(res.isError).toBe(true);
+    expect(res.body.error.code).toBe('invalid_values');
+    const errors = res.body.error.details.errors as {
+      field: string;
+      message: string;
+      expected?: string;
+    }[];
+    expect(errors.find((e) => e.field === 'name')).toMatchObject({
+      message: expect.stringContaining('firstName'),
+      expected: FIELD_VALUE_FORMATS.full_name,
+    });
+    expect(errors.find((e) => e.field === 'emails')).toMatchObject({
+      message: expect.stringContaining('primaryEmail'),
+      expected: FIELD_VALUE_FORMATS.emails,
+    });
+
+    // Rewritten as the format says, the same values are accepted.
+    const fixed = await agent.call('upsert_record', {
+      object: 'person',
+      values: {
+        name: { first: 'Dana', last: 'Levi' },
+        emails: { primary: email(), additional: [] },
+      },
+    });
+    expect(fixed.isError).toBe(false);
+    expect(fixed.body.fields).toMatchObject({ name: 'applied', emails: 'applied' });
   });
 
   it('rejects a match on phones and points to query_records', async () => {

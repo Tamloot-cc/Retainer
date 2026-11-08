@@ -4,8 +4,12 @@ import {
   BASE_FIELD_IDS,
   BASE_OBJECT_IDS,
   EVENT_COLUMNS,
+  FIELD_TYPES,
+  FIELD_VALUE_FORMATS,
   type FieldSettings,
+  type FieldType,
   type ObjectView,
+  type SchemaDescription,
 } from '@retainer/shared';
 import type { CompiledSchema } from '../schema/compiled.js';
 import type { FieldState } from '../schema/types.js';
@@ -47,6 +51,14 @@ function presentSettings(schema: CompiledSchema, field: FieldState): FieldSettin
     if (inverse?.status === 'active') settings.inverseField = inverse.name;
   }
   return settings;
+}
+
+/** The value format of each field type the objects use, in FIELD_TYPES order. */
+export function presentValueFormats(objects: ObjectView[]): SchemaDescription['valueFormats'] {
+  const used = new Set<FieldType>(objects.flatMap((o) => o.fields.map((f) => f.type)));
+  return Object.fromEntries(
+    FIELD_TYPES.filter((type) => used.has(type)).map((type) => [type, FIELD_VALUE_FORMATS[type]]),
+  );
 }
 
 /** The active schema as describe_schema and GET /v1/schema show it (5). */

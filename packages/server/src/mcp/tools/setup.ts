@@ -27,7 +27,8 @@ export function registerSetupTools(server: McpServer, sql: Sql, caller: Caller):
       description:
         'Returns the workspace (id, name, applied templates, initialized, schemaVersion) and ' +
         'every object with its fields: type, options, and whether it is unique, filterable or ' +
-        'required. isProtected marks objects that cannot be deleted and fields that cannot be ' +
+        'required. valueFormats shows how to write a value of each field type they use, ' +
+        'e.g. full_name as { first, last }. isProtected marks objects that cannot be deleted and fields that cannot be ' +
         'deleted or reshaped; protectedOptions lists option values that cannot be removed. ' +
         'Renames, labels and descriptions remain allowed under the usual approval rules. ' +
         'baseObject and baseField identify built-ins after renames: use their current API ' +

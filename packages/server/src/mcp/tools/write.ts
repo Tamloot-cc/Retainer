@@ -28,8 +28,8 @@ const upsertRecordInput = z.strictObject({
   values: valuesSchema
     .default({})
     .describe(
-      'Field name to value. Composite fields (emails, phones, links, money, full_name, ' +
-        'address) are replaced whole, so include the values to keep. null clears a field. ' +
+      "Field name to value, in its type's format from describe_schema's valueFormats. " +
+        'Composite fields (emails, phones, links, money, full_name, address) are replaced whole, so include the values to keep. null clears a field. ' +
         'A many_to_many relation takes the whole list of record IDs ([] clears it): read ' +
         'the record first and send every member to keep. Fields marked readOnly (isInverse) ' +
         'are written from the other side.',
@@ -151,7 +151,7 @@ export function registerWriteTools(server: McpServer, sql: Sql, caller: Caller):
         'The response reports each field: "applied" (it is now the value), "pending_review" ' +
         '(a person set a different value; yours waits for their approval, so say so) or ' +
         '"superseded" (kept in history; a newer or higher-precedence value stands). ' +
-        'Validation errors name the field and the allowed values.',
+        'Validation errors name the field and the allowed values or expected format.',
       inputSchema: upsertRecordInput,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },

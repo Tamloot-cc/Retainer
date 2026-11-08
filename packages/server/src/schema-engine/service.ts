@@ -8,7 +8,7 @@ import { getSchema } from '../schema/compiled.js';
 import { BUILT_INS } from './built-ins.js';
 import { runSchemaChange, type SchemaChangeResult } from './engine.js';
 import { schemaOperationSchema, stripUniversalIds } from './operations.js';
-import { presentSchema } from './present.js';
+import { presentSchema, presentValueFormats } from './present.js';
 
 export type { SchemaDescription } from '@retainer/shared';
 
@@ -23,6 +23,7 @@ export async function describeSchema(sql: Sql, caller: Caller): Promise<SchemaDe
       readWorkspace(tx, workspaceId),
       getSchema(tx, workspaceId),
     ]);
+    const objects = presentSchema(schema);
     return {
       workspace: {
         id: workspace.id,
@@ -32,7 +33,8 @@ export async function describeSchema(sql: Sql, caller: Caller): Promise<SchemaDe
         initialized: workspace.initializedAt !== null,
         schemaVersion: schema.version,
       },
-      objects: presentSchema(schema),
+      objects,
+      valueFormats: presentValueFormats(objects),
       builtIns: BUILT_INS,
     };
   });

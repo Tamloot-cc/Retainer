@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { FieldType } from './field-types.js';
 import {
   addressValueSchema,
+  compositeValueSchemas,
   type EmailsValue,
   type FullNameValue,
   fullNameValueSchema,
@@ -12,7 +13,13 @@ import {
 import { type FieldSettings, isCollectionRelation, isInverseRelation } from './schema.js';
 export type ValueField = { type: FieldType; settings: FieldSettings; isNullable?: boolean };
 
-export type ValueError = { field: string; message: string; allowed?: unknown[] };
+export type ValueError = {
+  field: string;
+  message: string;
+  allowed?: unknown[];
+  /** A composite field's value format (FIELD_VALUE_FORMATS), so an agent can rewrite it. */
+  expected?: string;
+};
 
 /** A value that does not fit its field. Collected so one response lists them all. */
 export class FieldValueError extends Error {
@@ -66,6 +73,65 @@ function parseWith<T>(schema: z.ZodType<T>, value: unknown): T {
 
 const emailSchema = z.email();
 const urlSchema = z.url({ protocol: /^https?$/ });
+
+/** One phone in a `phones` value, as written. */
+const phoneInputSchema = z.strictObject({
+  number: z.string().trim().min(3).max(40),
+  countryCode: z.string().length(2).toUpperCase().optional(),
+});
+
+/** One link in a `links` value, as written. */
+const linkInputSchema = z.strictObject({
+  url: z.string().min(1),
+  label: z.string().max(200).optional(),
+});
+
+/** An object schema's keys as an agent writes them: `{ url, label? }`. */
+function keysOf(schema: z.ZodObject): string {
+  const keys = Object.entries(schema.shape).map(([key, value]) =>
+    (value as z.ZodType).def.type === 'optional' ? `${key}?` : key,
+  );
+  return `{ ${keys.join(', ')} }`;
+}
+
+const MULTI = '{ primary, additional: [...] }';
+
+/**
+ * How to write each field type's value, for agents: describe_schema lists
+ * the formats its fields use, and valueError repeats an invalid composite
+ * value's format. Object keys come from the schemas normalizeFieldValue parses
+ * with, so the two cannot drift; values.test.ts checks an example of each.
+ */
+export const FIELD_VALUE_FORMATS = {
+  text: 'a string',
+  number: 'a number',
+  boolean: 'true or false',
+  date: '"YYYY-MM-DD"',
+  date_time: 'ISO 8601 with a time zone, e.g. "2026-11-02T09:30:00Z"',
+  select: "one of the field's option values",
+  multi_select: "an array of the field's option values",
+  money: `${keysOf(moneyValueSchema)}: amountMicros is an integer in millionths (12.50 is 12500000), currency an ISO 4217 code such as "USD"`,
+  emails: `${MULTI} of address strings, or one address as a string`,
+  phones: `${MULTI} of ${keysOf(phoneInputSchema)} (countryCode e.g. "IL"), or one number as a string`,
+  links: `${MULTI} of ${keysOf(linkInputSchema)}, or one URL as a string`,
+  full_name: `${keysOf(fullNameValueSchema)}, or "First Last" as one string`,
+  address: keysOf(addressValueSchema),
+  relation: "the related record's ID; a many_to_many relation takes an array of IDs ([] clears it)",
+  json: 'any JSON value',
+} as const satisfies Record<FieldType, string>;
+
+/**
+ * A field's invalid value as a response lists it: what was wrong, the
+ * allowed values, and for a composite field the format it expected.
+ */
+export function valueError(field: string, type: FieldType, error: FieldValueError): ValueError {
+  return {
+    field,
+    message: error.message,
+    ...(error.allowed ? { allowed: error.allowed } : {}),
+    ...(type in compositeValueSchemas ? { expected: FIELD_VALUE_FORMATS[type] } : {}),
+  };
+}
 
 function normalizeUrl(url: string): string {
   const trimmed = url.trim();
@@ -174,13 +240,7 @@ export function normalizeFieldValue(field: ValueField, value: unknown): unknown 
         value,
         (raw) => {
           const phone = typeof raw === 'string' ? { number: raw } : raw;
-          const parsed = parseWith(
-            z.strictObject({
-              number: z.string().trim().min(3).max(40),
-              countryCode: z.string().length(2).toUpperCase().optional(),
-            }),
-            phone,
-          );
+          const parsed = parseWith(phoneInputSchema, phone);
           if (!/^[+\d][\d\s().-]*$/.test(parsed.number))
             fail(`"${parsed.number}" is not a phone number`);
           return parsed;
@@ -193,10 +253,7 @@ export function normalizeFieldValue(field: ValueField, value: unknown): unknown 
         value,
         (raw) => {
           const link = typeof raw === 'string' ? { url: raw } : raw;
-          const parsed = parseWith(
-            z.strictObject({ url: z.string().min(1), label: z.string().max(200).optional() }),
-            link,
-          );
+          const parsed = parseWith(linkInputSchema, link);
           return { ...parsed, url: normalizeUrl(parsed.url) };
         },
         (link) => link.url.toLowerCase(),
