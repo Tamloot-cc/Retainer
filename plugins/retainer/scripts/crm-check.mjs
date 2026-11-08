@@ -199,7 +199,9 @@ async function main() {
     process.stderr.write(failureMessage(failures));
     return WAKE;
   }
-  if (state.authWarnedAt || state.failures) {
+  // Read again: another session may have failed while the classifier ran.
+  const current = readState();
+  if (current.authWarnedAt || current.failures) {
     updateState((s) => {
       s.authWarnedAt = 0;
       s.failures = 0;
