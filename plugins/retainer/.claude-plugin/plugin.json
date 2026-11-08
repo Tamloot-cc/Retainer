@@ -1,6 +1,6 @@
 {
   "name": "retainer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Connects Claude Code to Retainer, the memory of your CRM, and logs what your chats teach it about your customers and work.",
   "author": { "name": "Tamloot", "url": "https://github.com/Tamloot-cc" },
   "homepage": "https://github.com/Tamloot-cc/Retainer/tree/main/plugins/retainer#readme",

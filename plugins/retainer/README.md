@@ -43,8 +43,13 @@ they improve without a plugin update. To log a chat yourself, pick the
 Retainer".
 
 The check sends the turn's text (your prompt, Claude's replies and the names
-of the tools it used) to Claude Haiku, under your own Claude account. It
-sends nothing to Retainer: only Claude's own Retainer calls do that.
+of the tools it used), with the end of the turn before it as context, to
+Claude Haiku, under your own Claude account. It sends nothing to Retainer:
+only Claude's own Retainer calls do that.
+
+The check leans towards waking Claude: a turn it flags but that holds
+nothing worth keeping costs one line from Claude saying so, while a turn it
+misses is lost.
 
 ## Turning it off
 
@@ -66,7 +71,8 @@ Every decision the check makes, and why, goes to `crm-check.log` in
 
 The check runs `claude -p`, so it needs Claude Code's own sign-in. If that
 expires, the check stops working; Claude tells you once a day to run
-`claude auth login` until you do.
+`claude auth login` until you do. If the check fails three turns in a row
+for any other reason, Claude tells you once a day where to find the log.
 
 ## License
 
