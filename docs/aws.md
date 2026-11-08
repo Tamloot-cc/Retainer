@@ -156,11 +156,12 @@ functions had their own logins needs `terraform apply` once, then
 consolidator fail, because they no longer have the owner's password and
 `retainer_app` cannot log in yet.
 
-**Upgrading from PostgreSQL 17.** Retainer needs 18 or later. A deployment
-created with 17 moves to 18 on the next `terraform apply`: RDS takes a snapshot
-and upgrades the database in place during the next maintenance window
-(`maintenance_window` in `database.tf`), with several minutes of downtime. The
-same apply moves the functions from the `nodejs22.x` runtime to `nodejs24.x`
+**Upgrading from PostgreSQL 17.** Retainer needs 18 or later. If
+`terraform.tfvars` sets `db_engine_version = "17"`, remove that line first;
+Terraform rejects versions below 18. A deployment created with 17 then moves
+to 18 on the next `terraform apply`: RDS takes a snapshot and upgrades the
+database in place during the next maintenance window (`maintenance_window` in
+`database.tf`), with several minutes of downtime. The same apply moves the functions from the `nodejs22.x` runtime to `nodejs24.x`
 (Lambda's Node 26 runtime is still a preview). Run `deploy.sh` after the
 upgrade. Until RDS reports 18, it stops before changing anything, and the
 running version keeps serving.
