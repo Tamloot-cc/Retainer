@@ -92,6 +92,8 @@ jobs:
           TF_VAR_alarm_email: ${{ vars.ALARM_EMAIL }}
           TF_VAR_google_client_id: ${{ vars.GOOGLE_CLIENT_ID }}
           TF_VAR_google_client_secret: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          TF_VAR_microsoft_client_id: ${{ vars.MICROSOFT_CLIENT_ID }}
+          TF_VAR_microsoft_client_secret: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
           TF_VAR_state_bucket: ${{ vars.TF_STATE_BUCKET }}
           TF_VAR_state_key: ${{ vars.TF_STATE_KEY }}
           ALLOW_DESTROY: ${{ inputs.allow_destroy }}
