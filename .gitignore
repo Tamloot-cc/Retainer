@@ -6,6 +6,9 @@ dist/
 coverage/
 .DS_Store
 
+# Git worktrees for parallel sessions (see CLAUDE.md)
+.worktrees/
+
 # spec-duel review snapshots
 *.review/
 

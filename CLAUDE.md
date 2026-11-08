@@ -17,6 +17,14 @@ rules.
   (`DATABASE_URL` required; fresh cloned database per test).
 - `pnpm dev` runs the server with `RETAINER_ROLE=all` from `.env`.
 
+## Worktrees
+
+- Make every new worktree inside `.worktrees/` at the repo root, which is
+  gitignored: `git worktree add .worktrees/<name> -b <branch> origin/main`.
+- Remove your own worktree when its work is merged or dropped
+  (`git worktree remove .worktrees/<name>`). Leave other worktrees alone;
+  they may belong to another session.
+
 ## Testing
 
 See `ARCHITECTURE.md` section 11 for the six test layers.
