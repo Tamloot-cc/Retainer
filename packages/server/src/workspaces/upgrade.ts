@@ -3,6 +3,7 @@ import type { Sql } from '../db/client.js';
 import type { AppliedTemplate } from '../db/schema.js';
 import { inWorkspace, lockSchemaExclusive } from '../db/tx.js';
 import { log } from '../log.js';
+import { seedWorkspaceProfile } from '../memory/profiles.js';
 import { loadSchemaState } from '../schema/load.js';
 import { runSchemaChange, SYSTEM_ACTOR } from '../schema-engine/engine.js';
 import type { SchemaOperation } from '../schema-engine/operations.js';
@@ -115,6 +116,8 @@ async function upgradeWorkspace(sql: Sql, workspaceId: string): Promise<Workspac
     if (result.status !== 'applied' && result.status !== 'unchanged') {
       throw new Error(`the upgrade change was ${result.status}: ${result.change?.error ?? ''}`);
     }
+    // Workspaces from before workspace memory get its profile (personal memory 4.1).
+    await seedWorkspaceProfile(tx, workspaceId, SYSTEM_ACTOR);
     if (conflicts.length === 0) {
       const templates = row.templates.map((t) => ({
         ...t,

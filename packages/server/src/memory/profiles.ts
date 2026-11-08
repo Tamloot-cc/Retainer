@@ -1,9 +1,9 @@
-import { isProfileAlias, type ProfileAlias } from '@retainer/shared';
+import { type Actor, isProfileAlias, type ProfileAlias } from '@retainer/shared';
 import type { CallerPerson } from '../caller.js';
 import { isUuid } from '../db/ids.js';
 import { lockMemberShared, lockProfileCreation, type Tx } from '../db/tx.js';
 import { AppError, noPerson, notFound } from '../errors.js';
-import type { CompiledObject, CompiledSchema } from '../schema/compiled.js';
+import { type CompiledObject, type CompiledSchema, getSchema } from '../schema/compiled.js';
 
 /**
  * Workspace memory and personal memory (personal memory spec 4.1, 4.3):
@@ -113,7 +113,7 @@ async function findProfile(
  */
 async function createProfile(
   tx: Tx,
-  context: ProfileContext & { actor: unknown },
+  context: Pick<ProfileContext, 'workspaceId'> & { actor: Actor },
   object: CompiledObject,
   privateTo: string | null,
 ): Promise<string> {
@@ -123,8 +123,8 @@ async function createProfile(
   const [row] = await tx<{ id: string }[]>`
     insert into records
       (workspace_id, object_type_id, created_by, updated_by, search, private_to_user)
-    values (${context.workspaceId}, ${object.id}, ${tx.json(context.actor as never)},
-      ${tx.json(context.actor as never)}, ''::tsvector, ${privateTo})
+    values (${context.workspaceId}, ${object.id}, ${tx.json(context.actor)},
+      ${tx.json(context.actor)}, ''::tsvector, ${privateTo})
     returning id`;
   return (row as { id: string }).id;
 }
@@ -137,7 +137,7 @@ async function createProfile(
  */
 export async function resolveProfile(
   tx: Tx,
-  context: ProfileContext & { actor?: unknown },
+  context: ProfileContext & { actor?: Actor },
   alias: ProfileAlias,
   { create = false }: { create?: boolean } = {},
 ): Promise<Profile> {
@@ -145,6 +145,7 @@ export async function resolveProfile(
   const privateTo = alias === 'me' ? (await lockPerson(tx, context)).id : null;
   let id = await findProfile(tx, context.workspaceId, object, privateTo);
   if (!id && create) {
+    if (!context.actor) throw new Error('creating a profile needs an actor');
     id = await createProfile(tx, { ...context, actor: context.actor }, object, privateTo);
   }
   return { alias, object, id, privateTo };
@@ -157,7 +158,7 @@ export async function resolveProfile(
  */
 export async function resolveTarget(
   tx: Tx,
-  context: ProfileContext & { actor?: unknown },
+  context: ProfileContext & { actor?: Actor },
   ref: string,
   options: { create?: boolean } = {},
 ): Promise<Target> {
@@ -190,4 +191,17 @@ export async function profileLabel(
   const [row] = await tx<{ name: string }[]>`
     select name from workspaces where id = ${context.workspaceId}`;
   return row?.name ?? null;
+}
+
+/**
+ * Seeds a workspace's profile (4.1): at creation, and for workspaces from
+ * before profiles, on upgrade. A no-op when it exists or the type does not.
+ */
+export async function seedWorkspaceProfile(
+  tx: Tx,
+  workspaceId: string,
+  actor: Actor,
+): Promise<void> {
+  const object = (await getSchema(tx, workspaceId)).workspaceProfile;
+  if (object) await createProfile(tx, { workspaceId, actor }, object, null);
 }

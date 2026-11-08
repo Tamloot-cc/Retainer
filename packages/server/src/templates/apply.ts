@@ -2,6 +2,7 @@ import type { Actor } from '@retainer/shared';
 import type { ApiKeyScope, AppliedTemplate } from '../db/schema.js';
 import { lockSchemaExclusive, type Tx } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
+import { seedWorkspaceProfile } from '../memory/profiles.js';
 import { runSchemaChange, type SchemaChangeResult, SYSTEM_ACTOR } from '../schema-engine/engine.js';
 import { SEED_OPERATIONS } from './base.js';
 import { getTemplate, TEMPLATE_NAMES } from './index.js';
@@ -22,6 +23,8 @@ export async function seedBaseObjects(tx: Tx, workspaceId: string): Promise<void
     owner: 'system',
     trusted: true,
   });
+  // Workspace memory exists from the start (personal memory spec 4.1).
+  await seedWorkspaceProfile(tx, workspaceId, SYSTEM_ACTOR);
 }
 
 export type ApplyTemplateResult = SchemaChangeResult & { alreadyApplied: boolean };

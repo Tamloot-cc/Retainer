@@ -361,7 +361,7 @@ async function supersedeFact(
           { id: first.id },
         );
       }
-      if (input.text !== first.content.trim()) {
+      if (input.text.trim() !== first.content.trim()) {
         throw new AppError(
           422,
           'invalid_move',

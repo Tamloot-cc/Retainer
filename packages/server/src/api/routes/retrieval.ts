@@ -1,7 +1,7 @@
 import type { Hono } from 'hono';
 import { requireScope } from '../../auth/middleware.js';
 import type { Sql } from '../../db/client.js';
-import { idParam, readBody, zodError } from '../../http/request.js';
+import { readBody, recordParam, zodError } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 import { contextInputSchema } from '../../retrieval/context.js';
 import { searchInputSchema } from '../../retrieval/search.js';
@@ -18,8 +18,9 @@ export function retrievalRoutes(app: Hono<AppEnv>, sql: Sql) {
     return c.json(await searchFor(sql, c.get('caller'), input));
   });
 
+  // `workspace` and `me` name workspace and personal memory (personal memory 4.4).
   app.get('/records/:id/context', requireScope('read'), async (c) => {
-    const id = idParam(c);
+    const id = recordParam(c);
     const raw = c.req.query('tokenBudget');
     const parsed = contextInputSchema.safeParse(
       raw === undefined ? {} : { tokenBudget: Number(raw) },
@@ -29,7 +30,7 @@ export function retrievalRoutes(app: Hono<AppEnv>, sql: Sql) {
   });
 
   app.get('/records/:id/timeline', requireScope('read'), async (c) => {
-    const id = idParam(c);
+    const id = recordParam(c);
     const query: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(c.req.query())) {
       query[key] = LIST_PARAMS.has(key)

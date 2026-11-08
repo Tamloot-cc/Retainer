@@ -417,13 +417,17 @@ export async function removeFromWorkspace(
 // API keys in the web app (4.5): for agents and integrations only
 // ---------------------------------------------------------------------------
 
-export type WorkspaceKey = ApiKeyListing & { createdBy: { id: string; name: string } | null };
+export type WorkspaceKey = ApiKeyListing & {
+  createdBy: { id: string; name: string } | null;
+  /** The person this agent works for, whose personal memory it reaches (personal memory 4.3). */
+  worksFor: { id: string; name: string } | null;
+};
 
 export async function createWorkspaceKey(
   sql: Sql,
   person: Person,
   workspaceId: string,
-  input: { name: string; access: string },
+  input: { name: string; access: string; worksForMe?: boolean | undefined },
 ): Promise<CreatedApiKey> {
   const name = input.name.trim();
   if (!name) throw new AppError(400, 'invalid_request', 'a key needs a name');
@@ -439,6 +443,9 @@ export async function createWorkspaceKey(
       actor: { type: 'agent', id: slugify(name) || 'agent', name },
       scopes,
       createdByUser: person.id,
+      // "This agent works for me" (personal memory spec 4.3): only ever the
+      // person creating the key, so nobody can mint a key into another's memory.
+      ...(input.worksForMe ? { actsForUser: person.id } : {}),
     }),
   );
 }
@@ -455,19 +462,25 @@ export async function listWorkspaceKeys(
       revokedAt: Date | null;
       createdById: string | null;
       createdByName: string | null;
+      worksForId: string | null;
+      worksForName: string | null;
     })[]
   >`
     select k.id, k.name, k.prefix, k.scopes, k.actor, k.created_at as "createdAt",
-      k.revoked_at as "revokedAt", u.id as "createdById", u.name as "createdByName"
-    from api_keys k left join users u on u.id = k.created_by_user
+      k.revoked_at as "revokedAt", u.id as "createdById", u.name as "createdByName",
+      f.id as "worksForId", f.name as "worksForName"
+    from api_keys k
+    left join users u on u.id = k.created_by_user
+    left join users f on f.id = k.acts_for_user
     where k.workspace_id = ${workspace.id}
     order by k.revoked_at nulls first, k.created_at desc`;
-  return rows.map(({ createdById, createdByName, ...row }) => ({
+  return rows.map(({ createdById, createdByName, worksForId, worksForName, ...row }) => ({
     ...row,
     workspaceId: workspace.id,
     createdAt: row.createdAt.toISOString(),
     revokedAt: row.revokedAt?.toISOString() ?? null,
     createdBy: createdById ? { id: createdById, name: createdByName ?? '' } : null,
+    worksFor: worksForId ? { id: worksForId, name: worksForName ?? '' } : null,
   }));
 }
 

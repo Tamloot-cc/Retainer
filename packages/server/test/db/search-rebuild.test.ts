@@ -91,7 +91,8 @@ describe('rebuilding search text after migration 0010 (5.1)', () => {
     for (const id of mergedIds) expect(written[`records:${id}`]).toBeNull();
 
     await runMigration();
-    expect(await nothingStale()).toBe(8);
+    // Three records, two events and each workspace's profile, in both workspaces.
+    expect(await nothingStale()).toBe(10);
     // Facts are already rewritten by the migration.
     expect(Object.entries(await vectors()).filter(([key]) => !key.startsWith('records:'))).toEqual(
       Object.entries(written).filter(([key]) => !key.startsWith('records:')),
@@ -99,7 +100,7 @@ describe('rebuilding search text after migration 0010 (5.1)', () => {
 
     // Four records per workspace (a company, a person, the call and the
     // internal note) in batches of two: two full batches, then an empty one.
-    expect(await rebuildSearchText(db.connect({ max: 1 }), { batch: 2 })).toBe(8);
+    expect(await rebuildSearchText(db.connect({ max: 1 }), { batch: 2 })).toBe(10);
     expect(await vectors()).toEqual(written);
     expect(await rebuildSearchText(db.connect({ max: 1 }))).toBe(0);
   });
@@ -119,7 +120,7 @@ describe('rebuilding search text after migration 0010 (5.1)', () => {
     const runs = await Promise.all(
       Array.from({ length: 3 }, () => rebuildSearchText(db.connect({ max: 1 }), { batch: 1 })),
     );
-    expect(runs.reduce((sum, n) => sum + n, 0)).toBe(8);
+    expect(runs.reduce((sum, n) => sum + n, 0)).toBe(10);
     expect(await nothingStale()).toBe(0);
     expect(await vectors()).toEqual(written);
   });

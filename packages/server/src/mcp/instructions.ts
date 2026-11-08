@@ -45,6 +45,14 @@ Each call is its own write, so you can stop and resume; logging the same
 externalId again returns the same event, adding any participants and about
 records it did not have yet.
 
+Not everything is about a record. "workspace" is shared memory of how the
+business works; "me" is private memory of the person you work for (their
+preferences, style and goals). Pass either instead of a record ID to
+remember, get_context and get_timeline. At the start of a session, call
+get_context("workspace") and, if describe_schema's "memory" built-in lists
+"me" in profiles, get_context("me"). Customer knowledge never goes in me.
+Read get_guide("memory") the first time you write to either.
+
 When a chat with your user teaches you something durable about the people,
 companies or work this workspace tracks, log it the same way, without being
 asked: read get_guide("log_from_chat") the first time.
