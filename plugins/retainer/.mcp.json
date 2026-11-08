@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "retainer": {
+      "type": "http",
+      "url": "${RETAINER_URL:-https://retainer.tamloot.cc}/mcp"
+    }
+  }
+}

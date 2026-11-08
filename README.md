@@ -97,6 +97,15 @@ claude mcp add retainer \
   -- npx -y @retainer/mcp
 ```
 
+With a Retainer account, Claude Code users can install the
+[Retainer plugin](plugins/retainer/README.md) instead. It signs in over OAuth
+and logs what your chats teach Claude about your customers and work:
+
+```
+/plugin marketplace add Tamloot-cc/Retainer
+/plugin install retainer@retainer
+```
+
 Tools: `describe_schema`, `list_templates`, `apply_template`,
 `query_records`, `get_record`, `search`, `get_context`, `upsert_record`,
 `log_event`, `remember` and `propose_schema_change`. See
@@ -138,15 +147,16 @@ path of `packages/web/dist` in `.env`.
 
 ## Packages
 
-| Package           | License  | Contents                                    |
-| ----------------- | -------- | ------------------------------------------- |
-| `packages/server` | AGPL-3.0 | API, MCP endpoint, workers, schema engine   |
-| `packages/shared` | MIT      | Field types, composite value shapes, actors |
-| `packages/sdk`    | MIT      | TypeScript client                           |
-| `packages/web`    | MIT      | Optional review and records web app         |
-| `packages/mcp`    | MIT      | stdio bridge for MCP clients                |
+| Package            | License  | Contents                                       |
+| ------------------ | -------- | ---------------------------------------------- |
+| `packages/server`  | AGPL-3.0 | API, MCP endpoint, workers, schema engine      |
+| `packages/shared`  | MIT      | Field types, composite value shapes, actors    |
+| `packages/sdk`     | MIT      | TypeScript client                              |
+| `packages/web`     | MIT      | Optional review and records web app            |
+| `packages/mcp`     | MIT      | stdio bridge for MCP clients                   |
+| `plugins/retainer` | MIT      | Claude Code plugin: MCP server and CRM logging |
 
 ## License
 
 The server is licensed under [AGPL-3.0](LICENSE). The SDK, shared types and
-MCP bridge and web app are MIT-licensed; see each package's `LICENSE`.
+MCP bridge, web app and Claude Code plugin are MIT-licensed; see each package's `LICENSE`.

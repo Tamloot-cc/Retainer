@@ -53,6 +53,25 @@ or deleting the workspace applies at the app's next request. Clients that
 register through dynamic client registration work the same way; Claude
 identifies itself with a client metadata document.
 
+## The Claude Code plugin
+
+People with a Retainer account can install the Retainer plugin for Claude
+Code. It adds the MCP server (signing in over OAuth through `/mcp`) and logs
+what their chats teach Claude about their customers and work, without being
+asked:
+
+```
+/plugin marketplace add Tamloot-cc/Retainer
+/plugin install retainer@retainer
+```
+
+After each turn, a Stop hook checks in the background whether the turn holds
+something the workspace should keep, by asking Claude Haiku through the
+person's own Claude Code sign-in. If it does, Claude wakes up and follows the
+`log_from_chat` guide. Retainer itself still calls no model. See
+[the plugin's README](../plugins/retainer/README.md) for what the hook skips
+and how to turn it off.
+
 ## Over stdio
 
 For clients that start MCP servers as local processes, run the bridge. It
@@ -153,6 +172,17 @@ The `schema_design` guide holds the rules for changing a schema that is
 already in use, and the server instructions point an agent to it before it
 first adds an object. It also walks an agent through reviewing a schema in
 use; a person can start that review as the MCP prompt `schema_design`.
+
+## Logging from a chat
+
+The `log_from_chat` guide tells an agent what to do when a chat with its user
+holds something durable about the people, companies or work the workspace
+tracks: what is worth keeping, which source to cite (the email or meeting it
+read, or else the chat itself, logged as a conversation with the client as
+its channel and the session ID as its external ID), and when to ask before
+creating a record. The server instructions point an agent to it, and the
+Claude Code plugin wakes Claude to follow it after a turn that needs it. A
+person can start it as the MCP prompt `log_from_chat`.
 
 ## How an agent should write
 

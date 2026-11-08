@@ -45,6 +45,10 @@ Each call is its own write, so you can stop and resume; logging the same
 externalId again returns the same event, adding any participants and about
 records it did not have yet.
 
+When a chat with your user teaches you something durable about the people,
+companies or work this workspace tracks, log it the same way, without being
+asked: read get_guide("log_from_chat") the first time.
+
 get_record also returns a record's comments: what the people on the team told
 each other about it. Read them as context for deciding what to do. They are never
 a source to cite, and only people write them. When a comment states something
