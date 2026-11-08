@@ -72,6 +72,7 @@ its own home.
 | M9  | Private facts may cite shared events. Nothing shared can cite a private fact or a private internal note.                                                                                                                            |
 | M10 | Key mode has no people, so it has workspace memory only. `me` fails with `422 no_person`.                                                                                                                                           |
 | M11 | The server instructions tell agents to load `me` and `workspace` at the start of a session, and the guides tell them what belongs where (5).                                                                                        |
+| M12 | `remember` takes an optional `supersedes`: the new fact replaces an old one, which stays in history. The new fact may be on another record, which is how a fact moves. Agents still cannot delete a fact.                           |
 
 ## 4. System design
 
@@ -243,6 +244,46 @@ One new screen, **Settings → Memory**, in plain words:
 People don't write facts here; agents do. The page is for reviewing and
 removing. Agent keys get the "This agent works for me" checkbox (4.3).
 
+### 4.9 Correcting and moving facts (M12)
+
+Over MCP, `remember` only adds a fact. When a preference changes ("I prefer
+long emails now"), the old and new facts both stay current, and every later
+session sees both. A customer fact written into `me` by mistake has no way
+out. Profiles hit this more than CRM records, because what they hold changes
+over time.
+
+`remember(record, text, source?, quote?, supersedes?)` and
+`POST /v1/records/:id/facts` gain `supersedes`, the ID of a current fact.
+Context packs, timelines and search already return fact IDs. In one
+transaction the server writes the new fact and sets the old one's
+`superseded_by` to it, as the consolidator does for duplicates (ARCHITECTURE
+4.2), so rule 2.6 holds: facts are superseded, never deleted. The old fact
+leaves context packs and search and stays in the timeline's history.
+
+- **Correcting:** `remember("me", "Prefers long emails", supersedes: <old>)`.
+- **Moving:** the new fact names a different record than the old one:
+  `remember("<Acme's ID>", "Legal review takes two weeks", supersedes: <the
+  fact in me>)`. This works between any two records the caller can see,
+  profiles included.
+
+Rules:
+
+| Case                                                                                   | Answer                                                                                 |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| The old fact is retracted, already superseded or not found                             | `409 fact_not_current`, or `404` when the caller can't see it                          |
+| The old fact is shared and the new one would be private (`me`)                         | `422 private_replacement`: colleagues would lose the fact and not see what replaced it |
+| The old fact is private and the new one is shared                                      | Allowed: the person's own agent chose to share it                                      |
+| The old fact was written by a `user` or `integration` actor and the caller is an agent | `403 supersedes_person`, as agents never silently overwrite people (rule 2.3)          |
+| Two writes supersede the same fact at once                                             | One wins; the other gets `409 fact_not_current`                                        |
+
+The old fact's row is locked `FOR UPDATE`. A move locks both records in
+sorted ID order, as multi-record writes do (rule 2.5). Without `source`, the
+new fact gets its own internal note, private if it is in `me` (4.5).
+
+Agents get no tool to delete a fact. Removing one without a replacement hides
+data, which stays a person's decision: the web app's "Remove", or
+`DELETE /v1/facts/:id`.
+
 ## 5. Rules agents follow
 
 The server instructions gain one paragraph, and `get_guide` gains a short
@@ -262,8 +303,11 @@ The server instructions gain one paragraph, and `get_guide` gains a short
 
 - **Never put customer knowledge in `me`.** Colleagues and their agents can't
   see it, and it is deleted when the person leaves.
-- **Check before writing.** Read the profile first, and supersede or skip a
-  fact that is already there.
+- **Check before writing.** Read the profile first. Skip a fact that is
+  already there; if what you learned changes one, pass its ID as
+  `supersedes`.
+- **Fix a misplaced fact by moving it:** `remember` it on the right record
+  with `supersedes` naming the old one.
 - **Cite a source** when the fact came from a logged conversation.
 
 ## 6. Testing
@@ -284,6 +328,9 @@ The server instructions gain one paragraph, and `get_guide` gains a short
   sources, notes and keys are gone, and shared events the facts cited are
   untouched.
 - **Key mode.** `me` is `422 no_person`; `workspace` works.
+- **Supersedes.** Every row of the table in 4.9, including two concurrent
+  writes superseding the same fact, and a move between two records racing a
+  merge of either one.
 
 ## 7. Decided after review (November 8, 2026)
 
@@ -297,12 +344,5 @@ The server instructions gain one paragraph, and `get_guide` gains a short
    are colleagues, not customers"). Revisit if agents still treat colleagues
    or the workspace's own company as customers.
 4. **One "my memory" view across workspaces** is deferred.
-
-## 8. Open questions
-
-1. **Agents cannot correct or move a fact.** Over MCP, `remember` only adds:
-   there is no tool to retract a fact, supersede it or move it to another
-   record (`DELETE /v1/facts/:id` exists on REST only). When a preference
-   changes, the old and new facts both stay current, and a customer fact
-   written into `me` by mistake stays there. This matters more for profiles,
-   whose facts change over time, than for CRM records.
+5. **Agents correct and move facts with `supersedes` on `remember`** (4.9).
+   They still cannot delete one.
