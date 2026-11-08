@@ -1,7 +1,6 @@
 # Weekly dependency updates. Minor and patch updates come grouped, one PR per
 # ecosystem; each major update gets its own PR. Not covered: .nvmrc (CI's
-# Node), the Lambda runtime in deploy/aws/functions.tf and the RDS
-# db_engine_version, which need a deploy plan.
+# Node).
 version: 2
 updates:
   - package-ecosystem: npm
@@ -39,8 +38,3 @@ updates:
     schedule:
       interval: weekly
       day: monday
-
-  - package-ecosystem: terraform
-    directory: /deploy/aws
-    schedule:
-      interval: monthly

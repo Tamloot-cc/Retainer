@@ -13,7 +13,6 @@ resolves conflicts and searches. It never calls a language model.
 | Guide                           | For                                                             |
 | ------------------------------- | --------------------------------------------------------------- |
 | [Self-hosting](self-hosting.md) | Running the server, workspaces and API keys, configuration      |
-| [Deploying to AWS](aws.md)      | Lambda, API Gateway and RDS with Terraform, instead of Docker   |
 | [Connecting agents](agents.md)  | MCP over HTTP or stdio, the tools, how an agent should write    |
 | [TypeScript SDK](sdk.md)        | `@retainer/sdk`: calling the REST API from your own code        |
 | [REST API](rest-api.md)         | Authentication, errors, pagination, idempotency and every route |

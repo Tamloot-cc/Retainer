@@ -11,11 +11,3 @@ coverage/
 
 playwright-report/
 test-results/
-
-# AWS deployment (deploy/aws): build output, Terraform working files and
-# each deployment's own settings.
-deploy/aws/.build/
-deploy/aws/.terraform/
-deploy/aws/*.tfstate*
-deploy/aws/terraform.tfvars
-deploy/aws/backend.hcl

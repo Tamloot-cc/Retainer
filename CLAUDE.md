@@ -48,6 +48,10 @@ See `ARCHITECTURE.md` section 11 for the six test layers.
 
 ## Deployment
 
-- The AWS deployment (`retainer.tamloot.cc`, `docs/aws.md`) has no users
-  yet. A deploy's short outage doesn't matter, so deploy whenever it helps to
-  check a change live.
+- Self-hosting is Docker Compose only (`docker/`, `docs/self-hosting.md`).
+  Don't add one-click deploys to cloud providers.
+- The hosted service (`retainer.tamloot.cc`) runs on AWS Lambda from the
+  private `Tamloot-cc/retainer-cloud` repo: its Terraform, deploy workflow and
+  ops guide live there, not here. Its Lambda entry points
+  (`packages/server/src/lambda/`) are product code and stay here. It has no
+  users yet, so deploy whenever it helps to check a change live.
