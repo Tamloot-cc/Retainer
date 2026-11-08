@@ -80,7 +80,10 @@ export async function recheckPerson(
  * their membership re-checked under it (4.3): every read or write of
  * personal memory calls this first.
  */
-export async function lockPerson(tx: Tx, context: ProfileContext): Promise<CallerPerson> {
+export async function lockPerson(
+  tx: Tx,
+  context: Pick<ProfileContext, 'workspaceId' | 'person'>,
+): Promise<CallerPerson> {
   const { person } = context;
   if (!person) throw noPerson();
   await lockMemberShared(tx, context.workspaceId, person.id);

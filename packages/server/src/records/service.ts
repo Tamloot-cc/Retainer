@@ -18,6 +18,7 @@ import { inWorkspace, lockForWrite, type Tx, type WriteLocks } from '../db/tx.js
 import { AppError, notFound } from '../errors.js';
 import { claimIdempotencyKey, requestHash, storeIdempotentResult } from '../idempotency.js';
 import { lockSource, retractEventClaims } from '../memory/events.js';
+import { lockPerson } from '../memory/profiles.js';
 import { forgetRecord } from '../privacy/forget.js';
 import {
   type CompiledObject,
@@ -127,11 +128,19 @@ export async function withRead<T>(
   caller: Caller,
   fn: (tx: Tx, schema: CompiledSchema) => Promise<T>,
 ): Promise<T> {
+  const { person, workspaceId } = caller;
   return inWorkspace(
     sql,
-    caller.workspaceId,
-    async (tx) => fn(tx, await getSchema(tx, caller.workspaceId)),
-    caller.person?.id,
+    workspaceId,
+    async (tx) => {
+      // A read with a person can see their personal memory on any path
+      // (search, an event's citations), so it holds their membership lock
+      // and re-checks access first: a removal either committed before, and
+      // the read is refused, or waits for it (personal memory spec 4.3).
+      if (person) await lockPerson(tx, { workspaceId, person });
+      return fn(tx, await getSchema(tx, workspaceId));
+    },
+    person?.id,
   );
 }
 

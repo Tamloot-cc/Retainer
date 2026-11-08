@@ -9,7 +9,7 @@ import {
 import type { Caller } from '../../src/caller.js';
 import { CONTROL_ROLE } from '../../src/config.js';
 import { RUNTIME_ROLE, type Sql } from '../../src/db/client.js';
-import { inWorkspace } from '../../src/db/tx.js';
+import { inWorkspace, lockMemberExclusive, type Tx } from '../../src/db/tx.js';
 import type { LogEventInput } from '../../src/memory/events.js';
 import { clearMyMemory, factsOf, logEventFor, remember } from '../../src/memory/service.js';
 import { reviewPage } from '../../src/reads/review.js';
@@ -435,6 +435,31 @@ describe('concurrency', () => {
         expect(shared.facts).toEqual([]);
       }
     }
+  });
+
+  it('makes a search during a removal wait for it, then refuses it', async () => {
+    const { person, key } = await newMember('Searcher');
+    const word = `kiwi${randomBytes(3).toString('hex')}`;
+    await remember(app, key, 'me', { text: `Prefers ${word} on Fridays` });
+    let release = () => {};
+    const removing = db.owner.begin(async (tx) => {
+      // What removal holds while it deletes the membership and the memory.
+      await lockMemberExclusive(tx as unknown as Tx, t.workspaceId, person.id);
+      await tx`delete from workspace_members
+        where workspace_id = ${t.workspaceId} and user_id = ${person.id}`;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    let settled = false;
+    const search = searchFor(app, key, { query: word, limit: 10 }).finally(() => {
+      settled = true;
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(settled).toBe(false);
+    release();
+    await removing;
+    await expect(search).rejects.toMatchObject({ status: 403, code: 'not_a_member' });
   });
 
   it('never replays a stored response after its person left', async () => {
