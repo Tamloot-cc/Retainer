@@ -149,8 +149,8 @@ export const authAccounts = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    index('auth_accounts_user_idx').on(t.userId),
     unique('auth_accounts_provider_account_uq').on(t.providerId, t.accountId),
+    // Also serves lookups by user_id alone.
     unique('auth_accounts_user_provider_uq').on(t.userId, t.providerId),
   ],
 );

@@ -831,7 +831,7 @@ export async function acceptInvitation(
     const row = await findInvitation(tx, person, tokenOrId);
     if (!(await isVerifiedEmail(tx, person, row.email))) {
       throw forbidden(
-        `This invitation is for ${row.email}. Sign in with the Google or Microsoft account for that address to accept it.`,
+        `This invitation is for ${row.email}. Sign in with the account for that address to accept it.`,
       );
     }
     if (row.accepted_at) return { organizationId: row.organization_id };

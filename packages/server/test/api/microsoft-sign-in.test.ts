@@ -29,15 +29,6 @@ afterAll(() => microsoft.close());
 
 const unique = (name: string) => `${name}-${Math.random().toString(16).slice(2, 8)}`;
 
-/** Signs in with a Microsoft ID token; returns the person and their cookie. */
-async function signInWithMicrosoft(account: MicrosoftAccount) {
-  const res = await app.microsoftIdToken(account);
-  if (!res.ok) throw new Error(`sign-in failed: ${res.status} ${await res.text()}`);
-  const setCookie = res.headers.getSetCookie().find((c) => c.includes('.session_token='));
-  const body = (await res.json()) as { user: { id: string } };
-  return { cookie: setCookie?.split(';')[0] ?? '', userId: body.user.id };
-}
-
 const linksOf = (userId: string) =>
   db.owner<{ provider_id: string; account_id: string }[]>`
     select provider_id, account_id from auth_accounts where user_id = ${userId} order by provider_id`;
@@ -79,7 +70,7 @@ describe('signing in with Microsoft', () => {
     expect(first).toMatchObject({ path: '/app/', error: null });
     expect(first.cookie).toMatch(/^retainer\.session_token=/);
 
-    const again = await signInWithMicrosoft(account);
+    const again = await app.signInWithMicrosoft(account);
     const [user] =
       await db.owner`select id, name, email, email_verified from users where id = ${again.userId}`;
     expect(user).toEqual({
@@ -94,17 +85,17 @@ describe('signing in with Microsoft', () => {
 
     // The same object ID in another tenant is another account.
     const elsewhere = { ...account, tid: WORK_TENANT, xms_edov: true, email: 'pat@elsewhere.test' };
-    const other = await signInWithMicrosoft(elsewhere);
+    const other = await app.signInWithMicrosoft(elsewhere);
     expect(other.userId).not.toBe(again.userId);
 
     // A changed address on the same account is still the same person.
-    const renamed = await signInWithMicrosoft({ ...account, email: 'pat.new@outlook.test' });
+    const renamed = await app.signInWithMicrosoft({ ...account, email: 'pat.new@outlook.test' });
     expect(renamed.userId).toBe(again.userId);
   });
 
   it('makes a work account a person when its tenant proved it owns the domain', async () => {
     const email = `${unique('nina')}@fabrikam.test`;
-    const { userId } = await signInWithMicrosoft(workAccount(email, { verified: true }));
+    const { userId } = await app.signInWithMicrosoft(workAccount(email, { verified: true }));
     const [user] = await db.owner`select email_verified from users where id = ${userId}`;
     expect(user).toEqual({ email_verified: true });
   });
@@ -122,14 +113,9 @@ describe('signing in with Microsoft', () => {
   it('refuses a token signed by anyone but Microsoft', async () => {
     const forged = await startFakeMicrosoft();
     try {
-      const res = await app.accounts.request('http://localhost:8787/account/auth/sign-in/social', {
-        method: 'POST',
-        headers: { origin: 'http://localhost:8787', 'content-type': 'application/json' },
-        body: JSON.stringify({
-          provider: 'microsoft',
-          idToken: { token: await forged.idToken(personalAccount('x@outlook.test')) },
-        }),
-      });
+      const res = await app.microsoftIdToken(
+        await forged.idToken(personalAccount('x@outlook.test')),
+      );
       expect(res.status).toBe(401);
       expect(await db.owner`select 1 from users where email = 'x@outlook.test'`).toHaveLength(0);
     } finally {
@@ -166,7 +152,7 @@ describe('a Microsoft sign-in with the address of an existing person', () => {
       const email = `${unique('dana')}@acme.test`;
       const sub = unique('dana-sub');
       const dana = await app.signIn({ email, sub, name: 'Dana' });
-      const viaMicrosoft = await signInWithMicrosoft(account(email.toUpperCase()));
+      const viaMicrosoft = await app.signInWithMicrosoft(account(email.toUpperCase()));
       expect(viaMicrosoft.userId).toBe(dana.userId);
       expect((await linksOf(dana.userId)).map((l) => l.provider_id)).toEqual([
         'google',
@@ -182,11 +168,11 @@ describe('a Microsoft sign-in with the address of an existing person', () => {
 
   it('works the other way round: Google joins a person who started with Microsoft', async () => {
     const email = `${unique('mo')}@outlook.test`;
-    const mo = await signInWithMicrosoft(personalAccount(email));
+    const mo = await app.signInWithMicrosoft(personalAccount(email));
     expect((await app.signIn({ email })).userId).toBe(mo.userId);
     // An address Google has not verified does not join them either.
     const other = `${unique('mo2')}@outlook.test`;
-    await signInWithMicrosoft(personalAccount(other));
+    await app.signInWithMicrosoft(personalAccount(other));
     await expect(app.signIn({ email: other, email_verified: false })).rejects.toThrow(
       'account not linked',
     );
@@ -194,7 +180,7 @@ describe('a Microsoft sign-in with the address of an existing person', () => {
 
   it('keeps one Google and one Microsoft account per person', async () => {
     const email = `${unique('two')}@acme.test`;
-    const first = await signInWithMicrosoft(personalAccount(email));
+    const first = await app.signInWithMicrosoft(personalAccount(email));
     // Another verified Microsoft account with the same address is refused,
     // as another Google account with it is.
     const second = await app.microsoftIdToken(workAccount(email, { verified: true }));
@@ -223,7 +209,7 @@ describe('invitations and Microsoft', () => {
     const landed = await app.microsoftRedirect(workAccount(email, { verified: false }));
     expect(landed).toMatchObject({ error: 'email_not_verified', cookie: null });
     // Nor can someone signed in with another address use the link.
-    const other = await signInWithMicrosoft(personalAccount(`${unique('other')}@outlook.test`));
+    const other = await app.signInWithMicrosoft(personalAccount(`${unique('other')}@outlook.test`));
     const res = await accept(invitation.token, other.cookie);
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({
@@ -250,7 +236,7 @@ describe('invitations and Microsoft', () => {
     ]) {
       const email = `${unique('nina')}@fabrikam.test`;
       const invitation = await invitationFor(email);
-      const nina = await signInWithMicrosoft(account(email));
+      const nina = await app.signInWithMicrosoft(account(email));
       const res = await accept(invitation.token, nina.cookie);
       expect(res.status).toBe(200);
       const me = await app.v1('/v1/me', { cookie: nina.cookie, workspace: invitation.workspaceId });
@@ -262,7 +248,7 @@ describe('invitations and Microsoft', () => {
     const email = `${unique('gil')}@acme.test`;
     const invitation = await invitationFor(email);
     const gil = await app.signIn({ email, name: 'Gil' });
-    const viaMicrosoft = await signInWithMicrosoft(personalAccount(email));
+    const viaMicrosoft = await app.signInWithMicrosoft(personalAccount(email));
     expect(viaMicrosoft.userId).toBe(gil.userId);
     expect((await accept(invitation.token, viaMicrosoft.cookie)).status).toBe(200);
   });
@@ -284,7 +270,7 @@ describe('simultaneous Microsoft sign-ins (9.2, concurrent)', () => {
   it('signs every first sign-in for one account in as the one person they make', async () => {
     const account = personalAccount(`${unique('race')}@outlook.test`);
     const results = await slowLinks(() =>
-      Promise.all([1, 2, 3, 4, 5, 6].map(() => signInWithMicrosoft(account))),
+      Promise.all([1, 2, 3, 4, 5, 6].map(() => app.signInWithMicrosoft(account))),
     );
     expect(new Set(results.map((r) => r.userId)).size).toBe(1);
     expect(await db.owner`select 1 from users where email = ${account.email ?? ''}`).toHaveLength(
@@ -298,7 +284,7 @@ describe('simultaneous Microsoft sign-ins (9.2, concurrent)', () => {
     const dana = await app.signIn({ email });
     const account = personalAccount(email);
     const results = await slowLinks(() =>
-      Promise.all([1, 2, 3, 4].map(() => signInWithMicrosoft(account))),
+      Promise.all([1, 2, 3, 4].map(() => app.signInWithMicrosoft(account))),
     );
     expect(results.map((r) => r.userId)).toEqual([
       dana.userId,
@@ -316,9 +302,9 @@ describe('simultaneous Microsoft sign-ins (9.2, concurrent)', () => {
     const results = await slowLinks(() =>
       Promise.all([
         app.signIn({ email, sub }),
-        signInWithMicrosoft(microsoftAccount),
+        app.signInWithMicrosoft(microsoftAccount),
         app.signIn({ email, sub }),
-        signInWithMicrosoft(microsoftAccount),
+        app.signInWithMicrosoft(microsoftAccount),
       ]),
     );
     expect(new Set(results.map((r) => r.userId)).size).toBe(1);
@@ -350,6 +336,12 @@ describe('which providers are on', () => {
     const res = await app.account('/account/providers');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ providers: ['google', 'microsoft'] });
+  });
+
+  it('tells the account screens too, so they name only those', async () => {
+    const dana = await app.signIn();
+    const res = await app.account('/account', { cookie: dana.cookie });
+    expect(await res.json()).toMatchObject({ providers: ['google', 'microsoft'] });
   });
 
   it('runs with Microsoft alone, where Google is not offered', async () => {

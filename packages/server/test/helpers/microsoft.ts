@@ -13,9 +13,14 @@ import { PERSONAL_ACCOUNTS_TENANT } from '../../src/accounts/microsoft.js';
 export const MICROSOFT_CLIENT_ID = 'test-microsoft-client';
 export const MICROSOFT_CLIENT_SECRET = 'test-microsoft-secret';
 
+/** The settings that turn Microsoft sign-in on, for this fake's client. */
+export const MICROSOFT_SETTINGS = {
+  RETAINER_MICROSOFT_CLIENT_ID: MICROSOFT_CLIENT_ID,
+  RETAINER_MICROSOFT_CLIENT_SECRET: MICROSOFT_CLIENT_SECRET,
+};
+
 /** A work or school tenant, as opposed to personal accounts' tenant. */
 export const WORK_TENANT = '72f988bf-86f1-41af-91ab-2d7cd011db47';
-export { PERSONAL_ACCOUNTS_TENANT };
 
 /** The claims of a Microsoft ID token that Retainer reads. */
 export type MicrosoftAccount = {

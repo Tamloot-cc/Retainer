@@ -1,10 +1,10 @@
+import { SIGN_IN_PROVIDER_NAMES, type SignInProvider } from '@retainer/shared';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import {
   type Account,
   account as accountApi,
   authClient,
   type InvitationPreview,
-  type SignInProvider,
   signOutOfAccount,
   workspaceHref,
 } from '../api/account.js';
@@ -14,8 +14,6 @@ import { allWorkspaces, managed } from './context.js';
 import { providerNames, roleWords, signInError } from './format.js';
 
 /** Screens outside any workspace in accounts mode (accounts spec 5). */
-
-const PROVIDER_NAMES: Record<SignInProvider, string> = { google: 'Google', microsoft: 'Microsoft' };
 
 export function AccountSignIn({ returnTo }: { returnTo?: string } = {}) {
   const [error, setError] = useState(() =>
@@ -44,7 +42,7 @@ export function AccountSignIn({ returnTo }: { returnTo?: string } = {}) {
       errorCallbackURL: returnTo ?? '/app/',
     });
     if (result.error) {
-      setError(`${PROVIDER_NAMES[provider]} sign-in could not start. Try again.`);
+      setError(`${SIGN_IN_PROVIDER_NAMES[provider]} sign-in could not start. Try again.`);
       setBusy(null);
     }
   }
@@ -73,8 +71,8 @@ export function AccountSignIn({ returnTo }: { returnTo?: string } = {}) {
             onClick={() => void social(provider)}
           >
             {busy === provider
-              ? `Opening ${PROVIDER_NAMES[provider]}…`
-              : `Continue with ${PROVIDER_NAMES[provider]}`}
+              ? `Opening ${SIGN_IN_PROVIDER_NAMES[provider]}…`
+              : `Continue with ${SIGN_IN_PROVIDER_NAMES[provider]}`}
           </Button>
         ))}
         <Button disabled={busy !== null} onClick={() => void passkey()}>
@@ -297,7 +295,8 @@ export function InvitePage({ token, account }: { token: string; account: Account
       ) : (
         <Notice error>
           This invitation is for {preview.email}, and you're signed in as {account.user.email}. Sign
-          out, then sign in with the Google or Microsoft account for that address to accept it.
+          out, then sign in with the {providerNames(account.providers)} account for that address to
+          accept it.
         </Notice>
       )}
     </AccountFrame>

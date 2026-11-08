@@ -9,8 +9,7 @@ import { CONTROL_ROLE, loadConfig } from '../src/config.js';
 import { createSql, RUNTIME_ROLE } from '../src/db/client.js';
 import {
   type FakeMicrosoft,
-  MICROSOFT_CLIENT_ID,
-  MICROSOFT_CLIENT_SECRET,
+  MICROSOFT_SETTINGS,
   startFakeMicrosoft,
 } from '../test/helpers/microsoft.js';
 import { fetchClientMetadata } from '../test/helpers/oauth.js';
@@ -72,12 +71,7 @@ export const test = base.extend<{
       RETAINER_AUTH_SECRET: AUTH_SECRET,
       RETAINER_GOOGLE_CLIENT_ID: 'browser-test-client',
       RETAINER_GOOGLE_CLIENT_SECRET: 'browser-test-secret',
-      ...(microsoft
-        ? {
-            RETAINER_MICROSOFT_CLIENT_ID: MICROSOFT_CLIENT_ID,
-            RETAINER_MICROSOFT_CLIENT_SECRET: MICROSOFT_CLIENT_SECRET,
-          }
-        : {}),
+      ...(microsoft ? MICROSOFT_SETTINGS : {}),
       RETAINER_PUBLIC_ORIGIN: url,
       LOG_LEVEL: 'error',
     });

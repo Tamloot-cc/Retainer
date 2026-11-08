@@ -4,7 +4,7 @@ import { fetchClientMetadataResource } from '@better-auth/cimd/node';
 import { mcp } from '@better-auth/mcp';
 import { oauthProviderAuthServerMetadata } from '@better-auth/oauth-provider';
 import { passkey } from '@better-auth/passkey';
-import { OAUTH_SCOPES } from '@retainer/shared';
+import { OAUTH_SCOPES, type SignInProvider } from '@retainer/shared';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
@@ -13,7 +13,7 @@ import type { GoogleOptions } from 'better-auth/social-providers';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ACCOUNT_COOKIE_PREFIX } from '../auth/account-session.js';
 import { AUTH_BASE_PATH, oauthSettings, WORKSPACE_CLAIM } from '../auth/oauth-token.js';
-import { type AccountsConfig, type SignInProvider, signInProviders } from '../config.js';
+import { type AccountsConfig, signInProviders } from '../config.js';
 import type { Sql } from '../db/client.js';
 import { isUuid } from '../db/ids.js';
 import {

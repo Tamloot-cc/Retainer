@@ -5,12 +5,7 @@ import { createApp } from '../../src/api/app.js';
 import { CONTROL_ROLE, loadConfig } from '../../src/config.js';
 import { RUNTIME_ROLE } from '../../src/db/client.js';
 import type { TestDatabase } from './db.js';
-import {
-  type FakeMicrosoft,
-  MICROSOFT_CLIENT_ID,
-  MICROSOFT_CLIENT_SECRET,
-  type MicrosoftAccount,
-} from './microsoft.js';
+import { type FakeMicrosoft, MICROSOFT_SETTINGS, type MicrosoftAccount } from './microsoft.js';
 
 /**
  * Accounts mode in-process (accounts spec 8): the API and /account, with a
@@ -37,8 +32,10 @@ export type AccountsTestApp = {
   api: ReturnType<typeof createApp>;
   /** Signs in with Google; returns the Cookie header to send. */
   signIn: (profile?: Partial<GoogleProfile>) => Promise<{ cookie: string; userId: string }>;
-  /** Signs in with a Microsoft ID token; the response, as Better Auth gives it. */
-  microsoftIdToken: (account: MicrosoftAccount) => Promise<Response>;
+  /** Signs in with a Microsoft ID token, or a raw token; the response, as Better Auth gives it. */
+  microsoftIdToken: (account: MicrosoftAccount | string) => Promise<Response>;
+  /** Signs in with a Microsoft ID token; returns the Cookie header to send. */
+  signInWithMicrosoft: (account: MicrosoftAccount) => Promise<{ cookie: string; userId: string }>;
   /**
    * Signs in through Microsoft's redirect, as the web app does: starts it,
    * then lands on the callback with a code for the account. Returns where the
@@ -76,12 +73,7 @@ export function startAccountsApp(
     ...(options.google === false
       ? {}
       : { RETAINER_GOOGLE_CLIENT_ID: 'test-client', RETAINER_GOOGLE_CLIENT_SECRET: 'test-secret' }),
-    ...(options.microsoft
-      ? {
-          RETAINER_MICROSOFT_CLIENT_ID: MICROSOFT_CLIENT_ID,
-          RETAINER_MICROSOFT_CLIENT_SECRET: MICROSOFT_CLIENT_SECRET,
-        }
-      : {}),
+    ...(options.microsoft ? MICROSOFT_SETTINGS : {}),
     RETAINER_PUBLIC_ORIGIN: ORIGIN,
     LOG_LEVEL: 'error',
   });
@@ -118,6 +110,29 @@ export function startAccountsApp(
     accountsSecret: AUTH_SECRET,
   });
 
+  /** Better Auth's sign-in, as a page starts it. */
+  const socialSignIn = (body: unknown) =>
+    accounts.request(`${ORIGIN}/account/auth/sign-in/social`, {
+      method: 'POST',
+      headers: { origin: ORIGIN, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  /** The person a successful sign-in made, and the Cookie header to send as them. */
+  const signedIn = async (res: Response) => {
+    if (!res.ok) throw new Error(`sign-in failed: ${res.status} ${await res.text()}`);
+    const cookie = sessionCookie(res);
+    if (!cookie) throw new Error('sign-in set no session cookie');
+    const body = (await res.json()) as { user: { id: string } };
+    return { cookie, userId: body.user.id };
+  };
+
+  const microsoftIdToken = async (account: MicrosoftAccount | string) => {
+    if (!options.microsoft) throw new Error('start the app with a fake Microsoft');
+    const token = typeof account === 'string' ? account : await options.microsoft.idToken(account);
+    return socialSignIn({ provider: 'microsoft', idToken: { token } });
+  };
+
   const json = (body: unknown) =>
     body === undefined
       ? {}
@@ -133,39 +148,19 @@ export function startAccountsApp(
         name: input.name ?? 'Test Person',
         email_verified: input.email_verified ?? true,
       };
-      const res = await accounts.request(`${ORIGIN}/account/auth/sign-in/social`, {
-        method: 'POST',
-        headers: { origin: ORIGIN, 'content-type': 'application/json' },
-        body: JSON.stringify({ provider: 'google', idToken: { token: JSON.stringify(profile) } }),
-      });
-      if (!res.ok) throw new Error(`sign-in failed: ${res.status} ${await res.text()}`);
-      const setCookie = res.headers.getSetCookie().find((c) => c.includes('.session_token='));
-      if (!setCookie) throw new Error('sign-in set no session cookie');
-      const body = (await res.json()) as { user: { id: string } };
-      return { cookie: setCookie.split(';')[0] ?? '', userId: body.user.id };
+      return signedIn(
+        await socialSignIn({ provider: 'google', idToken: { token: JSON.stringify(profile) } }),
+      );
     },
-    microsoftIdToken: async (account) => {
-      if (!options.microsoft) throw new Error('start the app with a fake Microsoft');
-      return accounts.request(`${ORIGIN}/account/auth/sign-in/social`, {
-        method: 'POST',
-        headers: { origin: ORIGIN, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          provider: 'microsoft',
-          idToken: { token: await options.microsoft.idToken(account) },
-        }),
-      });
-    },
+    microsoftIdToken,
+    signInWithMicrosoft: async (account) => signedIn(await microsoftIdToken(account)),
     microsoftRedirect: async (account) => {
       const microsoft = options.microsoft;
       if (!microsoft) throw new Error('start the app with a fake Microsoft');
-      const started = await accounts.request(`${ORIGIN}/account/auth/sign-in/social`, {
-        method: 'POST',
-        headers: { origin: ORIGIN, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          provider: 'microsoft',
-          callbackURL: '/app/',
-          errorCallbackURL: '/app/',
-        }),
+      const started = await socialSignIn({
+        provider: 'microsoft',
+        callbackURL: '/app/',
+        errorCallbackURL: '/app/',
       });
       if (!started.ok) throw new Error(`could not start: ${started.status}`);
       const { url } = (await started.json()) as { url: string };
@@ -187,11 +182,10 @@ export function startAccountsApp(
       );
       if (landed.status !== 302) throw new Error(`callback answered ${landed.status}`);
       const place = new URL(landed.headers.get('location') ?? '', ORIGIN);
-      const session = landed.headers.getSetCookie().find((c) => c.includes('.session_token='));
       return {
         path: place.pathname,
         error: place.searchParams.get('error'),
-        cookie: session ? (session.split(';')[0] ?? null) : null,
+        cookie: sessionCookie(landed),
       };
     },
     account: async (path, init = {}) => {
@@ -222,4 +216,10 @@ export function startAccountsApp(
       });
     },
   };
+}
+
+/** The session cookie a response set, as a Cookie header, or null. */
+export function sessionCookie(res: Response): string | null {
+  const set = res.headers.getSetCookie().find((c) => c.includes('.session_token='));
+  return set?.split(';')[0] ?? null;
 }

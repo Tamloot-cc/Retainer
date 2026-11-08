@@ -1,5 +1,11 @@
 import { RetainerApiError } from '@retainer/sdk';
-import type { KeyAccess, OrganizationRole, Scope, WorkspaceRole } from '@retainer/shared';
+import type {
+  KeyAccess,
+  OrganizationRole,
+  Scope,
+  SignInProvider,
+  WorkspaceRole,
+} from '@retainer/shared';
 
 /**
  * /account (accounts spec 4.5): the signed-in person, their organizations,
@@ -24,6 +30,8 @@ export type Account = {
   user: { id: string; name: string; email: string };
   organizations: AccountOrganization[];
   invitations: PendingForYou[];
+  /** The providers this server signs people in with. */
+  providers: SignInProvider[];
 };
 
 export type Workspace = { id: string; slug: string; name: string; organizationId: string };
@@ -117,9 +125,6 @@ async function call<T>(path: string, init: { method?: string; body?: unknown } =
 
 const ws = (id: string) => `/account/workspaces/${encodeURIComponent(id)}`;
 const org = (id: string) => `/account/organizations/${encodeURIComponent(id)}`;
-
-/** A way to sign in for the first time; passkeys come after. */
-export type SignInProvider = 'google' | 'microsoft';
 
 export const account = {
   /** The person; 401 when signed out, 404 in key mode. */

@@ -84,7 +84,9 @@ export function createAccountsApp(deps: AccountsDeps) {
   const account = new Hono<AccountsEnv>();
   account.use('*', signedIn(deps));
   const { sql } = deps;
-  account.get('/', async (c) => c.json(await describeAccount(sql, c.get('person'))));
+  account.get('/', async (c) =>
+    c.json({ ...(await describeAccount(sql, c.get('person'))), providers: deps.auth.providers }),
+  );
 
   // Workspaces
   account.post('/workspaces', async (c) => {

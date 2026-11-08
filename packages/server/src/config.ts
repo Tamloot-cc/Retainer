@@ -1,3 +1,4 @@
+import { SIGN_IN_PROVIDERS, type SignInProvider } from '@retainer/shared';
 import { z } from 'zod';
 import { LOG_LEVELS } from './log.js';
 
@@ -217,10 +218,6 @@ export function accountsMode(config: Config): boolean {
 }
 
 export type OAuthClient = { clientId: string; clientSecret: string };
-
-/** The ways a person first signs in, in the order the sign-in page shows them. */
-export const SIGN_IN_PROVIDERS = ['google', 'microsoft'] as const;
-export type SignInProvider = (typeof SIGN_IN_PROVIDERS)[number];
 
 export type AccountsConfig = {
   secret: string;

@@ -45,6 +45,7 @@ a session cookie and refuse an API key or an OAuth token, so no agent
 credential can create a key, add a member or create a workspace. The one
 exception is `GET /account/providers`, which needs no session: it tells the
 sign-in page which providers are on, as `{ "providers": ["google", "microsoft"] }`.
+`GET /account` includes the same `providers`.
 
 Deleting a workspace (`DELETE /account/workspaces/:id` with its name as
 `{ "name": "…" }`, for an organization owner or admin) takes effect at once:

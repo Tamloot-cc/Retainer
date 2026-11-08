@@ -6,6 +6,8 @@ import {
   ORGANIZATION_ROLES,
   type OrganizationRole,
   type Scope,
+  SIGN_IN_PROVIDER_NAMES,
+  type SignInProvider,
   WORKSPACE_ROLE_DESCRIPTIONS,
   WORKSPACE_ROLES,
   type WorkspaceRole,
@@ -78,9 +80,10 @@ export const APP_SCOPE_WORDS: Partial<Record<Scope, string>> = {
 };
 
 /** "Google", "Microsoft" or "Google or Microsoft", for sentences on the sign-in page. */
-export function providerNames(providers: readonly ('google' | 'microsoft')[]): string {
-  const names = providers.map((p) => (p === 'google' ? 'Google' : 'Microsoft'));
-  return names.length ? names.join(' or ') : 'Google or Microsoft';
+export function providerNames(providers: readonly SignInProvider[]): string {
+  return providers.length
+    ? providers.map((p) => SIGN_IN_PROVIDER_NAMES[p]).join(' or ')
+    : 'Google or Microsoft';
 }
 
 /**

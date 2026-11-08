@@ -17,7 +17,7 @@ import type { OAuthClient } from '../config.js';
 export const PERSONAL_ACCOUNTS_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad';
 
 /** Microsoft's sign-in service. Tests point the provider at a local fake instead. */
-export const MICROSOFT_AUTHORITY = 'https://login.microsoftonline.com';
+const MICROSOFT_AUTHORITY = 'https://login.microsoftonline.com';
 
 /** The ID token claims the rule reads. */
 type Claims = { tid?: unknown; email?: unknown; xms_edov?: unknown };
