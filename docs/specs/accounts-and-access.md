@@ -940,7 +940,9 @@ deleting a workspace twice, purge against restore, and simultaneous first sign-i
 identified itself with its metadata document (no dynamic registration), sent the
 person through Google sign-in to the consent page, where they picked a workspace,
 and then read the schema and wrote a record. Claude Code connected the same way
-through its claude.ai connector.
+through its claude.ai connector. On November 8, Claude Code's call answered `200`,
+the person clicked Disconnect under Connected apps, and the next call with the
+same token, nine seconds later, got `401`.
 
 **Limits on the live deployment**, November 8, 2026:
 
