@@ -41,7 +41,8 @@ const tsvector = customType<{ data: string }>({
   dataType: () => 'tsvector',
 });
 
-const id = () => uuid('id').primaryKey().defaultRandom();
+// Time-ordered (Postgres 18): new rows land at the end of the primary key index.
+const id = () => uuid('id').primaryKey().default(sql`uuidv7()`);
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
 const updatedAt = () =>
   timestamp('updated_at', { withTimezone: true })
