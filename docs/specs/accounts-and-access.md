@@ -833,8 +833,9 @@ deployed install after each Better Auth upgrade that touches OAuth.
 
 1. **People without a Google account.** They cannot sign up, and an invitation only
    works if it goes to the address of the Google account the person signs in with.
-   Teams on Microsoft 365 are the likely gap. Better Auth has a Microsoft provider,
-   which can be added without changing the design if they ask.
+   Teams on Microsoft 365 are the likely gap. _Decided November 8, 2026: add
+   Microsoft sign-in_, through Better Auth's Microsoft provider, without changing the
+   design.
 2. **Two sign-ins at once.** _Resolved in PR 3._ In the test, two simultaneous first
    sign-ins for one email made one user as they should, but the second person got a
    500. With Google the second got Better Auth's `unable to create user` instead, and
@@ -848,17 +849,17 @@ deployed install after each Better Auth upgrade that touches OAuth.
 3. **Agent write formats.** In the test Claude called `upsert_record` twice, then
    warned that names are `{first, last}` and emails `{primary, additional[]}`. The
    failed call's error was not logged, but the tool descriptions may need to state
-   these formats more clearly.
+   these formats more clearly. _Decided November 8, 2026: state them._
 4. **Old personal keys.** Actors like `user:maya` stay separate from new user IDs,
-   so a person cannot edit comments written under the old one. A mapping could
-   be added if that matters.
+   so a person cannot edit comments written under the old one. _Decided November 8,
+   2026: no mapping._ It would only serve backward compatibility.
 5. **Departed people's names** stay on past writes through the stored actor.
    `forget` covers records, not actors. Erasing a former employee's name needs a
-   decision.
+   decision. _Deferred November 8, 2026._
 6. **Viewers and private views.** Creating a view needs `write`, so a viewer cannot
-   save a private view. That is acceptable at first.
+   save a private view. _Decided November 8, 2026: they cannot._
 7. **Zero-downtime deploys.** Each deploy gives up to a minute of `503`s because one
-   version runs at a time.
+   version runs at a time. _Deferred November 8, 2026._
 
 ## 10. Acceptance
 
