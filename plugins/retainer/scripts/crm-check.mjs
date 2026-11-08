@@ -32,6 +32,7 @@ import {
   isAuthFailure,
   lastTurn,
   parseVerdict,
+  promptsAfter,
   skipReason,
   turnText,
   wakeMessage,
@@ -62,14 +63,18 @@ function readState() {
   }
 }
 
-function writeState(state) {
+/**
+ * Applies a change to the state as it is on disk now, not as this process
+ * read it: checks in other sessions run at the same time and write it too.
+ */
+function updateState(change) {
+  const state = readState();
+  state.checked ??= {};
+  change(state);
   // Keep the last 200 sessions; older ones will never stop again.
-  const sessions = Object.entries(state.checked ?? {}).slice(-200);
+  state.checked = Object.fromEntries(Object.entries(state.checked).slice(-200));
   try {
-    writeFileSync(
-      join(dataDir, 'state.json'),
-      JSON.stringify({ ...state, checked: Object.fromEntries(sessions) }),
-    );
+    writeFileSync(join(dataDir, 'state.json'), JSON.stringify(state));
   } catch (error) {
     log(`could not save state: ${error.message}`);
   }
@@ -179,21 +184,24 @@ async function main() {
     return 0;
   }
   // Saved before the slow classifier call, so a second Stop for this turn skips it.
-  state.checked[session] = turn.id;
-  writeState(state);
+  updateState((s) => {
+    s.checked[session] = turn.id;
+  });
 
   const result = await classify(turnText(turn));
   if (!result.ok) {
     log(`${session} classifier failed: ${result.output.slice(0, 300).replace(/\s+/g, ' ')}`);
     // Not checked after all: a later Stop for this turn may try again.
-    if (state.checked[session] === turn.id) delete state.checked[session];
-    writeState(state);
+    updateState((s) => {
+      if (s.checked[session] === turn.id) delete s.checked[session];
+    });
     if (
       isAuthFailure(result.output) &&
       Date.now() - (state.authWarnedAt ?? 0) > AUTH_WARNING_EVERY_MS
     ) {
-      state.authWarnedAt = Date.now();
-      writeState(state);
+      updateState((s) => {
+        s.authWarnedAt = Date.now();
+      });
       process.stderr.write(
         "Retainer's CRM check could not run: Claude Code's sign-in for `claude -p` has " +
           'expired. Tell the user, in one line, to run `claude auth login` in a terminal so ' +
@@ -204,15 +212,22 @@ async function main() {
     return 0;
   }
   if (state.authWarnedAt) {
-    state.authWarnedAt = 0;
-    writeState(state);
+    updateState((s) => {
+      s.authWarnedAt = 0;
+    });
   }
 
   const verdict = parseVerdict(result.output);
   log(`${session} ${verdict.log ? 'log' : 'no'}: ${verdict.what || '-'}`);
   if (!verdict.log) return 0;
 
-  process.stderr.write(wakeMessage(session, turn.id ?? Date.now()));
+  let later = 0;
+  try {
+    later = promptsAfter(readTail(input.transcript_path), turn.id);
+  } catch {
+    later = null;
+  }
+  process.stderr.write(wakeMessage(session, turn.id ?? Date.now(), later));
   return WAKE;
 }
 

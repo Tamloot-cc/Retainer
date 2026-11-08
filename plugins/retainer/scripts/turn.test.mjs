@@ -5,6 +5,7 @@ import {
   lastTurn,
   MAX_TURN_CHARS,
   parseVerdict,
+  promptsAfter,
   skipReason,
   turnText,
   wakeMessage,
@@ -66,6 +67,7 @@ describe('lastTurn', () => {
       prompt('later', { promptId: 'b' }),
     );
     assert.equal(lastTurn(text, 'a').prompt, 'wanted');
+    assert.deepEqual(lastTurn(text, 'a').replies, ['r']);
     assert.equal(lastTurn(text, 'missing').prompt, 'later');
   });
 
@@ -184,6 +186,25 @@ describe('isAuthFailure', () => {
   });
 });
 
+describe('promptsAfter', () => {
+  const text = jsonl(
+    prompt('checked', { promptId: 'a' }),
+    reply('r'),
+    prompt('note', { promptId: 'n', turnOrigin: 'task_notification' }),
+    prompt('next', { promptId: 'b', turnOrigin: 'human' }),
+    prompt('latest', { promptId: 'c' }),
+  );
+
+  it('counts the prompts a person typed after the turn, not notifications', () => {
+    assert.equal(promptsAfter(text, 'a'), 2);
+    assert.equal(promptsAfter(text, 'c'), 0);
+  });
+
+  it('returns null when the turn is no longer in the text', () => {
+    assert.equal(promptsAfter(text, 'gone'), null);
+  });
+});
+
 describe('wakeMessage', () => {
   it("points Claude at the server's guide, with the chat's channel and turn's IDs", () => {
     const text = wakeMessage('session-123', 'p7');
@@ -191,6 +212,13 @@ describe('wakeMessage', () => {
     assert.match(text, /channel\s+"claude-code" and externalId "session-123:p7"/);
     assert.match(text, /run \/mcp/);
     assert.match(text, /RETAINER_CRM_HOOK=off/);
+  });
+
+  it('names the turn when the person has moved on since', () => {
+    assert.match(wakeMessage('s', 'p'), /The last turn of this chat/);
+    assert.match(wakeMessage('s', 'p', 1), /started 1 message before their latest one/);
+    assert.match(wakeMessage('s', 'p', 3), /started 3 messages before their latest one/);
+    assert.match(wakeMessage('s', 'p', null), /A recent turn/);
   });
 
   it('carries nothing but its IDs from outside, so a turn cannot steer it', () => {

@@ -56,22 +56,23 @@ function isPrompt(entry) {
  */
 export function lastTurn(text, promptId) {
   const lines = text.split('\n');
-  const after = [];
-  let prompt = null;
+  // Replies seen since the last prompt passed, walking back: they belong to the next prompt.
+  let replies = [];
+  let found = null;
   let latest = null;
-  for (let i = lines.length - 1; i >= 0 && !prompt; i--) {
+  for (let i = lines.length - 1; i >= 0 && !found; i--) {
     const entry = parseLine(lines[i]);
     if (!isPrompt(entry)) {
-      if (!latest && entry?.type === 'assistant' && !entry.isSidechain) after.push(entry);
+      if (entry?.type === 'assistant' && !entry.isSidechain) replies.push(entry);
       continue;
     }
-    latest ??= entry;
-    if (!promptId || entry.promptId === promptId) prompt = entry;
+    const turn = { prompt: entry, assistant: replies.reverse() };
+    replies = [];
+    latest ??= turn;
+    if (!promptId || entry.promptId === promptId) found = turn;
   }
-  prompt ??= latest;
+  const { prompt, assistant } = found ?? latest ?? {};
   if (!prompt) return null;
-  // Replies collected before reaching the latest prompt belong to its turn.
-  const assistant = prompt === latest ? after.reverse() : [];
   return {
     id: prompt.promptId ?? prompt.uuid ?? null,
     origin: prompt.turnOrigin ?? null,
@@ -82,6 +83,27 @@ export function lastTurn(text, promptId) {
       .filter((block) => block?.type === 'tool_use' && typeof block.name === 'string')
       .map((block) => block.name),
   };
+}
+
+/** A prompt a person typed, not one a task notification or the hook itself started. */
+const isHumanPrompt = (entry) =>
+  isPrompt(entry) && (!entry.turnOrigin || entry.turnOrigin === 'human');
+
+/**
+ * How many prompts the person has typed since the turn with this id, or null
+ * if that turn is no longer in the text. The check runs in the background,
+ * so the person may have moved on by the time it wakes Claude.
+ */
+export function promptsAfter(text, turnId) {
+  let count = 0;
+  const lines = text.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const entry = parseLine(lines[i]);
+    if (!isPrompt(entry)) continue;
+    if ((entry.promptId ?? entry.uuid) === turnId) return count;
+    if (isHumanPrompt(entry)) count++;
+  }
+  return null;
 }
 
 /**
@@ -161,11 +183,17 @@ const safeId = (id) => String(id).replace(/[^\w.:-]/g, '');
  * log_from_chat guide; this only points Claude there and adds what the guide
  * cannot know.
  */
-export function wakeMessage(session, turnId) {
+export function wakeMessage(session, turnId, later = 0) {
+  const which =
+    later === 0
+      ? 'The last turn of this chat'
+      : later === null
+        ? 'A recent turn of this chat'
+        : `The turn your user started ${later} message${later === 1 ? '' : 's'} before their latest one`;
   return [
-    'Retainer CRM check: the last turn of this chat may hold something worth logging in ' +
-      'Retainer, about a person, company or piece of work the CRM tracks. Read that turn ' +
-      'again yourself to find it.',
+    `Retainer CRM check: ${which} may hold something worth logging in Retainer, about a ` +
+      'person, company or piece of work the CRM tracks. Read that turn again yourself to ' +
+      'find it, and log only what it holds.',
     '',
     'To log it, call the Retainer get_guide tool with {"name": "log_from_chat"} and follow ' +
       'the guide. If the chat itself is the source, log it as a conversation with channel ' +
