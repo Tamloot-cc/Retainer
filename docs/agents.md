@@ -178,9 +178,9 @@ use; a person can start that review as the MCP prompt `schema_design`.
 The `log_from_chat` guide tells an agent what to do when a chat with its user
 holds something durable about the people, companies or work the workspace
 tracks: what is worth keeping, which source to cite (the email or meeting it
-read, or else the chat itself, logged as a conversation with the client as
-its channel and the session ID as its external ID), and when to ask before
-creating a record. The server instructions point an agent to it, and the
+read, or else the turn of the chat, logged as a conversation with the client
+as its channel and the session and turn IDs as its external ID), and when to
+ask before creating a record. The server instructions point an agent to it, and the
 Claude Code plugin wakes Claude to follow it after a turn that needs it. A
 person can start it as the MCP prompt `log_from_chat`.
 

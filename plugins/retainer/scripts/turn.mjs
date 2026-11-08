@@ -99,9 +99,20 @@ export function skipReason(turn, { checked } = {}) {
   return null;
 }
 
+/**
+ * The turn with the Stop hook's last_assistant_message as its final reply.
+ * The transcript is written asynchronously and may not hold that reply yet,
+ * so the hook's copy is the one to trust.
+ */
+export function withFinalReply(turn, lastAssistantMessage) {
+  const final = typeof lastAssistantMessage === 'string' ? lastAssistantMessage.trim() : '';
+  if (!turn || !final || turn.replies.at(-1) === final) return turn;
+  return { ...turn, replies: [...turn.replies, final] };
+}
+
 /** The turn as plain text for the classifier, trimmed in the middle if too long. */
-export function turnText(turn, lastAssistantMessage) {
-  const replies = turn.replies.length > 0 ? turn.replies : [lastAssistantMessage].filter(Boolean);
+export function turnText(turn) {
+  const { replies } = turn;
   const tools = [...new Set(turn.tools)];
   const text = [
     `USER:\n${turn.prompt}`,
@@ -144,13 +155,13 @@ The user message is the turn. Reply with JSON only, no prose:
  * on the server, in the log_from_chat guide, so every MCP client shares them;
  * this only points Claude there and adds what the guide cannot know.
  */
-export function wakeMessage(what, session) {
+export function wakeMessage(what, session, turnId) {
   return [
     `Retainer CRM check: the last turn may hold something to log in Retainer: ${what}`,
     '',
     'To log it, call the Retainer get_guide tool with {"name": "log_from_chat"} and follow ' +
       'the guide. If the chat itself is the source, log it as a conversation with channel ' +
-      `"claude-code" and externalId "${session}".`,
+      `"claude-code" and externalId "${session}:${turnId}".`,
     '',
     'If the Retainer tools are not available, tell the user in one line to run /mcp and sign ' +
       'in to retainer, or to set RETAINER_CRM_HOOK=off to stop these checks. Do nothing else.',

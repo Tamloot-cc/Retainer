@@ -346,11 +346,14 @@ Where your user got it decides the source:
   make the chat its source.
 - They told you themselves: the chat is the source. log_event a
   conversation with channel set to your client ("claude-code", "codex",
-  "cursor"), medium "message", the chat's session or conversation ID as
-  externalId (so a whole chat stays one event), occurredAt now, a short
-  title, and your own one-paragraph summary of what your user said, not of
-  the whole chat. Put your user's email in participants and the records it
-  concerns in about.
+  "cursor"), medium "message", an externalId for this turn of the chat
+  (its session or conversation ID plus the turn's own ID, or the time if
+  your client has none), occurredAt now, a short title, and your own
+  one-paragraph summary of what your user said in this turn. Put your
+  user's email in participants and the records it concerns in about.
+  Each turn you log is its own event: an event's time and summary are
+  fixed once logged, so logging a later turn under the same externalId
+  fails as a conflict.
 
 ## 3. Write what you learned
 

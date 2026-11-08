@@ -8,6 +8,7 @@ import {
   skipReason,
   turnText,
   wakeMessage,
+  withFinalReply,
 } from './turn.mjs';
 
 const long = 'Dana from Acme said they will renew in March, at the same price. '.repeat(4);
@@ -126,9 +127,26 @@ describe('skipReason', () => {
   });
 });
 
+describe('withFinalReply', () => {
+  const turn = { prompt: 'p', replies: ['Looking at the inbox.'], tools: [] };
+
+  it('adds the final reply the transcript has not caught up with', () => {
+    assert.deepEqual(withFinalReply(turn, ' Acme renews in March. ').replies, [
+      'Looking at the inbox.',
+      'Acme renews in March.',
+    ]);
+  });
+
+  it('does not repeat a final reply the transcript already has, and leaves null alone', () => {
+    assert.equal(withFinalReply(turn, 'Looking at the inbox.'), turn);
+    assert.equal(withFinalReply(turn, undefined), turn);
+    assert.equal(withFinalReply(null, 'x'), null);
+  });
+});
+
 describe('turnText', () => {
   it('falls back to last_assistant_message when the transcript has no reply yet', () => {
-    const text = turnText({ prompt: 'p', replies: [], tools: [] }, 'final answer');
+    const text = turnText(withFinalReply({ prompt: 'p', replies: [], tools: [] }, 'final answer'));
     assert.match(text, /ASSISTANT:\nfinal answer/);
   });
 
@@ -168,10 +186,10 @@ describe('isAuthFailure', () => {
 
 describe('wakeMessage', () => {
   it("points Claude at the server's guide, with the chat's channel and session ID", () => {
-    const text = wakeMessage('Acme renews in March', 'session-123');
+    const text = wakeMessage('Acme renews in March', 'session-123', 'p7');
     assert.match(text, /Acme renews in March/);
     assert.match(text, /get_guide tool with \{"name": "log_from_chat"\}/);
-    assert.match(text, /channel\s+"claude-code" and externalId "session-123"/);
+    assert.match(text, /channel\s+"claude-code" and externalId "session-123:p7"/);
     assert.match(text, /run \/mcp/);
     assert.match(text, /RETAINER_CRM_HOOK=off/);
   });

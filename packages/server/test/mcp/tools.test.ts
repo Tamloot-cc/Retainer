@@ -443,6 +443,7 @@ describe('the log_from_chat guide', () => {
     const prose = body.replace(/\s+/g, ' ');
     expect(prose).toContain('Reading it does not make the chat its source.');
     expect(prose).toContain('channel set to your client ("claude-code"');
+    expect(prose).toContain('Each turn you log is its own event');
     expect(prose).toContain('Ask your user before creating a company');
   });
 });

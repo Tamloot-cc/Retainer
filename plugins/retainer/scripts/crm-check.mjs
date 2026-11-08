@@ -35,6 +35,7 @@ import {
   skipReason,
   turnText,
   wakeMessage,
+  withFinalReply,
 } from './turn.mjs';
 
 const WAKE = 2;
@@ -171,6 +172,7 @@ async function main() {
     log(`${session} skip: cannot read transcript (${error.message})`);
     return 0;
   }
+  turn = withFinalReply(turn, input.last_assistant_message);
   const reason = skipReason(turn, { checked: state.checked[session] });
   if (reason) {
     log(`${session} skip: ${reason}`);
@@ -180,7 +182,7 @@ async function main() {
   state.checked[session] = turn.id;
   writeState(state);
 
-  const result = await classify(turnText(turn, input.last_assistant_message));
+  const result = await classify(turnText(turn));
   if (!result.ok) {
     log(`${session} classifier failed: ${result.output.slice(0, 300).replace(/\s+/g, ' ')}`);
     if (
@@ -207,7 +209,7 @@ async function main() {
   log(`${session} ${verdict.log ? 'log' : 'no'}: ${verdict.what || '-'}`);
   if (!verdict.log) return 0;
 
-  process.stderr.write(wakeMessage(verdict.what, session));
+  process.stderr.write(wakeMessage(verdict.what, session, turn.id ?? Date.now()));
   return WAKE;
 }
 
