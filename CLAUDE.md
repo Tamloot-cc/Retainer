@@ -53,5 +53,7 @@ See `ARCHITECTURE.md` section 11 for the six test layers.
 - The hosted service (`retainer.tamloot.cc`) runs on AWS Lambda from the
   private `Tamloot-cc/retainer-cloud` repo: its Terraform, deploy workflow and
   ops guide live there, not here. Its Lambda entry points
-  (`packages/server/src/lambda/`) are product code and stay here. It has no
-  users yet, so deploy whenever it helps to check a change live.
+  (`packages/server/src/lambda/`) are product code and stay here. Each merge
+  to main that changes what ships deploys it once CI passes; docs, tests and
+  the plugin don't (`.github/workflows/deploy-hosted.yml`). Only commits on
+  main can be deployed.

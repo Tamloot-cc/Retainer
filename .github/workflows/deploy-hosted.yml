@@ -1,0 +1,42 @@
+name: Deploy hosted
+
+# After CI passes on a push to main, starts the deploy of retainer.tamloot.cc
+# in the private Tamloot-cc/retainer-cloud repo with that commit. That
+# workflow ships it only if it's newer than the live commit and changes what
+# ships, so docs-only merges and re-runs of old CI runs deploy nothing.
+# Self-hosted copies and forks skip this job.
+#
+# RETAINER_CLOUD_DEPLOY_TOKEN: a fine-grained token with access to
+# Tamloot-cc/retainer-cloud only, and "Actions: read and write" only, which
+# can start its workflows but not read or change its code.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  deploy:
+    name: Start the deploy
+    if: >-
+      github.repository == 'Tamloot-cc/Retainer' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.RETAINER_CLOUD_DEPLOY_TOKEN }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Set the RETAINER_CLOUD_DEPLOY_TOKEN secret"
+            exit 1
+          fi
+          gh workflow run deploy-aws.yml -R Tamloot-cc/retainer-cloud --ref main \
+            -f ref="$SHA" -f code=if-changed
+          echo "Started the deploy of $SHA: https://github.com/Tamloot-cc/retainer-cloud/actions/workflows/deploy-aws.yml"
