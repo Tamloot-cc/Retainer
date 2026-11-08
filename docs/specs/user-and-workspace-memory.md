@@ -100,8 +100,11 @@ get it from the workspace upgrade ([workspace-upgrade.md](workspace-upgrade.md))
 
 A personal profile is created on the first write to `me`, not when someone
 joins: most members may never have an agent write about them. Reading `me`
-before then returns an empty context. Creation takes a transaction-scoped
-advisory lock on `(workspace, user)`, so two first writes make one profile.
+before then returns an empty context. After taking the shared membership
+lock (4.3), creation takes a separate transaction-scoped exclusive advisory
+lock on `(workspace, user)` in a **different lock namespace**, then checks
+again whether the profile exists. Two first writes both succeed and make
+one profile. Never upgrade the shared membership lock to exclusive mode.
 
 ### 4.2 Privacy (M5)
 
@@ -112,6 +115,8 @@ personal profile or of the internal notes `remember` creates for it:
 - `facts`, `fact_sources`
 - `field_assertions` (the internal notes' title and summary)
 - `event_records`, `event_links` (the internal notes and their `about` link)
+- `idempotency_keys` (stored responses to writes that read or change private
+  facts, including moves from `me` to a shared record)
 
 It is null for everything else. The server sets it, never a client. It is
 copied onto each row rather than read through a join, so the policy is one
@@ -134,6 +139,18 @@ first restrictive policy that 7.2 anticipates, limited to one rule (owner
 only); general audiences and roles stay out of scope.
 
 `references()` needs no change: a private row is invisible to it already.
+
+**Retries are private too.** Idempotency claims are scoped by workspace,
+operation, the resolved person (or an explicit no-person scope), and key.
+The unique constraint and replay lookup use that same scope; RLS alone
+cannot separate competing claims on the old workspace-wide unique key.
+Resolve aliases and check access and membership before claiming or replaying.
+The request hash includes `supersedes` and the resolved destination. Stored
+results involving private facts get `private_to_user`, even when the new
+fact is shared. Another person reusing the same key gets an independent
+claim, never another person's response. Erasure removes cached responses
+that contain erased facts, notes or sources; clearing personal memory also
+removes that person's private cached responses. Expiry is not erasure.
 
 ### 4.3 Who is `me` (M6, M10)
 
@@ -158,6 +175,8 @@ every request, but a member can be removed while a write is in flight. Every
 read or write of `me` takes the `(workspace, user)` advisory lock in shared
 mode and re-checks membership in the same transaction through the existing
 `SECURITY DEFINER` access functions. Removal takes the lock exclusively (4.6).
+This also applies when `supersedes` names a personal fact by ID rather than
+the destination being `me`, and before returning an idempotent replay.
 So a write either commits before removal and is deleted with the rest, or
 starts after it and fails with `403`. A test runs the two concurrently.
 
@@ -169,6 +188,10 @@ starts after it and fails with `403`. A test runs the two concurrently.
 - `get_context(record, tokenBudget)`;
 - `get_timeline(record, filters)`, which lists facts only for a profile;
 - fact retraction.
+
+The owning session also accepts `me` on `POST /v1/records/me/forget` for
+"Clear all", with the separate authorization rules in 4.6. Workspace memory
+cannot be forgotten through that exception.
 
 Any other tool given an alias, or a profile's ID, answers `422
 profile_not_supported` and names the tools above. `upsert_record`,
@@ -194,8 +217,12 @@ cannot open.
 - `remember("me", …)` without a source creates a **private** internal note
   (`private_to_user` set on its rows). `remember("workspace", …)` creates an
   ordinary internal note.
-- A shared fact cannot cite a private internal note: it is invisible to the
-  write (`invalid_source`, as for any record the caller cannot see).
+- A shared fact cannot cite a private internal note or private fact. Check
+  the source's privacy against the destination explicitly: an owner's
+  `app.user_id` makes their own private rows visible, so visibility alone
+  does not establish that a source is safe to share. Internal notes remain
+  unavailable as caller-supplied sources, as today. A move publishes a copy
+  of an internal note under the destination's privacy (4.9).
 
 ### 4.6 Leaving, deleting and erasing (M8)
 
@@ -206,23 +233,50 @@ from the organization, or their account deleted), in one transaction:
 2. switch to `retainer_app` with `SET LOCAL ROLE`, set `app.workspace_id` and
    `app.user_id` to that workspace and person;
 3. hard-delete their personal profile, its facts and sources, and its private
-   internal notes with their assertions and links;
+   internal notes with their assertions and links, and private cached
+   idempotency responses;
 4. revoke API keys in that workspace whose `acts_for_user` is that person;
 5. write a `deletion_audit_log` row with counts only, no text.
 
 This runs in the `control` function, which already handles removals. The
 deleted facts are gone; there is no grace period in v1.
 
-A person can also clear their own memory: `forget` on `me`, from their
-session or their own agent, does the same deletion without leaving. No one
-else can.
+A person can also clear their own memory: `forget` on `me` is a session-only
+REST operation used by "Clear all". It requires the owning person's current
+workspace access, without requiring workspace admin or the `write` scope.
+It deletes their profile, private facts, notes and cached responses in one
+transaction under the exclusive membership lock, but keeps their membership
+and agent keys. This is an explicit exception to the admin requirement for
+forgetting shared records. API keys and OAuth agents cannot clear memory,
+and MCP exposes no `forget` tool. Another person's profile cannot be named.
 
 Deleting a workspace deletes everything in it, profiles included, as today.
 
-`forget` on a shared record does not reach anyone's personal memory: it
-cannot see those rows. A personal fact that names an erased contact in its
-text stays, exactly as plain text in any other fact does today (ARCHITECTURE
-2.1 erases by record, handle and source, not by text).
+`forget` on a shared record must also erase private derivatives of the
+sources it deletes. Before foreign keys can clear source IDs, delete private
+`fact_sources` rows citing those sources, including quotes; delete affected
+private facts left without a live source, and cached responses containing
+erased data. Facts with another live source retain only their surviving
+citations. The existing application query under the requester's RLS cannot
+perform this cleanup.
+
+This cleanup runs in one new `SECURITY DEFINER` function, the only exception
+this spec adds to ARCHITECTURE 7.2's list:
+
+- It takes the workspace and the shared records and events being erased,
+  never a user ID or a private row's ID.
+- It runs inside the `forget` transaction, under the privacy lock, as a
+  dedicated role with only the privileges the cleanup needs, a fixed
+  `search_path` and schema-qualified tables.
+- It returns nothing private: no text, IDs, owners or counts of private rows
+  reach the requester.
+
+Every other read and write stays under RLS.
+
+A personal fact that merely names an erased contact in its text and does
+not depend on an erased source stays, exactly as plain text in any other
+fact does today (ARCHITECTURE 2.1 erases by record, handle and source, not by
+text).
 
 ### 4.7 Consolidator
 
@@ -256,9 +310,15 @@ over time.
 `POST /v1/records/:id/facts` gain `supersedes`, the ID of a current fact.
 Context packs, timelines and search already return fact IDs. In one
 transaction the server writes the new fact and sets the old one's
-`superseded_by` to it, as the consolidator does for duplicates (ARCHITECTURE
-4.2), so rule 2.6 holds: facts are superseded, never deleted. The old fact
-leaves context packs and search and stays in the timeline's history.
+`superseded_by` to it. It also records a permanent `replaced_at` timestamp
+on the old fact, separate from `valid_to` (world time). Current-fact reads,
+search and consolidation exclude facts with `replaced_at` set; history
+shows them as superseded even if the replacement has been erased. The
+existing `ON DELETE SET NULL` foreign key may clear `superseded_by`, but
+must never clear `replaced_at` or restore the original to current memory.
+The consolidator's existing duplicate superseding does not set this marker:
+an explicit replacement has different semantics from deduplication. Rule
+2.6 still holds: facts are superseded, never deleted.
 
 - **Correcting:** `remember("me", "Prefers long emails", supersedes: <old>)`.
 - **Moving:** the new fact names a different record than the old one:
@@ -276,9 +336,29 @@ Rules:
 | The old fact was written by a `user` or `integration` actor and the caller is an agent | `403 supersedes_person`, as agents never silently overwrite people (rule 2.3)          |
 | Two writes supersede the same fact at once                                             | One wins; the other gets `409 fact_not_current`                                        |
 
-The old fact's row is locked `FOR UPDATE`. A move locks both records in
-sorted ID order, as multi-record writes do (rule 2.5). Without `source`, the
-new fact gets its own internal note, private if it is in `me` (4.5).
+The old fact's row is locked `FOR UPDATE` and its current status includes
+`replaced_at is null` and at least one live source. A move locks both records
+in sorted ID order, as multi-record writes do (rule 2.5). Source locks still
+precede record locks, as in existing writes, so moves must collect and lock
+inherited sources before locking records and re-check eligibility afterward.
+
+**Moving preserves evidence.** A different destination means a move: text
+must match the old fact after the usual input trimming, and `source` and
+`quote` must be omitted (`422 invalid_move` otherwise). Copy all live shared
+event citations and their quotes, and preserve `valid_from` and `valid_to`.
+Retracting or erasing an inherited shared source affects the replacement
+exactly as it would the original. For an internal-note source, create a
+destination-owned copy with the same content and occurrence time and the
+destination's privacy; do not leave a shared fact citing a private note or
+a note whose `about` link still belongs to the old record. A move from `me`
+to shared memory explicitly publishes that copy, which survives clearing
+the original personal memory. The new fact records the moving actor; the
+old fact retains its author and sources in history until erased.
+
+**Correcting supplies new evidence.** On the same record, `source` and
+`quote` retain their normal meaning. Without `source`, the correction gets
+its own internal note, private if it is in `me` (4.5). To change both content
+and location, correct first, then move the resulting fact.
 
 Agents get no tool to delete a fact. Removing one without a replacement hides
 data, which stays a person's decision: the web app's "Remove", or
@@ -307,8 +387,10 @@ The server instructions gain one paragraph, and `get_guide` gains a short
   already there; if what you learned changes one, pass its ID as
   `supersedes`.
 - **Fix a misplaced fact by moving it:** `remember` it on the right record
-  with `supersedes` naming the old one.
-- **Cite a source** when the fact came from a logged conversation.
+  with unchanged text and `supersedes` naming the old one. Omit `source` and
+  `quote`; the server preserves its evidence. Correct separately if needed.
+- **Cite a source** when adding or correcting a fact learned from a logged
+  conversation.
 
 ## 6. Testing
 
@@ -321,16 +403,35 @@ The server instructions gain one paragraph, and `get_guide` gains a short
   the consolidator. These run against real Postgres with RLS on, as the
   runtime role.
 - **RLS without the app.** A raw query as `retainer_app` with only
-  `app.workspace_id` set returns no private rows from any of the six tables.
+  `app.workspace_id` set returns no private rows from any protected table,
+  including cached idempotency results.
 - **Concurrency.** Removal racing `remember("me")`; two first writes to `me`
-  creating one profile.
+  both succeeding and creating one profile without a lock upgrade; removal
+  racing a move from `me` or an idempotent replay.
 - **Removal.** After each of the three ways to leave, the profile, its facts,
-  sources, notes and keys are gone, and shared events the facts cited are
-  untouched.
+  sources, notes, private cached responses and keys are gone, and shared
+  events the facts cited are untouched. Session-only "Clear all" works for
+  viewers too, preserves keys and membership, and rejects API keys, OAuth
+  agents and requests targeting someone else's memory.
+- **Retry isolation.** Two people using the same idempotency key and
+  `remember("me", …)` input get independent results. Private-to-shared moves
+  also have private cached responses. Replays cannot return erased content
+  or bypass membership checks.
+- **Source erasure.** Forget a shared event cited by personal facts owned by
+  multiple people. Verify private quotes and orphaned facts are physically
+  gone, surviving multi-source facts retain only live citations, cached
+  responses are gone, and no private details or counts reach the requester.
+  Direct calls to the erasure function cannot cross workspaces or erase a
+  personal profile. A shared fact cannot cite even the caller's own private
+  note or fact.
 - **Key mode.** `me` is `422 no_person`; `workspace` works.
 - **Supersedes.** Every row of the table in 4.9, including two concurrent
   writes superseding the same fact, and a move between two records racing a
-  merge of either one.
+  merge of either one. Erasing a replacement never makes the old fact
+  current again. Moves preserve shared citations, quotes and validity dates;
+  source retraction and erasure affect the replacement. Internal-note copies
+  have the destination's privacy and attachment; published copies survive
+  clearing personal memory. Changed-text or explicit-source moves fail.
 
 ## 7. Decided after review (November 8, 2026)
 
@@ -346,3 +447,14 @@ The server instructions gain one paragraph, and `get_guide` gains a short
 4. **One "my memory" view across workspaces** is deferred.
 5. **Agents correct and move facts with `supersedes` on `remember`** (4.9).
    They still cannot delete one.
+6. **"Clear all" is the person's, not their agent's** (4.6). It is a
+   session-only REST call; no API key or OAuth agent can clear personal
+   memory, and MCP has no `forget`. An agent that cannot remove one fact
+   should not be able to remove all of them.
+7. **A move keeps the text and the evidence** (4.9). Changing text and
+   location takes two calls, correct then move, so a moved fact never loses
+   the sources that erasure depends on.
+8. **One `SECURITY DEFINER` function for erasure** (4.6). Forgetting a shared
+   record must remove other people's private facts and quotes that rest on
+   it, which no RLS-bound query can see. The function is narrow and returns
+   nothing private.
