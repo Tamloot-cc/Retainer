@@ -1,11 +1,10 @@
 name: Deploy hosted
 
 # After CI passes on a push to main, starts the deploy of retainer.tamloot.cc
-# in the private Tamloot-cc/retainer-cloud repo for that commit, if anything
-# that ships changed since the last commit on main that passed CI. Docs,
-# tests and other packages don't ship, so they don't deploy. Its workflow
-# checks again that the commit is on main and its CI passed. Self-hosted
-# copies and forks skip this job.
+# in the private Tamloot-cc/retainer-cloud repo with that commit. That
+# workflow ships it only if it's newer than the live commit and changes what
+# ships, so docs-only merges and re-runs of old CI runs deploy nothing.
+# Self-hosted copies and forks skip this job.
 #
 # RETAINER_CLOUD_DEPLOY_TOKEN: a fine-grained token with access to
 # Tamloot-cc/retainer-cloud only, and "Actions: read and write" only, which
@@ -17,9 +16,7 @@ on:
     types: [completed]
     branches: [main]
 
-permissions:
-  contents: read
-  actions: read
+permissions: {}
 
 jobs:
   deploy:
@@ -32,40 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Check what changed
-        id: changes
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
-          STARTED: ${{ github.event.workflow_run.created_at }}
-        run: |
-          # The last commit on main whose CI passed before this one. CI cancels
-          # superseded runs on main, so the range covers every commit since.
-          prev="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&created=<$STARTED&per_page=1" --jq '.workflow_runs[0].head_sha // empty')"
-          if [ -z "$prev" ] || ! git merge-base --is-ancestor "$prev" "$SHA"; then
-            echo "No earlier passing commit to compare with: deploying."
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # What infra/aws/build.sh in retainer-cloud builds and ships.
-          if git diff --quiet "$prev" "$SHA" -- \
-            packages/server packages/web packages/shared packages/sdk \
-            package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json .nvmrc \
-            ':(exclude,glob)**/*.md' \
-            ':(exclude,glob)packages/*/test/**' \
-            ':(exclude,glob)packages/*/e2e/**'; then
-            echo "Nothing that ships changed since $prev: not deploying."
-          else
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Start the deploy
-        if: steps.changes.outputs.deploy == 'true'
-        env:
+      - env:
           GH_TOKEN: ${{ secrets.RETAINER_CLOUD_DEPLOY_TOKEN }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
@@ -73,5 +37,6 @@ jobs:
             echo "::error::Set the RETAINER_CLOUD_DEPLOY_TOKEN secret"
             exit 1
           fi
-          gh workflow run deploy-aws.yml -R Tamloot-cc/retainer-cloud --ref main -f ref="$SHA"
+          gh workflow run deploy-aws.yml -R Tamloot-cc/retainer-cloud --ref main \
+            -f ref="$SHA" -f code=if-changed
           echo "Started the deploy of $SHA: https://github.com/Tamloot-cc/retainer-cloud/actions/workflows/deploy-aws.yml"
