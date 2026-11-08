@@ -363,8 +363,9 @@ Where your user got it decides the source:
   event's ID plus ":invite:" and the time this invitation was sent, so an
   updated invitation for a moved meeting is a new event, not a conflict.
   Add the meeting as a task due that day, moving its due date when the
-  meeting moves, and log the meeting itself once it has happened, under
-  the calendar event's own ID.
+  meeting moves. Log the meeting itself once it has happened, under the
+  calendar event's own ID, and set that task's status to done then, or
+  when the meeting is cancelled.
 
 ## 3. Write what you learned
 
