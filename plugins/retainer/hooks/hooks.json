@@ -1,0 +1,17 @@
+{
+  "description": "After each turn, checks in the background whether it holds something to log in Retainer, and wakes Claude if it does. Turn off with RETAINER_CRM_HOOK=off.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/crm-check.sh\"",
+            "asyncRewake": true,
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

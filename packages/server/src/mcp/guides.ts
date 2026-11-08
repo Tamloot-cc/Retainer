@@ -309,6 +309,65 @@ When your user asks whether the schema still fits:
 Propose additions as usual. Renames and removals wait for a person with
 admin access, so list them separately and say why each is worth it.`;
 
+const LOG_FROM_CHAT = `# Log what your user tells you
+
+Goal: when a chat with your user (in Claude Code, Codex or any other agent)
+holds something the workspace should remember, write it to Retainer, cited,
+without your user having to ask. Your client may wake you after a turn with
+a hint of what to log; the hint says where to look, not what to write.
+Decide from the chat itself.
+
+## What is worth logging
+
+Log durable things about the people, companies and work the workspace
+tracks: a deal moved, a renewal date, a new contact and their role, a
+budget, a decision, a promise someone made, how a customer wants to be
+reached. Skip the rest: your user's own code, questions to you, plans that
+never left the chat, guesses, and anything already in Retainer. When unsure,
+leave it out; a missed fact costs less than a wrong one.
+
+## 1. Find the records
+
+search or query_records for every person and company the chat names, then
+get_context on each one you will write to. If what you learned is already
+there with the same value, stop: there is nothing to log.
+
+Ask your user before creating a company or a record of any object other
+than person and task, and before writing to a record you matched only by a
+similar name. Creating a person the chat clearly names, with an email or a
+company, needs no question.
+
+## 2. Log the source first
+
+Where your user got it decides the source:
+- They read it to you, or you read it with your own tools (an email, a
+  meeting transcript, a calendar event): log that email or meeting as its
+  own event with its own channel and ID, and cite it. Reading it does not
+  make the chat its source.
+- They told you themselves: the chat is the source. log_event a
+  conversation with channel set to your client ("claude-code", "codex",
+  "cursor"), medium "message", an externalId for this turn of the chat
+  (its session or conversation ID plus the turn's own ID, or the time if
+  your client has none), occurredAt now, a short title, and your own
+  one-paragraph summary of what your user said in this turn. Put your
+  user's email in participants and the records it concerns in about.
+  Each turn you log is its own event: an event's time and summary are
+  fixed once logged, so logging a later turn under the same externalId
+  fails as a conflict.
+
+## 3. Write what you learned
+
+Write values, facts and tasks in the order the server instructions give
+for any conversation, each citing the event from step 2 as source. Quote
+your user's own words in a fact when it helps, and give a task the due date
+that was said.
+
+## 4. Tell your user
+
+One line: what you logged and on which records, and anything waiting for
+approval or for their answer. Do not go back to the task they were on
+unless they ask; they will carry on themselves.`;
+
 export const GUIDES = {
   discover_schema: {
     title: 'Discover the schema',
@@ -336,6 +395,14 @@ export const GUIDES = {
       'instead of new objects, and grow fields from evidence. Also how to review one.',
     text: SCHEMA_DESIGN,
     promptIntro: "Review this Retainer workspace's schema with me.",
+  },
+  log_from_chat: {
+    title: 'Log what your user tells you',
+    description:
+      'Write what a chat with your user taught you about people, companies and work ' +
+      'to Retainer: what is worth keeping, which source to cite, and the order of the writes.',
+    text: LOG_FROM_CHAT,
+    promptIntro: 'Log to Retainer what this chat taught you about our customers and work.',
   },
 } as const;
 

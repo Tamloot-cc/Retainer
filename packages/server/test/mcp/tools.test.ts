@@ -2,10 +2,15 @@ import { readFileSync } from 'node:fs';
 import type { GetPromptResult } from '@modelcontextprotocol/client';
 import { FIELD_TYPES, FIELD_VALUE_FORMATS } from '@retainer/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { GUIDE_NAMES } from '../../src/mcp/guides.js';
+import { GUIDE_NAMES, GUIDES } from '../../src/mcp/guides.js';
 import { schemaOperationSchema } from '../../src/schema-engine/operations.js';
 import { type McpTestClient, startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
+
+/** The guides that carry the shared schema design rules. */
+const SCHEMA_GUIDE_NAMES = GUIDE_NAMES.filter((name) =>
+  GUIDES[name].text.includes('### Use what Retainer already has'),
+);
 
 const db = useTestDatabase();
 let t: TestApp;
@@ -269,16 +274,19 @@ describe('event history and schema guidance', () => {
     expect(schema).toContain('current API');
   });
 
-  it.each(GUIDE_NAMES)('%s explains rollup limits and protected schema markers', async (name) => {
-    const { body } = await reader.call<string>('get_guide', { name });
-    expect(body).toContain('one hop from source to target');
-    expect(body).toContain('Only events roll up, not field');
-    expect(body).toContain('query_records with linked returns direct attachments only');
-    expect(body).toContain('Protected objects cannot be deleted');
-    expect(body).toContain('protected option values cannot be removed');
-    expect(body).toContain('Use baseObject and baseField');
-    expect(body).toContain('current API names');
-  });
+  it.each(SCHEMA_GUIDE_NAMES)(
+    '%s explains rollup limits and protected schema markers',
+    async (name) => {
+      const { body } = await reader.call<string>('get_guide', { name });
+      expect(body).toContain('one hop from source to target');
+      expect(body).toContain('Only events roll up, not field');
+      expect(body).toContain('query_records with linked returns direct attachments only');
+      expect(body).toContain('Protected objects cannot be deleted');
+      expect(body).toContain('protected option values cannot be removed');
+      expect(body).toContain('Use baseObject and baseField');
+      expect(body).toContain('current API names');
+    },
+  );
 
   it('warns that moving events between types is not a quick cleanup', async () => {
     const { body } = await reader.call<string>('get_guide', { name: 'schema_design' });
@@ -290,7 +298,7 @@ describe('event history and schema guidance', () => {
     expect(review).toContain('Run it with dryRun: true');
   });
 
-  it.each(GUIDE_NAMES)(
+  it.each(SCHEMA_GUIDE_NAMES)(
     '%s steers conversations to medium and new types to the D4 rule',
     async (name) => {
       const { body } = await reader.call<string>('get_guide', { name });
@@ -412,6 +420,31 @@ describe('the schema_design guide', () => {
     const shared = rules.slice(0, rules.indexOf('## Reviewing'));
     expect(shared.length).toBeGreaterThan(500);
     expect(discover.body).toContain(shared.trim());
+  });
+});
+
+describe('the log_from_chat guide', () => {
+  it('points agents at the guide from the instructions', () => {
+    expect(agent.getInstructions()).toContain('get_guide("log_from_chat")');
+  });
+
+  it('logs the source before the values, facts and tasks that cite it', async () => {
+    const { body, isError } = await reader.call<string>('get_guide', { name: 'log_from_chat' });
+    expect(isError).toBe(false);
+    expect(body).toMatch(/^# Log what your user tells you/);
+    const steps = ['get_context', 'log_event', 'order the server instructions give'];
+    const positions = steps.map((step) => body.indexOf(step));
+    expect(positions.every((p) => p >= 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  it('cites the email or meeting itself, not the chat, when that is where it came from', async () => {
+    const { body } = await reader.call<string>('get_guide', { name: 'log_from_chat' });
+    const prose = body.replace(/\s+/g, ' ');
+    expect(prose).toContain('Reading it does not make the chat its source.');
+    expect(prose).toContain('channel set to your client ("claude-code"');
+    expect(prose).toContain('Each turn you log is its own event');
+    expect(prose).toContain('Ask your user before creating a company');
   });
 });
 

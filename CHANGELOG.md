@@ -58,6 +58,9 @@ The first release.
   purging a workspace of 360,000 records went from over 9 minutes to 16 seconds.
 - An `invalid_filter` error for a bad value carries what a write's error does:
   the field, the message, and the allowed values.
+- MCP guide and prompt `log_from_chat`: what an agent logs from a chat with
+  its user, which source it cites, and when it asks before creating a
+  record. The server instructions point agents to it.
 
 ### `@retainer/sdk`
 
@@ -69,6 +72,15 @@ The first release.
 
 - stdio bridge (`retainer-mcp`) for MCP clients that only speak stdio,
   configured with `RETAINER_URL` and `RETAINER_API_KEY`.
+
+### Claude Code plugin (`plugins/retainer`)
+
+- Installs from this repository's marketplace with
+  `/plugin install retainer@retainer`: the Retainer MCP server over OAuth,
+  a background Stop hook that asks Claude Haiku (through the person's own
+  sign-in) whether a turn holds CRM information and wakes Claude to follow
+  the server's `log_from_chat` guide. `RETAINER_CRM_HOOK=off` turns the
+  check off.
 
 ### `@retainer/shared`
 

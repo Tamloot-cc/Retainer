@@ -1,0 +1,15 @@
+{
+  "name": "retainer",
+  "owner": { "name": "Tamloot", "url": "https://github.com/Tamloot-cc" },
+  "metadata": {
+    "description": "Claude Code plugins for Retainer, the memory of your CRM."
+  },
+  "plugins": [
+    {
+      "name": "retainer",
+      "source": "./plugins/retainer",
+      "description": "Connects Claude Code to Retainer and logs what your chats teach it about your customers and work.",
+      "category": "productivity"
+    }
+  ]
+}
