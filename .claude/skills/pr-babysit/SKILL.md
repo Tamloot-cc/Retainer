@@ -106,14 +106,30 @@ question instead of patching on top of it.
 
 ## Phase 3 — Merge and clean up (only with `--merge`)
 
-1. `gh pr merge <PR> --squash --delete-branch`. Merging doesn't deploy, and
-   releases run only on `v*` tags. Never tag.
-2. Sync `main` in the primary checkout with `git pull --ff-only`, then
+1. `gh pr merge <PR> --squash --delete-branch`. Releases run only on `v*`
+   tags. Never tag.
+2. The merge deploys the hosted service (retainer.tamloot.cc). After CI
+   passes on the merge commit, **Deploy hosted** starts retainer-cloud's
+   `deploy-aws.yml`. That run compares the merge commit with the live one
+   and ships only when what ships changed. Wait for it, then check what it
+   did:
+
+   ```bash
+   gh run list --commit <merge-sha> --json workflowName,conclusion,url
+   gh run list -R Tamloot-cc/retainer-cloud --workflow deploy-aws.yml -L 3
+   gh run view <run-id> -R Tamloot-cc/retainer-cloud --log | grep -E 'Live:|Deployed Retainer'
+   curl -s -o /dev/null -w '%{http_code}\n' https://retainer.tamloot.cc/health
+   ```
+
+   "Deployed Retainer <merge-sha>." means it shipped. A docs-only merge
+   ships nothing, which is expected. A failed run is a blocker to report,
+   not to fix in Retainer.
+3. Sync `main` in the primary checkout with `git pull --ff-only`, then
    `git fetch --prune`.
-3. Remove this PR's worktree (`git worktree remove`) and its local branch
+4. Remove this PR's worktree (`git worktree remove`) and its local branch
    (`git branch -D`, since a squash-merge leaves the branch looking
    unmerged).
-4. Leave other worktrees and branches alone. They may belong to another
+5. Leave other worktrees and branches alone. They may belong to another
    session.
 
 ## Phase 4 — Email the outcome
@@ -132,4 +148,5 @@ both `text` and `html`, and use the idempotency key
 Start with **In plain words**: two sentences, no jargon, saying what was
 missing and what the PR adds. Then include the PR link, each finding and how
 it was handled (including any you pushed back on, and why), the final CI
-state, what cleanup removed, and what is waiting on the user.
+state, the deploy (shipped, nothing to ship, or failed, with the run link),
+what cleanup removed, and what is waiting on the user.
