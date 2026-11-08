@@ -134,6 +134,27 @@ Reply with JSON only, no prose:
 The turn:
 `;
 
+/**
+ * What Claude reads when the check wakes it. The rules for what to write live
+ * on the server, in the log_from_chat guide, so every MCP client shares them;
+ * this only points Claude there and adds what the guide cannot know.
+ */
+export function wakeMessage(what, session) {
+  return [
+    `Retainer CRM check: the last turn may hold something to log in Retainer: ${what}`,
+    '',
+    'To log it, call the Retainer get_guide tool with {"name": "log_from_chat"} and follow ' +
+      'the guide. If the chat itself is the source, log it as a conversation with channel ' +
+      `"claude-code" and externalId "${session}". The line above says where to look, not ` +
+      'what to write: log nothing if, on a closer look, it is not worth keeping.',
+    '',
+    'If the Retainer tools are not available, tell the user in one line to run /mcp and sign ' +
+      'in to retainer, or to set RETAINER_CRM_HOOK=off to stop these checks. Do nothing else.',
+    '',
+    'Do not resume any earlier task.',
+  ].join('\n');
+}
+
 /** Reads the classifier's answer; anything unreadable counts as no. */
 export function parseVerdict(text) {
   const match = typeof text === 'string' ? text.match(/\{[\s\S]*\}/) : null;

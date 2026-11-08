@@ -4,7 +4,7 @@
  * *when* to log: it asks a small model whether the turn holds something the
  * person's CRM should keep, and if so exits with code 2, which wakes Claude
  * with the message on stderr. Claude then decides *what* to write, following
- * the crm-logging skill and the server's log_from_chat guide.
+ * the server's log_from_chat guide, which the message points it to.
  *
  * Retainer itself never calls a model: this runs on the person's machine,
  * through their own Claude Code sign-in. Every decision is logged to
@@ -35,6 +35,7 @@ import {
   parseVerdict,
   skipReason,
   turnText,
+  wakeMessage,
 } from './turn.mjs';
 
 const WAKE = 2;
@@ -195,12 +196,7 @@ async function main() {
   log(`${session} ${verdict.log ? 'log' : 'no'}: ${verdict.what || '-'}`);
   if (!verdict.log) return 0;
 
-  process.stderr.write(
-    `Retainer CRM check: the last turn may hold something to log in Retainer: ${verdict.what}\n` +
-      `Session ID: ${session}\n` +
-      'Use the crm-logging skill to log it, or log nothing if, on a closer look, it is not ' +
-      'worth keeping. Do not resume any earlier task.',
-  );
+  process.stderr.write(wakeMessage(verdict.what, session));
   return WAKE;
 }
 

@@ -8,6 +8,7 @@ import {
   parseVerdict,
   skipReason,
   turnText,
+  wakeMessage,
 } from './turn.mjs';
 
 const long = 'Dana from Acme said they will renew in March, at the same price. '.repeat(4);
@@ -163,5 +164,16 @@ describe('isAuthFailure', () => {
     assert.ok(isAuthFailure('API Error: 401 {"type":"authentication_error"}'));
     assert.ok(!isAuthFailure('spawn claude ENOENT'));
     assert.ok(!isAuthFailure('API Error: 529 overloaded'));
+  });
+});
+
+describe('wakeMessage', () => {
+  it("points Claude at the server's guide, with the chat's channel and session ID", () => {
+    const text = wakeMessage('Acme renews in March', 'session-123');
+    assert.match(text, /Acme renews in March/);
+    assert.match(text, /get_guide tool with \{"name": "log_from_chat"\}/);
+    assert.match(text, /channel\s+"claude-code" and externalId "session-123"/);
+    assert.match(text, /run \/mcp/);
+    assert.match(text, /RETAINER_CRM_HOOK=off/);
   });
 });

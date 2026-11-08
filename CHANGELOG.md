@@ -78,8 +78,9 @@ The first release.
 - Installs from this repository's marketplace with
   `/plugin install retainer@retainer`: the Retainer MCP server over OAuth,
   a background Stop hook that asks Claude Haiku (through the person's own
-  sign-in) whether a turn holds CRM information and wakes Claude to log it,
-  and a `crm-logging` skill. `RETAINER_CRM_HOOK=off` turns the check off.
+  sign-in) whether a turn holds CRM information and wakes Claude to follow
+  the server's `log_from_chat` guide. `RETAINER_CRM_HOOK=off` turns the
+  check off.
 
 ### `@retainer/shared`
 
