@@ -8,7 +8,8 @@ so under "As built". The design is summarized in `ARCHITECTURE.md` 7.3.
 This spec turns Retainer from a server an operator runs into a service people
 sign up for: they log in, create workspaces, invite colleagues and connect
 agents. It amends `ARCHITECTURE.md` section 7 and `FRONTEND.md` section 4 and
-adds deployment pieces to [Deploying to AWS](../aws.md).
+adds deployment pieces to the AWS deployment guide (now in the private
+`retainer-cloud` repo).
 
 ## 1. Why
 

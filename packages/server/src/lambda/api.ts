@@ -5,7 +5,7 @@ import { createApiSql, type Sql } from '../db/client.js';
 import { setLogLevel } from '../log.js';
 
 /**
- * The API as an AWS Lambda function behind API Gateway (docs/aws.md): the
+ * The API as an AWS Lambda function behind API Gateway: the
  * same Hono app the container serves, REST, MCP and the web app included.
  *
  * Boot tasks the container runs on start (migrations, first-boot key,

@@ -2,8 +2,7 @@
 
 Retainer is one Docker image and Postgres 18 or later; its migrations don't run
 on 17. The image runs the REST API, the MCP endpoint, the background workers
-and, optionally, the web app. To run it on AWS Lambda and RDS instead, see
-[Deploying to AWS](aws.md).
+and, optionally, the web app.
 
 ## Start it
 

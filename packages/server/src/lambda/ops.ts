@@ -10,8 +10,8 @@ import { type UpgradeReport, upgradeWorkspaces } from '../workspaces/upgrade.js'
 import { withMigrationLock } from './deploy-lock.js';
 
 /**
- * Operator tasks as an AWS Lambda function that only the operator invokes
- * (docs/aws.md). It is the deployment's replacement for running the CLI in
+ * Operator tasks as an AWS Lambda function that only the operator invokes.
+ * It is the deployment's replacement for running the CLI in
  * the container, since the database is not reachable from outside the VPC.
  *
  * - `{ "command": "migrate" }` applies pending migrations, sets the runtime

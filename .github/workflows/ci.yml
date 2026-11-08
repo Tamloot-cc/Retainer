@@ -63,22 +63,3 @@ jobs:
           name: web-browser-traces
           path: packages/server/test-results
           retention-days: 7
-
-  terraform:
-    name: AWS deployment (Terraform)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: deploy/aws
-    steps:
-      - uses: actions/checkout@v7
-      - uses: hashicorp/setup-terraform@v4
-        with:
-          terraform_version: ~1.17.0 # as in deploy-aws.yml
-      # No AWS credentials: format, validate and test against mocked
-      # providers, no backend.
-      - run: terraform fmt -check -recursive
-      - run: terraform init -backend=false -input=false
-      - run: terraform validate
-      - run: terraform test

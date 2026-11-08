@@ -12,10 +12,6 @@ coverage/
 playwright-report/
 test-results/
 
-# AWS deployment (deploy/aws): build output, Terraform working files and
-# each deployment's own settings.
-deploy/aws/.build/
-deploy/aws/.terraform/
-deploy/aws/*.tfstate*
-deploy/aws/terraform.tfvars
-deploy/aws/backend.hcl
+# The AWS deployment moved out of this repo. Older checkouts may still hold
+# its settings and Terraform state here, with secrets in them: keep ignoring it.
+deploy/aws/

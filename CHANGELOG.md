@@ -52,13 +52,7 @@ The first release.
   named it.
 - `groupBy` on `POST /v1/objects/:object/aggregate`: the same totals per
   value of a single-select field.
-- AWS deployment (`deploy/aws`, [docs/aws.md](docs/aws.md)): Terraform for
-  Lambda functions behind API Gateway (REST, MCP and the web app), a
-  scheduled consolidator, an ops function for migrations and the operator
-  CLI, and RDS PostgreSQL in a private VPC, with scripts to build, deploy
-  (stop, migrate, start) and run operator commands, and an optional
-  GitHub Actions deploy role. `RETAINER_DB_POOL_MAX` sets the API's
-  database pool size (default 10).
+- `RETAINER_DB_POOL_MAX` sets the API's database pool size (default 10).
 
 ### `@retainer/sdk`
 
