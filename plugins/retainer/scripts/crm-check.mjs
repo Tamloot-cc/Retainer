@@ -28,11 +28,13 @@ import {
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
-  CLASSIFIER_PROMPT,
+  classifierArgs,
+  FAILURES_BEFORE_WARNING,
+  failureMessage,
   isAuthFailure,
   lastTurn,
-  parseVerdict,
   promptsAfter,
+  readClassifierOutput,
   skipReason,
   turnText,
   wakeMessage,
@@ -43,7 +45,7 @@ const WAKE = 2;
 const CLASSIFIER_TIMEOUT_MS = 90_000;
 /** Reading more than this of a transcript is wasted work: the turn is near its end. */
 const TAIL_BYTES = 4 * 1024 * 1024;
-const AUTH_WARNING_EVERY_MS = 24 * 60 * 60 * 1000;
+const WARNING_EVERY_MS = 24 * 60 * 60 * 1000;
 
 const dataDir = process.env.CLAUDE_PLUGIN_DATA || join(homedir(), '.claude', 'retainer-plugin');
 
@@ -99,27 +101,10 @@ async function readStdin() {
   return JSON.parse(text);
 }
 
-/**
- * Runs `claude -p` with Haiku in safe mode: no CLAUDE.md, hooks, plugins, MCP
- * servers or skills, and no tools, with the classifier prompt as the whole
- * system prompt.
- */
+/** Runs the classifier with `claude -p` (see classifierArgs) on the turn's text. */
 function classify(text) {
-  const args = [
-    '-p',
-    '--safe-mode',
-    '--model',
-    'haiku',
-    '--system-prompt',
-    CLASSIFIER_PROMPT,
-    '--tools',
-    '',
-    '--output-format',
-    'json',
-    '--no-session-persistence',
-  ];
   return new Promise((resolve) => {
-    const child = spawn('claude', args, {
+    const child = spawn('claude', classifierArgs(), {
       // The off switch doubles as a recursion guard, should hooks run anyway.
       env: { ...process.env, RETAINER_CRM_HOOK: 'off' },
       cwd: homedir(),
@@ -136,20 +121,12 @@ function classify(text) {
     });
     child.on('error', (error) => {
       clearTimeout(timer);
-      resolve({ ok: false, output: error.message });
+      resolve({ ok: false, output: error.message, verdict: { log: false, what: '' } });
     });
     child.on('close', (code) => {
       clearTimeout(timer);
-      let result = stdout;
-      let isError = code !== 0;
-      try {
-        const json = JSON.parse(stdout);
-        result = typeof json.result === 'string' ? json.result : '';
-        isError ||= json.is_error === true;
-      } catch {
-        // Not JSON: keep the raw output for the log.
-      }
-      resolve({ ok: !isError, output: isError ? `${result}\n${stderr}`.trim() : result });
+      const result = readClassifierOutput(stdout, code ?? 1);
+      resolve(result.ok ? result : { ...result, output: `${result.output}\n${stderr}`.trim() });
     });
     child.stdin.end(text);
   });
@@ -195,10 +172,8 @@ async function main() {
     updateState((s) => {
       if (s.checked[session] === turn.id) delete s.checked[session];
     });
-    if (
-      isAuthFailure(result.output) &&
-      Date.now() - (state.authWarnedAt ?? 0) > AUTH_WARNING_EVERY_MS
-    ) {
+    if (isAuthFailure(result.output)) {
+      if (Date.now() - (state.authWarnedAt ?? 0) <= WARNING_EVERY_MS) return 0;
       updateState((s) => {
         s.authWarnedAt = Date.now();
       });
@@ -209,15 +184,29 @@ async function main() {
       );
       return WAKE;
     }
-    return 0;
+    // Any other failure stays in the log, until it keeps happening.
+    let failures = 0;
+    let warn = false;
+    updateState((s) => {
+      s.failures = (s.failures ?? 0) + 1;
+      failures = s.failures;
+      warn =
+        failures >= FAILURES_BEFORE_WARNING &&
+        Date.now() - (s.failureWarnedAt ?? 0) > WARNING_EVERY_MS;
+      if (warn) s.failureWarnedAt = Date.now();
+    });
+    if (!warn) return 0;
+    process.stderr.write(failureMessage(failures));
+    return WAKE;
   }
-  if (state.authWarnedAt) {
+  if (state.authWarnedAt || state.failures) {
     updateState((s) => {
       s.authWarnedAt = 0;
+      s.failures = 0;
     });
   }
 
-  const verdict = parseVerdict(result.output);
+  const { verdict } = result;
   log(`${session} ${verdict.log ? 'log' : 'no'}: ${verdict.what || '-'}`);
   if (!verdict.log) return 0;
 
