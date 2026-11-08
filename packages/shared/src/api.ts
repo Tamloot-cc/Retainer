@@ -70,6 +70,11 @@ export type SchemaDescription = {
   };
   objects: ObjectView[];
   /**
+   * How to write a value of each field type the objects use
+   * (FIELD_VALUE_FORMATS), so an agent gets composite shapes right first time.
+   */
+  valueFormats: Partial<Record<FieldType, string>>;
+  /**
    * What Retainer stores besides records (1.3): facts. Fixed by Retainer and
    * written only through their own tools, never upsert_record.
    */

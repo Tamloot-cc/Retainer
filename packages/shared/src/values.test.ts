@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { validateFieldValue } from './values.js';
+import { COMPOSITE_FIELD_TYPES, FIELD_TYPES, type FieldType } from './field-types.js';
+import { FIELD_VALUE_FORMATS, FieldValueError, validateFieldValue } from './values.js';
 
 const f = (type: Parameters<typeof validateFieldValue>[0]['type'], settings = {}) => ({
   type,
@@ -69,5 +70,111 @@ describe('public field-aware validation', () => {
         b,
       ]),
     ).toThrow('read-only');
+  });
+});
+
+describe('value formats (accounts spec 9.3)', () => {
+  const id = 'a0000000-0000-4000-8000-000000000001';
+  // Values written the way FIELD_VALUE_FORMATS describes them, one per form.
+  const EXAMPLES: Record<FieldType, [settings: object, value: unknown][]> = {
+    text: [[{}, 'Dana']],
+    number: [[{}, 3.5]],
+    boolean: [[{}, true]],
+    date: [[{}, '2026-11-02']],
+    date_time: [[{}, '2026-11-02T09:30:00Z']],
+    select: [[{ options: [{ value: 'won', label: 'Won' }] }, 'won']],
+    multi_select: [[{ options: [{ value: 'vip', label: 'VIP' }] }, ['vip']]],
+    money: [[{}, { amountMicros: 12_500_000, currency: 'USD' }]],
+    emails: [
+      [{}, { primary: 'dana@acme.com', additional: ['dana@home.com'] }],
+      [{}, 'dana@acme.com'],
+    ],
+    phones: [
+      [{}, { primary: { number: '+972 50 123 4567', countryCode: 'IL' }, additional: [] }],
+      [{}, '+972 50 123 4567'],
+    ],
+    links: [
+      [{}, { primary: { url: 'https://acme.com', label: 'Site' }, additional: [] }],
+      [{}, 'https://acme.com'],
+    ],
+    full_name: [
+      [{}, { first: 'Dana', last: 'Levi' }],
+      [{}, 'Dana Levi'],
+    ],
+    address: [
+      [
+        {},
+        {
+          street1: '1 Rothschild Blvd',
+          street2: 'Floor 3',
+          city: 'Tel Aviv',
+          state: 'Tel Aviv District',
+          postcode: '6688101',
+          country: 'IL',
+          lat: 32.06,
+          lng: 34.77,
+        },
+      ],
+    ],
+    relation: [
+      [{}, id],
+      [{ relationCardinality: 'many_to_many' }, [id]],
+    ],
+    json: [[{}, { any: ['thing'] }]],
+  };
+
+  it('documents a format for every field type', () => {
+    for (const type of FIELD_TYPES) expect(FIELD_VALUE_FORMATS[type], type).toBeTruthy();
+    expect(Object.keys(FIELD_VALUE_FORMATS).sort()).toEqual([...FIELD_TYPES].sort());
+  });
+
+  it('accepts a value written as each format says, and names its keys', () => {
+    for (const type of FIELD_TYPES) {
+      for (const [settings, value] of EXAMPLES[type]) {
+        expect(() => validateFieldValue(f(type, settings), value), type).not.toThrow();
+        // Every key the example uses, at any depth, appears in the format.
+        const keys = JSON.stringify(value).match(/"(\w+)":/g) ?? [];
+        for (const key of keys) expect(FIELD_VALUE_FORMATS[type], type).toContain(key.slice(1, -2));
+      }
+    }
+    expect(FIELD_VALUE_FORMATS.full_name).toContain('{ first, last }');
+    expect(FIELD_VALUE_FORMATS.emails).toContain('{ primary, additional: [...] }');
+    expect(FIELD_VALUE_FORMATS.phones).toContain('{ number, countryCode? }');
+    expect(FIELD_VALUE_FORMATS.links).toContain('{ url, label? }');
+    expect(FIELD_VALUE_FORMATS.money).toContain('{ amountMicros, currency }');
+  });
+
+  const failure = (type: FieldType, value: unknown) => {
+    try {
+      validateFieldValue(f(type), value);
+    } catch (error) {
+      if (error instanceof FieldValueError) return error;
+      throw error;
+    }
+    throw new Error(`${type} accepted ${JSON.stringify(value)}`);
+  };
+
+  it('names the expected format when a composite value has the wrong shape', () => {
+    // The shapes an agent guessed in the live test, and others like them.
+    const wrong: Record<(typeof COMPOSITE_FIELD_TYPES)[number], unknown> = {
+      full_name: { firstName: 'Dana', lastName: 'Levi' },
+      emails: { primaryEmail: 'dana@acme.com', additionalEmails: [] },
+      phones: { primary: { phone: '+972501234567' } },
+      links: { primary: { href: 'https://acme.com' } },
+      address: { line1: '1 Rothschild Blvd' },
+      money: { amount: 12.5, currency: 'USD' },
+    };
+    for (const type of COMPOSITE_FIELD_TYPES) {
+      const error = failure(type, wrong[type]);
+      expect(error.expected, type).toBe(FIELD_VALUE_FORMATS[type]);
+    }
+    expect(failure('full_name', { firstName: 'Dana' }).message).toContain('firstName');
+    expect(failure('emails', { primaryEmail: 'dana@acme.com' }).message).toContain('primaryEmail');
+  });
+
+  it('leaves the format off simple types, whose message already says what it expects', () => {
+    const error = failure('date', '02/11/2026');
+    expect(error.message).toContain('YYYY-MM-DD');
+    expect(error.expected).toBeUndefined();
   });
 });

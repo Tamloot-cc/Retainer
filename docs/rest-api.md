@@ -79,7 +79,7 @@ seconds, and `details.retryAfter` with the same number.
 ## Errors
 
 Errors are JSON with a stable `code`, a readable `message`, and sometimes
-`details` naming the field and the allowed values:
+`details` naming the field and the allowed values or expected format:
 
 ```json
 { "error": { "code": "stale_write", "message": "the record changed since expectedUpdatedAt", "details": { … } } }

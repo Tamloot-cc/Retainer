@@ -1117,7 +1117,10 @@ deterministic and testable.
 `builtIns` lists facts, apart from `objects`, so a person reading the
 schema sees that the workspace keeps them and no client mistakes them for
 something `upsert_record` writes. Event types are objects of class `event`
-(1.3); the internal-note type is never listed.
+(1.3); the internal-note type is never listed. `valueFormats` says how to
+write a value of each field type the objects use, from `FIELD_VALUE_FORMATS`
+in `@retainer/shared`, whose object keys come from the schemas the validator
+parses with; an invalid composite value's error repeats it as `expected`.
 
 Filter values are checked against their column or field type before any
 cast: record IDs, ISO 8601 times with a UTC offset, and dates in years 0001
@@ -1335,7 +1338,8 @@ for the agent's own context. Agents that work across several workspaces,
 and any search or query across workspaces, are out of scope for v1.
 
 Inputs are validated at runtime against the workspace schema, and validation
-errors name the field and the allowed values so the agent can retry.
+errors name the field and the allowed values, or a composite field's
+expected format, so the agent can retry.
 
 `remember(record, text, source?, quote?)` writes one `stated` fact at once,
 citing `source` (an event ID) with an optional quote. Without `source`, it

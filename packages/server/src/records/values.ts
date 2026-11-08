@@ -49,6 +49,7 @@ export function prepareValues(
         field: name,
         message: error.message,
         ...(error.allowed ? { allowed: error.allowed } : {}),
+        ...(error.expected ? { expected: error.expected } : {}),
       });
     }
   }

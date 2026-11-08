@@ -123,8 +123,11 @@ change the tool list.
 | `propose_schema_change` | Add fields or objects (applied at once), or propose destructive changes for a person to approve                              | `schema:write` |
 | `move_events`           | Change the type of logged events, keeping IDs, identity, links and citations; agents run it as a dry run                     | `schema:write` |
 
-Validation errors name the field and the allowed values, so an agent can
-correct its call and retry.
+`describe_schema` returns `valueFormats`: how to write a value of each field
+type the workspace uses, for example `full_name` as `{ first, last }` and
+`emails` as `{ primary, additional: [...] }`. Validation errors name the field
+and the allowed values, and for a composite field the expected format
+(`expected`), so an agent can correct its call and retry.
 
 ## Setting up a new workspace
 
