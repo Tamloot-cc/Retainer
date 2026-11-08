@@ -745,7 +745,7 @@ changes nothing for existing installs when it merges.
 | 2. Accounts          | Tables and roles, Better Auth with Google, AWS and NAT, sign-in and workspace URLs, self-serve workspaces, members and invitations, API keys in the web app, passkeys, the settings pages (5.1) |
 | 3. Agents and launch | MCP OAuth with the workspace picker, rate and quota limits, the statement timeout, scheduled deletion, the sign-in race (9.2)                                                                   |
 
-All three are built: PR 1, PR 2 (#38) and PR 3 (branch `feat/agents-and-launch`).
+All three are built and deployed: PR 1 (#36), PR 2 (#38) and PR 3 (#42).
 
 **Why these stay apart.** PR 1 is the only one that changes the live deployment in
 every mode, so a problem there should be easy to trace and roll back, and it should
