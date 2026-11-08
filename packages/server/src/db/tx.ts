@@ -20,12 +20,20 @@ export async function inWorkspace<T>(
   userId?: string,
 ): Promise<T> {
   const result = await sql.begin(async (tx) => {
-    await tx`
-      select set_config('app.workspace_id', ${workspaceId}, true),
-        set_config('app.user_id', ${userId ?? ''}, true)`;
+    await setScope(tx as unknown as Tx, workspaceId, userId);
     return fn(tx as unknown as Tx);
   });
   return result as T;
+}
+
+/**
+ * Sets the transaction's row-level security context: the workspace, and the
+ * person whose personal memory it may see (none when `userId` is absent).
+ */
+export async function setScope(tx: Tx, workspaceId: string, userId?: string): Promise<void> {
+  await tx`
+    select set_config('app.workspace_id', ${workspaceId}, true),
+      set_config('app.user_id', ${userId ?? ''}, true)`;
 }
 
 /** Advisory-lock class for a person's membership of a workspace (personal memory spec 4.3). */

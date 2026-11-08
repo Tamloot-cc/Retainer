@@ -507,6 +507,15 @@ export async function retractEventClaims(
   };
 }
 
+/**
+ * A current fact, as `f` (2.1, 5; personal memory 4.9): not retracted,
+ * superseded, replaced or ended, and resting on at least one live event.
+ */
+export function currentFact(tx: Tx): Fragment {
+  return tx`f.deleted_at is null and f.superseded_by is null and f.replaced_at is null
+    and f.valid_to is null and exists (${liveFactSource(tx, tx`f.id`)})`;
+}
+
 /** `select … from` a fact's live sources: events not deleted (2.1). */
 export function liveFactSource(tx: Tx, factId: Fragment): Fragment {
   return tx`select 1 from fact_sources s

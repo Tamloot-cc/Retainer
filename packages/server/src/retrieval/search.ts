@@ -1,7 +1,8 @@
 import type { EventHit, FactHit, RecordHit, SearchResult } from '@retainer/shared';
 import { z } from 'zod';
 import type { Tx } from '../db/tx.js';
-import { liveFactSource } from '../memory/events.js';
+import { currentFact } from '../memory/events.js';
+import { factPlace } from '../memory/profiles.js';
 import { exactQuery, prefixQuery } from '../records/search-sql.js';
 import { type CompiledSchema, eventText } from '../schema/compiled.js';
 
@@ -102,23 +103,16 @@ async function searchFacts(
     select f.id, f.record_id, r.object_type_id, f.content, f.valid_from from facts f
     join records r on r.id = f.record_id and r.deleted_at is null
     where f.workspace_id = ${workspaceId} and f.search @@ ${prefixQuery(tx, input.query)}
-      and f.deleted_at is null and f.superseded_by is null and f.replaced_at is null
-      and f.valid_to is null
-      and exists (${liveFactSource(tx, tx`f.id`)})
+      and ${currentFact(tx)}
     order by ${rank(tx, 'f.search', input.query)}, f.valid_from desc, f.id
     limit ${input.limit}`;
-  return rows.map((row) => {
-    // A fact in workspace or personal memory names the profile, not an ID
-    // the caller cannot open (personal memory spec 4.4). Row-level security
-    // shows personal facts to their person only.
-    const profile = schema.objectsById.get(row.object_type_id)?.profile;
-    return {
-      id: row.id,
-      ...(profile ? { profile } : { record: row.record_id }),
-      content: row.content,
-      validFrom: row.valid_from.toISOString(),
-    };
-  });
+  // Row-level security shows personal facts to their person only.
+  return rows.map((row) => ({
+    id: row.id,
+    ...factPlace(schema, row.object_type_id, row.record_id),
+    content: row.content,
+    validFrom: row.valid_from.toISOString(),
+  }));
 }
 
 /**

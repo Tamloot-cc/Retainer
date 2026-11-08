@@ -15,15 +15,11 @@ export type IdempotencyClaim = { kind: 'new'; id: string } | { kind: 'replay'; r
 /** The scope of a claim made by a credential that works for no person (personal memory spec 4.2). */
 export const NO_PERSON_SCOPE = '00000000-0000-0000-0000-000000000000';
 
-export type ClaimScope = {
-  /** The person behind the credential, if any: two people never share a claim. */
-  personId?: string | undefined;
-  /**
-   * Set when the stored response will read or change that person's private
-   * facts, so only they can replay it. Must be the same person.
-   */
-  private?: boolean;
-};
+/**
+ * Who claims a key: the write's workspace and the person behind the
+ * credential, if any, so two people never share a claim.
+ */
+export type Claimant = { workspaceId: string; person?: { id: string } | undefined };
 
 /**
  * Claims a caller's idempotency key for one operation (6.2), in the same
@@ -37,17 +33,23 @@ export type ClaimScope = {
  */
 export async function claimIdempotencyKey(
   tx: Tx,
-  workspaceId: string,
+  claimant: Claimant,
   operation: string,
   key: string,
   hash: string,
-  scope: ClaimScope = {},
+  /**
+   * Set when the stored response will read or change the person's private
+   * facts, so only they can replay it.
+   */
+  { private: isPrivate = false }: { private?: boolean } = {},
 ): Promise<IdempotencyClaim> {
   if (key.length === 0 || key.length > 200) {
     throw new AppError(400, 'invalid_request', 'Idempotency-Key must be 1 to 200 characters');
   }
-  const personScope = scope.personId ?? NO_PERSON_SCOPE;
-  const privateTo = scope.private && scope.personId ? scope.personId : null;
+  const { workspaceId } = claimant;
+  const personId = claimant.person?.id;
+  const personScope = personId ?? NO_PERSON_SCOPE;
+  const privateTo = isPrivate && personId ? personId : null;
   const [claimed] = await tx<{ id: string }[]>`
     insert into idempotency_keys
       (workspace_id, operation, person_scope, key, request_hash, expires_at, private_to_user)

@@ -171,11 +171,11 @@ export async function remember(
     if (idempotencyKey !== undefined) {
       const claim = await claimIdempotencyKey(
         tx,
-        caller.workspaceId,
+        context,
         'remember',
         idempotencyKey,
         rememberRequestHash(plan, input),
-        { personId: context.person?.id, private: plan.private },
+        { private: plan.private },
       );
       if (claim.kind === 'replay') return claim.result as RememberResult;
       claimId = claim.id;

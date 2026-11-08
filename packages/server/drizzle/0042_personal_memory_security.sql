@@ -248,11 +248,18 @@ BEGIN
   )
   SELECT coalesce(array_agg(gone.id), '{}') INTO orphaned FROM gone;
 
+  IF cardinality(shared || orphaned) = 0 THEN
+    RETURN;
+  END IF;
+  -- Each cached response is turned into text once, not once per erased ID.
   DELETE FROM public.idempotency_keys AS k
-  WHERE k.workspace_id = workspace AND k.private_to_user IS NOT NULL AND k.result IS NOT NULL
+  USING public.idempotency_keys AS c
+  CROSS JOIN LATERAL (SELECT c.result::text AS body) AS r
+  WHERE k.id = c.id
+    AND c.workspace_id = workspace AND c.private_to_user IS NOT NULL AND c.result IS NOT NULL
     AND EXISTS (
       SELECT 1 FROM unnest(shared || orphaned) AS x
-      WHERE strpos(k.result::text, x::text) > 0
+      WHERE strpos(r.body, x::text) > 0
     );
 END
 $$;

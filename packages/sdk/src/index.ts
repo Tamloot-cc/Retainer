@@ -280,7 +280,6 @@ export class RetainerClient {
       idempotencyKey,
     );
   }
-  /** Erases a person and what was logged about them (needs the `admin` scope). Not reversible. */
   /**
    * Deletes the signed-in person's personal memory in this workspace (4.6):
    * web sessions only; agents cannot clear it.
@@ -288,6 +287,7 @@ export class RetainerClient {
   clearMyMemory() {
     return this.post<{ cleared: true; counts: Record<string, number> }>('/v1/records/me/forget');
   }
+  /** Erases a person and what was logged about them (needs the `admin` scope). Not reversible. */
   forget(id: string) {
     return this.post<ForgetResult>(`/v1/records/${encodeURIComponent(id)}/forget`);
   }

@@ -10,7 +10,7 @@ import type { OrganizationLimits } from '../db/schema.js';
 import type { Tx } from '../db/tx.js';
 import { getWorkspace } from '../db/workspaces.js';
 import { AppError } from '../errors.js';
-import { endLostMemberships, membersOf } from './leaving.js';
+import { endLostMemberships, membersOf, organizationMemberships } from './leaving.js';
 
 /**
  * Organizations and their members (accounts spec 4.2, 4.5). Operator
@@ -209,14 +209,7 @@ export async function setOrganizationMember(
     if (current?.role === 'owner' && role !== 'owner') {
       await assertKeepsAnOwner(tx, organization.id, user.id);
     }
-    const workspaces = await tx<{ id: string }[]>`
-      select id from workspaces where organization_id = ${organization.id}`;
-    const before = (
-      await membersOf(
-        tx,
-        workspaces.map((w) => w.id),
-      )
-    ).filter((m) => m.userId === user.id);
+    const before = await organizationMemberships(tx, organization.id, user.id);
     await tx`
       insert into organization_members (organization_id, user_id, role)
       values (${organization.id}, ${user.id}, ${role})

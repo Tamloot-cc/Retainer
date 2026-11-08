@@ -12,9 +12,9 @@ import { z } from 'zod';
 import type { Tx } from '../db/tx.js';
 import {
   countEventHistory,
+  currentFact,
   eventHistory,
   type HistoryRow,
-  liveFactSource,
   viaOf,
 } from '../memory/events.js';
 import { type Profile, type ProfileContext, profileLabel } from '../memory/profiles.js';
@@ -276,9 +276,7 @@ async function currentFacts(
       count(*) over () as total
     from facts f
     where f.workspace_id = ${workspaceId} and f.record_id = ${recordId}
-      and f.deleted_at is null and f.superseded_by is null and f.replaced_at is null
-      and f.valid_to is null
-      and exists (${liveFactSource(tx, tx`f.id`)})
+      and ${currentFact(tx)}
     order by f.valid_from desc, f.created_at desc, f.id
     limit ${limit}`;
   return {

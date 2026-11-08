@@ -1,6 +1,6 @@
 import type { Actor } from '@retainer/shared';
 import { RUNTIME_ROLE } from '../db/client.js';
-import { lockMemberExclusive, lockPrivacyShared, type Tx } from '../db/tx.js';
+import { lockMemberExclusive, lockPrivacyShared, setScope, type Tx } from '../db/tx.js';
 import { deletePersonalMemory } from '../privacy/personal.js';
 
 /** A person and a workspace they may have lost access to. */
@@ -57,12 +57,26 @@ export async function endLostMemberships(
 
   await tx.unsafe(`set local role ${RUNTIME_ROLE}`);
   for (const { workspaceId, userId } of lost) {
-    await tx`
-      select set_config('app.workspace_id', ${workspaceId}, true),
-        set_config('app.user_id', ${userId}, true)`;
+    await setScope(tx, workspaceId, userId);
     await deletePersonalMemory(tx, workspaceId, userId, actor);
   }
   return lost.length;
+}
+
+/** The workspaces of an organization one person has a role in now (A5). */
+export async function organizationMemberships(
+  tx: Tx,
+  organizationId: string,
+  userId: string,
+): Promise<Membership[]> {
+  return tx<Membership[]>`
+    select w.id as "workspaceId", om.user_id as "userId"
+    from workspaces w
+    join organization_members om
+      on om.organization_id = w.organization_id and om.user_id = ${userId}
+    where w.organization_id = ${organizationId}
+      and (om.role in ('owner', 'admin') or exists (
+        select 1 from workspace_members wm where wm.workspace_id = w.id and wm.user_id = om.user_id))`;
 }
 
 /** Everyone with a role in a workspace now, by organization role or their own (A5). */

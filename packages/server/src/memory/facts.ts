@@ -1,4 +1,4 @@
-import type { Actor, FactSource, PresentedFact, ProfileAlias } from '@retainer/shared';
+import type { Actor, FactPlace, FactSource, PresentedFact, ProfileAlias } from '@retainer/shared';
 import { z } from 'zod';
 import type { Tx } from '../db/tx.js';
 import { AppError, invalid, notFound } from '../errors.js';
@@ -13,7 +13,7 @@ import {
   writeFields,
 } from '../records/write.js';
 import type { CompiledSchema } from '../schema/compiled.js';
-import { type CitedSource, liveFactSource, lockSource, NOTE_CHANNEL } from './events.js';
+import { type CitedSource, currentFact, lockSource, NOTE_CHANNEL } from './events.js';
 import {
   lockPerson,
   type Profile,
@@ -105,10 +105,7 @@ export async function planRemember(
   const target = await resolveTarget(tx, context, ref, { create: true });
   let old: OldFact | null = null;
   if (input.supersedes) {
-    const [row] = await tx<OldFact[]>`
-      select id, record_id, content, kind, valid_from, valid_to, actor, private_to_user,
-        deleted_at, superseded_by, replaced_at
-      from facts where id = ${input.supersedes} and workspace_id = ${context.workspaceId}`;
+    const row = await readOldFact(tx, context.workspaceId, input.supersedes);
     if (!row) throw notFound('fact', { id: input.supersedes });
     old = row;
     // A personal fact moved out of `me` is a write of personal memory too.
@@ -262,6 +259,21 @@ async function writeStatedFact(
   };
 }
 
+/** A fact `supersedes` names; `forUpdate` locks it. */
+async function readOldFact(
+  tx: Tx,
+  workspaceId: string,
+  id: string,
+  { forUpdate = false } = {},
+): Promise<OldFact | undefined> {
+  const [row] = await tx<OldFact[]>`
+    select id, record_id, content, kind, valid_from, valid_to, actor, private_to_user,
+      deleted_at, superseded_by, replaced_at
+    from facts where id = ${id} and workspace_id = ${workspaceId}
+    ${forUpdate ? tx`for update` : tx``}`;
+  return row;
+}
+
 /** Whether a fact is current (2.1, 4.9): not retracted, replaced, superseded or ended. */
 function isCurrent(fact: OldFact): boolean {
   return !fact.deleted_at && !fact.replaced_at && !fact.superseded_by && !fact.valid_to;
@@ -344,6 +356,10 @@ async function supersedeFact(
   }
 
   for (let attempt = 1; ; attempt++) {
+    // A concurrent merge moved a record this attempt read: try again, a few times.
+    const retry = () => {
+      if (attempt >= MOVE_ATTEMPTS) throw notCurrent(first.id);
+    };
     const oldRecord = first.record_id;
     const destinationId =
       plan.target.kind === 'profile'
@@ -390,28 +406,24 @@ async function supersedeFact(
     const destination = locked.get(destinationId);
     if (destination?.id !== destinationId) {
       // The destination was merged meanwhile: resolve it again.
-      if (attempt >= MOVE_ATTEMPTS) throw notCurrent(first.id);
+      retry();
       continue;
     }
     if (plan.target.kind === 'record') objectOf(context.schema, destination);
 
     // Then the fact, re-read under the locks.
-    const [old] = await tx<OldFact[]>`
-      select id, record_id, content, kind, valid_from, valid_to, actor, private_to_user,
-        deleted_at, superseded_by, replaced_at
-      from facts where id = ${first.id} and workspace_id = ${context.workspaceId}
-      for update`;
+    const old = await readOldFact(tx, context.workspaceId, first.id, { forUpdate: true });
     if (!old || !isCurrent(old)) throw notCurrent(first.id);
     if (old.record_id !== oldRecord) {
       // A merge moved it to the survivor meanwhile: start again from there.
-      if (attempt >= MOVE_ATTEMPTS) throw notCurrent(first.id);
+      retry();
       first = old;
       continue;
     }
     const live = await liveSourcesOf(tx, old.id);
     if (live.length === 0) throw notCurrent(first.id);
     if (moving && live.some((s) => !sourceIds.includes(s.source_record_id))) {
-      if (attempt >= MOVE_ATTEMPTS) throw notCurrent(first.id);
+      retry();
       continue;
     }
 
@@ -533,12 +545,7 @@ export async function factSources(
   return sources;
 }
 
-export type FactList = (
-  | { record: string; profile?: never }
-  | { profile: ProfileAlias; record?: never }
-) & {
-  facts: PresentedFact[];
-};
+export type FactList = FactPlace & { facts: PresentedFact[] };
 
 /**
  * A live record's current facts, newest `validFrom` first: not retracted,
@@ -577,8 +584,7 @@ export async function listFacts(
         select f.id, f.record_id, f.content, f.kind, f.valid_from, f.valid_to, f.actor
         from facts f
         where f.workspace_id = ${workspaceId} and f.record_id = ${recordId}
-          and f.deleted_at is null and f.superseded_by is null and f.replaced_at is null
-          and f.valid_to is null and exists (${liveFactSource(tx, tx`f.id`)})
+          and ${currentFact(tx)}
         order by f.valid_from desc, f.created_at desc, f.id
         limit ${limit}`
     : [];

@@ -28,12 +28,16 @@ export async function deletePersonalMemory(
   userId: string,
   actor: Pick<Actor, 'type' | 'id'>,
 ): Promise<PersonalMemoryCounts> {
+  // Private facts and notes are exactly those on the person's private
+  // records (the privacy triggers copy it), so counting through the records
+  // uses their index rather than scanning the workspace's facts.
   const [found] = await tx<{ facts: number; notes: number }[]>`
+    with mine as (
+      select id from records
+      where private_to_user = ${userId} and workspace_id = ${workspaceId})
     select
-      (select count(*)::int from facts
-        where workspace_id = ${workspaceId} and private_to_user = ${userId}) as facts,
-      (select count(*)::int from event_records
-        where workspace_id = ${workspaceId} and private_to_user = ${userId}) as notes`;
+      (select count(*)::int from facts where record_id in (select id from mine)) as facts,
+      (select count(*)::int from event_records where record_id in (select id from mine)) as notes`;
   const responses = await tx`
     delete from idempotency_keys
     where workspace_id = ${workspaceId} and private_to_user = ${userId}

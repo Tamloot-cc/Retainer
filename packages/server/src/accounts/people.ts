@@ -14,13 +14,13 @@ import type { Sql } from '../db/client.js';
 import { RUNTIME_ROLE } from '../db/client.js';
 import { isUuid } from '../db/ids.js';
 import type { InvitedWorkspace } from '../db/schema.js';
-import type { Tx } from '../db/tx.js';
+import { setScope, type Tx } from '../db/tx.js';
 import { getWorkspace, type Workspace } from '../db/workspaces.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { SYSTEM_ACTOR } from '../schema-engine/engine.js';
 import { applyTemplate, seedBaseObjects } from '../templates/apply.js';
 import { DELETION_GRACE_DAYS, purgeAfter } from '../workspaces/deletion.js';
-import { endLostMemberships, type Membership, membersOf } from '../workspaces/leaving.js';
+import { endLostMemberships, organizationMemberships } from '../workspaces/leaving.js';
 import {
   assertKeepsAnOwner,
   assertWithinLimit,
@@ -194,7 +194,7 @@ export async function createWorkspaceFor(
     if (!workspaceId) throw new Error('could not find a free workspace slug');
 
     await tx.unsafe(`set local role ${RUNTIME_ROLE}`);
-    await tx`select set_config('app.workspace_id', ${workspaceId}, true)`;
+    await setScope(tx, workspaceId);
     await seedBaseObjects(tx, workspaceId);
     if (input.template) {
       await applyTemplate(tx, {
@@ -655,21 +655,6 @@ export async function removeFromOrganization(
     // Their personal memory in every workspace of it goes (personal memory 4.6).
     await endLostMemberships(tx, before, personActor(person));
   });
-}
-
-/** The workspaces of an organization a person has a role in now. */
-async function organizationMemberships(
-  tx: Tx,
-  organizationId: string,
-  userId: string,
-): Promise<Membership[]> {
-  const rows = await tx<{ id: string }[]>`
-    select id from workspaces where organization_id = ${organizationId}`;
-  const members = await membersOf(
-    tx,
-    rows.map((r) => r.id),
-  );
-  return members.filter((m) => m.userId === userId);
 }
 
 const personActor = (person: Person) => ({ type: 'user' as const, id: person.id });

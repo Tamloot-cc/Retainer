@@ -13,7 +13,7 @@ import type { Fragment } from 'postgres';
 import { after, page } from '../db/pagination.js';
 import type { Tx } from '../db/tx.js';
 import { notFound } from '../errors.js';
-import { liveFactSource, presentSource } from '../memory/events.js';
+import { currentFact, presentSource } from '../memory/events.js';
 import { identifiersFor } from '../records/derive.js';
 import { getRecord, type PresentedRecord } from '../records/read.js';
 import { references, relationReferences } from '../records/references.js';
@@ -160,8 +160,7 @@ async function recordCounts(
       (select count(*)::int from comments c
         where c.record_id = ${recordId} and c.deleted_at is null) as comments,
       (select count(*)::int from facts f
-        where f.record_id = ${recordId} and f.deleted_at is null and f.superseded_by is null
-          and f.replaced_at is null and f.valid_to is null and exists (${liveFactSource(tx, tx`f.id`)})) as facts,
+        where f.record_id = ${recordId} and ${currentFact(tx)}) as facts,
       (select count(distinct t.id)::int from record_links l
         join records t on t.id = l.source_record_id and t.deleted_at is null
         where l.target_record_id = ${recordId}

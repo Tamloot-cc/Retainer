@@ -1,4 +1,4 @@
-import { type Actor, isProfileAlias, type ProfileAlias } from '@retainer/shared';
+import { type Actor, type FactPlace, isProfileAlias, type ProfileAlias } from '@retainer/shared';
 import type { CallerPerson } from '../caller.js';
 import { isUuid } from '../db/ids.js';
 import { lockMemberShared, lockProfileCreation, type Tx } from '../db/tx.js';
@@ -53,14 +53,13 @@ export async function recheckPerson(
 ): Promise<void> {
   const { check } = person;
   let ok = false;
-  if (check.kind === 'session') {
+  if (check.kind === 'session' || check.kind === 'oauth') {
+    const access =
+      check.kind === 'session'
+        ? tx`retainer_session_access(${check.token}, ${workspaceId})`
+        : tx`retainer_token_access(${check.subject}, ${check.workspace}, ${check.client})`;
     const [row] = await tx<{ workspace_id: string | null; role: string | null; user_id: string }[]>`
-      select user_id, workspace_id, role from retainer_session_access(${check.token}, ${workspaceId})`;
-    ok = row?.user_id === person.id && row.workspace_id === workspaceId && row.role !== null;
-  } else if (check.kind === 'oauth') {
-    const [row] = await tx<{ workspace_id: string; role: string | null; user_id: string }[]>`
-      select user_id, workspace_id, role
-      from retainer_token_access(${check.subject}, ${check.workspace}, ${check.client})`;
+      select user_id, workspace_id, role from ${access}`;
     ok = row?.user_id === person.id && row.workspace_id === workspaceId && row.role !== null;
   } else {
     const [row] = await tx<{ workspace_id: string; acts_for_user: string | null }[]>`
@@ -168,7 +167,7 @@ export async function resolveTarget(
   if (!isUuid(ref)) throw notFound('record', { id: ref });
   const [row] = await tx<{ object_type_id: string }[]>`
     select object_type_id from records where id = ${ref} and workspace_id = ${context.workspaceId}`;
-  const alias = row && context.schema.objectsById.get(row.object_type_id)?.profile;
+  const alias = row && profileAliasOf(context.schema, row.object_type_id);
   if (alias) return { kind: 'profile', profile: await resolveProfile(tx, context, alias, options) };
   return { kind: 'record', id: ref };
 }
@@ -179,6 +178,19 @@ export function profileAliasOf(
   objectTypeId: string,
 ): ProfileAlias | undefined {
   return schema.objectsById.get(objectTypeId)?.profile;
+}
+
+/**
+ * Where a fact is shown (4.4): its record, or for a profile's fact the
+ * alias, never a profile ID the caller has no use for.
+ */
+export function factPlace(
+  schema: CompiledSchema,
+  objectTypeId: string,
+  recordId: string,
+): FactPlace {
+  const profile = profileAliasOf(schema, objectTypeId);
+  return profile ? { profile } : { record: recordId };
 }
 
 /** A profile's computed label (4.1): the workspace's name, or the person's. */

@@ -199,11 +199,10 @@ export async function createRecord(
     if (idempotencyKey !== undefined) {
       const claim = await claimIdempotencyKey(
         tx,
-        caller.workspaceId,
+        context,
         'create_record',
         idempotencyKey,
         requestHash({ object: object.name, values, source: source ?? null }),
-        { personId: context.person?.id },
       );
       if (claim.kind === 'replay') return claim.result as WriteResponse;
       claimId = claim.id;
@@ -616,11 +615,10 @@ export async function mergeRecord(
         if (idempotencyKey !== undefined) {
           const claim = await claimIdempotencyKey(
             tx,
-            caller.workspaceId,
+            context,
             'merge',
             idempotencyKey,
             requestHash({ id, recordId: input.recordId, values: input.values ?? null }),
-            { personId: context.person?.id },
           );
           if (claim.kind === 'replay') return claim.result as MergeResult;
           claimId = claim.id;
