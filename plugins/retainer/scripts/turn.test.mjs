@@ -122,6 +122,16 @@ describe('skipReason', () => {
     assert.match(skipReason(turn({ prompt: 'thanks', replies: ['sure'] })), /trivial/);
   });
 
+  it('checks a short reply to a longer turn, which the classifier sees as context', () => {
+    const previous = { prompt: 'who emailed us from Hooli last week?', replies: [long] };
+    const short = { prompt: "yes that's her, and she signs off on budget", replies: ['Got it.'] };
+    assert.equal(skipReason(turn({ ...short, previous })), null);
+    assert.match(
+      skipReason(turn({ ...short, previous: { prompt: 'hi', replies: ['hello'] } })),
+      /trivial/,
+    );
+  });
+
   it('skips a turn that already used any Retainer server, however it was added', () => {
     for (const name of [
       'mcp__retainer__log_event',

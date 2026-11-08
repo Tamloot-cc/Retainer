@@ -9,7 +9,10 @@
 /** Tools whose use means the turn already worked with Retainer. */
 const RETAINER_TOOL = /^mcp__.*retainer.*__/i;
 
-/** Turns shorter than this, prompt and replies together, are not worth a check. */
+/**
+ * Turns shorter than this, prompt and replies together with the turn before
+ * them, are not worth a check.
+ */
 export const MIN_TURN_CHARS = 200;
 
 /** How much of a turn the classifier sees. Long turns keep their start and end. */
@@ -130,7 +133,9 @@ export function skipReason(turn, { checked } = {}) {
   if (turn.id && turn.id === checked) return 'turn already checked';
   if (/^\s*(\/|<command-name>|<local-command)/.test(turn.prompt)) return 'slash command';
   if (turn.tools.some((name) => RETAINER_TOOL.test(name))) return 'turn already used Retainer';
-  const size = turn.prompt.length + turn.replies.reduce((sum, text) => sum + text.length, 0);
+  // A short reply such as "yes, that's her" counts the turn it answers.
+  const length = (t) => t.prompt.length + t.replies.reduce((sum, text) => sum + text.length, 0);
+  const size = length(turn) + (turn.previous ? length(turn.previous) : 0);
   if (size < MIN_TURN_CHARS) return 'trivial turn';
   return null;
 }
