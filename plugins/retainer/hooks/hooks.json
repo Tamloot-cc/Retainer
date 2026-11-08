@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/crm-check.mjs\"",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/crm-check.sh\"",
             "asyncRewake": true,
             "timeout": 120
           }

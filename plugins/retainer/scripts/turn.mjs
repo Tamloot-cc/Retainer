@@ -150,18 +150,26 @@ When unsure, answer no.
 The user message is the turn. Reply with JSON only, no prose:
 {"log": true or false, "what": "one short line: what to save and about whom, or empty"}`;
 
+/** Keeps an ID to the characters IDs use, so it cannot carry text into the message. */
+const safeId = (id) => String(id).replace(/[^\w.:-]/g, '');
+
 /**
- * What Claude reads when the check wakes it. The rules for what to write live
- * on the server, in the log_from_chat guide, so every MCP client shares them;
- * this only points Claude there and adds what the guide cannot know.
+ * What Claude reads when the check wakes it, delivered as a system reminder.
+ * It is static apart from the IDs Claude Code gave the hook: the classifier's
+ * own words stay in the log, because a turn that quotes a customer's email
+ * could steer them. The rules for what to write live on the server, in the
+ * log_from_chat guide; this only points Claude there and adds what the guide
+ * cannot know.
  */
-export function wakeMessage(what, session, turnId) {
+export function wakeMessage(session, turnId) {
   return [
-    `Retainer CRM check: the last turn may hold something to log in Retainer: ${what}`,
+    'Retainer CRM check: the last turn of this chat may hold something worth logging in ' +
+      'Retainer, about a person, company or piece of work the CRM tracks. Read that turn ' +
+      'again yourself to find it.',
     '',
     'To log it, call the Retainer get_guide tool with {"name": "log_from_chat"} and follow ' +
       'the guide. If the chat itself is the source, log it as a conversation with channel ' +
-      `"claude-code" and externalId "${session}:${turnId}".`,
+      `"claude-code" and externalId "${safeId(session)}:${safeId(turnId)}".`,
     '',
     'If the Retainer tools are not available, tell the user in one line to run /mcp and sign ' +
       'in to retainer, or to set RETAINER_CRM_HOOK=off to stop these checks. Do nothing else.',

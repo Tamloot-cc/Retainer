@@ -185,6 +185,9 @@ async function main() {
   const result = await classify(turnText(turn));
   if (!result.ok) {
     log(`${session} classifier failed: ${result.output.slice(0, 300).replace(/\s+/g, ' ')}`);
+    // Not checked after all: a later Stop for this turn may try again.
+    if (state.checked[session] === turn.id) delete state.checked[session];
+    writeState(state);
     if (
       isAuthFailure(result.output) &&
       Date.now() - (state.authWarnedAt ?? 0) > AUTH_WARNING_EVERY_MS
@@ -209,7 +212,7 @@ async function main() {
   log(`${session} ${verdict.log ? 'log' : 'no'}: ${verdict.what || '-'}`);
   if (!verdict.log) return 0;
 
-  process.stderr.write(wakeMessage(verdict.what, session, turn.id ?? Date.now()));
+  process.stderr.write(wakeMessage(session, turn.id ?? Date.now()));
   return WAKE;
 }
 

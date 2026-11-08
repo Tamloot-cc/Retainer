@@ -8,7 +8,8 @@ citing the chat.
 
 ## Install
 
-You need a Retainer account. In Claude Code:
+You need a Retainer account, and Node.js 20 or later for the check that
+runs after each turn. In Claude Code:
 
 ```
 /plugin marketplace add Tamloot-cc/Retainer
