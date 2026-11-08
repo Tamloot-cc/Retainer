@@ -347,23 +347,17 @@ Where your user got it decides the source:
 - They told you themselves: the chat is the source. log_event a
   conversation with channel set to your client ("claude-code", "codex",
   "cursor"), medium "message", the chat's session or conversation ID as
-  externalId, occurredAt now, a short title, and your own one-paragraph
-  summary of what your user said, not of the whole chat. Put your user's
-  email in participants and the records it concerns in about.
-
-Logging the same externalId again returns the same event, so a long chat
-keeps one event; later calls add the records it newly concerns.
+  externalId (so a whole chat stays one event), occurredAt now, a short
+  title, and your own one-paragraph summary of what your user said, not of
+  the whole chat. Put your user's email in participants and the records it
+  concerns in about.
 
 ## 3. Write what you learned
 
-In this order, each citing the event id from step 2 as source:
-1. upsert_record for values that fit a field.
-2. remember for plain-language facts that do not, with a short quote of
-   your user's words when it helps.
-3. upsert_record for tasks someone committed to, with a due date when one
-   was said.
-A write that comes back as pending_review waits for a person's approval:
-say so.
+Write values, facts and tasks in the order the server instructions give
+for any conversation, each citing the event from step 2 as source. Quote
+your user's own words in a fact when it helps, and give a task the due date
+that was said.
 
 ## 4. Tell your user
 
@@ -408,9 +402,6 @@ export const GUIDES = {
     promptIntro: 'Log to Retainer what this chat taught you about our customers and work.',
   },
 } as const;
-
-/** The guides that teach schema design; each carries DESIGN_RULES. */
-export const SCHEMA_GUIDE_NAMES = ['discover_schema', 'schema_design'] as const;
 
 type GuideName = keyof typeof GUIDES;
 

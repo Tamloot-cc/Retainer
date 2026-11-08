@@ -33,10 +33,7 @@ work.
   that already used Retainer, short turns, slash commands and turns you
   didn't start. For the rest, it asks Claude Haiku, through your own Claude
   Code sign-in, whether the turn holds something your CRM should keep. If it
-  does, Claude wakes up and follows the server's `log_from_chat` guide: it
-  logs the chat as a conversation event first, then the field values, facts
-  and tasks that cite it, and asks you before creating a company or any
-  record other than a person or a task.
+  does, Claude wakes up and follows the server's `log_from_chat` guide.
 
 The rules for what to log live on the Retainer server, not in the plugin, so
 they improve without a plugin update. To log a chat yourself, pick the

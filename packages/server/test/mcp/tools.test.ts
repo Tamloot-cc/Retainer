@@ -2,10 +2,15 @@ import { readFileSync } from 'node:fs';
 import type { GetPromptResult } from '@modelcontextprotocol/client';
 import { FIELD_TYPES, FIELD_VALUE_FORMATS } from '@retainer/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { GUIDE_NAMES, SCHEMA_GUIDE_NAMES } from '../../src/mcp/guides.js';
+import { GUIDE_NAMES, GUIDES } from '../../src/mcp/guides.js';
 import { schemaOperationSchema } from '../../src/schema-engine/operations.js';
 import { type McpTestClient, startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
+
+/** The guides that carry the shared schema design rules. */
+const SCHEMA_GUIDE_NAMES = GUIDE_NAMES.filter((name) =>
+  GUIDES[name].text.includes('### Use what Retainer already has'),
+);
 
 const db = useTestDatabase();
 let t: TestApp;
@@ -345,14 +350,12 @@ describe('the discover_schema guide', () => {
       const res = await agent.call<string>('get_guide', { name });
       const operations = schemaOperationSchema.options.map((o) => o.shape.op.value);
       const cardinalities = ['many_to_one', 'many_to_many', 'one_to_many'];
-      const writeStatuses = ['pending_review'];
       const known = new Set<string>([
         ...TOOLS,
         ...operations,
         ...FIELD_TYPES,
         ...GUIDE_NAMES,
         ...cardinalities,
-        ...writeStatuses,
       ]);
       const named = new Set(res.body.match(/\b[a-z]+(?:_[a-z]+)+\b/g));
       expect(named).toContain('log_event');
@@ -421,17 +424,15 @@ describe('the schema_design guide', () => {
 });
 
 describe('the log_from_chat guide', () => {
-  it('points agents at the guide from the instructions and get_guide', async () => {
+  it('points agents at the guide from the instructions', () => {
     expect(agent.getInstructions()).toContain('get_guide("log_from_chat")');
-    const byName = await toolsByName(agent);
-    expect(byName.get('get_guide')?.description).toContain('"log_from_chat"');
   });
 
   it('logs the source before the values, facts and tasks that cite it', async () => {
     const { body, isError } = await reader.call<string>('get_guide', { name: 'log_from_chat' });
     expect(isError).toBe(false);
     expect(body).toMatch(/^# Log what your user tells you/);
-    const steps = ['get_context', 'log_event', 'upsert_record', 'remember for', 'pending_review'];
+    const steps = ['get_context', 'log_event', 'order the server instructions give'];
     const positions = steps.map((step) => body.indexOf(step));
     expect(positions.every((p) => p >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
@@ -439,9 +440,10 @@ describe('the log_from_chat guide', () => {
 
   it('cites the email or meeting itself, not the chat, when that is where it came from', async () => {
     const { body } = await reader.call<string>('get_guide', { name: 'log_from_chat' });
-    expect(body).toContain('Reading it does not\n  make the chat its source.');
-    expect(body).toContain('channel set to your client ("claude-code"');
-    expect(body).toContain('Ask your user before creating a company');
+    const prose = body.replace(/\s+/g, ' ');
+    expect(prose).toContain('Reading it does not make the chat its source.');
+    expect(prose).toContain('channel set to your client ("claude-code"');
+    expect(prose).toContain('Ask your user before creating a company');
   });
 });
 

@@ -4,7 +4,6 @@ import {
   isAuthFailure,
   lastTurn,
   MAX_TURN_CHARS,
-  parseTranscript,
   parseVerdict,
   skipReason,
   turnText,
@@ -16,8 +15,6 @@ const long = 'Dana from Acme said they will renew in March, at the same price. '
 function prompt(text, extra = {}) {
   return {
     type: 'user',
-    uuid: `u-${text.length}`,
-    promptId: 'p1',
     message: { content: text },
     ...extra,
   };
@@ -32,59 +29,61 @@ function toolResult() {
   return { type: 'user', message: { content: [{ type: 'tool_result', content: 'ok' }] } };
 }
 
-describe('parseTranscript', () => {
-  it('skips lines that are not JSON, such as a line cut by reading the tail', () => {
-    const text = `{"type":"use\n${JSON.stringify(prompt('hi'))}\n\n${JSON.stringify(reply('yo'))}\n`;
-    assert.deepEqual(
-      parseTranscript(text).map((e) => e.type),
-      ['user', 'assistant'],
-    );
-  });
-});
+/** A transcript's JSONL text, as the hook reads it. */
+const jsonl = (...entries) => entries.map((e) => JSON.stringify(e)).join('\n');
 
 describe('lastTurn', () => {
   it('starts at the last prompt and collects replies and tools, not tool results', () => {
-    const turn = lastTurn([
-      prompt('first'),
-      reply('old reply'),
-      prompt('second', { uuid: 'u2', turnOrigin: 'human' }),
-      toolUse('mcp__gmail__search'),
-      toolResult(),
-      reply('Found it.'),
-    ]);
+    const turn = lastTurn(
+      jsonl(
+        prompt('first'),
+        reply('old reply'),
+        prompt('second', { promptId: 'p2', turnOrigin: 'human' }),
+        toolUse('mcp__gmail__search'),
+        toolResult(),
+        reply('Found it.'),
+      ),
+    );
     assert.equal(turn.prompt, 'second');
-    assert.equal(turn.id, 'u2');
+    assert.equal(turn.id, 'p2');
     assert.equal(turn.origin, 'human');
     assert.deepEqual(turn.replies, ['Found it.']);
     assert.deepEqual(turn.tools, ['mcp__gmail__search']);
   });
 
-  it("prefers the Stop hook's prompt_id", () => {
-    const turn = lastTurn(
-      [
-        prompt('wanted', { promptId: 'a', uuid: 'ua' }),
-        reply('r'),
-        prompt('later', { promptId: 'b' }),
-      ],
-      'a',
+  it('skips lines that are not JSON, such as a line cut by reading the tail', () => {
+    const text = `{"type":"use\n${jsonl(prompt('hi', { promptId: 'p1' }), reply('yo'))}\n{"type":"assi`;
+    const turn = lastTurn(text);
+    assert.equal(turn.id, 'p1');
+    assert.deepEqual(turn.replies, ['yo']);
+  });
+
+  it("prefers the Stop hook's prompt_id, and falls back to the last prompt", () => {
+    const text = jsonl(
+      prompt('wanted', { promptId: 'a' }),
+      reply('r'),
+      prompt('later', { promptId: 'b' }),
     );
-    assert.equal(turn.id, 'ua');
+    assert.equal(lastTurn(text, 'a').prompt, 'wanted');
+    assert.equal(lastTurn(text, 'missing').prompt, 'later');
   });
 
   it('ignores meta messages, subagent entries and prompts made of blocks without text', () => {
-    const turn = lastTurn([
-      prompt('real', { uuid: 'ur' }),
-      prompt('caveat', { isMeta: true }),
-      prompt('from a subagent', { isSidechain: true }),
-      { type: 'user', message: { content: [{ type: 'image' }] } },
-      { ...reply('subagent reply'), isSidechain: true },
-    ]);
-    assert.equal(turn.id, 'ur');
+    const turn = lastTurn(
+      jsonl(
+        prompt('real', { promptId: 'pr' }),
+        prompt('caveat', { isMeta: true }),
+        prompt('from a subagent', { isSidechain: true }),
+        { type: 'user', message: { content: [{ type: 'image' }] } },
+        { ...reply('subagent reply'), isSidechain: true },
+      ),
+    );
+    assert.equal(turn.id, 'pr');
     assert.deepEqual(turn.replies, []);
   });
 
   it('returns null when there is no prompt', () => {
-    assert.equal(lastTurn([reply('x')]), null);
+    assert.equal(lastTurn(jsonl(reply('x'))), null);
   });
 });
 

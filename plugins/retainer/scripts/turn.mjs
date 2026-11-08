@@ -15,18 +15,13 @@ export const MIN_TURN_CHARS = 200;
 /** How much of a turn the classifier sees. Long turns keep their start and end. */
 export const MAX_TURN_CHARS = 12_000;
 
-/** Parses JSONL, skipping lines that are not JSON (a partial first line, say). */
-export function parseTranscript(text) {
-  const entries = [];
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    try {
-      entries.push(JSON.parse(line));
-    } catch {
-      // A line cut by reading from the middle of the file, or one being written.
-    }
+function parseLine(line) {
+  if (!line.trim()) return null;
+  try {
+    return JSON.parse(line);
+  } catch {
+    return null; // A line cut by reading from the middle of the file, or one being written.
   }
-  return entries;
 }
 
 function blocks(entry) {
@@ -54,30 +49,38 @@ function isPrompt(entry) {
 }
 
 /**
- * The last turn: the prompt that started it and every main-thread entry
- * after it. Prefers the prompt with the Stop hook's prompt_id; falls back to
- * the last prompt in the transcript.
+ * The last turn in a transcript's JSONL text: the prompt that started it and
+ * the main-thread replies after it. Walks back from the end and parses only
+ * as far as the prompt with the Stop hook's prompt_id, or without one, the
+ * last prompt; falls back to the last prompt if that id is not found.
  */
-export function lastTurn(entries, promptId) {
-  let start = -1;
-  if (promptId) start = entries.findLastIndex((e) => isPrompt(e) && e.promptId === promptId);
-  if (start < 0) start = entries.findLastIndex(isPrompt);
-  if (start < 0) return null;
-  const prompt = entries[start];
-  const rest = entries.slice(start + 1).filter((e) => !e.isSidechain);
-  const toolUses = rest
-    .filter((e) => e.type === 'assistant')
-    .flatMap(blocks)
-    .filter((block) => block?.type === 'tool_use');
+export function lastTurn(text, promptId) {
+  const lines = text.split('\n');
+  const after = [];
+  let prompt = null;
+  let latest = null;
+  for (let i = lines.length - 1; i >= 0 && !prompt; i--) {
+    const entry = parseLine(lines[i]);
+    if (!isPrompt(entry)) {
+      if (!latest && entry?.type === 'assistant' && !entry.isSidechain) after.push(entry);
+      continue;
+    }
+    latest ??= entry;
+    if (!promptId || entry.promptId === promptId) prompt = entry;
+  }
+  prompt ??= latest;
+  if (!prompt) return null;
+  // Replies collected before reaching the latest prompt belong to its turn.
+  const assistant = prompt === latest ? after.reverse() : [];
   return {
-    id: prompt.uuid ?? prompt.promptId ?? null,
+    id: prompt.promptId ?? prompt.uuid ?? null,
     origin: prompt.turnOrigin ?? null,
     prompt: textOf(prompt),
-    replies: rest
-      .filter((e) => e.type === 'assistant')
-      .map(textOf)
-      .filter(Boolean),
-    tools: toolUses.map((block) => block.name).filter((name) => typeof name === 'string'),
+    replies: assistant.map(textOf).filter(Boolean),
+    tools: assistant
+      .flatMap(blocks)
+      .filter((block) => block?.type === 'tool_use' && typeof block.name === 'string')
+      .map((block) => block.name),
   };
 }
 
@@ -98,12 +101,12 @@ export function skipReason(turn, { checked } = {}) {
 
 /** The turn as plain text for the classifier, trimmed in the middle if too long. */
 export function turnText(turn, lastAssistantMessage) {
-  const replies = turn.replies.length > 0 ? turn.replies : [lastAssistantMessage ?? ''];
+  const replies = turn.replies.length > 0 ? turn.replies : [lastAssistantMessage].filter(Boolean);
   const tools = [...new Set(turn.tools)];
   const text = [
     `USER:\n${turn.prompt}`,
     tools.length > 0 ? `TOOLS USED: ${tools.join(', ')}` : '',
-    `ASSISTANT:\n${replies.filter(Boolean).join('\n\n')}`,
+    `ASSISTANT:\n${replies.join('\n\n')}`,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -112,6 +115,11 @@ export function turnText(turn, lastAssistantMessage) {
   return `${text.slice(0, half)}\n\n[… trimmed …]\n\n${text.slice(-half)}`;
 }
 
+/**
+ * The classifier's system prompt. Its idea of what is worth saving is a
+ * coarse filter; the precise rules are in the server's log_from_chat guide,
+ * which Claude reads before writing anything. Keep the two in step.
+ */
 export const CLASSIFIER_PROMPT = `You decide whether one turn of a chat between a person and their AI
 assistant holds information worth saving in the person's CRM: facts about
 the people, companies, customers, deals, projects or commitments their
@@ -128,11 +136,8 @@ stay inside the chat, guesses, and anything about the assistant itself.
 
 When unsure, answer no.
 
-Reply with JSON only, no prose:
-{"log": true or false, "what": "one short line: what to save and about whom, or empty"}
-
-The turn:
-`;
+The user message is the turn. Reply with JSON only, no prose:
+{"log": true or false, "what": "one short line: what to save and about whom, or empty"}`;
 
 /**
  * What Claude reads when the check wakes it. The rules for what to write live
@@ -145,8 +150,7 @@ export function wakeMessage(what, session) {
     '',
     'To log it, call the Retainer get_guide tool with {"name": "log_from_chat"} and follow ' +
       'the guide. If the chat itself is the source, log it as a conversation with channel ' +
-      `"claude-code" and externalId "${session}". The line above says where to look, not ` +
-      'what to write: log nothing if, on a closer look, it is not worth keeping.',
+      `"claude-code" and externalId "${session}".`,
     '',
     'If the Retainer tools are not available, tell the user in one line to run /mcp and sign ' +
       'in to retainer, or to set RETAINER_CRM_HOOK=off to stop these checks. Do nothing else.',
@@ -155,10 +159,12 @@ export function wakeMessage(what, session) {
   ].join('\n');
 }
 
+const NO = Object.freeze({ log: false, what: '' });
+
 /** Reads the classifier's answer; anything unreadable counts as no. */
 export function parseVerdict(text) {
   const match = typeof text === 'string' ? text.match(/\{[\s\S]*\}/) : null;
-  if (!match) return { log: false, what: '' };
+  if (!match) return NO;
   try {
     const verdict = JSON.parse(match[0]);
     return {
@@ -166,7 +172,7 @@ export function parseVerdict(text) {
       what: typeof verdict.what === 'string' ? verdict.what.trim().slice(0, 300) : '',
     };
   } catch {
-    return { log: false, what: '' };
+    return NO;
   }
 }
 

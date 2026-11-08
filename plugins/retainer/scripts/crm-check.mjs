@@ -31,7 +31,6 @@ import {
   CLASSIFIER_PROMPT,
   isAuthFailure,
   lastTurn,
-  parseTranscript,
   parseVerdict,
   skipReason,
   turnText,
@@ -48,7 +47,6 @@ const dataDir = process.env.CLAUDE_PLUGIN_DATA || join(homedir(), '.claude', 're
 
 function log(message) {
   try {
-    mkdirSync(dataDir, { recursive: true });
     appendFileSync(join(dataDir, 'crm-check.log'), `${new Date().toISOString()} ${message}\n`);
   } catch {
     // Logging must never break the hook.
@@ -67,7 +65,6 @@ function writeState(state) {
   // Keep the last 200 sessions; older ones will never stop again.
   const sessions = Object.entries(state.checked ?? {}).slice(-200);
   try {
-    mkdirSync(dataDir, { recursive: true });
     writeFileSync(
       join(dataDir, 'state.json'),
       JSON.stringify({ ...state, checked: Object.fromEntries(sessions) }),
@@ -96,22 +93,23 @@ async function readStdin() {
   return JSON.parse(text);
 }
 
-/** Runs `claude -p` with Haiku, and with hooks, MCP servers, skills and tools off. */
+/**
+ * Runs `claude -p` with Haiku in safe mode: no CLAUDE.md, hooks, plugins, MCP
+ * servers or skills, and no tools, with the classifier prompt as the whole
+ * system prompt.
+ */
 function classify(text) {
   const args = [
     '-p',
+    '--safe-mode',
     '--model',
     'haiku',
-    '--output-format',
-    'json',
-    '--settings',
-    JSON.stringify({ disableAllHooks: true }),
-    '--strict-mcp-config',
-    '--mcp-config',
-    JSON.stringify({ mcpServers: {} }),
-    '--disable-slash-commands',
+    '--system-prompt',
+    CLASSIFIER_PROMPT,
     '--tools',
     '',
+    '--output-format',
+    'json',
     '--no-session-persistence',
   ];
   return new Promise((resolve) => {
@@ -147,7 +145,7 @@ function classify(text) {
       }
       resolve({ ok: !isError, output: isError ? `${result}\n${stderr}`.trim() : result });
     });
-    child.stdin.end(CLASSIFIER_PROMPT + text);
+    child.stdin.end(text);
   });
 }
 
@@ -156,31 +154,41 @@ async function main() {
   const input = await readStdin();
   if (input.stop_hook_active) return 0;
   const session = input.session_id ?? 'unknown';
+  mkdirSync(dataDir, { recursive: true });
+  const state = readState();
+  state.checked ??= {};
+  if (input.prompt_id && state.checked[session] === input.prompt_id) {
+    log(`${session} skip: turn already checked`);
+    return 0;
+  }
 
-  let entries = [];
+  let turn;
   try {
-    if (input.transcript_path) entries = parseTranscript(readTail(input.transcript_path));
+    turn = input.transcript_path
+      ? lastTurn(readTail(input.transcript_path), input.prompt_id)
+      : null;
   } catch (error) {
     log(`${session} skip: cannot read transcript (${error.message})`);
     return 0;
   }
-
-  const state = readState();
-  const turn = lastTurn(entries, input.prompt_id);
-  const reason = skipReason(turn, { checked: state.checked?.[session] });
+  const reason = skipReason(turn, { checked: state.checked[session] });
   if (reason) {
     log(`${session} skip: ${reason}`);
     return 0;
   }
-  state.checked = { ...state.checked, [session]: turn.id };
+  // Saved before the slow classifier call, so a second Stop for this turn skips it.
+  state.checked[session] = turn.id;
   writeState(state);
 
   const result = await classify(turnText(turn, input.last_assistant_message));
   if (!result.ok) {
     log(`${session} classifier failed: ${result.output.slice(0, 300).replace(/\s+/g, ' ')}`);
-    const warnedAt = state.authWarnedAt ?? 0;
-    if (isAuthFailure(result.output) && Date.now() - warnedAt > AUTH_WARNING_EVERY_MS) {
-      writeState({ ...state, authWarnedAt: Date.now() });
+    if (
+      isAuthFailure(result.output) &&
+      Date.now() - (state.authWarnedAt ?? 0) > AUTH_WARNING_EVERY_MS
+    ) {
+      state.authWarnedAt = Date.now();
+      writeState(state);
       process.stderr.write(
         "Retainer's CRM check could not run: Claude Code's sign-in for `claude -p` has " +
           'expired. Tell the user, in one line, to run `claude auth login` in a terminal so ' +
@@ -190,7 +198,10 @@ async function main() {
     }
     return 0;
   }
-  if (state.authWarnedAt) writeState({ ...state, authWarnedAt: 0 });
+  if (state.authWarnedAt) {
+    state.authWarnedAt = 0;
+    writeState(state);
+  }
 
   const verdict = parseVerdict(result.output);
   log(`${session} ${verdict.log ? 'log' : 'no'}: ${verdict.what || '-'}`);
