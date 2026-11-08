@@ -370,7 +370,7 @@ function InviteDialog({
         }
       }}
       title={workspace ? `Invite someone to ${workspace.name}` : 'Invite someone'}
-      description="Retainer gives you a link to send them. They sign in with the Google account for that email to accept."
+      description="Retainer gives you a link to send them. They sign in with the Google or Microsoft account for that email to accept."
     >
       {link ? (
         <Stack>

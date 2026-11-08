@@ -15,7 +15,10 @@ export function YourAccount({ account }: { account: Account }) {
       <Panel title="You">
         <p className="text-sm font-medium">{account.user.name}</p>
         <p className="text-sm text-muted-foreground">{account.user.email}</p>
-        <Muted small>Your name and email come from your Google account; change them there.</Muted>
+        <Muted small>
+          Your name and email come from the Google or Microsoft account you first signed in with;
+          change them there.
+        </Muted>
       </Panel>
       <Passkeys />
       <Panel title="Connected apps">
@@ -105,8 +108,8 @@ function Passkeys() {
     <Panel title="Passkeys">
       <Stack>
         <Muted small>
-          A passkey signs you in with your fingerprint, face or device PIN. Google sign-in keeps
-          working either way.
+          A passkey signs you in with your fingerprint, face or device PIN. Signing in with Google
+          or Microsoft keeps working either way.
         </Muted>
         {passkeys === null ? null : passkeys.length === 0 ? (
           <Muted>You have no passkeys yet.</Muted>

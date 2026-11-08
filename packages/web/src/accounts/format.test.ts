@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { signInError, withoutSignInError } from './format.js';
+import { providerNames, signInError, withoutSignInError } from './format.js';
 
 describe('signInError', () => {
   it('says nothing without an error', () => {
@@ -7,13 +7,21 @@ describe('signInError', () => {
   });
 
   it('tells someone who lost a simultaneous first sign-in to sign in again', () => {
-    expect(signInError('unable_to_create_user')).toMatch(/created in another tab or window/);
-    expect(signInError('unable_to_create_user')).not.toMatch(/verified/);
+    for (const code of ['unable_to_create_user', 'unable_to_link_account']) {
+      expect(signInError(code)).toMatch(/just set up in another tab or window. Sign in again/);
+      expect(signInError(code)).not.toMatch(/verified/);
+    }
   });
 
-  it('names an address Google has not verified, whatever the code’s case', () => {
-    expect(signInError('email_not_verified')).toMatch(/not verified/);
-    expect(signInError('EMAIL_NOT_VERIFIED')).toMatch(/not verified/);
+  it('names an address the provider has not verified, whatever the code’s case', () => {
+    for (const code of ['email_not_verified', 'EMAIL_NOT_VERIFIED', 'email_not_found']) {
+      expect(signInError(code)).toMatch(/no verified email address/);
+      expect(signInError(code)).toMatch(/IT admin can verify your email domain with Microsoft/);
+    }
+  });
+
+  it('sends someone whose address is already in use back the way they came', () => {
+    expect(signInError('account_not_linked')).toMatch(/Sign in the way you did before/);
   });
 
   it('falls back to a plain retry', () => {
@@ -21,8 +29,16 @@ describe('signInError', () => {
   });
 });
 
+describe('providerNames', () => {
+  it('names the providers that are on', () => {
+    expect(providerNames(['google'])).toBe('Google');
+    expect(providerNames(['microsoft'])).toBe('Microsoft');
+    expect(providerNames(['google', 'microsoft'])).toBe('Google or Microsoft');
+  });
+});
+
 describe('withoutSignInError', () => {
-  it("drops Google's error and keeps an OAuth request's parameters", () => {
+  it("drops the provider's error and keeps an OAuth request's parameters", () => {
     expect(withoutSignInError('?client_id=c&sig=s&error=access_denied&error_description=no')).toBe(
       '?client_id=c&sig=s',
     );

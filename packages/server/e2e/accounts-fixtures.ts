@@ -7,13 +7,20 @@ import { createAccountsServer } from '../src/accounts/index.js';
 import { createApp } from '../src/api/app.js';
 import { CONTROL_ROLE, loadConfig } from '../src/config.js';
 import { createSql, RUNTIME_ROLE } from '../src/db/client.js';
+import {
+  type FakeMicrosoft,
+  MICROSOFT_CLIENT_ID,
+  MICROSOFT_CLIENT_SECRET,
+  startFakeMicrosoft,
+} from '../test/helpers/microsoft.js';
 import { fetchClientMetadata } from '../test/helpers/oauth.js';
 
 /**
  * Accounts mode in the browser (accounts spec 8: Browser layer): the API,
  * /account and the built web app on one origin, with a fake Google that
- * trusts the ID token, which is the profile as JSON. The origin is
- * `localhost`, because passkeys refuse an IP address.
+ * trusts the ID token, which is the profile as JSON, and a fake Microsoft
+ * the browser really goes to and comes back from (test/helpers/microsoft.ts).
+ * The origin is `localhost`, because passkeys refuse an IP address.
  */
 
 const AUTH_SECRET = 'browser-auth-secret-0123456789abcdef0123456789';
@@ -21,14 +28,20 @@ const AUTH_SECRET = 'browser-auth-secret-0123456789abcdef0123456789';
 export type Profile = { sub?: string; email: string; name: string };
 
 export const test = base.extend<{
+  /** False runs the server with Google alone, as before Microsoft sign-in. */
+  withMicrosoft: boolean;
   accounts: {
     url: string;
     owner: ReturnType<typeof createSql>;
     /** Signs a browser context in with Google, as the web app's redirect would. */
     signIn: (context: BrowserContext, profile: Profile) => Promise<void>;
+    /** The fake Microsoft, when it is on. */
+    microsoft: FakeMicrosoft | null;
   };
 }>({
-  accounts: async ({ browserName: _browserName }, use) => {
+  withMicrosoft: [true, { option: true }],
+  accounts: async ({ browserName: _browserName, withMicrosoft }, use) => {
+    const microsoft = withMicrosoft ? await startFakeMicrosoft() : null;
     const adminUrl = process.env.DATABASE_URL;
     if (!adminUrl) throw new Error('DATABASE_URL is required');
     const name = `retainer_browser_${randomBytes(6).toString('hex')}`;
@@ -59,6 +72,12 @@ export const test = base.extend<{
       RETAINER_AUTH_SECRET: AUTH_SECRET,
       RETAINER_GOOGLE_CLIENT_ID: 'browser-test-client',
       RETAINER_GOOGLE_CLIENT_SECRET: 'browser-test-secret',
+      ...(microsoft
+        ? {
+            RETAINER_MICROSOFT_CLIENT_ID: MICROSOFT_CLIENT_ID,
+            RETAINER_MICROSOFT_CLIENT_SECRET: MICROSOFT_CLIENT_SECRET,
+          }
+        : {}),
       RETAINER_PUBLIC_ORIGIN: url,
       LOG_LEVEL: 'error',
     });
@@ -70,6 +89,7 @@ export const test = base.extend<{
       rateLimit: false,
       // Claude's client metadata document, without the internet.
       fetchClientMetadata: fetchClientMetadata as never,
+      ...(microsoft ? { microsoftAuthority: microsoft.authority } : {}),
       google: {
         verifyIdToken: async () => true,
         getUserInfo: async (token) => {
@@ -113,13 +133,14 @@ export const test = base.extend<{
     }
 
     try {
-      await use({ url, owner, signIn });
+      await use({ url, owner, signIn, microsoft });
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((e) => (e ? reject(e) : resolve()));
         if ('closeAllConnections' in server) server.closeAllConnections();
       });
       await Promise.all([runtime.end(), control.end(), authControl.end(), owner.end()]);
+      await microsoft?.close();
       await admin.unsafe(`drop database "${name}" with (force)`);
       await admin.end();
     }

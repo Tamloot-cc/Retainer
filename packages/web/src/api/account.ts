@@ -118,9 +118,14 @@ async function call<T>(path: string, init: { method?: string; body?: unknown } =
 const ws = (id: string) => `/account/workspaces/${encodeURIComponent(id)}`;
 const org = (id: string) => `/account/organizations/${encodeURIComponent(id)}`;
 
+/** A way to sign in for the first time; passkeys come after. */
+export type SignInProvider = 'google' | 'microsoft';
+
 export const account = {
   /** The person; 401 when signed out, 404 in key mode. */
   me: () => call<Account>('/account'),
+  /** The providers this server signs people in with; needs no session. */
+  providers: () => call<{ providers: SignInProvider[] }>('/account/providers'),
   createWorkspace: (input: { name: string; template?: string; organizationId?: string }) =>
     call<Workspace>('/account/workspaces', { method: 'POST', body: input }),
   renameWorkspace: (id: string, name: string) =>

@@ -4,36 +4,47 @@ import {
   account as accountApi,
   authClient,
   type InvitationPreview,
+  type SignInProvider,
   signOutOfAccount,
   workspaceHref,
 } from '../api/account.js';
 import { BrandMark } from '../ui/brand.js';
 import { Button, Input, Label, Muted, Notice, SignInFrame, Stack } from '../ui/index.js';
 import { allWorkspaces, managed } from './context.js';
-import { roleWords, signInError } from './format.js';
+import { providerNames, roleWords, signInError } from './format.js';
 
 /** Screens outside any workspace in accounts mode (accounts spec 5). */
+
+const PROVIDER_NAMES: Record<SignInProvider, string> = { google: 'Google', microsoft: 'Microsoft' };
 
 export function AccountSignIn({ returnTo }: { returnTo?: string } = {}) {
   const [error, setError] = useState(() =>
     signInError(new URLSearchParams(window.location.search).get('error')),
   );
-  const [busy, setBusy] = useState<'google' | 'passkey' | null>(null);
+  const [busy, setBusy] = useState<SignInProvider | 'passkey' | null>(null);
+  // Google, Microsoft or both, as the server is set up.
+  const [providers, setProviders] = useState<SignInProvider[] | null>(null);
+  useEffect(() => {
+    accountApi.providers().then(
+      (r) => setProviders(r.providers),
+      () => setError('Could not load the ways to sign in. Reload the page to try again.'),
+    );
+  }, []);
   // After signing in, come back to the page that asked for it.
   const here =
     returnTo ?? (window.location.pathname.startsWith('/app/') ? window.location.pathname : '/app/');
-  async function google() {
-    setBusy('google');
+  async function social(provider: SignInProvider) {
+    setBusy(provider);
     setError('');
     const client = await authClient();
     const result = await client.signIn.social({
-      provider: 'google',
+      provider,
       callbackURL: here,
       // Connecting an app: come back here, so its request is not lost.
       errorCallbackURL: returnTo ?? '/app/',
     });
     if (result.error) {
-      setError('Google sign-in could not start. Try again.');
+      setError(`${PROVIDER_NAMES[provider]} sign-in could not start. Try again.`);
       setBusy(null);
     }
   }
@@ -44,7 +55,7 @@ export function AccountSignIn({ returnTo }: { returnTo?: string } = {}) {
     const result = await client.signIn.passkey();
     if (result.error) {
       setError(
-        'That passkey did not work. Use Google instead, or try another passkey saved for this site.',
+        `That passkey did not work. Use ${providerNames(providers ?? [])} instead, or try another passkey saved for this site.`,
       );
       setBusy(null);
       return;
@@ -54,17 +65,28 @@ export function AccountSignIn({ returnTo }: { returnTo?: string } = {}) {
   return (
     <SignInFrame subtitle="Sign in to see what your agents remember.">
       <Stack>
-        <Button variant="primary" disabled={busy !== null} onClick={() => void google()}>
-          {busy === 'google' ? 'Opening Google…' : 'Continue with Google'}
-        </Button>
+        {(providers ?? []).map((provider) => (
+          <Button
+            key={provider}
+            variant="primary"
+            disabled={busy !== null}
+            onClick={() => void social(provider)}
+          >
+            {busy === provider
+              ? `Opening ${PROVIDER_NAMES[provider]}…`
+              : `Continue with ${PROVIDER_NAMES[provider]}`}
+          </Button>
+        ))}
         <Button disabled={busy !== null} onClick={() => void passkey()}>
           {busy === 'passkey' ? 'Waiting for your passkey…' : 'Use a passkey'}
         </Button>
         {error ? <Notice error>{error}</Notice> : null}
-        <Muted>
-          New here? Continue with Google to create your account. A passkey works once you have added
-          one.
-        </Muted>
+        {providers ? (
+          <Muted>
+            New here? Continue with {providerNames(providers)} to create your account. A passkey
+            works once you have added one.
+          </Muted>
+        ) : null}
       </Stack>
     </SignInFrame>
   );
@@ -275,7 +297,7 @@ export function InvitePage({ token, account }: { token: string; account: Account
       ) : (
         <Notice error>
           This invitation is for {preview.email}, and you're signed in as {account.user.email}. Sign
-          out, then sign in with that Google account to accept it.
+          out, then sign in with the Google or Microsoft account for that address to accept it.
         </Notice>
       )}
     </AccountFrame>
