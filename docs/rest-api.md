@@ -24,8 +24,8 @@ always wins over a cookie.
 
 ### Accounts mode
 
-In [accounts mode](self-hosting.md#accounts-mode) people sign in with Google
-or a passkey, and one session reaches every workspace they have a role in. A
+In [accounts mode](self-hosting.md#accounts-mode) people sign in with Google,
+Microsoft or a passkey, and one session reaches every workspace they have a role in. A
 request with the session cookie names its workspace by ID:
 
 ```http
@@ -42,7 +42,9 @@ request needs no header; one that names another workspace than its key's gets
 (`/account/auth/…`), the person and where they have access (`GET /account`),
 workspaces, members, invitations, API keys and connected apps. They take only
 a session cookie and refuse an API key or an OAuth token, so no agent
-credential can create a key, add a member or create a workspace.
+credential can create a key, add a member or create a workspace. The one
+exception is `GET /account/providers`, which needs no session: it tells the
+sign-in page which providers are on, as `{ "providers": ["google", "microsoft"] }`.
 
 Deleting a workspace (`DELETE /account/workspaces/:id` with its name as
 `{ "name": "…" }`, for an organization owner or admin) takes effect at once:

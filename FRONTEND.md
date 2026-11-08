@@ -18,17 +18,17 @@ no dashboards, email sync or agent chat.
 
 ## 1. Decisions
 
-| Decision      | Choice                                                                                                                                  |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Package       | `packages/web`, the private (unpublished) `@retainer/web`, **MIT**                                                                      |
-| Data source   | `@retainer/sdk` over the REST API only. Never imports `packages/server`                                                                 |
-| Data model    | Every list, form and filter is built at runtime from `GET /v1/schema`; nothing is written per object                                    |
-| UI kit        | Own components on Radix primitives and Tailwind CSS 4 (Button adapted from shadcn/ui), React 19                                         |
-| App shape     | Single-page app built with Vite; TanStack Router for routes, TanStack Query for server state                                            |
-| Hosting       | Static files served by the Retainer server at `/app`, same origin as the API, so the image stays one process and there is no CORS       |
-| Auth          | Key mode: a person signs in with their own `user`-actor API key, turned into an httpOnly cookie. Accounts mode: Google or a passkey (4) |
-| Twenty        | A behaviour reference only. No Twenty code is copied or translated (2)                                                                  |
-| First screens | Retainer's own: the review inbox, then records with provenance, facts and events                                                        |
+| Decision      | Choice                                                                                                                                             |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Package       | `packages/web`, the private (unpublished) `@retainer/web`, **MIT**                                                                                 |
+| Data source   | `@retainer/sdk` over the REST API only. Never imports `packages/server`                                                                            |
+| Data model    | Every list, form and filter is built at runtime from `GET /v1/schema`; nothing is written per object                                               |
+| UI kit        | Own components on Radix primitives and Tailwind CSS 4 (Button adapted from shadcn/ui), React 19                                                    |
+| App shape     | Single-page app built with Vite; TanStack Router for routes, TanStack Query for server state                                                       |
+| Hosting       | Static files served by the Retainer server at `/app`, same origin as the API, so the image stays one process and there is no CORS                  |
+| Auth          | Key mode: a person signs in with their own `user`-actor API key, turned into an httpOnly cookie. Accounts mode: Google, Microsoft or a passkey (4) |
+| Twenty        | A behaviour reference only. No Twenty code is copied or translated (2)                                                                             |
+| First screens | Retainer's own: the review inbox, then records with provenance, facts and events                                                                   |
 
 ### Why a single-page app and not Next.js
 
@@ -155,8 +155,10 @@ why actions are missing.
 ### 4.4 Accounts mode
 
 When the server runs in accounts mode
-([accounts spec](docs/specs/accounts-and-access.md)), people sign in with Google
-or a passkey and have a role in each workspace. The app finds out at startup:
+([accounts spec](docs/specs/accounts-and-access.md)), people sign in with Google,
+Microsoft or a passkey and have a role in each workspace. The sign-in page asks
+`GET /account/providers` which of Google and Microsoft are on, and shows a
+button for each. The app finds out at startup:
 `GET /account` answers `404` in key mode, `401` to someone signed out, and the
 person otherwise.
 

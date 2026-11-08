@@ -84,8 +84,10 @@ when running from source.
 | `RETAINER_WEB_DIR`                      | set in the image | Directory of the built web app, served at `/app`. Leave unset to serve no web app.                                                                                                                                                                                                                                                                          |
 | `RETAINER_DB_POOL_MAX`                  | `10`             | Database connections the API process opens. Lower it when many processes share one database.                                                                                                                                                                                                                                                                |
 | `RETAINER_AUTH_SECRET`                  | —                | Turns on [accounts mode](#accounts-mode). At least 32 characters (`openssl rand -hex 32`). Signs people's session cookies, so changing it signs everyone out.                                                                                                                                                                                               |
-| `RETAINER_GOOGLE_CLIENT_ID`             | —                | Accounts mode: the Google OAuth client people sign in with. Set it with the next one wherever `/account` is served.                                                                                                                                                                                                                                         |
+| `RETAINER_GOOGLE_CLIENT_ID`             | —                | Accounts mode: the Google OAuth client people sign in with. Set it with the next one wherever `/account` is served. Google, Microsoft or both.                                                                                                                                                                                                              |
 | `RETAINER_GOOGLE_CLIENT_SECRET`         | —                | Accounts mode: that client's secret.                                                                                                                                                                                                                                                                                                                        |
+| `RETAINER_MICROSOFT_CLIENT_ID`          | —                | Accounts mode: the Microsoft Entra app people sign in with, for work, school and personal Microsoft accounts. Set it with the next one wherever `/account` is served.                                                                                                                                                                                       |
+| `RETAINER_MICROSOFT_CLIENT_SECRET`      | —                | Accounts mode: that app's client secret. Microsoft secrets expire, so replace it before then.                                                                                                                                                                                                                                                               |
 | `RETAINER_CONTROL_DATABASE_URL`         | —                | Optional, accounts mode. A login as `retainer_control` for `/account`, with a password you choose, set by the server on start like the runtime login. Without it, `/account` uses the owner's login and switches to `retainer_control`.                                                                                                                     |
 | `RETAINER_RATE_LIMIT_PER_MINUTE`        | 600 or none      | Requests a minute each workspace may make to `/v1` and `/mcp`, across all its keys and connected apps; past it the API answers `429` with `Retry-After`. 600 in accounts mode, none in key mode. `0` turns it off.                                                                                                                                          |
 
@@ -103,30 +105,64 @@ The key is entered once on the sign-in screen and kept in an HTTP-only,
 same-site cookie, never in browser storage. Outside localhost, serve Retainer
 over HTTPS; Secure cookies require it. Revoking the key ends access at once.
 
-In [accounts mode](#accounts-mode) people sign in with Google or a passkey
-instead, and each workspace has its own address, `/app/w/<slug>/`.
+In [accounts mode](#accounts-mode) people sign in with Google, Microsoft or a
+passkey instead, and each workspace has its own address, `/app/w/<slug>/`.
 
 ## Accounts mode
 
 By default Retainer runs in key mode: everyone, people included, uses an API
-key. In accounts mode people sign in to the web app with Google or a passkey,
-and get a role in each workspace instead of a key. Agents keep using API keys,
+key. In accounts mode people sign in to the web app with Google, Microsoft or a
+passkey, and get a role in each workspace instead of a key. Agents keep using API keys,
 which workspace admins now create in the web app, or connect over OAuth with a
 person's sign-in, as Claude's web app does ([Connecting agents](agents.md#connecting-claudes-web-app-over-oauth)).
 
 Accounts mode is on when `RETAINER_AUTH_SECRET` is set, together with a Google
-OAuth client:
+OAuth client, a Microsoft Entra app, or both. The sign-in page shows a button
+for each one you set up.
 
-1. In the Google Cloud console, create an OAuth client of type "Web
-   application". Add `https://<your origin>/account/auth/callback/google` as an
-   authorized redirect URI. While the consent screen is in "Testing", only the
-   test users you list there can sign in; publish it to let anyone in.
-2. Set `RETAINER_AUTH_SECRET`, `RETAINER_GOOGLE_CLIENT_ID`,
-   `RETAINER_GOOGLE_CLIENT_SECRET` and `RETAINER_PUBLIC_ORIGIN`, then restart.
+**Google.** In the Google Cloud console, create an OAuth client of type "Web
+application". Add `https://<your origin>/account/auth/callback/google` as an
+authorized redirect URI. While the consent screen is in "Testing", only the
+test users you list there can sign in; publish it to let anyone in. Set
+`RETAINER_GOOGLE_CLIENT_ID` and `RETAINER_GOOGLE_CLIENT_SECRET`.
 
-Sign-up is open: anyone with a Google account can sign in and create a
-workspace of their own, in an organization of their own. They see only what
-they create or are invited to.
+**Microsoft.** Work and school accounts from any organization, and personal
+accounts such as Outlook.com:
+
+1. In the Microsoft Entra admin center, under Entra ID, App registrations, make
+   a new registration. For supported account types, choose any Entra ID tenant
+   plus personal Microsoft accounts.
+2. Under Authentication, add a Web redirect URI:
+   `https://<your origin>/account/auth/callback/microsoft`.
+3. Under Token configuration, add the optional claims `email` and `xms_edov` to
+   the ID token. If `xms_edov` is not offered there, add it in the Manifest,
+   under `optionalClaims.idToken`. Without it, no work account can sign in
+   (below).
+4. Under Certificates & secrets, create a client secret, and note when it
+   expires.
+5. Set `RETAINER_MICROSOFT_CLIENT_ID` (the application ID) and
+   `RETAINER_MICROSOFT_CLIENT_SECRET`.
+
+Then set `RETAINER_AUTH_SECRET` and `RETAINER_PUBLIC_ORIGIN`, and restart.
+
+**Which addresses count.** Retainer uses a person's email address to match
+invitations, so it only accepts one the provider verified. Google says so
+itself. For Microsoft, a personal account's address counts, and a work or
+school account's only when the token says its organization has proven to
+Microsoft that it owns the address's domain (`xms_edov`). An organization that
+has not verified its email domain with Microsoft cannot sign in with Microsoft
+until it does; its people can use Google.
+
+**One person, two ways in.** A person is the Google or Microsoft account they
+first signed in with, matched by the provider's own ID for it, not by email.
+Signing in later through the other provider with the same verified address
+reaches the same person. An address the provider has not verified never
+reaches someone else's account: that sign-in is refused, and so is a second
+account from the same provider. Passkeys come after either.
+
+Sign-up is open: anyone with a Google or Microsoft account whose address is
+verified can sign in and create a workspace of their own, in an organization of
+their own. They see only what they create or are invited to.
 
 Nothing limits how many workspaces or members an organization has unless you
 set a quota. Once full, creating a workspace or inviting someone more is
