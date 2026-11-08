@@ -12,7 +12,8 @@
 #   5. starts them again with the concurrency Terraform set.
 # Requests during steps 2-5 get 503 from API Gateway, usually for well under
 # a minute. If the migration fails, the functions stay stopped and the
-# script exits non-zero: fix the cause, then run it again.
+# script exits non-zero: fix the cause, then run it again. It refuses to
+# start at all while the database runs a PostgreSQL older than 18.
 set -euo pipefail
 
 name=retainer
@@ -55,6 +56,17 @@ if found="$(aws lambda get-function --function-name "$name-control" 2>&1)"; then
   services+=("$name-control")
 elif ! grep -q ResourceNotFoundException <<<"$found"; then
   echo "$found" >&2
+  exit 1
+fi
+
+# The migrations need PostgreSQL 18 or later (packages/server/src/db/migrate.ts).
+# After terraform apply, RDS waits for the maintenance window to upgrade from
+# 17, so check before stopping anything: the API keeps running on a no.
+engine="$(aws rds describe-db-instances --db-instance-identifier "$name" \
+  --query 'DBInstances[0].EngineVersion' --output text)"
+if ! [ "${engine%%.*}" -ge 18 ] 2>/dev/null; then
+  echo "The database runs PostgreSQL $engine; this version needs 18 or later." >&2
+  echo "Deploy again once RDS has upgraded it (docs/aws.md, Upgrading from PostgreSQL 17)." >&2
   exit 1
 fi
 

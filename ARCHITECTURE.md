@@ -1402,8 +1402,10 @@ write is attributed to the agent that made it; between agents the latest
 #### Responses of the memory tools
 
 Record writes return the shape shown above. `log_event`, `remember`
-and `get_context` return the following. IDs are UUIDs; the examples shorten
-them and add a type prefix for readability.
+and `get_context` return the following. IDs are UUIDs: version 7 for rows
+created since migration 0038, random for older ones, so sort by `createdAt`
+rather than by ID. The examples shorten them and add a type prefix for
+readability.
 
 ```
 → log_event {

@@ -234,3 +234,13 @@ run "tags_cannot_replace_the_application_tag" {
 
   expect_failures = [var.tags]
 }
+
+run "database_must_be_postgres_18_or_later" {
+  command = plan
+
+  variables {
+    db_engine_version = "17"
+  }
+
+  expect_failures = [var.db_engine_version]
+}
