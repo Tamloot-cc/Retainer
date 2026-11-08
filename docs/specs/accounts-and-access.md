@@ -1038,7 +1038,7 @@ same token, nine seconds later, got `401`.
 - **API Gateway's throttle comes first for a fast client.** An earlier, unpaced run
   at about 28 requests a second got API Gateway's own `429` (`Too Many Requests`, no
   `Retry-After`) after 309 calls, and so did the second workspace. That throttle is
-  global by design (25 a second, bursts of 50, `docs/aws.md`), so one tenant above
+  global by design (25 a second, bursts of 50, in the hosted service's settings), so one tenant above
   25 a second slows every tenant.
 - **Better Auth's sign-in rate limit.** Four quick `POST /account/auth/sign-in/social`
   calls with an empty body: the first three got `400` (`body.provider` invalid), the
@@ -1057,11 +1057,28 @@ provider is refused. Simultaneous first sign-ins, and sign-ins joining one perso
 once, end as one person. The browser goes to the fake and back for sign-in, an
 invitation and connecting Claude.
 
-**Not tested:** Microsoft sign-in on the live site, with a personal account and with a
-work account, including that personal addresses arrive verified and work ones carry
-`xms_edov`; `SET LOCAL ROLE` seeding by `retainer_control`; purging a large
-workspace within the control function's 300 seconds, deferred until real workspaces
-exist. Whether Claude falls back to dynamic registration is not listed: Claude uses
+**Seeding as `retainer_control`**, November 8, 2026, against real Postgres: logged
+in as `retainer_control` itself, as the control function is, creating a first
+workspace with the `sales` template switches to `retainer_app` with `SET LOCAL ROLE`,
+seeds under RLS and switches back when the transaction ends. Other tests log in as the
+owner and switch role, and Postgres checks `SET ROLE` against the login, so only a
+real control login shows this.
+
+**Purging a large workspace**, November 8, 2026, on a laptop's Docker Postgres, with
+generated data. A workspace of 360,000 records (60,000 companies, people and deals,
+300,000 interactions with 600,000 participant and `about` links, plus facts, field
+values and comments) first ran for over 9 minutes before it was stopped: deleting a
+record clears `merged_into_id` on records merged into it, and with no index for that,
+each deleted record scanned the whole workspace. `facts.superseded_by` and
+`fact_sources.premise_fact_id` had the same gap. With indexes on all three, it took 16
+seconds, and three times the data (1.08 million records) took 55. A test now fails on
+any foreign key whose delete would scan its table, apart from a listed few that fire
+once per workspace or touch only a handful of rows. RDS is slower than a laptop, so a
+workspace of several million records may still need the purge split into batches.
+
+**Not tested:** Microsoft sign-in on the live site with each kind of account,
+including that personal addresses arrive verified and work ones carry `xms_edov`. One
+Microsoft sign-in worked there on November 8, 2026. Whether Claude falls back to dynamic registration is not listed: Claude uses
 its metadata document, which works, and the fallback cannot be forced from outside.
 Simultaneous first sign-ins through Google's real redirect cannot be timed by hand,
 and the concurrent test covers the same code.

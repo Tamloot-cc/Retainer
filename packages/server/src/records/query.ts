@@ -3,6 +3,7 @@ import {
   type EventPage,
   type EventRecord,
   type FieldType,
+  FieldValueError,
   type FilterOperator,
   filterOperatorsFor,
   isCollectionRelation,
@@ -11,6 +12,7 @@ import {
   type RecordPage,
   type RecordReference,
   SORTABLE_TYPES,
+  valueError,
 } from '@retainer/shared';
 import type { Fragment } from 'postgres';
 import { z } from 'zod';
@@ -267,21 +269,27 @@ function filterableNames(object: CompiledObject): string[] {
   ];
 }
 
-/** Validates a filter value with the field's own rules, naming the field on error. */
+/**
+ * Validates a filter value with the field's own rules. Errors carry what a
+ * write's would (valueError), except the stored-value format: a filter on a
+ * composite field is not written like its stored value (money compares a
+ * number, emails a single address, a name or address matches text), so that
+ * format would mislead. Money's message names its own.
+ */
 function valueFor(field: Pick<FieldState, 'name' | 'type' | 'settings'>, value: unknown): unknown {
+  if (field.type === 'money') {
+    if (typeof value === 'number') return value;
+    throw invalidFilter(`invalid value for ${field.name}: expected amountMicros as a number`, {
+      field: field.name,
+      message: 'expected amountMicros as a number',
+    });
+  }
   try {
-    if (field.type === 'money') {
-      if (typeof value !== 'number') throw new Error('expected amountMicros as a number');
-      return value;
-    }
     return normalizeFieldValue(field, value);
   } catch (error) {
-    throw invalidFilter(`invalid value for ${field.name}: ${(error as Error).message}`, {
-      field: field.name,
-      ...((error as { allowed?: unknown[] }).allowed
-        ? { allowed: (error as { allowed?: unknown[] }).allowed }
-        : {}),
-    });
+    if (!(error instanceof FieldValueError)) throw error;
+    const { expected: _stored, ...details } = valueError(field.name, field.type, error);
+    throw invalidFilter(`invalid value for ${field.name}: ${error.message}`, details);
   }
 }
 
