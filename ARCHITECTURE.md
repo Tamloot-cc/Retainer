@@ -958,7 +958,10 @@ through `ops`, with the API stopped, so a cold start never migrates and no
 key is printed to the logs. In accounts mode a `control` function serves
 `/account` (7.3), and an hourly scheduled run of it removes workspaces whose
 deletion is over 7 days old (2.1); in a container the `control` or `all`
-process does that.
+process does that. With `RETAINER_EDGE_SECRET` set, `api` and `control`
+expect CloudFront in front of API Gateway: they refuse requests without that
+secret in `x-retainer-edge-secret`, so none bypass the edge's per-client
+limits, and take the caller's address from `CloudFront-Viewer-Address`.
 
 ### 4.1 How memory gets written
 

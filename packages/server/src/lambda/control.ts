@@ -7,6 +7,7 @@ import { setLogLevel } from '../log.js';
 import { isPurgeEvent, type PurgeEvent } from '../worker/purge.js';
 import { type PurgeReport, purgeDeletedWorkspaces } from '../workspaces/deletion.js';
 import { withPassLock } from './deploy-lock.js';
+import { clientIpOf, requireEdge } from './edge.js';
 
 /**
  * The control function (accounts spec 4.6): /account behind API Gateway,
@@ -33,12 +34,11 @@ export function createControlHandler(
     config,
     sql,
     authSql,
-    // API Gateway's view of the caller; a header the client sent is ignored.
-    clientIp: (c) =>
-      (c.env as { event?: { requestContext?: { http?: { sourceIp?: string } } } }).event
-        ?.requestContext?.http?.sourceIp,
+    // API Gateway's or, behind CloudFront, CloudFront's view of the caller;
+    // a header the client sent is ignored (edge.ts).
+    clientIp: (c) => clientIpOf((c.env as { event?: unknown }).event, config.RETAINER_EDGE_SECRET),
   });
-  const http = handle(app as unknown as Hono);
+  const http = requireEdge(config.RETAINER_EDGE_SECRET, handle(app as unknown as Hono));
   function control(event: PurgeEvent, context?: LambdaContext): Promise<PurgeReport>;
   function control(event: LambdaEvent, context: LambdaContext): ReturnType<typeof http>;
   function control(event: LambdaEvent | PurgeEvent, context?: LambdaContext) {

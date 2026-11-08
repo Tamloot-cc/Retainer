@@ -3,6 +3,7 @@ import { createApp } from '../api/app.js';
 import { type Config, loadConfig, rateLimitPerMinute } from '../config.js';
 import { createApiSql, type Sql } from '../db/client.js';
 import { setLogLevel } from '../log.js';
+import { requireEdge } from './edge.js';
 
 /**
  * The API as an AWS Lambda function behind API Gateway: the
@@ -27,7 +28,7 @@ export function createApiHandler(
     accountsSecret: config.RETAINER_AUTH_SECRET,
     rateLimit: { limit: rateLimitPerMinute(config) },
   });
-  return handle(app);
+  return requireEdge(config.RETAINER_EDGE_SECRET, handle(app));
 }
 
 let cached: ReturnType<typeof createApiHandler> | undefined;

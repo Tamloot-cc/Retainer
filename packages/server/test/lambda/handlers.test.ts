@@ -38,6 +38,47 @@ describe('control function', () => {
     const res = await handler(httpEvent('GET', '/account'), context);
     expect(res.statusCode).toBe(401);
   });
+
+  it("behind CloudFront, refuses requests without its secret and limits sign-in by the viewer's address", async () => {
+    const secret = 'lambda-edge-secret-0123456789abcdef0123';
+    const handler = createControlHandler(
+      loadConfig({
+        DATABASE_URL: db.url,
+        RETAINER_AUTH_SECRET: 'lambda-auth-secret-0123456789abcdef0123',
+        RETAINER_GOOGLE_CLIENT_ID: 'lambda-client',
+        RETAINER_GOOGLE_CLIENT_SECRET: 'lambda-secret',
+        RETAINER_PUBLIC_ORIGIN: 'https://retainer.example',
+        RETAINER_EDGE_SECRET: secret,
+        LOG_LEVEL: 'error',
+      }),
+      db.connect({ role: CONTROL_ROLE, max: 1 }),
+      db.connect({ role: CONTROL_ROLE, max: 1 }),
+    );
+    const direct = await handler(httpEvent('GET', '/account/auth/ok'), context);
+    expect(direct.statusCode).toBe(403);
+
+    // Better Auth allows 3 sign-in attempts per 10 seconds from one address.
+    // Every request reaches API Gateway from the same CloudFront address
+    // (192.0.2.1 in httpEvent), so only the viewer's tells them apart.
+    const signIn = (viewer: string) =>
+      handler(
+        httpEvent('POST', '/account/auth/sign-in/social', {
+          headers: {
+            'x-retainer-edge-secret': secret,
+            'cloudfront-viewer-address': `${viewer}:443`,
+            'content-type': 'application/json',
+            origin: 'https://retainer.example',
+          },
+          body: '{}',
+        }),
+        context,
+      );
+    const statuses = [];
+    for (let i = 0; i < 4; i++) statuses.push((await signIn('203.0.113.7')).statusCode);
+    expect(statuses.slice(0, 3)).not.toContain(429);
+    expect(statuses[3]).toBe(429);
+    expect((await signIn('203.0.113.8')).statusCode).not.toBe(429);
+  });
 });
 
 describe('API function', () => {

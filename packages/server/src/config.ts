@@ -108,6 +108,16 @@ const configSchema = z
       emptyToUndefined,
       z.coerce.number().int().min(0).optional(),
     ),
+    /**
+     * AWS Lambda only: the secret CloudFront sends as `x-retainer-edge-secret`.
+     * When set, the api and control functions refuse requests without it and
+     * take the caller's address from `CloudFront-Viewer-Address`
+     * (lambda/edge.ts).
+     */
+    RETAINER_EDGE_SECRET: z.preprocess(
+      emptyToUndefined,
+      z.string().min(32, 'use at least 32 characters').optional(),
+    ),
     PORT: z.coerce.number().int().positive().default(8787),
     LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
     /** How often the consolidator runs per workspace (4.2). */
