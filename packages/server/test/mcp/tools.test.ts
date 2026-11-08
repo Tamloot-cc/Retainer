@@ -446,6 +446,14 @@ describe('the log_from_chat guide', () => {
     expect(prose).toContain('Each turn you log is its own event');
     expect(prose).toContain('Ask your user before creating a company');
   });
+
+  it('says what to do with a meeting that has not happened yet, and with a new person', async () => {
+    const { body } = await reader.call<string>('get_guide', { name: 'log_from_chat' });
+    const prose = body.replace(/\s+/g, ' ');
+    expect(prose).toContain('log_event refuses an occurredAt in the future');
+    expect(prose).toContain('Add the meeting as a task due that day');
+    expect(prose).toContain("the new record's ID as the participant's recordId");
+  });
 });
 
 describe('describe_schema, list_templates and apply_template', () => {

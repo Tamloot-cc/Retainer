@@ -356,6 +356,13 @@ Where your user got it decides the source:
   Each turn you log is its own event: an event's time and summary are
   fixed once logged, so logging a later turn under the same externalId
   fails as a conflict.
+- It has not happened yet (a meeting invite, a scheduled call): log_event
+  refuses an occurredAt in the future. Log what has happened, the
+  invitation, as its own event when it was sent, with its organizer and
+  invitees as participants and an externalId of its own (the calendar
+  event's ID plus ":invite"). Add the meeting as a task due that day, and
+  log the meeting itself once it has happened, under the calendar event's
+  own ID.
 
 ## 3. Write what you learned
 
@@ -363,6 +370,10 @@ Write values, facts and tasks in the order the server instructions give
 for any conversation, each citing the event from step 2 as source. Quote
 your user's own words in a fact when it helps, and give a task the due date
 that was said.
+
+When you create a person who came back from step 2 unmatched, log that
+event again with the same input and the new record's ID as the
+participant's recordId, so the event shows on their timeline.
 
 ## 4. Tell your user
 
