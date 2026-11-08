@@ -285,22 +285,24 @@ The server instructions gain one paragraph, and `get_guide` gains a short
   untouched.
 - **Key mode.** `me` is `422 no_person`; `workspace` works.
 
-## 7. Open questions
+## 7. Decided after review (November 8, 2026)
 
-1. **Can agents write workspace memory freely?** A wrong agent fact there
-   ("we give 50% discounts") misleads every agent. Options: as proposed
-   (any `write` credential), or agent-written workspace facts start
-   `pending_review` until a person accepts them.
-2. **A cap on facts per profile?** Context packs fit a budget, so nothing
-   breaks, but a profile with thousands of facts is not useful. Possibly a
-   soft limit with a warning.
-3. **Pointers to records.** Later, a workspace could point at the record that
-   is "us" (a `company`, or a `person` for a solo consultant), and a member at
-   their shared `person` record as a colleague. Both would be ordinary shared
-   records. Not needed for the memory itself.
-4. **Moving a fact.** An agent that wrote a customer fact into `me` by
-   mistake cannot move it to the right record; it retracts and rewrites.
-   A move may be worth adding.
-5. **One "my memory" view across workspaces.** A read-only page listing a
-   person's memory in every workspace they belong to, each kept separate.
-   Deferred.
+1. **Agents write workspace memory freely.** Any credential with `write` can
+   `remember("workspace", …)`, with no review step. A wrong fact is fixed the
+   way any fact is.
+2. **No cap on facts per profile.** Context packs already fit a token budget.
+3. **No pointers to records for now.** Neither a workspace pointer to the
+   record that is "us" nor a member pointer to their `person` record. A
+   workspace fact covers what agents need ("We are Acme; @acme.com addresses
+   are colleagues, not customers"). Revisit if agents still treat colleagues
+   or the workspace's own company as customers.
+4. **One "my memory" view across workspaces** is deferred.
+
+## 8. Open questions
+
+1. **Agents cannot correct or move a fact.** Over MCP, `remember` only adds:
+   there is no tool to retract a fact, supersede it or move it to another
+   record (`DELETE /v1/facts/:id` exists on REST only). When a preference
+   changes, the old and new facts both stay current, and a customer fact
+   written into `me` by mistake stays there. This matters more for profiles,
+   whose facts change over time, than for CRM records.
