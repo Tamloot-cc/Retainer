@@ -520,7 +520,7 @@ _As built,_ where it differs:
   move it if it shows up as contention. _As built:_ a fixed one-minute window on
   `/v1` and `/mcp`, one upsert per request, 600 requests a minute by default in
   accounts mode and off in key mode, set with `RETAINER_RATE_LIMIT_PER_MINUTE`
-  (`0` turns it off). It has not been measured under load yet.
+  (`0` turns it off). Checked on the live deployment on November 8, 2026 (section 12).
 - **Time.** A statement timeout on the API's connection pool, below the 29-second
   request limit, so that one expensive search cannot hold connections. It is set in
   `createSql`, not with `ALTER ROLE`, because Postgres applies role settings only at
@@ -835,7 +835,8 @@ deployed install after each Better Auth upgrade that touches OAuth.
    works if it goes to the address of the Google account the person signs in with.
    Teams on Microsoft 365 are the likely gap. _Decided November 8, 2026: add
    Microsoft sign-in_, through Better Auth's Microsoft provider, without changing the
-   design.
+   design. It accepts every Microsoft account: work or school accounts (Entra ID) and
+   personal ones (Outlook, Hotmail).
 2. **Two sign-ins at once.** _Resolved in PR 3._ In the test, two simultaneous first
    sign-ins for one email made one user as they should, but the second person got a
    500. With Google the second got Better Auth's `unable to create user` instead, and
@@ -922,7 +923,8 @@ gzipped), so cold starts should not be a concern, though Lambda will be slower.
 **On the live deployment**, November 7, 2026, after PR 2 shipped to AWS
 (`retainer.tamloot.cc`, real Lambda and API Gateway): Google sign-in worked, so its
 OAuth state cookie survives Google's callback. A passkey added on the site signed in
-on a laptop and on a phone. The `Default` organization's first owner was set with
+on a laptop and on a phone. The phone used Face ID, so it was a synced passkey, not a
+cross-device sign-in. The `Default` organization's first owner was set with
 `ops.sh member add`. An invited second account accepted, saw only the workspaces it
 was given, and lost access once removed.
 
@@ -940,9 +942,31 @@ person through Google sign-in to the consent page, where they picked a workspace
 and then read the schema and wrote a record. Claude Code connected the same way
 through its claude.ai connector.
 
-**Not tested:** whether the phone used a synced passkey or a cross-device sign-in;
-Better Auth's sign-in rate-limit plugin; `SET LOCAL ROLE` seeding by
-`retainer_control`; whether Claude falls back to dynamic registration; the
-per-workspace rate limit under real load; purging a large workspace within the
-control function's 300 seconds; simultaneous first sign-ins through Google's real
-redirect, rather than a stubbed code exchange.
+**Limits on the live deployment**, November 8, 2026:
+
+- **Per-workspace rate limit.** One client called `GET /v1/me` on one workspace at
+  15 requests a second, starting just after a minute boundary. 583 calls got `200`;
+  with 17 other requests to that workspace in the same window, that made 600. The next
+  12 got `429` `rate_limited` with `Retry-After: 21`, then `20`, the seconds left in
+  the window. Meanwhile a second workspace, called with its own key every 0.4 seconds,
+  got `200` on all 114 calls. After `Retry-After` the first workspace got `200` again.
+  The key made for the check was revoked.
+- **API Gateway's throttle comes first for a fast client.** An earlier, unpaced run
+  at about 28 requests a second got API Gateway's own `429` (`Too Many Requests`, no
+  `Retry-After`) after 309 calls, and so did the second workspace. That throttle is
+  global by design (25 a second, bursts of 50, `docs/aws.md`), so one tenant above
+  25 a second slows every tenant.
+- **Better Auth's sign-in rate limit.** Four quick `POST /account/auth/sign-in/social`
+  calls with an empty body: the first three got `400` (`body.provider` invalid), the
+  fourth `429` with `X-Retry-After: 10`. Eleven seconds later the endpoint answered
+  `400` again. That is Better Auth's default for `/sign-in/*`: 3 requests per 10
+  seconds for each client address and path, counted in `auth_rate_limits` before the
+  body is checked. An empty body creates no user and no OAuth state; the only row it
+  leaves is the counter itself.
+
+**Not tested:** `SET LOCAL ROLE` seeding by `retainer_control`; purging a large
+workspace within the control function's 300 seconds, deferred until real workspaces
+exist. Whether Claude falls back to dynamic registration is not listed: Claude uses
+its metadata document, which works, and the fallback cannot be forced from outside.
+Simultaneous first sign-ins through Google's real redirect cannot be timed by hand,
+and the concurrent test covers the same code.
