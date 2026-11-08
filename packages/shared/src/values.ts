@@ -2,8 +2,7 @@ import { z } from 'zod';
 import type { FieldType } from './field-types.js';
 import {
   addressValueSchema,
-  COMPOSITE_FIELD_TYPES,
-  type CompositeFieldType,
+  compositeValueSchemas,
   type EmailsValue,
   type FullNameValue,
   fullNameValueSchema,
@@ -27,7 +26,6 @@ export class FieldValueError extends Error {
   constructor(
     message: string,
     readonly allowed?: unknown[],
-    readonly expected?: string,
   ) {
     super(message);
   }
@@ -100,8 +98,8 @@ const MULTI = '{ primary, additional: [...] }';
 
 /**
  * How to write each field type's value, for agents: describe_schema lists
- * the formats its fields use, and an invalid composite value's error repeats
- * its format. Object keys come from the schemas normalizeFieldValue parses
+ * the formats its fields use, and valueError repeats an invalid composite
+ * value's format. Object keys come from the schemas normalizeFieldValue parses
  * with, so the two cannot drift; values.test.ts checks an example of each.
  */
 export const FIELD_VALUE_FORMATS = {
@@ -122,8 +120,18 @@ export const FIELD_VALUE_FORMATS = {
   json: 'any JSON value',
 } as const satisfies Record<FieldType, string>;
 
-const COMPOSITE: ReadonlySet<FieldType> = new Set(COMPOSITE_FIELD_TYPES);
-const isComposite = (type: FieldType): type is CompositeFieldType => COMPOSITE.has(type);
+/**
+ * A field's invalid value as a response lists it: what was wrong, the
+ * allowed values, and for a composite field the format it expected.
+ */
+export function valueError(field: string, type: FieldType, error: FieldValueError): ValueError {
+  return {
+    field,
+    message: error.message,
+    ...(error.allowed ? { allowed: error.allowed } : {}),
+    ...(type in compositeValueSchemas ? { expected: FIELD_VALUE_FORMATS[type] } : {}),
+  };
+}
 
 function normalizeUrl(url: string): string {
   const trimmed = url.trim();
@@ -165,20 +173,9 @@ function multiValue<T>(
 
 /**
  * Validates one value for one field and returns its stored form. Throws
- * FieldValueError with a message an agent can act on and, for a composite
- * field, the value format it expected.
+ * FieldValueError with a message an agent can act on.
  */
 export function normalizeFieldValue(field: ValueField, value: unknown): unknown {
-  if (!isComposite(field.type)) return normalize(field, value);
-  try {
-    return normalize(field, value);
-  } catch (error) {
-    if (!(error instanceof FieldValueError) || error.expected) throw error;
-    throw new FieldValueError(error.message, error.allowed, FIELD_VALUE_FORMATS[field.type]);
-  }
-}
-
-function normalize(field: ValueField, value: unknown): unknown {
   switch (field.type) {
     case 'text':
       if (typeof value !== 'string') fail('expected a string');

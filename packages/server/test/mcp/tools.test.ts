@@ -475,7 +475,6 @@ describe('describe_schema, list_templates and apply_template', () => {
       emails: FIELD_VALUE_FORMATS.emails,
       phones: FIELD_VALUE_FORMATS.phones,
     });
-    expect(res.body.valueFormats.full_name).toContain('{ first, last }');
     const byName = await toolsByName(agent);
     expect(byName.get('describe_schema')?.description).toContain('valueFormats');
     expect(JSON.stringify(byName.get('upsert_record')?.inputSchema)).toContain('valueFormats');

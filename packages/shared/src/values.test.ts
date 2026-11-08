@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { COMPOSITE_FIELD_TYPES, FIELD_TYPES, type FieldType } from './field-types.js';
-import { FIELD_VALUE_FORMATS, FieldValueError, validateFieldValue } from './values.js';
+import {
+  COMPOSITE_FIELD_TYPES,
+  type CompositeFieldType,
+  FIELD_TYPES,
+  type FieldType,
+} from './field-types.js';
+import { FIELD_VALUE_FORMATS, FieldValueError, validateFieldValue, valueError } from './values.js';
 
 const f = (type: Parameters<typeof validateFieldValue>[0]['type'], settings = {}) => ({
   type,
@@ -156,7 +161,7 @@ describe('value formats (accounts spec 9.3)', () => {
 
   it('names the expected format when a composite value has the wrong shape', () => {
     // The shapes an agent guessed in the live test, and others like them.
-    const wrong: Record<(typeof COMPOSITE_FIELD_TYPES)[number], unknown> = {
+    const wrong: Record<CompositeFieldType, unknown> = {
       full_name: { firstName: 'Dana', lastName: 'Levi' },
       emails: { primaryEmail: 'dana@acme.com', additionalEmails: [] },
       phones: { primary: { phone: '+972501234567' } },
@@ -165,16 +170,18 @@ describe('value formats (accounts spec 9.3)', () => {
       money: { amount: 12.5, currency: 'USD' },
     };
     for (const type of COMPOSITE_FIELD_TYPES) {
-      const error = failure(type, wrong[type]);
-      expect(error.expected, type).toBe(FIELD_VALUE_FORMATS[type]);
+      expect(valueError('x', type, failure(type, wrong[type])), type).toMatchObject({
+        field: 'x',
+        expected: FIELD_VALUE_FORMATS[type],
+      });
     }
     expect(failure('full_name', { firstName: 'Dana' }).message).toContain('firstName');
     expect(failure('emails', { primaryEmail: 'dana@acme.com' }).message).toContain('primaryEmail');
   });
 
   it('leaves the format off simple types, whose message already says what it expects', () => {
-    const error = failure('date', '02/11/2026');
+    const error = valueError('due', 'date', failure('date', '02/11/2026'));
     expect(error.message).toContain('YYYY-MM-DD');
-    expect(error.expected).toBeUndefined();
+    expect(error).not.toHaveProperty('expected');
   });
 });
