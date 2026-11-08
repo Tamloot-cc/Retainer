@@ -257,6 +257,33 @@ describe('logging an event again adds links (1.3)', () => {
     }
   });
 
+  it('keeps an initially erased handle with an explicit ID idempotent', async () => {
+    const forgotten = await person();
+    await forget(app, as(USER), forgotten.id);
+    const dana = await person();
+    const input = {
+      externalId: externalId(),
+      participants: [{ handle: forgotten.email, recordId: dana.id }],
+    };
+    const first = await log(input);
+    expect(first.participants.matched).toEqual([
+      { id: expect.any(String), handle: null, role: null, recordId: dana.id },
+    ]);
+    const retries = await Promise.all([log(input), log(input)]);
+    for (const retry of retries) {
+      expect(retry.participants).toEqual(first.participants);
+      expect(retry.added).toEqual(none);
+    }
+    const viaLinks = await addEventLinksFor(app, as(AGENT), first.id, {
+      participants: input.participants,
+      about: [],
+    });
+    expect(viaLinks.added).toEqual(none);
+    expect(await db.owner`select record_id from event_links where event_id = ${first.id}`).toEqual([
+      { record_id: dana.id },
+    ]);
+  });
+
   it('only resolves an ambiguous row with an explicit current candidate', async () => {
     await inWorkspace(app, workspaceId, (tx) =>
       runSchemaChange(tx, {
@@ -278,12 +305,27 @@ describe('logging an event again adds links (1.3)', () => {
       }),
     );
     const handle = email();
+    const initiallyUnmatched = { externalId: externalId(), participants: [{ handle }] };
+    const unmatched = await log(initiallyUnmatched);
     const dana = await person({ emails: handle });
     const vendor = await createRecord(app, as(AGENT), 'company', {
       name: 'Billing',
       billingEmails: handle,
     });
     const unrelated = await person();
+    // A stored no_match row follows the existing explicit-ID contract even
+    // if email claims have changed. Unsuccessful retries leave it unchanged.
+    const stillUnmatched = await log(initiallyUnmatched);
+    expect(stillUnmatched.participants).toEqual(unmatched.participants);
+    expect(stillUnmatched.added).toEqual(none);
+    const explicitlyResolved = await log({
+      ...initiallyUnmatched,
+      participants: [{ handle, recordId: unrelated.id }],
+    });
+    expect(explicitlyResolved.added?.participants.matched[0]).toMatchObject({
+      id: unmatched.participants.unmatched[0]?.id,
+      recordId: unrelated.id,
+    });
     const input = { externalId: externalId(), participants: [{ handle }] };
     const first = await log(input);
     expect(first.participants.unmatched[0]).toMatchObject({

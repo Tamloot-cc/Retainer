@@ -502,12 +502,12 @@ export async function addLinks(
   const newParticipants: (NormalizedParticipant & { erased: boolean })[] = [];
   const retries: { row: LinkRow; participant: NormalizedParticipant & { erased: boolean } }[] = [];
   for (const p of kept) {
-    const key = participantKey(
-      p.role,
-      p.handle?.value ?? null,
-      p.erased ? null : survivor(p.recordId),
-    );
-    const row = remaining.get(key)?.shift();
+    const key = participantKey(p.role, p.handle?.value ?? null, survivor(p.recordId));
+    // An erased handle may already be linked by an explicit ID. Prefer that
+    // row, then consume an unresolved suppressed row without reviving it.
+    const row =
+      remaining.get(key)?.shift() ??
+      (p.erased ? remaining.get(participantKey(p.role, null, null))?.shift() : undefined);
     if (!row) {
       newParticipants.push(p);
       continue;

@@ -339,7 +339,10 @@ are re-resolved in place, preserving link ID and position. A supplied record ID
 is followed through merges; an email alone uses a fresh unique-claim lookup.
 Successful resolutions are included in `added.participants.matched` alongside
 new links. `suppressed` and `deleted_record` rows stay for people review;
-`ambiguous` rows require an explicit record ID among their current candidates.
+rows stored as `ambiguous` require an explicit record ID among their current
+candidates. For stored `no_match` or `phone_only` rows, an explicit record ID
+remains authoritative even if email claims have changed; a retry that still
+cannot resolve leaves the row unchanged.
 This also applies to `POST /v1/events/:id/links`. A participant is the same
 one when its role and handle match, or its role and record (after merges)
 when it has no handle; an erased handle (2.1) matches another erased handle with the same
