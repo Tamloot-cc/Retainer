@@ -17,6 +17,7 @@ import {
 import { QueryError, useView } from '../routes/state.js';
 import {
   Button,
+  CheckLabel,
   Code,
   CopyButton,
   Dialog,
@@ -47,10 +48,11 @@ import {
   roleLegend,
   WORKSPACE_ROLE_OPTIONS,
 } from './format.js';
+import { MemoryTab } from './memory.js';
 
 /** `/app/w/<slug>/settings`: people, agents and the workspace (accounts spec 5.1). */
 
-type Tab = 'members' | 'agents' | 'workspace' | 'organization';
+type Tab = 'members' | 'memory' | 'agents' | 'workspace' | 'organization';
 
 export function SettingsPage() {
   const state = useAccount();
@@ -79,6 +81,11 @@ export function SettingsPage() {
       value: 'members',
       label: 'Members',
       hint: 'Who has access to this workspace, and their roles',
+    },
+    {
+      value: 'memory',
+      label: 'Memory',
+      hint: 'What agents remember about this workspace and about you',
     },
     ...(admin
       ? ([
@@ -112,6 +119,8 @@ export function SettingsPage() {
       <Tabs items={tabs} value={tab} onChange={(v) => void setSearch({ tab: v })} sticky />
       {tab === 'members' ? (
         <MembersTab state={state} />
+      ) : tab === 'memory' ? (
+        <MemoryTab />
       ) : tab === 'agents' ? (
         <AgentsTab state={state} />
       ) : tab === 'workspace' ? (
@@ -485,6 +494,11 @@ function AgentsTab({ state }: { state: AccountState }) {
                 <span className="block font-mono text-xs font-normal text-muted-foreground">
                   {k.prefix}…
                 </span>
+                {k.worksFor ? (
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    Works for {k.worksFor.name}
+                  </span>
+                ) : null}
               </Td>
               <Td>{keyAccessWords(k.scopes)}</Td>
               <Td>
@@ -552,6 +566,7 @@ function CreateKey({
   workspaceId: string;
 }) {
   const [access, setAccess] = useState<KeyAccess>('write'),
+    [worksForMe, setWorksForMe] = useState(false),
     [created, setCreated] = useState<string>(''),
     [error, setError] = useState('');
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -559,7 +574,7 @@ function CreateKey({
     const name = (e.currentTarget.elements.namedItem('name') as HTMLInputElement).value.trim();
     setError('');
     try {
-      setCreated((await accountApi.createKey(workspaceId, { name, access })).key);
+      setCreated((await accountApi.createKey(workspaceId, { name, access, worksForMe })).key);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -573,6 +588,7 @@ function CreateKey({
         if (!next) {
           setCreated('');
           setError('');
+          setWorksForMe(false);
         }
       }}
       title={created ? 'Your new key' : 'Create an API key'}
@@ -616,6 +632,20 @@ function CreateKey({
               options={KEY_ACCESS_OPTIONS}
               onChange={setAccess}
             />
+            <Stack gap="small">
+              <CheckLabel>
+                <Input
+                  type="checkbox"
+                  checked={worksForMe}
+                  onChange={(e) => setWorksForMe(e.target.checked)}
+                />
+                <span>This agent works for me</span>
+              </CheckLabel>
+              <Muted small>
+                It can read and write your personal memory here, which only you and your agents see.
+                Leave it off for a key a team or a service shares.
+              </Muted>
+            </Stack>
             {error ? <Notice error>{error}</Notice> : null}
             <Button type="submit" variant="primary">
               Create key

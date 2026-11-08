@@ -63,6 +63,8 @@ export type WorkspaceKey = {
   createdAt: string;
   revokedAt: string | null;
   createdBy: { id: string; name: string } | null;
+  /** The person this agent works for: it reads and writes their personal memory. */
+  worksFor: { id: string; name: string } | null;
 };
 
 export type OrganizationDetails = {
@@ -153,7 +155,7 @@ export const account = {
   removeMember: (id: string, userId: string) =>
     call<void>(`${ws(id)}/members/${userId}`, { method: 'DELETE' }),
   keys: (id: string) => call<{ keys: WorkspaceKey[] }>(`${ws(id)}/keys`),
-  createKey: (id: string, input: { name: string; access: KeyAccess }) =>
+  createKey: (id: string, input: { name: string; access: KeyAccess; worksForMe?: boolean }) =>
     call<WorkspaceKey & { key: string }>(`${ws(id)}/keys`, { method: 'POST', body: input }),
   revokeKey: (id: string, keyId: string) =>
     call<void>(`${ws(id)}/keys/${keyId}`, { method: 'DELETE' }),

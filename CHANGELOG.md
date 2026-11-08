@@ -61,12 +61,31 @@ The first release.
 - MCP guide and prompt `log_from_chat`: what an agent logs from a chat with
   its user, which source it cites, and when it asks before creating a
   record. The server instructions point agents to it.
+- Workspace memory and personal memory: `workspace` and `me` name two hidden
+  profile records that hold facts only. `remember`, `get_context`,
+  `get_timeline` and `GET /v1/records/:id/facts` take them. Workspace memory
+  is shared by everyone in the workspace; personal memory is private to one
+  member in one workspace, enforced by row-level security, and is deleted
+  when they leave it. An agent reaches `me` through a session, an app the
+  person connected, or an API key created with "This agent works for me";
+  any other key gets `422 no_person`. `describe_schema` lists the profiles in
+  a `memory` built-in, and the `memory` guide tells agents what goes where.
+- `remember` takes `supersedes`: the ID of a current fact it corrects (same
+  record) or moves (another record or profile). The old fact keeps its
+  history and leaves current memory.
+- `POST /v1/records/me/forget` clears the signed-in person's personal memory
+  in the workspace; `forget` on a record also erases private copies of what
+  it removes.
+- Web app: Settings → Memory lists both memories with Remove and Clear all,
+  and agent keys have a "This agent works for me" option.
 
 ### `@retainer/sdk`
 
 - Typed client for every REST route, including search, context packs,
   aggregates, merges, merge-suggestion dismissal and `forget`; typed
   `RetainerApiError`.
+- `facts`, `remember` and `context` take `workspace` and `me`; `remember`
+  takes `supersedes`; `clearMyMemory()`.
 
 ### `@retainer/mcp`
 

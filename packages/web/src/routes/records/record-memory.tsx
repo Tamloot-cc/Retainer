@@ -223,13 +223,15 @@ export function MemoryTabs({ record, nav }: { record: PresentedRecord; nav: Memo
   );
 }
 
-function FactRow({
+export function FactRow({
   fact,
   onRetract,
+  retractLabel = 'Retract fact',
   children,
 }: {
   fact: PresentedFact;
   onRetract?: () => void;
+  retractLabel?: string;
   children?: React.ReactNode;
 }) {
   return (
@@ -248,8 +250,8 @@ function FactRow({
           <Button
             variant="ghost"
             size="iconSmall"
-            aria-label="Retract fact"
-            title="Retract fact"
+            aria-label={retractLabel}
+            title={retractLabel}
             onClick={onRetract}
           >
             <Undo2 size={13} />
@@ -657,9 +659,11 @@ function ClaimsPanel({ eventId }: { eventId: string }) {
                   .map((s) => (
                     <EntryQuote key={`${s.event}:${s.quote}`}>{s.quote}</EntryQuote>
                   ))}
-                <div>
-                  <RecordLink id={f.record}>View record</RecordLink>
-                </div>
+                {f.record ? (
+                  <div>
+                    <RecordLink id={f.record}>View record</RecordLink>
+                  </div>
+                ) : null}
               </FactRow>
             ))}
           </EntryList>

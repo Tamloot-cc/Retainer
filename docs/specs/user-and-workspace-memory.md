@@ -1,6 +1,15 @@
 # Personal and workspace memory: spec
 
-Status: **draft**, November 8, 2026. Not built.
+Status: **built**, November 8, 2026. Deviations from this spec:
+
+- `describe_schema` lists the profiles as a `memory` entry in `builtIns`,
+  with `profiles: ["workspace", "me"]`, not as a `builtIns.profiles`
+  property, so it reads like the `fact` and `comment` built-ins.
+- Retainer has no exports yet, so the leak matrix's export rows have nothing
+  to test; an export must apply the same policy when it is built.
+- Account deletion is not built. Deleting a user row cascades through
+  `private_to_user`, so personal memory goes with it; the leaving path in
+  4.6 covers removal from a workspace or organization and role changes.
 
 This spec amends [ARCHITECTURE.md](../../ARCHITECTURE.md) sections 1.3
 (memory), 2 (write rules), 6.2 (MCP), 7.2 (per-record access) and 7.3
