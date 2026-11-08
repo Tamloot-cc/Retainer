@@ -18,6 +18,7 @@ const UNINDEXED = new Set([
   // A workspace has tens of fields and object types, not thousands.
   'object_types(workspace_id, label_field_id) -> fields',
   'record_links(workspace_id, field_id) -> fields',
+  'record_identifiers(workspace_id, field_id) -> fields',
   'event_moves(workspace_id, to_object_type_id) -> object_types',
   'event_moves(workspace_id, from_object_type_id) -> object_types',
   // Once per deleted person.
@@ -35,7 +36,9 @@ describe('foreign keys', () => {
   it('each have an index their ON DELETE lookup can use', async () => {
     // An index serves the lookup when it starts with the column that points at
     // the referenced row's id (not the tenant column most keys also carry), or
-    // with all the key's columns.
+    // with all the key's columns. A partial index serves it only when its
+    // condition is that column being not null, which the lookup's equality
+    // implies; any other condition leaves rows the lookup must still find.
     const rows = await db.owner<{ key: string }[]>`
       with fk as (
         select c.conrelid, c.confrelid, c.conkey,
@@ -49,16 +52,26 @@ describe('foreign keys', () => {
             join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum) as columns
         from pg_constraint c join pg_namespace n on n.oid = c.connamespace
         where c.contype = 'f' and n.nspname = 'public'
+      ),
+      ix as (
+        select i.indrelid, i.indkey::int2[] as cols, i.indkey[0] as lead,
+          case
+            when i.indpred is null then 'all'
+            when pg_get_expr(i.indpred, i.indrelid) = format('(%s IS NOT NULL)', quote_ident(a.attname))
+              then 'lead not null'
+          end as rows
+        from pg_index i
+        join pg_attribute a on a.attrelid = i.indrelid and a.attnum = i.indkey[0]
       )
       select format('%s(%s) -> %s', fk.conrelid::regclass, fk.columns, fk.confrelid::regclass) as key
       from fk
       where not exists (
-        select 1 from pg_index i
-        where i.indrelid = fk.conrelid and (
-          (cardinality(fk.own) > 0 and (i.indkey::int2[])[0] = any(fk.own))
-          or (select array_agg(x order by x)
-                from unnest((i.indkey::int2[])[0:cardinality(fk.conkey) - 1]) x)
-             = (select array_agg(x order by x) from unnest(fk.conkey) x)
+        select 1 from ix
+        where ix.indrelid = fk.conrelid and (
+          (ix.lead = any(fk.own) and ix.rows is not null)
+          or (ix.rows = 'all'
+            and (select array_agg(x order by x) from unnest(ix.cols[0:cardinality(fk.conkey) - 1]) x)
+              = (select array_agg(x order by x) from unnest(fk.conkey) x))
         )
       )`;
     const missing = rows.map((r) => r.key).filter((key) => !UNINDEXED.has(key));
