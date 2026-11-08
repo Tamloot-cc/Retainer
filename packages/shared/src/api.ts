@@ -497,7 +497,10 @@ export type LogEventInput = {
   participants?: { handle?: string; recordId?: string; role?: string }[];
   about?: string[];
 };
-/** What a write added to an event's participants and `about` records. */
+/**
+ * Links added by this write, including existing unmatched participants resolved
+ * in place in `participants.matched` (their link IDs stay the same).
+ */
 export type AddedLinks = { participants: Participants; about: string[] };
 /** `POST /v1/events` result (6.2); `added` is set when it was logged before. */
 export type LogEventResult = {

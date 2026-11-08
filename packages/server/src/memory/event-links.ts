@@ -293,7 +293,7 @@ export async function presentLinks(
   workspaceId: string,
   schema: CompiledSchema,
   rows: readonly LinkRow[],
-  inserted: readonly LinkRow[] = [],
+  changed: readonly LinkRow[] = [],
 ): Promise<{ participants: Participants; about: string[]; added: AddedLinks }> {
   const [candidates, live] = await Promise.all([
     matchEmails(tx, workspaceId, schema, ambiguousHandles(rows)),
@@ -303,8 +303,8 @@ export async function presentLinks(
     participants: presentParticipants(rows, live, candidates),
     about: aboutOf(rows, live),
     added: {
-      participants: presentParticipants(inserted, live, candidates),
-      about: aboutOf(inserted, live),
+      participants: presentParticipants(changed, live, candidates),
+      about: aboutOf(changed, live),
     },
   };
 }
@@ -379,8 +379,30 @@ export async function eventDetails(
  * (after merges). An erased handle is stored as null, so it is compared as
  * "suppressed" rather than by value.
  */
-function participantKey(role: string | null, handle: string | null, recordId: string | null) {
+export function participantKey(
+  role: string | null,
+  handle: string | null,
+  recordId: string | null,
+) {
   return JSON.stringify([role, handle ? `h:${handle}` : recordId ? `r:${recordId}` : 's']);
+}
+
+/** Only safe unresolved rows may be retried; ambiguous rows need a current candidate. */
+export function canRematchParticipant(
+  row: Pick<LinkRow, 'record_id' | 'unmatched_reason'>,
+  participant: NormalizedParticipant & { erased: boolean },
+  candidateIds: readonly string[],
+  recordId: string | null,
+): boolean {
+  if (row.record_id || participant.erased) return false;
+  return (
+    row.unmatched_reason === 'no_match' ||
+    row.unmatched_reason === 'phone_only' ||
+    (row.unmatched_reason === 'ambiguous' &&
+      participant.recordId !== null &&
+      recordId !== null &&
+      candidateIds.includes(recordId))
+  );
 }
 
 /**
@@ -415,7 +437,8 @@ export async function lockLinkTargets(
 /**
  * Adds participants and `about` records to an event whose links are
  * `stored` (1.3). A participant already stored (by handle, or by record when
- * it has none) is not added again, so a retry or a re-log adds nothing. An
+ * it has none) is not added again. Eligible unmatched rows are re-resolved
+ * in place; successful resolutions are reported alongside new links. An
  * `about` record already linked to the event is skipped, and a record added
  * as a participant replaces its `about` link: a record is linked once.
  * `about` names live entities only (C4): a new link to an event is refused
@@ -428,7 +451,7 @@ export async function lockLinkTargets(
  * before links are compared or written, as relation writes do: a merge
  * locks the record it removes `FOR UPDATE`, so it either commits first and
  * the link goes to the survivor, or waits and then moves the new link too.
- * Returns the event's links after the write and the rows inserted.
+ * Returns the event's links after the write and the rows added or resolved.
  */
 export async function addLinks(
   tx: Tx,
@@ -437,7 +460,7 @@ export async function addLinks(
   eventId: string,
   stored: readonly StoredLink[],
   input: { participants: readonly NormalizedParticipant[]; about: readonly string[] },
-): Promise<{ rows: LinkRow[]; inserted: LinkRow[] }> {
+): Promise<{ rows: LinkRow[]; changed: LinkRow[] }> {
   // A handle erased by forget is never stored again (2.1). The caller holds
   // the privacy lock in shared mode, so forget cannot run between this check
   // and the commit.
@@ -449,9 +472,7 @@ export async function addLinks(
     ),
     matchEmails(tx, workspaceId, schema, [
       ...new Set(
-        input.participants.flatMap((p) =>
-          !p.recordId && p.handle?.kind === 'email' ? [p.handle.value] : [],
-        ),
+        input.participants.flatMap((p) => (p.handle?.kind === 'email' ? [p.handle.value] : [])),
       ),
     ]),
   ]);
@@ -469,22 +490,56 @@ export async function addLinks(
   records.delete(eventId);
   const survivor = (id: string | null) => (id ? (records.get(id)?.id ?? id) : null);
 
-  // Participants not stored yet. Matching counts duplicates, so a list that
-  // names the same handle twice keeps both, as when it was first logged.
-  const remaining = new Map<string, number>();
+  // Consume stored rows one at a time, preserving duplicate-handle counts.
+  const remaining = new Map<string, LinkRow[]>();
   for (const row of stored) {
     if (row.link !== 'participant') continue;
     const key = participantKey(row.role, row.handle, survivor(row.record_id));
-    remaining.set(key, (remaining.get(key) ?? 0) + 1);
+    const queue = remaining.get(key) ?? [];
+    queue.push(row);
+    remaining.set(key, queue);
   }
-  const newParticipants = kept.filter((p) => {
-    const key = participantKey(p.role, p.handle?.value ?? null, survivor(p.recordId));
-    const left = remaining.get(key) ?? 0;
-    if (left > 0) remaining.set(key, left - 1);
-    return left === 0;
-  });
+  const newParticipants: (NormalizedParticipant & { erased: boolean })[] = [];
+  const retries: { row: LinkRow; participant: NormalizedParticipant & { erased: boolean } }[] = [];
+  for (const p of kept) {
+    const key = participantKey(
+      p.role,
+      p.handle?.value ?? null,
+      p.erased ? null : survivor(p.recordId),
+    );
+    const row = remaining.get(key)?.shift();
+    if (!row) {
+      newParticipants.push(p);
+      continue;
+    }
+    const candidates = (emailMatches.get(p.handle?.value ?? '')?.live ?? []).flatMap((id) => {
+      const record = records.get(id);
+      return record && !record.deleted ? [record.id] : [];
+    });
+    if (canRematchParticipant(row, p, candidates, survivor(p.recordId))) {
+      retries.push({ row, participant: p });
+    }
+  }
+  const retryResolutions = resolveParticipants(
+    retries.map((r) => r.participant),
+    records,
+    emailMatches,
+  );
+  const resolved: LinkRow[] = [];
+  for (const [index, retry] of retries.entries()) {
+    const resolution = retryResolutions[index] as Resolution;
+    if (!('recordId' in resolution)) continue;
+    const [updated] = await tx<LinkRow[]>`
+      update event_links set record_id = ${resolution.recordId}, unmatched_reason = null
+      where id = ${retry.row.id}
+      returning id, handle, role, record_id, unmatched_reason, link`;
+    if (updated) resolved.push(updated);
+  }
   const resolutions = resolveParticipants(newParticipants, records, emailMatches);
-  const attending = new Set(resolutions.flatMap((r) => ('recordId' in r ? [r.recordId] : [])));
+  const attending = new Set([
+    ...resolutions.flatMap((r) => ('recordId' in r ? [r.recordId] : [])),
+    ...resolved.flatMap((r) => (r.record_id ? [r.record_id] : [])),
+  ]);
 
   // A record that now takes part loses its about link.
   const replaced = stored.filter(
@@ -569,12 +624,16 @@ export async function addLinks(
       link: 'about',
     })),
   ];
-  const inserted =
+  const changed =
     inserts.length > 0
       ? await tx<LinkRow[]>`
           insert into event_links ${tx(inserts)}
           returning id, handle, role, record_id, unmatched_reason, link`
       : [];
   const gone = new Set(replaced.map((r) => r.id));
-  return { rows: [...stored.filter((r) => !gone.has(r.id)), ...inserted], inserted };
+  const updated = new Map(resolved.map((r) => [r.id, r]));
+  return {
+    rows: [...stored.filter((r) => !gone.has(r.id)).map((r) => updated.get(r.id) ?? r), ...changed],
+    changed: [...resolved, ...changed],
+  };
 }

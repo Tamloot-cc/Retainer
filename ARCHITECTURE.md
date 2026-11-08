@@ -333,9 +333,16 @@ supplies it conflicts; one that names a field deleted since logging fails
 validation, like any write. Participants and `about` records the event does
 not have yet are added, after the existing ones, and the response lists them
 in `added`; nothing is removed this way, so retries, and syncs that log the
-original list again, are no-ops. A participant is the same one when its role
-and handle match, or its role and record (after merges) when it has no
-handle; an erased handle (2.1) matches another erased handle with the same
+original list again, are no-ops unless a previously unmatched participant can
+now resolve. Stored `no_match` and `phone_only` rows matching an input by key
+are re-resolved in place, preserving link ID and position. A supplied record ID
+is followed through merges; an email alone uses a fresh unique-claim lookup.
+Successful resolutions are included in `added.participants.matched` alongside
+new links. `suppressed` and `deleted_record` rows stay for people review;
+`ambiguous` rows require an explicit record ID among their current candidates.
+This also applies to `POST /v1/events/:id/links`. A participant is the same
+one when its role and handle match, or its role and record (after merges)
+when it has no handle; an erased handle (2.1) matches another erased handle with the same
 role. Adding a participant changes no field value or fact, only which
 records list the event. A different payload returns `event_conflict`; it is
 never silently ignored. Logging the identity of a deleted event, or one
@@ -1017,8 +1024,9 @@ Participants are resolved synchronously when the event is logged:
 handles are normalized (lowercased email, E.164 phone) and matched against
 unique identifiers in `record_identifiers`. Matched participants are linked;
 the response lists the unmatched ones so the agent can create those people
-itself or leave them. Retainer never creates records on its own. Phones are
-not unique (numbers are shared and reassigned), so a participant known only
+itself or leave them. After creating a person, the agent re-logs the same event
+with the same handle and role plus the new record ID to link that participant.
+Retainer never creates records on its own. Phones are not unique (numbers are shared and reassigned), so a participant known only
 by phone stays unresolved unless the agent passes its record ID. Matching a
 phone held by exactly one live record is a later option.
 
@@ -1471,7 +1479,8 @@ readability.
 `created` is `false` when the same `(channel, externalId)` was already
 logged with the same type, time and initial values (1.3); the response then
 also has `added`, the participants and `about` records this call added, in
-the same shapes. Handles come back normalized, in the order logged; `handle`
+the same shapes, including stored participants resolved in place in
+`added.participants.matched`. Handles come back normalized, in the order logged; `handle`
 or `role` is `null` when not given. Each participant's `id` names the link,
 for removing it. An unmatched
 participant's `reason` is `no_match`, `phone_only` (phones never resolve a

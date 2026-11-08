@@ -19,6 +19,7 @@ import {
   findRecords,
   forget,
   mergeRecord,
+  upsertRecord,
 } from '../../src/records/service.js';
 import { contextFor, searchFor } from '../../src/retrieval/service.js';
 import { runSchemaChange } from '../../src/schema-engine/engine.js';
@@ -120,6 +121,203 @@ describe('logging an event again adds links (1.3)', () => {
     expect(stale.added).toEqual(none);
     expect(stale.participants).toEqual(again.participants);
     expect(stale.about).toEqual([acme.id]);
+  });
+
+  it.each([false, true])(
+    'links a first-contact event after upsert (recordId: %s)',
+    async (explicit) => {
+      const handle = email();
+      const input = { externalId: externalId(), participants: [{ handle, role: 'organizer' }] };
+      const first = await log(input);
+      expect(first.participants.unmatched[0]?.reason).toBe('no_match');
+      const created = await upsertRecord(app, as(AGENT), 'person', {
+        values: { emails: handle },
+        ifMissing: 'create',
+        source: first.id,
+      });
+      expect(
+        (await contextFor(app, as(AGENT), created.id, { tokenBudget: 2000 })).recentEvents,
+      ).toEqual([]);
+      const retryInput = {
+        ...input,
+        participants: [
+          { handle, role: 'organizer', ...(explicit ? { recordId: created.id } : {}) },
+        ],
+      };
+      const again = await log(retryInput);
+      const matched = [
+        {
+          id: first.participants.unmatched[0]?.id,
+          handle,
+          role: 'organizer',
+          recordId: created.id,
+        },
+      ];
+      expect(again).toMatchObject({
+        id: first.id,
+        created: false,
+        participants: { matched, unmatched: [] },
+      });
+      expect(again.added).toEqual({ participants: { matched, unmatched: [] }, about: [] });
+      expect(
+        (await contextFor(app, as(AGENT), created.id, { tokenBudget: 2000 })).recentEvents,
+      ).toEqual([expect.objectContaining({ id: first.id, via: { kind: 'participant' } })]);
+      expect((await log(retryInput)).added).toEqual(none);
+      expect(
+        await db.owner`select id, position, record_id, unmatched_reason from event_links where event_id = ${first.id}`,
+      ).toEqual([
+        { id: matched[0]?.id, position: 0, record_id: created.id, unmatched_reason: null },
+      ]);
+    },
+  );
+
+  it('serializes concurrent re-logs into one resolved participant', async () => {
+    const handle = email();
+    const input = { externalId: externalId(), participants: [{ handle }] };
+    const first = await log(input);
+    const dana = await person({ emails: handle });
+    const results = await Promise.all([
+      log(input),
+      log({ ...input, participants: [{ handle, recordId: dana.id }] }),
+    ]);
+    expect(results.every((r) => r.id === first.id && !r.created)).toBe(true);
+    expect(results.map((r) => r.added?.participants.matched.length).sort()).toEqual([0, 1]);
+    expect(
+      await db.owner`select record_id, unmatched_reason from event_links where event_id = ${first.id}`,
+    ).toEqual([{ record_id: dana.id, unmatched_reason: null }]);
+  });
+
+  it.each([false, true])(
+    'resolves a formerly unmatched participant through a merge (recordId: %s)',
+    async (explicit) => {
+      const handle = email();
+      const input = { externalId: externalId(), participants: [{ handle }] };
+      await log(input);
+      const loser = await person({ emails: handle });
+      const winner = await person();
+      await mergeRecord(app, as(USER), winner.id, { recordId: loser.id });
+      const again = await log({
+        ...input,
+        participants: [{ handle, ...(explicit ? { recordId: loser.id } : {}) }],
+      });
+      expect(again.participants.matched[0]?.recordId).toBe(winner.id);
+      expect(again.added?.participants.matched[0]?.recordId).toBe(winner.id);
+    },
+  );
+
+  it('keeps duplicate handles and roles counted while resolving in place', async () => {
+    const handle = email();
+    const input = {
+      externalId: externalId(),
+      participants: [{ handle }, { handle }, { handle, role: 'guest' }],
+    };
+    const first = await log(input);
+    const dana = await person({ emails: handle });
+    const one = await log({ ...input, participants: [{ handle }] });
+    expect(one.participants.matched).toHaveLength(1);
+    expect(one.participants.unmatched).toHaveLength(2);
+    const again = await log(input);
+    expect(again.participants.matched.map((p) => p.id)).toEqual(
+      first.participants.unmatched.map((p) => p.id),
+    );
+    expect(again.participants.matched.map((p) => p.recordId)).toEqual([dana.id, dana.id, dana.id]);
+    expect(again.added?.participants.matched).toHaveLength(2);
+    expect((await log(input)).added).toEqual(none);
+  });
+
+  it('resolves phone_only with an explicit ID, replacing an about link', async () => {
+    const handle = '+14155552671';
+    const dana = await person();
+    const input = { externalId: externalId(), participants: [{ handle }], about: [dana.id] };
+    const first = await log(input);
+    expect(first.participants.unmatched[0]?.reason).toBe('phone_only');
+    expect((await log(input)).added).toEqual(none);
+    const again = await addEventLinksFor(app, as(AGENT), first.id, {
+      participants: [{ handle, recordId: dana.id }],
+      about: [],
+    });
+    expect(again.event?.about).toEqual([]);
+    expect(again.added.participants.matched[0]).toMatchObject({
+      id: first.participants.unmatched[0]?.id,
+      recordId: dana.id,
+    });
+  });
+
+  it('never revives a suppressed handle on retry, including with recordId', async () => {
+    const dana = await person();
+    await forget(app, as(USER), dana.id);
+    const input = { externalId: externalId(), participants: [{ handle: dana.email }] };
+    const first = await log(input);
+    expect(first.participants.unmatched[0]?.reason).toBe('suppressed');
+    const other = await person();
+    for (const participants of [input.participants, [{ handle: dana.email, recordId: other.id }]]) {
+      const again = await log({ ...input, participants });
+      expect(again.participants).toEqual(first.participants);
+      expect(again.added).toEqual(none);
+    }
+  });
+
+  it('only resolves an ambiguous row with an explicit current candidate', async () => {
+    await inWorkspace(app, workspaceId, (tx) =>
+      runSchemaChange(tx, {
+        workspaceId,
+        actor: USER,
+        scopes: ['schema:write', 'admin'],
+        operations: [
+          {
+            op: 'create_field',
+            object: 'company',
+            field: {
+              name: 'billingEmails',
+              label: 'Billing emails',
+              type: 'emails',
+              isUnique: true,
+            },
+          },
+        ],
+      }),
+    );
+    const handle = email();
+    const dana = await person({ emails: handle });
+    const vendor = await createRecord(app, as(AGENT), 'company', {
+      name: 'Billing',
+      billingEmails: handle,
+    });
+    const unrelated = await person();
+    const input = { externalId: externalId(), participants: [{ handle }] };
+    const first = await log(input);
+    expect(first.participants.unmatched[0]).toMatchObject({
+      reason: 'ambiguous',
+      candidates: [dana.id, vendor.id].sort(),
+    });
+    expect((await log(input)).added).toEqual(none);
+    const outside = await log({ ...input, participants: [{ handle, recordId: unrelated.id }] });
+    expect(outside.participants).toEqual(first.participants);
+    expect(outside.added).toEqual(none);
+    // Becoming unambiguous alone still requires explicit people/agent selection.
+    await deleteRecord(app, as(USER), vendor.id);
+    expect((await log(input)).added).toEqual(none);
+    const again = await log({ ...input, participants: [{ handle, recordId: dana.id }] });
+    expect(again.participants.unmatched).toEqual([]);
+    expect(again.added?.participants.matched[0]).toMatchObject({
+      id: first.participants.unmatched[0]?.id,
+      recordId: dana.id,
+    });
+  });
+
+  it('leaves deleted_record rows for review even when given another live ID', async () => {
+    const dana = await person();
+    await deleteRecord(app, as(USER), dana.id);
+    const input = { externalId: externalId(), participants: [{ handle: dana.email }] };
+    const first = await log(input);
+    expect(first.participants.unmatched[0]?.reason).toBe('deleted_record');
+    const other = await person();
+    const again = await log({
+      ...input,
+      participants: [{ handle: dana.email, recordId: other.id }],
+    });
+    expect(again.participants).toEqual(first.participants);
+    expect(again.added).toEqual(none);
   });
 
   it('still reports a different type, time, title or summary as a conflict', async () => {

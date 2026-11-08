@@ -202,7 +202,8 @@ export function registerWriteTools(server: McpServer, sql: Sql, caller: Caller):
         'upsert_record and remember.\n\n' +
         'Participants are matched by email to existing records. The response lists matched ' +
         'participants with their recordId, and unmatched ones with a reason: "no_match" (no ' +
-        'record has this email; create the person with upsert_record if worth keeping), ' +
+        'record has this email; create the person with upsert_record if worth keeping, then re-log ' +
+        'the same event with the same handle and role plus the new recordId), ' +
         '"phone_only" (phones never match on their own; pass recordId if you know it), ' +
         '"deleted_record" (the email belongs to a deleted record; a person will review it), ' +
         '"ambiguous" (several records claim it; candidates lists them) or "suppressed" (the ' +
@@ -210,7 +211,10 @@ export function registerWriteTools(server: McpServer, sql: Sql, caller: Caller):
         'for it). Retainer never creates records for you.\n\n' +
         'Logging the same channel and externalId again returns the same event with ' +
         'created: false, after adding the participants and about records it did not have ' +
-        '(listed in added); nothing is removed. A different type, occurredAt, title, summary ' +
+        '(listed in added). Existing no_match or phone_only participants are re-resolved in place ' +
+        'and successful matches are also listed in added.participants.matched. Ambiguous rows ' +
+        'require an explicit recordId among their candidates; suppressed and deleted_record ' +
+        'rows stay for people review. Nothing is removed. A different type, occurredAt, title, summary ' +
         'or field value is a conflict (event_conflict): an edited source needs a new ' +
         'externalId. event_retracted means that source was deleted or erased: do not log it ' +
         'again.',

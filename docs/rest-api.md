@@ -123,8 +123,14 @@ original response; the same key with a different body fails with 422
 `(channel, externalId)` instead: logging it again with the same `type`,
 `occurredAt`, title, summary and `fields` returns it with `created: false`
 (status 200 instead of 201), after adding any participants and `about`
-records it did not have yet (listed in `added`). Nothing is removed by
-logging again; a different payload is a 409 `event_conflict`, and the
+records it did not have yet (listed in `added`). Existing `no_match` and
+`phone_only` participants with the same handle and role are re-resolved in
+place: give the new person's `recordId`, or retry an email after creating its unique claim. Successful resolutions appear in
+`added.participants.matched`, keeping the original participant ID and position.
+Ambiguous participants require an explicit `recordId` among their current
+candidates; `suppressed` and `deleted_record` rows stay for people review.
+`POST /v1/events/:id/links` uses the same behavior and `added` response shape.
+Nothing is removed by logging again; a different payload is a 409 `event_conflict`, and the
 identity of a deleted or erased event is a 409 `event_retracted`.
 
 ## Routes
