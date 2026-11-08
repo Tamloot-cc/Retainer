@@ -59,9 +59,14 @@ variable "db_instance_class" {
 }
 
 variable "db_engine_version" {
-  description = "PostgreSQL major version."
+  description = "PostgreSQL major version, 18 or later."
   type        = string
   default     = "18"
+
+  validation {
+    condition     = try(tonumber(split(".", var.db_engine_version)[0]) >= 18, false)
+    error_message = "Retainer's migrations need PostgreSQL 18 or later."
+  }
 }
 
 variable "db_allocated_storage_gb" {
