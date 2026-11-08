@@ -11,3 +11,7 @@ coverage/
 
 playwright-report/
 test-results/
+
+# The AWS deployment moved out of this repo. Older checkouts may still hold
+# its settings and Terraform state here, with secrets in them: keep ignoring it.
+deploy/aws/
