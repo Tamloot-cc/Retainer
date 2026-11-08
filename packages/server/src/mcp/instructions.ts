@@ -35,7 +35,9 @@ After a meeting, call, email thread or chat, write what you learned in order:
    other records it concerns. Keep the id it returns.
    Unmatched participants come back with a reason; create the people worth
    keeping with upsert_record, or leave them. Retainer never creates records
-   on its own.
+   on its own. After creating a person, re-log the same event with the same
+   handle and role plus the new recordId to link the stored participant.
+   Successful resolutions are listed in added.participants.matched.
 2. upsert_record with source set to that event id, so the values carry its
    date and an older email cannot overwrite a newer claim.
 3. remember, citing the same source (with a short quote if useful), for

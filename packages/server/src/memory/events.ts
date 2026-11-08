@@ -200,7 +200,7 @@ export async function logEvent(
       if (existing.deleted_at) throw retracted(existing.record_id);
       await checkSameEvent(tx, context, existing, object, occurredAt, values);
       const stored = await loadLinks(tx, workspaceId, existing.record_id);
-      const { rows, inserted } = await addLinks(
+      const { rows, changed } = await addLinks(
         tx,
         workspaceId,
         schema,
@@ -208,7 +208,7 @@ export async function logEvent(
         stored,
         { participants, about: input.about },
       );
-      const links = await presentLinks(tx, workspaceId, schema, rows, inserted);
+      const links = await presentLinks(tx, workspaceId, schema, rows, changed);
       return {
         id: existing.record_id,
         type: object.name,
@@ -357,11 +357,11 @@ export async function addEventLinks(
   const participants = normalizeParticipants(input.participants);
   await lockEvent(tx, context, id);
   const stored = await loadLinks(tx, context.workspaceId, id);
-  const { inserted, rows } = await addLinks(tx, context.workspaceId, context.schema, id, stored, {
+  const { changed, rows } = await addLinks(tx, context.workspaceId, context.schema, id, stored, {
     participants,
     about: input.about,
   });
-  const links = await presentLinks(tx, context.workspaceId, context.schema, rows, inserted);
+  const links = await presentLinks(tx, context.workspaceId, context.schema, rows, changed);
   return {
     ...(await getRecord(tx, context.workspaceId, context.schema, id)),
     added: links.added,

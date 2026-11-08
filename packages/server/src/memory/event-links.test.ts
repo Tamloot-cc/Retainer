@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveParticipants } from './event-links.js';
+import { canRematchParticipant, participantKey, resolveParticipants } from './event-links.js';
 
 const A = '10000000-0000-4000-8000-00000000000a';
 const B = '10000000-0000-4000-8000-00000000000b';
@@ -45,5 +45,34 @@ describe('resolveParticipants', () => {
         both,
       ),
     ).toEqual([{ recordId: A }]);
+  });
+});
+
+describe('participant retry identity and eligibility', () => {
+  it('uses role and handle before record ID, and record ID only without a handle', () => {
+    expect(participantKey(null, 'dana@acme.test', null)).toBe(
+      participantKey(null, 'dana@acme.test', A),
+    );
+    expect(participantKey('guest', 'dana@acme.test', A)).not.toBe(
+      participantKey(null, 'dana@acme.test', A),
+    );
+    expect(participantKey(null, null, A)).not.toBe(participantKey(null, null, B));
+  });
+
+  it('only retries safe unmatched reasons, requiring an explicit candidate for ambiguity', () => {
+    const p = { ...dana, erased: false };
+    const row = { record_id: null, unmatched_reason: 'no_match' as const };
+    expect(canRematchParticipant(row, p, [], null)).toBe(true);
+    expect(canRematchParticipant({ ...row, unmatched_reason: 'phone_only' }, p, [], null)).toBe(
+      true,
+    );
+    for (const unmatched_reason of ['suppressed', 'deleted_record', 'ambiguous'] as const) {
+      expect(canRematchParticipant({ ...row, unmatched_reason }, p, [A], A)).toBe(false);
+    }
+    expect(canRematchParticipant({ ...row, record_id: A }, p, [], null)).toBe(false);
+    expect(canRematchParticipant(row, { ...p, erased: true }, [], null)).toBe(false);
+    const ambiguous = { ...row, unmatched_reason: 'ambiguous' as const };
+    expect(canRematchParticipant(ambiguous, { ...p, recordId: A }, [A, B], A)).toBe(true);
+    expect(canRematchParticipant(ambiguous, { ...p, recordId: B }, [A], B)).toBe(false);
   });
 });

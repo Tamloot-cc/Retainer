@@ -68,6 +68,81 @@ const internalNoteOf = async (factId: string) => {
 };
 
 describe('POST /v1/events', () => {
+  it.each([false, true])(
+    'rematches a first-contact participant over MCP (recordId: %s)',
+    async (explicit) => {
+      const mcp = await t.mcpClient(keys.agent);
+      try {
+        const handle = email();
+        const input = {
+          type: 'conversation',
+          channel: 'google-calendar',
+          externalId: `rematch-${++n}`,
+          occurredAt: '2026-10-29T12:00:00Z',
+          title: 'First contact',
+          summary: 'Meet Gal',
+          participants: [{ handle, role: 'organizer' }],
+        };
+        const first = await mcp.call('log_event', input);
+        expect(first.isError).toBeFalsy();
+        expect(first.body.participants.unmatched[0].reason).toBe('no_match');
+        const created = await mcp.call('upsert_record', {
+          object: 'person',
+          values: { emails: handle },
+          ifMissing: 'create',
+          source: first.body.id,
+        });
+        expect(created.isError).toBeFalsy();
+        const again = await mcp.call('log_event', {
+          ...input,
+          participants: [
+            { handle, role: 'organizer', ...(explicit ? { recordId: created.body.id } : {}) },
+          ],
+        });
+        expect(again.isError).toBeFalsy();
+        expect(again.body).toMatchObject({
+          id: first.body.id,
+          created: false,
+          participants: { unmatched: [] },
+        });
+        expect(again.body.added.participants.matched).toEqual([
+          {
+            id: first.body.participants.unmatched[0].id,
+            handle,
+            role: 'organizer',
+            recordId: created.body.id,
+          },
+        ]);
+        const context = await mcp.call('get_context', { record: created.body.id });
+        expect(context.isError).toBeFalsy();
+        expect(context.body.recentEvents).toContainEqual(
+          expect.objectContaining({ id: first.body.id }),
+        );
+      } finally {
+        await mcp.close();
+      }
+    },
+  );
+
+  it('reports in-place resolutions in the HTTP links response', async () => {
+    const handle = email();
+    const first = await logCall({ participants: [{ handle }] });
+    const person = await t.request('/v1/objects/person/upsert', {
+      key: keys.agent,
+      body: { values: { emails: handle }, ifMissing: 'create', source: first.body.id },
+    });
+    expect(person.status).toBe(201);
+    const added = await t.request(`/v1/events/${first.body.id}/links`, {
+      key: keys.agent,
+      body: { participants: [{ handle, recordId: person.body.id }] },
+    });
+    expect(added.status).toBe(200);
+    expect(added.body.event.participants.unmatched).toEqual([]);
+    expect(added.body.added.participants.matched).toEqual([
+      { id: first.body.participants.unmatched[0].id, handle, role: null, recordId: person.body.id },
+    ]);
+  });
+
   it('logs an event (201), and returns it again for the same input (200)', async () => {
     const dana = await createPerson();
     const body = {

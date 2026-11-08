@@ -46,6 +46,7 @@ export function memoryRoutes(app: Hono<AppEnv>, sql: Sql) {
     c.json(await readEvent(sql, c.get('caller'), idParam(c))),
   );
 
+  // `added.participants.matched` includes stored participants resolved in place.
   app.post('/events/:id/links', requireScope('write'), async (c) => {
     const id = idParam(c);
     const input = await readBody(c, addLinksInputSchema);

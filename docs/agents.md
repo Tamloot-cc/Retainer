@@ -197,7 +197,10 @@ email thread, a well-behaved agent:
    summary, the type's other fields, the source's external ID, the
    participants as emails, phones or record IDs, and in `about` the IDs of
    the records it concerns. The response lists which participants matched a
-   record and which did not.
+   record and which did not. For an unmatched person worth keeping, create them
+   with `upsert_record` citing the event as `source`, then re-log the same event
+   with the same handle and role plus the new `recordId`. The stored participant
+   is linked in place and listed in `added.participants.matched`.
 2. **Updates records** with `upsert_record`, passing the event's ID as
    `source`. Cited values carry the event's date, so an old email can never
    overwrite a newer value.

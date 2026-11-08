@@ -453,7 +453,11 @@ export class RetainerClient {
   queryEvents(input: EventQueryInput = {}, signal?: AbortSignal) {
     return this.post<EventPage>('/v1/events/query', input, signal);
   }
-  /** Logs an event; the only way events are created. Idempotent by channel and externalId. */
+  /**
+   * Logs an event; idempotent by channel and externalId. After creating an
+   * unmatched person, re-log with the same handle/role and their recordId.
+   * `added.participants.matched` includes participants resolved in place.
+   */
   logEvent(input: LogEventInput) {
     return this.post<LogEventResult>('/v1/events', input);
   }
@@ -466,7 +470,10 @@ export class RetainerClient {
   moveEvents(input: MoveEventsInput) {
     return this.post<MoveEventsResult>('/v1/events/move', input);
   }
-  /** Adds participants and `about` records to a logged event; idempotent. */
+  /**
+   * Adds links and retries eligible unmatched participants in place; idempotent.
+   * Successful resolutions are included in `added.participants.matched`.
+   */
   addEventLinks(id: string, input: { participants?: Participant[]; about?: string[] }) {
     return this.post<PresentedRecord & { added: AddedLinks }>(
       `/v1/events/${encodeURIComponent(id)}/links`,
