@@ -77,6 +77,10 @@ export function createAccountsApp(deps: AccountsDeps) {
     app.get(path, (c) => deps.auth.authServerMetadata(c.req.raw));
   }
 
+  // What the sign-in page offers, before anyone is signed in: Google,
+  // Microsoft or both, as the server is set up (accounts spec 4.1, 5).
+  app.get('/account/providers', (c) => c.json({ providers: deps.auth.providers }));
+
   const account = new Hono<AccountsEnv>();
   account.use('*', signedIn(deps));
   const { sql } = deps;
@@ -236,10 +240,17 @@ export function createAccountsApp(deps: AccountsDeps) {
   return app;
 }
 
-/** Better Auth routes Retainer does not expose (see /account/oauth/consent). */
+/**
+ * Better Auth routes Retainer does not expose. Consent goes through
+ * /account/oauth/consent. A second provider joins a person only at sign-in,
+ * under the verified-address rule (auth.ts), so the routes that link and
+ * unlink provider accounts by hand stay closed.
+ */
 const CLOSED_AUTH_PATHS = new Set([
   '/account/auth/oauth2/consent',
   '/account/auth/oauth2/continue',
+  '/account/auth/link-social',
+  '/account/auth/unlink-account',
 ]);
 
 /**

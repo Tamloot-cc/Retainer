@@ -11,8 +11,8 @@ import { withPassLock } from './deploy-lock.js';
 /**
  * The control function (accounts spec 4.6): /account behind API Gateway,
  * with Better Auth and the control role's login. It is the only function
- * with a route to the internet, through a NAT gateway, because Google
- * sign-in needs one. The api function never loads this code.
+ * with a route to the internet, through a NAT gateway, because Google and
+ * Microsoft sign-in need one. The api function never loads this code.
  *
  * EventBridge also invokes it with `{ "task": "purge-deleted-workspaces" }`
  * to remove deleted workspaces for good (4.5). That run holds the deploy

@@ -7,6 +7,7 @@ import {
   ownerDatabaseUrl,
   publicOriginSchema,
   RUNTIME_ROLE,
+  signInProviders,
 } from './config.js';
 import { runtimeConnection } from './db/client.js';
 
@@ -92,19 +93,45 @@ describe('accounts mode', () => {
     expect(() => loadConfig({ ...base, RETAINER_AUTH_SECRET: 'short' })).toThrow('32');
   });
 
-  it('refuses to sign people in without the Google client', () => {
+  it('refuses a Microsoft client without the secret, or half a client', () => {
+    expect(() =>
+      loadConfig({
+        ...base,
+        RETAINER_MICROSOFT_CLIENT_ID: 'ms-id',
+        RETAINER_MICROSOFT_CLIENT_SECRET: 'ms-shh',
+      }),
+    ).toThrow('a Microsoft client needs RETAINER_AUTH_SECRET too');
+    expect(() =>
+      loadConfig({ ...base, RETAINER_AUTH_SECRET: secret, RETAINER_MICROSOFT_CLIENT_ID: 'ms-id' }),
+    ).toThrow('RETAINER_MICROSOFT_CLIENT_ID and RETAINER_MICROSOFT_CLIENT_SECRET together');
+  });
+
+  it('refuses to sign people in without Google or Microsoft', () => {
     const apiOnly = loadConfig({ ...base, RETAINER_AUTH_SECRET: secret });
-    expect(() => accountsConfig(apiOnly)).toThrow('Set all three, or none');
-    const full = loadConfig({
-      ...base,
-      RETAINER_AUTH_SECRET: secret,
-      RETAINER_GOOGLE_CLIENT_ID: 'id',
-      RETAINER_GOOGLE_CLIENT_SECRET: 'shh',
-    });
-    expect(accountsConfig(full)).toEqual({
+    expect(() => accountsConfig(apiOnly)).toThrow('at least one provider');
+  });
+
+  it('signs people in with Google, Microsoft or both', () => {
+    const google = { RETAINER_GOOGLE_CLIENT_ID: 'id', RETAINER_GOOGLE_CLIENT_SECRET: 'shh' };
+    const microsoft = {
+      RETAINER_MICROSOFT_CLIENT_ID: 'ms-id',
+      RETAINER_MICROSOFT_CLIENT_SECRET: 'ms-shh',
+    };
+    const withSecret = { ...base, RETAINER_AUTH_SECRET: secret };
+    // An install that set Google before Microsoft existed is unchanged.
+    const googleOnly = accountsConfig(loadConfig({ ...withSecret, ...google }));
+    expect(googleOnly).toEqual({ secret, google: { clientId: 'id', clientSecret: 'shh' } });
+    expect(signInProviders(googleOnly)).toEqual(['google']);
+
+    const microsoftOnly = accountsConfig(loadConfig({ ...withSecret, ...microsoft }));
+    expect(microsoftOnly).toEqual({
       secret,
-      google: { clientId: 'id', clientSecret: 'shh' },
+      microsoft: { clientId: 'ms-id', clientSecret: 'ms-shh' },
     });
+    expect(signInProviders(microsoftOnly)).toEqual(['microsoft']);
+
+    const both = accountsConfig(loadConfig({ ...withSecret, ...google, ...microsoft }));
+    expect(signInProviders(both)).toEqual(['google', 'microsoft']);
   });
 
   it('runs the control function on the control login alone', () => {

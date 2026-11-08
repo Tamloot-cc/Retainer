@@ -274,6 +274,13 @@
       "when": 1794109033704,
       "tag": "0038_uuidv7_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1794111154736,
+      "tag": "0039_auth_accounts_one_per_provider",
+      "breakpoints": true
     }
   ]
 }

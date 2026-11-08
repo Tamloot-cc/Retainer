@@ -23,6 +23,8 @@ export function createAccountsServer(input: {
   authSql: Sql;
   clientIp: (c: Context) => string | undefined;
   google?: GoogleOverrides;
+  /** Tests run a local fake of Microsoft's sign-in service. */
+  microsoftAuthority?: string;
   rateLimit?: boolean;
   fetchClientMetadata?: AuthOptions['fetchClientMetadata'];
 }) {
@@ -33,6 +35,7 @@ export function createAccountsServer(input: {
     config: accountsConfig(config),
     publicOrigin,
     ...(input.google ? { google: input.google } : {}),
+    ...(input.microsoftAuthority ? { microsoftAuthority: input.microsoftAuthority } : {}),
     ...(input.rateLimit === undefined ? {} : { rateLimit: input.rateLimit }),
     ...(input.fetchClientMetadata ? { fetchClientMetadata: input.fetchClientMetadata } : {}),
   });
