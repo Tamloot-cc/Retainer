@@ -112,5 +112,11 @@ export async function lookupOAuthToken(
     },
     scopes: cappedScopes(tokenScopes, access.role),
     connectedBy: access.user_id,
+    // The app works for the person who connected it (personal memory spec 4.3).
+    person: {
+      id: access.user_id,
+      name: access.user_name,
+      check: { kind: 'oauth', subject, workspace, client },
+    },
   };
 }

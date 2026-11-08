@@ -17,7 +17,30 @@ export type Caller = {
    * 4.7). The caller is still an agent: `userId` stays unset.
    */
   connectedBy?: string;
+  /**
+   * The person whose personal memory this credential reaches, as `me`
+   * (personal memory spec 4.3): the signed-in person, the person who
+   * connected the app, or the person an API key works for. Unset for keys
+   * that work for nobody and in key mode.
+   */
+  person?: CallerPerson;
 };
+
+export type CallerPerson = {
+  id: string;
+  name: string;
+  /** How to ask again, inside a transaction, whether the credential still reaches the person. */
+  check: PersonCheck;
+};
+
+/**
+ * The credential behind `person`, re-checked through the same `SECURITY
+ * DEFINER` function that authenticated it (4.3).
+ */
+export type PersonCheck =
+  | { kind: 'session'; token: string }
+  | { kind: 'oauth'; subject: string; workspace: string; client: string }
+  | { kind: 'key'; hash: string };
 
 /** Only a `user` actor with `admin` scope is a human approval (3). */
 export function canApproveDestructive(actor: Actor, scopes: readonly ApiKeyScope[]): boolean {

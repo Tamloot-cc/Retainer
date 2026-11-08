@@ -122,7 +122,10 @@ export function createAccountsApp(deps: AccountsDeps) {
     c.json({ keys: await people.listWorkspaceKeys(sql, c.get('person'), idParam(c)) }),
   );
   account.post('/workspaces/:id/keys', async (c) => {
-    const body = await readBody(c, named.extend({ access: z.string() }));
+    const body = await readBody(
+      c,
+      named.extend({ access: z.string(), worksForMe: z.boolean().optional() }),
+    );
     return c.json(await people.createWorkspaceKey(sql, c.get('person'), idParam(c), body), 201);
   });
   account.delete('/workspaces/:id/keys/:keyId', async (c) => {

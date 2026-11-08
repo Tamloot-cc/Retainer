@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/server';
+import { isProfileAlias, PROFILE_ALIASES } from '@retainer/shared';
 import { z } from 'zod';
 import type { Caller } from '../../caller.js';
 import { listComments, readRecordWithComments } from '../../comments/service.js';
@@ -11,9 +12,28 @@ import { contextFor, searchFor, timelineFor } from '../../retrieval/service.js';
 import { timelineInputSchema } from '../../retrieval/timeline.js';
 import { objectName, run } from '../shared.js';
 
+/**
+ * A record ID. `workspace` and `me` pass validation so the call can answer
+ * with the tools that take them (`profile_not_supported`, personal memory
+ * spec 4.4) instead of a bare format error.
+ */
 const recordId = z
-  .uuid()
+  .string()
+  .refine((value) => z.uuid().safeParse(value).success || isProfileAlias(value), {
+    message: 'must be a record ID',
+  })
   .describe('The record ID. An ID merged into another record returns the survivor.');
+
+/**
+ * A record ID, or `workspace` or `me` (personal memory spec 4.4), for the
+ * tools that read facts.
+ */
+const recordOrMemory = z
+  .union([z.uuid(), z.enum(PROFILE_ALIASES)])
+  .describe(
+    'The record ID (a merged ID returns the survivor), or "workspace" for what the business ' +
+      'is and how it works, or "me" for the person you work for.',
+  );
 
 const getRecordInput = z.strictObject({
   id: recordId,
@@ -52,7 +72,7 @@ const searchInput = z.strictObject({
 });
 
 const getContextInput = z.strictObject({
-  record: recordId,
+  record: recordOrMemory,
   tokenBudget: contextInputSchema.shape.tokenBudget.describe(
     "Approximate size of the pack in tokens, 2000 by default (at most 16000). The record's " +
       'values are always included; tasks, facts and events fill the rest.',
@@ -60,7 +80,7 @@ const getContextInput = z.strictObject({
 });
 
 const getTimelineInput = z.strictObject({
-  record: recordId,
+  record: recordOrMemory,
   types: timelineInputSchema.shape.types.describe(
     'Kinds of item: "event", "field_change", "fact". All by default; fields or eventTypes ' +
       'alone narrow it to their kind.',
@@ -144,7 +164,9 @@ export function registerReadTools(server: McpServer, sql: Sql, caller: Caller): 
         'record by name or by anything said about it. When no record matches word for word, ' +
         'records with a similar label come back with match "similar_label" (a misspelled ' +
         'name), so check them before using one. Words match as typed or as the start of a ' +
-        'longer word, without stemming; email and website domains are searchable ("acme").',
+        'longer word, without stemming; email and website domains are searchable ("acme"). ' +
+        'A fact in workspace or personal memory names profile ("workspace" or "me") instead ' +
+        'of a record.',
       inputSchema: searchInput,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -162,7 +184,9 @@ export function registerReadTools(server: McpServer, sql: Sql, caller: Caller): 
         'those rolled up one hop from records pointing at it), each event saying how it is ' +
         'attached (via). Field ' +
         'values are what the CRM holds; facts are plain-language claims with their sources. ' +
-        'omitted counts what did not fit; read more with search or a larger tokenBudget.',
+        'omitted counts what did not fit; read more with search or a larger tokenBudget. ' +
+        'With record "workspace" or "me", returns that memory\'s current facts instead, ' +
+        'newest first: read both at the start of a session.',
       inputSchema: getContextInput,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -180,7 +204,8 @@ export function registerReadTools(server: McpServer, sql: Sql, caller: Caller): 
         'the record holds now, and one that is not may never have been) and facts (current, ' +
         'superseded or ended). Filter by types, fields, eventTypes and a from/to time ' +
         'range; page with cursor. Use get_context for what is true now, and this for how ' +
-        'it got there.',
+        'it got there. With record "workspace" or "me", lists that memory\'s facts only, ' +
+        'superseded ones included.',
       inputSchema: getTimelineInput,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },

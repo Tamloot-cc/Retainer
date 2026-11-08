@@ -15,6 +15,7 @@ import type {
   EventAttachment,
   EventPage,
   EventQueryInput,
+  FactPlace,
   ForgetResult,
   LogEventInput,
   LogEventResult,
@@ -27,6 +28,8 @@ import type {
   PresentedComment,
   PresentedFact,
   PresentedRecord,
+  ProfileAlias,
+  ProfileContextPack,
   QueryInput,
   RecordPage,
   RetractEventResult,
@@ -277,6 +280,13 @@ export class RetainerClient {
       idempotencyKey,
     );
   }
+  /**
+   * Deletes the signed-in person's personal memory in this workspace (4.6):
+   * web sessions only; agents cannot clear it.
+   */
+  clearMyMemory() {
+    return this.post<{ cleared: true; counts: Record<string, number> }>('/v1/records/me/forget');
+  }
   /** Erases a person and what was logged about them (needs the `admin` scope). Not reversible. */
   forget(id: string) {
     return this.post<ForgetResult>(`/v1/records/${encodeURIComponent(id)}/forget`);
@@ -284,8 +294,18 @@ export class RetainerClient {
   search(input: SearchInput, signal?: AbortSignal) {
     return this.post<SearchResult>('/v1/search', input, signal);
   }
+  context(
+    id: ProfileAlias,
+    input?: ContextInput,
+    signal?: AbortSignal,
+  ): Promise<ProfileContextPack>;
+  context(id: string, input?: ContextInput, signal?: AbortSignal): Promise<ContextPack>;
   context(id: string, input: ContextInput = {}, signal?: AbortSignal) {
-    return this.get<ContextPack>(`/v1/records/${encodeURIComponent(id)}/context`, input, signal);
+    return this.get<ContextPack | ProfileContextPack>(
+      `/v1/records/${encodeURIComponent(id)}/context`,
+      input,
+      signal,
+    );
   }
   dismissMergeSuggestion(id: string) {
     return this.post<MergeSuggestionDecision>(
@@ -353,17 +373,26 @@ export class RetainerClient {
       signal,
     );
   }
+  /**
+   * A record's current facts, or a profile's: `workspace` for workspace
+   * memory, `me` for the caller's personal memory (personal memory spec 4.4).
+   */
   facts(id: string, options: PageOptions = {}) {
     const { signal, ...params } = options;
-    return this.get<{ record: string; facts: PresentedFact[]; nextCursor: string | null }>(
+    return this.get<FactPlace & { facts: PresentedFact[]; nextCursor: string | null }>(
       `/v1/records/${encodeURIComponent(id)}/facts`,
       params,
       signal,
     );
   }
+  /**
+   * Adds a fact to a record or a profile (`workspace`, `me`). `supersedes`
+   * replaces a current fact: on the same record it corrects it, elsewhere it
+   * moves it (4.9).
+   */
   remember(
     id: string,
-    input: { text: string; source?: string; quote?: string },
+    input: { text: string; source?: string; quote?: string; supersedes?: string },
     idempotencyKey?: string,
   ) {
     return this.post<{ fact: PresentedFact }>(

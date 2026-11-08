@@ -12,35 +12,60 @@ export function requestHash(request: unknown): string {
 
 export type IdempotencyClaim = { kind: 'new'; id: string } | { kind: 'replay'; result: unknown };
 
+/** The scope of a claim made by a credential that works for no person (personal memory spec 4.2). */
+export const NO_PERSON_SCOPE = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * Who claims a key: the write's workspace and the person behind the
+ * credential, if any, so two people never share a claim.
+ */
+export type Claimant = { workspaceId: string; person?: { id: string } | undefined };
+
 /**
  * Claims a caller's idempotency key for one operation (6.2), in the same
  * transaction as the write. A concurrent request with the same key waits on
  * the unique index until this transaction ends, then replays its result. A
  * key reused with a different request fails. An expired key starts over.
+ * Claims are scoped by person as well as workspace and operation, so another
+ * person reusing the key gets a claim of their own (personal memory 4.2).
+ * Resolve aliases and check access before claiming: a replay returns the
+ * stored response as it is.
  */
 export async function claimIdempotencyKey(
   tx: Tx,
-  workspaceId: string,
+  claimant: Claimant,
   operation: string,
   key: string,
   hash: string,
+  /**
+   * Set when the stored response will read or change the person's private
+   * facts, so only they can replay it.
+   */
+  { private: isPrivate = false }: { private?: boolean } = {},
 ): Promise<IdempotencyClaim> {
   if (key.length === 0 || key.length > 200) {
     throw new AppError(400, 'invalid_request', 'Idempotency-Key must be 1 to 200 characters');
   }
+  const { workspaceId } = claimant;
+  const personId = claimant.person?.id;
+  const personScope = personId ?? NO_PERSON_SCOPE;
+  const privateTo = isPrivate && personId ? personId : null;
   const [claimed] = await tx<{ id: string }[]>`
-    insert into idempotency_keys (workspace_id, operation, key, request_hash, expires_at)
-    values (${workspaceId}, ${operation}, ${key}, ${hash}, now() + ${TTL}::interval)
-    on conflict (workspace_id, operation, key) do update
+    insert into idempotency_keys
+      (workspace_id, operation, person_scope, key, request_hash, expires_at, private_to_user)
+    values (${workspaceId}, ${operation}, ${personScope}, ${key}, ${hash},
+      now() + ${TTL}::interval, ${privateTo})
+    on conflict (workspace_id, operation, person_scope, key) do update
       set request_hash = excluded.request_hash, result = null, created_at = now(),
-        expires_at = excluded.expires_at
+        expires_at = excluded.expires_at, private_to_user = excluded.private_to_user
       where idempotency_keys.expires_at < now()
     returning id`;
   if (claimed) return { kind: 'new', id: claimed.id };
 
   const [existing] = await tx<{ request_hash: string; result: unknown }[]>`
     select request_hash, result from idempotency_keys
-    where workspace_id = ${workspaceId} and operation = ${operation} and key = ${key}`;
+    where workspace_id = ${workspaceId} and operation = ${operation}
+      and person_scope = ${personScope} and key = ${key}`;
   if (!existing || existing.request_hash !== hash) {
     throw new AppError(
       422,

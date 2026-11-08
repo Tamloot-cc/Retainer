@@ -92,5 +92,6 @@ export async function lookupAccountSession(
     actor: { type: 'user', id: row.user_id, name: row.user_name },
     scopes: WORKSPACE_ROLE_SCOPES[row.role],
     userId: row.user_id,
+    person: { id: row.user_id, name: row.user_name, check: { kind: 'session', token } },
   };
 }

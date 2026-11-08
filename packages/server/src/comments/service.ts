@@ -144,7 +144,7 @@ async function once<T>(
   if (key === undefined) return write();
   const { type, id } = context.actor;
   const hash = requestHash({ ...request, actor: { type, id } });
-  const claimed = await claimIdempotencyKey(tx, context.workspaceId, operation, key, hash);
+  const claimed = await claimIdempotencyKey(tx, context, operation, key, hash);
   if (claimed.kind === 'replay') return claimed.result as T;
   const result = await write();
   await storeIdempotentResult(tx, claimed.id, result);

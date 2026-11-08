@@ -37,8 +37,10 @@ export function registerSetupTools(server: McpServer, sql: Sql, caller: Caller):
         'log them with log_event, never create them with upsert_record. Every event has a ' +
         'channel (eventColumns): the source system or account, part of its identity. A ' +
         "conversation's medium field says what kind it was (meeting, call, email, message) " +
-        'and can be corrected later. builtIns lists facts, written with remember, and ' +
-        'comments, which only people write. Call it first, ' +
+        'and can be corrected later. builtIns lists facts, written with remember, ' +
+        'comments, which only people write, and memory: profiles lists "workspace" and, ' +
+        'when your credential works for a person, "me", which remember, get_context and ' +
+        'get_timeline take instead of a record ID. Call it first, ' +
         'and again after a schema change. If initialized is false, ' +
         'the schema has not been set up yet: follow get_guide("discover_schema"), or see ' +
         'list_templates.',

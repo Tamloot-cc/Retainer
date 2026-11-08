@@ -95,14 +95,21 @@ export async function createApiKey(
     scopes: ApiKeyScope[];
     /** The person who created it in the web app (accounts spec 4.5). */
     createdByUser?: string;
+    /**
+     * The person the agent works for (personal memory spec 4.3): only ever
+     * the person creating it in the web app.
+     */
+    actsForUser?: string;
   },
 ): Promise<CreatedApiKey> {
   const workspace = await getWorkspace(sql, input.workspace);
   const key = generateApiKey();
   const [row] = await sql<{ id: string }[]>`
-    insert into api_keys (workspace_id, name, prefix, hash, scopes, actor, created_by_user)
+    insert into api_keys
+      (workspace_id, name, prefix, hash, scopes, actor, created_by_user, acts_for_user)
     values (${workspace.id}, ${input.name}, ${keyPrefix(key)}, ${hashApiKey(key)},
-      ${input.scopes}, ${sql.json(input.actor)}, ${input.createdByUser ?? null})
+      ${input.scopes}, ${sql.json(input.actor)}, ${input.createdByUser ?? null},
+      ${input.actsForUser ?? null})
     returning id`;
   return {
     id: row?.id as string,

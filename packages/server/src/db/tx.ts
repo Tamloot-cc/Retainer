@@ -9,18 +9,68 @@ type JSONValue = Parameters<Tx['json']>[0];
 /**
  * Runs `fn` in a transaction scoped to one workspace. `app.workspace_id` is
  * set for this transaction only, so row-level security confines every query
- * in it to that workspace (7).
+ * in it to that workspace (7). With `userId`, `app.user_id` is set too, and
+ * that person's private rows become visible and writable (personal memory
+ * spec 4.2); without it, no private row is.
  */
 export async function inWorkspace<T>(
   sql: Sql,
   workspaceId: string,
   fn: (tx: Tx) => Promise<T>,
+  userId?: string,
 ): Promise<T> {
   const result = await sql.begin(async (tx) => {
-    await tx`select set_config('app.workspace_id', ${workspaceId}, true)`;
+    await setScope(tx as unknown as Tx, workspaceId, userId);
     return fn(tx as unknown as Tx);
   });
   return result as T;
+}
+
+/**
+ * Sets the transaction's row-level security context: the workspace, and the
+ * person whose personal memory it may see (none when `userId` is absent).
+ */
+export async function setScope(tx: Tx, workspaceId: string, userId?: string): Promise<void> {
+  await tx`
+    select set_config('app.workspace_id', ${workspaceId}, true),
+      set_config('app.user_id', ${userId ?? ''}, true)`;
+}
+
+/** Advisory-lock class for a person's membership of a workspace (personal memory spec 4.3). */
+const MEMBER_LOCK_CLASS = 0x524d; // "RM"
+/** A separate class for creating a person's profile, so it never upgrades the membership lock (4.1). */
+const PROFILE_LOCK_CLASS = 0x524e; // "RN"
+
+const memberKey = (workspaceId: string, userId: string) => `${workspaceId}:${userId}`;
+
+/**
+ * Every read or write of a person's personal memory holds their membership
+ * lock in shared mode and re-checks the membership after taking it; removing
+ * them takes it exclusively (4.3, 4.6). So a write either commits before the
+ * removal, and is deleted with the rest, or starts after it and fails.
+ */
+export async function lockMemberShared(tx: Tx, workspaceId: string, userId: string): Promise<void> {
+  await tx`select pg_advisory_xact_lock_shared(${MEMBER_LOCK_CLASS}::int4,
+    hashtext(${memberKey(workspaceId, userId)}))`;
+}
+
+export async function lockMemberExclusive(
+  tx: Tx,
+  workspaceId: string,
+  userId: string,
+): Promise<void> {
+  await tx`select pg_advisory_xact_lock(${MEMBER_LOCK_CLASS}::int4,
+    hashtext(${memberKey(workspaceId, userId)}))`;
+}
+
+/** Serializes creating one person's profile in one workspace (4.1). */
+export async function lockProfileCreation(
+  tx: Tx,
+  workspaceId: string,
+  userId: string | null,
+): Promise<void> {
+  await tx`select pg_advisory_xact_lock(${PROFILE_LOCK_CLASS}::int4,
+    hashtext(${memberKey(workspaceId, userId ?? 'workspace')}))`;
 }
 
 /** Advisory-lock class for workspace schema locks (3). */

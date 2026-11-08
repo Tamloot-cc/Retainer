@@ -14,12 +14,13 @@ import type { Sql } from '../db/client.js';
 import { RUNTIME_ROLE } from '../db/client.js';
 import { isUuid } from '../db/ids.js';
 import type { InvitedWorkspace } from '../db/schema.js';
-import type { Tx } from '../db/tx.js';
+import { setScope, type Tx } from '../db/tx.js';
 import { getWorkspace, type Workspace } from '../db/workspaces.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { SYSTEM_ACTOR } from '../schema-engine/engine.js';
 import { applyTemplate, seedBaseObjects } from '../templates/apply.js';
 import { DELETION_GRACE_DAYS, purgeAfter } from '../workspaces/deletion.js';
+import { endLostMemberships, organizationMemberships } from '../workspaces/leaving.js';
 import {
   assertKeepsAnOwner,
   assertWithinLimit,
@@ -193,7 +194,7 @@ export async function createWorkspaceFor(
     if (!workspaceId) throw new Error('could not find a free workspace slug');
 
     await tx.unsafe(`set local role ${RUNTIME_ROLE}`);
-    await tx`select set_config('app.workspace_id', ${workspaceId}, true)`;
+    await setScope(tx, workspaceId);
     await seedBaseObjects(tx, workspaceId);
     if (input.template) {
       await applyTemplate(tx, {
@@ -407,6 +408,8 @@ export async function removeFromWorkspace(
     // Apps they connected here stop working too, and stay disconnected if
     // they are added back (4.5).
     await endGrants(tx, tx`oc.user_id = ${userId} and oc.reference_id = ${workspace.id}`);
+    // Their personal memory here goes with them (personal memory spec 4.6).
+    await endLostMemberships(tx, [{ workspaceId: workspace.id, userId }], personActor(person));
   });
 }
 
@@ -414,13 +417,17 @@ export async function removeFromWorkspace(
 // API keys in the web app (4.5): for agents and integrations only
 // ---------------------------------------------------------------------------
 
-export type WorkspaceKey = ApiKeyListing & { createdBy: { id: string; name: string } | null };
+export type WorkspaceKey = ApiKeyListing & {
+  createdBy: { id: string; name: string } | null;
+  /** The person this agent works for, whose personal memory it reaches (personal memory 4.3). */
+  worksFor: { id: string; name: string } | null;
+};
 
 export async function createWorkspaceKey(
   sql: Sql,
   person: Person,
   workspaceId: string,
-  input: { name: string; access: string },
+  input: { name: string; access: string; worksForMe?: boolean | undefined },
 ): Promise<CreatedApiKey> {
   const name = input.name.trim();
   if (!name) throw new AppError(400, 'invalid_request', 'a key needs a name');
@@ -436,6 +443,9 @@ export async function createWorkspaceKey(
       actor: { type: 'agent', id: slugify(name) || 'agent', name },
       scopes,
       createdByUser: person.id,
+      // "This agent works for me" (personal memory spec 4.3): only ever the
+      // person creating the key, so nobody can mint a key into another's memory.
+      ...(input.worksForMe ? { actsForUser: person.id } : {}),
     }),
   );
 }
@@ -452,19 +462,25 @@ export async function listWorkspaceKeys(
       revokedAt: Date | null;
       createdById: string | null;
       createdByName: string | null;
+      worksForId: string | null;
+      worksForName: string | null;
     })[]
   >`
     select k.id, k.name, k.prefix, k.scopes, k.actor, k.created_at as "createdAt",
-      k.revoked_at as "revokedAt", u.id as "createdById", u.name as "createdByName"
-    from api_keys k left join users u on u.id = k.created_by_user
+      k.revoked_at as "revokedAt", u.id as "createdById", u.name as "createdByName",
+      f.id as "worksForId", f.name as "worksForName"
+    from api_keys k
+    left join users u on u.id = k.created_by_user
+    left join users f on f.id = k.acts_for_user
     where k.workspace_id = ${workspace.id}
     order by k.revoked_at nulls first, k.created_at desc`;
-  return rows.map(({ createdById, createdByName, ...row }) => ({
+  return rows.map(({ createdById, createdByName, worksForId, worksForName, ...row }) => ({
     ...row,
     workspaceId: workspace.id,
     createdAt: row.createdAt.toISOString(),
     revokedAt: row.revokedAt?.toISOString() ?? null,
     createdBy: createdById ? { id: createdById, name: createdByName ?? '' } : null,
+    worksFor: worksForId ? { id: worksForId, name: worksForName ?? '' } : null,
   }));
 }
 
@@ -603,9 +619,13 @@ export async function setOrganizationRole(
     }
     if (current === 'owner' && role !== 'owner')
       await assertKeepsAnOwner(tx, organizationId, userId);
+    const before = await organizationMemberships(tx, organizationId, userId);
     await tx`
       update organization_members set role = ${role}
       where organization_id = ${organizationId} and user_id = ${userId}`;
+    // A member keeps only the workspaces they have a role in: their personal
+    // memory in the others goes (personal memory spec 4.6).
+    await endLostMemberships(tx, before, personActor(person));
   });
 }
 
@@ -623,6 +643,7 @@ export async function removeFromOrganization(
       throw forbidden('Only an owner can remove an owner.');
     }
     if (current === 'owner') await assertKeepsAnOwner(tx, organizationId, userId);
+    const before = await organizationMemberships(tx, organizationId, userId);
     await tx`
       delete from organization_members
       where organization_id = ${organizationId} and user_id = ${userId}`;
@@ -631,8 +652,12 @@ export async function removeFromOrganization(
       tx`oc.user_id = ${userId} and oc.reference_id in
         (select id from workspaces where organization_id = ${organizationId})`,
     );
+    // Their personal memory in every workspace of it goes (personal memory 4.6).
+    await endLostMemberships(tx, before, personActor(person));
   });
 }
+
+const personActor = (person: Person) => ({ type: 'user' as const, id: person.id });
 
 // ---------------------------------------------------------------------------
 // Invitations (4.5): a link to copy; Retainer sends no email

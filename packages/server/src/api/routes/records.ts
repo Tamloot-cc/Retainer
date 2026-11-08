@@ -4,6 +4,7 @@ import { requireScope } from '../../auth/middleware.js';
 import type { Sql } from '../../db/client.js';
 import { idParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
+import { clearMyMemory } from '../../memory/service.js';
 import { aggregateInputSchema } from '../../records/aggregate.js';
 import { mergeInputSchema } from '../../records/merge.js';
 import { queryInputSchema } from '../../records/query.js';
@@ -85,6 +86,16 @@ export function recordRoutes(app: Hono<AppEnv>, sql: Sql) {
     const key = c.req.header('idempotency-key');
     return c.json(await mergeRecord(sql, c.get('caller'), id, input, key));
   });
+
+  /**
+   * "Clear all" (personal memory spec 4.6): a signed-in person deletes their
+   * own personal memory here. Not for API keys or OAuth agents, and only
+   * `me`: workspace memory and other records are forgotten below. Before
+   * that route, whose admin check would otherwise answer first.
+   */
+  app.post('/records/me/forget', requireScope('read'), async (c) =>
+    c.json(await clearMyMemory(sql, c.get('caller'))),
+  );
 
   app.post('/records/:id/forget', requireScope('admin'), async (c) =>
     c.json(await forget(sql, c.get('caller'), idParam(c))),

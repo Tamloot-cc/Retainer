@@ -1,7 +1,7 @@
 import type { Hono } from 'hono';
-import { requireScope } from '../../auth/middleware.js';
+import { missingScope, requireScope } from '../../auth/middleware.js';
 import type { Sql } from '../../db/client.js';
-import { idParam, readBody } from '../../http/request.js';
+import { idParam, readBody, recordParam } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 import { addLinksInputSchema } from '../../memory/event-links.js';
 import { logEventInputSchema } from '../../memory/events.js';
@@ -72,14 +72,27 @@ export function memoryRoutes(app: Hono<AppEnv>, sql: Sql) {
     c.json(await retractEventFor(sql, c.get('caller'), idParam(c))),
   );
 
+  // `workspace` and `me` name workspace and personal memory (personal memory 4.4).
   app.post('/records/:id/facts', requireScope('write'), async (c) => {
-    const id = idParam(c);
+    const id = recordParam(c);
     const input = await readBody(c, rememberInputSchema);
     const key = c.req.header('idempotency-key');
     return c.json(await remember(sql, c.get('caller'), id, input, key), 201);
   });
 
-  app.delete('/facts/:id', requireScope('write'), async (c) =>
-    c.json(await retractFactFor(sql, c.get('caller'), idParam(c))),
-  );
+  /**
+   * Removes a fact. A shared one needs `write`; a person removes their own
+   * personal fact signed in, whatever their role, as "Remove" on Settings →
+   * Memory does (personal memory spec 4.8).
+   */
+  app.delete('/facts/:id', requireScope('read'), async (c) => {
+    const caller = c.get('caller');
+    return c.json(
+      await retractFactFor(sql, caller, idParam(c), (personal) => {
+        const own = personal && caller.userId !== undefined;
+        const missing = own ? undefined : missingScope(caller, 'write');
+        if (missing) throw missing;
+      }),
+    );
+  });
 }

@@ -226,10 +226,12 @@ export function MemoryTabs({ record, nav }: { record: PresentedRecord; nav: Memo
 function FactRow({
   fact,
   onRetract,
+  retractLabel = 'Retract fact',
   children,
 }: {
   fact: PresentedFact;
   onRetract?: () => void;
+  retractLabel?: string;
   children?: React.ReactNode;
 }) {
   return (
@@ -248,8 +250,8 @@ function FactRow({
           <Button
             variant="ghost"
             size="iconSmall"
-            aria-label="Retract fact"
-            title="Retract fact"
+            aria-label={retractLabel}
+            title={retractLabel}
             onClick={onRetract}
           >
             <Undo2 size={13} />
@@ -263,7 +265,42 @@ function FactRow({
   );
 }
 
-function FactsPanel({ recordId }: { recordId: string }) {
+/** What a facts list says: a record's facts by default, or a profile's (Settings → Memory). */
+export type FactsWords = {
+  list: string;
+  empty: { title: string; description: string };
+  retract: string;
+  confirm: { title: string; description: string };
+  done: string;
+};
+
+const RECORD_FACT_WORDS: FactsWords = {
+  list: 'Facts',
+  empty: {
+    title: 'No facts yet',
+    description: 'What agents learn about this record appears here, with where they read it.',
+  },
+  retract: 'Retract fact',
+  confirm: {
+    title: 'Retract this fact?',
+    description: 'It will disappear from current memory. Its history remains stored.',
+  },
+  done: 'Fact retracted',
+};
+
+/**
+ * The current facts of a record, or of `workspace` or `me`, with retraction
+ * for whoever may retract them (people with `write` by default).
+ */
+export function FactsPanel({
+  recordId,
+  canRetract,
+  words = RECORD_FACT_WORDS,
+}: {
+  recordId: string;
+  canRetract?: boolean;
+  words?: FactsWords;
+}) {
   const { session } = useWorkspace(),
     client = useQueryClient();
   const facts = useInfiniteQuery({
@@ -274,7 +311,7 @@ function FactsPanel({ recordId }: { recordId: string }) {
   const [retract, setRetract] = useState<string | null>(null),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState('');
-  const canWrite = canMutate(session);
+  const canWrite = canRetract ?? canMutate(session);
   const items = facts.data?.pages.flatMap((p) => p.facts) ?? [];
   async function retractFact() {
     if (!retract) return;
@@ -282,7 +319,7 @@ function FactsPanel({ recordId }: { recordId: string }) {
     try {
       await api.retractFact(retract);
       setRetract(null);
-      setMessage('Fact retracted');
+      setMessage(words.done);
       await client.invalidateQueries({ queryKey: [session.workspace.id] });
     } catch (e) {
       setMessage((e as Error).message);
@@ -295,19 +332,14 @@ function FactsPanel({ recordId }: { recordId: string }) {
       {message ? <Notice>{message}</Notice> : null}
       {facts.error ? <QueryError error={facts.error} retry={() => void facts.refetch()} /> : null}
       {facts.isPending ? <EntryLoading label="Loading facts…" /> : null}
-      {facts.data && !items.length ? (
-        <Empty
-          quiet
-          title="No facts yet"
-          description="What agents learn about this record appears here, with where they read it."
-        />
-      ) : null}
+      {facts.data && !items.length ? <Empty quiet {...words.empty} /> : null}
       {items.length ? (
-        <EntryList label="Facts">
+        <EntryList label={words.list}>
           {items.map((f) => (
             <FactRow
               key={f.id}
               fact={f}
+              retractLabel={words.retract}
               {...(canWrite ? { onRetract: () => setRetract(f.id) } : {})}
             >
               <FactSources sources={f.sources} />
@@ -323,11 +355,10 @@ function FactsPanel({ recordId }: { recordId: string }) {
         onOpenChange={(open) => {
           if (!open && !busy) setRetract(null);
         }}
-        title="Retract this fact?"
-        description="It will disappear from current memory. Its history remains stored."
+        {...words.confirm}
       >
         <Button variant="destructive" disabled={busy} onClick={() => void retractFact()}>
-          Retract fact
+          {words.retract}
         </Button>
       </Dialog>
     </>
@@ -657,9 +688,11 @@ function ClaimsPanel({ eventId }: { eventId: string }) {
                   .map((s) => (
                     <EntryQuote key={`${s.event}:${s.quote}`}>{s.quote}</EntryQuote>
                   ))}
-                <div>
-                  <RecordLink id={f.record}>View record</RecordLink>
-                </div>
+                {f.record ? (
+                  <div>
+                    <RecordLink id={f.record}>View record</RecordLink>
+                  </div>
+                ) : null}
               </FactRow>
             ))}
           </EntryList>

@@ -5,17 +5,19 @@ import type {
   ContextPack,
   EventItem,
   OpenTask,
+  ProfileContextPack,
 } from '@retainer/shared';
 import { BASE_FIELD_IDS, BASE_OBJECT_IDS, TASK_DONE_OPTION } from '@retainer/shared';
 import { z } from 'zod';
 import type { Tx } from '../db/tx.js';
 import {
   countEventHistory,
+  currentFact,
   eventHistory,
   type HistoryRow,
-  liveFactSource,
   viaOf,
 } from '../memory/events.js';
+import { type Profile, type ProfileContext, profileLabel } from '../memory/profiles.js';
 import { getRecord } from '../records/read.js';
 import { references } from '../records/references.js';
 import { type CompiledSchema, eventText } from '../schema/compiled.js';
@@ -92,6 +94,47 @@ export async function contextPack(
   };
   // The estimate covers the whole response, itself included (sized with the
   // budget in its place).
+  pack.tokenEstimate = estimateTokens(pack);
+  return pack;
+}
+
+/**
+ * A profile's context pack (personal memory spec 4.4): its current facts,
+ * newest first, fitted to the budget, each with who wrote it and its
+ * sources. No fields, tasks or events. `me` before any write is empty.
+ */
+export async function profileContextPack(
+  tx: Tx,
+  context: ProfileContext,
+  profile: Profile,
+  input: ContextInput,
+): Promise<ProfileContextPack> {
+  const budgetChars = input.tokenBudget * CHARS_PER_TOKEN;
+  const rows = Math.floor(budgetChars / MIN_ITEM_CHARS) + 1;
+  const [label, facts] = await Promise.all([
+    profileLabel(tx, context, profile),
+    profile.id
+      ? currentFacts(tx, context.workspaceId, context.schema, profile.id, rows)
+      : { items: [], total: 0 },
+  ]);
+  const frame: ProfileContextPack = {
+    profile: profile.alias,
+    label,
+    facts: [],
+    omitted: { facts: facts.total },
+    tokenEstimate: input.tokenBudget,
+  };
+  const { included } = fitSections(
+    { facts: facts.items },
+    Math.max(0, budgetChars - jsonLength(frame)),
+  );
+  const pack: ProfileContextPack = {
+    profile: profile.alias,
+    label,
+    facts: included.facts,
+    omitted: { facts: facts.total - included.facts.length },
+    tokenEstimate: input.tokenBudget,
+  };
   pack.tokenEstimate = estimateTokens(pack);
   return pack;
 }
@@ -233,8 +276,7 @@ async function currentFacts(
       count(*) over () as total
     from facts f
     where f.workspace_id = ${workspaceId} and f.record_id = ${recordId}
-      and f.deleted_at is null and f.superseded_by is null and f.valid_to is null
-      and exists (${liveFactSource(tx, tx`f.id`)})
+      and ${currentFact(tx)}
     order by f.valid_from desc, f.created_at desc, f.id
     limit ${limit}`;
   return {

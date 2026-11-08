@@ -18,6 +18,7 @@ import { inWorkspace, lockForWrite, type Tx, type WriteLocks } from '../db/tx.js
 import { AppError, notFound } from '../errors.js';
 import { claimIdempotencyKey, requestHash, storeIdempotentResult } from '../idempotency.js';
 import { lockSource, retractEventClaims } from '../memory/events.js';
+import { lockPerson } from '../memory/profiles.js';
 import { forgetRecord } from '../privacy/forget.js';
 import {
   type CompiledObject,
@@ -76,27 +77,44 @@ const DEADLOCK_RETRIES = 3;
  * orders can deadlock, and Postgres then aborts one transaction. It is
  * rolled back whole, so it is run again from the start.
  */
+export type TransactionOptions = {
+  /**
+   * Whether the transaction sees the caller's personal memory (personal
+   * memory spec 4.2). `forget` runs without it, so nothing private reaches
+   * the requester; the erasure function cleans up private rows instead.
+   */
+  asPerson?: boolean;
+};
+
 export async function withWrite<T>(
   sql: Sql,
   caller: Caller,
   fn: (tx: Tx, context: WriteContext) => Promise<T>,
   locks: WriteLocks = {},
+  { asPerson = true }: TransactionOptions = {},
 ): Promise<T> {
+  const person = asPerson ? caller.person : undefined;
   for (let attempt = 0; ; attempt++) {
     try {
-      return await inWorkspace(sql, caller.workspaceId, async (tx) => {
-        await lockForWrite(tx, caller.workspaceId, locks);
-        const schema = await getSchema(tx, caller.workspaceId);
-        const [workspace] = await tx<{ settings: WorkspaceSettings }[]>`
-          select settings from workspaces where id = ${caller.workspaceId}`;
-        return fn(tx, {
-          workspaceId: caller.workspaceId,
-          actor: caller.actor,
-          schema,
-          confidenceThreshold:
-            workspace?.settings.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD,
-        });
-      });
+      return await inWorkspace(
+        sql,
+        caller.workspaceId,
+        async (tx) => {
+          await lockForWrite(tx, caller.workspaceId, locks);
+          const schema = await getSchema(tx, caller.workspaceId);
+          const [workspace] = await tx<{ settings: WorkspaceSettings }[]>`
+            select settings from workspaces where id = ${caller.workspaceId}`;
+          return fn(tx, {
+            workspaceId: caller.workspaceId,
+            actor: caller.actor,
+            schema,
+            confidenceThreshold:
+              workspace?.settings.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD,
+            person,
+          });
+        },
+        person?.id,
+      );
     } catch (error) {
       if (isDeadlock(error) && attempt < DEADLOCK_RETRIES) continue;
       throw error;
@@ -104,13 +122,25 @@ export async function withWrite<T>(
   }
 }
 
+/** A read as the caller: their personal memory is visible to them alone (4.2). */
 export async function withRead<T>(
   sql: Sql,
   caller: Caller,
   fn: (tx: Tx, schema: CompiledSchema) => Promise<T>,
 ): Promise<T> {
-  return inWorkspace(sql, caller.workspaceId, async (tx) =>
-    fn(tx, await getSchema(tx, caller.workspaceId)),
+  const { person, workspaceId } = caller;
+  return inWorkspace(
+    sql,
+    workspaceId,
+    async (tx) => {
+      // A read with a person can see their personal memory on any path
+      // (search, an event's citations), so it holds their membership lock
+      // and re-checks access first: a removal either committed before, and
+      // the read is refused, or waits for it (personal memory spec 4.3).
+      if (person) await lockPerson(tx, { workspaceId, person });
+      return fn(tx, await getSchema(tx, workspaceId));
+    },
+    person?.id,
   );
 }
 
@@ -178,7 +208,7 @@ export async function createRecord(
     if (idempotencyKey !== undefined) {
       const claim = await claimIdempotencyKey(
         tx,
-        caller.workspaceId,
+        context,
         'create_record',
         idempotencyKey,
         requestHash({ object: object.name, values, source: source ?? null }),
@@ -594,7 +624,7 @@ export async function mergeRecord(
         if (idempotencyKey !== undefined) {
           const claim = await claimIdempotencyKey(
             tx,
-            caller.workspaceId,
+            context,
             'merge',
             idempotencyKey,
             requestHash({ id, recordId: input.recordId, values: input.values ?? null }),
@@ -625,9 +655,17 @@ export async function dismissSuggestion(
 /**
  * `forget` (2.1). It holds the privacy lock exclusively, so it waits for
  * in-flight writes in the workspace and blocks new ones until it commits.
+ * It runs without the requester's personal memory (personal memory spec
+ * 4.6): private derivatives of what it erases, the requester's own
+ * included, go through the erasure function, so nothing private is counted
+ * or returned.
  */
 export async function forget(sql: Sql, caller: Caller, id: string): Promise<ForgetResult> {
-  return withWrite(sql, caller, (tx, context) => forgetRecord(tx, context, id), {
-    privacy: 'exclusive',
-  });
+  return withWrite(
+    sql,
+    caller,
+    (tx, context) => forgetRecord(tx, context, id),
+    { privacy: 'exclusive' },
+    { asPerson: false },
+  );
 }

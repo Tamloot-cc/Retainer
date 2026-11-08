@@ -464,6 +464,33 @@ presents such a source as `{ event: null, internal: true }` instead of an ID
 callers cannot read. Events a workspace logs as a `note` type are ordinary
 events.
 
+#### Workspace and personal memory
+
+Two more hidden, protected types with fixed universal IDs hold what is not
+about a CRM record ([personal memory spec](docs/specs/user-and-workspace-memory.md)).
+Both are entities with no fields; their records hold facts only.
+
+- The **workspace profile** (`workspace`): one per workspace, seeded at
+  creation and on upgrade. How the business works; everyone sees it.
+- The **member profile** (`me`): one per member per workspace, created by
+  the first write to `me`, with `records.private_to_user` set to that
+  person. What agents learn about the person they work for.
+
+Agents name them by alias in `remember`, `get_context`, `get_timeline` and
+`GET /v1/records/:id/facts`; every other record route answers `422
+profile_not_supported`. A profile's label is computed (the workspace's
+name, or the person's), and its search text is empty: its facts are
+searched like any other fact.
+
+`private_to_user` is on `records`, `facts`, `fact_sources`,
+`field_assertions`, `event_records`, `event_links` and `idempotency_keys`.
+Child rows copy it from their parent through triggers, and a write under a
+parent the writer cannot see fails. It never changes once set.
+
+`facts.replaced_at` marks a fact `remember` replaced with `supersedes`
+(rule 2.6): it leaves current memory for good, keeps its history, and is
+never revived.
+
 #### Comments
 
 A comment is plain text a person writes on any record, entity or event, to
@@ -683,7 +710,12 @@ object deletes its views with it.
    world; `created_at` says when it was recorded. `valid_from` is the cited
    event's `occurred_at`, or the write time for the internal note that
    `remember` creates; v1 takes no separate effective date. Supersession
-   records a correction and preserves provenance. A person can retract a
+   records a correction and preserves provenance. An agent supersedes a fact
+   itself with `remember`'s `supersedes`: on the same record the new fact
+   corrects it, elsewhere it moves it (and copies its citations). The
+   replaced fact gets `superseded_by` and `replaced_at`. Facts move between
+   records the caller can see; a private fact never moves to a shared place,
+   and a fact never moves between two people. A person can retract a
    fact (soft delete) or hard-delete data for privacy (2.1). Exact historical
    belief snapshots are deferred: the schema has no supersession-event
    timestamp or append-only history of validity edits.
@@ -1312,6 +1344,12 @@ the tool list without limit and break clients' tool caching.
 `query_records` on their type, or on `event` for every type at once, so no
 tool is needed per event type.
 
+`remember`, `get_context` and `get_timeline` also take `workspace` and `me`
+for workspace and personal memory (1.3). `describe_schema` lists them as the
+`memory` built-in, with `me` only when the credential works for a person;
+otherwise `me` answers `422 no_person`. The `memory` guide says what goes
+where.
+
 **Guides.** `get_guide(name)` returns step-by-step instructions, as
 markdown, for a task an agent does rarely. Each guide is also an MCP prompt
 of the same name, so a person can start it from their client (a slash
@@ -1634,10 +1672,16 @@ manages organizations and members (`org create`, `org list`, `member add`,
 deleted workspaces (`workspace restore`, `workspace purge`). There is no
 instance-wide admin HTTP API.
 
-### 7.2 Per-record access (not in v1)
+### 7.2 Per-record access
 
-v1 isolates workspaces only: every key sees every record in its workspace.
-Per-record audiences, principals and roles may come later. They would be
+v1 isolates workspaces, plus one private audience: personal memory (1.3).
+A restrictive policy, `private_to_user`, on the seven tables that carry the
+column shows a private row only when `app.user_id` names its person, which
+`inWorkspace` sets from the credential's person and nothing else. Every
+read or write of `me` holds that person's membership advisory lock shared
+and re-checks their access inside the transaction; removal and "Clear all"
+take it exclusively. Otherwise every key sees every record in its
+workspace. Wider per-record audiences, principals and roles may come later. They would be
 rules stored in tables and enforced by a restrictive RLS policy
 (`AS RESTRICTIVE`, with `USING` and `WITH CHECK`) next to
 `workspace_isolation`, so Postgres applies them to every query. Application
@@ -1649,8 +1693,10 @@ enforcement. Until then, new code keeps that path open:
    `retainer_session_access` (7.3), which returns a person's role in one
    workspace, `retainer_token_keys` and `retainer_token_access` (7.3), which
    return the public signing keys and a connected app's person, role and
-   workspace, and `retainer_workspaces_due` (4.2), which returns workspace IDs
-   only; no read takes a shortcut around RLS, including search and context.
+   workspace, `retainer_workspaces_due` (4.2), which returns workspace IDs
+   only, and `retainer_erase_private_derivatives`, which `forget` calls to
+   delete private copies of what it erases and which returns nothing; no read
+   takes a shortcut around RLS, including search and context.
 2. Per-request database context is set in one place (`inWorkspace`).
 3. A response mentions another record (conflict errors, merge candidates,
    relation labels, review items, context) only through one shared
@@ -1757,6 +1803,15 @@ downgrade, removal or revoked consent applies at the next request. The actor is 
 ID made from the client and the person, so the human-only rules still apply.
 Removing a person from a workspace or organization deletes their consents there,
 and a consent is the connection people see and disconnect in Settings.
+
+**Personal memory.** A caller has a person when its credential names one: a
+session, an OAuth token (the person who connected the app), or an API key
+created with "This agent works for me" (`api_keys.acts_for_user`, which
+stops reaching the person once they lose access). When a person loses
+access to a workspace, by removal from it or the organization or a role
+change, the same transaction deletes their personal memory there, revokes
+keys that work for them and writes a `deletion_audit_log` row with counts
+only. Settings → Memory shows both memories, with Remove and Clear all.
 
 **Limits.** A per-workspace rate limit on `/v1` and `/mcp` (600 requests a minute
 in accounts mode by default, off in key mode), counted in an unlogged table and

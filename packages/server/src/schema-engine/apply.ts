@@ -3,7 +3,8 @@ import {
   BASE_EVENT_TYPE_IDS,
   type CoreRole,
   type FieldType,
-  INTERNAL_NOTE_TYPE_ID,
+  HIDDEN_TYPE_IDS,
+  PROFILE_TYPE_IDS,
   type SchemaOwner,
 } from '@retainer/shared';
 import {
@@ -91,9 +92,8 @@ export function applyOperations(
   const allUniversalIds = () =>
     new Set(state.objects.flatMap((o) => [o.universalId, ...o.fields.map((f) => f.universalId)]));
 
-  // The hidden internal-note type is never named by an operation (6.4).
-  const visible = (o: ObjectState) =>
-    o.status === 'active' && o.universalId !== INTERNAL_NOTE_TYPE_ID;
+  // The hidden types are never named by an operation (6.4, personal memory 4.1).
+  const visible = (o: ObjectState) => o.status === 'active' && !HIDDEN_TYPE_IDS.has(o.universalId);
 
   function findObject(ref: string, path = ref): ObjectState | undefined {
     const object = state.objects.find(
@@ -335,6 +335,8 @@ export function applyOperations(
           object.labelFieldId = coreFieldUniversalId(universalId, 'title');
           break;
         }
+        // A profile type holds facts only: no fields, and a computed label.
+        if (PROFILE_TYPE_IDS.has(universalId) && definition.fields.length === 0) break;
         if (definition.fields.length === 0) {
           issue(definition.nameSingular, 'an object needs at least one field');
           break;

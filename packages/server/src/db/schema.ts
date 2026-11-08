@@ -564,11 +564,23 @@ export const apiKeys = pgTable(
     actor: jsonb('actor').$type<Actor>().notNull(),
     /** The person who created it in the web app; null for CLI keys. */
     createdByUser: uuid('created_by_user').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * The person this agent works for (personal memory spec 4.3): its
+     * `me` is their personal memory. Set only to the person who creates the
+     * key in the web app; never by the CLI.
+     */
+    actsForUser: uuid('acts_for_user').references(() => users.id, { onDelete: 'cascade' }),
     createdAt: createdAt(),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
   },
-  (t) => [index('api_keys_workspace_idx').on(t.workspaceId)],
+  (t) => [
+    index('api_keys_workspace_idx').on(t.workspaceId),
+    // Keys that work for a person, to revoke when they leave and to delete with them.
+    index('api_keys_acts_for_idx')
+      .on(t.actsForUser, t.workspaceId)
+      .where(sql`${t.actsForUser} is not null`),
+  ],
 );
 
 // ---------------------------------------------------------------------------
@@ -715,6 +727,12 @@ export const records = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: deletedAt(),
+    /**
+     * The person a personal profile or its internal notes are private to
+     * (personal memory spec 4.2); null for every shared record. Deleting the
+     * person deletes them.
+     */
+    privateToUser: uuid('private_to_user').references(() => users.id, { onDelete: 'cascade' }),
   },
   (t) => [
     unique('records_workspace_id_uq').on(t.workspaceId, t.id),
@@ -741,6 +759,11 @@ export const records = pgTable(
     // a workspace of 360,000 records ran past the control function's 300
     // seconds, and takes 16 with this and the two indexes on facts below.
     index('records_merged_into_idx').on(t.mergedIntoId).where(sql`${t.mergedIntoId} is not null`),
+    // A person's profile and private notes, to find and delete them, and
+    // for deleting the person.
+    index('records_private_idx')
+      .on(t.privateToUser, t.workspaceId, t.objectTypeId)
+      .where(sql`${t.privateToUser} is not null`),
   ],
 );
 
@@ -859,6 +882,12 @@ export const eventRecords = pgTable(
     /** The source system's ID. Makes logging the same item twice a no-op. */
     externalId: text('external_id'),
     createdAt: createdAt(),
+    /**
+     * The person this row is private to (personal memory spec 4.2), or null
+     * for a shared row. Set by the server, never by a client; a restrictive
+     * row-level security policy hides it from everyone else.
+     */
+    privateToUser: uuid('private_to_user'),
   },
   (t) => [
     primaryKey({ name: 'event_records_pk', columns: [t.recordId] }),
@@ -918,6 +947,12 @@ export const eventLinks = pgTable(
     /** Set when `record_id` is null: why the participant stayed unresolved. */
     unmatchedReason: text('unmatched_reason').$type<UnmatchedReason>(),
     link: text('link').$type<EventLink>().notNull(),
+    /**
+     * The person this row is private to (personal memory spec 4.2), or null
+     * for a shared row. Set by the server, never by a client; a restrictive
+     * row-level security policy hides it from everyone else.
+     */
+    privateToUser: uuid('private_to_user'),
   },
   (t) => [
     tenantFk('event_links_event_fk', [t.workspaceId, t.eventId], [records.workspaceId, records.id]),
@@ -1005,6 +1040,12 @@ export const fieldAssertions = pgTable(
     reviewedBy: jsonb('reviewed_by').$type<Actor>(),
     reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
     createdAt: createdAt(),
+    /**
+     * The person this row is private to (personal memory spec 4.2), or null
+     * for a shared row. Set by the server, never by a client; a restrictive
+     * row-level security policy hides it from everyone else.
+     */
+    privateToUser: uuid('private_to_user'),
   },
   (t) => [
     tenantFk(
@@ -1045,11 +1086,23 @@ export const facts = pgTable(
     validTo: timestamp('valid_to', { withTimezone: true }),
     /** FK in 0001_security (sets only this column to null). */
     supersededBy: uuid('superseded_by'),
+    /**
+     * When `remember` replaced this fact with `supersedes` (personal memory
+     * spec 4.9). Permanent: erasing the replacement may clear
+     * `superseded_by`, never this, so the fact never becomes current again.
+     */
+    replacedAt: timestamp('replaced_at', { withTimezone: true }),
     /** Server-computed from content (5.1). */
     search: tsvector('search'),
     actor: jsonb('actor').$type<Actor>().notNull(),
     createdAt: createdAt(),
     deletedAt: deletedAt(),
+    /**
+     * The person this row is private to (personal memory spec 4.2), or null
+     * for a shared row. Set by the server, never by a client; a restrictive
+     * row-level security policy hides it from everyone else.
+     */
+    privateToUser: uuid('private_to_user'),
   },
   (t) => [
     unique('facts_workspace_id_uq').on(t.workspaceId, t.id),
@@ -1077,6 +1130,12 @@ export const factSources = pgTable(
     sourceRecordId: uuid('source_record_id'),
     premiseFactId: uuid('premise_fact_id'),
     quote: text('quote'),
+    /**
+     * The person this row is private to (personal memory spec 4.2), or null
+     * for a shared row. Set by the server, never by a client; a restrictive
+     * row-level security policy hides it from everyone else.
+     */
+    privateToUser: uuid('private_to_user'),
   },
   (t) => [
     tenantFk('fact_sources_fact_fk', [t.workspaceId, t.factId], [facts.workspaceId, facts.id]),
@@ -1224,15 +1283,33 @@ export const idempotencyKeys = pgTable(
     id: id(),
     workspaceId: workspaceId(),
     operation: text('operation').notNull(),
+    /**
+     * Whose retries the key covers (personal memory spec 4.2): the person
+     * behind the credential, or `NO_PERSON_SCOPE` for one with none. Two
+     * people reusing one key get independent claims.
+     */
+    personScope: uuid('person_scope')
+      .notNull()
+      .default(sql`'00000000-0000-0000-0000-000000000000'`),
     key: text('key').notNull(),
     requestHash: text('request_hash').notNull(),
     /** The original response, stored in the same transaction as the write. */
     result: jsonb('result').$type<unknown>(),
     createdAt: createdAt(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    /**
+     * Set when the stored response reads or changes private facts (personal
+     * memory spec 4.2), so only that person can replay it. Deleting the
+     * person deletes it.
+     */
+    privateToUser: uuid('private_to_user').references(() => users.id, { onDelete: 'cascade' }),
   },
   (t) => [
-    uniqueIndex('idempotency_keys_uq').on(t.workspaceId, t.operation, t.key),
+    uniqueIndex('idempotency_keys_uq').on(t.workspaceId, t.operation, t.personScope, t.key),
+    // A person's private responses, to clear them and to delete the person.
+    index('idempotency_keys_private_idx')
+      .on(t.privateToUser, t.workspaceId)
+      .where(sql`${t.privateToUser} is not null`),
     index('idempotency_keys_expiry_idx').on(t.expiresAt),
   ],
 );

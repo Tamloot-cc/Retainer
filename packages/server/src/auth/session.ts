@@ -12,11 +12,33 @@ import type { AppEnv } from '../http/response.js';
 import { hashApiKey } from './keys.js';
 export const SESSION_COOKIE = 'retainer_session';
 export async function lookupKey(sql: Sql, raw: string): Promise<Caller> {
+  const hash = hashApiKey(raw);
   const [key] = await sql<
-    { workspace_id: string; scopes: ApiKeyScope[]; actor: Actor }[]
-  >`select * from retainer_lookup_api_key(${hashApiKey(raw)})`;
+    {
+      workspace_id: string;
+      scopes: ApiKeyScope[];
+      actor: Actor;
+      acts_for_user: string | null;
+      acts_for_name: string | null;
+    }[]
+  >`select * from retainer_lookup_api_key(${hash})`;
   if (!key) throw new AppError(401, 'unauthorized', 'the API key is unknown or revoked');
-  return { workspaceId: key.workspace_id, actor: key.actor, scopes: key.scopes };
+  return {
+    workspaceId: key.workspace_id,
+    actor: key.actor,
+    scopes: key.scopes,
+    // A key made with "This agent works for me" (personal memory spec 4.3),
+    // while its person still has a role in the workspace.
+    ...(key.acts_for_user
+      ? {
+          person: {
+            id: key.acts_for_user,
+            name: key.acts_for_name ?? '',
+            check: { kind: 'key' as const, hash },
+          },
+        }
+      : {}),
+  };
 }
 export function requireWebHeader(c: Context, publicOrigin?: string): void {
   if (c.req.header('X-Retainer-Client') !== 'web')
@@ -32,7 +54,12 @@ async function presentSession(sql: Sql, caller: Caller): Promise<Session> {
       { id: string; name: string; slug: string }[]
     >`select id, name, slug from workspaces where id = ${caller.workspaceId}`;
     if (!workspace) throw new AppError(401, 'unauthorized', 'workspace is unavailable');
-    return { workspace, actor: caller.actor, scopes: [...caller.scopes] };
+    return {
+      workspace,
+      actor: caller.actor,
+      scopes: [...caller.scopes],
+      person: caller.person !== undefined,
+    };
   });
 }
 export function sessionRoutes(app: Hono<AppEnv>, sql: Sql, publicOrigin?: string) {

@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/server';
+import { PROFILE_ALIASES } from '@retainer/shared';
 import { z } from 'zod';
 import type { Caller } from '../../caller.js';
 import type { Sql } from '../../db/client.js';
@@ -115,7 +116,13 @@ const logEventInput = z.strictObject({
 });
 
 const rememberInput = z.strictObject({
-  record: z.uuid().describe('The record the fact is about.'),
+  record: z
+    .union([z.uuid(), z.enum(PROFILE_ALIASES)])
+    .describe(
+      'The record the fact is about; or "workspace" for how the business works, shared by ' +
+        'everyone; or "me" for the person you work for (preferences, style, goals), private to ' +
+        "them. Customer knowledge always goes on the customer's record.",
+    ),
   ...rememberInputSchema.shape,
   text: rememberInputSchema.shape.text.describe(
     'One plain-language fact, e.g. "Legal review at Acme usually takes two weeks."',
@@ -126,6 +133,12 @@ const rememberInput = z.strictObject({
   ),
   quote: rememberInputSchema.shape.quote.describe(
     'Optional short quote from the source that supports the fact. Needs source.',
+  ),
+  supersedes: rememberInputSchema.shape.supersedes.describe(
+    'The ID of a current fact this one replaces; it stays in history. On the same record ' +
+      'it corrects that fact. On another record (or memory) it moves it: pass the same text ' +
+      'and no source or quote, and its evidence is copied. Not a fact a person wrote, and ' +
+      'not a shared fact into me.',
   ),
   idempotencyKey: z
     .string()
@@ -240,7 +253,9 @@ export function registerWriteTools(server: McpServer, sql: Sql, caller: Caller):
         '"Legal review at Acme usually takes two weeks." Cite the event it came from as ' +
         'source (from log_event), with an optional short quote; the fact is then valid from ' +
         "that event's date. Without source, Retainer keeps an internal note for it, shown " +
-        'as an internal source. One fact per call; field values belong in upsert_record.',
+        'as an internal source. One fact per call; field values belong in upsert_record. ' +
+        'record "workspace" or "me" stores what is not about a record (get_guide("memory")). ' +
+        'When a fact changes or sits on the wrong record, pass supersedes; you cannot delete one.',
       inputSchema: rememberInput,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },

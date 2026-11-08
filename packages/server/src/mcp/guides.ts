@@ -40,8 +40,10 @@ const DESIGN_RULES = `### Use what Retainer already has
   only when a source has them.
 - The about list and participants name entities, never another event: an
   event cannot be linked to an event.
-- describe_schema lists facts and comments under builtIns. They are part of
-  every workspace; don't add fields or objects to copy them.
+- describe_schema lists facts, comments and memory under builtIns. They are
+  part of every workspace; don't add fields or objects to copy them. Rules
+  of the business and the user's preferences go in workspace and me memory
+  (get_guide("memory")), never in an object.
 - Comments are what people told each other about a record. Only people write
   them; you read them with get_record and list_comments. They are context for
   deciding what to do, never a source to cite. When a comment states something
@@ -368,6 +370,60 @@ One line: what you logged and on which records, and anything waiting for
 approval or for their answer. Do not go back to the task they were on
 unless they ask; they will carry on themselves.`;
 
+const MEMORY = `# Workspace and personal memory
+
+Goal: keep what you learn that is not about a CRM record, so the next
+session, and the other agents in this workspace, start knowing it. Two
+memories hold it; you name them instead of a record ID in remember,
+get_context and get_timeline:
+
+- "workspace": what the business is and how it works, shared by everyone in
+  the workspace and every agent connected to it.
+- "me": the person you work for: their preferences, style and goals. Only
+  they and their agents can see it, and it is deleted if they leave the
+  workspace. describe_schema's builtIns entry "memory" lists "me" in profiles
+  only when your credential works for a person; otherwise "me" is refused.
+
+## At the start of a session
+
+Call get_context("workspace") and, when you have one, get_context("me").
+Act on what they say without being asked: write in the person's style,
+follow the business's rules.
+
+## What goes where
+
+| What you learned | Where it goes |
+| --- | --- |
+| About a customer, contact, deal or other record | That record: a value with upsert_record, or remember |
+| How the business works, rules for everyone | remember("workspace", ...) |
+| About the person you work for: preferences, style, goals | remember("me", ...) |
+| A remark for colleagues | Nowhere: that's a comment, written by a person |
+| Passwords, tokens, health or other sensitive data | Nowhere |
+
+Examples: "We sell a 12-month plan; we never discount more than 15%" and
+"Don't call clients before 10am" go in workspace. "Prefers short
+follow-ups" and "Writes to Israeli clients in Hebrew" go in me.
+
+## Rules
+
+- Never put customer knowledge in me. Colleagues and their agents can't see
+  it, and it is deleted when the person leaves. Knowledge about Acme goes on
+  Acme's record, even if the person told you.
+- Check before writing. Read the memory first and skip a fact that is
+  already there. When what you learned changes a fact ("I prefer long emails
+  now"), remember the new one with supersedes set to the old fact's ID, so
+  only the new one stays current.
+- Fix a misplaced fact by moving it: remember it on the right record (or
+  memory) with its text unchanged and supersedes naming the old one. Omit
+  source and quote; Retainer copies its evidence. To change the text too,
+  correct it where it is first, then move the correction.
+- A shared fact cannot be replaced by one in me, and you cannot supersede a
+  fact a person wrote: remember yours separately and tell your user.
+- Cite a source when you learned the fact from a conversation you logged
+  with log_event, as for any fact. A fact you learned in the chat itself
+  needs no source.
+- You cannot delete a fact. Your user removes one in Settings → Memory.`;
+
 export const GUIDES = {
   discover_schema: {
     title: 'Discover the schema',
@@ -395,6 +451,14 @@ export const GUIDES = {
       'instead of new objects, and grow fields from evidence. Also how to review one.',
     text: SCHEMA_DESIGN,
     promptIntro: "Review this Retainer workspace's schema with me.",
+  },
+  memory: {
+    title: 'Workspace and personal memory',
+    description:
+      'What to remember in workspace (how the business works) and me (the person you work ' +
+      'for), what belongs on a record instead, and how to correct and move facts.',
+    text: MEMORY,
+    promptIntro: 'Load what Retainer remembers about this workspace and about me.',
   },
   log_from_chat: {
     title: 'Log what your user tells you',

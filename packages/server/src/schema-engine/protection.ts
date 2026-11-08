@@ -1,7 +1,7 @@
 import {
   BASE_FIELD_IDS,
   BASE_OBJECT_IDS,
-  INTERNAL_NOTE_TYPE_ID,
+  HIDDEN_TYPE_IDS,
   TASK_DONE_OPTION,
 } from '@retainer/shared';
 import type { SchemaState } from '../schema/types.js';
@@ -15,7 +15,7 @@ import type { SchemaState } from '../schema/types.js';
  */
 export const PROTECTED_OBJECT_IDS: ReadonlySet<string> = new Set([
   ...Object.values(BASE_OBJECT_IDS),
-  INTERNAL_NOTE_TYPE_ID,
+  ...HIDDEN_TYPE_IDS,
 ]);
 
 export const PROTECTED_FIELD_IDS: ReadonlySet<string> = new Set([

@@ -34,3 +34,33 @@ export function requireUser(actor: Actor, what: string): void {
     throw forbidden(`only a user can ${what}; an agent's key scope is not a person's approval`);
   }
 }
+
+/**
+ * Workspace and personal memory work only with the memory tools (personal
+ * memory spec 4.4): any other tool given `workspace`, `me` or a profile's ID
+ * says which tools take them.
+ */
+export const profileNotSupported = (id?: string) =>
+  new AppError(
+    422,
+    'profile_not_supported',
+    'workspace and me (workspace and personal memory) hold facts only: use them with ' +
+      'remember, get_context and get_timeline (POST /v1/records/:id/facts, GET ' +
+      '/v1/records/:id/context, GET /v1/records/:id/timeline, GET /v1/records/:id/facts), ' +
+      'and remove a fact with DELETE /v1/facts/:id',
+    {
+      ...(id ? { id } : {}),
+      tools: ['remember', 'get_context', 'get_timeline'],
+    },
+  );
+
+/** `me` without a person behind the credential (personal memory spec 4.3, M10). */
+export const noPerson = () =>
+  new AppError(
+    422,
+    'no_person',
+    'me is the personal memory of the person this agent works for, and this credential works ' +
+      'for nobody: a signed-in person, an app a person connected over OAuth, or an API key ' +
+      'created with "This agent works for me" has one. Use workspace for what everyone shares',
+    { credentials: ['session', 'oauth', 'api_key_acts_for_user'] },
+  );

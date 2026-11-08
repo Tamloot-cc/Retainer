@@ -1,4 +1,9 @@
-import { type FieldType, INTERNAL_NOTE_TYPE_ID, MULTI_VALUE_TYPES } from '@retainer/shared';
+import {
+  type FieldType,
+  HIDDEN_TYPE_IDS,
+  MULTI_VALUE_TYPES,
+  PROFILE_TYPE_IDS,
+} from '@retainer/shared';
 import {
   type FieldState,
   type ObjectState,
@@ -27,6 +32,11 @@ export const RESERVED_OBJECT_NAMES: ReadonlyMap<string, string> = new Map([
   ...reserved(
     ['internalNote', 'internalNotes'],
     'it names the notes remember creates for facts with no source',
+  ),
+  ...reserved(
+    ['workspaceProfile', 'workspaceProfiles', 'memberProfile', 'memberProfiles'],
+    'workspace and personal memory are built in: remember facts with record "workspace" ' +
+      '(how the business works) or "me" (the person you work for) instead of creating an object',
   ),
   ...reserved(
     ['fact', 'facts'],
@@ -142,7 +152,7 @@ export function validateSchema(state: SchemaState): SchemaIssue[] {
 
   for (const object of active) {
     const path = object.nameSingular;
-    const internal = object.universalId === INTERNAL_NOTE_TYPE_ID;
+    const internal = HIDDEN_TYPE_IDS.has(object.universalId);
     for (const name of [object.nameSingular, object.namePlural]) {
       if (!NAME_PATTERN.test(name)) {
         issue(path, `"${name}" must be camelCase: a lowercase letter, then letters and digits`);
@@ -165,6 +175,8 @@ export function validateSchema(state: SchemaState): SchemaIssue[] {
     }
 
     if (object.class === 'event') validateEventCore(object, issue);
+    // A profile type's label is computed: the workspace's or the person's name.
+    if (PROFILE_TYPE_IDS.has(object.universalId)) continue;
     const labelField = object.fields.find((f) => f.universalId === object.labelFieldId);
     if (labelField?.status !== 'active') {
       issue(path, 'labelField must be an active field of the object');

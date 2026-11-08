@@ -1,6 +1,6 @@
 import { type Actor, isCollectionRelation, type PresentedRecord } from '@retainer/shared';
 import type { Tx } from '../db/tx.js';
-import { AppError, notFound } from '../errors.js';
+import { AppError, notFound, profileNotSupported } from '../errors.js';
 import { eventDetails } from '../memory/event-links.js';
 import type { CompiledSchema } from '../schema/compiled.js';
 import { resolveRecordId } from './write.js';
@@ -150,9 +150,9 @@ export async function findLiveRecord(
   const [row] = await tx<(RecordRow & { deleted_at: Date | null })[]>`
     select ${tx(RECORD_COLUMNS)}, deleted_at from records
     where id = ${canonical} and workspace_id = ${workspaceId}`;
-  if (!row || schema.objectsById.get(row.object_type_id)?.hidden) {
-    throw notFound('record', { id });
-  }
+  const object = row && schema.objectsById.get(row.object_type_id);
+  if (object?.profile) throw profileNotSupported(id);
+  if (!row || object?.hidden) throw notFound('record', { id });
   if (row.deleted_at) {
     throw new AppError(404, 'record_deleted', `record ${canonical} was deleted`, {
       recordId: canonical,

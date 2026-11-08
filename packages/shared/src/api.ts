@@ -11,6 +11,7 @@ import type {
   FieldSettings,
   ObjectClass,
   ObjectDefinition,
+  ProfileAlias,
   SchemaChangeStatus,
   SchemaOwner,
   SelectOption,
@@ -21,6 +22,12 @@ export type Session = {
   workspace: { id: string; name: string; slug: string };
   actor: Actor;
   scopes: Scope[];
+  /**
+   * Whether the credential works for a person, and so has personal memory
+   * (`me`): a signed-in person, an app a person connected, or an API key
+   * created with "This agent works for me".
+   */
+  person: boolean;
 };
 export type FieldView = Omit<FieldDefinition, 'description' | 'settings'> & {
   description: string | null;
@@ -82,7 +89,7 @@ export type SchemaDescription = {
 };
 /** A built-in part of every workspace's memory, as describe_schema lists it. */
 export type BuiltInView = {
-  name: 'fact' | 'comment';
+  name: 'fact' | 'comment' | 'memory';
   labelSingular: string;
   labelPlural: string;
   description: string;
@@ -91,6 +98,12 @@ export type BuiltInView = {
   writeWith: string[];
   /** The MCP tools (and REST routes) that read it. */
   readWith: string[];
+  /**
+   * `memory` only: the memories this credential can name instead of a record
+   * ID (personal memory spec 4.4). `workspace` always; `me` when it works
+   * for a person.
+   */
+  profiles?: ProfileAlias[];
 };
 export type RecordReference = { id: string; object: string; label: string | null };
 /** The event a claim cites. */
@@ -326,10 +339,16 @@ export type ReviewQueue = {
   nextCursors: Record<ReviewCollection, string | null>;
 };
 export type Page<T> = { items: T[]; nextCursor: string | null };
-export type PresentedFact = {
+/**
+ * Where a fact is: a record's ID, or for workspace and personal memory the
+ * alias agents use, never the profile's ID (personal memory spec 4.4).
+ */
+export type FactPlace =
+  | { record: string; profile?: never }
+  | { profile: ProfileAlias; record?: never };
+export type PresentedFact = FactPlace & {
   status?: 'current' | 'retracted' | 'superseded' | 'ended';
   id: string;
-  record: string;
   content: string;
   kind: 'stated' | 'inferred';
   validFrom: string;
@@ -453,7 +472,7 @@ export type TimelineItem =
       writtenBy: Actor;
       sources: FactSource[];
     };
-export type TimelinePage = { record: string; items: TimelineItem[]; nextCursor: string | null };
+export type TimelinePage = FactPlace & { items: TimelineItem[]; nextCursor: string | null };
 /** An event in `GET /v1/records/:id/events`: the full event and how it is attached. */
 export type AttachedEvent = PresentedRecord & { event: EventDetails; via: Via };
 /**
@@ -622,7 +641,7 @@ export type RecordHit = {
   /** `text`: a full-text match. `similar_label`: the fuzzy fallback on the label. */
   match: 'text' | 'similar_label';
 };
-export type FactHit = { id: string; record: string; content: string; validFrom: string };
+export type FactHit = FactPlace & { id: string; content: string; validFrom: string };
 export type EventHit = {
   id: string;
   /** The event type's API name. */
@@ -672,6 +691,19 @@ export type ContextPack = {
   recentEvents: EventItem[];
   /** Items of each section left out to fit the budget. */
   omitted: { openTasks: number; facts: number; recentEvents: number };
+  tokenEstimate: number;
+};
+/**
+ * `get_context("workspace")` and `get_context("me")` (personal memory spec
+ * 4.4): a profile's current facts, newest first, fitted to the budget. It
+ * has no fields, tasks or events.
+ */
+export type ProfileContextPack = {
+  profile: ProfileAlias;
+  /** The workspace's name, or the person's. */
+  label: string | null;
+  facts: ContextFact[];
+  omitted: { facts: number };
   tokenEstimate: number;
 };
 /** `POST /v1/records/:id/merge` input (4.2). */

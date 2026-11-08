@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
   ArrowUpRight,
+  Brain,
   KeyRound,
   Lightbulb,
   Lock,
@@ -60,6 +61,7 @@ const EVENT_COLUMN_INFO: Record<EventColumn, { label: string; description: strin
 const BUILT_IN_ICONS: Record<BuiltInView['name'], LucideIcon> = {
   fact: Lightbulb,
   comment: MessageSquare,
+  memory: Brain,
 };
 
 export function ObjectsTab() {
