@@ -45,3 +45,9 @@ See `ARCHITECTURE.md` section 11 for the six test layers.
   import server code into the MIT packages.
 - TypeScript 7: `types: ["node"]` is set in `tsconfig.base.json` because TS no
   longer includes `@types/*` by default.
+
+## Deployment
+
+- The AWS deployment (`retainer.tamloot.cc`, `docs/aws.md`) has no users
+  yet. A deploy's short outage doesn't matter, so deploy whenever it helps to
+  check a change live.
