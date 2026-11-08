@@ -38,7 +38,7 @@ export type AccountsDeps = {
   /** A connection as the control role. */
   sql: Sql;
   publicOrigin: string;
-  /** The client's address, from the connection or API Gateway, never a header. */
+  /** The client's address, from the connection, API Gateway or CloudFront, never a header the client set. */
   clientIp: (c: Context) => string | undefined;
 };
 
