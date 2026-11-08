@@ -146,4 +146,23 @@ describe('query_records', () => {
       message: 'cannot sort by "amount"',
     });
   });
+
+  it('describes a bad filter value as a write would, without the stored format', async () => {
+    const failure = (filter: Record<string, unknown>) =>
+      query('deal', { filter }).then(
+        () => expect.unreachable(),
+        (error: { details: Record<string, unknown> }) => error.details,
+      );
+    expect(await failure({ stage: 'closed' })).toEqual({
+      field: 'stage',
+      message: 'expected one of the options',
+      allowed: ['lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'],
+    });
+    // A money filter compares the amount alone, unlike the stored
+    // { amountMicros, currency }, so no `expected` points at that format.
+    expect(await failure({ amount: { gt: { amountMicros: 1, currency: 'USD' } } })).toEqual({
+      field: 'amount',
+      message: 'expected amountMicros as a number',
+    });
+  });
 });

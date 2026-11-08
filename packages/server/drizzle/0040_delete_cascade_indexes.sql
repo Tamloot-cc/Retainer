@@ -1,0 +1,3 @@
+CREATE INDEX "fact_sources_premise_idx" ON "fact_sources" USING btree ("premise_fact_id") WHERE "fact_sources"."premise_fact_id" is not null;--> statement-breakpoint
+CREATE INDEX "facts_superseded_by_idx" ON "facts" USING btree ("superseded_by") WHERE "facts"."superseded_by" is not null;--> statement-breakpoint
+CREATE INDEX "records_merged_into_idx" ON "records" USING btree ("merged_into_id") WHERE "records"."merged_into_id" is not null;

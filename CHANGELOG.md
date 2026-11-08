@@ -53,6 +53,11 @@ The first release.
 - `groupBy` on `POST /v1/objects/:object/aggregate`: the same totals per
   value of a single-select field.
 - `RETAINER_DB_POOL_MAX` sets the API's database pool size (default 10).
+- Deleting records, facts and whole workspaces no longer scans a table for each
+  deleted row: three foreign keys gained the index their delete needs, and
+  purging a workspace of 360,000 records went from over 9 minutes to 16 seconds.
+- An `invalid_filter` error for a bad value carries what a write's error does:
+  the field, the message, and the allowed values.
 
 ### `@retainer/sdk`
 

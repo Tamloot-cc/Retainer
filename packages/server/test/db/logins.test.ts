@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createWorkspaceFor } from '../../src/accounts/people.js';
 import { createApiKey } from '../../src/auth/keys.js';
 import { CONTROL_ROLE, loadConfig } from '../../src/config.js';
 import { createRuntimeSql, RUNTIME_ROLE } from '../../src/db/client.js';
@@ -212,25 +214,57 @@ describe('scramVerifier', () => {
 });
 
 describe('the control login', () => {
-  it('may switch to the runtime role, but read nothing itself or become the owner', async () => {
-    const password = 'control-test-password-1';
+  const password = 'control-test-password-1';
+  let control: ReturnType<typeof db.connectUrl>;
+
+  beforeAll(async () => {
     await setRoleLogin(db.owner, CONTROL_ROLE, password);
-    try {
-      const url = new URL(db.url);
-      url.username = CONTROL_ROLE;
-      url.password = password;
-      const control = db.connectUrl(url.toString());
-      const [who] = await control<{ user: string }[]>`select current_user as user`;
-      expect(who?.user).toBe(CONTROL_ROLE);
-      await expect(control`select 1 from records`).rejects.toMatchObject({ code: '42501' });
-      await expect(control.unsafe(`set role "${ownerRole}"`)).rejects.toMatchObject({
-        code: '42501',
-      });
-      await control.unsafe(`set role ${RUNTIME_ROLE}`);
-      const [now] = await control<{ user: string }[]>`select current_user as user`;
-      expect(now?.user).toBe(RUNTIME_ROLE);
-    } finally {
-      await db.owner.unsafe(`alter role ${CONTROL_ROLE} nologin password null`);
-    }
+    const url = new URL(db.url);
+    url.username = CONTROL_ROLE;
+    url.password = password;
+    control = db.connectUrl(url.toString());
+  });
+
+  afterAll(async () => {
+    await db.owner.unsafe(`alter role ${CONTROL_ROLE} nologin password null`);
+  });
+
+  it('may switch to the runtime role, but read nothing itself or become the owner', async () => {
+    const [who] = await control<{ user: string }[]>`select current_user as user`;
+    expect(who?.user).toBe(CONTROL_ROLE);
+    await expect(control`select 1 from records`).rejects.toMatchObject({ code: '42501' });
+    await expect(control.unsafe(`set role "${ownerRole}"`)).rejects.toMatchObject({
+      code: '42501',
+    });
+    await control.unsafe(`set role ${RUNTIME_ROLE}`);
+    const [now] = await control<{ user: string }[]>`select current_user as user`;
+    expect(now?.user).toBe(RUNTIME_ROLE);
+    await control.unsafe('reset role');
+  });
+
+  // Logged in as the owner, SET ROLE is checked against the owner, so only a
+  // real control login shows that its SET LOCAL ROLE seeding works (4.5, 4.9).
+  it('creates and seeds a workspace, switching to the runtime role for the seed', async () => {
+    const person = { id: randomUUID(), name: 'Seed', email: 'seed@example.com' };
+    await db.owner`
+      insert into users (id, name, email, email_verified)
+      values (${person.id}, ${person.name}, ${person.email}, true)`;
+    const workspace = await createWorkspaceFor(control, person, {
+      name: 'Seeded',
+      template: 'sales',
+    });
+
+    const objects = await db.owner<{ key: string }[]>`
+      select name_singular as key from object_types where workspace_id = ${workspace.id}`;
+    expect(objects.map((o) => o.key)).toEqual(
+      expect.arrayContaining(['company', 'person', 'deal']),
+    );
+    const [membership] = await db.owner`
+      select role from organization_members
+      where organization_id = ${workspace.organizationId} and user_id = ${person.id}`;
+    expect(membership).toEqual({ role: 'owner' });
+    // The switch ended with the transaction.
+    const [who] = await control<{ user: string }[]>`select current_user as user`;
+    expect(who?.user).toBe(CONTROL_ROLE);
   });
 });

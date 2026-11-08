@@ -281,6 +281,13 @@
       "when": 1794114526369,
       "tag": "0039_auth_accounts_one_per_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794137253961,
+      "tag": "0040_delete_cascade_indexes",
+      "breakpoints": true
     }
   ]
 }

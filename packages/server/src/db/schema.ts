@@ -736,6 +736,11 @@ export const records = pgTable(
     index('records_search_stale_idx')
       .on(t.workspaceId, t.id)
       .where(sql`${t.search} is null and ${t.mergedIntoId} is null`),
+    // Deleting a record clears merged_into_id on whatever was merged into it.
+    // Without this, each deleted record scans its workspace's records: purging
+    // a workspace of 360,000 records ran past the control function's 300
+    // seconds, and takes 16 with this and the two indexes on facts below.
+    index('records_merged_into_idx').on(t.mergedIntoId).where(sql`${t.mergedIntoId} is not null`),
   ],
 );
 
@@ -1055,6 +1060,9 @@ export const facts = pgTable(
       .on(t.recordId, t.validFrom)
       .where(sql`${t.validTo} is null and ${t.deletedAt} is null`),
     index('facts_search_gin').using('gin', t.workspaceId, t.search),
+    // Deleting a fact clears superseded_by on the facts it replaced; see
+    // records_merged_into_idx.
+    index('facts_superseded_by_idx').on(t.supersededBy).where(sql`${t.supersededBy} is not null`),
   ],
 );
 
@@ -1079,6 +1087,10 @@ export const factSources = pgTable(
     ),
     index('fact_sources_fact_idx').on(t.factId),
     index('fact_sources_source_idx').on(t.sourceRecordId),
+    // Deleting a fact removes the sources that cite it as a premise.
+    index('fact_sources_premise_idx')
+      .on(t.premiseFactId)
+      .where(sql`${t.premiseFactId} is not null`),
   ],
 );
 
