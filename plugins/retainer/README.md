@@ -9,7 +9,8 @@ citing the chat.
 ## Install
 
 You need a Retainer account, and Node.js 20 or later for the check that
-runs after each turn. In Claude Code:
+runs after each turn. On Windows, the check also needs Git for Windows,
+whose shell runs it. In Claude Code:
 
 ```
 /plugin marketplace add Tamloot-cc/Retainer
