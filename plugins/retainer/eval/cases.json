@@ -77,6 +77,26 @@
     }
   },
   {
+    "name": "property inspection, no one named",
+    "expect": "yes",
+    "turn": {
+      "prompt": "the inspection for Herzl 12 found roof damage, about 40k to fix. The closing moves to after the repair.",
+      "tools": [],
+      "replies": ["That's a significant finding. Want me to draft a note to the seller's side?"]
+    }
+  },
+  {
+    "name": "order date moved, no one named",
+    "expect": "yes",
+    "turn": {
+      "prompt": "check the status of order 184",
+      "tools": ["mcp__shop__get_order"],
+      "replies": [
+        "Order 184 is now due on the 24th instead of the 10th; the status changed to 'delayed: materials'."
+      ]
+    }
+  },
+  {
     "name": "customer email the assistant read",
     "expect": "yes",
     "turn": {
