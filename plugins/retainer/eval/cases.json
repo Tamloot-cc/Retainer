@@ -37,6 +37,66 @@
     }
   },
   {
+    "name": "recruiting: interview feedback",
+    "expect": "yes",
+    "turn": {
+      "prompt": "Second interview with Lior Ben-David went well. The panel wants to move him to the offer stage; he expects around 32k a month and can start March 1.",
+      "tools": [],
+      "replies": ["Great. Want me to draft the offer email?"]
+    }
+  },
+  {
+    "name": "real estate: buyer viewing",
+    "expect": "yes",
+    "turn": {
+      "prompt": "what did the Harels say after the viewing on Herzl 12?",
+      "tools": ["mcp__gmail__get_thread"],
+      "replies": [
+        "Michal Harel wrote this morning: they loved the light but think the price is high; they'd offer 2.9M if the seller fixes the roof, and want an answer by Sunday."
+      ]
+    }
+  },
+  {
+    "name": "nonprofit: donor pledge",
+    "expect": "yes",
+    "turn": {
+      "prompt": "Dr. Avi Segal pledged 50k for the spring scholarship fund at last night's dinner, paid in two installments. He wants his name off the donor wall.",
+      "tools": [],
+      "replies": ["That's a generous pledge. Should I draft a thank-you letter?"]
+    }
+  },
+  {
+    "name": "supplier delivery slipped",
+    "expect": "yes",
+    "turn": {
+      "prompt": "any news from the fabric supplier?",
+      "tools": ["mcp__gmail__search_threads"],
+      "replies": [
+        "Yes: Orly from TexCo says the linen order slips from the 10th to the 24th because of a dye shortage; she offered 5% off the next order."
+      ]
+    }
+  },
+  {
+    "name": "property inspection, no one named",
+    "expect": "yes",
+    "turn": {
+      "prompt": "the inspection for Herzl 12 found roof damage, about 40k to fix. The closing moves to after the repair.",
+      "tools": [],
+      "replies": ["That's a significant finding. Want me to draft a note to the seller's side?"]
+    }
+  },
+  {
+    "name": "order date moved, no one named",
+    "expect": "yes",
+    "turn": {
+      "prompt": "check the status of order 184",
+      "tools": ["mcp__shop__get_order"],
+      "replies": [
+        "Order 184 is now due on the 24th instead of the 10th; the status changed to 'delayed: materials'."
+      ]
+    }
+  },
+  {
     "name": "customer email the assistant read",
     "expect": "yes",
     "turn": {
@@ -153,6 +213,15 @@
       "replies": [
         "Started the teardown for Anomaly; the card shows it queued. This was a test run of the card."
       ]
+    }
+  },
+  {
+    "name": "real estate: editing a listing page",
+    "expect": "no",
+    "turn": {
+      "prompt": "make the agent photo on the listing template round, the one with Michal's headshot",
+      "tools": ["Edit", "Read"],
+      "replies": ["Done: listing.html now crops the agent photo to a circle."]
     }
   }
 ]
