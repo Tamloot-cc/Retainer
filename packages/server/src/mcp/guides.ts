@@ -365,12 +365,13 @@ Where your user got it decides the source:
   sent, so an updated invitation for a moved meeting is a new event, not a
   conflict. Then look in describe_schema for an object that holds
   scheduled things, whatever its name: one with a date and time, linked
-  to people or companies, ideally with a field for the calendar event's
-  ID. If there is one, find the meeting's record by the calendar event's
-  ID with query_records, and create or update it citing the invitation,
-  so a moved or cancelled meeting updates the same record. If there is
-  none, tell your user the workspace has nowhere to keep upcoming
-  meetings, and offer to add one following get_guide("schema_design").
+  to people or companies, and with a field for the calendar event's ID.
+  If there is one, find the meeting's record by that ID with
+  query_records, and create or update it citing the invitation, so a
+  moved or cancelled meeting updates the same record. Without that field
+  you cannot find the record again, so if the object lacks it, or there is
+  no such object, the invitation is all you log: tell your user, and offer
+  to add the field or the object following get_guide("schema_design").
   Either way, log the meeting itself once it has happened, under the
   calendar event's own ID.
 

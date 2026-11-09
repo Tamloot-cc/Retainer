@@ -454,7 +454,10 @@ describe('the log_from_chat guide', () => {
     expect(prose).toContain('an updated invitation for a moved meeting is a new event');
     expect(prose).toContain('look in describe_schema for an object that holds scheduled things');
     expect(prose).toContain('a moved or cancelled meeting updates the same record');
-    expect(prose).toContain('offer to add one following get_guide("schema_design")');
+    expect(prose).toContain('Without that field you cannot find the record again');
+    expect(prose).toContain(
+      'offer to add the field or the object following get_guide("schema_design")',
+    );
     expect(prose).not.toContain('as a task due that day');
     expect(prose).toContain("the new record's ID as the participant's recordId");
   });
