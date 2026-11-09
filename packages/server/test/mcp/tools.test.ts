@@ -446,6 +446,21 @@ describe('the log_from_chat guide', () => {
     expect(prose).toContain('Each turn you log is its own event');
     expect(prose).toContain('Ask your user before creating a company');
   });
+
+  it('says what to do with a meeting that has not happened yet, and with a new person', async () => {
+    const { body } = await reader.call<string>('get_guide', { name: 'log_from_chat' });
+    const prose = body.replace(/\s+/g, ' ');
+    expect(prose).toContain('log_event refuses an occurredAt in the future');
+    expect(prose).toContain('an updated invitation for a moved meeting is a new event');
+    expect(prose).toContain('look in describe_schema for an object that holds scheduled things');
+    expect(prose).toContain('a moved or cancelled meeting updates the same record');
+    expect(prose).toContain('Without that field you cannot find the record again');
+    expect(prose).toContain(
+      'offer to add the field or the object following get_guide("schema_design")',
+    );
+    expect(prose).not.toContain('as a task due that day');
+    expect(prose).toContain("the new record's ID as the participant's recordId");
+  });
 });
 
 describe('describe_schema, list_templates and apply_template', () => {

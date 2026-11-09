@@ -356,6 +356,24 @@ Where your user got it decides the source:
   Each turn you log is its own event: an event's time and summary are
   fixed once logged, so logging a later turn under the same externalId
   fails as a conflict.
+- It has not happened yet (a meeting invite, a scheduled call): log_event
+  refuses an occurredAt in the future, and a scheduled meeting can still
+  move or be cancelled, so it belongs in an object, not an event. Log what
+  has happened, the invitation, as its own event when it was sent, with
+  its organizer and invitees as participants and an externalId of its own:
+  the calendar event's ID plus ":invite:" and the time this invitation was
+  sent, so an updated invitation for a moved meeting is a new event, not a
+  conflict. Then look in describe_schema for an object that holds
+  scheduled things, whatever its name: one with a date and time, linked
+  to people or companies, and with a field for the calendar event's ID.
+  If there is one, find the meeting's record by that ID with
+  query_records, and create or update it citing the invitation, so a
+  moved or cancelled meeting updates the same record. Without that field
+  you cannot find the record again, so if the object lacks it, or there is
+  no such object, the invitation is all you log: tell your user, and offer
+  to add the field or the object following get_guide("schema_design").
+  Either way, log the meeting itself once it has happened, under the
+  calendar event's own ID.
 
 ## 3. Write what you learned
 
@@ -363,6 +381,10 @@ Write values, facts and tasks in the order the server instructions give
 for any conversation, each citing the event from step 2 as source. Quote
 your user's own words in a fact when it helps, and give a task the due date
 that was said.
+
+When you create a person who came back from step 2 unmatched, log that
+event again with the same input and the new record's ID as the
+participant's recordId, so the event shows on their timeline.
 
 ## 4. Tell your user
 
