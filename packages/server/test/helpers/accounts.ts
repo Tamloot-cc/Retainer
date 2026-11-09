@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { LAST_SIGN_IN_COOKIE } from '@retainer/shared';
 import type { Hono } from 'hono';
 import { createAccountsServer } from '../../src/accounts/index.js';
 import { createApp } from '../../src/api/app.js';
@@ -30,6 +31,8 @@ export type AccountsTestApp = {
   accounts: Hono;
   /** /v1 and the rest, as the api function serves it. */
   api: ReturnType<typeof createApp>;
+  /** Signs in with a Google ID token; the response, as Better Auth gives it. */
+  googleIdToken: (profile?: Partial<GoogleProfile>) => Promise<Response>;
   /** Signs in with Google; returns the Cookie header to send. */
   signIn: (profile?: Partial<GoogleProfile>) => Promise<{ cookie: string; userId: string }>;
   /** Signs in with a Microsoft ID token, or a raw token; the response, as Better Auth gives it. */
@@ -41,9 +44,13 @@ export type AccountsTestApp = {
    * then lands on the callback with a code for the account. Returns where the
    * browser is sent, the error it carries, and the session cookie if one was set.
    */
-  microsoftRedirect: (
-    account: MicrosoftAccount,
-  ) => Promise<{ path: string; error: string | null; cookie: string | null }>;
+  microsoftRedirect: (account: MicrosoftAccount) => Promise<{
+    path: string;
+    error: string | null;
+    cookie: string | null;
+    /** How the browser is remembered to have signed in, if the callback set it. */
+    lastSignIn: string | null;
+  }>;
   /** A request to /account with the web app's headers. */
   account: (
     path: string,
@@ -127,6 +134,16 @@ export function startAccountsApp(
     return { cookie, userId: body.user.id };
   };
 
+  const googleIdToken = async (input: Partial<GoogleProfile> = {}) => {
+    const profile: GoogleProfile = {
+      sub: input.sub ?? randomUUID(),
+      email: input.email ?? `${randomUUID().slice(0, 8)}@example.test`,
+      name: input.name ?? 'Test Person',
+      email_verified: input.email_verified ?? true,
+    };
+    return socialSignIn({ provider: 'google', idToken: { token: JSON.stringify(profile) } });
+  };
+
   const microsoftIdToken = async (account: MicrosoftAccount | string) => {
     if (!options.microsoft) throw new Error('start the app with a fake Microsoft');
     const token = typeof account === 'string' ? account : await options.microsoft.idToken(account);
@@ -141,17 +158,8 @@ export function startAccountsApp(
   return {
     accounts,
     api,
-    signIn: async (input = {}) => {
-      const profile: GoogleProfile = {
-        sub: input.sub ?? randomUUID(),
-        email: input.email ?? `${randomUUID().slice(0, 8)}@example.test`,
-        name: input.name ?? 'Test Person',
-        email_verified: input.email_verified ?? true,
-      };
-      return signedIn(
-        await socialSignIn({ provider: 'google', idToken: { token: JSON.stringify(profile) } }),
-      );
-    },
+    googleIdToken,
+    signIn: async (input = {}) => signedIn(await googleIdToken(input)),
     microsoftIdToken,
     signInWithMicrosoft: async (account) => signedIn(await microsoftIdToken(account)),
     microsoftRedirect: async (account) => {
@@ -186,6 +194,7 @@ export function startAccountsApp(
         path: place.pathname,
         error: place.searchParams.get('error'),
         cookie: sessionCookie(landed),
+        lastSignIn: lastSignInCookie(landed)?.value ?? null,
       };
     },
     account: async (path, init = {}) => {
@@ -222,4 +231,12 @@ export function startAccountsApp(
 export function sessionCookie(res: Response): string | null {
   const set = res.headers.getSetCookie().find((c) => c.includes('.session_token='));
   return set?.split(';')[0] ?? null;
+}
+
+/** The last-sign-in cookie a response set: its value and the whole Set-Cookie line. */
+export function lastSignInCookie(res: Response): { value: string; header: string } | null {
+  const header = res.headers.getSetCookie().find((c) => c.startsWith(`${LAST_SIGN_IN_COOKIE}=`));
+  return header
+    ? { value: header.slice(LAST_SIGN_IN_COOKIE.length + 1).split(';')[0] ?? '', header }
+    : null;
 }

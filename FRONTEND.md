@@ -158,7 +158,8 @@ When the server runs in accounts mode
 ([accounts spec](docs/specs/accounts-and-access.md)), people sign in with Google,
 Microsoft or a passkey and have a role in each workspace. The sign-in page asks
 `GET /account/providers` which of Google and Microsoft are on, and shows a
-button for each. The app finds out at startup:
+button for each. The button for the way this browser last signed in says "Last
+used", read from the `retainer.last_sign_in` cookie the server sets. The app finds out at startup:
 `GET /account` answers `404` in key mode, `401` to someone signed out, and the
 person otherwise.
 

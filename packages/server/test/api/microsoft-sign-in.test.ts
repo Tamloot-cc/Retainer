@@ -69,6 +69,7 @@ describe('signing in with Microsoft', () => {
     const first = await app.microsoftRedirect(account);
     expect(first).toMatchObject({ path: '/app/', error: null });
     expect(first.cookie).toMatch(/^retainer\.session_token=/);
+    expect(first.lastSignIn).toBe('microsoft');
 
     const again = await app.signInWithMicrosoft(account);
     const [user] =
@@ -103,7 +104,12 @@ describe('signing in with Microsoft', () => {
   it('refuses a work account whose address Microsoft has not verified, saying so', async () => {
     const email = `${unique('unproven')}@contoso.test`;
     const landed = await app.microsoftRedirect(workAccount(email, { verified: false }));
-    expect(landed).toEqual({ path: '/app/', error: 'email_not_verified', cookie: null });
+    expect(landed).toEqual({
+      path: '/app/',
+      error: 'email_not_verified',
+      cookie: null,
+      lastSignIn: null,
+    });
     const res = await app.microsoftIdToken(workAccount(email, { verified: false }));
     expect(res.status).toBe(401);
     expect(await res.json()).toMatchObject({ code: 'email_not_verified' });
@@ -187,7 +193,11 @@ describe('a Microsoft sign-in with the address of an existing person', () => {
     expect(second.status).toBe(401);
     expect(await second.json()).toMatchObject({ code: 'account_not_linked' });
     const viaRedirect = await app.microsoftRedirect(workAccount(email, { verified: true }));
-    expect(viaRedirect).toMatchObject({ error: 'account_not_linked', cookie: null });
+    expect(viaRedirect).toMatchObject({
+      error: 'account_not_linked',
+      cookie: null,
+      lastSignIn: null,
+    });
     const sub = unique('google-sub');
     await expect(app.signIn({ email, sub })).resolves.toMatchObject({ userId: first.userId });
     await expect(app.signIn({ email, sub })).resolves.toMatchObject({ userId: first.userId });
@@ -207,7 +217,7 @@ describe('invitations and Microsoft', () => {
     // No person can be made from the unverified address, so there is no
     // session to accept with.
     const landed = await app.microsoftRedirect(workAccount(email, { verified: false }));
-    expect(landed).toMatchObject({ error: 'email_not_verified', cookie: null });
+    expect(landed).toMatchObject({ error: 'email_not_verified', cookie: null, lastSignIn: null });
     // Nor can someone signed in with another address use the link.
     const other = await app.signInWithMicrosoft(personalAccount(`${unique('other')}@outlook.test`));
     const res = await accept(invitation.token, other.cookie);

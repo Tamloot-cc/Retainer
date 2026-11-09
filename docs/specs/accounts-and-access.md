@@ -679,9 +679,12 @@ MFA does not protect API keys on any provider. Scopes and revocation do.
   must move together.
 - Follow its security advisories and update within days. Twelve advisories were
   published on one day, November 3, 2026.
-- Load only Google, Microsoft, JWT, passkey, `mcp()` and `cimd()`. SSO and SCIM have
-  some of its worst advisories, so add them only when a customer needs them, and lock
-  down who can register a provider.
+- Load only Google, Microsoft, JWT, passkey, `mcp()`, `cimd()` and
+  `lastLoginMethod()`. The last adds no routes and no table: after a sign-in it
+  sets a cookie the page can read, `retainer.last_sign_in`, naming the method
+  (`google`, `microsoft` or `passkey`). SSO and SCIM have some of its worst
+  advisories, so add them only when a customer needs them, and lock down who can
+  register a provider.
 - Never install its `dash()` plugin, which calls Better Auth's own servers.
 - Only the control function loads it, which limits what any bug can reach.
 - Keep session cookie caching off, since revoked sessions can stay active until a
@@ -721,6 +724,8 @@ for someone signed in with Google as well as for an agent.
 - **Sign in.** "Continue with Google" and "Use a passkey". Key mode keeps today's
   screen. _As built:_ "Continue with Microsoft" too, when the server has it; the page
   asks `GET /account/providers` and shows a button for each provider that is on.
+  The button for the way this browser last signed in says "Last used", from the
+  `retainer.last_sign_in` cookie (4.12); it stays after sign-out.
 - **First run.** "Name your workspace", then the existing flow. The word organization
   does not appear.
 - **URLs.** `/app/w/<slug>/...` in accounts mode, and `/app/...` as today in key

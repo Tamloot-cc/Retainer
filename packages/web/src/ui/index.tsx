@@ -161,6 +161,14 @@ export function Muted({ children, small = false }: { children: ReactNode; small?
     <span className={cn('text-muted-foreground', small ? 'text-xs' : 'text-sm')}>{children}</span>
   );
 }
+/** A short note inside a button, after its label, in the button's own colour: "Last used". */
+export function ButtonNote({ children }: { children: ReactNode }) {
+  return (
+    <span className="rounded-sm border border-current/30 px-1.5 py-px text-xs font-normal opacity-80">
+      {children}
+    </span>
+  );
+}
 export function Badge({ children, tone = 'neutral' }: { children: ReactNode; tone?: Tone }) {
   return (
     <span
