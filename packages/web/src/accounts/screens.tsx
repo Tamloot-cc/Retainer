@@ -95,11 +95,14 @@ export function AccountFrame({
   title,
   description,
   account,
+  signOutTo,
   children,
 }: {
   title: string;
   description?: string;
   account?: Account;
+  /** Where signing in again leads after Sign out; the person's workspaces by default. */
+  signOutTo?: string;
   children: ReactNode;
 }) {
   const [signOutError, setSignOutError] = useState('');
@@ -119,7 +122,7 @@ export function AccountFrame({
               type="button"
               className="hover:text-foreground"
               onClick={() =>
-                void signOutOfAccount().catch((e: Error) => setSignOutError(e.message))
+                void signOutOfAccount(signOutTo).catch((e: Error) => setSignOutError(e.message))
               }
             >
               Sign out
@@ -278,6 +281,8 @@ export function InvitePage({ token, account }: { token: string; account: Account
       title={`Join ${preview.organization.name}`}
       description={preview.invitedBy ? `${preview.invitedBy} invited ${preview.email}.` : undefined}
       account={account}
+      // Signed in as someone else: signing in again comes back to this invitation.
+      signOutTo={window.location.pathname}
     >
       {preview.workspaces.length ? (
         <ul className="flex flex-col gap-1 text-sm">
@@ -290,7 +295,7 @@ export function InvitePage({ token, account }: { token: string; account: Account
       ) : null}
       {preview.forYou ? (
         <InvitationRow id={token}>
-          Accept to open {preview.organization.name}'s workspaces.
+          Accept to join {preview.organization.name} and open its workspaces.
         </InvitationRow>
       ) : (
         <Notice error>
