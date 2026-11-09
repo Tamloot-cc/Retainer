@@ -11,7 +11,9 @@ import { createWorkspace } from '../../src/workspaces/workspaces.js';
 import {
   type AccountsTestApp,
   AUTH_SECRET,
+  lastSignInCookie,
   ORIGIN,
+  sessionCookie,
   startAccountsApp,
 } from '../helpers/accounts.js';
 import { useTestDatabase } from '../helpers/db.js';
@@ -166,6 +168,36 @@ describe('signing in with Google', () => {
     expect(cookie).toMatch(/^retainer\.session_token=/);
     expect(cookie).toMatch(/HttpOnly/i);
     expect(cookie).toMatch(/SameSite=Strict/i);
+  });
+
+  it('remembers Google as the last way in, in a cookie the page can read', async () => {
+    const res = await app.googleIdToken();
+    expect(res.status).toBe(200);
+    const last = lastSignInCookie(res);
+    expect(last?.value).toBe('google');
+    expect(last?.header).not.toMatch(/HttpOnly/i);
+    expect(last?.header).toMatch(/SameSite=Strict/i);
+    expect(last?.header).toMatch(/Max-Age=31536000/);
+  });
+
+  it('remembers nothing when the sign-in is refused', async () => {
+    const res = await app.googleIdToken({ email_verified: false });
+    expect(res.status).toBe(401);
+    expect(lastSignInCookie(res)).toBeNull();
+  });
+
+  it('leaves the last way in alone when a session is only extended', async () => {
+    const { cookie, userId } = await app.signIn();
+    await db.owner`update sessions set expires_at = now() + interval '20 days', updated_at = now() - interval '10 days'
+      where user_id = ${userId}`;
+    const res = await app.account('/account/auth/get-session', {
+      cookie,
+      method: 'POST',
+      body: {},
+    });
+    expect(res.status).toBe(200);
+    expect(sessionCookie(res)).not.toBeNull();
+    expect(lastSignInCookie(res)).toBeNull();
   });
 
   it("extends an active session on the web app's POST, and never on a read", async () => {

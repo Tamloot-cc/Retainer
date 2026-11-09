@@ -1,4 +1,9 @@
-import { SIGN_IN_PROVIDER_NAMES, type SignInProvider } from '@retainer/shared';
+import {
+  LAST_SIGN_IN_COOKIE,
+  SIGN_IN_PROVIDER_NAMES,
+  type SignInMethod,
+  type SignInProvider,
+} from '@retainer/shared';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import {
   type Account,
@@ -9,17 +14,34 @@ import {
   workspaceHref,
 } from '../api/account.js';
 import { BrandMark } from '../ui/brand.js';
-import { Button, Input, Label, Muted, Notice, SignInFrame, Stack } from '../ui/index.js';
+import {
+  Button,
+  ButtonNote,
+  Input,
+  Label,
+  Muted,
+  Notice,
+  SignInFrame,
+  Stack,
+} from '../ui/index.js';
 import { allWorkspaces, managed } from './context.js';
 import { providerNames, roleWords, signInError } from './format.js';
 
 /** Screens outside any workspace in accounts mode (accounts spec 5). */
 
+/** How this browser last signed in (a `SignInMethod`), from the cookie the server sets then. */
+const lastSignIn = () =>
+  document.cookie
+    .split('; ')
+    .find((c) => c.startsWith(`${LAST_SIGN_IN_COOKIE}=`))
+    ?.slice(LAST_SIGN_IN_COOKIE.length + 1);
+
 export function AccountSignIn({ returnTo }: { returnTo?: string } = {}) {
   const [error, setError] = useState(() =>
     signInError(new URLSearchParams(window.location.search).get('error')),
   );
-  const [busy, setBusy] = useState<SignInProvider | 'passkey' | null>(null);
+  const [busy, setBusy] = useState<SignInMethod | null>(null);
+  const last = lastSignIn();
   // Google, Microsoft or both, as the server is set up.
   const [providers, setProviders] = useState<SignInProvider[] | null>(null);
   useEffect(() => {
@@ -73,10 +95,12 @@ export function AccountSignIn({ returnTo }: { returnTo?: string } = {}) {
             {busy === provider
               ? `Opening ${SIGN_IN_PROVIDER_NAMES[provider]}…`
               : `Continue with ${SIGN_IN_PROVIDER_NAMES[provider]}`}
+            {last === provider ? <ButtonNote>Last used</ButtonNote> : null}
           </Button>
         ))}
         <Button disabled={busy !== null} onClick={() => void passkey()}>
           {busy === 'passkey' ? 'Waiting for your passkey…' : 'Use a passkey'}
+          {last === 'passkey' ? <ButtonNote>Last used</ButtonNote> : null}
         </Button>
         {error ? <Notice error>{error}</Notice> : null}
         {providers ? (

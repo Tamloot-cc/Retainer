@@ -4,10 +4,11 @@ import { fetchClientMetadataResource } from '@better-auth/cimd/node';
 import { mcp } from '@better-auth/mcp';
 import { oauthProviderAuthServerMetadata } from '@better-auth/oauth-provider';
 import { passkey } from '@better-auth/passkey';
-import { OAUTH_SCOPES, type SignInProvider } from '@retainer/shared';
+import { LAST_SIGN_IN_COOKIE, OAUTH_SCOPES, type SignInProvider } from '@retainer/shared';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
+import { lastLoginMethod } from 'better-auth/plugins';
 import { jwt } from 'better-auth/plugins/jwt';
 import type { GoogleOptions } from 'better-auth/social-providers';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -399,6 +400,16 @@ function betterAuthFor(options: AuthOptions) {
           oauthConsent: { modelName: 'oauth_consents' },
           oauthClientAssertion: { modelName: 'oauth_client_assertions' },
         },
+      }),
+      // Remembers in a cookie how this browser last signed in, so the
+      // sign-in page can mark that button. Nothing goes in the database.
+      lastLoginMethod({
+        cookieName: LAST_SIGN_IN_COOKIE,
+        maxAge: 365 * 24 * 60 * 60,
+        // Redirects and passkeys are recognised already; a sign-in with an
+        // ID token is not.
+        customResolveMethod: (ctx) =>
+          ctx.path === '/sign-in/social' && ctx.body?.idToken ? ctx.body.provider : null,
       }),
       // Claude identifies itself with a client metadata document, fetched
       // from the internet: only the control function has a route out (4.6).
