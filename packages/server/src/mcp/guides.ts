@@ -357,15 +357,22 @@ Where your user got it decides the source:
   fixed once logged, so logging a later turn under the same externalId
   fails as a conflict.
 - It has not happened yet (a meeting invite, a scheduled call): log_event
-  refuses an occurredAt in the future. Log what has happened, the
-  invitation, as its own event when it was sent, with its organizer and
-  invitees as participants and an externalId of its own: the calendar
-  event's ID plus ":invite:" and the time this invitation was sent, so an
-  updated invitation for a moved meeting is a new event, not a conflict.
-  Add the meeting as a task due that day, moving its due date when the
-  meeting moves. Log the meeting itself once it has happened, under the
-  calendar event's own ID, and set that task's status to done then, or
-  when the meeting is cancelled.
+  refuses an occurredAt in the future, and a scheduled meeting can still
+  move or be cancelled, so it belongs in an object, not an event. Log what
+  has happened, the invitation, as its own event when it was sent, with
+  its organizer and invitees as participants and an externalId of its own:
+  the calendar event's ID plus ":invite:" and the time this invitation was
+  sent, so an updated invitation for a moved meeting is a new event, not a
+  conflict. Then look in describe_schema for an object that holds
+  scheduled things, whatever its name: one with a date and time, linked
+  to people or companies, ideally with a field for the calendar event's
+  ID. If there is one, find the meeting's record by the calendar event's
+  ID with query_records, and create or update it citing the invitation,
+  so a moved or cancelled meeting updates the same record. If there is
+  none, tell your user the workspace has nowhere to keep upcoming
+  meetings, and offer to add one following get_guide("schema_design").
+  Either way, log the meeting itself once it has happened, under the
+  calendar event's own ID.
 
 ## 3. Write what you learned
 

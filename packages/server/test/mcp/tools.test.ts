@@ -451,9 +451,11 @@ describe('the log_from_chat guide', () => {
     const { body } = await reader.call<string>('get_guide', { name: 'log_from_chat' });
     const prose = body.replace(/\s+/g, ' ');
     expect(prose).toContain('log_event refuses an occurredAt in the future');
-    expect(prose).toContain('Add the meeting as a task due that day');
     expect(prose).toContain('an updated invitation for a moved meeting is a new event');
-    expect(prose).toContain("set that task's status to done");
+    expect(prose).toContain('look in describe_schema for an object that holds scheduled things');
+    expect(prose).toContain('a moved or cancelled meeting updates the same record');
+    expect(prose).toContain('offer to add one following get_guide("schema_design")');
+    expect(prose).not.toContain('as a task due that day');
     expect(prose).toContain("the new record's ID as the participant's recordId");
   });
 });
