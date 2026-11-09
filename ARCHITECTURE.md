@@ -839,6 +839,10 @@ cost of losing what that event said about the others. Redacting only
 the person, or keeping other people's facts with a "deleted for privacy"
 source, is a possible later refinement.
 
+`forget` erases a record, not an actor. The name stored with each write
+(`{ type, id, name }`) stays after the person who made it leaves the
+workspace: the history is the workspace's audit trail (accounts spec 9.5).
+
 Workspace deletion cascades through `workspace_id` and removes everything.
 In accounts mode deleting a workspace first only sets `deletion_scheduled_at`:
 every lookup (keys, sessions, OAuth tokens, the consolidator) then treats it

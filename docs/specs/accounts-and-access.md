@@ -937,8 +937,12 @@ deployed install after each Better Auth upgrade that touches OAuth.
    so a person cannot edit comments written under the old one. _Decided November 8,
    2026: no mapping._ It would only serve backward compatibility.
 5. **Departed people's names** stay on past writes through the stored actor.
-   `forget` covers records, not actors. Erasing a former employee's name needs a
-   decision. _Deferred November 8, 2026._
+   `forget` covers records, not actors. _Decided November 9, 2026: keep them._ A
+   workspace's history is its audit trail, so a person who leaves stays named on
+   what they and the apps they connected wrote. Nothing erases a member's name
+   from past writes. Set aside: an admin action that replaces the name with
+   "Former member" on request, and storing only the actor's ID with the name
+   looked up on read. The options are in issue #61.
 6. **Viewers and private views.** Creating a view needs `write`, so a viewer cannot
    save a private view. _Decided November 8, 2026: they cannot._
 7. **Zero-downtime deploys.** Each deploy gives up to a minute of `503`s because one
