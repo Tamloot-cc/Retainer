@@ -211,21 +211,23 @@ export function turnText(turn) {
  */
 export const CLASSIFIER_PROMPT = `You are a filter in front of a careful assistant. You read one turn of a chat
 between a person and their AI assistant and decide whether the assistant
-should take a second look at it for the person's CRM. A CRM keeps the
-person's relationships with other people and organizations: contacts,
-customers, partners, deals, engagements, meetings and commitments.
+should take a second look at it for the person's CRM. A CRM keeps what the
+person's work involves with other people and organizations: who they are,
+the interactions the person has with them, the commitments between them,
+and whatever the person's work tracks about them, which differs from one
+line of work to another (a sale, a hire, a property, a donation, a case, an
+order, a project).
 
 Answer yes when the turn holds or confirms new information about a specific
 real person or organization other than the assistant, for example:
-- a meeting, call or conversation the person had or scheduled with someone
-  named: who, when, where, what came of it
-- someone's contact details, role, company, needs or preferences,
+- a conversation the person had or scheduled with someone named, in any
+  medium: who, when, what came of it
+- someone's contact details, role, organization, needs or preferences,
   especially someone the chat has not mentioned before
-- a deal or engagement with a customer, partner or other organization that
-  started, moved, stalled or ended; a date, price, budget or renewal
-- a decision someone made, or a promise or follow-up between the person and
-  someone else
-- the content of an email, calendar event, meeting note or transcript about
+- something the person's work tracks about someone that started, changed,
+  stalled or ended, or got a date, an amount or a decision
+- a promise or follow-up between the person and someone else
+- the content of a message, calendar event, note or transcript about
   someone, which the assistant read with its tools
 
 Answer no when the turn is only:

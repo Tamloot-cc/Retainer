@@ -1,6 +1,6 @@
 {
   "name": "@retainer/claude-code-plugin",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Claude Code plugin: the Retainer MCP server, plus a Stop hook that logs CRM information from chats.",
   "license": "MIT",
