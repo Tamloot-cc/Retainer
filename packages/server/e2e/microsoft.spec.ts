@@ -75,14 +75,24 @@ test('an invited person signs in with a verified work account and accepts', asyn
   const link =
     (await page.locator('code').filter({ hasText: '/app/invite/' }).textContent())?.trim() ?? '';
 
+  // Nina opens the link while signed in with another account. Signing out
+  // from the invitation brings her back to it after she signs in again.
   const ninaContext = await browser.newContext();
   const nina = await ninaContext.newPage();
+  await a.signIn(ninaContext, { email: 'nina@home.test', name: 'Nina Home' });
   await nina.goto(link);
+  await expect(nina.getByText('This invitation is for nina@fabrikam.test')).toBeVisible();
+  await nina.getByRole('button', { name: 'Sign out' }).click();
+  await expect(nina.getByRole('button', { name: 'Continue with Microsoft' })).toBeVisible();
+  await expect(nina).toHaveURL(link);
   a.microsoft?.signInNextAs(
     workAccount('Nina@Fabrikam.test', { verified: true, name: 'Nina Work' }),
   );
   await nina.getByRole('button', { name: 'Continue with Microsoft' }).click();
   await expect(nina.getByRole('heading', { name: "Join Olga Owner's organization" })).toBeVisible();
+  await expect(
+    nina.getByText("Accept to join Olga Owner's organization and open its workspaces."),
+  ).toBeVisible();
   await nina.getByRole('button', { name: 'Accept' }).click();
   await expect(nina).toHaveURL(workspaceUrl);
   await expect(nina.getByRole('button', { name: 'Account: Nina Work' })).toContainText('Editor');
