@@ -1,5 +1,6 @@
 import type { FieldView, ObjectView, PresentedRecord } from '@retainer/shared';
-import { describe, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { defaultColumnOrder, resolveColumns } from '../views/list-state.js';
 import {
   eventColumnOrder,
@@ -7,6 +8,7 @@ import {
   eventMedium,
   listFilterOperators,
   occurredCalendar,
+  ParticipantsCell,
   withEventValues,
 } from './event-list.js';
 
@@ -151,5 +153,33 @@ describe('event type lists', () => {
     expect(eventMedium(renamed, { fields: { kind: 'call' } })).toBe('Call');
     const namesake = { ...conversation, fields: [{ ...medium, baseField: undefined }] };
     expect(eventMedium(namesake as ObjectView, { fields: { medium: 'call' } })).toBeUndefined();
+  });
+});
+
+describe('the participants cell', () => {
+  it('fits people and unmatched handles in one list, a person matched twice included', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const record = {
+      id: 'e1',
+      fields: {},
+      event: {
+        participants: {
+          // One person, matched by two of their addresses.
+          matched: [
+            { id: 'l1', handle: 'a@x.test', role: null, recordId: 'p1' },
+            { id: 'l2', handle: 'a@y.test', role: null, recordId: 'p1' },
+          ],
+          unmatched: [{ id: 'l3', handle: 'b@x.test', role: null, reason: 'no_match' }],
+        },
+      },
+    } as unknown as PresentedRecord;
+    render(
+      <ParticipantsCell record={record} field={field('participants', { type: 'relation' })} />,
+    );
+    // Before the cell has a width, two items show and the third is counted.
+    expect(screen.getAllByText('Unavailable reference')).toHaveLength(2);
+    expect(screen.getByText('+1')).toBeTruthy();
+    expect(errors.mock.calls.flat().join(' ')).not.toMatch(/same key/);
+    errors.mockRestore();
   });
 });

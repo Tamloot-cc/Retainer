@@ -238,12 +238,13 @@ export function ParticipantsCell({
     return (
       <FitList
         items={[
+          // One person can be matched by several handles: key by the participant.
           ...relationItems(
             field,
             matched.map((p) => p.recordId),
             references ?? {},
             workspace,
-          ),
+          ).map((item, i) => ({ ...item, key: `${matched[i]?.id}\u0000${item.key}` })),
           ...unmatched.map((p) => ({
             key: `unmatched\u0000${p.id}`,
             node: <Muted small>{p.handle || 'Unknown'}</Muted>,
