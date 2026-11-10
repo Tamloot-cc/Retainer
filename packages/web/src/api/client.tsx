@@ -1,6 +1,7 @@
 import { RetainerClient } from '@retainer/sdk';
 import type { SchemaDescription, Scope, Session } from '@retainer/shared';
 import { createContext, useContext } from 'react';
+import { updatingFetch } from './maintenance.js';
 
 async function errorCode(response: Response): Promise<unknown> {
   const body = await response
@@ -10,8 +11,11 @@ async function errorCode(response: Response): Promise<unknown> {
   return (body as { error?: { code?: unknown } } | null)?.error?.code;
 }
 let sessionEpoch = 0;
+let sessionRequests = new AbortController();
 export function resetSessionTransport() {
   sessionEpoch++;
+  sessionRequests.abort();
+  sessionRequests = new AbortController();
 }
 const makeClient = (workspace?: string) =>
   new RetainerClient({
@@ -20,7 +24,13 @@ const makeClient = (workspace?: string) =>
     ...(workspace ? { workspace } : {}),
     fetch: async (input, init) => {
       const epoch = sessionEpoch;
-      let response = await window.fetch(input, init);
+      init = {
+        ...init,
+        signal: init?.signal
+          ? AbortSignal.any([init.signal, sessionRequests.signal])
+          : sessionRequests.signal,
+      };
+      let response = await updatingFetch(input, init);
       const url = new URL(
         typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
       );
@@ -42,7 +52,7 @@ const makeClient = (workspace?: string) =>
         if (epoch !== sessionEpoch)
           throw new DOMException('Previous session response discarded', 'AbortError');
         window.dispatchEvent(new CustomEvent('retainer:schema-refreshed', { detail: refreshed }));
-        response = await window.fetch(input, init);
+        response = await updatingFetch(input, init);
       }
       if (epoch !== sessionEpoch)
         throw new DOMException('Previous session response discarded', 'AbortError');

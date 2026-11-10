@@ -1,3 +1,7 @@
+import { isMaintenance, maintenanceFetch } from './maintenance.js';
+
+export { isMaintenance, retryAfterMs, waitForRetry } from './maintenance.js';
+
 import type {
   AddedLinks,
   AggregateInput,
@@ -99,7 +103,8 @@ export class RetainerClient {
   private readonly fetchImpl: typeof fetch;
   constructor(private readonly options: RetainerClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
-    this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
+    const fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
+    this.fetchImpl = (input, init) => maintenanceFetch(fetcher, input, init);
   }
   protected headers(): Record<string, string> {
     if (this.options.apiKey) return { authorization: `Bearer ${this.options.apiKey}` };
@@ -165,6 +170,9 @@ export class RetainerClient {
   /** Health reports database outages in its response body, including HTTP 503. */
   async health(): Promise<HealthResponse> {
     const response = await this.fetchImpl(`${this.baseUrl}/health`);
+    if (await isMaintenance(response)) {
+      throw new RetainerApiError(503, 'maintenance', 'Retainer is updating. Please retry shortly.');
+    }
     return (await response.json()) as HealthResponse;
   }
   signIn(key: string) {

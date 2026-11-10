@@ -1,7 +1,7 @@
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 import type { TransactionSql } from 'postgres';
 import { CONTROL_ROLE, type Config, passwordOf } from '../config.js';
-import { RUNTIME_ROLE, type Sql } from './client.js';
+import { createSql, RUNTIME_ROLE, type Sql } from './client.js';
 
 /** The roles a function may log in as, and the role each may switch to. */
 const LOGIN_ROLES = {
@@ -117,4 +117,30 @@ export function scramVerifier(password: string, salt: Buffer = randomBytes(16)):
   const serverKey = createHmac('sha256', salted).update('Server Key').digest();
   const b64 = (buffer: Buffer) => buffer.toString('base64');
   return `SCRAM-SHA-256$${SCRAM_ITERATIONS}:${b64(salt)}$${b64(storedKey)}:${b64(serverKey)}`;
+}
+
+/**
+ * Rewriting an unchanged SCRAM verifier is unnecessary. A fresh authenticated
+ * connection proves the configured login works without reading pg_authid (RDS
+ * owners cannot). Rotation/role repair needs a stop: old pools may reconnect.
+ * Never return connection errors: they may contain credentials.
+ */
+export async function loginsPending(config: Config, owner: Sql): Promise<boolean> {
+  for (const [role, url] of [
+    [RUNTIME_ROLE, config.RETAINER_RUNTIME_DATABASE_URL],
+    [CONTROL_ROLE, config.RETAINER_CONTROL_DATABASE_URL],
+  ] as const) {
+    if (!url) continue;
+    if ((await owner.begin((tx) => roleProblems(tx, role))).length > 0) return true;
+    const login = createSql(url, { max: 1 });
+    try {
+      const [row] = await login`select current_user as name`;
+      if (row?.name !== role) return true;
+    } catch {
+      return true;
+    } finally {
+      await login.end({ timeout: 5 });
+    }
+  }
+  return false;
 }

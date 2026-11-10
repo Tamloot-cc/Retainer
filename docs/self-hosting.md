@@ -276,3 +276,41 @@ source again is refused. It needs a `user` key with the `admin` scope and
 `RETAINER_SUPPRESSION_KEY` set. The response gives counts only, plus other
 rows that may still mention the person for someone to review; Retainer does
 not edit free text on its own.
+
+### Read-only deployment preflight
+
+The serverless ops entry point accepts `{"command":"migration-status"}` and
+returns `{command, protocol: 1, needsStop, reasons}` without changing database
+rows, roles or schema. A missing command, error or unknown protocol means the
+caller must stop the old version. This does not classify migrations as breaking
+or restrict how migrations are written.
+
+The check uses the same migration journal and timestamp comparison as Drizzle.
+Pending SQL or missing extensions require a stop; on an older schema it returns
+immediately without querying newer columns. It also checks these startup tasks:
+
+- **Logins:** a fresh connection must authenticate as each configured role, and
+  the existing role-safety checks must pass. An unchanged login needs no work
+  (rewriting its randomized SCRAM verifier would have no useful effect). A
+  changed password or unsafe role requires a stop, since old pools may reconnect.
+  The authentication check assumes password authentication, as the hosted
+  database uses; it cannot verify passwords on a server configured with trust
+  authentication. It does not read password hashes or return credential errors.
+- **Search:** any unmerged record with null search text requires a stop. Batches
+  lock rows, but an old writer could otherwise recreate old-format search text.
+- **Definitions:** any workspace whose built-in-definition digest differs,
+  including an unresolved conflict, requires a stop. Upgrades change schema
+  protections and can seed workspace profiles; do not run those changes alongside
+  an older release. A failed workspace upgrade fails the ops migration.
+
+When none is pending, a deployment orchestrator may skip `migrate` and roll
+application code, accepting brief version overlap. The container upgrade
+instructions above still stop first. An orchestrator must serialize deployments
+and retain the stopped state after an interrupted migration, even if a subsequent
+check reports no work because the migration already committed.
+
+The independent serverless maintenance handler returns HTTP 503, `Retry-After: 5`
+and the normal `{error: {code: "maintenance", message}}` shape. Browser
+navigations receive a self-refreshing HTML page. It enforces the same edge secret
+as the application. Its `X-Retainer-Maintenance: not-executed` header guarantees
+that application code was never invoked; do not attach it to arbitrary failures.

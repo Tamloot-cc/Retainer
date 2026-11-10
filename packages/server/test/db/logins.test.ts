@@ -4,7 +4,12 @@ import { createWorkspaceFor } from '../../src/accounts/people.js';
 import { createApiKey } from '../../src/auth/keys.js';
 import { CONTROL_ROLE, loadConfig } from '../../src/config.js';
 import { createRuntimeSql, RUNTIME_ROLE } from '../../src/db/client.js';
-import { scramVerifier, setRoleLogin, setRuntimeLogin } from '../../src/db/logins.js';
+import {
+  loginsPending,
+  scramVerifier,
+  setRoleLogin,
+  setRuntimeLogin,
+} from '../../src/db/logins.js';
 import { inWorkspace } from '../../src/db/tx.js';
 import { createApiHandler } from '../../src/lambda/api.js';
 import { createOpsHandler } from '../../src/lambda/ops.js';
@@ -42,6 +47,25 @@ afterAll(async () => {
 });
 
 describe('the runtime login', () => {
+  it('checks login readiness without rotating the verifier and detects a changed password', async () => {
+    const config = loadConfig({
+      DATABASE_URL: db.url,
+      RETAINER_RUNTIME_DATABASE_URL: runtimeUrl(PASSWORD),
+    });
+    const before =
+      await db.owner`select rolpassword from pg_authid where rolname = ${RUNTIME_ROLE}`;
+    expect(await loginsPending(config, db.owner)).toBe(false);
+    expect(
+      await db.owner`select rolpassword from pg_authid where rolname = ${RUNTIME_ROLE}`,
+    ).toEqual(before);
+    expect(
+      await loginsPending(
+        { ...config, RETAINER_RUNTIME_DATABASE_URL: runtimeUrl('wrong-password') },
+        db.owner,
+      ),
+    ).toBe(true);
+  });
+
   it('logs in as the runtime role, with no other role to become', async () => {
     const sql = db.connectUrl(runtimeUrl(PASSWORD));
     const [who] = await sql<{ user: string }[]>`select current_user as user`;

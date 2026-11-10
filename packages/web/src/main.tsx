@@ -37,6 +37,7 @@ import {
   useAuth,
   WorkspaceContext,
 } from './api/client.js';
+import { UpdatingBanner } from './api/maintenance.js';
 import { SignIn } from './auth/sign-in.js';
 import { CommandPalette } from './routes/command.js';
 import { DeveloperContext, readDeveloperView, writeDeveloperView } from './routes/developer.js';
@@ -543,6 +544,7 @@ const container = document.getElementById('root');
 if (container)
   createRoot(container).render(
     <StrictMode>
+      <UpdatingBanner />
       <App />
     </StrictMode>,
   );

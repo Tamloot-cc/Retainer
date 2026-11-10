@@ -173,3 +173,9 @@ export async function upgradeWorkspaces(sql: Sql): Promise<UpgradeReport> {
   }
   return report;
 }
+
+/** Read-only and deliberately conservative, including unresolved conflicts. */
+export async function workspaceUpgradesPending(sql: Sql): Promise<boolean> {
+  const rows = await sql<WorkspaceRow[]>`select templates, definitions_digest from workspaces`;
+  return rows.some((row) => row.definitions_digest !== definitionsFor(row.templates).digest);
+}
