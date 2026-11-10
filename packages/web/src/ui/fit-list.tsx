@@ -51,6 +51,8 @@ export function FitList({
     widths: number[];
     more: number;
     gap: number;
+    /** The cell's width then: zero means it was hidden and the widths are too. */
+    available: number;
   } | null>(null);
   const [fitted, setFitted] = useState<{ signature: string; shown: number } | null>(null);
   const shown = fitted?.signature === signature ? fitted.shown : null;
@@ -60,6 +62,11 @@ export function FitList({
     const m = measured.current;
     if (!el || !m) return;
     const available = el.clientWidth;
+    // Mounted hidden, then shown: measure the items now that they have a size.
+    if (available > 0 && m.available === 0) {
+      setFitted(null);
+      return;
+    }
     const next =
       available > 0
         ? fitCount(m.widths, available, m)
@@ -83,6 +90,7 @@ export function FitList({
       widths,
       more: moreEl?.getBoundingClientRect().width ?? 0,
       gap: Number.parseFloat(getComputedStyle(box.current).columnGap) || 0,
+      available: box.current.clientWidth,
     };
     refit();
   });

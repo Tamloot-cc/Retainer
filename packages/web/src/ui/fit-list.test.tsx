@@ -99,4 +99,34 @@ describe('FitList', () => {
     expect(screen.getByText('Grace')).toBeTruthy();
     expect(screen.queryByText(/^\+/)).toBeNull();
   });
+
+  it('measures again when a cell mounted hidden is shown', () => {
+    // Hidden, the cell and its items have no width.
+    width = 0;
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (width === 0) return { width: 0 } as DOMRect;
+      return { width: this.dataset.fitMore !== undefined ? 20 : 50 } as DOMRect;
+    });
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(private cb: () => void) {}
+        observe() {
+          observers.push(this.cb);
+        }
+        disconnect() {
+          observers = observers.filter((o) => o !== this.cb);
+        }
+      },
+    );
+    render(<FitList items={items} more={more} />);
+    width = 128;
+    resize();
+    expect(screen.getByText('Grace')).toBeTruthy();
+    expect(screen.queryByText('Linus')).toBeNull();
+    expect(screen.getByText('+2')).toBeTruthy();
+  });
 });
