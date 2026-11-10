@@ -16,6 +16,25 @@ export default async function setup(project: TestProject) {
     );
   }
 
+  // Caller owns this already-migrated database. Each test still gets a clone;
+  // neither migrations nor teardown may modify the supplied template.
+  const suppliedTemplate = process.env.RETAINER_TEST_TEMPLATE;
+  if (suppliedTemplate) {
+    if (!/^[a-z][a-z0-9_]{0,62}$/.test(suppliedTemplate)) {
+      throw new Error('RETAINER_TEST_TEMPLATE must be a simple Postgres database name.');
+    }
+    const admin = postgres(adminUrl, { max: 1, onnotice: false });
+    try {
+      const rows = await admin`select 1 from pg_database where datname = ${suppliedTemplate}`;
+      if (rows.length !== 1) throw new Error('RETAINER_TEST_TEMPLATE does not exist.');
+    } finally {
+      await admin.end();
+    }
+    project.provide('adminDatabaseUrl', adminUrl);
+    project.provide('templateDatabase', suppliedTemplate);
+    return;
+  }
+
   // One template per run, so two runs on the same server do not collide.
   const template = `retainer_test_template_${randomBytes(4).toString('hex')}`;
   const admin = postgres(adminUrl, { max: 1, onnotice: false });

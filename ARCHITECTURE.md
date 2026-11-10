@@ -1951,3 +1951,7 @@ typecheck, layers 1–4, then the browser tests, with Postgres as a service
 container. Pushing a `v*` tag runs the release workflow, which reruns CI
 before publishing (docs/releasing.md). Retainer calls no model, so CI needs
 no API keys.
+
+PRs changing database migrations also run an advisory [migration compatibility
+check](docs/migration-compatibility.md): old server tests on the new schema, with
+an explicit machine-readable verdict. Breaking migrations remain allowed.
