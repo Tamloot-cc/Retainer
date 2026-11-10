@@ -2,7 +2,7 @@ import { FIELD_TYPES, type FieldView, validateFieldValue } from '@retainer/share
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   decimalToMicros,
   FieldDisplay,
@@ -230,4 +230,44 @@ it('treats empty composites as empty without hiding zero or false', () => {
   expect(fields.number.isEmpty(0)).toBe(false);
   expect(fields.boolean.isEmpty(false)).toBe(false);
   expect(fields.json.isEmpty({})).toBe(false);
+});
+
+describe('list cells', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+  it('fits a list again when only a label it shows changes', () => {
+    // A 200px cell; each item is as wide as its text, 10px a character.
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(200);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return { width: (this.textContent ?? '').length * 10 } as DOMRect;
+    });
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const links = (label: string) => ({
+      primary: { url: 'https://docs.example.test', label },
+      additional: [{ url: 'https://blog.example.test', label: 'Blog' }],
+    });
+    const { rerender } = render(<FieldDisplay field={f('links')} value={links('Docs')} compact />);
+    expect(screen.getByText('Blog')).toBeTruthy();
+    rerender(<FieldDisplay field={f('links')} value={links('Documentation home')} compact />);
+    expect(screen.queryByText('Blog')).toBeNull();
+    expect(screen.getByText('+1')).toBeTruthy();
+  });
+});
+
+describe('text', () => {
+  it('previews long text in a compact cell, wherever it is shown', () => {
+    const long = 'x'.repeat(100);
+    render(<FieldDisplay field={f('text')} value={long} compact />);
+    expect(screen.getByText(`${'x'.repeat(60)}…`)).toBeTruthy();
+  });
 });

@@ -464,3 +464,50 @@ test('keeps a changed filter as unsaved until the view is saved or reset', async
   await page.getByRole('button', { name: 'View: Executives' }).click();
   await expect(page.getByRole('menuitem', { name: 'New view…' })).not.toBeVisible();
 });
+
+test('fits as many of a list as its column holds, and counts the rest', async ({
+  page,
+  retainer: r,
+}) => {
+  const [first, ...additional] = [
+    'ada.one@example.test',
+    'ada.two@example.test',
+    'ada.three@example.test',
+  ] as const;
+  const emails = [first, ...additional];
+  await r.request('/objects/person/records', {
+    values: { name: 'Ada person', emails: { primary: first, additional } },
+  });
+  await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'People', exact: true }).click();
+  const grid = page.getByRole('region', { name: 'People' });
+  const row = grid.getByRole('row').filter({ hasText: 'Ada person' });
+  const cell = row.getByRole('cell').filter({ hasText: first });
+  const resize = grid.getByRole('separator', { name: 'Resize Emails' });
+
+  // Narrow: one address and a count of the rest, all on one line.
+  const narrow = Number(await resize.getAttribute('aria-valuenow'));
+  await expect(cell.getByText(additional[0])).toHaveCount(0);
+  await expect(cell.getByText('+2', { exact: true })).toBeVisible();
+  const lineHeight = (await cell.boundingBox())?.height;
+
+  // Wider: every address, and no count.
+  await resize.focus();
+  for (let i = 0; i < 30; i++) await page.keyboard.press('ArrowRight');
+  await expect(resize).not.toHaveAttribute('aria-valuenow', String(narrow));
+  for (const email of emails) await expect(cell.getByText(email)).toBeVisible();
+  await expect(cell.getByText(/^\+\d+$/)).toHaveCount(0);
+  expect((await cell.boundingBox())?.height).toBe(lineHeight);
+
+  // Narrower than one address: it is cut short with an ellipsis, not clipped.
+  for (let i = 0; i < 60; i++) await page.keyboard.press('ArrowLeft');
+  const cut = cell.getByText(first);
+  await expect(cut).toHaveCSS('text-overflow', 'ellipsis');
+  expect(await cut.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+
+  // On the record itself every address shows, and long ones wrap.
+  await grid.getByRole('link', { name: 'Ada person' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Ada person' });
+  for (const email of emails) await expect(sheet.getByText(email)).toBeVisible();
+  await expect(sheet.getByText(first)).toHaveCSS('white-space', 'normal');
+});

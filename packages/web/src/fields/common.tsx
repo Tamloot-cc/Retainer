@@ -19,7 +19,7 @@ import {
 import { useQueries } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
 import { Plus, Star, X } from 'lucide-react';
-import { type ComponentType, type ReactNode, useContext, useState } from 'react';
+import { type ComponentType, type ContextType, type ReactNode, useContext, useState } from 'react';
 import { api, useWorkspace, WorkspaceContext } from '../api/client.js';
 import { objectByName, objectLabel, recordTitle, useDebounced } from '../routes/state.js';
 import {
@@ -29,6 +29,8 @@ import {
   CheckLabel,
   Columns,
   ExternalLink,
+  type FitItem,
+  FitList,
   Fixed,
   Input,
   Label,
@@ -150,6 +152,7 @@ export function FieldDisplay({ field, value, compact = false, references = {} }:
     case 'text':
       return (
         <Tooltip content={String(value)}>
+          {/* Compact hosts outside the grid (the merge table) don't truncate. */}
           <span>
             {compact && String(value).length > 60
               ? `${String(value).slice(0, 60)}…`
@@ -175,15 +178,19 @@ export function FieldDisplay({ field, value, compact = false, references = {} }:
         </Badge>
       );
     case 'multi_select': {
-      const values = value as string[];
-      return (
-        <Row>
-          {(compact ? values.slice(0, 2) : values).map((v) => (
-            <Badge key={v}>{field.settings.options?.find((o) => o.value === v)?.label ?? v}</Badge>
-          ))}
-          {compact && values.length > 2 ? <Badge>+{values.length - 2}</Badge> : null}
-        </Row>
-      );
+      // Each key carries what the item shows, so a changed label is measured again.
+      const badges = (value as string[]).map((v) => {
+        const label = field.settings.options?.find((o) => o.value === v)?.label ?? v;
+        return {
+          key: `${v}\u0000${label}`,
+          node: (
+            <Badge>
+              <span className="truncate">{label}</span>
+            </Badge>
+          ),
+        };
+      });
+      return <ListDisplay items={badges} compact={compact} />;
     }
     case 'money':
       return <span>{moneyText(value as MoneyValue)}</span>;
@@ -236,64 +243,88 @@ export function FieldDisplay({ field, value, compact = false, references = {} }:
     case 'phones':
     case 'links': {
       const v = value as EmailsValue | PhonesValue | LinksValue;
-      const values = [v.primary, ...v.additional].filter(Boolean);
-      return (
-        <Row>
-          {(compact ? values.slice(0, 1) : values).map((item) => {
-            if (typeof item === 'string') return <span key={item}>{item}</span>;
-            if (item && 'url' in item)
-              return (
-                <ExternalLink key={item.url} href={item.url}>
-                  {item.label || new URL(item.url).host}
+      const items = [v.primary, ...v.additional]
+        .filter((item): item is NonNullable<typeof item> => !!item)
+        .map((item): FitItem => {
+          if (typeof item === 'string')
+            return { key: item, node: <span className="truncate">{item}</span> };
+          if ('url' in item) {
+            const label = item.label || new URL(item.url).host;
+            return {
+              key: `${item.url}\u0000${label}`,
+              node: (
+                <ExternalLink href={item.url}>
+                  <span className="truncate">{label}</span>
                 </ExternalLink>
-              );
-            if (item && 'number' in item)
-              return (
-                <span key={item.number}>
-                  {item.number}
-                  {item.countryCode ? ` (${item.countryCode})` : ''}
-                </span>
-              );
-            return null;
-          })}
-          {compact && values.length > 1 ? <Badge>+{values.length - 1}</Badge> : null}
-          {values.length === 0 ? <Muted>—</Muted> : null}
-        </Row>
-      );
+              ),
+            };
+          }
+          return {
+            key: `${item.countryCode ?? ''}${item.number}`,
+            node: (
+              <span className="truncate">
+                {item.number}
+                {item.countryCode ? ` (${item.countryCode})` : ''}
+              </span>
+            ),
+          };
+        });
+      if (items.length === 0) return <Muted>—</Muted>;
+      return <ListDisplay items={items} compact={compact} />;
     }
   }
 }
 /**
- * Linked records by name. A list cell shows the first two of a set and how
- * many more there are. A polymorphic relation tags each with its object, so
- * "Acme (Company)" and "Acme (Person)" can be told apart.
+ * A list of values: in a list cell, as many as the column has room for and
+ * how many more there are; on the record page, all of them.
+ */
+function ListDisplay({ items, compact }: { items: FitItem[]; compact?: boolean }) {
+  if (compact) return <FitList items={items} />;
+  return (
+    <Row>
+      {items.map((item) => (
+        // Items cut their text short for a list cell; here long labels wrap.
+        <span key={item.key} className="flex min-w-0 [&_.truncate]:whitespace-normal">
+          {item.node}
+        </span>
+      ))}
+    </Row>
+  );
+}
+/**
+ * Linked records by name. A polymorphic relation tags each with its object,
+ * so "Acme (Company)" and "Acme (Person)" can be told apart.
  */
 function RelationDisplay({ field, value, compact, references = {} }: DisplayProps) {
   const workspace = useContext(WorkspaceContext);
-  const tagged = isPolymorphic(field);
-  const ids = relationIds(value);
   return (
-    <Row>
-      {(compact ? ids.slice(0, 2) : ids).map((id) => {
-        const reference = references[id];
-        if (!reference) return <Muted key={id}>Unavailable reference</Muted>;
-        const name = recordTitle(reference);
-        return tagged ? (
-          <span key={id} className="inline-flex min-w-0 items-center gap-1.5">
-            <RecordLink id={id}>{name}</RecordLink>{' '}
-            <ObjectTag>
-              {workspace ? objectLabel(workspace.schema, reference.object) : reference.object}
-            </ObjectTag>
-          </span>
-        ) : (
-          <RecordLink key={id} id={id}>
-            {name}
-          </RecordLink>
-        );
-      })}
-      {compact && ids.length > 2 ? <Badge>+{ids.length - 2}</Badge> : null}
-    </Row>
+    <ListDisplay items={relationItems(field, value, references, workspace)} compact={compact} />
   );
+}
+/** Each linked record as a list item: its name as a link, tagged with its object if need be. */
+export function relationItems(
+  field: FieldView,
+  value: unknown,
+  references: Record<string, RecordReference>,
+  workspace: ContextType<typeof WorkspaceContext>,
+): FitItem[] {
+  const tagged = isPolymorphic(field);
+  return relationIds(value).map((id) => {
+    const reference = references[id];
+    if (!reference) return { key: id, node: <Muted>Unavailable reference</Muted> };
+    const name = recordTitle(reference);
+    const object = workspace ? objectLabel(workspace.schema, reference.object) : reference.object;
+    return {
+      key: `${id}\u0000${name}\u0000${tagged ? object : ''}`,
+      node: tagged ? (
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <RecordLink id={id}>{name}</RecordLink> <ObjectTag>{object}</ObjectTag>
+        </span>
+      ) : (
+        <RecordLink id={id}>{name}</RecordLink>
+      ),
+    };
+  });
 }
 
 /** Exact decimal-to-micros conversion; never multiply a floating-point input. */

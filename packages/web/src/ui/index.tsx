@@ -16,7 +16,7 @@ import {
   useRef,
 } from 'react';
 import { BrandMark } from './brand.js';
-import { cn, isPlainClick, NavigationContext, ROW_STATE, type Tone } from './core.js';
+import { Badge, cn, isPlainClick, NavigationContext, ROW_STATE } from './core.js';
 import { ApiName } from './layout.js';
 import { LogoMark } from './logo-mark.js';
 import { Tooltip } from './tooltip.js';
@@ -165,24 +165,6 @@ export function Muted({ children, small = false }: { children: ReactNode; small?
 export function ButtonNote({ children }: { children: ReactNode }) {
   return (
     <span className="rounded-sm border border-current/30 px-1.5 py-px text-xs font-normal opacity-80">
-      {children}
-    </span>
-  );
-}
-export function Badge({ children, tone = 'neutral' }: { children: ReactNode; tone?: Tone }) {
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 rounded-sm border px-1.5 py-px text-xs font-medium',
-        tone === 'pending'
-          ? 'border-amber-300/40 text-amber-700 dark:text-amber-300'
-          : tone === 'success'
-            ? 'border-emerald-300/40 text-emerald-700 dark:text-emerald-300'
-            : tone === 'error'
-              ? 'border-destructive/30 text-destructive'
-              : 'border-border text-muted-foreground',
-      )}
-    >
       {children}
     </span>
   );
@@ -699,7 +681,7 @@ export {
   MonthGrid,
   MoreEntries,
 } from './calendar.js';
-export type { Tone } from './core.js';
+export { Badge, type Tone } from './core.js';
 export {
   DataGrid,
   EditableCell,
@@ -732,6 +714,7 @@ export {
   useTabAnchor,
 } from './entry.js';
 export { FeedDay, FeedItem, FeedLinks, FeedScroll } from './feed.js';
+export { type FitItem, FitList, fitCount } from './fit-list.js';
 /** React Flow and dagre are heavy, so the canvas loads on first render; wrap it in Suspense. */
 export const Diagram = lazy(() => import('./diagram.js').then((m) => ({ default: m.Diagram })));
 export {

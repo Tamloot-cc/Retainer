@@ -346,7 +346,7 @@ const GridBody = memo(function GridBody({
               className={columns[i]?.pinned ? PINNED_CELL : CELL}
               style={columns[i]?.pinned ? { left: pinLeft } : undefined}
             >
-              <div className="flex h-9 items-center gap-1 overflow-hidden whitespace-nowrap px-3 [&>*]:min-w-0">
+              <div className="flex h-9 items-center gap-1 overflow-hidden whitespace-nowrap px-3 [&>*]:min-w-0 [&>*]:truncate">
                 {cell}
               </div>
             </td>
