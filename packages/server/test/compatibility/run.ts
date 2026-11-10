@@ -8,12 +8,12 @@ import { assertCompletedRun, classifyReport } from './report.js';
 
 // These test migration/upgrade machinery itself, rather than an old running
 // server. They explicitly migrate or rewrite historical schema/data.
-const excluded = [
-  'test/db/accounts-upgrade.test.ts',
-  'test/db/search-rebuild.test.ts',
-  'test/db/logins.test.ts',
-  'test/lambda/handlers.test.ts',
-];
+const excluded = JSON.parse(
+  readFileSync(
+    new URL('../../../../scripts/migration-compatibility-exclusions.json', import.meta.url),
+    'utf8',
+  ),
+) as string[];
 const base = resolve(process.argv[2] ?? '');
 const output = resolve(process.argv[3] ?? 'test-results/migration-compatibility');
 mkdirSync(output, { recursive: true });

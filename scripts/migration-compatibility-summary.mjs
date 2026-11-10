@@ -11,6 +11,12 @@ if (!existsSync(path)) {
       {
         version: 1,
         verdict: 'error',
+        excluded: JSON.parse(
+          readFileSync(
+            new URL('./migration-compatibility-exclusions.json', import.meta.url),
+            'utf8',
+          ),
+        ),
         baseSha: process.env.BASE_SHA,
         headSha: process.env.HEAD_SHA,
         error: 'The job could not finish setup or run the compatibility checker.',

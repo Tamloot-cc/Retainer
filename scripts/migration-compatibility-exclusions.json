@@ -1,0 +1,6 @@
+[
+  "test/db/accounts-upgrade.test.ts",
+  "test/db/search-rebuild.test.ts",
+  "test/db/logins.test.ts",
+  "test/lambda/handlers.test.ts"
+]
