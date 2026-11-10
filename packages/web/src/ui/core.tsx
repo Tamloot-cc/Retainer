@@ -49,3 +49,23 @@ export function Kbd({ children }: { children: ReactNode }) {
     </kbd>
   );
 }
+
+/** A short label in a box; `tone` colours it by status. */
+export function Badge({ children, tone = 'neutral' }: { children: ReactNode; tone?: Tone }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-sm border px-1.5 py-px text-xs font-medium',
+        tone === 'pending'
+          ? 'border-amber-300/40 text-amber-700 dark:text-amber-300'
+          : tone === 'success'
+            ? 'border-emerald-300/40 text-emerald-700 dark:text-emerald-300'
+            : tone === 'error'
+              ? 'border-destructive/30 text-destructive'
+              : 'border-border text-muted-foreground',
+      )}
+    >
+      {children}
+    </span>
+  );
+}

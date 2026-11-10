@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { cn } from './core.js';
+import { Badge, cn } from './core.js';
 
 export type FitItem = {
   /** Identifies the item and changes when what it shows does, e.g. id and name. */
@@ -7,21 +7,24 @@ export type FitItem = {
   node: ReactNode;
 };
 
+/** Items shown while the cell has no width yet (hidden, or not laid out). */
+const UNMEASURED_SHOWN = 2;
+
 /**
- * How many items fit in `available` pixels, `gap` apart, with a count of the
- * rest after them. At least one shows, cut short if even it is too wide.
+ * How many items fit in `available` pixels, `gap` apart, with a count of
+ * the rest (`more` pixels wide) after them. At least one shows, cut short
+ * if even it is too wide.
  */
 export function fitCount(
   widths: readonly number[],
   available: number,
-  { gap, more, extra = 0 }: { gap: number; more: number; extra?: number },
+  { gap, more }: { gap: number; more: number },
 ): number {
   let used = 0;
   let fits = 0;
   for (let n = 1; n <= widths.length; n++) {
     used += (widths[n - 1] ?? 0) + (n > 1 ? gap : 0);
-    const hidden = widths.length - n + extra;
-    const need = used + (hidden > 0 ? gap + more : 0);
+    const need = used + (n < widths.length ? gap + more : 0);
     if (need <= available) fits = n;
   }
   return Math.max(Math.min(1, widths.length), fits);
@@ -30,20 +33,15 @@ export function fitCount(
 /**
  * One line of items in a table cell: as many as the column's width holds,
  * then "+n" for the rest. Widening the column shows more and lowers the
- * count; `extra` adds items that are counted but never shown. Until the
- * cell has a width (it is hidden, or not laid out), `fallback` items show.
+ * count.
  */
 export function FitList({
   items,
-  extra = 0,
-  fallback = 2,
-  more,
+  more = (n) => <Badge>+{n}</Badge>,
 }: {
   items: FitItem[];
-  extra?: number;
-  fallback?: number;
-  /** The count of items not shown, e.g. a "+n" badge. */
-  more: (n: number) => ReactNode;
+  /** The count of items not shown. */
+  more?: (n: number) => ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const signature = items.map((i) => i.key).join('\u0000');
@@ -54,28 +52,27 @@ export function FitList({
     more: number;
     gap: number;
   } | null>(null);
-  const [state, setState] = useState<{ signature: string; shown: number | null }>({
-    signature,
-    shown: null,
-  });
-  const measuring = state.signature !== signature || state.shown === null;
+  const [fitted, setFitted] = useState<{ signature: string; shown: number } | null>(null);
+  const shown = fitted?.signature === signature ? fitted.shown : null;
 
   const refit = useCallback(() => {
     const el = box.current;
     const m = measured.current;
     if (!el || !m) return;
     const available = el.clientWidth;
-    const shown =
+    const next =
       available > 0
-        ? fitCount(m.widths, available, { gap: m.gap, more: m.more, extra })
-        : Math.min(items.length, fallback);
-    setState((s) =>
-      s.signature === m.signature && s.shown === shown ? s : { signature: m.signature, shown },
+        ? fitCount(m.widths, available, m)
+        : Math.min(m.widths.length, UNMEASURED_SHOWN);
+    setFitted((s) =>
+      s?.signature === m.signature && s.shown === next
+        ? s
+        : { signature: m.signature, shown: next },
     );
-  }, [extra, fallback, items.length]);
+  }, []);
 
   useLayoutEffect(() => {
-    if (!measuring || !box.current) return;
+    if (shown !== null || !box.current) return;
     const children = Array.from(box.current.children) as HTMLElement[];
     const widths = children
       .filter((c) => c.dataset.fitItem !== undefined)
@@ -93,13 +90,13 @@ export function FitList({
   useLayoutEffect(() => {
     const el = box.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => refit());
+    const observer = new ResizeObserver(refit);
     observer.observe(el);
     return () => observer.disconnect();
   }, [refit]);
 
-  const shown = measuring ? items.length : (state.shown ?? items.length);
-  const hidden = items.length - shown + extra;
+  const measuring = shown === null;
+  const count = shown ?? items.length;
   return (
     <div
       ref={box}
@@ -108,26 +105,26 @@ export function FitList({
         measuring && 'invisible',
       )}
     >
-      {items.slice(0, shown).map((item, i) => (
+      {items.slice(0, count).map((item, i) => (
         <span
           key={item.key}
           data-fit-item=""
           className={cn(
             'flex items-center',
             // The last one shown gives way when even it doesn't fit.
-            !measuring && i === shown - 1 ? 'min-w-0 shrink overflow-hidden' : 'shrink-0',
+            !measuring && i === count - 1 ? 'min-w-0 shrink overflow-hidden' : 'shrink-0',
           )}
         >
           {item.node}
         </span>
       ))}
-      {measuring && items.length + extra > 0 ? (
+      {measuring && items.length > 1 ? (
         // The widest count there can be, for its width.
         <span data-fit-more="" aria-hidden className="shrink-0">
-          {more(items.length + extra)}
+          {more(items.length - 1)}
         </span>
-      ) : hidden > 0 ? (
-        <span className="shrink-0">{more(hidden)}</span>
+      ) : items.length > count ? (
+        <span className="shrink-0">{more(items.length - count)}</span>
       ) : null}
     </div>
   );

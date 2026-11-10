@@ -19,7 +19,7 @@ import {
 import { useQueries } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
 import { Plus, Star, X } from 'lucide-react';
-import { type ComponentType, type ReactNode, useContext, useState } from 'react';
+import { type ComponentType, type ContextType, type ReactNode, useContext, useState } from 'react';
 import { api, useWorkspace, WorkspaceContext } from '../api/client.js';
 import { objectByName, objectLabel, recordTitle, useDebounced } from '../routes/state.js';
 import {
@@ -152,11 +152,7 @@ export function FieldDisplay({ field, value, compact = false, references = {} }:
     case 'text':
       return (
         <Tooltip content={String(value)}>
-          <span>
-            {compact && String(value).length > 60
-              ? `${String(value).slice(0, 60)}…`
-              : String(value)}
-          </span>
+          <span>{String(value)}</span>
         </Tooltip>
       );
     case 'number':
@@ -181,15 +177,7 @@ export function FieldDisplay({ field, value, compact = false, references = {} }:
         key: v,
         node: <Badge>{field.settings.options?.find((o) => o.value === v)?.label ?? v}</Badge>,
       }));
-      return compact ? (
-        <FitList items={badges} more={moreBadge} />
-      ) : (
-        <Row>
-          {badges.map((b) => (
-            <span key={b.key}>{b.node}</span>
-          ))}
-        </Row>
-      );
+      return <ListDisplay items={badges} compact={compact} />;
     }
     case 'money':
       return <span>{moneyText(value as MoneyValue)}</span>;
@@ -242,64 +230,67 @@ export function FieldDisplay({ field, value, compact = false, references = {} }:
     case 'phones':
     case 'links': {
       const v = value as EmailsValue | PhonesValue | LinksValue;
-      const items = [v.primary, ...v.additional].flatMap((item) => {
-        if (typeof item === 'string') return [{ key: item, node: <span>{item}</span> }];
-        if (item && 'url' in item)
-          return [
-            {
+      const items = [v.primary, ...v.additional]
+        .filter((item): item is NonNullable<typeof item> => !!item)
+        .map((item): FitItem => {
+          if (typeof item === 'string') return { key: item, node: <span>{item}</span> };
+          if ('url' in item)
+            return {
               key: item.url,
               node: (
                 <ExternalLink href={item.url}>{item.label || new URL(item.url).host}</ExternalLink>
               ),
-            },
-          ];
-        if (item && 'number' in item)
-          return [
-            {
-              key: `${item.countryCode ?? ''}${item.number}`,
-              node: (
-                <span>
-                  {item.number}
-                  {item.countryCode ? ` (${item.countryCode})` : ''}
-                </span>
-              ),
-            },
-          ];
-        return [];
-      });
+            };
+          return {
+            key: `${item.countryCode ?? ''}${item.number}`,
+            node: (
+              <span>
+                {item.number}
+                {item.countryCode ? ` (${item.countryCode})` : ''}
+              </span>
+            ),
+          };
+        });
       if (items.length === 0) return <Muted>—</Muted>;
-      return compact ? (
-        <FitList items={items} fallback={1} more={moreBadge} />
-      ) : (
-        <Row>
-          {items.map((item) => (
-            <span key={item.key} className="min-w-0">
-              {item.node}
-            </span>
-          ))}
-        </Row>
-      );
+      return <ListDisplay items={items} compact={compact} />;
     }
   }
 }
 /**
- * Linked records by name. A list cell shows as many of a set as the column
- * has room for and how many more there are. A polymorphic relation tags each with its object, so
- * "Acme (Company)" and "Acme (Person)" can be told apart.
+ * A list of values: in a list cell, as many as the column has room for and
+ * how many more there are; on the record page, all of them.
  */
-export function RelationDisplay({
-  field,
-  value,
-  compact,
-  references = {},
-  extra = 0,
-}: DisplayProps & {
-  /** In a list cell, more linked items to count after these, e.g. unmatched participants. */
-  extra?: number;
-}) {
+function ListDisplay({ items, compact }: { items: FitItem[]; compact?: boolean }) {
+  if (compact) return <FitList items={items} />;
+  return (
+    <Row>
+      {items.map((item) => (
+        <span key={item.key} className="flex min-w-0">
+          {item.node}
+        </span>
+      ))}
+    </Row>
+  );
+}
+/**
+ * Linked records by name. A polymorphic relation tags each with its object,
+ * so "Acme (Company)" and "Acme (Person)" can be told apart.
+ */
+function RelationDisplay({ field, value, compact, references = {} }: DisplayProps) {
   const workspace = useContext(WorkspaceContext);
+  return (
+    <ListDisplay items={relationItems(field, value, references, workspace)} compact={compact} />
+  );
+}
+/** Each linked record as a list item: its name as a link, tagged with its object if need be. */
+export function relationItems(
+  field: FieldView,
+  value: unknown,
+  references: Record<string, RecordReference>,
+  workspace: ContextType<typeof WorkspaceContext>,
+): FitItem[] {
   const tagged = isPolymorphic(field);
-  const items = relationIds(value).map((id): FitItem => {
+  return relationIds(value).map((id) => {
     const reference = references[id];
     if (!reference) return { key: id, node: <Muted>Unavailable reference</Muted> };
     const name = recordTitle(reference);
@@ -315,21 +306,6 @@ export function RelationDisplay({
       ),
     };
   });
-  if (compact) return <FitList items={items} extra={extra} fallback={2} more={moreBadge} />;
-  return (
-    <Row>
-      {items.map((item) => (
-        <span key={item.key} className="flex min-w-0">
-          {item.node}
-        </span>
-      ))}
-    </Row>
-  );
-}
-
-/** The count of a list cell's items the column has no room for. */
-export function moreBadge(n: number) {
-  return <Badge>+{n}</Badge>;
 }
 
 /** Exact decimal-to-micros conversion; never multiply a floating-point input. */

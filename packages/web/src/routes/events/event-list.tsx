@@ -9,8 +9,11 @@ import type {
 } from '@retainer/shared';
 import { filterOperatorsFor } from '@retainer/shared';
 import { CircleHelp } from 'lucide-react';
-import { RelationDisplay } from '../../fields/common.js';
-import { Code, Muted, PanelBody, Popover, Stack } from '../../ui/index.js';
+import { useContext } from 'react';
+import { WorkspaceContext } from '../../api/client.js';
+import { relationItems } from '../../fields/common.js';
+import { fields } from '../../fields/index.js';
+import { Code, FitList, Muted, PanelBody, Popover, Stack } from '../../ui/index.js';
 
 // Event type lists (5.3): the grid of an object list, with an event's
 // built-in columns and links shown as columns beside its fields.
@@ -214,8 +217,8 @@ export function occurredCalendar(object: ObjectView): SavedView {
 
 /**
  * Participants: matched records linked, then other handles. Compact (a grid
- * cell) fits one row and counts the other handles beside matched records;
- * otherwise every handle is listed.
+ * cell) fits as many of both as the column holds on one line and counts the
+ * rest; otherwise every handle is listed.
  */
 export function ParticipantsCell({
   record,
@@ -228,26 +231,35 @@ export function ParticipantsCell({
   field: FieldView;
   compact?: boolean;
 }) {
+  const workspace = useContext(WorkspaceContext);
   const unmatched = record.event?.participants.unmatched ?? [];
   const matched = record.event?.participants.matched ?? [];
-  const handles = <Muted small>{unmatched.map((p) => p.handle || 'Unknown').join(', ')}</Muted>;
-  if (!matched.length) return unmatched.length ? handles : null;
-  const people = (
-    <RelationDisplay
-      field={field}
-      value={matched.map((p) => p.recordId)}
-      compact={compact}
-      references={references}
-      // A list cell counts the unmatched with the people it has no room for.
-      extra={compact ? unmatched.length : 0}
-    />
-  );
-  return compact || !unmatched.length ? (
-    people
-  ) : (
+  if (compact)
+    return (
+      <FitList
+        items={[
+          ...relationItems(
+            field,
+            matched.map((p) => p.recordId),
+            references ?? {},
+            workspace,
+          ),
+          ...unmatched.map((p) => ({
+            key: `unmatched\u0000${p.id}`,
+            node: <Muted small>{p.handle || 'Unknown'}</Muted>,
+          })),
+        ]}
+      />
+    );
+  const Display = fields.relation.Display;
+  return (
     <>
-      {people}
-      {handles}
+      {matched.length ? (
+        <Display field={field} value={matched.map((p) => p.recordId)} references={references} />
+      ) : null}
+      {unmatched.length ? (
+        <Muted small>{unmatched.map((p) => p.handle || 'Unknown').join(', ')}</Muted>
+      ) : null}
     </>
   );
 }
