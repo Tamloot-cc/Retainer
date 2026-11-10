@@ -5,6 +5,7 @@ import { AppError, notFound } from '../errors.js';
 import { seedWorkspaceProfile } from '../memory/profiles.js';
 import { runSchemaChange, type SchemaChangeResult, SYSTEM_ACTOR } from '../schema-engine/engine.js';
 import { SEED_OPERATIONS } from './base.js';
+import { definitionsFor } from './definitions.js';
 import { getTemplate, TEMPLATE_NAMES } from './index.js';
 
 /**
@@ -14,7 +15,7 @@ import { getTemplate, TEMPLATE_NAMES } from './index.js';
  * which would otherwise need approval).
  */
 export async function seedBaseObjects(tx: Tx, workspaceId: string): Promise<void> {
-  await runSchemaChange(tx, {
+  const result = await runSchemaChange(tx, {
     workspaceId,
     actor: SYSTEM_ACTOR,
     scopes: [],
@@ -23,8 +24,14 @@ export async function seedBaseObjects(tx: Tx, workspaceId: string): Promise<void
     owner: 'system',
     trusted: true,
   });
+  if (result.status !== 'applied' && result.status !== 'unchanged') {
+    throw new AppError(409, 'base_not_applied', `base change was ${result.status}`);
+  }
   // Workspace memory exists from the start (personal memory spec 4.1).
   await seedWorkspaceProfile(tx, workspaceId, SYSTEM_ACTOR);
+  // Both creation paths call this inside the transaction that installs the
+  // current base definitions/profile. No deploy should have to stamp it later.
+  await tx`update workspaces set definitions_digest = ${definitionsFor([]).digest} where id = ${workspaceId}`;
 }
 
 export type ApplyTemplateResult = SchemaChangeResult & { alreadyApplied: boolean };
@@ -45,8 +52,10 @@ export async function applyTemplate(
   }
   // Held through the whole transaction, so two concurrent applies serialize.
   await lockSchemaExclusive(tx, input.workspaceId);
-  const [workspace] = await tx<{ templates: AppliedTemplate[]; schema_version: number }[]>`
-    select templates, schema_version from workspaces where id = ${input.workspaceId}`;
+  const [workspace] = await tx<
+    { templates: AppliedTemplate[]; schema_version: number; definitions_digest: string | null }[]
+  >`
+    select templates, schema_version, definitions_digest from workspaces where id = ${input.workspaceId}`;
   if (!workspace) throw notFound('workspace');
   if (workspace.templates.some((t) => t.name === template.name)) {
     return {
@@ -75,9 +84,16 @@ export async function applyTemplate(
     version: template.version,
     appliedAt: new Date().toISOString(),
   };
+  // Applying one template does not upgrade old base definitions or other
+  // templates. Only advance a digest already current before this operation;
+  // preserve null/stale markers (and unresolved conflicts) for migrate.
+  const digest =
+    workspace.definitions_digest === definitionsFor(workspace.templates).digest
+      ? definitionsFor([...workspace.templates, applied]).digest
+      : workspace.definitions_digest;
   await tx`
     update workspaces
-    set templates = templates || ${tx.json([applied])},
+    set definitions_digest = ${digest}, templates = templates || ${tx.json([applied])},
       initialized_at = coalesce(initialized_at, now()), updated_at = now()
     where id = ${input.workspaceId}`;
   return { ...result, alreadyApplied: false };
