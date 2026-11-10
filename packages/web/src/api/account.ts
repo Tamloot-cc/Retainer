@@ -6,6 +6,7 @@ import type {
   SignInProvider,
   WorkspaceRole,
 } from '@retainer/shared';
+import { updatingFetch } from './maintenance.js';
 
 /**
  * /account (accounts spec 4.5): the signed-in person, their organizations,
@@ -103,7 +104,7 @@ export type InvitationPreview = {
 };
 
 async function call<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
-  const response = await fetch(path, {
+  const response = await updatingFetch(path, {
     method: init.method ?? 'GET',
     credentials: 'same-origin',
     headers: {
@@ -213,7 +214,7 @@ export const account = {
  * sign-in however active the person is.
  */
 export async function refreshSession(): Promise<void> {
-  await fetch('/account/auth/get-session', {
+  await updatingFetch('/account/auth/get-session', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'content-type': 'application/json' },

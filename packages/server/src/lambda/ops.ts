@@ -1,12 +1,16 @@
 import { z } from 'zod';
 import { type Config, loadConfig, ownerDatabaseUrl } from '../config.js';
 import { createSql } from '../db/client.js';
-import { applyLogins } from '../db/logins.js';
-import { runMigrations } from '../db/migrate.js';
+import { applyLogins, loginsPending } from '../db/logins.js';
+import { migrationsPending, runMigrations } from '../db/migrate.js';
 import { setLogLevel } from '../log.js';
 import { runCli } from '../operator/commands.js';
 import { rebuildSearchText } from '../records/rebuild-search.js';
-import { type UpgradeReport, upgradeWorkspaces } from '../workspaces/upgrade.js';
+import {
+  type UpgradeReport,
+  upgradeWorkspaces,
+  workspaceUpgradesPending,
+} from '../workspaces/upgrade.js';
 import { withMigrationLock } from './deploy-lock.js';
 
 /**
@@ -14,6 +18,8 @@ import { withMigrationLock } from './deploy-lock.js';
  * It is the deployment's replacement for running the CLI in
  * the container, since the database is not reachable from outside the VPC.
  *
+ * - `{ "command": "migration-status" }` reports pending work without writes.
+ *   Only protocol 1 with needsStop false permits a rolling code update.
  * - `{ "command": "migrate" }` applies pending migrations, sets the runtime
  *   and control roles' logins from their URLs, rebuilds stale search
  *   text and upgrades workspaces to the built-in definitions: what the
@@ -28,6 +34,7 @@ import { withMigrationLock } from './deploy-lock.js';
  * prints the only copy of a key.
  */
 const opsEvent = z.discriminatedUnion('command', [
+  z.object({ command: z.literal('migration-status') }),
   z.object({
     command: z.literal('migrate'),
     // At least 1: a lock_timeout of 0 would wait forever.
@@ -38,6 +45,7 @@ const opsEvent = z.discriminatedUnion('command', [
 
 export type OpsEvent = z.input<typeof opsEvent>;
 export type OpsResult =
+  | { command: 'migration-status'; protocol: 1; needsStop: boolean; reasons: string[] }
   | {
       command: 'migrate';
       logins: { runtime: boolean; control: boolean };
@@ -54,13 +62,35 @@ export function createOpsHandler(config: Config) {
     const parsed = opsEvent.safeParse(event);
     if (!parsed.success) {
       throw new Error(
-        'Expected {"command":"migrate"} or {"command":"cli","args":[...]}: ' +
+        'Expected {"command":"migrate"}, {"command":"migration-status"} or {"command":"cli","args":[...]}: ' +
           parsed.error.issues.map((issue) => issue.message).join('; '),
       );
     }
     // Operator commands connect as the migration role, like the CLI.
     // `max: 1`, because the deploy lock and the search rebuild are session
     // locks; the workspace upgrade runs on the same connection.
+    if (parsed.data.command === 'migration-status') {
+      const sql = createSql(databaseUrl, { max: 1 });
+      try {
+        // SQL can change any write rule. Return early on old schemas rather
+        // than querying columns they may not have yet. Any failure is a stop.
+        const reasons: string[] = [];
+        if (await migrationsPending(sql)) reasons.push('migrations');
+        else {
+          if (await loginsPending(config, sql)) reasons.push('logins');
+          // Rebuild batches lock rows, but old writers could still produce
+          // old-format text. Definition upgrades change schema/protection
+          // and seed profiles. Both require a stop across release versions.
+          const [stale] =
+            await sql`select exists(select 1 from records where search is null and merged_into_id is null) as pending`;
+          if (stale?.pending) reasons.push('search');
+          if (await workspaceUpgradesPending(sql)) reasons.push('definitions');
+        }
+        return { command: 'migration-status', protocol: 1, needsStop: reasons.length > 0, reasons };
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    }
     if (parsed.data.command === 'migrate') {
       const sql = createSql(databaseUrl, { max: 1, keepConnections: true });
       try {
@@ -70,6 +100,8 @@ export function createOpsHandler(config: Config) {
           const logins = await applyLogins(config, sql);
           const rebuiltSearchText = await rebuildSearchText(sql);
           const workspaceUpgrade = await upgradeWorkspaces(sql);
+          if (workspaceUpgrade.failed.length > 0)
+            throw new Error('Workspace upgrades failed; keep maintenance enabled and retry.');
           return { command: 'migrate', logins, rebuiltSearchText, workspaceUpgrade };
         });
       } finally {

@@ -212,3 +212,24 @@ server's statement timeout gets a 503 `timeout`.
 as their last argument. A retry with the same key returns the original result;
 reusing a key with a different payload fails. Read methods take an
 `AbortSignal`, as their last argument or as `signal` in their options.
+
+### Maintenance retries
+
+The SDK recognizes HTTP 503 with `error.code: "maintenance"`. It honors numeric
+or HTTP-date `Retry-After`, defaults to five seconds when absent or invalid, and
+bounds retries to 12 retries and a 60-second waiting budget. A longer Retry-After
+is returned as an error rather than retried too soon. Abort signals also cancel
+retry waits. Generic 503s and network errors are not retried.
+
+Reads (including POST query, search, aggregate and delete-impact) retry. Writes retry
+when the independent maintenance responder guarantees `X-Retainer-Maintenance:
+not-executed`, or when a supported write carries an idempotency key: record
+creation, merge, facts and comments. Retries preserve the exact body and key;
+the server stores keyed results in the same transaction as the write, for 24
+hours. Unkeyed writes without the not-executed guarantee are returned as errors.
+
+The web app waits through explicit maintenance until recovery or cancellation,
+shows an updating banner, and leaves forms and drafts mounted. It does not reload
+a page that is already open. A fresh browser navigation uses the maintenance
+HTML page and reloads automatically. Network errors and prolonged deployment
+failures still need operator attention; waiting does not finish a failed deploy.

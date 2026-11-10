@@ -1,6 +1,8 @@
 import { fileURLToPath } from 'node:url';
+import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { loadConfig, ownerDatabaseUrl } from '../config.js';
+import type { Sql } from './client.js';
 import { createDb } from './client.js';
 
 const migrationsFolder = fileURLToPath(new URL('../../drizzle', import.meta.url));
@@ -46,4 +48,19 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const config = loadConfig();
   await runMigrations(ownerDatabaseUrl(config));
   console.log('Migrations applied.');
+}
+
+/** Read-only: use the same timestamp rule and journal as Drizzle's migrator. */
+export async function migrationsPending(sql: Sql): Promise<boolean> {
+  const [table] = await sql`select to_regclass('drizzle.__drizzle_migrations') as name`;
+  if (!table?.name) return true;
+  const [last] =
+    await sql`select created_at from drizzle.__drizzle_migrations order by created_at desc limit 1`;
+  const extensions = await sql`select extname from pg_extension`;
+  return (
+    EXTENSIONS.some((name) => !extensions.some((row) => row.extname === name)) ||
+    readMigrationFiles({ migrationsFolder }).some(
+      (migration) => !last || Number(last.created_at) < migration.folderMillis,
+    )
+  );
 }
