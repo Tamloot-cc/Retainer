@@ -504,4 +504,10 @@ test('fits as many of a list as its column holds, and counts the rest', async ({
   const cut = cell.getByText(first);
   await expect(cut).toHaveCSS('text-overflow', 'ellipsis');
   expect(await cut.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+
+  // On the record itself every address shows, and long ones wrap.
+  await grid.getByRole('link', { name: 'Ada person' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Ada person' });
+  for (const email of emails) await expect(sheet.getByText(email)).toBeVisible();
+  await expect(sheet.getByText(first)).toHaveCSS('white-space', 'normal');
 });

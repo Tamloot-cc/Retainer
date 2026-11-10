@@ -283,7 +283,8 @@ function ListDisplay({ items, compact }: { items: FitItem[]; compact?: boolean }
   return (
     <Row>
       {items.map((item) => (
-        <span key={item.key} className="flex min-w-0">
+        // Items cut their text short for a list cell; here long labels wrap.
+        <span key={item.key} className="flex min-w-0 [&_.truncate]:whitespace-normal">
           {item.node}
         </span>
       ))}
