@@ -152,7 +152,12 @@ export function FieldDisplay({ field, value, compact = false, references = {} }:
     case 'text':
       return (
         <Tooltip content={String(value)}>
-          <span>{String(value)}</span>
+          {/* Compact hosts outside the grid (the merge table) don't truncate. */}
+          <span>
+            {compact && String(value).length > 60
+              ? `${String(value).slice(0, 60)}…`
+              : String(value)}
+          </span>
         </Tooltip>
       );
     case 'number':

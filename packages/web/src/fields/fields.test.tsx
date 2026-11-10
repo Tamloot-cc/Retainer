@@ -263,3 +263,11 @@ describe('list cells', () => {
     expect(screen.getByText('+1')).toBeTruthy();
   });
 });
+
+describe('text', () => {
+  it('previews long text in a compact cell, wherever it is shown', () => {
+    const long = 'x'.repeat(100);
+    render(<FieldDisplay field={f('text')} value={long} compact />);
+    expect(screen.getByText(`${'x'.repeat(60)}…`)).toBeTruthy();
+  });
+});
