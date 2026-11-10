@@ -29,6 +29,8 @@ import {
   CheckLabel,
   Columns,
   ExternalLink,
+  type FitItem,
+  FitList,
   Fixed,
   Input,
   Label,
@@ -175,13 +177,17 @@ export function FieldDisplay({ field, value, compact = false, references = {} }:
         </Badge>
       );
     case 'multi_select': {
-      const values = value as string[];
-      return (
+      const badges = (value as string[]).map((v) => ({
+        key: v,
+        node: <Badge>{field.settings.options?.find((o) => o.value === v)?.label ?? v}</Badge>,
+      }));
+      return compact ? (
+        <FitList items={badges} more={moreBadge} />
+      ) : (
         <Row>
-          {(compact ? values.slice(0, 2) : values).map((v) => (
-            <Badge key={v}>{field.settings.options?.find((o) => o.value === v)?.label ?? v}</Badge>
+          {badges.map((b) => (
+            <span key={b.key}>{b.node}</span>
           ))}
-          {compact && values.length > 2 ? <Badge>+{values.length - 2}</Badge> : null}
         </Row>
       );
     }
@@ -236,64 +242,94 @@ export function FieldDisplay({ field, value, compact = false, references = {} }:
     case 'phones':
     case 'links': {
       const v = value as EmailsValue | PhonesValue | LinksValue;
-      const values = [v.primary, ...v.additional].filter(Boolean);
-      return (
-        <Row>
-          {(compact ? values.slice(0, 1) : values).map((item) => {
-            if (typeof item === 'string') return <span key={item}>{item}</span>;
-            if (item && 'url' in item)
-              return (
-                <ExternalLink key={item.url} href={item.url}>
-                  {item.label || new URL(item.url).host}
-                </ExternalLink>
-              );
-            if (item && 'number' in item)
-              return (
-                <span key={item.number}>
+      const items = [v.primary, ...v.additional].flatMap((item) => {
+        if (typeof item === 'string') return [{ key: item, node: <span>{item}</span> }];
+        if (item && 'url' in item)
+          return [
+            {
+              key: item.url,
+              node: (
+                <ExternalLink href={item.url}>{item.label || new URL(item.url).host}</ExternalLink>
+              ),
+            },
+          ];
+        if (item && 'number' in item)
+          return [
+            {
+              key: `${item.countryCode ?? ''}${item.number}`,
+              node: (
+                <span>
                   {item.number}
                   {item.countryCode ? ` (${item.countryCode})` : ''}
                 </span>
-              );
-            return null;
-          })}
-          {compact && values.length > 1 ? <Badge>+{values.length - 1}</Badge> : null}
-          {values.length === 0 ? <Muted>—</Muted> : null}
+              ),
+            },
+          ];
+        return [];
+      });
+      if (items.length === 0) return <Muted>—</Muted>;
+      return compact ? (
+        <FitList items={items} fallback={1} more={moreBadge} />
+      ) : (
+        <Row>
+          {items.map((item) => (
+            <span key={item.key} className="min-w-0">
+              {item.node}
+            </span>
+          ))}
         </Row>
       );
     }
   }
 }
 /**
- * Linked records by name. A list cell shows the first two of a set and how
- * many more there are. A polymorphic relation tags each with its object, so
+ * Linked records by name. A list cell shows as many of a set as the column
+ * has room for and how many more there are. A polymorphic relation tags each with its object, so
  * "Acme (Company)" and "Acme (Person)" can be told apart.
  */
-function RelationDisplay({ field, value, compact, references = {} }: DisplayProps) {
+export function RelationDisplay({
+  field,
+  value,
+  compact,
+  references = {},
+  extra = 0,
+}: DisplayProps & {
+  /** In a list cell, more linked items to count after these, e.g. unmatched participants. */
+  extra?: number;
+}) {
   const workspace = useContext(WorkspaceContext);
   const tagged = isPolymorphic(field);
-  const ids = relationIds(value);
+  const items = relationIds(value).map((id): FitItem => {
+    const reference = references[id];
+    if (!reference) return { key: id, node: <Muted>Unavailable reference</Muted> };
+    const name = recordTitle(reference);
+    const object = workspace ? objectLabel(workspace.schema, reference.object) : reference.object;
+    return {
+      key: `${id}\u0000${name}\u0000${tagged ? object : ''}`,
+      node: tagged ? (
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <RecordLink id={id}>{name}</RecordLink> <ObjectTag>{object}</ObjectTag>
+        </span>
+      ) : (
+        <RecordLink id={id}>{name}</RecordLink>
+      ),
+    };
+  });
+  if (compact) return <FitList items={items} extra={extra} fallback={2} more={moreBadge} />;
   return (
     <Row>
-      {(compact ? ids.slice(0, 2) : ids).map((id) => {
-        const reference = references[id];
-        if (!reference) return <Muted key={id}>Unavailable reference</Muted>;
-        const name = recordTitle(reference);
-        return tagged ? (
-          <span key={id} className="inline-flex min-w-0 items-center gap-1.5">
-            <RecordLink id={id}>{name}</RecordLink>{' '}
-            <ObjectTag>
-              {workspace ? objectLabel(workspace.schema, reference.object) : reference.object}
-            </ObjectTag>
-          </span>
-        ) : (
-          <RecordLink key={id} id={id}>
-            {name}
-          </RecordLink>
-        );
-      })}
-      {compact && ids.length > 2 ? <Badge>+{ids.length - 2}</Badge> : null}
+      {items.map((item) => (
+        <span key={item.key} className="flex min-w-0">
+          {item.node}
+        </span>
+      ))}
     </Row>
   );
+}
+
+/** The count of a list cell's items the column has no room for. */
+export function moreBadge(n: number) {
+  return <Badge>+{n}</Badge>;
 }
 
 /** Exact decimal-to-micros conversion; never multiply a floating-point input. */

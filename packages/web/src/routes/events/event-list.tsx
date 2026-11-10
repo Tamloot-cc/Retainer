@@ -9,8 +9,8 @@ import type {
 } from '@retainer/shared';
 import { filterOperatorsFor } from '@retainer/shared';
 import { CircleHelp } from 'lucide-react';
-import { fields } from '../../fields/index.js';
-import { Code, Muted, PanelBody, Popover, Row, Stack } from '../../ui/index.js';
+import { RelationDisplay } from '../../fields/common.js';
+import { Code, Muted, PanelBody, Popover, Stack } from '../../ui/index.js';
 
 // Event type lists (5.3): the grid of an object list, with an event's
 // built-in columns and links shown as columns beside its fields.
@@ -228,29 +228,28 @@ export function ParticipantsCell({
   field: FieldView;
   compact?: boolean;
 }) {
-  const Display = fields.relation.Display;
   const unmatched = record.event?.participants.unmatched ?? [];
   const matched = record.event?.participants.matched ?? [];
-  const links = (
+  const handles = <Muted small>{unmatched.map((p) => p.handle || 'Unknown').join(', ')}</Muted>;
+  if (!matched.length) return unmatched.length ? handles : null;
+  const people = (
+    <RelationDisplay
+      field={field}
+      value={matched.map((p) => p.recordId)}
+      compact={compact}
+      references={references}
+      // A list cell counts the unmatched with the people it has no room for.
+      extra={compact ? unmatched.length : 0}
+    />
+  );
+  return compact || !unmatched.length ? (
+    people
+  ) : (
     <>
-      {matched.length ? (
-        <Display
-          field={field}
-          value={matched.map((p) => p.recordId)}
-          compact={compact}
-          references={references}
-        />
-      ) : null}
-      {unmatched.length ? (
-        <Muted small>
-          {compact && matched.length
-            ? `+${unmatched.length}`
-            : unmatched.map((p) => p.handle || 'Unknown').join(', ')}
-        </Muted>
-      ) : null}
+      {people}
+      {handles}
     </>
   );
-  return compact ? <Row nowrap>{links}</Row> : links;
 }
 
 /**

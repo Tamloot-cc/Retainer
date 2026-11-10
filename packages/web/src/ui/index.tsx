@@ -732,6 +732,7 @@ export {
   useTabAnchor,
 } from './entry.js';
 export { FeedDay, FeedItem, FeedLinks, FeedScroll } from './feed.js';
+export { type FitItem, FitList, fitCount } from './fit-list.js';
 /** React Flow and dagre are heavy, so the canvas loads on first render; wrap it in Suspense. */
 export const Diagram = lazy(() => import('./diagram.js').then((m) => ({ default: m.Diagram })));
 export {

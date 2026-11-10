@@ -464,3 +464,33 @@ test('keeps a changed filter as unsaved until the view is saved or reset', async
   await page.getByRole('button', { name: 'View: Executives' }).click();
   await expect(page.getByRole('menuitem', { name: 'New view…' })).not.toBeVisible();
 });
+
+test('fits as many of a list as its column holds, and counts the rest', async ({
+  page,
+  retainer: r,
+}) => {
+  const emails = ['ada.one@example.test', 'ada.two@example.test', 'ada.three@example.test'];
+  await r.request('/objects/person/records', {
+    values: { name: 'Ada person', emails: { primary: emails[0], additional: emails.slice(1) } },
+  });
+  await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'People', exact: true }).click();
+  const grid = page.getByRole('region', { name: 'People' });
+  const row = grid.getByRole('row').filter({ hasText: 'Ada person' });
+  const cell = row.getByRole('cell').filter({ hasText: emails[0] });
+  const resize = grid.getByRole('separator', { name: 'Resize Emails' });
+
+  // Narrow: one address and a count of the rest, all on one line.
+  const narrow = Number(await resize.getAttribute('aria-valuenow'));
+  await expect(cell.getByText(emails[1])).toHaveCount(0);
+  await expect(cell.getByText('+2', { exact: true })).toBeVisible();
+  const lineHeight = (await cell.boundingBox())?.height;
+
+  // Wider: every address, and no count.
+  await resize.focus();
+  for (let i = 0; i < 30; i++) await page.keyboard.press('ArrowRight');
+  await expect(resize).not.toHaveAttribute('aria-valuenow', String(narrow));
+  for (const email of emails) await expect(cell.getByText(email)).toBeVisible();
+  await expect(cell.getByText(/^\+\d+$/)).toHaveCount(0);
+  expect((await cell.boundingBox())?.height).toBe(lineHeight);
+});

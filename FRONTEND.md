@@ -701,6 +701,12 @@ The last column is where to read how Twenty behaves (2). Paths are under
 | `relation`     | Target record's label as a link                          | Record list searching the target object; inverse fields are read-only | `RelationManyToOneFieldInput`                 |
 | `json`         | Collapsed preview, formatted on the record page          | Read-only in v1                                                       | `JsonDisplay`                                 |
 
+In a table cell, a list (`multi_select`, `emails`, `phones`, `links`, a set
+of `relation`s, an event's participants) stays on one line: `FitList` shows
+as many items as the column's width holds, then "+n" for the rest, and
+widening the column shows more and lowers the count. Single values truncate
+with an ellipsis.
+
 Composite values are replaced whole (rule 2.2), so list editors send the
 complete value, not a diff.
 
