@@ -1,0 +1,78 @@
+name: Migration compatibility
+
+on:
+  pull_request:
+    paths: ["packages/server/drizzle/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: migration-compatibility-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  compatibility:
+    name: Advisory migration compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Infrastructure errors remain visible, but this advisory job is not a gate.
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: retainer
+          POSTGRES_PASSWORD: retainer
+          POSTGRES_DB: retainer
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U retainer"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgres://retainer:retainer@localhost:5432/retainer
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: candidate/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: candidate/.nvmrc
+          cache: pnpm
+          cache-dependency-path: "**/pnpm-lock.yaml"
+      - run: pnpm install --frozen-lockfile
+        working-directory: candidate
+      - run: pnpm install --frozen-lockfile
+        working-directory: base
+      - run: pnpm --filter @retainer/shared build
+        working-directory: candidate
+      - run: pnpm build
+        working-directory: base
+      - name: Run old tests against base and PR schemas
+        working-directory: candidate/packages/server
+        run: pnpm exec tsx test/compatibility/run.ts ../../../base ../../../results
+      - name: Publish verdict summary (including setup errors)
+        if: always()
+        env:
+          RESULT_DIR: results
+        run: node candidate/scripts/migration-compatibility-summary.mjs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: migration-compatibility
+          path: results/
+          retention-days: 30
