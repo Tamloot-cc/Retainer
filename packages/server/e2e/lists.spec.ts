@@ -469,20 +469,25 @@ test('fits as many of a list as its column holds, and counts the rest', async ({
   page,
   retainer: r,
 }) => {
-  const emails = ['ada.one@example.test', 'ada.two@example.test', 'ada.three@example.test'];
+  const [first, ...additional] = [
+    'ada.one@example.test',
+    'ada.two@example.test',
+    'ada.three@example.test',
+  ] as const;
+  const emails = [first, ...additional];
   await r.request('/objects/person/records', {
-    values: { name: 'Ada person', emails: { primary: emails[0], additional: emails.slice(1) } },
+    values: { name: 'Ada person', emails: { primary: first, additional } },
   });
   await signIn(page, r.url, r.keys.user);
   await page.getByRole('link', { name: 'People', exact: true }).click();
   const grid = page.getByRole('region', { name: 'People' });
   const row = grid.getByRole('row').filter({ hasText: 'Ada person' });
-  const cell = row.getByRole('cell').filter({ hasText: emails[0] });
+  const cell = row.getByRole('cell').filter({ hasText: first });
   const resize = grid.getByRole('separator', { name: 'Resize Emails' });
 
   // Narrow: one address and a count of the rest, all on one line.
   const narrow = Number(await resize.getAttribute('aria-valuenow'));
-  await expect(cell.getByText(emails[1])).toHaveCount(0);
+  await expect(cell.getByText(additional[0])).toHaveCount(0);
   await expect(cell.getByText('+2', { exact: true })).toBeVisible();
   const lineHeight = (await cell.boundingBox())?.height;
 

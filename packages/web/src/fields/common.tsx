@@ -173,10 +173,11 @@ export function FieldDisplay({ field, value, compact = false, references = {} }:
         </Badge>
       );
     case 'multi_select': {
-      const badges = (value as string[]).map((v) => ({
-        key: v,
-        node: <Badge>{field.settings.options?.find((o) => o.value === v)?.label ?? v}</Badge>,
-      }));
+      // Each key carries what the item shows, so a changed label is measured again.
+      const badges = (value as string[]).map((v) => {
+        const label = field.settings.options?.find((o) => o.value === v)?.label ?? v;
+        return { key: `${v}\u0000${label}`, node: <Badge>{label}</Badge> };
+      });
       return <ListDisplay items={badges} compact={compact} />;
     }
     case 'money':
@@ -234,13 +235,13 @@ export function FieldDisplay({ field, value, compact = false, references = {} }:
         .filter((item): item is NonNullable<typeof item> => !!item)
         .map((item): FitItem => {
           if (typeof item === 'string') return { key: item, node: <span>{item}</span> };
-          if ('url' in item)
+          if ('url' in item) {
+            const label = item.label || new URL(item.url).host;
             return {
-              key: item.url,
-              node: (
-                <ExternalLink href={item.url}>{item.label || new URL(item.url).host}</ExternalLink>
-              ),
+              key: `${item.url}\u0000${label}`,
+              node: <ExternalLink href={item.url}>{label}</ExternalLink>,
             };
+          }
           return {
             key: `${item.countryCode ?? ''}${item.number}`,
             node: (
