@@ -181,7 +181,14 @@ export function FieldDisplay({ field, value, compact = false, references = {} }:
       // Each key carries what the item shows, so a changed label is measured again.
       const badges = (value as string[]).map((v) => {
         const label = field.settings.options?.find((o) => o.value === v)?.label ?? v;
-        return { key: `${v}\u0000${label}`, node: <Badge>{label}</Badge> };
+        return {
+          key: `${v}\u0000${label}`,
+          node: (
+            <Badge>
+              <span className="truncate">{label}</span>
+            </Badge>
+          ),
+        };
       });
       return <ListDisplay items={badges} compact={compact} />;
     }
@@ -239,18 +246,23 @@ export function FieldDisplay({ field, value, compact = false, references = {} }:
       const items = [v.primary, ...v.additional]
         .filter((item): item is NonNullable<typeof item> => !!item)
         .map((item): FitItem => {
-          if (typeof item === 'string') return { key: item, node: <span>{item}</span> };
+          if (typeof item === 'string')
+            return { key: item, node: <span className="truncate">{item}</span> };
           if ('url' in item) {
             const label = item.label || new URL(item.url).host;
             return {
               key: `${item.url}\u0000${label}`,
-              node: <ExternalLink href={item.url}>{label}</ExternalLink>,
+              node: (
+                <ExternalLink href={item.url}>
+                  <span className="truncate">{label}</span>
+                </ExternalLink>
+              ),
             };
           }
           return {
             key: `${item.countryCode ?? ''}${item.number}`,
             node: (
-              <span>
+              <span className="truncate">
                 {item.number}
                 {item.countryCode ? ` (${item.countryCode})` : ''}
               </span>

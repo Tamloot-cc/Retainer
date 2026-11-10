@@ -111,8 +111,11 @@ export function FitList({
           data-fit-item=""
           className={cn(
             'flex items-center',
-            // The last one shown gives way when even it doesn't fit.
-            !measuring && i === count - 1 ? 'min-w-0 shrink overflow-hidden' : 'shrink-0',
+            // The last one shown gives way when even it doesn't fit: it and its
+            // content may shrink, and the item cuts its own text short with "…".
+            !measuring && i === count - 1
+              ? 'min-w-0 shrink overflow-hidden [&>*]:min-w-0'
+              : 'shrink-0',
           )}
         >
           {item.node}

@@ -498,4 +498,10 @@ test('fits as many of a list as its column holds, and counts the rest', async ({
   for (const email of emails) await expect(cell.getByText(email)).toBeVisible();
   await expect(cell.getByText(/^\+\d+$/)).toHaveCount(0);
   expect((await cell.boundingBox())?.height).toBe(lineHeight);
+
+  // Narrower than one address: it is cut short with an ellipsis, not clipped.
+  for (let i = 0; i < 60; i++) await page.keyboard.press('ArrowLeft');
+  const cut = cell.getByText(first);
+  await expect(cut).toHaveCSS('text-overflow', 'ellipsis');
+  expect(await cut.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
 });

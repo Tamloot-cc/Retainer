@@ -247,7 +247,11 @@ export function ParticipantsCell({
           ).map((item, i) => ({ ...item, key: `${matched[i]?.id}\u0000${item.key}` })),
           ...unmatched.map((p) => ({
             key: `unmatched\u0000${p.id}`,
-            node: <Muted small>{p.handle || 'Unknown'}</Muted>,
+            node: (
+              <span className="truncate">
+                <Muted small>{p.handle || 'Unknown'}</Muted>
+              </span>
+            ),
           })),
         ]}
       />
