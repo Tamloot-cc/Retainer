@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { extensionReleaseStatus } from '../../src/operator/extension-releases.js';
 import {
   type ExecutionDriver,
   ExecutionRegistry,
@@ -86,6 +87,21 @@ async function setup() {
   return { workspace: workspace.id, id, jobId, queue, executor };
 }
 describe('trusted executor protocol with an explicitly in-process test driver', () => {
+  it('keeps a late coordinator claim visible to deployment until its lease expires', async () => {
+    const h = await setup();
+    const lease = await h.queue.claim(h.workspace, h.jobId, 'late-coordinator');
+    expect(lease).toBeTruthy();
+    if (!lease) throw new Error('missing lease');
+    const [inventory] = await Promise.all([
+      extensionReleaseStatus(db.owner, [release.digest]),
+      h.queue.renew(lease),
+    ]);
+    expect(inventory.activeLeases).toBe(1);
+    expect(JSON.stringify(inventory)).not.toContain(h.workspace);
+    await db.owner`update extension_jobs set lease_until=clock_timestamp()-interval '1 second' where id=${h.jobId}`;
+    expect((await extensionReleaseStatus(db.owner, [release.digest])).activeLeases).toBe(0);
+    await db.owner`update extension_jobs set status='cancelled',lease_until=null where id=${h.jobId}`;
+  });
   it('bounds a scheduled coordinator pass while leaving unclaimed work durable', async () => {
     const installations = await Promise.all([setup(), setup(), setup()]);
     const h = installations[0];

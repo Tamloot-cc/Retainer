@@ -39,6 +39,7 @@ it('reports only release hashes/counts and refuses to drop disabled or cleanup-c
     command: 'extension-release-status',
     protocol: 1,
     compatible: false,
+    activeLeases: 0,
     references: [{ releaseDigest: digest, installations: 1 }],
     missingReleaseDigests: [digest],
   });

@@ -1,11 +1,25 @@
 # Extensions implementation plan
 
-Current status: controls, isolated execution/lifecycle, files/erasure, managed
-sources/revisions, commit-ordered feeds, durable triggers, isolated verification,
-public webhook ingress and deterministic last-contact are implemented and tested.
-The default catalog is empty. Granola, typed sync progress and standalone keys are
-implemented locally, together with standalone OAuth. Hosted launch remains outstanding. Reviewed reconnect and grant changes are also implemented.
+Current status: product controls, isolated execution/lifecycle, files/erasure,
+managed sources/revisions, commit-ordered feeds, durable triggers, webhook
+verification/admission, Last Contact, Granola, reviewed reconnect/grant changes,
+typed progress, and standalone key/OAuth are implemented locally. The private
+repository now also implements immutable publication, isolated hosted resources,
+prepared deployment/recovery, key/configuration preflight and alarms. The default
+catalog remains empty. No PR, push, merge, AWS deployment or live Granola account
+has been used. Hosted/AMI and real-provider acceptance remain outstanding.
 
+Latest product regression: 1,462 automated tests (1,134 server, 327 other-package
+and one real-Git release test), plus 68 fresh-build browser tests. Workspace
+build/type/lint/layer/release checks pass. Fresh Node 24 images pass actual Docker
+isolation, no-network signature verification, Granola bundle, public lifecycle,
+webhook/source transcript-file import and Last Contact/one-hop rollup proofs.
+These are local synthetic-provider proofs, not hosted or real-provider evidence.
+
+The sections below are chronological checkpoints. Earlier statements about work
+remaining describe that checkpoint, not the current implementation. The current
+acceptance gaps are hosted staging, hardened-AMI network proof and authorized
+live Granola validation.
 The contract in extensions.md remains the acceptance specification. Implement in
 these dependency-ordered slices; never advertise a trigger before its safety
 prerequisites ship. No production deployment is authorized by this plan.
@@ -695,3 +709,18 @@ and host-unavailable deployment cases pass. Runtime-health/handler tests pass;
 workspace types/build/lint and final full regression are being rerun. Hosted
 staging, hardened-AMI network proof and a separately authorized real Granola
 account remain acceptance gates. No push, PR, merge or deployment has occurred.
+
+## Final lease drain and local acceptance checkpoint
+
+Owner release inventory now reports a global active-lease count with no tenant
+identities. After all Lambda writers drain, deployment waits for zero before DDL,
+covering a claim immediately before coordinator timeout. Stuck leases preserve
+maintenance. A concurrent real-Postgres claim/renew/inventory test and an offline
+late/stuck lease rollout case prove the boundary. Fresh pre-maintenance resources
+also recover their first deployment without an earlier routing marker.
+
+The complete server rerun passes all 1,134 tests; the unchanged other packages
+and real-Git release test bring the total to 1,462. All 68 browser tests and the
+fresh container proofs listed above pass. The remaining cloud failure-injection
+rerun and final packaging/read-back are being completed; no hosted/live claim is
+made from these local results.

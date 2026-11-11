@@ -2,8 +2,15 @@ import type { Sql } from '../db/client.js';
 
 /** Read-only deployment inventory. Returns release hashes/counts, never workspace identities or settings. */
 export async function extensionReleaseStatus(sql: Sql, available: readonly string[]) {
+  const [jobs] = await sql`select to_regclass('public.extension_jobs') as name`;
+  const [leases] = jobs?.name
+    ? await sql<{ count: number }[]>`
+    select count(*)::int as count from extension_jobs where status='running' and lease_until>clock_timestamp()`
+    : [];
+  const activeLeases = leases?.count ?? 0;
   const [table] = await sql`select to_regclass('public.extension_installations') as name`;
-  if (!table?.name) return { compatible: true, references: [], missingReleaseDigests: [] };
+  if (!table?.name)
+    return { compatible: true, activeLeases, references: [], missingReleaseDigests: [] };
   // Forward bootstrap may precede the lifecycle migration that adds cleanup leases.
   const [columns] = await sql<{ cleanup: boolean }[]>`select exists(select 1 from pg_attribute
     where attrelid='public.extension_installations'::regclass and attname='cleanup_deadline' and not attisdropped) as cleanup`;
@@ -16,5 +23,10 @@ export async function extensionReleaseStatus(sql: Sql, available: readonly strin
     missingReleaseDigests = references
       .filter((row) => !allowed.has(row.releaseDigest))
       .map((row) => row.releaseDigest);
-  return { compatible: missingReleaseDigests.length === 0, references, missingReleaseDigests };
+  return {
+    compatible: missingReleaseDigests.length === 0,
+    activeLeases,
+    references,
+    missingReleaseDigests,
+  };
 }

@@ -4,7 +4,8 @@ Status: implementation in progress. Control/lifecycle UI, isolated execution,
 files, managed sources, durable change dispatch, verified webhook ingress and
 deterministic last-contact, reviewed connection/grant management, typed source
 progress, the Granola adapter and standalone key/OAuth credentials are implemented
-locally. Hosted launch remains. Granola is
+locally. Private hosted provisioning, immutable publication and prepared rollout
+are implemented locally too; hosted/AMI acceptance and launch remain. Granola is
 verified against provider fixtures, not a live account. Date: 2026-11-11.
 See [implementation progress](extensions-implementation.md) for completed and outstanding work.
 
@@ -464,7 +465,10 @@ Catalog and executable snapshots are packaged immutable files with expected
 SHA-256 hashes, retaining every referenced installed/cleanup release. Deployment
 checks source, schema-history compatibility, image/config identity and release
 inventory before changing traffic, repeats inventory after draining all writers,
-and holds maintenance on migration or post-drain failure. Environment and host
+and holds maintenance on migration or post-drain failure. After draining Lambda
+writers, the owner must prove zero live execution leases before DDL: a job
+claimed immediately before a coordinator timeout must not regain write access
+when the API restarts. Environment and host
 updates happen only after that drain. No automatic down-migrations or blind
 release/image pruning are allowed.
 
