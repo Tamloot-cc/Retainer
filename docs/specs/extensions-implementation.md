@@ -636,3 +636,17 @@ suite passes all nine failure/recovery cases, including legacy status without
 history proof, unknown migrations and a missing maintenance responder. These
 failures leave existing traffic and worker state untouched. Hosted provisioning
 and live acceptance remain outstanding.
+
+## Referenced release inventory
+
+The operator's read-only release-status entry point checks candidate protocol,
+runtime and available release hashes against current installations, including
+disabled installations and live cleanup deadlines. It returns only release
+hashes and counts, supports a database that has not reached the extension
+migrations, and cannot expose tenant IDs, people or settings. Standalone catalog
+identity is included even though an external app has no hosted image.
+
+Ten real-Postgres inventory/migration-status tests pass, plus server typechecking
+and lint/layer checks. The private archive inspector and rollout will consume
+this inventory before changing traffic and again after draining writers;
+that integration and hosted acceptance remain in progress.
