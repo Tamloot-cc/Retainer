@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 # The build stage runs natively once, even for multi-arch images: its output
 # is plain JavaScript with no native modules, so it is the same on every arch.
-FROM --platform=$BUILDPLATFORM node:26-slim AS build
+ARG NODE_VERSION=26
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-slim AS build
 # Node 25 and later no longer bundle corepack.
 RUN npm install --global corepack@0.36.0 && corepack enable
 WORKDIR /app
@@ -20,7 +21,9 @@ COPY packages ./packages
 RUN pnpm --filter @retainer/shared build && pnpm --filter @retainer/extension build && pnpm --filter @retainer/sdk build && pnpm --filter @retainer/web build && pnpm --filter @retainer/server build
 RUN pnpm --filter @retainer/server deploy --legacy --prod /out
 
-FROM node:26-slim
+FROM node:${NODE_VERSION}-slim
+ARG PRODUCT_COMMIT
+LABEL org.opencontainers.image.revision=$PRODUCT_COMMIT
 ENV NODE_ENV=production
 ENV RETAINER_WEB_DIR=/app/web
 WORKDIR /app

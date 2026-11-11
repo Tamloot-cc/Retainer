@@ -21,11 +21,19 @@ const sandbox = new DockerSandbox({
   apiOrigin: process.env.RETAINER_EXECUTION_API_ORIGIN ?? '',
   bundles: z.array(bundleSchema).parse(JSON.parse(process.env.RETAINER_EXTENSION_BUNDLES ?? '[]')),
 });
+const configurationDigest = process.env.RETAINER_LAUNCHER_CONFIGURATION_SHA256;
+if (configurationDigest && !/^[a-f0-9]{64}$/.test(configurationDigest))
+  throw new Error('invalid launcher configuration digest');
 const server = createServer(async (req, res) => {
   if (req.url === '/health' && req.method === 'GET') {
     try {
       res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify(await sandbox.health()));
+      res.end(
+        JSON.stringify({
+          ...(await sandbox.health()),
+          ...(configurationDigest ? { configurationDigest } : {}),
+        }),
+      );
     } catch {
       res.writeHead(503);
       res.end('{"status":"unavailable"}');

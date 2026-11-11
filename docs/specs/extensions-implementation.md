@@ -651,7 +651,6 @@ and lint/layer checks. The private archive inspector and rollout will consume
 this inventory before changing traffic and again after draining writers;
 that integration and hosted acceptance remain in progress.
 
-
 ## Static package and release rollout checks
 
 The private archive inspector checks clean-main source stamps, complete immutable
@@ -663,3 +662,36 @@ snapshots preserve their catalog entries without creating hosted image entries.
 All thirteen offline deployment cases and nine local Node metadata cases pass.
 The broader public handler/inventory/migration regression passes all 25 tests.
 Hosted provisioning, publication automation and live acceptance remain in progress.
+
+## Hosted publication, isolated host and prepared deployments
+
+The private implementation now has opt-in catalog/runtime provisioning, separate
+broker/coordinator/change Lambdas, private file access, explicit callback routing,
+a database-inaccessible execution host and bounded schedules. Standalone-only
+catalogs provision no execution host, run keys or provider broker secrets. New
+writers start with zero concurrency and routes in maintenance. The hardened AMI
+must provide Docker 28+ isolated bridges and the iptables backend; boot validates
+capabilities and immutable metadata/image labels without downloaded installers.
+No actual AMI or AWS execution boundary has been exercised yet.
+
+A main-only publisher reuses immutable image tags/digests, retains earlier
+catalog/executable entries, publishes versioned create-only metadata and advances
+the channel with CAS. Its offline CLI test uses real compiled product validators,
+a temporary clean Git repository and simulated ECR/S3/Docker commands; it cannot
+establish actual registry or cloud acceptance. The private CI now includes a
+built public-product CLI dependency check rather than skipping those cases.
+
+Deployment prepares maintenance and drains all current writers before Terraform
+changes environments/host configuration. Persistent stage markers cover new
+routes created during apply. The post-apply ZIP/configuration and exact host
+snapshot must agree before writers restart. Product operator health checks expose
+only protocol/configuration compatibility; launcher health refuses Docker engines
+without isolated-gateway support. Lambda failure/throttle and host status alarms
+are provisioned; durable job failures still require checking Extensions status.
+
+Local verification so far: 23 Terraform scenarios, 14 metadata/publication cases,
+all 15 prepared-deployment failure/recovery cases, and the new catalog-mismatch
+and host-unavailable deployment cases pass. Runtime-health/handler tests pass;
+workspace types/build/lint and final full regression are being rerun. Hosted
+staging, hardened-AMI network proof and a separately authorized real Granola
+account remain acceptance gates. No push, PR, merge or deployment has occurred.

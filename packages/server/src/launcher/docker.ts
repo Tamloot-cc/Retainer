@@ -202,6 +202,10 @@ export class DockerSandbox {
     }
   }
   async health() {
+    const engine = await this.engine.json<{ Version: string }>('GET', '/version');
+    const major = Number(engine.Version?.split('.')[0]);
+    if (!Number.isInteger(major) || major < 28)
+      throw new Error('Docker 28 or later is required for isolated gateway networks');
     for (const container of [this.options.apiContainer, this.options.proxyContainer]) {
       if (!container) continue; // A remote HTTPS API is reached only through the trusted proxy.
       const info = await this.engine.json<{ State: { Running: boolean } }>(

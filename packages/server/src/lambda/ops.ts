@@ -40,6 +40,11 @@ import { withMigrationLock } from './deploy-lock.js';
 const opsEvent = z.discriminatedUnion('command', [
   z.object({ command: z.literal('migration-status') }),
   z.object({
+    command: z.literal('extension-runtime-status'),
+    configurationDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    bundles: z.number().int().min(1).max(10000),
+  }),
+  z.object({
     command: z.literal('extension-release-status'),
     protocolVersion: z.literal(1),
     runtimeVersion: z.literal('node24'),
@@ -55,6 +60,7 @@ const opsEvent = z.discriminatedUnion('command', [
 
 export type OpsEvent = z.input<typeof opsEvent>;
 export type OpsResult =
+  | { command: 'extension-runtime-status'; protocol: 1; compatible: boolean }
   | ({ command: 'extension-release-status'; protocol: 1 } & Awaited<
       ReturnType<typeof extensionReleaseStatus>
     >)
@@ -88,6 +94,33 @@ export function createOpsHandler(config: Config) {
     // Operator commands connect as the migration role, like the CLI.
     // `max: 1`, because the deploy lock and the search rebuild are session
     // locks; the workspace upgrade runs on the same connection.
+    if (parsed.data.command === 'extension-runtime-status') {
+      // Only the operator-configured private origin is reachable; payloads cannot choose a URL.
+      const origin = config.RETAINER_EXTENSION_LAUNCHER_ORIGIN;
+      if (!origin) throw new Error('extension launcher is not configured');
+      try {
+        const response = await fetch(new URL('/health', origin), {
+          signal: AbortSignal.timeout(10000),
+          redirect: 'error',
+        });
+        const status = z
+          .object({
+            status: z.literal('ok'),
+            protocolVersion: z.literal(1),
+            runtimeVersion: z.literal('node24'),
+            configurationDigest: z.literal(parsed.data.configurationDigest),
+            bundles: z.literal(parsed.data.bundles),
+          })
+          .safeParse(await response.json());
+        return {
+          command: 'extension-runtime-status',
+          protocol: 1,
+          compatible: response.ok && status.success,
+        };
+      } catch {
+        return { command: 'extension-runtime-status', protocol: 1, compatible: false };
+      }
+    }
     if (parsed.data.command === 'extension-release-status') {
       const sql = createSql(databaseUrl, { max: 1 });
       try {

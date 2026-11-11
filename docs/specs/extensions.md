@@ -92,7 +92,7 @@ Twenty paths below are relative to the reference checkout:
 Cloud evidence: `README.md`, `infra/aws/functions.tf`, `api.tf`, `schedule.tf`,
 `build.sh`, and `deploy.sh`. API/consolidator/ops have isolated networking;
 control has outbound networking. Functions currently share a deployment package
-and a VPC execution role. The extension executor, restricted execution roles,
+and a VPC execution role. The extension coordinator, isolated execution host,
 file storage, routing and scheduling described here are new work. The existing
 build targets Node 24 on Lambda; extension compatibility must follow the actual
 runtime rather than assuming the development Node version.
@@ -994,15 +994,17 @@ own source code for product Lambda handlers or first-party integrations. Keep
 SDK/web/runner packages MIT and server modules AGPL under current boundaries;
 do not copy Twenty source or make legal promises about arbitrary extension code.
 
-Cloud changes must add dedicated executor/verifier/execution roles and packaging;
+Cloud changes must add separate coordinator, broker and host roles and packaging;
 do not reuse the current shared function role for extension code. Add explicit
 webhook routing and file-signing support without giving the isolated API internet
 access. Broker/runtime control endpoints must also work in key mode and must not
 be accidentally disabled by the existing accounts-only control function flag.
 Use a dedicated runtime control entry point rather than conflating it with login.
 
-Build manifests and artifacts from the same main commit; deploy immutable function
-versions before advertising compatible catalog releases. No cloud API creates
+Build manifests and artifacts from the same clean main commit; publish pinned
+images and retained configuration before advertising compatible catalog releases.
+Bind the host snapshot, Lambda catalog hashes and archive source/checksum during
+preflight, then prepare/drain before changing environments or replacing the host. No cloud API creates
 arbitrary functions from workspace input. Extend existing migration-status,
 maintenance routing, stop/start lists and deploy locks to ingress, dispatchers,
 file workers and executions. During a stopped migration, webhook ingress returns
