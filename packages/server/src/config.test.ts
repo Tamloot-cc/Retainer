@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   accountsConfig,
@@ -10,6 +13,46 @@ import {
   signInProviders,
 } from './config.js';
 import { runtimeConnection } from './db/client.js';
+
+describe('immutable operator release files', () => {
+  it('loads bounded catalog/executable JSON without mutating the supplied environment', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'retainer-release-config-'));
+    try {
+      const path = join(directory, 'catalog.json');
+      writeFileSync(path, '[{"fixture":true}]');
+      const env = {
+        DATABASE_URL: 'postgres://localhost/test',
+        RETAINER_EXTENSION_CATALOG_FILE: path,
+        RETAINER_EXTENSION_EXECUTABLES_FILE: path,
+      };
+      const config = loadConfig(env);
+      expect(config.RETAINER_EXTENSION_CATALOG).toBe('[{"fixture":true}]');
+      expect(config.RETAINER_EXTENSION_EXECUTABLES).toBe('[{"fixture":true}]');
+      expect(env).not.toHaveProperty('RETAINER_EXTENSION_CATALOG');
+      expect(() => loadConfig({ ...env, RETAINER_EXTENSION_CATALOG: '[]' })).toThrow('only one');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+  it('refuses missing, oversized and non-file sources without including their contents in errors', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'retainer-release-invalid-'));
+    try {
+      const large = join(directory, 'large.json');
+      writeFileSync(large, 'sensitive'.repeat(300000));
+      for (const path of [directory, large, join(directory, 'missing')])
+        expect(() =>
+          loadConfig({
+            DATABASE_URL: 'postgres://localhost/test',
+            RETAINER_EXTENSION_CATALOG_FILE: path,
+          }),
+        ).toThrow(
+          'cannot load bounded operator release configuration: RETAINER_EXTENSION_CATALOG_FILE',
+        );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('public browser origin configuration', () => {
   it('normalizes an explicit origin and allows an unset Compose variable', () => {

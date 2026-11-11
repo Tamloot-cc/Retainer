@@ -86,6 +86,21 @@ async function setup() {
   return { workspace: workspace.id, id, jobId, queue, executor };
 }
 describe('trusted executor protocol with an explicitly in-process test driver', () => {
+  it('bounds a scheduled coordinator pass while leaving unclaimed work durable', async () => {
+    const installations = await Promise.all([setup(), setup(), setup()]);
+    const h = installations[0];
+    if (!h) throw new Error('missing fixture');
+    const executor = h.executor({ invoke: async () => ({ status: 'succeeded' }) });
+    await expect(executor.tick(2)).resolves.toMatchObject({ executed: 2 });
+    expect(
+      (
+        await db.owner`select count(*)::int as count from extension_jobs where installation_id=any(${installations.map((h) => h.id)}::uuid[]) and status='queued'`
+      )[0]?.count,
+    ).toBe(1);
+    await expect(executor.tick(1)).resolves.toMatchObject({ executed: 1 });
+    for (const limit of [0, 1.5, 1001])
+      await expect(executor.tick(limit)).rejects.toThrow('pass limit');
+  });
   it('claims once across two coordinators and runs the deterministic adapter with only its scoped API credential', async () => {
     const { id, jobId, executor } = await setup();
     let calls = 0;

@@ -589,3 +589,19 @@ and release checks pass. The first full server run found a missing FK deletion
 index, fixed with a generated migration; the full rerun passed. No assertions,
 timeouts or fixture sizes were relaxed. All work remains local; no PR, merge,
 live provider account or hosted AWS acceptance has been performed.
+
+## Hosted runtime preparation
+
+Operator-owned catalog and executable JSON can be bundled as bounded immutable
+files, avoiding large manifests in constrained environment blocks. Inline/file
+ambiguity, oversized/non-file sources and unreadable paths fail with redacted
+configuration errors. The launcher supports a remote HTTPS API through its
+existing trusted proxy, without a local API container or new raw network route.
+The scheduled Lambda coordinator discovers at most four jobs per pass and uses
+the deployment lock; the general executor keeps its existing default batch size.
+
+Twenty targeted configuration, launcher, real-Postgres executor and Lambda tests
+pass, as do server typechecking and lint/layer checks. The private cloud worktree
+has separate function IAM roles with the legacy API role preserved, verified by
+all 17 existing Terraform tests. Storage provisioning and deployment recovery
+are being implemented separately; hosted execution and acceptance remain pending.

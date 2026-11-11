@@ -209,10 +209,12 @@ export class ExtensionExecutor {
     this.stopped = true;
     for (const controller of this.active) controller.abort();
   }
-  async tick() {
+  async tick(limit = 1000) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
+      throw new Error('executor pass limit must be 1–1000');
     if (this.stopped) return { executed: 0, fenced: 0 };
     await this.queue.maintain(this.options.discoverySql);
-    const due = await this.queue.discover(this.options.discoverySql, 1000);
+    const due = await this.queue.discover(this.options.discoverySql, limit);
     let next = 0,
       executed = 0,
       fenced = 0;

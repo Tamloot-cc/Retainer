@@ -27,6 +27,12 @@ The proxy blocks private, loopback, link-local, metadata and reserved destinatio
 except the configured API authority. Raw outbound connections have no route.
 Separate networks prevent execution containers from reaching each other.
 
+The launcher may also target a remote HTTPS API by leaving its configured API
+container empty. In this mode only the trusted proxy joins each run's isolated
+network; the API is reached through the proxy, without attaching or resolving a
+local API container. A remote plain-HTTP API is refused. The host and proxy still
+belong to the trusted operator boundary and no host credentials enter a run.
+
 This is reviewed first-party isolation, not a hostile third-party sandbox claim.
 Installation secrets fetched during a run remain that run's responsibility;
 handlers must not log provider bodies or credentials.

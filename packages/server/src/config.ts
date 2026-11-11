@@ -1,3 +1,4 @@
+import { readFileSync, statSync } from 'node:fs';
 import { SIGN_IN_PROVIDERS, type SignInProvider } from '@retainer/shared';
 import { z } from 'zod';
 import { LOG_LEVELS } from './log.js';
@@ -96,6 +97,14 @@ const configSchema = z
     RETAINER_EXTENSION_EXECUTABLES: z.preprocess(
       emptyToUndefined,
       z.string().max(2097152).optional(),
+    ),
+    RETAINER_EXTENSION_CATALOG_FILE: z.preprocess(
+      emptyToUndefined,
+      z.string().min(1).max(4096).optional(),
+    ),
+    RETAINER_EXTENSION_EXECUTABLES_FILE: z.preprocess(
+      emptyToUndefined,
+      z.string().min(1).max(4096).optional(),
     ),
     RETAINER_EXTENSION_RUN_PUBLIC_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
     RETAINER_EXTENSION_RUN_PRIVATE_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
@@ -225,7 +234,27 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .join('\n');
     throw new Error(`Invalid configuration:\n${problems}`);
   }
-  return parsed.data;
+  const config = parsed.data;
+  // Operator-owned immutable release files avoid large manifests in small environment blocks.
+  // Never accept these paths from an installation request or evaluate package code here.
+  for (const [value, path] of [
+    ['RETAINER_EXTENSION_CATALOG', 'RETAINER_EXTENSION_CATALOG_FILE'],
+    ['RETAINER_EXTENSION_EXECUTABLES', 'RETAINER_EXTENSION_EXECUTABLES_FILE'],
+  ] as const) {
+    const file = config[path];
+    if (!file) continue;
+    if (config[value]) throw new Error(`set only one of ${value} and ${path}`);
+    try {
+      const stat = statSync(file);
+      if (!stat.isFile() || stat.size > 2097152) throw new Error('invalid release file');
+      const bytes = readFileSync(file);
+      if (bytes.length > 2097152) throw new Error('invalid release file');
+      config[value] = bytes.toString('utf8');
+    } catch {
+      throw new Error(`cannot load bounded operator release configuration: ${path}`);
+    }
+  }
+  return config;
 }
 
 /**

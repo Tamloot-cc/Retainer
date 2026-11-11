@@ -164,14 +164,15 @@ export class DockerSandbox {
     )
       throw new Error('execution needs a dedicated network prefix');
     if (
-      [options.apiContainer, options.proxyContainer].some(
-        (name) => !/^[a-zA-Z0-9_.-]{1,128}$/.test(name),
-      ) ||
+      !/^[a-zA-Z0-9_.-]{1,128}$/.test(options.proxyContainer) ||
+      (options.apiContainer && !/^[a-zA-Z0-9_.-]{1,128}$/.test(options.apiContainer)) ||
       options.apiContainer === options.proxyContainer
     )
       throw new Error('launcher needs distinct fixed API and proxy containers');
     const proxy = new URL(options.proxyOrigin),
       api = new URL(options.apiOrigin);
+    if (!options.apiContainer && api.protocol !== 'https:')
+      throw new Error('a remote execution API requires HTTPS through the trusted proxy');
     if (
       proxy.protocol !== 'http:' ||
       proxy.username ||
@@ -202,6 +203,7 @@ export class DockerSandbox {
   }
   async health() {
     for (const container of [this.options.apiContainer, this.options.proxyContainer]) {
+      if (!container) continue; // A remote HTTPS API is reached only through the trusted proxy.
       const info = await this.engine.json<{ State: { Running: boolean } }>(
         'GET',
         `/containers/${encodeURIComponent(container)}/json`,
@@ -327,7 +329,8 @@ export class DockerSandbox {
           [this.options.apiContainer, this.options.apiOrigin],
           [this.options.proxyContainer, this.options.proxyOrigin],
         ]) {
-          if (!container || !origin) throw new Error('missing trusted endpoint');
+          if (!container) continue;
+          if (!origin) throw new Error('missing trusted endpoint');
           const connected = await this.engine.call('POST', `/networks/${network}/connect`, {
             Container: container,
             EndpointConfig: { Aliases: [new URL(origin).hostname] },
