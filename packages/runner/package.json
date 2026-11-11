@@ -18,6 +18,7 @@
     "zod": "^4.6.7"
   },
   "exports": {
+    "./last-contact": "./dist/last-contact.js",
     "./granola": "./dist/granola.js",
     "./granola-contract": "./dist/granola-contract.js"
   }

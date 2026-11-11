@@ -82,6 +82,29 @@ describe('last-contact adapter', () => {
     await executeLastContact({ ...run, attempt: 2 }, signal(), transport);
     expect(calls.slice(count).every((call) => call.path.includes('/runtime/kv/'))).toBe(true);
   });
+  it('accepts the trusted scheduled timestamp while refusing malformed or setup payloads', async () => {
+    const run = invocation(LAST_CONTACT.schedule, { scheduledAt: new Date().toISOString() });
+    let calls = 0;
+    const transport: typeof fetch = async (url) => {
+      calls++;
+      return response(new URL(String(url)).pathname.includes('/runtime/kv/') ? null : {});
+    };
+    expect(await executeLastContact(run, signal(), transport)).toEqual({ status: 'succeeded' });
+    expect(calls).toBe(2);
+    for (const input of [
+      {},
+      { scheduledAt: 'bad' },
+      { scheduledAt: new Date().toISOString(), after: randomUUID() },
+    ])
+      expect(await executeLastContact({ ...run, input }, signal(), transport)).toEqual({
+        status: 'failed',
+        code: 'invalid_input',
+      });
+    expect(
+      await executeLastContact({ ...run, functionId: LAST_CONTACT.setup }, signal(), transport),
+    ).toEqual({ status: 'failed', code: 'invalid_input' });
+    expect(calls).toBe(2);
+  });
   it('keeps record cursors in erasable KV, fixes the scan upper bound and queues empty child input with a fresh root after privacy clears KV', async () => {
     const run = invocation(LAST_CONTACT.scan),
       after = randomUUID(),

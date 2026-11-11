@@ -85,11 +85,21 @@ export function lastContactManifest(build: {
     functions: [
       fn(LAST_CONTACT.setup, 'setup', { kind: 'install' }),
       fn(LAST_CONTACT.scan, 'scan', { kind: 'job' }),
-      fn(LAST_CONTACT.schedule, 'recover', {
-        kind: 'schedule',
-        cron: '*/15 * * * *',
-        timezone: 'UTC',
-      }),
+      fn(
+        LAST_CONTACT.schedule,
+        'recover',
+        {
+          kind: 'schedule',
+          cron: '*/15 * * * *',
+          timezone: 'UTC',
+        },
+        {
+          type: 'object',
+          additionalProperties: false,
+          properties: { scheduledAt: { type: 'string', maxLength: 100 } },
+          required: ['scheduledAt'],
+        },
+      ),
       ...[
         { id: LAST_CONTACT.person, objectId: BASE_OBJECT_IDS.person, name: 'person-changed' },
         { id: LAST_CONTACT.company, objectId: BASE_OBJECT_IDS.company, name: 'company-changed' },
@@ -170,7 +180,11 @@ export async function executeLastContact(
     invocation.functionId === LAST_CONTACT.setup ||
     invocation.functionId === LAST_CONTACT.schedule
   ) {
-    if (!z.strictObject({}).safeParse(invocation.input).success)
+    const input =
+      invocation.functionId === LAST_CONTACT.schedule
+        ? z.strictObject({ scheduledAt: z.iso.datetime() })
+        : z.strictObject({});
+    if (!input.safeParse(invocation.input).success)
       return { status: 'failed', code: 'invalid_input' };
     await kick(invocation.functionId === LAST_CONTACT.setup);
     return { status: 'succeeded' };
