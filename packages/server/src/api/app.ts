@@ -3,7 +3,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { OAUTH_SCOPES } from '@retainer/shared';
 import { Hono } from 'hono';
 import { authenticate } from '../auth/middleware.js';
-import { oauthSettings } from '../auth/oauth-token.js';
+import { installationOAuthSettings, oauthSettings } from '../auth/oauth-token.js';
 import { meRoute, sessionRoutes } from '../auth/session.js';
 import { publicOriginSchema } from '../config.js';
 import type { Sql } from '../db/client.js';
@@ -86,6 +86,8 @@ export function createApp(deps: AppDeps) {
       accountsSecret: deps.accountsSecret,
       runTokens: deps.runTokens,
       installationKeys: !deps.accountsSecret,
+      oauth:
+        deps.accountsSecret && publicOrigin ? installationOAuthSettings(publicOrigin) : undefined,
     }),
   );
   v1.use('*', limit);
@@ -125,7 +127,18 @@ export function createApp(deps: AppDeps) {
   // (accounts spec 4.7). The authorization server is Better Auth, under
   // /account; this function only checks its tokens.
   const oauth = deps.accountsSecret && publicOrigin ? oauthSettings(publicOrigin) : undefined;
-  if (oauth) {
+  if (oauth && publicOrigin) {
+    const rest = installationOAuthSettings(publicOrigin);
+    app.get('/.well-known/oauth-protected-resource/v1', (c) => {
+      c.header('Cache-Control', 'public, max-age=3600');
+      return c.json({
+        resource: rest.resource,
+        authorization_servers: [rest.issuer],
+        bearer_methods_supported: ['header'],
+        scopes_supported: ['read', 'write', 'offline_access'],
+        resource_name: 'Retainer workspace apps',
+      });
+    });
     // RFC 9728 protected resource metadata: static, so the API serves it.
     const metadata = {
       resource: oauth.resource,

@@ -540,6 +540,55 @@
       "when": 1794418445984,
       "tag": "0076_standalone_credential_security",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1794420512005,
+      "tag": "0077_oauth_grant_references",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1794420512934,
+      "tag": "0078_oauth_reference_bootstrap",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1794420555993,
+      "tag": "0079_oauth_reference_foreign_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1794420556905,
+      "tag": "0080_oauth_reference_claims",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1794421718170,
+      "tag": "0081_oauth_pending_consent",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1794421736144,
+      "tag": "0082_oauth_pending_claims",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1794422473056,
+      "tag": "0083_oauth_reference_revoke_index",
+      "breakpoints": true
     }
   ]
 }

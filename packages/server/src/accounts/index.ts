@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import { accountsConfig, accountsOrigin, type Config } from '../config.js';
 import type { Sql } from '../db/client.js';
+import { parseExtensionCatalog } from '../extensions/catalog.js';
 import { type AuthOptions, createAuth, type GoogleOverrides } from './auth.js';
 import { createAccountsApp } from './routes.js';
 
@@ -39,5 +40,11 @@ export function createAccountsServer(input: {
     ...(input.rateLimit === undefined ? {} : { rateLimit: input.rateLimit }),
     ...(input.fetchClientMetadata ? { fetchClientMetadata: input.fetchClientMetadata } : {}),
   });
-  return createAccountsApp({ auth, sql: input.sql, publicOrigin, clientIp: input.clientIp });
+  return createAccountsApp({
+    auth,
+    sql: input.sql,
+    publicOrigin,
+    clientIp: input.clientIp,
+    extensionCatalog: parseExtensionCatalog(config.RETAINER_EXTENSION_CATALOG),
+  });
 }

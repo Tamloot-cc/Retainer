@@ -93,6 +93,15 @@ export type Connection = {
   connectedAt: string;
 };
 
+export type OAuthInstallation = {
+  id: string;
+  name: string;
+  version: string;
+  actor: 'agent' | 'integration';
+  scopes: ('read' | 'write')[];
+  generation: number;
+};
+
 export type InvitationPreview = {
   id: string;
   organization: { id: string; name: string };
@@ -189,13 +198,25 @@ export const account = {
       `/account/oauth/client?client_id=${encodeURIComponent(clientId)}`,
     ),
   /** Allows or refuses an app; returns where to send the browser next. */
-  oauthConsent: (input: { oauthQuery: string; accept: boolean; workspaceId?: string }) =>
+  oauthInstallations: (clientId: string, workspaceId: string) =>
+    call<{ installations: OAuthInstallation[] }>(
+      `/account/oauth/installations?${new URLSearchParams({ client_id: clientId, workspaceId })}`,
+    ),
+  oauthConsent: (input: {
+    oauthQuery: string;
+    accept: boolean;
+    workspaceId?: string;
+    installationId?: string;
+    expectedGeneration?: number;
+  }) =>
     call<{ url: string }>('/account/oauth/consent', {
       method: 'POST',
       body: {
         oauth_query: input.oauthQuery,
         accept: input.accept,
         ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+        ...(input.installationId ? { installationId: input.installationId } : {}),
+        ...(input.expectedGeneration ? { expectedGeneration: input.expectedGeneration } : {}),
       },
     }),
   invitation: (tokenOrId: string) =>

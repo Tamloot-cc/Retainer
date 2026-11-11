@@ -61,6 +61,7 @@ import type {
 } from '@retainer/shared';
 export type RetainerClientOptions = {
   baseUrl: string;
+  /** Bearer credential: workspace/installation key or a REST installation OAuth access token. */
   apiKey?: string;
   credentials?: 'omit' | 'same-origin' | 'include';
   /**

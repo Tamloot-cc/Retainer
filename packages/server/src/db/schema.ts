@@ -306,12 +306,12 @@ export const oauthClientResources = pgTable(
 );
 
 /**
- * The workspace an OAuth grant is for: Better Auth's `referenceId`, set from
- * the workspace the person picks at consent. Deleting the workspace removes
- * the grants and their tokens.
+ * Better Auth's referenceId: the workspace UUID for existing person grants,
+ * or a reviewed installation-credential UUID for workspace app grants.
+ * Both reference kinds cascade with their owning workspace.
  */
 const grantWorkspace = () =>
-  uuid('reference_id').references(() => workspaces.id, { onDelete: 'cascade' });
+  uuid('reference_id').references(() => oauthGrantReferences.id, { onDelete: 'cascade' });
 
 /** Rotating refresh tokens, stored hashed. */
 export const oauthRefreshTokens = pgTable(
@@ -382,6 +382,7 @@ export const oauthAccessTokens = pgTable(
     index('oauth_access_tokens_user_idx').on(t.userId),
     index('oauth_access_tokens_code_idx').on(t.authorizationCodeId),
     index('oauth_access_tokens_refresh_idx').on(t.refreshId),
+    index('oauth_access_tokens_reference_idx').on(t.referenceId),
   ],
 );
 
@@ -1495,6 +1496,7 @@ export const extensionCredentials = pgTable(
     createdBy: jsonb('created_by').$type<Actor>().notNull(),
     createdAt: createdAt(),
     revokedAt: timestamptz('revoked_at'),
+    pending: boolean('pending').notNull().default(false),
   },
   (t) => [
     unique('extension_credentials_ws_id_uq').on(t.workspaceId, t.id),
@@ -1511,6 +1513,7 @@ export const extensionCredentials = pgTable(
       or (${t.kind}='oauth' and ${t.keyHash} is null and ${t.prefix} is null and ${t.clientId} is not null and ${t.subjectId} is not null)`,
     ),
     check('extension_credentials_generation', sql`${t.generation}>0`),
+    check('extension_credentials_pending', sql`not ${t.pending} or ${t.kind}='oauth'`),
     check(
       'extension_credentials_scopes',
       sql`jsonb_typeof(${t.scopes})='array' and jsonb_array_length(${t.scopes}) between 1 and 2 and ${t.scopes}<@'["read","write"]'::jsonb`,
@@ -1520,6 +1523,37 @@ export const extensionCredentials = pgTable(
       to: 'retainer_app',
       using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
       withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+/** OAuth consent references preserve workspace UUIDs for person grants and use credential UUIDs for installations. */
+export const oauthGrantReferences = pgTable(
+  'oauth_grant_references',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    kind: text('kind').notNull(),
+    credentialId: uuid('credential_id'),
+  },
+  (t) => [
+    unique('oauth_grant_references_ws_id_uq').on(t.workspaceId, t.id),
+    tenantFk(
+      'oauth_grant_references_credential_fk',
+      [t.workspaceId, t.credentialId],
+      [extensionCredentials.workspaceId, extensionCredentials.id],
+    ),
+    index('oauth_grant_references_credential_idx').on(t.workspaceId, t.credentialId),
+    check(
+      'oauth_grant_references_kind',
+      sql`(${t.kind}='person' and ${t.id}=${t.workspaceId} and ${t.credentialId} is null)
+      or (${t.kind}='installation' and ${t.credentialId} is not null and ${t.id}=${t.credentialId})`,
+    ),
+    pgPolicy('oauth_grant_references_installation', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid and ${t.kind}='installation'`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid and ${t.kind}='installation'`,
     }),
   ],
 ).enableRLS();

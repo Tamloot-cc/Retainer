@@ -5,7 +5,7 @@ import { createSql, type Sql } from '../db/client.js';
 import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../extension-runtime/secrets.js';
 import { RunTokens } from '../extension-runtime/tokens.js';
-import { ExtensionCatalog } from '../extensions/catalog.js';
+import { parseExtensionCatalog } from '../extensions/catalog.js';
 import { createFileStorage } from '../file-storage/configuration.js';
 import { Webhooks } from '../webhooks/service.js';
 import { ChangeMaintenance } from '../worker/changes.js';
@@ -22,23 +22,7 @@ export async function extensionServices(
   const owned: Sql[] = [];
   const close = () => Promise.all(owned.map((pool) => pool.end({ timeout: 5 }))).then(() => {});
   try {
-    const entries = config.RETAINER_EXTENSION_CATALOG
-      ? JSON.parse(config.RETAINER_EXTENSION_CATALOG)
-      : [];
-    const releases = z
-      .array(
-        z.strictObject({
-          manifest: z.unknown(),
-          actorCeiling: z.enum(['integration', 'agent']),
-          runtimeEnabled: z.boolean().optional(),
-        }),
-      )
-      .parse(entries);
-    // Catalog validates and copies each JSON manifest rather than evaluating package code.
-    const { defineExtension } = await import('@retainer/extension');
-    const catalog = new ExtensionCatalog(
-      releases.map((release) => ({ ...release, manifest: defineExtension(release.manifest) })),
-    );
+    const catalog = parseExtensionCatalog(config.RETAINER_EXTENSION_CATALOG);
     const jwk = z.strictObject({
       kty: z.literal('OKP'),
       crv: z.literal('Ed25519'),

@@ -1,6 +1,6 @@
 import { defineExtension } from '@retainer/extension';
 import { describe, expect, it } from 'vitest';
-import { ExtensionCatalog, hash } from './catalog.js';
+import { ExtensionCatalog, hash, parseExtensionCatalog } from './catalog.js';
 
 const manifest = () =>
   defineExtension({
@@ -60,5 +60,26 @@ describe('release-owned catalog', () => {
   });
   it('hashes canonical JSON without key-order differences', () => {
     expect(hash({ a: 1, b: { d: 2, c: 3 } })).toBe(hash({ b: { c: 3, d: 2 }, a: 1 }));
+  });
+  it('pins the reviewed OAuth client into the release digest and across releases', () => {
+    const initial = { ...manifest(), oauthClientId: 'registered-client' };
+    expect(hash(initial)).not.toBe(hash(manifest()));
+    expect(
+      () =>
+        new ExtensionCatalog([
+          { manifest: initial, actorCeiling: 'integration' },
+          {
+            manifest: { ...initial, version: '2.0.0', oauthClientId: 'different-client' },
+            actorCeiling: 'integration',
+          },
+        ]),
+    ).toThrow('OAuth client');
+    expect(
+      parseExtensionCatalog(
+        JSON.stringify([{ manifest: initial, actorCeiling: 'integration' }]),
+      ).list()[0]?.manifest.oauthClientId,
+    ).toBe('registered-client');
+    expect(() => defineExtension({ ...initial, execution: 'hosted' })).toThrow();
+    expect(() => defineExtension({ ...initial, oauthClientId: ' ' })).toThrow();
   });
 });

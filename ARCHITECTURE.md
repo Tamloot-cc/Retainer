@@ -1183,6 +1183,26 @@ Authentication exposes only minimal current key metadata through the reviewed
 registered OAuth client row and returns a boolean. Both privileged functions fix
 `search_path` and are executable only by the runtime role.
 
+In accounts mode a standalone manifest pins its reviewed `oauthClientId`.
+The consent controller checks workspace-admin access and the active installation
+generation, then lets Better Auth validate its signed query. A committed pending
+credential/reference lets the library's separate pool record consent; the grant
+remains unusable until a second admin/generation check activates it and revokes
+the previous connection under the exclusive installation lock. Pending attempts
+are bounded and abandoned ones are collected on later attempts.
+
+`oauth_grant_references` preserves existing person references (`id = workspace_id`)
+and gives installation grants a credential UUID. Workspace creation bootstraps
+the person reference; the app role sees only workspace-scoped installation refs.
+The control-only `retainer_oauth_reference` returns minimal signing metadata.
+REST tokens name the installation, credential and immutable generation, and
+require the exact `/v1` audience. The API checks client/subject and current
+credential admission under RLS; it never assigns the approving person's memory
+identity. Refresh cannot cross a generation change. Membership removal leaves
+the workspace grant intact; hard user deletion can remove library refresh tokens.
+An admin disconnects it in Extensions, deleting its library reference and tokens.
+Person-bound MCP authorization and membership rules remain separate (7.3).
+
 ## 5. Read paths
 
 | Operation                          | What it returns                                                                                                                                    |
@@ -1377,7 +1397,8 @@ not built yet; docs/rest-api.md lists every route.
 Hosted on the API server at `/mcp` (Streamable HTTP). `@retainer/mcp` is a
 small stdio bridge for local clients that only speak stdio. In accounts mode,
 clients that cannot use an API key, such as Claude's web app, connect over
-OAuth (7.3); OAuth tokens are accepted on `/mcp` only.
+OAuth (7.3); person OAuth tokens target `/mcp`, while separately approved
+installation OAuth tokens target `/v1` (4.5).
 
 Tools are generic, not one per object. Custom objects would otherwise grow
 the tool list without limit and break clients' tool caching.
@@ -1857,11 +1878,11 @@ public signing keys through `retainer_token_keys`, verifies the token, then call
 scopes are the token's scopes intersected with that role's and the consent's, so a
 downgrade, removal or revoked consent applies at the next request. The actor is always an `agent`, with an
 ID made from the client and the person, so the human-only rules still apply.
-Removing a person from a workspace or organization deletes their consents there,
+Removing a person from a workspace or organization deletes their person-bound MCP consents there,
 and a consent is the connection people see and disconnect in Settings.
 
 **Personal memory.** A caller has a person when its credential names one: a
-session, an OAuth token (the person who connected the app), or an API key
+session, a person-bound MCP OAuth token (the person who connected the app), or an API key
 created with "This agent works for me" (`api_keys.acts_for_user`, which
 stops reaching the person once they lose access). When a person loses
 access to a workspace, by removal from it or the organization or a role

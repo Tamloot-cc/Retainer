@@ -3,7 +3,10 @@ import { cappedScopes, type WorkspaceRole } from '@retainer/shared';
 import { decodeProtectedHeader, importJWK, type JWK, jwtVerify } from 'jose';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
+import { isUuid } from '../db/ids.js';
+import { inWorkspace, lockSchemaShared } from '../db/tx.js';
 import { AppError } from '../errors.js';
+import { admitInstallation } from '../extension-runtime/admission.js';
 
 /**
  * Checks an MCP OAuth access token (accounts spec 4.7) without Better Auth
@@ -22,7 +25,12 @@ export const AUTH_BASE_PATH = '/account/auth';
 /** The access token claim naming the workspace the person picked at consent. */
 export const WORKSPACE_CLAIM = 'workspace_id';
 
-export type OAuthSettings = { issuer: string; resource: string; resourceMetadata: string };
+export type OAuthSettings = {
+  issuer: string;
+  resource: string;
+  resourceMetadata: string;
+  mode?: 'installation';
+};
 
 /** The issuer, the protected resource and its metadata URL, from the public origin. */
 export function oauthSettings(publicOrigin: string): OAuthSettings {
@@ -31,6 +39,19 @@ export function oauthSettings(publicOrigin: string): OAuthSettings {
     issuer: `${origin}${AUTH_BASE_PATH}`,
     resource: `${origin}/mcp`,
     resourceMetadata: `${origin}/.well-known/oauth-protected-resource/mcp`,
+  };
+}
+
+export const INSTALLATION_CLAIM = 'installation_id';
+export const GRANT_CLAIM = 'grant_id';
+export const GENERATION_CLAIM = 'grant_generation';
+export function installationOAuthSettings(publicOrigin: string): OAuthSettings {
+  const origin = new URL(publicOrigin).origin;
+  return {
+    issuer: `${origin}${AUTH_BASE_PATH}`,
+    resource: `${origin}/v1`,
+    resourceMetadata: `${origin}/.well-known/oauth-protected-resource/v1`,
+    mode: 'installation',
   };
 }
 
@@ -71,11 +92,20 @@ export async function lookupOAuthToken(
       issuer: settings.issuer,
       audience: settings.resource,
       algorithms: ['EdDSA'],
-      requiredClaims: ['sub', 'azp', 'exp', WORKSPACE_CLAIM],
+      requiredClaims: [
+        'sub',
+        'azp',
+        'exp',
+        WORKSPACE_CLAIM,
+        ...(settings.mode === 'installation'
+          ? [INSTALLATION_CLAIM, GRANT_CLAIM, GENERATION_CLAIM]
+          : []),
+      ],
     }));
   } catch {
     throw refused('the access token is not valid or has expired; refresh it or connect again');
   }
+  if (settings.mode === 'installation') return installationCaller(sql, claims, settings);
   const subject = claims.sub;
   const client = claims.azp;
   const workspace = claims[WORKSPACE_CLAIM];
@@ -119,4 +149,69 @@ export async function lookupOAuthToken(
       check: { kind: 'oauth', subject, workspace, client },
     },
   };
+}
+
+async function installationCaller(
+  sql: Sql,
+  claims: Record<string, unknown>,
+  settings: OAuthSettings,
+): Promise<Caller> {
+  const workspace = claims[WORKSPACE_CLAIM],
+    installation = claims[INSTALLATION_CLAIM],
+    grant = claims[GRANT_CLAIM],
+    generation = claims[GENERATION_CLAIM];
+  if (
+    claims.aud !== settings.resource ||
+    typeof claims.azp !== 'string' ||
+    typeof claims.sub !== 'string' ||
+    typeof workspace !== 'string' ||
+    !isUuid(workspace) ||
+    typeof installation !== 'string' ||
+    !isUuid(installation) ||
+    typeof grant !== 'string' ||
+    !isUuid(grant) ||
+    typeof generation !== 'number' ||
+    !Number.isSafeInteger(generation) ||
+    generation < 1
+  )
+    throw refused('the installation access token is not valid; connect again');
+  const client = claims.azp,
+    subject = claims.sub;
+  return inWorkspace(sql, workspace, async (tx) => {
+    await lockSchemaShared(tx, workspace);
+    const [row] = await tx<
+      {
+        registration_id: string;
+        scopes: ('read' | 'write')[];
+        granted_scopes: ('read' | 'write')[];
+      }[]
+    >`
+      select i.registration_id,c.scopes,i.granted_scopes from extension_credentials c
+      join extension_installations i on i.id=c.installation_id and i.workspace_id=c.workspace_id
+      join oauth_grant_references r on r.credential_id=c.id and r.workspace_id=c.workspace_id and r.kind='installation'
+      where c.id=${grant} and c.installation_id=${installation} and c.kind='oauth' and c.client_id=${client}
+      and c.subject_id=${subject} and c.generation=${generation} and c.revoked_at is null and not c.pending and i.state='active' and i.generation=c.generation`;
+    if (!row) throw refused('this installation connection was removed; connect again');
+    const tokenScopes = typeof claims.scope === 'string' ? claims.scope.split(/\s+/) : [];
+    const scopes = [
+      ...new Set(
+        tokenScopes.filter(
+          (s): s is 'read' | 'write' =>
+            (s === 'read' || s === 'write') &&
+            row.scopes.includes(s) &&
+            row.granted_scopes.includes(s),
+        ),
+      ),
+    ];
+    const binding = {
+      installationId: installation,
+      registrationId: row.registration_id,
+      generation,
+      credentialId: grant,
+      kind: 'oauth' as const,
+      scopes,
+    };
+    const admitted = await admitInstallation(tx, workspace, binding);
+    return { workspaceId: workspace, actor: admitted.actor, scopes, installation: binding };
+  });
 }

@@ -3,8 +3,8 @@
 Status: implementation in progress. Control/lifecycle UI, isolated execution,
 files, managed sources, durable change dispatch, verified webhook ingress and
 deterministic last-contact, reviewed connection/grant management, typed source
-progress, the Granola adapter and key-mode standalone credentials are implemented
-locally. Accounts-mode standalone OAuth and hosted launch remain. Granola is
+progress, the Granola adapter and standalone key/OAuth credentials are implemented
+locally. Hosted launch remains. Granola is
 verified against provider fixtures, not a live account. Date: 2026-11-11.
 See [implementation progress](extensions-implementation.md) for completed and outstanding work.
 
@@ -350,6 +350,38 @@ installation, client, workspace and grant generation; recheck revocation on ever
 request. Key-mode standalone apps use a separate revocable installation key.
 Authorization-code flows use state, PKCE and exact registered redirects; provider
 OAuth connection management is separate from Retainer access authorization.
+
+Accounts-mode manifests pin `oauthClientId` into the reviewed release digest;
+the same registration cannot switch to a different client across releases.
+Clients explicitly register the `/v1` resource; ordinary registrations keep
+their MCP resource default. Consent lists only active matching installations
+in workspaces the person administers. The approval names a current generation
+and explicit read/write scope subset, with optional `offline_access`.
+Never combine the REST and MCP audiences in one grant.
+
+OAuth library references use `oauth_grant_references`: existing person grants
+retain their workspace UUID, while installation references use the credential
+UUID and a tenant-safe workspace/credential FK. Backfill existing references
+before replacing the library FKs, and bootstrap a person reference for each new
+workspace under an insert trigger. The app role can access only installation
+references in its current workspace; a control-only resolver returns minimal
+claim metadata. Workspace/credential deletion cascades library grants.
+
+Consent stages a committed, unusable pending credential because the library
+has a separate database connection. After the library validates signed consent,
+recheck admin access, release/client binding and generation, then replace the
+old grant and activate the new one under the exclusive installation lock.
+Invalid consent leaves the working grant intact. Crashes leave only unusable
+pending references; at most 20 handshakes may be pending, with abandoned ones
+collected on later attempts after an hour. The access token names workspace,
+installation, immutable grant generation, credential, client and subject. REST
+checks the exact single audience and current credential/installation/client
+inside each transaction; it derives the approved actor and never assigns a
+personal-memory principal. Refresh cannot adopt a later generation. Membership
+removal does not revoke the workspace grant. Hard deletion of the approving
+user may remove library refresh tokens and require fresh admin consent.
+Admins inspect and revoke OAuth credentials in Extensions; revocation deletes
+their library reference/refresh tokens and drains admitted API writes.
 
 Key-mode standalone installation approval activates the external app grant without
 hosted setup jobs. A human admin creates an `rti_` key for an explicit subset of

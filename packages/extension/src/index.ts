@@ -114,6 +114,8 @@ export const manifestSchema = z.strictObject({
   serverVersions: z.array(version).min(1).max(100),
   runtimeVersion: z.literal('node24'),
   execution: z.enum(['hosted', 'standalone']),
+  /** Reviewed first-party OAuth client identity, pinned into the release digest. */
+  oauthClientId: z.string().min(1).max(2048).regex(/^\S+$/).optional(),
   protocolVersion: z.literal(1),
   requestedActor: z.enum(['integration', 'agent']),
   scopes: z
@@ -273,6 +275,8 @@ export function defineExtension(value: unknown): ExtensionManifest {
     throw new Error('unsupported_manifest: duplicate universal ID');
   if (new Set(manifest.scopes).size !== manifest.scopes.length)
     throw new Error('unsupported_manifest: duplicate scope');
+  if (manifest.oauthClientId && manifest.execution !== 'standalone')
+    throw new Error('unsupported_manifest: OAuth clients require standalone execution');
   if (manifest.execution === 'standalone' && manifest.functions.length)
     throw new Error('unsupported_manifest: standalone apps cannot contain hosted functions');
   for (const setting of Object.values(manifest.settings))

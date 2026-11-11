@@ -9,10 +9,12 @@ import { z } from 'zod';
 import { requireWebHeader } from '../auth/session.js';
 import type { Sql } from '../db/client.js';
 import { AppError } from '../errors.js';
-import { idParam, readBody } from '../http/request.js';
+import type { ExtensionCatalog } from '../extensions/catalog.js';
+import { idParam, readBody, zodError } from '../http/request.js';
 import { errorResponse, toAppError } from '../http/response.js';
 import { type Auth, CLIENT_IP_HEADER } from './auth.js';
 import * as connections from './connections.js';
+import { consentInstallation, installationOptions, installationRequest } from './extensions.js';
 import type { Person } from './people.js';
 import * as people from './people.js';
 
@@ -35,6 +37,7 @@ export type AccountsEnv = {
 
 export type AccountsDeps = {
   auth: Auth;
+  extensionCatalog?: ExtensionCatalog;
   /** A connection as the control role. */
   sql: Sql;
   publicOrigin: string;
@@ -197,6 +200,22 @@ export function createAccountsApp(deps: AccountsDeps) {
       throw new AppError(404, 'not_found', 'This app is not known; start again from it.');
     return c.json({ clientId, name: client.name ?? clientId, uri: client.uri });
   });
+  account.get('/oauth/installations', async (c) => {
+    const parsed = z
+      .object({ workspaceId: z.uuid(), client_id: z.string().min(1).max(2048) })
+      .safeParse(c.req.query());
+    if (!parsed.success) throw zodError(parsed.error);
+    const query = parsed.data;
+    return c.json(
+      await installationOptions(
+        sql,
+        c.get('person'),
+        query.workspaceId,
+        query.client_id,
+        deps.extensionCatalog,
+      ),
+    );
+  });
   account.post('/oauth/consent', async (c) => {
     const body = await readBody(
       c,
@@ -204,6 +223,8 @@ export function createAccountsApp(deps: AccountsDeps) {
         oauth_query: z.string().min(1).max(8192),
         accept: z.boolean(),
         workspaceId: z.uuid().optional(),
+        installationId: z.uuid().optional(),
+        expectedGeneration: z.number().int().positive().optional(),
       }),
     );
     const { accept, workspaceId } = body;
@@ -219,6 +240,23 @@ export function createAccountsApp(deps: AccountsDeps) {
       body: JSON.stringify({ accept, oauth_query: body.oauth_query }),
     });
     if (!accept || !workspaceId) return deps.auth.handler(request);
+    const grant = installationRequest(body.oauth_query, deps.publicOrigin);
+    if (grant) {
+      if (!body.installationId || !body.expectedGeneration)
+        throw new AppError(400, 'invalid_request', 'pick the reviewed installation to connect');
+      return consentInstallation({
+        sql,
+        person: c.get('person'),
+        workspaceId,
+        installationId: body.installationId,
+        expectedGeneration: body.expectedGeneration,
+        grant,
+        ...(deps.extensionCatalog ? { catalog: deps.extensionCatalog } : {}),
+        record: (referenceId) => deps.auth.consent(request, referenceId),
+      });
+    }
+    if (body.installationId || body.expectedGeneration)
+      throw new AppError(400, 'invalid_request', 'MCP uses a separate person connection');
     return connections.recordConsent(sql, c.get('person'), workspaceId, () =>
       deps.auth.consent(request, workspaceId),
     );

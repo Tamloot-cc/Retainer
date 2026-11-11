@@ -198,6 +198,30 @@ describe('generated extension settings and human approval', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Revoke rti_visible' }));
     await vi.waitFor(() => expect(revoke).toHaveBeenCalledWith(installation.id, 'credential'));
   });
+  it('manages accounts-mode OAuth connections without offering installation keys', async () => {
+    vi.spyOn(api, 'extensionCredentials').mockResolvedValue({
+      credentials: [
+        {
+          id: 'oauth',
+          kind: 'oauth',
+          prefix: null,
+          clientId: 'reviewed-client',
+          generation: 1,
+          scopes: ['read'],
+          createdAt: '2026-11-11T10:00:00Z',
+          revokedAt: null,
+          active: true,
+        },
+      ],
+    });
+    const revoke = vi.spyOn(api, 'revokeExtensionCredential').mockResolvedValue({ revoked: true });
+    mount(
+      <InstallationCredentials installation={installation} keyMode={false} onClose={() => {}} />,
+    );
+    expect(screen.queryByRole('button', { name: 'Create installation key' })).toBeNull();
+    await userEvent.click(await screen.findByRole('button', { name: 'Revoke connection' }));
+    expect(revoke).toHaveBeenCalledWith(installation.id, 'oauth');
+  });
   it('keeps credential edits behind reconnect review and sends only staged references after human approval', async () => {
     vi.spyOn(api, 'stageExtensionSecret').mockResolvedValue({
       pendingSecretId: 'new-reference',

@@ -342,6 +342,8 @@ describe('SECURITY DEFINER functions', () => {
     retainer_queue_file_deletion: null,
     retainer_lookup_api_key: RUNTIME_ROLE,
     retainer_lookup_extension_key: RUNTIME_ROLE,
+    retainer_bootstrap_oauth_reference: null,
+    retainer_oauth_reference: 'retainer_control',
     retainer_extension_oauth_client_active: RUNTIME_ROLE,
     retainer_retire_extension_secrets: RUNTIME_ROLE,
     retainer_session_access: RUNTIME_ROLE,

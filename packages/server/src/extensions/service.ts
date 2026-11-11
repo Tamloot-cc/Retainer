@@ -708,7 +708,7 @@ export class Extensions {
       const [installation] = await tx<Row[]>`select * from extension_installations where id=${id}`;
       if (!installation) throw notFound('extension installation');
       const rows =
-        await tx`select id,kind,prefix,client_id,generation,scopes,created_at,revoked_at from extension_credentials where installation_id=${id} order by created_at,id`;
+        await tx`select id,kind,prefix,client_id,generation,scopes,created_at,revoked_at,pending from extension_credentials where installation_id=${id} order by created_at,id`;
       return {
         credentials: rows.map((r) => ({
           id: r.id,
@@ -721,6 +721,7 @@ export class Extensions {
           revokedAt: r.revoked_at?.toISOString() ?? null,
           active:
             !r.revoked_at &&
+            !r.pending &&
             r.generation === installation.generation &&
             installation.state === 'active',
         })),
@@ -737,6 +738,7 @@ export class Extensions {
       const [row] =
         await tx`update extension_credentials set revoked_at=coalesce(revoked_at,clock_timestamp()) where id=${credentialId} and installation_id=${id} returning id`;
       if (!row) throw notFound('installation credential');
+      await tx`delete from oauth_grant_references where credential_id=${credentialId} and kind='installation'`;
       return { revoked: true };
     });
   }

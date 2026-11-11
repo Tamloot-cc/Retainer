@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { defineExtension, type ExtensionManifest } from '@retainer/extension';
+import { z } from 'zod';
 import { AppError } from '../errors.js';
 import { stableJson } from '../stable-json.js';
 import { VERSION } from '../version.js';
@@ -18,6 +19,7 @@ export class ExtensionCatalog {
   constructor(releases: readonly ReviewedRelease[] = []) {
     const actors = new Map<string, string>();
     const locators = new Map<string, string>();
+    const clients = new Map<string, string>();
     for (const release of releases) {
       const manifest = defineExtension(release.manifest);
       if (release.actorCeiling === 'agent' && manifest.requestedActor === 'integration')
@@ -30,6 +32,12 @@ export class ExtensionCatalog {
             'registration webhook locator cannot change across releases; use a new route',
           );
         locators.set(key, locator);
+      }
+      if (manifest.oauthClientId) {
+        const prior = clients.get(manifest.universalId);
+        if (prior && prior !== manifest.oauthClientId)
+          throw new Error('registration OAuth client cannot change across releases');
+        clients.set(manifest.universalId, manifest.oauthClientId);
       }
       const priorActor = actors.get(manifest.universalId);
       if (priorActor && priorActor !== release.actorCeiling)
@@ -56,4 +64,20 @@ export class ExtensionCatalog {
       );
     return structuredClone(release);
   }
+}
+
+/** Operator-owned catalog data, shared by API and consent control without evaluating package code. */
+export function parseExtensionCatalog(raw?: string): ExtensionCatalog {
+  const entries = z
+    .array(
+      z.strictObject({
+        manifest: z.unknown(),
+        actorCeiling: z.enum(['integration', 'agent']),
+        runtimeEnabled: z.boolean().optional(),
+      }),
+    )
+    .parse(raw ? JSON.parse(raw) : []);
+  return new ExtensionCatalog(
+    entries.map((entry) => ({ ...entry, manifest: defineExtension(entry.manifest) })),
+  );
 }

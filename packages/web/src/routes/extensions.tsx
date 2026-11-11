@@ -130,7 +130,7 @@ export function ExtensionsPage() {
                 ) : null}
                 <Row>
                   <Button onClick={() => setRuns(installation)}>View runs</Button>
-                  {admin && !accountState && release?.manifest.execution === 'standalone' ? (
+                  {admin && release?.manifest.execution === 'standalone' ? (
                     <Button onClick={() => setCredentials(installation)}>App credentials</Button>
                   ) : null}
                   {admin && release ? (
@@ -231,6 +231,7 @@ export function ExtensionsPage() {
       ) : null}
       {credentials ? (
         <InstallationCredentials
+          keyMode={!accountState}
           installation={installed.find((i) => i.id === credentials.id) ?? credentials}
           onClose={() => setCredentials(null)}
         />
@@ -664,9 +665,11 @@ export function SourceSyncStatus({ installationId }: { installationId: string })
 export function InstallationCredentials({
   installation,
   onClose,
+  keyMode = true,
 }: {
   installation: Installation;
   onClose: () => void;
+  keyMode?: boolean;
 }) {
   const client = useQueryClient();
   const [scopes, setScopes] = useState<('read' | 'write')[]>(installation.grantedScopes);
@@ -708,13 +711,22 @@ export function InstallationCredentials({
       }}
     >
       <Stack>
-        <p>This key works for this app in this workspace. It has no access to personal memory.</p>
+        <p>
+          These credentials work for this app in this workspace. They have no access to personal
+          memory.
+        </p>
+        {!keyMode ? (
+          <Muted>
+            Start a connection from the app to approve access. Revoke its connection here to
+            disconnect it.
+          </Muted>
+        ) : null}
         {credentials.error ? (
           <QueryError error={credentials.error} retry={() => void credentials.refetch()} />
         ) : null}
         {issue.error ? <Notice>{issue.error.message}</Notice> : null}
         {revoke.error ? <Notice>{revoke.error.message}</Notice> : null}
-        {issued ? (
+        {!keyMode ? null : issued ? (
           <Stack>
             <Notice>Copy this key now. It is shown only once.</Notice>
             <Input aria-label="Installation key" readOnly value={issued.key} />

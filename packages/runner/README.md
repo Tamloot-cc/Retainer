@@ -1,7 +1,9 @@
 # @retainer/runner
 
 MIT runtime for first-party, release-bundled functions. The current bundle contains
-only a deterministic test fixture. It is not advertised in the default catalog.
+a deterministic test fixture, last-contact and Granola adapters. The default
+server catalog remains empty; these bundles require explicit operator review
+and activation.
 
 Each invocation arrives on stdin in a fresh Node 24 container. The entry point
 checks the baked release digest, function ID, protocol, input size and deadline.

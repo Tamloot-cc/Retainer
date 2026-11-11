@@ -13,11 +13,20 @@ protocol v1. Cron uses five UTC fields with lists, ranges, steps and month/weekd
 scalar values; executable defaults, remote schemas/code and unknown kinds fail
 validation. Nested input schemas require closed objects and bounded arrays.
 
-The current server provides inert installation control only. Installations stay
-disabled; releases needing secrets are refused until the broker is implemented.
-There are no runtime credentials, provider calls, jobs, active integrations or
-standalone installation OAuth grants in this slice. Table views are created
-through the existing view service and retained across uninstall/reinstall.
+The server supports reviewed installation approval, lifecycle, isolated hosted
+jobs, source revisions, files, webhooks and change triggers. Table views are
+created through the existing view service and retained across uninstall/reinstall.
+The default catalog is empty; operators explicitly bundle reviewed releases and
+configure their execution prerequisites before activation.
+
+Standalone manifests use `execution: 'standalone'` and may pin the registered
+`oauthClientId` used for accounts-mode REST consent. Client identity is part of
+the release digest and cannot change across releases of one registration.
+Key-mode admins instead issue installation keys. Both identify the approved
+workspace app and have no personal-memory access. Hosted queue/KV/secrets and
+managed-source attestation continue to require a leased hosted invocation.
+See [standalone app connections](../../docs/standalone-apps.md) for registration,
+consent, SDK usage, credential rotation and source-write boundaries.
 
 See `docs/specs/extensions.md` for the full acceptance specification and
 `docs/specs/extensions-implementation.md` for outstanding delivery phases.

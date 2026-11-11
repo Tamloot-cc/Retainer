@@ -4,6 +4,7 @@ import { runtimeRoutes } from '../api/routes/extension-runtime.js';
 import { extensionRoutes } from '../api/routes/extensions.js';
 import { webhookIngress, webhookRuntime } from '../api/routes/webhooks.js';
 import { authenticate } from '../auth/middleware.js';
+import { installationOAuthSettings } from '../auth/oauth-token.js';
 import { AppError } from '../errors.js';
 import { Extensions } from '../extensions/service.js';
 import { rateLimit } from '../http/rate-limit.js';
@@ -32,6 +33,11 @@ export function createExtensionControlApp(deps: AppDeps) {
       publicOrigin: deps.publicOrigin,
       accountsSecret: deps.accountsSecret,
       runTokens: deps.runTokens,
+      installationKeys: !deps.accountsSecret,
+      oauth:
+        deps.accountsSecret && deps.publicOrigin
+          ? installationOAuthSettings(deps.publicOrigin)
+          : undefined,
     }),
   );
   v1.use('*', rateLimit(deps.sql, deps.rateLimit ?? { limit: 0 }));
@@ -41,7 +47,7 @@ export function createExtensionControlApp(deps: AppDeps) {
     deps.extensionSecrets,
     deps.extensionActivation,
   );
-  extensionRoutes(v1, extensions);
+  extensionRoutes(v1, extensions, !deps.accountsSecret);
   runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets);
   webhookRuntime(v1, deps.webhooks);
   app.route('/v1', v1);

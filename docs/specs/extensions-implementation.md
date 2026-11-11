@@ -4,7 +4,7 @@ Current status: controls, isolated execution/lifecycle, files/erasure, managed
 sources/revisions, commit-ordered feeds, durable triggers, isolated verification,
 public webhook ingress and deterministic last-contact are implemented and tested.
 The default catalog is empty. Granola, typed sync progress and standalone keys are
-implemented locally; standalone OAuth and hosted launch remain outstanding. Reviewed reconnect and grant changes are also implemented.
+implemented locally, together with standalone OAuth. Hosted launch remains outstanding. Reviewed reconnect and grant changes are also implemented.
 
 The contract in extensions.md remains the acceptance specification. Implement in
 these dependency-ordered slices; never advertise a trigger before its safety
@@ -545,3 +545,47 @@ installation-key lookup and client liveness; both use `pg_catalog, pg_temp` with
 fully qualified tables and runtime-role-only execution. No hosted deployment or
 real external app account has been used. Accounts-mode installation OAuth and
 private hosted implementation remain.
+
+## Standalone workspace OAuth
+
+Reviewed standalone manifests pin the registered client ID into their release
+digest. Accounts-mode clients explicitly register the REST resource; MCP keeps
+its existing resource default and person consent. The consent page offers active
+matching installations only to workspace admins, shows their approved actor and
+scope, and binds approval to the current generation. Extensions manages OAuth
+revocation alongside key-mode credentials without offering key issuance in
+accounts mode, including on the dedicated extension-control surface.
+
+The staged reference migrations preserve existing person consent/token UUIDs,
+bootstrap references for concurrent/new workspaces and give workspace grants a
+credential reference with tenant-safe FKs. App RLS exposes only installation
+references in the current workspace; privileged claim lookup is control-only.
+An indexed library reference supports bounded grant deletion. Pending consent
+credentials remain unusable until the library validates the signed request and
+the controller rechecks admin/release/generation under its exclusive grant lock.
+Invalid or stale approval leaves a working grant intact. Interrupted handshakes
+are bounded and eventually collected without ever granting access.
+
+REST JWT verification requires the exact single audience and binds issuer,
+client, subject, workspace, installation, credential and generation. Runtime
+admission drains writes on revoke and checks fences before replay or file
+authorization. Refresh cannot cross disable/enable. Removing the approving admin
+leaves the app's workspace grant active, without any personal-memory identity;
+explicit admin disconnect removes library references/refresh tokens too.
+
+Real-Postgres tests exercise authorization code/state/PKCE/redirects, refresh,
+read-only access, concurrent approvals, invalid-query recovery, generation races,
+installer departure, revocation, signed mismatched-claim JWTs, resource/client
+boundaries and the dedicated control API. A standalone SDK contract imports a
+complete Tamloot transcript as an immutable file/event, preserves ordinary
+event payload-conflict rules, and deduplicates concurrent form-submission retries.
+The new standalone-app guide documents external provider/state ownership and the
+leased hosted-source boundary. Browser tests cover approval and disconnect;
+the existing personal MCP flows pass unchanged.
+
+Validation: all 1,448 tests pass (1,122 server with two workers and 326 other
+packages), plus all 68 fresh-build browser tests. Typecheck, build, lint, layer
+and release checks pass. The first full server run found a missing FK deletion
+index, fixed with a generated migration; the full rerun passed. No assertions,
+timeouts or fixture sizes were relaxed. All work remains local; no PR, merge,
+live provider account or hosted AWS acceptance has been performed.

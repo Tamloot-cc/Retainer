@@ -1,0 +1,2 @@
+ALTER TABLE "extension_credentials" ADD COLUMN "pending" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "extension_credentials" ADD CONSTRAINT "extension_credentials_pending" CHECK (not "extension_credentials"."pending" or "extension_credentials"."kind"='oauth');

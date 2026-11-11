@@ -101,7 +101,7 @@ export async function admitInstallation(
   >`
     select scopes,client_id,subject_id from extension_credentials where id=${binding.credentialId}
     and installation_id=${binding.installationId} and kind=${binding.kind} and generation=${binding.generation}
-    and revoked_at is null for share`;
+    and revoked_at is null and not pending for share`;
   if (
     !credential ||
     binding.scopes.some(
