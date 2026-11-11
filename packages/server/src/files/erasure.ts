@@ -7,12 +7,17 @@ import {
 } from '../records/write.js';
 
 /** Collect before record/assertion cascades, including shared copies and historical references. */
-export async function collectFileErasure(tx: Tx, erasedRecords: string[], sourceEvents: string[]) {
+export async function collectFileErasure(
+  tx: Tx,
+  erasedRecords: string[],
+  sourceEvents: string[],
+  boundFiles: string[] = [],
+) {
   const rows = await tx<
     { file_id: string }[]
   >`select distinct ref.file_id from file_references ref join field_assertions a on a.id=ref.assertion_id
     where a.record_id=any(${erasedRecords}::uuid[]) or a.source_record_id=any(${sourceEvents}::uuid[])`;
-  const fileIds = rows.map((r) => r.file_id);
+  const fileIds = [...new Set([...boundFiles, ...rows.map((r) => r.file_id)])];
   const references = fileIds.length
     ? await tx<
         { record_id: string }[]

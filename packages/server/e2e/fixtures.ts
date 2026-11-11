@@ -5,16 +5,20 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { test as base, expect } from '@playwright/test';
-import { BASE_OBJECT_IDS } from '@retainer/shared';
+import { BASE_EVENT_TYPE_IDS, BASE_OBJECT_IDS } from '@retainer/shared';
+import { generateKeyPair } from 'jose';
 import postgres from 'postgres';
 import { createApp } from '../src/api/app.js';
 import { createApiKey } from '../src/auth/keys.js';
 import { createSql, RUNTIME_ROLE } from '../src/db/client.js';
+import { type ClaimedJob, ExtensionQueue } from '../src/extension-runtime/queue.js';
+import { RunTokens } from '../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../src/extensions/catalog.js';
 import { createFileServer, LocalFileStorage } from '../src/file-storage/local.js';
 import { consolidateWorkspace } from '../src/worker/consolidate.js';
 import { createWorkspace } from '../src/workspaces/workspaces.js';
 import { extensionFixture as manifestFixture } from '../test/helpers/extensions.js';
+import { sourceManifest } from './source-fixture.js';
 export const browserExtensionManifest = manifestFixture({
   universalId: 'e0548bb1-47fd-4de8-8edc-759e26a61e36',
   name: 'browser-fixture',
@@ -42,14 +46,20 @@ export const test = base.extend<
       request: (path: string, body?: unknown, key?: string, method?: string) => Promise<any>;
       /** Runs the consolidator once, which suggests merges. */
       consolidate: () => Promise<unknown>;
+      sourceEvidence: () => Promise<{
+        personId: string;
+        previousEventId: string;
+        currentEventId: string;
+      }>;
     };
   },
-  { extensionFixture: boolean; fileStorage: boolean }
+  { extensionFixture: boolean; fileStorage: boolean; sourceFixture: boolean }
 >({
   extensionFixture: [false, { option: true, scope: 'worker' }],
   fileStorage: [false, { option: true, scope: 'worker' }],
+  sourceFixture: [false, { option: true, scope: 'worker' }],
   retainer: async (
-    { browserName: _browserName, extensionFixture, fileStorage: withFiles },
+    { browserName: _browserName, extensionFixture, fileStorage: withFiles, sourceFixture },
     use,
   ) => {
     const adminUrl = process.env.DATABASE_URL;
@@ -120,9 +130,30 @@ export const test = base.extend<
       if (!a || typeof a === 'string') throw new Error('file address missing');
       storage = new LocalFileStorage(`http://127.0.0.1:${a.port}`, fileKey);
     }
+    const catalog = sourceFixture
+      ? new ExtensionCatalog([
+          { manifest: sourceManifest, actorCeiling: 'integration', runtimeEnabled: true },
+        ])
+      : undefined;
+    const pair = sourceFixture ? await generateKeyPair('EdDSA') : undefined;
+    const runTokens = pair
+      ? new RunTokens({
+          issuer: 'https://retainer.test',
+          keyId: 'browser',
+          signingKey: pair.privateKey,
+          verificationKey: pair.publicKey,
+        })
+      : undefined;
     const app = createApp({
       sql,
       ...(storage ? { fileStorage: storage } : {}),
+      ...(catalog && runTokens
+        ? {
+            extensionCatalog: catalog,
+            extensionActivation: new Set(catalog.list().map((r) => r.digest)),
+            runTokens,
+          }
+        : {}),
       ...(extensionFixture
         ? {
             extensionCatalog: new ExtensionCatalog([
@@ -138,7 +169,12 @@ export const test = base.extend<
     if (!address || typeof address === 'string') throw new Error('No listening address');
     const url = `http://127.0.0.1:${address.port}`;
     fileOrigins.push(url);
-    async function request(path: string, body?: unknown, key = agent, method?: string) {
+    async function request(
+      path: string,
+      body?: unknown,
+      key = agent,
+      method?: string,
+    ): Promise<any> {
       const response = await fetch(`${url}/v1${path}`, {
         method: method ?? (body === undefined ? 'GET' : 'POST'),
         headers: {
@@ -151,12 +187,99 @@ export const test = base.extend<
       if (!response.ok) throw new Error(JSON.stringify(result));
       return result;
     }
+    async function sourceEvidence() {
+      if (!catalog || !runTokens) throw new Error('source fixture is not enabled');
+      const manifest = sourceManifest,
+        input = { registrationId: manifest.universalId, version: manifest.version, settings: {} };
+      const preview = await request('/extensions/preview', input, user);
+      const installed = await fetch(`${url}/v1/extensions`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${user}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'source-browser',
+        },
+        body: JSON.stringify({ ...input, planDigest: preview.planDigest }),
+      });
+      if (!installed.ok) throw new Error('source fixture install failed');
+      const { id } = (await installed.json()) as { id: string },
+        base = `/extensions/${id}`;
+      const queue = new ExtensionQueue(sql, (id, version) => catalog.get(id, version).manifest);
+      const token = (run: ClaimedJob) =>
+        runTokens.issue(sql, run, manifest.universalId, run.scopes);
+      const [setup] =
+        await owner`select id from extension_jobs where installation_id=${id} and trigger_kind='install'`;
+      const setupRun = await queue.claim(workspace.id, setup?.id, 'browser-setup');
+      if (!setupRun) throw new Error('setup missing');
+      const { sourceAccountId } = await request(
+        `${base}/source/verify`,
+        { sharing: 'workspace', accountId: 'browser-provider' },
+        await token(setupRun),
+      );
+      await queue.complete(setupRun, { status: 'succeeded' });
+      const scan = await queue.enqueue(workspace.id, id, {
+        functionId: '897a069d-ae57-44e9-820e-e2e8d231f605',
+        input: {},
+        dedupeKey: 'scan',
+      });
+      const scanRun = await queue.claim(workspace.id, scan.id, 'browser-scan');
+      if (!scanRun) throw new Error('scan missing');
+      const { sourceItemId } = await request(
+        `${base}/source-items`,
+        { sourceAccountId, externalId: 'browser-note' },
+        await token(scanRun),
+      );
+      await queue.complete(scanRun, { status: 'succeeded' });
+      const job = await queue.enqueue(workspace.id, id, {
+        functionId: '8ce44dc0-f84b-4730-8cf3-2e4c8df70d77',
+        input: { sourceItemId },
+        dedupeKey: 'sync',
+      });
+      const run = await queue.claim(workspace.id, job.id, 'browser-sync');
+      if (!run) throw new Error('sync missing');
+      const key = await token(run),
+        person = (
+          await request(
+            '/objects/person/records',
+            { values: { name: 'Source attendee', emails: 'source-browser@fixture.test' } },
+            user,
+          )
+        ).record;
+      const event = {
+        type: BASE_EVENT_TYPE_IDS.conversation,
+        occurredAt: '2026-11-10T10:00:00Z',
+        title: 'Original provider note',
+        participants: [{ email: 'source-browser@fixture.test' }],
+      };
+      const first = await request(
+        `${base}/source-events`,
+        { sourceItemId, providerRevision: '1', expectedRevisionId: null, event },
+        key,
+      );
+      const edited = await request(
+        `${base}/source-events`,
+        {
+          sourceItemId,
+          providerRevision: '2',
+          expectedRevisionId: first.revisionId,
+          event: { ...event, title: 'Edited provider note' },
+        },
+        key,
+      );
+      await queue.complete(run, { status: 'succeeded' });
+      return {
+        personId: person.id,
+        previousEventId: first.eventId,
+        currentEventId: edited.eventId,
+      };
+    }
     try {
       await use({
         url,
         keys: { user, writer, agent, reader, other: otherKey },
         request,
         consolidate: () => consolidateWorkspace(sql, workspace.id),
+        sourceEvidence,
       });
     } finally {
       await new Promise<void>((resolve, reject) => {

@@ -186,14 +186,21 @@ export class ExtensionQueue {
       throw unavailable();
     if (!input.dedupeKey || input.dedupeKey.length > 500)
       throw new AppError(422, 'invalid_input', 'dedupe key must contain 1–500 characters');
-    const fn = this.manifest(installation).functions.find(
-      (f) => f.universalId === input.functionId,
-    );
+    const manifest = this.manifest(installation);
+    const fn = manifest.functions.find((f) => f.universalId === input.functionId);
     const system =
       input.functionId === SYSTEM_LIFECYCLE_FUNCTION_ID && ['install', 'uninstall'].includes(kind);
     if (!system && fn?.trigger.kind !== kind)
       throw new AppError(422, 'invalid_input', 'only registered job functions can be enqueued');
     if (fn) validateInput(fn.inputSchema, input.input);
+    let sourceItemId: string | null = null;
+    if (manifest.source?.syncFunctionIds.includes(input.functionId)) {
+      sourceItemId = z.uuid().parse((input.input as { sourceItemId?: unknown }).sourceItemId);
+      const [item] =
+        await tx`select s.id from source_items s join source_bindings b on b.account_id=s.account_id
+        where s.id=${sourceItemId} and s.state not in ('erased','retracted','deleted') and b.installation_id=${installation.id} and b.generation=${installation.generation}`;
+      if (!item) throw notFound('source item');
+    }
     if (Buffer.byteLength(stableJson(input.input)) > 65536)
       throw new AppError(413, 'quota_exceeded', 'job input exceeds 64 KiB');
     const hash = requestHash({ functionId: input.functionId, input: input.input, cause });
@@ -213,9 +220,9 @@ export class ExtensionQueue {
         retryAfterSeconds: 60,
       });
     const [job] = await tx<{ id: string }[]>`insert into extension_jobs
-      (workspace_id,installation_id,generation,release_digest,function_id,input,input_hash,dedupe_key,cause,trigger_kind)
+      (workspace_id,installation_id,generation,release_digest,function_id,input,input_hash,dedupe_key,cause,trigger_kind,source_item_id)
       values (${installation.workspace_id},${installation.id},${installation.generation},${installation.release_digest},
-        ${input.functionId},${tx.json(jsonValue(input.input))},${hash},${input.dedupeKey},${tx.json(cause)},${kind}) returning id`;
+        ${input.functionId},${tx.json(jsonValue(input.input))},${hash},${input.dedupeKey},${tx.json(cause)},${kind},${sourceItemId}) returning id`;
     if (!job) throw new Error('job insert returned no row');
     return job.id;
   }
@@ -425,6 +432,15 @@ export class ExtensionQueue {
       and generation=${installation.generation} and trigger_kind=${job.trigger_kind} and status<>'succeeded' limit 1`;
     if (pending) return false;
     if (job.trigger_kind === 'install') {
+      if (this.manifest(installation).source) {
+        const [verified] =
+          await tx`select 1 from source_bindings where installation_id=${installation.id} and generation=${installation.generation}`;
+        if (!verified) {
+          await tx`update extension_installations set state=${installation.setup_kind === 'upgrade' ? 'disabled' : 'setup_failed'},connection_health='needs_reconnect',last_error='source_verification_required' where id=${installation.id}`;
+          await tx`update extension_jobs set status='failed',code='source_verification_required' where id=${job.id}`;
+          return false;
+        }
+      }
       await tx`update extension_installations set state='active',connection_health='ok',last_error=null,activated_at=clock_timestamp(),updated_at=now() where id=${installation.id}`;
       return true;
     }

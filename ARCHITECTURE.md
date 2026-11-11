@@ -19,7 +19,8 @@ It combines two ideas:
 
 Retainer never calls a language model. Agents decide what to remember;
 Retainer validates it, resolves conflicts, keeps its history and makes it
-searchable. Full conversations stay with the agent.
+searchable. Conversations can stay with the agent or be retained as authorized
+file attachments; transcript bytes never enter record JSON or search indexes.
 
 ---
 
@@ -97,6 +98,7 @@ API and MCP schemas are cached per `(workspace, schema_version)`.
 | `full_name`                                              | `{ first, last }`                                                |
 | `address`                                                | `{ street1, street2, city, state, postcode, country, lat, lng }` |
 | `relation`                                               | Not in `records.data`; see `record_links`                        |
+| `files`                                                  | Immutable opaque file ID list; bytes in authorized external storage |
 
 Composite shapes are defined once in `@retainer/shared`, so every object that
 has emails stores them the same way.
@@ -1863,7 +1865,7 @@ from its own layer and the ones below it:
 | Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`, `egress`, `launcher`, `extension-control`                         | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
 | Admin      | `schema-engine`, `templates`, `workspaces`, `extensions`                                                                          | Changing a schema and creating workspaces                                         |
 | Features   | `views`, `comments`, `retrieval`, `reads`                                                                                         | Built on records and memory                                                       |
-| Core       | `records`, `memory`, `privacy`, `files`                                                                                           | The write rules                                                                   |
+| Core       | `records`, `memory`, `privacy`, `files`, `sources`                                                                                | The write rules                                                                   |
 | Foundation | `db`, `schema`, `caller`, `idempotency`, `stable-json`, `config`, `errors`, `log`, `version`, `extension-runtime`, `file-storage` | The database and reading a schema                                                 |
 
 The schema engine sits above the records because a schema change rewrites

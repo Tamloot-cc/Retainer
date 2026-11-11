@@ -103,7 +103,7 @@ export function EventPage() {
         <>
           <Button asChild variant="ghost" size="small">
             <Link to="/r/$id" params={{ id: r.id }}>
-              {canWrite ? 'Edit fields' : 'Open as record'}
+              {canWrite && !e.source ? 'Edit fields' : 'Open as record'}
             </Link>
           </Button>
           {canWrite ? <Button onClick={() => setConfirm(true)}>Delete event</Button> : null}

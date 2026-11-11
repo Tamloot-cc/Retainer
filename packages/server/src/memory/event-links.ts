@@ -326,6 +326,7 @@ type EventColumnsRow = {
   occurred_at: Date;
   channel: string | null;
   external_id: string | null;
+  source: EventDetails['source'] | null;
 };
 
 /**
@@ -342,8 +343,10 @@ export async function eventDetails(
   const ids = events.map((e) => e.id);
   const [columns, links] = await Promise.all([
     tx<EventColumnsRow[]>`
-      select record_id, occurred_at, channel, external_id from event_records
-      where workspace_id = ${workspaceId} and record_id = any(${ids}::uuid[])`,
+      select e.record_id,e.occurred_at,e.channel,e.external_id,
+        case when v.id is null then null else json_build_object('sourceItemId',v.item_id,'revisionId',v.id,'current',v.is_current,'previousEventId',v.previous_event_id) end as source
+      from event_records e left join source_revisions v on v.workspace_id=e.workspace_id and v.event_id=e.record_id
+      where e.workspace_id = ${workspaceId} and e.record_id = any(${ids}::uuid[])`,
     tx<(LinkRow & { event_id: string })[]>`
       select event_id, id, handle, role, record_id, unmatched_reason, link from event_links
       where workspace_id = ${workspaceId} and event_id = any(${ids}::uuid[])
@@ -368,6 +371,7 @@ export async function eventDetails(
       ...eventText(schema.objectsById.get(event.object_type_id), event.data),
       participants: presentParticipants(rows, live, candidates),
       about: aboutOf(rows, live),
+      ...(row.source ? { source: row.source } : {}),
     });
   }
   return details;

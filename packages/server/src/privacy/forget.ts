@@ -14,6 +14,7 @@ import {
   type WriteContext,
 } from '../records/write.js';
 import type { CompiledSchema } from '../schema/compiled.js';
+import { prepareSourceErasure } from '../sources/erasure.js';
 import {
   requireSuppressionKey,
   suppress,
@@ -116,9 +117,15 @@ export async function forgetRecord(
     where r.id = any(${recordIds}::uuid[])
       and r.object_type_id = any(${schema.eventTypeIds}::uuid[])
     order by 1`;
-  const eventIds = events.map((r) => r.id);
+  const sourceErasure = await prepareSourceErasure(
+    tx,
+    workspaceId,
+    events.map((r) => r.id),
+    handleValues,
+  );
+  const eventIds = sourceErasure.eventIds;
   const erased = [...new Set([...recordIds, ...eventIds])];
-  const fileErasure = await collectFileErasure(tx, erased, eventIds);
+  const fileErasure = await collectFileErasure(tx, erased, eventIds, sourceErasure.fileIds);
 
   const reviewCandidates = await findMentions(
     tx,
@@ -249,6 +256,7 @@ export async function forgetRecord(
     suppressedHandles,
     comments: comments.length,
     ...(fileErasure.fileIds.length ? { files: fileErasure.fileIds.length } : {}),
+    ...(sourceErasure.count ? { sourceItems: sourceErasure.count } : {}),
   };
   await tx`
     insert into deletion_audit_log (workspace_id, actor_type, actor_id, counts)

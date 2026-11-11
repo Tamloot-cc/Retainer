@@ -182,3 +182,45 @@ live AWS verification. Managed source-bound uploads and erasure across source
 revisions, queued provider work, KV and feeds belong to the next phase; this
 checkpoint does not advertise provider ingestion. No merge or deployment has
 been performed.
+
+## Managed source identities, revisions and erasure
+
+The source milestone adds release-pinned identity/ordering/verifier contracts;
+setup-only account attestations and activation checks; stable identities retained
+across reinstall; item-bound ingestion jobs; staged participant ownership before
+uploads; immutable evidence revisions; permanent replay receipts; optimistic
+revision checks and explicit stale outcomes; server-enforced participant creation
+policy; verified keep/retract deletion handling; and matching REST, MCP and SDK
+operations. Provider I/O remains in isolated first-party handlers. The primitives
+do not by themselves verify a provider's connection contract.
+
+Edited evidence retracts prior derived assertions and hides facts with no current
+source. Current activity/search/context uses one revision; explicit citations and
+historical reads remain available. Managed fields, participants and event-type
+moves are immutable. The UI explains current/superseded evidence and links prior
+revisions. Metadata is joined into the existing event hydration query, preserving
+the bounded-query regression contract.
+
+Source erasure expands every affected revision and staged participant, including
+pending files before any event exists. It clears provider identity/digests,
+receipts, staged ownership and installation KV, retains keyed suppression through
+reinstall/key rotation, and fences in-memory fetches through a generation change.
+Affected jobs are redacted/cancelled; unrelated durable jobs are retained and can
+resume under the new generation. Backfill date bounds must therefore live in
+durable operational job input rather than resettable cursor KV.
+
+Evidence includes real-Postgres competing revisions, duplicate delivery, erasure
+versus import, pending uploads, scope/item isolation, participant policies,
+provider deletion policy, reinstall/key rotation, missing-key fail-closed behavior,
+workspace purge and MCP parity. Browser coverage now includes the immutable
+source-history flow; all 65 scenarios pass against freshly built assets.
+The final unit/integration suite passes 1,326 tests, including 1,042 server tests.
+Typecheck, build, lint, layer and release checks pass; lint retains existing
+repository warnings only.
+
+Remaining delivery: provider-specific connection/sharing verification and
+refresh/reconnect UI, explicit grant changes, standalone installation REST/OAuth,
+raw-byte isolated webhook verification and receipts, commit-ordered feed/change
+dispatch and last-contact, Granola/backfill/gap recovery, and private hosted
+infrastructure/staging/rollback/maintenance proof. The shipped default catalog
+remains empty. No real provider calls, merge or deployment have been performed.

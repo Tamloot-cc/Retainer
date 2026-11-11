@@ -442,6 +442,20 @@
       "when": 1794395922841,
       "tag": "0062_file_storage_capabilities",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1794397176089,
+      "tag": "0063_managed_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1794397207346,
+      "tag": "0064_source_permissions",
+      "breakpoints": true
     }
   ]
 }

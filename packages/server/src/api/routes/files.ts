@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireScope } from '../../auth/middleware.js';
 import type { Sql } from '../../db/client.js';
 import type { FileStorage } from '../../file-storage/contract.js';
-import { Files, fileMetadataSchema } from '../../files/service.js';
+import { Files, fileIntentSchema } from '../../files/service.js';
 import { idParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 export function fileRoutes(app: Hono<AppEnv>, sql: Sql, storage?: FileStorage, quota?: number) {
@@ -20,7 +20,7 @@ export function fileRoutes(app: Hono<AppEnv>, sql: Sql, storage?: FileStorage, q
     c.json(
       await files.intent(
         c.get('caller'),
-        await readBody(c, fileMetadataSchema),
+        await readBody(c, fileIntentSchema),
         c.req.header('Idempotency-Key') ?? '',
       ),
       201,

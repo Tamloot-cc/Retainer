@@ -17,6 +17,8 @@ export type WriteContext = {
   workspaceId: string;
   actor: Actor;
   run?: RunBinding;
+  /** Server-only managed-import context; never read from an ordinary record payload. */
+  sourceItemId?: string;
   schema: CompiledSchema;
   /** Agent assertions below this confidence wait for review (rule 2.3). */
   confidenceThreshold: number;
@@ -318,6 +320,13 @@ export async function writeFields(
   writes: Map<FieldState, unknown>,
   options: WriteOptions = {},
 ): Promise<Record<string, FieldWriteStatus>> {
+  const [managed] = await tx`select 1 from source_revisions where event_id=${record.id}`;
+  if (managed)
+    throw new AppError(
+      409,
+      'immutable_source_revision',
+      'managed evidence is immutable; import a new source revision',
+    );
   if (
     options.expectedUpdatedAt !== undefined &&
     record.updated_at.getTime() !== new Date(options.expectedUpdatedAt).getTime()
@@ -754,6 +763,9 @@ export async function markDeleted(
     where id = any(${[...ids]}::uuid[]) and deleted_at is null
     returning id`;
   const sorted = deleted.map((r) => r.id).sort();
+  if (sorted.length)
+    await tx`update source_items set state='retracted',updated_at=clock_timestamp()
+    where id in(select item_id from source_revisions where event_id=any(${sorted}::uuid[]) and is_current) and state<>'erased'`;
   await closeSuggestionsFor(tx, context, sorted);
   return sorted;
 }

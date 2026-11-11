@@ -1,7 +1,7 @@
 import type { EventHit, FactHit, RecordHit, SearchResult } from '@retainer/shared';
 import { z } from 'zod';
 import type { Tx } from '../db/tx.js';
-import { currentFact } from '../memory/events.js';
+import { currentFact, currentSourceEvidence } from '../memory/events.js';
 import { factPlace } from '../memory/profiles.js';
 import { exactQuery, prefixQuery } from '../records/search-sql.js';
 import { type CompiledSchema, eventText } from '../schema/compiled.js';
@@ -145,6 +145,7 @@ async function searchEvents(
     from records r
     join event_records e on e.record_id = r.id
     where r.workspace_id = ${workspaceId} and r.deleted_at is null
+      and ${currentSourceEvidence(tx, tx`r.id`)}
       and r.object_type_id = any(${schema.eventTypeIds}::uuid[])
       and r.search @@ ${prefixQuery(tx, input.query)}
     order by ${rank(tx, 'r.search', input.query)}, e.occurred_at desc, r.id

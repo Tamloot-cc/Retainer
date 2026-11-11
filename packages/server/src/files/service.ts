@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { z } from 'zod';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
 import type { Tx } from '../db/tx.js';
@@ -11,8 +12,10 @@ import {
 } from '../file-storage/contract.js';
 import { requestHash } from '../idempotency.js';
 import { withRead, withWrite } from '../records/service.js';
+import type { CompiledSchema } from '../schema/compiled.js';
 
 export { fileMetadataSchema };
+export const fileIntentSchema = fileMetadataSchema.extend({ sourceItemId: z.uuid().optional() });
 
 type Row = {
   id: string;
@@ -46,8 +49,8 @@ export class Files {
     if (!this.storage || (row && row.storage_id !== this.storage.id)) throw missingStorage();
     return this.storage;
   }
-  async intent(caller: Caller, raw: FileMetadata, key: string) {
-    const metadata = fileMetadataSchema.parse(raw),
+  async intent(caller: Caller, raw: FileMetadata & { sourceItemId?: string }, key: string) {
+    const { sourceItemId, ...metadata } = fileIntentSchema.parse(raw),
       storage = this.adapter();
     if (!key || key.length > 200)
       throw new AppError(
@@ -61,11 +64,28 @@ export class Files {
       generation: caller.run?.generation ?? null,
       key,
     });
-    const digest = requestHash(metadata);
+    const digest = requestHash({ metadata, sourceItemId: sourceItemId ?? null });
     const row = await withWrite(
       this.sql,
       caller,
       async (tx) => {
+        const [binding] = caller.run
+          ? await tx`select account_id from source_bindings where installation_id=${caller.run.installationId} and generation=${caller.run.generation}`
+          : [];
+        if (sourceItemId || binding) {
+          const [item] =
+            caller.run && sourceItemId
+              ? await tx`select s.id from source_items s join extension_jobs j on j.source_item_id=s.id
+            where s.id=${sourceItemId} and s.account_id=${binding?.account_id ?? null} and s.state in ('reserved','live','unavailable') and j.id=${caller.run.jobId}
+            and s.prepared_job_id=j.id and s.prepared_fence=${caller.run.fence}::bigint for share of s`
+              : [];
+          if (!item)
+            throw new AppError(
+              403,
+              'forbidden',
+              "managed uploads require the current job's live source item",
+            );
+        }
         await lockBudget(tx, caller.workspaceId);
         const [existing] = await tx<Row[]>`select * from files where request_key=${requestKey}`;
         if (existing) {
@@ -92,8 +112,8 @@ export class Files {
           });
         const [row] = await tx<
           Row[]
-        >`insert into files(workspace_id,installation_id,storage_id,object_key,metadata,bytes,created_by,request_key,request_hash)
-        values(${caller.workspaceId},${caller.run?.installationId ?? null},${storage.id},${randomBytes(32).toString('hex')},${tx.json(metadata)},${metadata.bytes},${tx.json(caller.actor)},${requestKey},${digest}) returning *`;
+        >`insert into files(workspace_id,installation_id,storage_id,object_key,metadata,bytes,created_by,request_key,request_hash,source_item_id)
+        values(${caller.workspaceId},${caller.run?.installationId ?? null},${storage.id},${randomBytes(32).toString('hex')},${tx.json(metadata)},${metadata.bytes},${tx.json(caller.actor)},${requestKey},${digest},${sourceItemId ?? null}) returning *`;
         if (!row) throw new Error('upload intent insert returned no row');
         return row;
       },
@@ -153,18 +173,19 @@ export class Files {
       { asPerson: false },
     );
   }
-  private async visible(tx: Tx, id: string) {
+  private async visible(tx: Tx, id: string, schema: CompiledSchema) {
     const [row] = await tx<
       Row[]
     >`select f.* from files f where f.id=${id} and f.state='ready' and exists(
       select 1 from file_references ref join field_assertions a on a.id=ref.assertion_id join records r on r.id=a.record_id
-      where ref.file_id=f.id and ref.workspace_id=f.workspace_id and r.deleted_at is null and r.merged_into_id is null)`;
+      where ref.file_id=f.id and ref.workspace_id=f.workspace_id and r.deleted_at is null and r.merged_into_id is null
+      and r.object_type_id=any(${schema.visibleObjectIds}::uuid[]))`;
     if (!row) throw notFound('file');
     return row;
   }
   async get(caller: Caller, id: string) {
-    return withRead(this.sql, caller, async (tx) => {
-      const row = await this.visible(tx, id);
+    return withRead(this.sql, caller, async (tx, schema) => {
+      const row = await this.visible(tx, id, schema);
       return { id, ...row.metadata };
     });
   }
@@ -188,8 +209,8 @@ export class Files {
     return withRead(
       this.sql,
       caller,
-      async (tx) => {
-        const row = await this.visible(tx, id);
+      async (tx, schema) => {
+        const row = await this.visible(tx, id, schema);
         try {
           return await this.adapter(row).download(
             row.object_key,

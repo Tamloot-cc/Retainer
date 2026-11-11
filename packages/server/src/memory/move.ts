@@ -264,6 +264,14 @@ export async function moveEvents(
   const defaults = prepareDefaults(target, input.defaults);
   const events = await lockEvents(tx, context, source, input.events);
   const ids = events.map((e) => e.id);
+  const [managed] =
+    await tx`select event_id from source_revisions where event_id=any(${ids}::uuid[]) limit 1`;
+  if (managed)
+    throw new AppError(
+      409,
+      'immutable_source_revision',
+      'managed evidence cannot move between event types; import a new revision',
+    );
   const result: MoveEventsResult = {
     id: null,
     dryRun: input.dryRun,

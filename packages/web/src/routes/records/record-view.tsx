@@ -162,7 +162,7 @@ export function RecordView({
     enabled: !!history,
   });
   const object = objectByName(schema, r.object),
-    canWrite = canMutate(session);
+    canWrite = canMutate(session) && !r.event?.source;
   const own = object?.fields.filter((f) => !isInverseRelation(f)) ?? [];
   const inverse = object?.fields.filter(isInverseRelation) ?? [];
   const incoming = polymorphicLinksTo(schema.objects, r.object);

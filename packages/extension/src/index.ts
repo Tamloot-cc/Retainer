@@ -122,6 +122,17 @@ export const manifestSchema = z.strictObject({
   connection: z.literal('workspace'),
   createPeople: z.enum(['never', 'contacted_first', 'everyone']),
   onSourceDelete: z.enum(['keep', 'retract']),
+  /** Reviewed, release-pinned ingestion authority; provider code attests only through setup. */
+  source: z
+    .strictObject({
+      provider: name,
+      identity: z.enum(['account', 'global-resource']),
+      verifyFunctionId: uuid,
+      syncFunctionIds: z.array(uuid).min(1).max(20),
+      eventTypeIds: z.array(uuid).min(1).max(20),
+      revisionOrder: z.enum(['integer', 'timestamp', 'opaque']),
+    })
+    .optional(),
   settings: z.record(
     name,
     z.strictObject({
@@ -222,6 +233,42 @@ export function defineExtension(value: unknown): ExtensionManifest {
     if (definition.secret && definition.type !== 'string')
       throw new Error('unsupported_manifest: secrets must be strings');
   for (const fn of manifest.functions) checkFunction(fn);
+  if (manifest.source) {
+    const source = manifest.source;
+    if (
+      manifest.execution !== 'hosted' ||
+      !manifest.scopes.includes('write') ||
+      !manifest.scopes.includes('read')
+    )
+      throw new Error('unsupported_manifest: managed sources require hosted write authority');
+    if (
+      manifest.functions.find((f) => f.universalId === source.verifyFunctionId)?.trigger.kind !==
+      'install'
+    )
+      throw new Error(
+        'unsupported_manifest: source verification requires a registered install function',
+      );
+    if (
+      new Set(source.syncFunctionIds).size !== source.syncFunctionIds.length ||
+      new Set(source.eventTypeIds).size !== source.eventTypeIds.length
+    )
+      throw new Error('unsupported_manifest: duplicate source binding');
+    for (const id of source.syncFunctionIds) {
+      const fn = manifest.functions.find((f) => f.universalId === id);
+      const input = fn?.inputSchema;
+      if (
+        fn?.trigger.kind !== 'job' ||
+        input?.type !== 'object' ||
+        input.additionalProperties !== false ||
+        input.required?.length !== 1 ||
+        input.required[0] !== 'sourceItemId' ||
+        Object.keys(input.properties ?? {}).length !== 1 ||
+        input.properties?.sourceItemId?.type !== 'string' ||
+        input.properties.sourceItemId.maxLength !== 36
+      )
+        throw new Error('unsupported_manifest: source jobs accept only a local sourceItemId');
+    }
+  }
   for (const view of manifest.views) {
     if (new Set(view.fieldIds).size !== view.fieldIds.length)
       throw new Error('unsupported_manifest: duplicate view field');

@@ -368,6 +368,18 @@ export class Extensions {
         );
     }
     const generation = existing?.generation ?? 0;
+    if (
+      manifest.source?.eventTypeIds.some(
+        (id) =>
+          !planned.desired.objects.some(
+            (o) => o.universalId === id && o.class === 'event' && o.status === 'active',
+          ),
+      )
+    )
+      throw conflict(
+        'schema_binding_conflict',
+        'managed source event types must resolve to active event schema identities',
+      );
     const preview: ExtensionPreview = {
       planDigest: hash({
         workspace: caller.workspaceId,
@@ -391,11 +403,19 @@ export class Extensions {
         action: owns('view', view.universalId) ? 'retain' : 'create',
       })),
       grants: { actor: manifest.requestedActor, scopes: manifest.scopes },
-      warnings: this.activation.has(release.digest)
-        ? []
-        : [
-            'Runtime activation is unavailable. This installation remains disabled and cannot ingest data.',
-          ],
+      warnings: [
+        ...(manifest.source
+          ? [
+              `Provider content is shared with everyone in this Retainer workspace. Source identity: ${manifest.source.identity}.`,
+              `Create people: ${manifest.createPeople}; source deletion: ${manifest.onSourceDelete}.`,
+            ]
+          : []),
+        ...(this.activation.has(release.digest)
+          ? []
+          : [
+              'Runtime activation is unavailable. This installation remains disabled and cannot ingest data.',
+            ]),
+      ],
     };
     return { preview, release, operations, existing, draftId };
   }

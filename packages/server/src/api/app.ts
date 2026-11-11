@@ -16,6 +16,7 @@ import type { FileStorage } from '../file-storage/contract.js';
 import { type RateLimit, rateLimit } from '../http/rate-limit.js';
 import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
 import { mcpRoute } from '../mcp/route.js';
+import { Sources } from '../sources/service.js';
 import { VERSION } from '../version.js';
 import { commentRoutes } from './routes/comments.js';
 import { runtimeRoutes } from './routes/extension-runtime.js';
@@ -25,6 +26,7 @@ import { memoryRoutes } from './routes/memory.js';
 import { recordRoutes } from './routes/records.js';
 import { retrievalRoutes } from './routes/retrieval.js';
 import { schemaRoutes } from './routes/schema.js';
+import { sourceRoutes } from './routes/sources.js';
 import { templateRoutes } from './routes/templates.js';
 import { viewRoutes } from './routes/views.js';
 import { webReadRoutes } from './routes/web-read.js';
@@ -98,6 +100,15 @@ export function createApp(deps: AppDeps) {
   extensionRoutes(v1, extensions);
   runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets);
   fileRoutes(v1, deps.sql, deps.fileStorage, deps.fileQuota);
+  sourceRoutes(
+    v1,
+    new Sources(deps.sql, (registration, version, digest) => {
+      const release = extensions.catalog.get(registration, version);
+      if (release.digest !== digest)
+        throw new AppError(409, 'incompatible_runtime', 'source release changed');
+      return release.manifest;
+    }),
+  );
   app.route('/v1', v1);
 
   // Accounts mode: apps connect to /mcp over OAuth as well as with API keys
@@ -131,6 +142,7 @@ export function createApp(deps: AppDeps) {
     extensionActivation: deps.extensionActivation,
     fileStorage: deps.fileStorage,
     fileQuota: deps.fileQuota,
+    runTokens: deps.runTokens,
   });
 
   if (deps.webDir) {

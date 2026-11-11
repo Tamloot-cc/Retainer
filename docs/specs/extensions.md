@@ -1,6 +1,6 @@
 # Retainer extensions
 
-Status: implementation in progress; control, isolated execution, lifecycle, management UI and file storage implemented; managed ingestion and launch remain. Date: 2026-11-11.
+Status: implementation in progress; control, isolated execution, lifecycle, management UI, file storage and managed source primitives implemented; provider delivery, feeds and launch remain. Date: 2026-11-11.
 See [implementation progress](extensions-implementation.md) for completed and outstanding work.
 
 This spec replaces the exported **Retainer Extensions** proposal supplied as
@@ -450,29 +450,58 @@ retraction/deletion; it cannot just retain the maximum timestamp ever seen.
 Do not change `logEvent` into an upsert. Add `sync_source_event` (REST
 `POST /v1/extensions/:installation/source-events`) for managed imports. Require
 write scope plus installation match. Input contains stable source account/item
-ID, normalized content digest, provider revision/order marker when available,
+ID, optional normalized content digest assertion, provider revision/order marker when available,
 expected current revision, event body, and ready file references. Return
 `{sourceItemId, revisionId, eventId, created, unchanged, previousEventId?}`.
 The normalized import body is:
 
 ```ts
 type SourceEventImport = {
-  sourceAccountId: string; // server-verified binding, never a workspace selector
-  externalId: string;
-  contentDigest: string; // recomputed by the server from canonical event content
+  sourceItemId: string; // local identity reserved under the verified source account
+  contentDigest?: string; // checked against the server's canonical digest when supplied
   providerRevision?: string;
   expectedRevisionId: string | null; // null means create only
   event: {
-    type: string; // resolved through the installation's stable schema binding
+    type: string; // event type universal UUID from the release-pinned binding
     occurredAt: string;
     title: string;
     summary?: string;
     fields?: Record<string, unknown>; // resolved permanent field keys
-    participants?: Array<{ email: string }>;
+    participants?: Array<{ email: string; name?: string; contacted?: boolean }>;
     about?: string[];
   };
 };
 ```
+
+Setup binds an account through `/source/verify`, callable only by the registered
+isolated install verifier for the live generation. Normal credentials cannot
+attest provider identities. Activation refuses missing verification. Account
+replacement requires a human disconnect, generation revocation and setup again;
+retained data stays in its former namespace. Releases pin provider name, identity
+strategy, verifier function, ingestion job functions, event type UUIDs and revision
+ordering. An account-scoped provider must return a stable provider account ID.
+A reviewed `global-resource` strategy is allowed only when provider resource IDs
+have a stable provider-wide namespace; it makes no claim to verify an account ID
+that the provider does not expose. Neither strategy uses a mutable display name,
+credential hash or installation ID as the durable source namespace. Provider
+credential ownership and explicit Retainer workspace-sharing approval remain
+separate checks. Granola's account-verification/sharing adapter remains a delivery
+requirement; a global namespace alone does not satisfy it.
+
+Before enqueueing ingestion, reserve `{sourceAccountId, externalId}` through
+`POST /v1/extensions/:id/source-items`. Jobs carry only the returned local
+`sourceItemId`; queue admission validates it against the current binding. The
+registered ingestion job may read the provider ID, stage participant emails with
+`/source-items/:item/prepare`, and upload files bound to that item. Staging is
+required for each job attempt before issuing an upload URL, so erasure can find
+pending transcripts even before the first event revision exists. Staged emails
+are suppression-checked and erased with the source. A source job cannot import
+another item's evidence or attach another item's uploads.
+
+The server returns its canonical content digest, including normalized fields and
+file metadata/checksums rather than transient upload IDs. Re-uploading identical
+bytes does not alone create a new evidence revision. Permanent receipts retain
+provider-revision results independently of request-idempotency expiration.
 
 The adapter declares how provider revisions compare, or explicitly declares them
 opaque; the server cannot lexically order arbitrary provider strings. Persist the
@@ -499,8 +528,9 @@ Default activity/context presents the current revision once; explicit history
 shows prior revisions and supersession, with old citations still resolving.
 `occurredAt` is when the meeting happened, not its edit time. Participant changes
 are represented by the new revision, not `logEvent`'s additive-link retry behavior.
-Map source identity to `(registration, stable provider account, external ID)`;
-keep it across reinstall. This is a deliberate change from the proposal's promise
+Map source identity to `(registration, stable provider account, external ID)`
+or `(registration, reviewed provider-wide namespace, external ID)` for a
+global-resource provider; keep it across reinstall. This is a deliberate change from the proposal's promise
 of the same event ID on edit and must ship before claiming edited-note sync works.
 
 `onSourceDelete` is a requested policy shown at install. `keep` retains the current
@@ -509,6 +539,12 @@ evidence and its derivatives through normal rules. Neither hard-erases data or
 allows deleting unrelated events. A transient 404/permission error is not proof
 of deletion; require a verified deletion signal or provider-defined definitive
 lookup. Deleted/retracted identities are not silently recreated on future sync.
+The item's ingestion job reports transient unavailability separately from a
+deletion backed by a provider event or definitive lookup. `keep` preserves the
+current evidence; `retract` runs the normal event/derived-claim retraction path.
+Ordinary record deletion also marks the current managed item retracted. Direct
+field/participant editing of managed revisions is refused; the UI shows their
+current or superseded status and preserves explicit historical reads.
 
 Catch-up starts 31 days back for Granola, with explicit larger backfills. A page
 transaction enqueues all item jobs and commits its checkpoint together. Advance
@@ -577,6 +613,16 @@ cursors/IDs; documented source-linked state must be deleted during forget. Arbit
 personal-data caching in KV is unsupported. Account/workspace purge cleans every
 new table and file namespace; remote provider deletion is a separate product
 operation and must never be implied by local erasure.
+
+For managed sources, erasure expands to every revision of each affected item and
+staged participant ownership before collecting files. It removes provider IDs,
+ordering markers, content digests, receipts and staged emails; keeps only an
+opaque erased item and keyed identity tombstone; clears the affected installation's
+KV; and advances its generation to fence fetched in-memory content. Erased-source
+jobs are cancelled and redacted. Unrelated durable jobs are retained/requeued under
+the new generation. Backfill jobs must retain their non-sensitive requested date
+bounds independently of resettable KV cursors, so privacy recovery cannot silently
+shrink a requested scan. A setup interrupted by erasure requires setup retry.
 
 ## 12. Public interfaces and user experience
 

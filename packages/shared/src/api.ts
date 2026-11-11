@@ -323,6 +323,7 @@ export type ForgetResult = {
     /** Comments on the erased records, hard-deleted with them. */
     comments: number;
     files?: number;
+    sourceItems?: number;
   };
   /** Records whose values were recomputed after their claims or links were removed. */
   recomputedRecordIds: string[];
@@ -389,6 +390,13 @@ export type Participant = MatchedParticipant | UnmatchedParticipant;
 export type Participants = { matched: MatchedParticipant[]; unmatched: UnmatchedParticipant[] };
 /** An event record's built-in columns and links (1.3), beside its fields. */
 export type EventDetails = {
+  /** Managed evidence is immutable; explicit reads preserve superseded citations. */
+  source?: {
+    sourceItemId: string;
+    revisionId: string;
+    current: boolean;
+    previousEventId: string | null;
+  };
   occurredAt: string;
   /** Null once a privacy request erased the event's raw identity (2.1). */
   channel: string | null;
@@ -918,6 +926,12 @@ export function filterOperatorsFor(field: {
 }
 
 /** File bytes use signed transfers; only immutable ready IDs enter field values. */
-export type FileUploadInput = { name: string; mediaType: string; bytes: number; sha256: string };
+export type FileUploadInput = {
+  name: string;
+  mediaType: string;
+  bytes: number;
+  sha256: string;
+  sourceItemId?: string;
+};
 export type FileTransfer = { url: string; headers: Record<string, string>; expiresAt: string };
-export type FileView = FileUploadInput & { id: string };
+export type FileView = Omit<FileUploadInput, 'sourceItemId'> & { id: string };

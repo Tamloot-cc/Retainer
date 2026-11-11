@@ -1511,6 +1511,7 @@ export const extensionJobs = pgTable(
     id: id(),
     workspaceId: workspaceId(),
     installationId: uuid('installation_id').notNull(),
+    sourceItemId: uuid('source_item_id'),
     generation: integer('generation').notNull(),
     releaseDigest: text('release_digest').notNull(),
     functionId: uuid('function_id').notNull(),
@@ -1545,6 +1546,12 @@ export const extensionJobs = pgTable(
       .where(sql`${t.status} = 'running'`),
     index('extension_jobs_due_idx').on(t.status, t.availableAt),
     index('extension_jobs_install_idx').on(t.workspaceId, t.installationId, t.createdAt),
+    index('extension_jobs_source_idx').on(t.workspaceId, t.sourceItemId),
+    foreignKey({
+      name: 'extension_jobs_source_fk',
+      columns: [t.workspaceId, t.sourceItemId],
+      foreignColumns: [sourceItems.workspaceId, sourceItems.id],
+    }),
     tenantFk(
       'extension_jobs_install_fk',
       [t.workspaceId, t.installationId],
@@ -1724,6 +1731,7 @@ export const files = pgTable(
     id: id(),
     workspaceId: workspaceId(),
     installationId: uuid('installation_id'),
+    sourceItemId: uuid('source_item_id'),
     storageId: text('storage_id').notNull().default('local-v1'),
     objectKey: text('object_key').notNull(),
     metadata: jsonb('metadata').notNull(),
@@ -1751,6 +1759,12 @@ export const files = pgTable(
     unique('files_request_key_uq').on(t.workspaceId, t.requestKey),
     index('files_expiry_idx').on(t.workspaceId, t.expiresAt),
     index('files_installation_idx').on(t.workspaceId, t.installationId),
+    index('files_source_idx').on(t.workspaceId, t.sourceItemId),
+    foreignKey({
+      name: 'files_source_fk',
+      columns: [t.workspaceId, t.sourceItemId],
+      foreignColumns: [sourceItems.workspaceId, sourceItems.id],
+    }),
     check('files_state', sql`${t.state} in ('pending','ready','erasing','erased')`),
     check('files_bytes', sql`${t.bytes}>0 and ${t.bytes}<=26214400`),
     pgPolicy('files_workspace', {
@@ -1805,6 +1819,189 @@ export const fileDeletions = pgTable(
     unique('file_deletions_object_key_uq').on(t.objectKey),
     index('file_deletions_due_idx').on(t.status, t.availableAt),
     pgPolicy('file_deletions_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+// Stable provider identities outlive installations; evidence revisions never mutate in place.
+export const sourceAccounts = pgTable(
+  'source_accounts',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    registrationId: uuid('registration_id').notNull(),
+    provider: text('provider').notNull(),
+    namespace: text('namespace').notNull(),
+    identity: text('identity').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('source_accounts_ws_id_uq').on(t.workspaceId, t.id),
+    unique('source_accounts_identity_uq').on(
+      t.workspaceId,
+      t.registrationId,
+      t.provider,
+      t.namespace,
+    ),
+    pgPolicy('source_accounts_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const sourceBindings = pgTable(
+  'source_bindings',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    generation: integer('generation').notNull(),
+    verifiedAt: timestamptz('verified_at').notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId] }),
+    tenantFk(
+      'source_bindings_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    tenantFk(
+      'source_bindings_account_fk',
+      [t.workspaceId, t.accountId],
+      [sourceAccounts.workspaceId, sourceAccounts.id],
+    ),
+    index('source_bindings_account_idx').on(t.workspaceId, t.accountId),
+    pgPolicy('source_bindings_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const sourceItems = pgTable(
+  'source_items',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    accountId: uuid('account_id').notNull(),
+    externalId: text('external_id'),
+    state: text('state').notNull().default('reserved'),
+    providerRevision: text('provider_revision'),
+    preparedJobId: uuid('prepared_job_id'),
+    preparedFence: bigint('prepared_fence', { mode: 'number' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('source_items_ws_id_uq').on(t.workspaceId, t.id),
+    unique('source_items_identity_uq').on(t.workspaceId, t.accountId, t.externalId),
+    tenantFk(
+      'source_items_account_fk',
+      [t.workspaceId, t.accountId],
+      [sourceAccounts.workspaceId, sourceAccounts.id],
+    ),
+    check(
+      'source_items_state',
+      sql`${t.state} in ('reserved','live','unavailable','deleted','retracted','erased')`,
+    ),
+    check('source_items_erased_identity', sql`(${t.state}='erased')=(${t.externalId} is null)`),
+    pgPolicy('source_items_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const sourceRevisions = pgTable(
+  'source_revisions',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    itemId: uuid('item_id').notNull(),
+    eventId: uuid('event_id').notNull(),
+    contentDigest: text('content_digest').notNull(),
+    providerRevision: text('provider_revision'),
+    isCurrent: boolean('is_current').notNull().default(true),
+    previousEventId: uuid('previous_event_id'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('source_revisions_ws_id_uq').on(t.workspaceId, t.id),
+    unique('source_revisions_event_uq').on(t.workspaceId, t.eventId),
+    uniqueIndex('source_revisions_current_uq')
+      .on(t.workspaceId, t.itemId)
+      .where(sql`${t.isCurrent}`),
+    index('source_revisions_item_idx').on(t.workspaceId, t.itemId),
+    index('source_revisions_previous_idx').on(t.workspaceId, t.previousEventId),
+    tenantFk(
+      'source_revisions_item_fk',
+      [t.workspaceId, t.itemId],
+      [sourceItems.workspaceId, sourceItems.id],
+    ),
+    tenantFk(
+      'source_revisions_event_fk',
+      [t.workspaceId, t.eventId],
+      [records.workspaceId, records.id],
+    ),
+    // Previous IDs are historical hints only: forgetting a revision removes its entire item.
+    pgPolicy('source_revisions_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const sourceReceipts = pgTable(
+  'source_receipts',
+  {
+    workspaceId: workspaceId(),
+    itemId: uuid('item_id').notNull(),
+    key: text('key').notNull(),
+    contentDigest: text('content_digest').notNull(),
+    response: jsonb('response').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.itemId, t.key] }),
+    tenantFk(
+      'source_receipts_item_fk',
+      [t.workspaceId, t.itemId],
+      [sourceItems.workspaceId, sourceItems.id],
+    ),
+    pgPolicy('source_receipts_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+/** Minimal staged participant ownership makes pending source uploads erasable before an event exists. */
+export const sourceParticipants = pgTable(
+  'source_participants',
+  {
+    workspaceId: workspaceId(),
+    itemId: uuid('item_id').notNull(),
+    email: text('email').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.itemId, t.email] }),
+    tenantFk(
+      'source_participants_item_fk',
+      [t.workspaceId, t.itemId],
+      [sourceItems.workspaceId, sourceItems.id],
+    ),
+    index('source_participants_email_idx').on(t.workspaceId, t.email),
+    pgPolicy('source_participants_workspace', {
       for: 'all',
       to: 'retainer_app',
       using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,

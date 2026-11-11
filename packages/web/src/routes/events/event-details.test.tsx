@@ -168,6 +168,21 @@ const event: EventDetails = {
 };
 
 describe('EventDetailsView', () => {
+  it('explains superseded provider evidence and keeps its participants immutable', async () => {
+    renderIn(
+      <EventDetailsView
+        id="e1"
+        event={{
+          ...event,
+          source: { sourceItemId: 's1', revisionId: 'v1', current: false, previousEventId: null },
+        }}
+        editable
+      />,
+    );
+    expect(screen.getByText(/This provider revision was superseded/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add participant…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Remove/ })).toBeNull();
+  });
   it('shows unmatched reasons and erased identity, read-only without write access', async () => {
     renderIn(<EventDetailsView id="e1" event={event} editable={false} />);
     expect(screen.getByText('Phone only')).toBeTruthy();

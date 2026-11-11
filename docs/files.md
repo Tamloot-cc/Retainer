@@ -117,8 +117,10 @@ previously signed or already-started upload from recreating erased content.
 Concurrent reclaimed workers retain each other's barriers. Storage lifecycle
 rules must preserve that protection; a delete followed by a late upload is not
 successful privacy erasure. Already-issued downloads have a maximum 60-second
-window. Managed source binding and erasure of unattached ingestion artifacts are
-part of the source-ingestion continuation; no provider integration is advertised.
+window. Managed ingestion uploads additionally require a local source item and
+staged participant ownership bound to the live item job attempt. Source erasure
+includes those unattached uploads before a first event exists. The managed source
+primitives are implemented; no provider integration is advertised yet.
 
 ## Verification
 

@@ -23,6 +23,62 @@ export const fixture = () => ({
   functions: [],
 });
 describe('strict extension contracts', () => {
+  it('requires a pinned setup verifier and local-ID-only source ingestion jobs', () => {
+    const verifyId = '5c011ac7-a6b8-4bc5-bac5-5c9b70491ab4',
+      syncId = '50b706e0-2f74-46d4-b454-d9481ed21b24';
+    const source = {
+      provider: 'fixture',
+      identity: 'account',
+      verifyFunctionId: verifyId,
+      syncFunctionIds: [syncId],
+      eventTypeIds: ['d7eec2a6-7217-4923-9cf8-00673f706ab4'],
+      revisionOrder: 'opaque',
+    };
+    const fn = { description: 'Source handler', handlerDigest: 'b'.repeat(64) };
+    const functions = [
+      {
+        ...fn,
+        universalId: verifyId,
+        name: 'verify',
+        trigger: { kind: 'install' },
+        inputSchema: { type: 'object', additionalProperties: false },
+      },
+      {
+        ...fn,
+        universalId: syncId,
+        name: 'sync',
+        trigger: { kind: 'job' },
+        inputSchema: {
+          type: 'object',
+          properties: { sourceItemId: { type: 'string', maxLength: 36 } },
+          required: ['sourceItemId'],
+          additionalProperties: false,
+        },
+      },
+    ];
+    expect(defineExtension({ ...fixture(), source, functions }).source?.provider).toBe('fixture');
+    expect(() => defineExtension({ ...fixture(), source, functions: functions.slice(1) })).toThrow(
+      'source verification',
+    );
+    expect(() =>
+      defineExtension({
+        ...fixture(),
+        source,
+        functions: [
+          functions[0],
+          {
+            ...functions[1],
+            inputSchema: {
+              type: 'object',
+              properties: { transcript: { type: 'string', maxLength: 65536 } },
+              required: ['transcript'],
+              additionalProperties: false,
+            },
+          },
+        ],
+      }),
+    ).toThrow('local sourceItemId');
+  });
   it('produces a JSON manifest with explicit policy', () => {
     expect(defineExtension(fixture())).toMatchObject({
       createPeople: 'never',

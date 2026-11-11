@@ -2,8 +2,9 @@
 
 The default catalog is empty. The deterministic fixture exercises the execution
 platform; it is not a provider integration. Authorized files and durable byte
-erasure are implemented; see [file storage](files.md). Managed source revisions,
-erasure across the remaining extension stores, webhooks, change triggers, standalone OAuth and
+erasure are implemented; see [file storage](files.md). Managed source identities,
+immutable revisions, staged upload ownership and source erasure are implemented
+as platform primitives. Provider connection adapters, webhooks, change triggers, standalone OAuth and
 Granola are still in development. Do not enable an ingestion adapter before its
 source/privacy prerequisites are implemented and tested. Hosted infrastructure
 and deployment remain separate work in `retainer-cloud`.

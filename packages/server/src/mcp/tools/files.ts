@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { Caller } from '../../caller.js';
-import { type Files, fileMetadataSchema } from '../../files/service.js';
+import { type Files, fileIntentSchema } from '../../files/service.js';
 import { run } from '../shared.js';
 export function registerFileTools(server: McpServer, files: Files, caller: Caller) {
   server.registerTool(
@@ -9,7 +9,7 @@ export function registerFileTools(server: McpServer, files: Files, caller: Calle
     {
       description:
         'Reserve an immutable file upload (up to 25 MiB) against workspace quota. Upload bytes to the returned signed URL with its headers, then call finalize_file. Never send bytes in tool JSON.',
-      inputSchema: fileMetadataSchema.extend({ idempotencyKey: z.string().min(1).max(200) }),
+      inputSchema: fileIntentSchema.extend({ idempotencyKey: z.string().min(1).max(200) }),
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,

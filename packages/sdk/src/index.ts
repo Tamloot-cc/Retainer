@@ -567,6 +567,58 @@ export class RetainerClient {
       releases: { manifest: ExtensionManifest; digest: string; actorCeiling: string }[];
     }>('/v1/extensions/catalog', {}, signal);
   }
+  verifySource(installationId: string, input: { sharing: 'workspace'; accountId?: string }) {
+    return this.post<{
+      sourceAccountId: string;
+      provider: string;
+      identity: string;
+      sharing: 'workspace';
+    }>(`/v1/extensions/${encodeURIComponent(installationId)}/source/verify`, input);
+  }
+  reserveSourceItem(
+    installationId: string,
+    input: { sourceAccountId: string; externalId: string },
+  ) {
+    return this.post<{ sourceItemId: string }>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/source-items`,
+      input,
+    );
+  }
+  sourceItem(installationId: string, itemId: string) {
+    return this.get<import('@retainer/shared').SourceItemView>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/source-items/${encodeURIComponent(itemId)}`,
+    );
+  }
+  prepareSourceItem(installationId: string, itemId: string, participants: string[]) {
+    return this.post<{ prepared: true }>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/source-items/${encodeURIComponent(itemId)}/prepare`,
+      { participants },
+    );
+  }
+  markSourceUnavailable(
+    installationId: string,
+    itemId: string,
+    input: { status: 'unavailable' | 'deleted'; evidence?: 'provider_event' | 'definitive_lookup' },
+  ) {
+    return this.post<{
+      state: string;
+      invalidated: import('@retainer/shared').SourceEventResult['invalidated'];
+    }>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/source-items/${encodeURIComponent(itemId)}/unavailable`,
+      input,
+    );
+  }
+  syncSourceEvent(installationId: string, input: import('@retainer/shared').SourceEventImport) {
+    return this.post<import('@retainer/shared').SourceEventResult>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/source-events`,
+      input,
+    );
+  }
+  disconnectSource(installationId: string) {
+    return this.post<{ disconnected: true }>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/source/disconnect`,
+    );
+  }
   extensions(signal?: AbortSignal) {
     return this.get<{ installations: ExtensionInstallation[] }>('/v1/extensions', {}, signal);
   }
