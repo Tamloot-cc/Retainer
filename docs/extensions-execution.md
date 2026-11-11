@@ -1,8 +1,9 @@
 # First-party extension execution (development preview)
 
 The default catalog is empty. The deterministic fixture exercises the execution
-platform; it is not a provider integration. Files, managed source revisions,
-erasure across extension stores, webhooks, change triggers, standalone OAuth and
+platform; it is not a provider integration. Authorized files and durable byte
+erasure are implemented; see [file storage](files.md). Managed source revisions,
+erasure across the remaining extension stores, webhooks, change triggers, standalone OAuth and
 Granola are still in development. Do not enable an ingestion adapter before its
 source/privacy prerequisites are implemented and tested. Hosted infrastructure
 and deployment remain separate work in `retainer-cloud`.

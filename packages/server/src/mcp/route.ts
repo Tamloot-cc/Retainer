@@ -5,6 +5,7 @@ import type { OAuthSettings } from '../auth/oauth-token.js';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
 import type { ExtensionCatalog } from '../extensions/catalog.js';
+import type { FileStorage } from '../file-storage/contract.js';
 import type { AppEnv } from '../http/response.js';
 import { log } from '../log.js';
 import { createMcpServer } from './server.js';
@@ -20,6 +21,9 @@ export function mcpRoute(
   sql: Sql,
   options: {
     extensionCatalog?: ExtensionCatalog | undefined;
+    extensionActivation?: ReadonlySet<string> | undefined;
+    fileStorage?: FileStorage | undefined;
+    fileQuota?: number | undefined;
     publicOrigin?: string | undefined;
     /** Accepts MCP OAuth access tokens too (accounts spec 4.7). */
     oauth?: OAuthSettings | undefined;
@@ -32,7 +36,7 @@ export function mcpRoute(
       const caller = authInfo?.extra?.caller as Caller | undefined;
       // Unreachable behind authenticate(); fail closed if that ever changes.
       if (!caller) throw new Error('MCP request reached the server without a caller');
-      return createMcpServer(sql, caller, options.extensionCatalog);
+      return createMcpServer(sql, caller, options.extensionCatalog, options);
     },
     { onerror: (error) => log.error(error) },
   );

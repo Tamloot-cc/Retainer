@@ -4,6 +4,7 @@ import { isUuid } from '../db/ids.js';
 import type { AssertionStatus, ReviewReason } from '../db/schema.js';
 import { jsonValue, type Tx } from '../db/tx.js';
 import { AppError, notFound, profileNotSupported } from '../errors.js';
+import { attachFileReferences, validateFileReferences } from '../files/references.js';
 import { isSuppressed, suppressedOf, suppressibleHandles } from '../privacy/suppression.js';
 import type { CompiledObject, CompiledSchema } from '../schema/compiled.js';
 import { type FieldState, relationTargetIds } from '../schema/types.js';
@@ -325,6 +326,7 @@ export async function writeFields(
       updatedAt: record.updated_at.toISOString(),
     });
   }
+  await validateFileReferences(tx, context, record.id, writes);
   await checkRelationTargets(tx, context, object, writes);
   if (!options.skipSuppressionCheck) await checkSuppressed(tx, context, record, writes);
 
@@ -362,6 +364,7 @@ export async function writeFields(
         ${reason ? 'pending_review' : 'active'}, ${reason}, ${observedAt}, clock_timestamp())
       returning id, field_id, value, actor, status, observed_at, created_at`;
     const assertion = inserted as AssertionRow;
+    await attachFileReferences(tx, context.workspaceId, assertion.id, field, value);
 
     if (reason) {
       statuses[field.name] = 'pending_review';

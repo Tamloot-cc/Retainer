@@ -5,7 +5,9 @@ import { createSql, type Sql } from '../db/client.js';
 import { SecretBroker, SecretCipher } from '../extension-runtime/secrets.js';
 import { RunTokens } from '../extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../extensions/catalog.js';
+import { createFileStorage } from '../file-storage/configuration.js';
 import { type Executable, ExecutionRegistry, ExtensionExecutor } from '../worker/extensions.js';
+import { FileMaintenance } from '../worker/files.js';
 import { LauncherDriver } from '../worker/launch-driver.js';
 
 /** These are operator-provisioned release inputs. Workspace APIs cannot change them. */
@@ -95,6 +97,17 @@ export async function extensionServices(
         ),
       );
     }
+    const fileStorage = await createFileStorage(config);
+    if (config.RETAINER_ROLE === 'files' && !fileStorage)
+      throw new Error('file maintenance requires storage configuration');
+    let fileMaintenance: FileMaintenance | undefined;
+    if (fileStorage && options.workerSql) {
+      const discovery = config.RETAINER_EXECUTOR_DATABASE_URL
+        ? createSql(config.RETAINER_EXECUTOR_DATABASE_URL, { max: 1 })
+        : createSql(ownerDatabaseUrl(config), { role: EXECUTOR_ROLE, max: 1 });
+      owned.push(discovery);
+      fileMaintenance = new FileMaintenance(options.workerSql, discovery, fileStorage);
+    }
     const activationReady = new Set<string>();
     if (tokens && config.RETAINER_EXTENSION_EXECUTABLES) {
       const entries: unknown = JSON.parse(config.RETAINER_EXTENSION_EXECUTABLES);
@@ -153,12 +166,21 @@ export async function extensionServices(
         owner: `executor-${crypto.randomUUID()}`,
       });
     }
-    return { catalog, tokens, broker, executor, activationReady, close };
+    return {
+      catalog,
+      tokens,
+      broker,
+      executor,
+      activationReady,
+      fileStorage,
+      fileMaintenance,
+      close,
+    };
   } catch {
     await close();
     // Never include raw configuration, key material, connection URLs or parse errors.
     throw new Error(
-      'invalid extension runtime configuration; check catalog, keyring, run keys and executor settings',
+      'invalid extension runtime configuration; check catalog, keyring, run keys, executor and file storage settings',
     );
   }
 }

@@ -82,6 +82,7 @@ describe('value formats (accounts spec 9.3)', () => {
   const id = 'a0000000-0000-4000-8000-000000000001';
   // Values written the way FIELD_VALUE_FORMATS describes them, one per form.
   const EXAMPLES: Record<FieldType, [settings: object, value: unknown][]> = {
+    files: [[{}, ['8b6c5882-7c8d-4d99-85e9-53d7bf06aa21']]],
     text: [[{}, 'Dana']],
     number: [[{}, 3.5]],
     boolean: [[{}, true]],

@@ -530,6 +530,38 @@ export class RetainerClient {
       nextCursors: { assertions: string | null; facts: string | null };
     }>(`/v1/events/${encodeURIComponent(id)}/claims`, params, signal);
   }
+  fileErasureStatus(ids: string[]) {
+    return this.post<{
+      pending: number;
+      succeeded: number;
+      jobs: { id: string; status: string; code: string | null }[];
+    }>('/v1/files/erasure-status', { ids });
+  }
+  createFileIntent(input: import('@retainer/shared').FileUploadInput, idempotencyKey: string) {
+    return this.post<{ id: string; upload: import('@retainer/shared').FileTransfer }>(
+      '/v1/files/intents',
+      input,
+      undefined,
+      idempotencyKey,
+    );
+  }
+  finalizeFile(id: string) {
+    return this.post<import('@retainer/shared').FileView & { state: 'ready' }>(
+      `/v1/files/${encodeURIComponent(id)}/finalize`,
+    );
+  }
+  file(id: string, signal?: AbortSignal) {
+    return this.get<import('@retainer/shared').FileView>(
+      `/v1/files/${encodeURIComponent(id)}`,
+      {},
+      signal,
+    );
+  }
+  downloadFile(id: string) {
+    return this.post<import('@retainer/shared').FileTransfer>(
+      `/v1/files/${encodeURIComponent(id)}/download`,
+    );
+  }
   extensionCatalog(signal?: AbortSignal) {
     return this.get<{
       releases: { manifest: ExtensionManifest; digest: string; actorCeiling: string }[];

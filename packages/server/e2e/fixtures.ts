@@ -1,4 +1,7 @@
 import { randomBytes } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { test as base, expect } from '@playwright/test';
@@ -8,6 +11,7 @@ import { createApp } from '../src/api/app.js';
 import { createApiKey } from '../src/auth/keys.js';
 import { createSql, RUNTIME_ROLE } from '../src/db/client.js';
 import { ExtensionCatalog } from '../src/extensions/catalog.js';
+import { createFileServer, LocalFileStorage } from '../src/file-storage/local.js';
 import { consolidateWorkspace } from '../src/worker/consolidate.js';
 import { createWorkspace } from '../src/workspaces/workspaces.js';
 import { extensionFixture as manifestFixture } from '../test/helpers/extensions.js';
@@ -40,10 +44,14 @@ export const test = base.extend<
       consolidate: () => Promise<unknown>;
     };
   },
-  { extensionFixture: boolean }
+  { extensionFixture: boolean; fileStorage: boolean }
 >({
   extensionFixture: [false, { option: true, scope: 'worker' }],
-  retainer: async ({ browserName: _browserName, extensionFixture }, use) => {
+  fileStorage: [false, { option: true, scope: 'worker' }],
+  retainer: async (
+    { browserName: _browserName, extensionFixture, fileStorage: withFiles },
+    use,
+  ) => {
     const adminUrl = process.env.DATABASE_URL;
     if (!adminUrl) throw new Error('DATABASE_URL is required');
     const name = `retainer_browser_${randomBytes(6).toString('hex')}`;
@@ -97,8 +105,24 @@ export const test = base.extend<
         scopes: ['admin'],
       })
     ).key;
+    const fileDirectory = withFiles
+      ? await mkdtemp(join(tmpdir(), 'retainer-browser-files-'))
+      : undefined;
+    const fileOrigins: string[] = [];
+    const fileKey = randomBytes(32);
+    const byteServer = fileDirectory
+      ? createFileServer({ directory: fileDirectory, key: fileKey, allowedOrigins: fileOrigins })
+      : undefined;
+    let storage: LocalFileStorage | undefined;
+    if (byteServer) {
+      await new Promise<void>((r) => byteServer.listen(0, '127.0.0.1', r));
+      const a = byteServer.address();
+      if (!a || typeof a === 'string') throw new Error('file address missing');
+      storage = new LocalFileStorage(`http://127.0.0.1:${a.port}`, fileKey);
+    }
     const app = createApp({
       sql,
+      ...(storage ? { fileStorage: storage } : {}),
       ...(extensionFixture
         ? {
             extensionCatalog: new ExtensionCatalog([
@@ -113,6 +137,7 @@ export const test = base.extend<
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('No listening address');
     const url = `http://127.0.0.1:${address.port}`;
+    fileOrigins.push(url);
     async function request(path: string, body?: unknown, key = agent, method?: string) {
       const response = await fetch(`${url}/v1${path}`, {
         method: method ?? (body === undefined ? 'GET' : 'POST'),
@@ -140,6 +165,11 @@ export const test = base.extend<
         // assertions finish. Stop accepting first, then close those sockets.
         if ('closeAllConnections' in server) server.closeAllConnections();
       });
+      if (byteServer) {
+        byteServer.closeAllConnections();
+        await new Promise<void>((r) => byteServer.close(() => r()));
+      }
+      if (fileDirectory) await rm(fileDirectory, { recursive: true, force: true });
       await sql.end();
       await owner.end();
       await admin.unsafe(`drop database "${name}" with (force)`);

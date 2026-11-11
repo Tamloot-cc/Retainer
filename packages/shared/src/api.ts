@@ -312,6 +312,7 @@ export type MergeSuggestionDecision = {
 export type ForgetResult = {
   id: string;
   forgotten: true;
+  storage?: { pending: number; deletionIds: string[] };
   counts: {
     records: number;
     events: number;
@@ -321,6 +322,7 @@ export type ForgetResult = {
     suppressedHandles: number;
     /** Comments on the erased records, hard-deleted with them. */
     comments: number;
+    files?: number;
   };
   /** Records whose values were recomputed after their claims or links were removed. */
   recomputedRecordIds: string[];
@@ -893,6 +895,7 @@ export const FILTER_OPERATORS: Record<FieldType, readonly FilterOperator[]> = {
   address: ['contains'],
   relation: ['eq', 'in'],
   json: [],
+  files: [],
 };
 /**
  * Filters on a many_to_many relation: whether its set holds any or all of
@@ -913,3 +916,8 @@ export function filterOperatorsFor(field: {
   }
   return [...FILTER_OPERATORS[field.type], 'isNull'];
 }
+
+/** File bytes use signed transfers; only immutable ready IDs enter field values. */
+export type FileUploadInput = { name: string; mediaType: string; bytes: number; sha256: string };
+export type FileTransfer = { url: string; headers: Record<string, string>; expiresAt: string };
+export type FileView = FileUploadInput & { id: string };

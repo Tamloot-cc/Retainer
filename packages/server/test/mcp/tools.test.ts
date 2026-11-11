@@ -27,9 +27,13 @@ const clients: McpTestClient[] = [];
 
 const TOOLS = [
   'apply_template',
+  'create_file_upload',
   'describe_schema',
+  'download_file',
+  'finalize_file',
   'get_context',
   'get_extension',
+  'get_file',
   'get_guide',
   'get_record',
   'get_timeline',

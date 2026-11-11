@@ -52,6 +52,7 @@ export type DisplayProps = {
   references?: Record<string, RecordReference>;
 };
 export type InputProps = {
+  onBusyChange?: (busy: boolean) => void;
   field: FieldView;
   value: unknown;
   onChange: (value: unknown) => void;

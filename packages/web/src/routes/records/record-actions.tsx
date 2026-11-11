@@ -363,6 +363,15 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
 /** What `forget` removed, and the live rows that may still mention the person. */
 function ForgetReport({ label, result }: { label: string; result: ForgetResult }) {
+  const { session } = useWorkspace();
+  const deletionIds = result.storage?.deletionIds;
+  const storage = useQuery({
+    queryKey: [session.workspace.id, 'file-erasure', deletionIds],
+    queryFn: () => api.fileErasureStatus(deletionIds ?? []),
+    enabled: !!deletionIds?.length,
+    refetchInterval: (q) => (q.state.data?.pending === 0 ? false : 3000),
+  });
+  const pending = storage.data?.pending ?? result.storage?.pending ?? 0;
   const { counts, reviewCandidates: c } = result;
   const linked = [
     ...c.records.map((id) => <CandidateRecord key={id} id={id} />),
@@ -371,12 +380,21 @@ function ForgetReport({ label, result }: { label: string; result: ForgetResult }
   return (
     <Stack>
       <span>
-        Erased {label}: {plural(counts.records, 'record', 'records')},{' '}
-        {plural(counts.events, 'event', 'events')}, {plural(counts.facts, 'fact', 'facts')} and{' '}
-        {plural(counts.assertions, 'value', 'values')}.{' '}
+        {pending ? 'Erasure in progress for' : 'Erased'} {label}:{' '}
+        {plural(counts.records, 'record', 'records')}, {plural(counts.events, 'event', 'events')},{' '}
+        {plural(counts.facts, 'fact', 'facts')} and {plural(counts.assertions, 'value', 'values')}.{' '}
         {plural(counts.suppressedHandles, 'email or phone is', 'emails and phones are')} blocked
         from coming back.
       </span>
+      {pending ? (
+        <Notice>
+          File access has been revoked. {pending} storage deletions are pending. Previously issued
+          download links expire within 60 seconds.
+        </Notice>
+      ) : result.storage ? (
+        <Muted>File storage erasure is complete.</Muted>
+      ) : null}
+      {storage.error ? <Notice>Storage erasure status is temporarily unavailable.</Notice> : null}
       {linked.length || c.facts.length ? (
         <Stack>
           <span>These may still mention them. Check each one:</span>

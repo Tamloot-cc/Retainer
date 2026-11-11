@@ -23,6 +23,7 @@ COPY --from=build /app/packages/web/dist ./web
 #   docker compose exec retainer retainer workspace create --name "Acme"
 RUN printf '#!/bin/sh\nexec node /app/dist/cli.js "$@"\n' > /usr/local/bin/retainer \
   && chmod +x /usr/local/bin/retainer
+RUN mkdir -p /data/files && chown node:node /data/files
 USER node
 EXPOSE 8787
 # Applies pending migrations, then starts the role set by RETAINER_ROLE.

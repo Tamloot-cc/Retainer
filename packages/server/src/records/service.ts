@@ -14,7 +14,14 @@ import { z } from 'zod';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
 import type { WorkspaceSettings } from '../db/schema.js';
-import { inWorkspace, lockForWrite, lockSchemaShared, type Tx, type WriteLocks } from '../db/tx.js';
+import {
+  inWorkspace,
+  lockForWrite,
+  lockPrivacyShared,
+  lockSchemaShared,
+  type Tx,
+  type WriteLocks,
+} from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
 import { admitRun } from '../extension-runtime/admission.js';
 import { claimIdempotencyKey, requestHash, storeIdempotentResult } from '../idempotency.js';
@@ -130,6 +137,7 @@ export async function withRead<T>(
   sql: Sql,
   caller: Caller,
   fn: (tx: Tx, schema: CompiledSchema) => Promise<T>,
+  options: { privacy?: boolean } = {},
 ): Promise<T> {
   const { workspaceId } = caller;
   const person = caller.run ? undefined : caller.person;
@@ -137,6 +145,7 @@ export async function withRead<T>(
     sql,
     workspaceId,
     async (tx) => {
+      if (options.privacy) await lockPrivacyShared(tx, workspaceId);
       // A read with a person can see their personal memory on any path
       // (search, an event's citations), so it holds their membership lock
       // and re-checks access first: a removal either committed before, and

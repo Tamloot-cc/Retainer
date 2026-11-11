@@ -153,3 +153,32 @@ webhook verifier and receipt queue, commit-ordered feed/change dispatch, Granola
 and private hosted infrastructure/staging/rollback/maintenance proof. Earlier
 'inert-only' descriptions above document the previous checkpoints, not current
 runtime-ready fixture behavior. No merge or deployment has been performed.
+
+## Authorized files and durable erasure
+
+The files milestone adds the shared field type, immutable assertion references,
+REST/MCP and SDK transfers, browser upload/download, and the permanent base
+conversation transcript field. Intent reservations serialize quota checks;
+finalization checks checksum, length, media type and credential ownership.
+Historical references survive current-value clearing and record merges.
+
+Compose runs a dedicated byte service and volume with no database credentials.
+API revocation precedes durable erasure. Fenced workers retry storage failures,
+retain obligations after workspace deletion, expose pending status, and prevent
+previously signed uploads from recreating erased content. Local storage and the
+private S3 adapter use immutable conditional uploads and zero-byte erasure
+barriers; S3 erasure removes content-bearing retained versions. The dedicated
+Lambda maintenance entry point holds the existing deployment lock, but hosted
+IAM, scheduling and live S3 verification remain outstanding.
+
+Evidence: all 64 browser scenarios pass against freshly built assets. The final
+API image passes the real Compose/Postgres/storage-volume proof: upload,
+finalize, assertion attachment, authorized download, immediate revocation,
+scheduled physical erasure and rejection of a late signed upload. Competing
+quota, attachment/collection and worker claims run against real Postgres.
+The full unit/integration suite passes 1,307 tests, including 1,025 server tests.
+Typecheck, build, lint and release checks pass. S3 policy tests do not constitute
+live AWS verification. Managed source-bound uploads and erasure across source
+revisions, queued provider work, KV and feeds belong to the next phase; this
+checkpoint does not advertise provider ingestion. No merge or deployment has
+been performed.

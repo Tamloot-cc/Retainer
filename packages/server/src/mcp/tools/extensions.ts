@@ -9,7 +9,7 @@ export function registerExtensionTools(server: McpServer, extensions: Extensions
     'list_extensions',
     {
       description:
-        'List workspace extension installations and their disabled state. Runtime activation is not available yet.',
+        'List workspace extension installations, current lifecycle state, connection health and approved grants.',
       inputSchema: z.strictObject({}),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },

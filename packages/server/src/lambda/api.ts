@@ -20,7 +20,10 @@ export function createApiHandler(
   // One request at a time per instance; a small pool keeps the total number
   // of connections bounded by the function's concurrency.
   sql: Sql = createApiSql(config, { max: config.RETAINER_DB_POOL_MAX }),
-  extensions: Pick<AppDeps, 'extensionCatalog' | 'runTokens' | 'extensionActivation'> = {},
+  extensions: Pick<
+    AppDeps,
+    'extensionCatalog' | 'runTokens' | 'extensionActivation' | 'fileStorage' | 'fileQuota'
+  > = {},
 ) {
   setLogLevel(config.LOG_LEVEL);
   const app = createApp({
@@ -43,6 +46,8 @@ export const handler = async (event: LambdaEvent, context: LambdaContext) => {
       sql = createApiSql(config, { max: config.RETAINER_DB_POOL_MAX });
     const extensions = await extensionServices(config);
     return createApiHandler(config, sql, {
+      fileStorage: extensions.fileStorage,
+      fileQuota: config.RETAINER_FILE_QUOTA_BYTES,
       extensionCatalog: extensions.catalog,
       extensionActivation: extensions.activationReady,
       ...(extensions.tokens ? { runTokens: extensions.tokens } : {}),

@@ -85,11 +85,11 @@ const extensionApiSql =
     ? pool(createApiSql(config, { max: config.RETAINER_DB_POOL_MAX }))
     : undefined;
 const extensionWorkerSql =
-  role === 'worker' || role === 'all'
+  role === 'worker' || role === 'all' || role === 'files'
     ? pool(createRuntimeSql(config, { max: config.RETAINER_DB_POOL_MAX }))
     : undefined;
 const extensions = await extensionServices(config, {
-  broker: role === 'all' || role === 'extensions',
+  broker: role === 'all' || role === 'api' || role === 'extensions',
   ...(extensionWorkerSql ? { workerSql: extensionWorkerSql } : {}),
 });
 if (role === 'api' || role === 'all' || role === 'control' || role === 'extensions') {
@@ -98,6 +98,8 @@ if (role === 'api' || role === 'all' || role === 'control' || role === 'extensio
       ? undefined
       : (role === 'extensions' ? createExtensionControlApp : createApp)({
           sql: extensionApiSql as Sql,
+          fileStorage: extensions.fileStorage,
+          fileQuota: config.RETAINER_FILE_QUOTA_BYTES,
           extensionCatalog: extensions.catalog,
           extensionActivation: extensions.activationReady,
           ...(extensions.tokens ? { runTokens: extensions.tokens } : {}),
@@ -135,7 +137,11 @@ if (role === 'api' || role === 'all' || role === 'control' || role === 'extensio
   );
 }
 
-if (config.RETAINER_ROLE === 'worker' || config.RETAINER_ROLE === 'all') {
+if (
+  config.RETAINER_ROLE === 'worker' ||
+  config.RETAINER_ROLE === 'all' ||
+  config.RETAINER_ROLE === 'files'
+) {
   const worker = await startWorker({
     sql: pool(createRuntimeSql(config, { max: config.RETAINER_DB_POOL_MAX })),
     intervalMinutes: config.RETAINER_CONSOLIDATE_INTERVAL_MINUTES,
@@ -163,6 +169,29 @@ if (config.RETAINER_ROLE === 'worker' || config.RETAINER_ROLE === 'all') {
       await running;
     });
   }
+}
+
+if (extensions.fileMaintenance) {
+  let running = Promise.resolve(),
+    busy = false;
+  const tick = () => {
+    if (busy) return;
+    busy = true;
+    running = (extensions.fileMaintenance as NonNullable<typeof extensions.fileMaintenance>)
+      .tick()
+      .then(() => {})
+      .catch(() => log.error('File storage maintenance failed.'))
+      .finally(() => {
+        busy = false;
+      });
+  };
+  const timer = setInterval(tick, 60000);
+  tick();
+  stops.push(async () => {
+    clearInterval(timer);
+    extensions.fileMaintenance?.stop();
+    await running;
+  });
 }
 
 async function shutdown(signal: string) {

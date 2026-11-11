@@ -1,6 +1,7 @@
 import type { ForgetResult } from '@retainer/shared';
 import type { Tx } from '../db/tx.js';
 import { requireUser } from '../errors.js';
+import { collectFileErasure, eraseFileReferences } from '../files/erasure.js';
 import { liveFactSource } from '../memory/events.js';
 import { type Handle, parseHandle } from '../memory/handles.js';
 import { inboundRelationFields } from '../records/merge.js';
@@ -117,6 +118,7 @@ export async function forgetRecord(
     order by 1`;
   const eventIds = events.map((r) => r.id);
   const erased = [...new Set([...recordIds, ...eventIds])];
+  const fileErasure = await collectFileErasure(tx, erased, eventIds);
 
   const reviewCandidates = await findMentions(
     tx,
@@ -144,8 +146,10 @@ export async function forgetRecord(
       and (source_record_id = any(${eventIds}::uuid[]) or (${pointsAtRecord})
         or (${holdsRecord}))`;
   const locked = await lockRecordsForUpdate(tx, workspaceId, [
-    ...new Set([...erased, ...affected.map((r) => r.record_id)]),
+    ...new Set([...erased, ...affected.map((r) => r.record_id), ...fileErasure.recordIds]),
   ]);
+
+  const fileRemoval = await eraseFileReferences(tx, context, fileErasure.fileIds, locked);
 
   // Surviving events whose initial values are erased below lose their raw
   // identity (6.4): the caller-chosen channel and external ID may identify.
@@ -244,6 +248,7 @@ export async function forgetRecord(
     inboundRelations: inboundRelations.length + trimmed.length,
     suppressedHandles,
     comments: comments.length,
+    ...(fileErasure.fileIds.length ? { files: fileErasure.fileIds.length } : {}),
   };
   await tx`
     insert into deletion_audit_log (workspace_id, actor_type, actor_id, counts)
@@ -253,7 +258,15 @@ export async function forgetRecord(
     id: root,
     forgotten: true,
     counts,
-    recomputedRecordIds: recomputed,
+    recomputedRecordIds: [...new Set([...recomputed, ...fileRemoval.recomputedRecordIds])],
+    ...(fileRemoval.deletionIds.length
+      ? {
+          storage: {
+            pending: fileRemoval.deletionIds.length,
+            deletionIds: fileRemoval.deletionIds,
+          },
+        }
+      : {}),
     // Candidates already exclude the erased records and events; only
     // facts orphaned by the deletion can have gone since.
     reviewCandidates: {

@@ -1,0 +1,1 @@
+ALTER TABLE "field_assertions" ADD CONSTRAINT "field_assertions_ws_id_uq" UNIQUE("workspace_id","id");

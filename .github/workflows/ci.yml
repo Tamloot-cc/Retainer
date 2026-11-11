@@ -57,7 +57,7 @@ jobs:
       - run: pnpm test
       - name: Build extension isolation test images
         run: |
-          docker build -f docker/Dockerfile -t retainer:extensions-review .
+          docker build -f docker/Dockerfile -t retainer:extensions-review -t retainer:files-review .
           docker build -f docker/Dockerfile.extension-runner --build-arg RELEASE_DIGEST=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --build-arg BUNDLE_ID=fixture -t retainer:extension-runner-fixture .
       - run: pnpm test:extensions:sandbox
       - name: Build reviewed lifecycle fixture
@@ -66,6 +66,7 @@ jobs:
           digest=$(node -p "JSON.parse(require('fs').readFileSync('artifacts/extensions/fixture/metadata.json')).releaseDigest")
           docker build -f docker/Dockerfile.extension-runner --build-arg RELEASE_DIGEST="$digest" --build-arg BUNDLE_ID=fixture -t retainer:extension-runner-fixture .
       - run: pnpm test:extensions:compose
+      - run: pnpm test:files:compose
       - run: pnpm --filter @retainer/server exec playwright install --with-deps chromium
       - run: pnpm test:web
       - uses: actions/upload-artifact@v7

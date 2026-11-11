@@ -421,6 +421,27 @@
       "when": 1794389654841,
       "tag": "0059_extension_lifecycle_capabilities",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1794392031113,
+      "tag": "0060_assertion_file_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1794395918227,
+      "tag": "0061_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1794395922841,
+      "tag": "0062_file_storage_capabilities",
+      "breakpoints": true
     }
   ]
 }

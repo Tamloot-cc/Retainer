@@ -27,9 +27,10 @@ const LAYERS = [
       'db',
       'schema',
       'extension-runtime',
+      'file-storage',
     ],
   ],
-  ['core', ['records', 'memory', 'privacy']],
+  ['core', ['records', 'memory', 'privacy', 'files']],
   ['features', ['views', 'comments', 'retrieval', 'reads']],
   ['admin', ['schema-engine', 'templates', 'workspaces', 'extensions']],
   [
@@ -47,7 +48,7 @@ const LAYERS = [
       'extension-control',
     ],
   ],
-  ['entry', ['index', 'cli', 'lambda', 'egress-proxy', 'extension-launcher']],
+  ['entry', ['index', 'cli', 'lambda', 'egress-proxy', 'extension-launcher', 'file-server']],
 ];
 // Events are records, so these modules depend on each other by design.
 const MAY_SHARE_A_CYCLE = 'core';

@@ -324,7 +324,7 @@ describe('API-key lookup', () => {
 describe('SECURITY DEFINER functions', () => {
   // Every way around RLS is listed here (ARCHITECTURE.md 7.2, accounts spec
   // 7.4). Adding one means adding it here, on purpose, with a review.
-  const ALLOWED: Record<string, string> = {
+  const ALLOWED: Record<string, string | null> = {
     retainer_adopt_extension_secret: RUNTIME_ROLE,
     retainer_erase_private_derivatives: RUNTIME_ROLE,
     retainer_extension_jobs_due: 'retainer_executor',
@@ -333,6 +333,8 @@ describe('SECURITY DEFINER functions', () => {
     retainer_extension_pending_secrets: RUNTIME_ROLE,
     retainer_extension_secret_names: RUNTIME_ROLE,
     retainer_extension_slot_available: RUNTIME_ROLE,
+    retainer_file_maintenance_due: 'retainer_executor',
+    retainer_queue_file_deletion: null,
     retainer_lookup_api_key: RUNTIME_ROLE,
     retainer_retire_extension_secrets: RUNTIME_ROLE,
     retainer_session_access: RUNTIME_ROLE,
@@ -352,7 +354,7 @@ describe('SECURITY DEFINER functions', () => {
     expect(rows.map((r) => r.name)).toEqual(Object.keys(ALLOWED).sort());
     for (const row of rows) {
       expect(row.config, row.name).toContain('search_path=pg_catalog, pg_temp');
-      expect(row.grantees, row.name).toEqual([ALLOWED[row.name]]);
+      expect(row.grantees, row.name).toEqual(ALLOWED[row.name] ? [ALLOWED[row.name]] : []);
     }
   });
 });

@@ -1,6 +1,6 @@
 # Retainer extensions
 
-Status: implementation in progress; control, isolated execution, lifecycle and management UI implemented; ingestion and launch remain. Date: 2026-11-11.
+Status: implementation in progress; control, isolated execution, lifecycle, management UI and file storage implemented; managed ingestion and launch remain. Date: 2026-11-11.
 See [implementation progress](extensions-implementation.md) for completed and outstanding work.
 
 This spec replaces the exported **Retainer Extensions** proposal supplied as
@@ -557,7 +557,11 @@ transcript search and streaming media are deferred.
 
 Erasure first removes authorization and reference visibility in the DB transaction,
 then durable deletion jobs remove objects and their retained storage versions.
-The maximum previously issued download window is 60 seconds. Do not declare
+Erasure must also prevent a previously signed or already-started upload from
+recreating content. Immutable conditional uploads and an opaque zero-byte object
+barrier may be used; remove all content-bearing retained versions and preserve
+the barrier through concurrent retries. The barrier contains no filename or
+source identity. The maximum previously issued download window is 60 seconds. Do not declare
 physical erasure complete until storage deletion succeeds; expose pending/failure
 status. Shared references require explicit ownership tracking: preserve a blob
 only if an independent authorized source legitimately retains it, otherwise erase

@@ -87,7 +87,7 @@ describe('planUpgrade', () => {
       objectOf(state, BASE_EVENT_TYPE_IDS.conversation)?.fields.map((f) => f.universalId);
     expect(ids(upgraded)).toEqual(ids(seeded));
     expect(objectOf(upgraded, BASE_EVENT_TYPE_IDS.conversation)?.fields.map((f) => f.name)).toEqual(
-      ['title', 'summary', 'medium'],
+      ['title', 'summary', 'medium', 'transcript'],
     );
   });
 

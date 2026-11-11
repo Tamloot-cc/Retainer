@@ -58,6 +58,19 @@ const configSchema = z
   .object({
     RETAINER_PUBLIC_ORIGIN: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
     RETAINER_WEB_DIR: z.string().optional(),
+    RETAINER_FILE_STORAGE: z.preprocess(emptyToUndefined, z.enum(['local', 's3']).optional()),
+    RETAINER_FILE_PUBLIC_ORIGIN: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
+    RETAINER_FILE_CONTROL_ORIGIN: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
+    RETAINER_FILE_EXECUTION_ORIGIN: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
+    RETAINER_FILE_SIGNING_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    RETAINER_FILE_STORAGE_ID: z.string().default('local-v1'),
+    RETAINER_FILE_S3_BUCKET: z.preprocess(emptyToUndefined, z.string().optional()),
+    RETAINER_FILE_QUOTA_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(1099511627776)
+      .default(1073741824),
     /**
      * The migration role, which owns the tables. Migrations, boot tasks and the
      * operator CLI connect with it. Without RETAINER_RUNTIME_DATABASE_URL the
@@ -99,7 +112,9 @@ const configSchema = z
      * `control` serves only /account: sign-in and account management. `all`
      * serves everything, including /account in accounts mode.
      */
-    RETAINER_ROLE: z.enum(['api', 'worker', 'control', 'extensions', 'all']).default('all'),
+    RETAINER_ROLE: z
+      .enum(['api', 'worker', 'control', 'extensions', 'files', 'all'])
+      .default('all'),
     /**
      * Turns on accounts mode (accounts spec 4.1): people sign in with Google,
      * Microsoft or a passkey. Signs session cookies, so changing it signs

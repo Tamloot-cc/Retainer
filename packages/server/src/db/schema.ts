@@ -1049,6 +1049,7 @@ export const fieldAssertions = pgTable(
     privateToUser: uuid('private_to_user'),
   },
   (t) => [
+    unique('field_assertions_ws_id_uq').on(t.workspaceId, t.id),
     tenantFk(
       'field_assertions_record_fk',
       [t.workspaceId, t.recordId],
@@ -1405,7 +1406,7 @@ export const workspaceRequestCounts = pgTable('workspace_request_counts', {
   count: integer('count').notNull(),
 });
 
-// Extension control is deliberately inert until runtime admission is available.
+// Release-owned extension installations and admitted runtime generations.
 export const extensionInstallations = pgTable(
   'extension_installations',
   {
@@ -1712,6 +1713,102 @@ export const extensionSchedules = pgTable(
       to: 'retainer_app',
       using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
       withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+/** Metadata only: immutable bytes are held by an external storage adapter. */
+export const files = pgTable(
+  'files',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id'),
+    storageId: text('storage_id').notNull().default('local-v1'),
+    objectKey: text('object_key').notNull(),
+    metadata: jsonb('metadata').notNull(),
+    bytes: integer('bytes').notNull(),
+    state: text('state').notNull().default('pending'),
+    createdBy: jsonb('created_by').$type<Actor>().notNull(),
+    requestKey: text('request_key').notNull(),
+    requestHash: text('request_hash').notNull(),
+    uploadExpiresAt: timestamptz('upload_expires_at')
+      .notNull()
+      .default(sql`clock_timestamp()+interval '5 minutes'`),
+    expiresAt: timestamptz('expires_at')
+      .notNull()
+      .default(sql`clock_timestamp()+interval '24 hours'`),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('files_ws_id_uq').on(t.workspaceId, t.id),
+    foreignKey({
+      name: 'files_installation_fk',
+      columns: [t.workspaceId, t.installationId],
+      foreignColumns: [extensionInstallations.workspaceId, extensionInstallations.id],
+    }),
+    unique('files_object_key_uq').on(t.objectKey),
+    unique('files_request_key_uq').on(t.workspaceId, t.requestKey),
+    index('files_expiry_idx').on(t.workspaceId, t.expiresAt),
+    index('files_installation_idx').on(t.workspaceId, t.installationId),
+    check('files_state', sql`${t.state} in ('pending','ready','erasing','erased')`),
+    check('files_bytes', sql`${t.bytes}>0 and ${t.bytes}<=26214400`),
+    pgPolicy('files_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const fileReferences = pgTable(
+  'file_references',
+  {
+    workspaceId: workspaceId(),
+    fileId: uuid('file_id').notNull(),
+    assertionId: uuid('assertion_id').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.fileId, t.assertionId] }),
+    tenantFk('file_references_file_fk', [t.workspaceId, t.fileId], [files.workspaceId, files.id]),
+    tenantFk(
+      'file_references_assertion_fk',
+      [t.workspaceId, t.assertionId],
+      [fieldAssertions.workspaceId, fieldAssertions.id],
+    ),
+    index('file_references_assertion_idx').on(t.workspaceId, t.assertionId),
+    pgPolicy('file_references_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+/** Must survive workspace cascades until every stored version is erased. Opaque keys only. */
+export const fileDeletions = pgTable(
+  'file_deletions',
+  {
+    id: id(),
+    workspaceId: uuid('workspace_id').notNull(),
+    storageId: text('storage_id').notNull().default('local-v1'),
+    objectKey: text('object_key').notNull(),
+    status: text('status').notNull().default('queued'),
+    availableAt: timestamptz('available_at').notNull().defaultNow(),
+    leaseUntil: timestamptz('lease_until'),
+    fence: bigint('fence', { mode: 'number' }).notNull().default(0),
+    attempt: integer('attempt').notNull().default(0),
+    code: text('code'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('file_deletions_object_key_uq').on(t.objectKey),
+    index('file_deletions_due_idx').on(t.status, t.availableAt),
+    pgPolicy('file_deletions_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
     }),
   ],
 ).enableRLS();
