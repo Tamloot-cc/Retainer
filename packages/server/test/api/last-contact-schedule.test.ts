@@ -49,10 +49,7 @@ it('coalesces due Last Contact recovery and executes its real scheduled payload 
   });
   expect(installed.status).toBe(201);
   const id = installed.body.id as string;
-  const queue = new ExtensionQueue(
-    app.sql,
-    (registration, version) => catalog.get(registration, version).manifest,
-  );
+  const queue = new ExtensionQueue(app.sql, catalog.runtime);
   const [pending] =
     await db.owner`select id from extension_jobs where installation_id=${id} and trigger_kind='install'`;
   const setup = await queue.claim(workspace.id, pending?.id, 'setup');

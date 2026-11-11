@@ -133,6 +133,30 @@ no unresolved failures remain in the current generation. Schedule maintenance
 recovers missed ticks and initialization after a worker crash; disabled installs
 accumulate none. An expired worker cannot acknowledge or write after replacement.
 
+## Unavailable releases and server upgrades
+
+A missing or incompatible pinned release pauses its pending work in that runtime.
+It does not change provider connection health, discard jobs, consume attempts or
+advance change/schedule cursors. `GET /v1/extensions` and installation inspection
+report `runtimeAvailability`; failure codes and the next probe time are safe
+operator diagnostics. The web app explains when the server cannot run an extension.
+
+Discovery skips a matching installation generation, release and catalog failure
+for five minutes, then permits a serialized probe. A restored/changed catalog
+rechecks immediately. Successful resolution resumes the same pending work without
+an upgrade or generation change. Other catalogs' workers remain independent.
+Expired jobs, uninstall cleanup deadlines and erasure keep running. Catalog
+markers older than 30 days are collected; workspace purge deletes them too.
+
+First-party compatibility is reviewed in `scripts/extension-release.mjs` as an
+exact server-version set. Artifact generation refuses an unreviewed package
+version. Before a server version transition, test and publish a bridge extension
+release with both versions in that set, upgrade every referenced installation
+while the old server runs, then deploy the new server. Disabled installations and
+live cleanup also count as references. Retaining old bytes does not establish
+compatibility, and an incompatible adapter requires an explicit migration/removal
+plan. Hosted preflight keeps refusing a server rollout with unsupported pins.
+
 ## Change feeds and retention recovery
 
 `GET /v1/changes` (`list_changes`, SDK `changes`) returns minimal IDs, permanent

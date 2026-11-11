@@ -244,7 +244,7 @@ describe('authorized immutable files with real Postgres and real byte service', 
       { name: 'Installation file boundaries' },
       { admin: { actor: { type: 'user', id: 'admin' }, scopes: ['admin'] } },
     );
-    const queue = new ExtensionQueue(app.sql, (id, version) => catalog.get(id, version).manifest);
+    const queue = new ExtensionQueue(app.sql, catalog.runtime);
     const runs: { id: string; token: string }[] = [];
     for (const manifest of manifests) {
       const input = {

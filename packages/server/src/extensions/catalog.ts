@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { defineExtension, type ExtensionManifest } from '@retainer/extension';
 import { z } from 'zod';
 import { AppError } from '../errors.js';
+import type { RuntimeCatalog } from '../extension-runtime/availability.js';
 import { stableJson } from '../stable-json.js';
 import { VERSION } from '../version.js';
 
@@ -15,6 +16,7 @@ export const hash = (value: unknown) =>
 
 /** Constructed from release-bundled code only. Never populated from a workspace request. */
 export class ExtensionCatalog {
+  readonly runtime: RuntimeCatalog;
   private readonly releases = new Map<string, ReviewedRelease & { digest: string }>();
   constructor(releases: readonly ReviewedRelease[] = []) {
     const actors = new Map<string, string>();
@@ -47,6 +49,15 @@ export class ExtensionCatalog {
       if (this.releases.has(key)) throw new Error('duplicate or mutable extension release');
       this.releases.set(key, structuredClone({ ...release, manifest, digest: hash(manifest) }));
     }
+    this.runtime = Object.freeze({
+      identity: hash({
+        serverVersion: VERSION,
+        runtimeVersion: 'node24',
+        protocolVersion: 1,
+        releases: [...this.releases.values()].sort((a, b) => a.digest.localeCompare(b.digest)),
+      }),
+      resolve: (id: string, version: string) => this.get(id, version).manifest,
+    });
   }
   list() {
     return [...this.releases.values()]

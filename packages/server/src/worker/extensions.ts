@@ -86,16 +86,7 @@ export class ExtensionExecutor {
     const concurrency = options.concurrency ?? 4;
     if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 32)
       throw new Error('executor concurrency must be 1–32');
-    this.queue = new ExtensionQueue(options.sql, (id, version, digest) => {
-      const release = options.catalog.get(id, version);
-      if (release.digest !== digest)
-        throw new AppError(
-          409,
-          'incompatible_runtime',
-          'installed release digest is not available',
-        );
-      return release.manifest;
-    });
+    this.queue = new ExtensionQueue(options.sql, options.catalog.runtime);
   }
   async execute(job: ClaimedJob) {
     if (job.system) return this.acknowledge(job, { status: 'succeeded' });
@@ -218,16 +209,24 @@ export class ExtensionExecutor {
     let next = 0,
       executed = 0,
       fenced = 0;
+    let firstFailure: unknown;
+    let hasFailure = false;
     const worker = async () => {
       for (;;) {
         if (this.stopped) return;
         const item = due[next++];
         if (!item) return;
-        const job = await this.queue.claim(item.workspace_id, item.job_id, this.options.owner);
-        if (!job) continue;
-        const status = await this.execute(job);
-        executed++;
-        if (status === 'fenced') fenced++;
+        try {
+          const job = await this.queue.claim(item.workspace_id, item.job_id, this.options.owner);
+          if (!job) continue;
+          const status = await this.execute(job);
+          executed++;
+          if (status === 'fenced') fenced++;
+        } catch (error) {
+          // Keep this worker draining peers; report an operational failure only after the pass.
+          if (!hasFailure) firstFailure = error;
+          hasFailure = true;
+        }
       }
     };
     const outcomes = await Promise.allSettled(
@@ -235,6 +234,7 @@ export class ExtensionExecutor {
     );
     const failure = outcomes.find((result) => result.status === 'rejected');
     if (failure?.status === 'rejected') throw failure.reason;
+    if (hasFailure) throw firstFailure;
     return { executed, fenced };
   }
 }

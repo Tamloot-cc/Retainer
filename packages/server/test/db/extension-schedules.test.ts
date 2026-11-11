@@ -56,7 +56,7 @@ async function setup(limit = 10000) {
   expect(install.status).toBe(201);
   const id = install.body.id as string;
   await db.owner`update extension_installations set state='active' where id=${id}`;
-  const queue = new ExtensionQueue(t.sql, (id, version) => catalog.get(id, version).manifest, {
+  const queue = new ExtensionQueue(t.sql, catalog.runtime, {
     queued: limit,
     kvBytes: 1048576,
   });
@@ -99,19 +99,21 @@ describe('transactional schedule ticks', () => {
     // The owner inventory can still discover an installation whose pinned release is absent locally.
     const unavailableDigest = 'f'.repeat(64);
     await db.owner`update extension_installations set release_digest=${unavailableDigest} where id=${broken.id}`;
-    const queue = new ExtensionQueue(t.sql, (id, version, digest) => {
-      if (digest === unavailableDigest) throw new Error('pinned release unavailable');
-      return catalog.get(id, version).manifest;
-    });
+    const queue = new ExtensionQueue(t.sql, catalog.runtime);
     const discovery = db.connect({ role: 'retainer_executor' });
     await queue.maintain(discovery);
     const [diagnostic] =
       await db.owner`select state,last_error,connection_health from extension_installations where id=${broken.id}`;
     expect(diagnostic).toEqual({
       state: 'active',
-      last_error: 'maintenance_unavailable',
-      connection_health: 'degraded',
+      last_error: null,
+      connection_health: 'needs_reconnect',
     });
+    expect(
+      (
+        await db.owner`select code,generation,runtime_identity from extension_runtime_unavailable where installation_id=${broken.id}`
+      )[0],
+    ).toMatchObject({ code: 'incompatible_runtime', runtime_identity: catalog.runtime.identity });
     const [pending] =
       await db.owner`select next_due_at from extension_schedules where installation_id=${broken.id}`;
     expect(pending?.next_due_at).toEqual(past);

@@ -74,7 +74,7 @@ async function setup(count = 1) {
     extensionActivation: new Set(catalog.list().map((r) => r.digest)),
     runTokens: tokens,
   });
-  const resolve = (id: string, version: string) => catalog.get(id, version).manifest,
+  const resolve = catalog.runtime,
     queue = new ExtensionQueue(app.sql, resolve),
     ids: string[] = [];
   for (const manifest of manifests) {
@@ -295,6 +295,30 @@ describe('transactional change dispatch with real Postgres', () => {
     await expect(discovery`select record_id from record_changes`).rejects.toMatchObject({
       code: '42501',
     });
+  });
+  it('quarantines unavailable change dispatch for its catalog and recovers without losing its cursor', async () => {
+    const h = await setup(),
+      id = h.ids[0];
+    if (!id) throw new Error('installation missing');
+    await h.person('Pending unavailable dispatch');
+    const [before] =
+      await db.owner`select position::text from change_dispatch where installation_id=${id}`;
+    const empty = new ExtensionQueue(h.app.sql, new ExtensionCatalog().runtime),
+      discovery = db.connect({ role: 'retainer_executor' });
+    expect(
+      (await empty.discoverChanges(discovery, null)).some((row) => row.installation_id === id),
+    ).toBe(true);
+    expect(await empty.dispatchChanges(h.workspace.id, id)).toEqual({ queued: 0, blocked: 0 });
+    expect(
+      (await empty.discoverChanges(discovery, null)).some((row) => row.installation_id === id),
+    ).toBe(false);
+    expect(
+      (await db.owner`select position::text from change_dispatch where installation_id=${id}`)[0],
+    ).toEqual(before);
+    expect(
+      (await h.queue.discoverChanges(discovery, null)).some((row) => row.installation_id === id),
+    ).toBe(true);
+    expect((await h.queue.dispatchChanges(h.workspace.id, id)).queued).toBe(1);
   });
   it('preserves accepted change metadata through feed retention and still erases the owned copy', async () => {
     const h = await setup(),

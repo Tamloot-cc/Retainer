@@ -107,12 +107,7 @@ export class Webhooks {
     const limit = options.rateLimit ?? 100;
     if (!Number.isInteger(limit) || limit < 1 || limit > 10000)
       throw new Error('invalid webhook rate limit');
-    this.queue = new ExtensionQueue(options.sql, (id, version, digest) => {
-      const release = options.catalog.get(id, version);
-      if (release.digest !== digest)
-        throw new AppError(409, 'incompatible_runtime', 'webhook release changed');
-      return release.manifest;
-    });
+    this.queue = new ExtensionQueue(options.sql, options.catalog.runtime);
   }
   private contract(candidate: Candidate, route: string) {
     const release = this.options.catalog.get(candidate.registration_id, candidate.version);

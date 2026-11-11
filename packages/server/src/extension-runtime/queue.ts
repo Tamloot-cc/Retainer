@@ -1,4 +1,4 @@
-import type { ExtensionManifest, InputSchema } from '@retainer/extension';
+import type { InputSchema } from '@retainer/extension';
 import { nextOccurrence, SYSTEM_LIFECYCLE_FUNCTION_ID } from '@retainer/extension';
 import { sourceScanSchema } from '@retainer/shared';
 import { z } from 'zod';
@@ -10,6 +10,7 @@ import { AppError, notFound } from '../errors.js';
 import { requestHash } from '../idempotency.js';
 import { getSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
+import { RuntimeAvailability, type RuntimeCatalog } from './availability.js';
 import { failInstallation } from './lifecycle.js';
 import { cancelRuns, lockExtension, lockQueue } from './locks.js';
 
@@ -68,11 +69,6 @@ type Job = {
   expires_at: Date;
   cause: string[];
 };
-export type ResolveRelease = (
-  registrationId: string,
-  version: string,
-  digest: string,
-) => ExtensionManifest;
 const unavailable = () =>
   new AppError(409, 'installation_disabled', 'installation is disabled or its generation changed');
 const runnable = (i: Installation, kind: string) =>
@@ -134,11 +130,16 @@ export function validateInput(schema: InputSchema, value: unknown, depth = 0): v
 
 /** Durable queue. No method executes provider code or accepts a workspace-supplied executable. */
 export class ExtensionQueue {
+  private readonly availability: RuntimeAvailability;
+  readonly runtimeIdentity: string;
   constructor(
     readonly sql: Sql,
-    private readonly resolve: ResolveRelease,
+    catalog: RuntimeCatalog,
     private readonly limits = { queued: 10000, kvBytes: 1048576 },
-  ) {}
+  ) {
+    this.availability = new RuntimeAvailability(catalog);
+    this.runtimeIdentity = catalog.identity;
+  }
 
   private async installation(
     tx: Tx,
@@ -159,21 +160,7 @@ export class ExtensionQueue {
     return current;
   }
   private manifest(installation: Installation) {
-    const manifest = this.resolve(
-      installation.registration_id,
-      installation.version,
-      installation.release_digest,
-    );
-    if (
-      manifest.universalId !== installation.registration_id ||
-      manifest.version !== installation.version
-    )
-      throw new AppError(
-        409,
-        'incompatible_runtime',
-        'registered release differs from installation',
-      );
-    return manifest;
+    return this.availability.require(installation);
   }
   private async insert(
     tx: Tx,
@@ -276,8 +263,9 @@ export class ExtensionQueue {
         const installation = await this.installation(tx, workspace, id);
         admittedGeneration = installation.generation;
         if (installation.state !== 'active') return { queued: 0, blocked: 0 };
-        const manifest = this.manifest(installation),
-          schema = await getSchema(tx, workspace);
+        const manifest = await this.availability.inspect(tx, installation);
+        if (!manifest) return { queued: 0, blocked: 0 };
+        const schema = await getSchema(tx, workspace);
         const handlers = manifest.functions.filter((fn) => fn.trigger.kind === 'change');
         if (!handlers.length) return { queued: 0, blocked: 0 };
         const [checkpoint] = await tx<
@@ -428,11 +416,15 @@ export class ExtensionQueue {
       throw new Error('invalid discovery limit');
     return discoverySql<
       { workspace_id: string; job_id: string }[]
-    >`select * from retainer_extension_jobs_due(${limit})`;
+    >`select * from retainer_extension_jobs_due(${limit},${this.runtimeIdentity})`;
+  }
+  async discoverChanges(discoverySql: Sql, after: string | null) {
+    return discoverySql<{ workspace_id: string; installation_id: string }[]>`
+      select * from retainer_extension_changes_due(${after}::uuid,1000,${this.runtimeIdentity})`;
   }
   async maintain(discoverySql: Sql) {
     const due = await discoverySql<{ workspace_id: string; installation_id: string }[]>`
-      select * from retainer_extension_maintenance_due(1000)`;
+      select * from retainer_extension_maintenance_due(1000,${this.runtimeIdentity})`;
     for (const item of due) {
       let generation: number | undefined;
       try {
@@ -503,19 +495,6 @@ export class ExtensionQueue {
         return null;
       }
       if (!runnable(installation, job.trigger_kind)) return null;
-      const fn = this.manifest(installation).functions.find(
-        (f) => f.universalId === job.function_id,
-      );
-      const system =
-        job.function_id === SYSTEM_LIFECYCLE_FUNCTION_ID &&
-        ['install', 'uninstall'].includes(job.trigger_kind);
-      if (!system && fn?.trigger.kind !== job.trigger_kind)
-        throw new AppError(
-          409,
-          'incompatible_runtime',
-          'job function is unavailable in pinned release',
-        );
-      const timeout = fn?.timeoutSeconds ?? 30;
       const [exhausted] =
         await tx`select 1 where ${job.expires_at}<=clock_timestamp() or ${job.cycle_attempt}>=10`;
       if (exhausted) {
@@ -524,6 +503,19 @@ export class ExtensionQueue {
         await this.finishLifecycle(tx, installation, job, 'failed', 'retry_exhausted');
         return null;
       }
+      const manifest = await this.availability.inspect(tx, installation);
+      if (!manifest) return null;
+      const fn = manifest.functions.find((f) => f.universalId === job.function_id);
+      const system =
+        job.function_id === SYSTEM_LIFECYCLE_FUNCTION_ID &&
+        ['install', 'uninstall'].includes(job.trigger_kind);
+      if (!system && fn?.trigger.kind !== job.trigger_kind) {
+        await tx`update extension_jobs set status='failed',code='incompatible_runtime',lease_owner=null,lease_until=null,run_until=null where id=${id}`;
+        await tx`update extension_attempts set status='failed',code='incompatible_runtime',finished_at=now() where job_id=${id} and finished_at is null`;
+        await this.finishLifecycle(tx, installation, job, 'failed', 'incompatible_runtime');
+        return null;
+      }
+      const timeout = fn?.timeoutSeconds ?? 30;
       const [other] =
         await tx`select id from extension_jobs where installation_id=${installation.id} and status='running' and id<>${id}`;
       if (other) return null;
@@ -792,7 +784,8 @@ export class ExtensionQueue {
       await lockSchemaShared(tx, workspace);
       const installation = await this.installation(tx, workspace, installationId);
       if (installation.state !== 'active') return { scheduled: 0 };
-      const manifest = this.manifest(installation);
+      const manifest = await this.availability.inspect(tx, installation);
+      if (!manifest) return { scheduled: 0 };
       const [clock] = await tx<{ now: Date }[]>`select clock_timestamp() as now`;
       if (!clock) throw new Error('database clock unavailable');
       for (const fn of manifest.functions) {
@@ -878,9 +871,15 @@ export class ExtensionQueue {
             !!installation.last_error &&
             installation.setup_kind === 'upgrade'));
       if (!runnable(installation, job.trigger_kind) && !setupRetry) throw unavailable();
-      if (fn?.trigger.kind !== job.trigger_kind)
-        throw conflict('incompatible_runtime', 'job function is unavailable');
-      validateInput(fn.inputSchema, job.input);
+      const system =
+        job.function_id === SYSTEM_LIFECYCLE_FUNCTION_ID &&
+        ['install', 'uninstall'].includes(job.trigger_kind);
+      if (system) validateInput({ type: 'object', additionalProperties: false }, job.input);
+      else {
+        if (!fn || fn.trigger.kind !== job.trigger_kind)
+          throw conflict('incompatible_runtime', 'job function is unavailable');
+        validateInput(fn.inputSchema, job.input);
+      }
       if (setupRetry)
         await tx`update extension_installations set state=${installation.setup_kind === 'upgrade' ? 'upgrading' : 'installing'},last_error=null where id=${installationId}`;
       await tx`update extension_jobs set status='queued',code=null,cycle_attempt=0,fence=fence+1,

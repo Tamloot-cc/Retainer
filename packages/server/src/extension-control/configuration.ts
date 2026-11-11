@@ -103,11 +103,7 @@ export async function extensionServices(
         .list()
         .some((release) => release.manifest.functions.some((fn) => fn.trigger.kind === 'change')) &&
       options.workerSql
-        ? new ExtensionQueue(options.workerSql, (id, version, digest) => {
-            const release = catalog.get(id, version);
-            if (release.digest !== digest) throw new Error('registered release differs');
-            return release.manifest;
-          })
+        ? new ExtensionQueue(options.workerSql, catalog.runtime)
         : undefined;
     const changeMaintenance =
       options.workerSql && discovery

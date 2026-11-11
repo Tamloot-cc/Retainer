@@ -213,7 +213,7 @@ async function setup(
   });
   expect(installed.status).toBe(201);
   const id = installed.body.id as string,
-    queue = new ExtensionQueue(app.sql, (id, version) => setupCatalog.get(id, version).manifest);
+    queue = new ExtensionQueue(app.sql, setupCatalog.runtime);
   const [job] =
     await db.owner`select id from extension_jobs where installation_id=${id} and trigger_kind='install'`;
   const run = await queue.claim(workspace.id, job?.id, 'setup');

@@ -219,7 +219,7 @@ describe('broker-only secret storage and opaque approval references', () => {
     expect(installed.status).toBe(201);
     const id = installed.body.id as string;
     await db.owner`update extension_installations set state='active' where id=${id}`;
-    const queue = new ExtensionQueue(t.sql, (id, version) => catalog.get(id, version).manifest);
+    const queue = new ExtensionQueue(t.sql, catalog.runtime);
     const { id: jobId } = await queue.enqueue(workspace, id, {
       functionId,
       input: {},
@@ -291,7 +291,7 @@ describe('broker-only secret storage and opaque approval references', () => {
     const installed = await install(keys.admin, request),
       id = installed.body.id as string;
     await db.owner`update extension_installations set state='active' where id=${id}`;
-    const queue = new ExtensionQueue(t.sql, (id, version) => catalog.get(id, version).manifest);
+    const queue = new ExtensionQueue(t.sql, catalog.runtime);
     const queued = await queue.enqueue(workspace, id, {
       functionId,
       input: {},
@@ -380,7 +380,7 @@ describe('broker-only secret storage and opaque approval references', () => {
     const installed = await install(keys.admin, request),
       id = installed.body.id as string;
     await db.owner`update extension_installations set state='active' where id=${id}`;
-    const queue = new ExtensionQueue(t.sql, (id, version) => catalog.get(id, version).manifest);
+    const queue = new ExtensionQueue(t.sql, catalog.runtime);
     const queued = await queue.enqueue(workspace, id, {
       functionId,
       input: {},
@@ -437,7 +437,7 @@ describe('broker-only secret storage and opaque approval references', () => {
     const installed = await install(h.keys.admin, h.request),
       id = installed.body.id as string;
     await db.owner`update extension_installations set state='active' where id=${id}`;
-    const queue = new ExtensionQueue(t.sql, (id, version) => catalog.get(id, version).manifest);
+    const queue = new ExtensionQueue(t.sql, catalog.runtime);
     const initial = await queue.enqueue(h.workspace, id, {
       functionId,
       input: {},

@@ -42,11 +42,8 @@ let t: TestApp;
 beforeAll(() => {
   t = startTestApp(db, { extensionCatalog: catalog });
 });
-const resolve = (registration: string, version: string, digest: string) => {
-  const release = catalog.get(registration, version);
-  if (release.digest !== digest) throw new Error('digest mismatch');
-  return release.manifest;
-};
+const resolve = catalog.runtime;
+
 async function setup(limits = { queued: 10000, kvBytes: 1048576 }) {
   const { workspace, keys } = await t.setupWorkspace(
     { name: `Queue ${randomUUID()}` },
@@ -218,7 +215,9 @@ describe('durable extension jobs and checkpoints', () => {
     const discovery = db.connect({ role: 'retainer_executor' });
     expect(await queue.discover(discovery)).toContainEqual({ workspace_id: workspace, job_id: id });
     await expect(discovery`select * from extension_jobs`).rejects.toMatchObject({ code: '42501' });
-    await expect(t.sql`select * from retainer_extension_jobs_due(100)`).rejects.toMatchObject({
+    await expect(
+      t.sql`select * from retainer_extension_jobs_due(100,${catalog.runtime.identity})`,
+    ).rejects.toMatchObject({
       code: '42501',
     });
     const lease = claimed(await queue.claim(workspace, id, 'worker'));
@@ -298,10 +297,7 @@ describe('durable extension jobs and checkpoints', () => {
       { name: `Capacity ${randomUUID()}` },
       { admin: { actor: { type: 'user', id: 'admin' }, scopes: ['admin'] } },
     );
-    const capacityQueue = new ExtensionQueue(
-      app.sql,
-      (id, version) => releases.get(id, version).manifest,
-    );
+    const capacityQueue = new ExtensionQueue(app.sql, releases.runtime);
     const ids = [];
     for (const manifest of manifests) {
       const input = {

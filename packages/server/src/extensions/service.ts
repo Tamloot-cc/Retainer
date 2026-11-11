@@ -17,6 +17,7 @@ import {
 } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { admitCaller } from '../extension-runtime/admission.js';
+import { type RuntimeCatalog, resolveRelease } from '../extension-runtime/availability.js';
 import { hashInstallationKey, mintInstallationKey } from '../extension-runtime/credentials.js';
 import { cancelRuns, lockExtension as lockInstallation } from '../extension-runtime/locks.js';
 import { ExtensionQueue } from '../extension-runtime/queue.js';
@@ -65,10 +66,23 @@ type Row = {
   secret_names?: string[];
   connection_health: 'ok' | 'needs_reconnect' | 'degraded';
   last_error: string | null;
+  runtime_retry_at?: Date | null;
   created_by: ExtensionInstallation['createdBy'];
 };
-function present(r: Row): ExtensionInstallation {
+function present(r: Row, runtime?: RuntimeCatalog): ExtensionInstallation {
+  const resolution = runtime ? resolveRelease(runtime, r) : undefined;
   return {
+    ...(resolution
+      ? {
+          runtimeAvailability: resolution.available
+            ? { state: 'available' as const }
+            : {
+                state: 'unavailable' as const,
+                code: resolution.code,
+                ...(r.runtime_retry_at ? { retryAt: r.runtime_retry_at.toISOString() } : {}),
+              },
+        }
+      : {}),
     id: r.id,
     registrationId: r.registration_id,
     version: r.version,
@@ -94,12 +108,7 @@ export class Extensions {
     private readonly activation: ReadonlySet<string> = new Set(),
   ) {}
   private queue() {
-    return new ExtensionQueue(this.sql, (id, version, digest) => {
-      const release = this.catalog.get(id, version);
-      if (release.digest !== digest)
-        throw conflict('incompatible_runtime', 'release differs from installation');
-      return release.manifest;
-    });
+    return new ExtensionQueue(this.sql, this.catalog.runtime);
   }
 
   async stageSecret(
@@ -133,10 +142,11 @@ export class Extensions {
       }
       return {
         installations: (
-          await tx<
-            Row[]
-          >`select i.*,retainer_extension_secret_names(i.id) as secret_names from extension_installations i ${caller.run || caller.installation ? tx`where i.id = ${caller.run?.installationId ?? caller.installation?.installationId ?? null}` : tx``} order by i.created_at, i.id`
-        ).map(present),
+          await tx<Row[]>`select i.*,retainer_extension_secret_names(i.id) as secret_names,
+            (select u.retry_at from extension_runtime_unavailable u where u.installation_id=i.id
+              and u.runtime_identity=${this.catalog.runtime.identity} and u.generation=i.generation and u.release_digest=i.release_digest) as runtime_retry_at
+            from extension_installations i ${caller.run || caller.installation ? tx`where i.id = ${caller.run?.installationId ?? caller.installation?.installationId ?? null}` : tx``} order by i.created_at, i.id`
+        ).map((row) => present(row, this.catalog.runtime)),
       };
     });
   }
@@ -152,7 +162,10 @@ export class Extensions {
         await lockSchemaShared(tx, caller.workspaceId);
         await admitCaller(tx, caller, false, 'runtime');
       }
-      const [row] = await tx<Row[]>`select * from extension_installations where id = ${id}`;
+      const [row] = await tx<Row[]>`select i.*,
+        (select u.retry_at from extension_runtime_unavailable u where u.installation_id=i.id
+          and u.runtime_identity=${this.catalog.runtime.identity} and u.generation=i.generation and u.release_digest=i.release_digest) as runtime_retry_at
+        from extension_installations i where i.id = ${id}`;
       if (!row) throw notFound('extension installation');
       const contributions =
         await tx`select kind, universal_id as "universalId", element_id as "elementId"
@@ -161,7 +174,7 @@ export class Extensions {
         { names: string[] }[]
       >`select retainer_extension_secret_names(${id}::uuid) as names`;
       return {
-        ...present(row),
+        ...present(row, this.catalog.runtime),
         secrets: Object.fromEntries((presence?.names ?? []).map((name) => [name, true])),
         contributions,
       };

@@ -242,7 +242,7 @@ export const test = base.extend<
       if (!installed.ok) throw new Error('source fixture install failed');
       const { id } = (await installed.json()) as { id: string },
         base = `/extensions/${id}`;
-      const queue = new ExtensionQueue(sql, (id, version) => catalog.get(id, version).manifest);
+      const queue = new ExtensionQueue(sql, catalog.runtime);
       const token = (run: ClaimedJob) =>
         runTokens.issue(sql, run, manifest.universalId, run.scopes);
       const [setup] =

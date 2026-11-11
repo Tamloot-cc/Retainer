@@ -510,6 +510,29 @@ source dedupe independent of run retention. Payloads are source IDs, not notes o
 transcripts. Child enqueue dedupe is bound to installation and business operation,
 not a random attempt ID.
 
+Pinned-release availability is operational state separate from provider connection
+health and installation lifecycle. A single resolver validates registration,
+version, exact manifest digest and the server's reviewed compatibility set. Its
+nonthrowing result is shared by claim, schedule maintenance and change dispatch.
+Unavailable releases create a workspace-RLS-scoped failure marker bound to the
+installation generation, release digest and immutable local catalog identity
+(including server/runtime/protocol compatibility and order-independent release
+metadata). All three discovery functions require that identity and exclude only
+matching unexpired markers. An older or partial catalog cannot quarantine work
+for a different catalog. API inspection reports `runtimeAvailability` separately
+from `connectionHealth`; the web app explains that pending work is saved.
+
+Unavailable work stays queued without consuming execution attempts or advancing
+schedule/change cursors. Retry resolution at most once per installation/catalog
+every five minutes under the installation and queue locks. A changed/restored
+catalog is eligible immediately; successful reinspection clears its own marker
+without changing installation generation or requiring upgrade. Expired jobs,
+cleanup deadlines and erasure continue independently. Collect stale catalog
+markers in bounded batches after 30 days, with workspace deletion cascading them.
+Unexpected per-item claim/acknowledgement errors do not end a worker's loop: finish
+processing peers, then report the operational failure. Admin retry recognizes
+reserved built-in lifecycle jobs and validates their strict empty input.
+
 One scheduler tick per minute transactionally locks due schedule rows, inserts
 jobs keyed by `(installation, function, scheduled UTC instant)`, then advances
 `nextDueAt`. UTC-only cron in v1; missed ticks coalesce to one catch-up job, not
@@ -518,7 +541,7 @@ one occurrence. Schedule input must be a closed object containing only required
 `scheduledAt`, a string accepting the scheduler's 24-character UTC timestamp;
 reject incompatible manifests at registration. Isolate maintenance failures per
 installation, keep unaccepted occurrences pending, and mark the inspected
-generation degraded without blocking other workspaces. Disabled installations
+generation degraded for non-release maintenance errors without blocking other workspaces. Disabled installations
 never accumulate schedule jobs.
 
 ### 9.3 Webhooks
@@ -1040,7 +1063,15 @@ produce `incompatible_migrations`; migration refuses before DDL or definition
 upgrades. Deploy requires the explicit `historyChecked` capability and a packaged
 maintenance responder, so an older artifact lacking the check cannot bypass it. Candidate release inventory includes only manifests whose exact
 `serverVersions` support the packaged server version; retaining incompatible
-bytes cannot make a referenced installation safe to dispatch.
+bytes cannot make a referenced installation safe to dispatch. First-party builds
+use the checked-in reviewed server-version set in `scripts/extension-release.mjs`,
+not an automatic wildcard or the current package version alone. A server version
+outside that set refuses artifact generation. For a version transition, first
+review/test a bridge extension release supporting both old and new servers,
+publish/install it while the old server is running, and verify all referenced
+installations (including disabled and live cleanup) support the new server before
+rolling it out. A genuinely incompatible adapter needs an explicit migration or
+removal plan; availability quarantine never authorizes incompatible execution.
 Packaged catalog and executable files may also pin expected SHA-256 hashes;
 missing or mismatched release configuration fails before runtime initialization.
 

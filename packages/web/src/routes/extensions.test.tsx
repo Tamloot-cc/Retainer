@@ -166,6 +166,22 @@ describe('generated extension settings and human approval', () => {
       grantedScopes: ['read'],
       createdBy: { type: 'user', id: 'admin' },
     };
+  it('explains unavailable execution while keeping the provider connection separate', async () => {
+    vi.spyOn(api, 'extensionCatalog').mockResolvedValue({ releases: [release] });
+    vi.spyOn(api, 'extensions').mockResolvedValue({
+      installations: [
+        {
+          ...installation,
+          connectionHealth: 'ok',
+          runtimeAvailability: { state: 'unavailable', code: 'release_unavailable' },
+        },
+      ],
+    });
+    mount(<ExtensionsPage />);
+    expect(await screen.findByText(/Your server cannot run this extension right now/)).toBeTruthy();
+    expect(screen.getByText(/Pending work is saved/)).toBeTruthy();
+    expect(screen.queryByText(/Needs attention:/)).toBeNull();
+  });
   it('creates only selected app access, shows the returned key once and discards it when closing', async () => {
     const rawKey = 'rti_shown_once_only';
     vi.spyOn(api, 'extensionCredentials').mockResolvedValue({ credentials: [] });

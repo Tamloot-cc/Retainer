@@ -60,11 +60,7 @@ async function setup(scopes: ('read' | 'write')[] = ['read', 'write']) {
   expect(installed.status).toBe(201);
   const id = installed.body.id as string;
   await db.owner`update extension_installations set state='active' where id=${id}`;
-  const queue = new ExtensionQueue(t.sql, (id, version, digest) => {
-    const release = catalog.get(id, version);
-    if (release.digest !== digest) throw new Error('digest');
-    return release.manifest;
-  });
+  const queue = new ExtensionQueue(t.sql, catalog.runtime);
   const { id: jobId } = await queue.enqueue(workspace.id, id, {
     functionId,
     input: { sourceId: 'fixture' },

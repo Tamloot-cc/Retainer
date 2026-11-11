@@ -38,8 +38,7 @@ const allCatalog = new ExtensionCatalog([
   { manifest: noHook, actorCeiling: 'integration', runtimeEnabled: true },
 ]);
 let t: TestApp, tokens: RunTokens;
-const queue = () =>
-  new ExtensionQueue(t.sql, (id, version) => allCatalog.get(id, version).manifest);
+const queue = () => new ExtensionQueue(t.sql, allCatalog.runtime);
 beforeAll(async () => {
   const keys = await generateKeyPair('EdDSA');
   tokens = new RunTokens({
@@ -137,6 +136,37 @@ describe('approved runtime lifecycle on real Postgres', () => {
         ).toBe(200);
         expect(await queue().claim(workspace, job?.id, 'after-maintenance')).toBeTruthy();
       }
+    },
+  );
+  it.each(['install', 'upgrade'] as const)(
+    'retries expired built-in %s setup without a declared handler and rejects nonempty system input',
+    async (kind) => {
+      const { workspace, key, id } = await install(noHook);
+      if (kind === 'upgrade')
+        await db.owner`update extension_installations set setup_kind='upgrade',state='upgrading' where id=${id}`;
+      const [job] =
+        await db.owner`select id from extension_jobs where installation_id=${id} and trigger_kind='install'`;
+      await db.owner`update extension_jobs set expires_at=clock_timestamp()-interval '1 second' where id=${job?.id}`;
+      expect(
+        (await new ChangeMaintenance(t.sql, db.connect({ role: 'retainer_executor' })).tick())
+          .failed,
+      ).toBe(0);
+      expect((await state(id))?.state).toBe(kind === 'upgrade' ? 'disabled' : 'setup_failed');
+      await db.owner`update extension_jobs set input='{"unexpected":true}'::jsonb where id=${job?.id}`;
+      const retry = () =>
+        t.request(`/v1/extensions/${id}/runs/${job?.id}/retry`, {
+          key,
+          method: 'POST',
+          headers: { 'Idempotency-Key': 'retry-system' },
+        });
+      expect((await retry()).status).toBe(422);
+      await db.owner`update extension_jobs set input='{}'::jsonb where id=${job?.id}`;
+      expect((await retry()).status).toBe(200);
+      const run = await queue().claim(workspace, job?.id, 'retried-system');
+      if (!run) throw new Error('missing built-in retry');
+      expect(run.system).toBe(true);
+      await queue().complete(run, { status: 'succeeded' });
+      expect((await state(id))?.state).toBe('active');
     },
   );
   it('atomically queues setup, fences CRM until activation, and starts durable children after setup succeeds', async () => {

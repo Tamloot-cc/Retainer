@@ -589,6 +589,20 @@
       "when": 1794422473056,
       "tag": "0083_oauth_reference_revoke_index",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1794435479453,
+      "tag": "0084_extension_runtime_availability",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1794435589120,
+      "tag": "0085_extension_runtime_discovery",
+      "breakpoints": true
     }
   ]
 }

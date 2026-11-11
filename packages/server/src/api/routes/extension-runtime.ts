@@ -18,12 +18,7 @@ export function runtimeRoutes(
   catalog: ExtensionCatalog,
   broker?: SecretBroker,
 ) {
-  const queue = new ExtensionQueue(sql, (id, version, digest) => {
-    const release = catalog.get(id, version);
-    if (release.digest !== digest)
-      throw new AppError(409, 'incompatible_runtime', 'release digest does not match');
-    return release.manifest;
-  });
+  const queue = new ExtensionQueue(sql, catalog.runtime);
   app.post('/extensions/:id/runs/:run/retry', async (c) =>
     c.json(
       await queue.retry(

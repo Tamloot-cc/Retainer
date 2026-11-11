@@ -81,7 +81,7 @@ async function setup() {
   expect(installed.status).toBe(201);
   const id = installed.body.id as string,
     path = `/v1/extensions/${id}/runtime/last-contact`,
-    queue = new ExtensionQueue(app.sql, (id, version) => catalog.get(id, version).manifest);
+    queue = new ExtensionQueue(app.sql, catalog.runtime);
   const [pending] =
     await db.owner`select id from extension_jobs where installation_id=${id} and trigger_kind='install'`;
   const installRun = await queue.claim(workspace.id, pending?.id, 'setup');

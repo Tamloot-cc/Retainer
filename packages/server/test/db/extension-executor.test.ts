@@ -67,7 +67,7 @@ async function setup() {
   expect(install.status).toBe(201);
   const id = install.body.id as string;
   await db.owner`update extension_installations set state='active' where id=${id}`;
-  const queue = new ExtensionQueue(t.sql, (id, version) => catalog.get(id, version).manifest);
+  const queue = new ExtensionQueue(t.sql, catalog.runtime);
   const { id: jobId } = await queue.enqueue(workspace.id, id, {
     functionId,
     input: {},

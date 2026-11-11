@@ -123,6 +123,15 @@ export function ExtensionsPage() {
                 <p>
                   {stateLabel(installation.state)} · Version {installation.version}
                 </p>
+                {installation.runtimeAvailability?.state === 'unavailable' &&
+                ['active', 'installing', 'upgrading', 'uninstalling'].includes(
+                  installation.state,
+                ) ? (
+                  <Notice>
+                    Your server cannot run this extension right now. Pending work is saved. Contact
+                    your server operator to restore it.
+                  </Notice>
+                ) : null}
                 {installation.lastError ? (
                   <Notice>
                     {installation.lastError === 'cursor_expired'

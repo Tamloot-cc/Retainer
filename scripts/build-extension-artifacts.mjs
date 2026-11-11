@@ -9,7 +9,7 @@ import { defineExtension } from '../packages/extension/dist/index.js';
 import { granolaManifest } from '../packages/runner/dist/granola-contract.js';
 import { lastContactManifest } from '../packages/runner/dist/last-contact.js';
 import { stableJson } from '../packages/server/dist/stable-json.js';
-import { extensionRelease } from './extension-release.mjs';
+import { extensionRelease, extensionServerVersions } from './extension-release.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -43,7 +43,9 @@ const manifest = defineExtension({
   version,
   description: 'Deterministic first-party adapter for execution verification.',
   packageDigest,
-  serverVersions: [JSON.parse(readFileSync(resolve(root, 'packages/server/package.json'))).version],
+  serverVersions: extensionServerVersions(
+    JSON.parse(readFileSync(resolve(root, 'packages/server/package.json'))).version,
+  ),
   runtimeVersion: 'node24',
   execution: 'hosted',
   protocolVersion: 1,

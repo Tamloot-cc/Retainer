@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { extensionRelease } from './extension-release.mjs';
+import { extensionRelease, extensionServerVersions } from './extension-release.mjs';
 
 test('accepts clean detached main commits and never reuses a published version after main advances', () => {
   const directory = mkdtempSync(join(tmpdir(), 'retainer-release-policy-'));
@@ -40,4 +40,12 @@ test('accepts clean detached main commits and never reuses a published version a
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('requires reviewed server compatibility and does not silently claim support after a version bump', () => {
+  const supported = extensionServerVersions('0.1.0');
+  assert.deepEqual(supported, ['0.1.0']);
+  supported.push('999.0.0');
+  assert.deepEqual(extensionServerVersions('0.1.0'), ['0.1.0']);
+  assert.throws(() => extensionServerVersions('0.2.0'), /compatibility must be reviewed/);
 });

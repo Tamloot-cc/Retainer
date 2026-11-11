@@ -17,3 +17,13 @@ export function extensionRelease(git, development) {
   // Main is append-only. A new main commit never republishes a prior version.
   return { commit, development, version: development ? '1.0.0' : `1.0.${ordinal}` };
 }
+
+// Review this exact set before a server-version transition. A bridge release must
+// be tested on both versions, installed while the old server is still running,
+// then retained across the server upgrade. Never infer support from semver alone.
+const REVIEWED_SERVER_VERSIONS = Object.freeze(['0.1.0']);
+export function extensionServerVersions(currentVersion) {
+  if (!REVIEWED_SERVER_VERSIONS.includes(currentVersion))
+    throw new Error('first-party extension compatibility must be reviewed for this server version');
+  return [...REVIEWED_SERVER_VERSIONS];
+}

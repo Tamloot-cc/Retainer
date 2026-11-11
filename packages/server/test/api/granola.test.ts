@@ -108,7 +108,7 @@ async function setup() {
   });
   expect(installed.status).toBe(201);
   const id = installed.body.id as string,
-    queue = new ExtensionQueue(app.sql, (id, version) => catalog.get(id, version).manifest);
+    queue = new ExtensionQueue(app.sql, catalog.runtime);
   const providerId = 'not_123456789abcde';
   let version = 1,
     status = 200,
