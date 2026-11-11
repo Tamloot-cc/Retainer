@@ -23,6 +23,47 @@ export const fixture = () => ({
   functions: [],
 });
 describe('strict extension contracts', () => {
+  it('bounds change handlers to a local feed position and refuses caller-supplied record bodies', () => {
+    const input = {
+      ...fixture(),
+      functions: [
+        {
+          universalId: 'f3f3e359-61f7-4115-9dc9-63d9184c2070',
+          name: 'watch',
+          description: 'Watch fields',
+          handlerDigest: 'b'.repeat(64),
+          trigger: {
+            kind: 'change',
+            objectId: 'e449a44f-0b0e-4c43-981c-f50fe507a6a7',
+            fieldIds: [],
+          },
+          inputSchema: {
+            type: 'object',
+            properties: { changePosition: { type: 'string', maxLength: 19 } },
+            required: ['changePosition'],
+            additionalProperties: false,
+          },
+        },
+      ],
+    };
+    expect(defineExtension(input).functions[0]?.trigger.kind).toBe('change');
+    expect(() =>
+      defineExtension({
+        ...input,
+        functions: [
+          {
+            ...input.functions[0],
+            inputSchema: {
+              type: 'object',
+              properties: { body: { type: 'string', maxLength: 65536 } },
+              required: ['body'],
+              additionalProperties: false,
+            },
+          },
+        ],
+      }),
+    ).toThrow('local changePosition');
+  });
   it('requires a pinned setup verifier and local-ID-only source ingestion jobs', () => {
     const verifyId = '5c011ac7-a6b8-4bc5-bac5-5c9b70491ab4',
       syncId = '50b706e0-2f74-46d4-b454-d9481ed21b24';

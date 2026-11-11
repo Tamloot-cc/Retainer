@@ -1,7 +1,7 @@
 import type { Actor, SchemaChange as SchemaChangeView, SchemaOwner } from '@retainer/shared';
 import { canApproveDestructive } from '../caller.js';
 import type { ApiKeyScope, SchemaChangeStatus } from '../db/schema.js';
-import { jsonValue, lockSchemaExclusive, type Tx } from '../db/tx.js';
+import { jsonValue, lockPrivacyShared, lockSchemaExclusive, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { loadSchemaState } from '../schema/load.js';
 import {
@@ -98,6 +98,7 @@ export async function runSchemaChange(
   request: SchemaChangeRequest,
 ): Promise<SchemaChangeResult> {
   const { workspaceId, actor } = request;
+  await lockPrivacyShared(tx, workspaceId);
   await lockSchemaExclusive(tx, workspaceId);
   const current = await loadSchemaState(tx, workspaceId);
   const { desired, ops } = planSchemaChange(
@@ -177,6 +178,7 @@ export async function decideSchemaChange(
   if (!canApproveDestructive(actor, input.scopes)) {
     throw forbidden('only a user key with admin scope can decide schema changes');
   }
+  await lockPrivacyShared(tx, workspaceId);
   await lockSchemaExclusive(tx, workspaceId);
   const [row] = await tx<ChangeRow[]>`
     select * from schema_changes where id = ${changeId} and workspace_id = ${workspaceId}

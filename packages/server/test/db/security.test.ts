@@ -334,6 +334,8 @@ describe('SECURITY DEFINER functions', () => {
     retainer_extension_secret_names: RUNTIME_ROLE,
     retainer_extension_slot_available: RUNTIME_ROLE,
     retainer_file_maintenance_due: 'retainer_executor',
+    retainer_extension_changes_due: 'retainer_executor',
+    retainer_change_retention_due: 'retainer_executor',
     retainer_queue_file_deletion: null,
     retainer_lookup_api_key: RUNTIME_ROLE,
     retainer_retire_extension_secrets: RUNTIME_ROLE,

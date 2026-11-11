@@ -315,6 +315,7 @@ export async function moveEvents(
   }
   await checkInboundRelations(tx, context, target, ids);
 
+  for (const event of events) await context.changes?.capture(tx, event.id);
   // From here on, the move itself. Every derived row is rebuilt from the
   // assertions once they belong to the target's fields.
   await tx`

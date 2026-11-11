@@ -1,6 +1,6 @@
 import type { Actor } from '@retainer/shared';
 import type { ApiKeyScope, AppliedTemplate } from '../db/schema.js';
-import { lockSchemaExclusive, type Tx } from '../db/tx.js';
+import { lockPrivacyShared, lockSchemaExclusive, type Tx } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
 import { seedWorkspaceProfile } from '../memory/profiles.js';
 import { runSchemaChange, type SchemaChangeResult, SYSTEM_ACTOR } from '../schema-engine/engine.js';
@@ -51,6 +51,7 @@ export async function applyTemplate(
     throw notFound(`template "${input.name}"`, { templates: [...TEMPLATE_NAMES] });
   }
   // Held through the whole transaction, so two concurrent applies serialize.
+  await lockPrivacyShared(tx, input.workspaceId);
   await lockSchemaExclusive(tx, input.workspaceId);
   const [workspace] = await tx<
     { templates: AppliedTemplate[]; schema_version: number; definitions_digest: string | null }[]

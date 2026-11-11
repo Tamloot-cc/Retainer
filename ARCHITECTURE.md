@@ -87,17 +87,17 @@ API and MCP schemas are cached per `(workspace, schema_version)`.
 
 #### Field types
 
-| Type                                                     | Stored as                                                        |
-| -------------------------------------------------------- | ---------------------------------------------------------------- |
-| `text`, `number`, `boolean`, `date`, `date_time`, `json` | Plain JSON values                                                |
-| `select`, `multi_select`                                 | Option value(s); options live in `fields.settings`               |
-| `money`                                                  | `{ amountMicros, currency }`                                     |
-| `emails`                                                 | `{ primary, additional[] }`                                      |
-| `phones`                                                 | `{ primary: { number, countryCode }, additional[] }`             |
-| `links`                                                  | `{ primary: { url, label }, additional[] }`                      |
-| `full_name`                                              | `{ first, last }`                                                |
-| `address`                                                | `{ street1, street2, city, state, postcode, country, lat, lng }` |
-| `relation`                                               | Not in `records.data`; see `record_links`                        |
+| Type                                                     | Stored as                                                           |
+| -------------------------------------------------------- | ------------------------------------------------------------------- |
+| `text`, `number`, `boolean`, `date`, `date_time`, `json` | Plain JSON values                                                   |
+| `select`, `multi_select`                                 | Option value(s); options live in `fields.settings`                  |
+| `money`                                                  | `{ amountMicros, currency }`                                        |
+| `emails`                                                 | `{ primary, additional[] }`                                         |
+| `phones`                                                 | `{ primary: { number, countryCode }, additional[] }`                |
+| `links`                                                  | `{ primary: { url, label }, additional[] }`                         |
+| `full_name`                                              | `{ first, last }`                                                   |
+| `address`                                                | `{ street1, street2, city, state, postcode, country, lat, lng }`    |
+| `relation`                                               | Not in `records.data`; see `record_links`                           |
 | `files`                                                  | Immutable opaque file ID list; bytes in authorized external storage |
 
 Composite shapes are defined once in `@retainer/shared`, so every object that
@@ -1865,7 +1865,7 @@ from its own layer and the ones below it:
 | Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`, `egress`, `launcher`, `extension-control`                         | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
 | Admin      | `schema-engine`, `templates`, `workspaces`, `extensions`                                                                          | Changing a schema and creating workspaces                                         |
 | Features   | `views`, `comments`, `retrieval`, `reads`                                                                                         | Built on records and memory                                                       |
-| Core       | `records`, `memory`, `privacy`, `files`, `sources`                                                                                | The write rules                                                                   |
+| Core       | `records`, `memory`, `privacy`, `files`, `sources`, `changes`                                                                     | The write rules                                                                   |
 | Foundation | `db`, `schema`, `caller`, `idempotency`, `stable-json`, `config`, `errors`, `log`, `version`, `extension-runtime`, `file-storage` | The database and reading a schema                                                 |
 
 The schema engine sits above the records because a schema change rewrites

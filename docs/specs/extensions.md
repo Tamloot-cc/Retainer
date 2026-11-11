@@ -1,6 +1,6 @@
 # Retainer extensions
 
-Status: implementation in progress; control, isolated execution, lifecycle, management UI, file storage and managed source primitives implemented; provider delivery, feeds and launch remain. Date: 2026-11-11.
+Status: implementation in progress; control, isolated execution, lifecycle, management UI, file storage, managed sources and commit-ordered change dispatch implemented; provider delivery, last-contact and launch remain. Date: 2026-11-11.
 See [implementation progress](extensions-implementation.md) for completed and outstanding work.
 
 This spec replaces the exported **Retainer Extensions** proposal supplied as
@@ -420,7 +420,9 @@ contracts; the example header names are not a universal protocol.
 Record transactions append an outbox row only when effective values, links,
 visibility or lifecycle state change; assertion-review changes have a separate
 operation kind. Watched fields are permanent keys resolved from manifest UUIDs,
-not mutable names. Include deletion, merge, retraction and source-revision events.
+not mutable names. Include deletion, merge, retraction and source-revision events. An event-type
+move emits an old-type tombstone and new-type creation in the same transaction,
+so handlers watching either type can recompute.
 Personal memory is excluded from the workspace feed in v1.
 
 Use a per-workspace feed counter locked at the end of the write transaction;
@@ -431,16 +433,28 @@ new record locks after the feed lock. One change plus its trigger jobs is durabl
 linked through dispatcher checkpoints; never rely on in-process notifications.
 
 `GET /v1/changes?after=<opaqueCursor>&limit=100` and `list_changes` return IDs,
-operation, changed keys, origin and next cursor. Read scope required; authorize
+operation, changed keys, origin, next cursor and `headCursor`. Read scope required; authorize
 referenced records at read time. Tombstones contain only authorized minimal IDs.
 Retention is 30 days; expired cursors return `410 cursor_expired` with a rescan
-instruction, never silent truncation. Agents persist their own cursors; this is
+instruction, never silent truncation. Capture `headCursor` from a fresh page
+before scanning current records, then replay after that cursor; writes during
+the scan are replayed and handlers tolerate overlap. Agents persist their own cursors; this is
 not delivery acknowledgement or exactly-once extraction.
 
 Cause metadata is server-derived from the triggering job/run and propagated to
 writes and child jobs. Skip any installation already in the chain; cap depth at
-8 and record `trigger_cycle_blocked`. This stops A → B → A as well as direct
+8 and count blocked matches. Direct self-writes are expected and do not degrade
+connection health; a multi-installation repeat/depth breach records
+`trigger_cycle_blocked`. This stops A → B → A as well as direct
 self-triggering. Coalesce duplicate `(installation,function,changePosition)` jobs.
+Accepted trigger jobs retain only the authorized minimal change metadata, so
+public-feed pruning cannot strand accepted work. Erasure scrubs those copies and
+fences every live run; all installation KV is cleared because operational values
+may indirectly derive from erased records. Preserve unrelated durable jobs and
+keep immutable backfill bounds in job input. A dispatcher that has fallen behind
+retention stops with degraded `cursor_expired`; it never advances past the gap.
+Disable, rescan and re-enable only through the reviewed adapter catch-up path.
+
 Handlers read current data and recompute deterministically, tolerating duplicate
 or superseded changes. Last-contact recomputes from surviving events, including
 retraction/deletion; it cannot just retain the maximum timestamp ever seen.

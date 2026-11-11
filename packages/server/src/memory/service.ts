@@ -95,6 +95,7 @@ export async function retractEventFor(
     });
     if (!record.event) throw notFound('event', { id });
     const deleted = await softDeleteRecord(tx, context, record.id);
+    for (const id of deleted) await context.changes?.capture(tx, id, 'retract');
     const retraction = await retractEventClaims(
       tx,
       context,

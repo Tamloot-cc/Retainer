@@ -194,6 +194,31 @@ if (extensions.fileMaintenance) {
   });
 }
 
+if (extensions.changeMaintenance) {
+  let running = Promise.resolve(),
+    busy = false;
+  const tick = () => {
+    if (busy) return;
+    busy = true;
+    running = (extensions.changeMaintenance as NonNullable<typeof extensions.changeMaintenance>)
+      .tick()
+      .then((result) => {
+        if (result.failed) log.error('Change dispatch or retention remains pending.');
+      })
+      .catch(() => log.error('Change maintenance failed.'))
+      .finally(() => {
+        busy = false;
+      });
+  };
+  const timer = setInterval(tick, 1000);
+  tick();
+  stops.push(async () => {
+    clearInterval(timer);
+    extensions.changeMaintenance?.stop();
+    await running;
+  });
+}
+
 async function shutdown(signal: string) {
   log.info(`${signal} received, shutting down.`);
   await Promise.allSettled(stops.map((stop) => stop()));

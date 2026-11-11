@@ -10,6 +10,7 @@ import { Sources } from '../sources/service.js';
 import { VERSION } from '../version.js';
 import { SERVER_ICON } from './icon.js';
 import { INSTRUCTIONS } from './instructions.js';
+import { registerChangeTools } from './tools/changes.js';
 import { registerExtensionTools } from './tools/extensions.js';
 import { registerFileTools } from './tools/files.js';
 import { registerReadTools } from './tools/read.js';
@@ -66,6 +67,7 @@ export function createMcpServer(
   );
   registerSetupTools(server, sql, caller);
   registerReadTools(server, sql, caller);
+  registerChangeTools(server, sql, caller);
   registerWriteTools(server, sql, caller);
 
   return server;

@@ -589,6 +589,17 @@ export class RetainerClient {
       `/v1/extensions/${encodeURIComponent(installationId)}/source-items/${encodeURIComponent(itemId)}`,
     );
   }
+  changes(input: { after?: string; limit?: number; signal?: AbortSignal } = {}) {
+    const { signal, ...params } = input;
+    return this.get<import('@retainer/shared').ChangePage>('/v1/changes', params, signal);
+  }
+  change(position: string, signal?: AbortSignal) {
+    return this.get<import('@retainer/shared').RecordChange>(
+      `/v1/changes/${encodeURIComponent(position)}`,
+      {},
+      signal,
+    );
+  }
   prepareSourceItem(installationId: string, itemId: string, participants: string[]) {
     return this.post<{ prepared: true }>(
       `/v1/extensions/${encodeURIComponent(installationId)}/source-items/${encodeURIComponent(itemId)}/prepare`,

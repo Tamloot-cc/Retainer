@@ -10,6 +10,7 @@ import type { Sql } from '../db/client.js';
 import {
   inWorkspace,
   jsonValue,
+  lockPrivacyShared,
   lockSchemaExclusive,
   lockSchemaShared,
   type Tx,
@@ -443,6 +444,7 @@ export class Extensions {
         'Idempotency-Key of at most 200 characters required',
       );
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await lockPrivacyShared(tx, caller.workspaceId);
       await lockSchemaExclusive(tx, caller.workspaceId);
       await lockInstallation(tx, caller.workspaceId, input.registrationId);
       const requestHash = hash({ input, actor: caller.actor });

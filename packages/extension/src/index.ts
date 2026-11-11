@@ -195,6 +195,21 @@ function checkInput(schema: InputSchema): void {
 }
 function checkFunction(fn: z.infer<typeof functionSchema>) {
   checkInput(fn.inputSchema);
+  if (fn.trigger.kind === 'change') {
+    const input = fn.inputSchema;
+    if (
+      input.type !== 'object' ||
+      input.additionalProperties !== false ||
+      input.required?.length !== 1 ||
+      input.required[0] !== 'changePosition' ||
+      Object.keys(input.properties ?? {}).length !== 1 ||
+      input.properties?.changePosition?.type !== 'string' ||
+      input.properties.changePosition.maxLength !== 19
+    )
+      throw new Error('unsupported_manifest: change handlers accept only a local changePosition');
+    if (new Set(fn.trigger.fieldIds).size !== fn.trigger.fieldIds.length)
+      throw new Error('unsupported_manifest: duplicate watched field');
+  }
   // Cron execution is deferred. Still refuse malformed expressions at release registration.
   if (fn.trigger.kind === 'schedule')
     nextOccurrence(fn.trigger.cron, new Date('2000-01-01T00:00:00Z'));

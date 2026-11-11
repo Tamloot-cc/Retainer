@@ -2,6 +2,14 @@ import type { TransactionSql } from 'postgres';
 import type { Sql } from './client.js';
 
 export type Tx = TransactionSql<Record<string, never>>;
+const publications = new WeakMap<Tx, { publish?: () => Promise<void> }>();
+/** One terminal publication stage, after all workspace work and before COMMIT. No network I/O. */
+export function publishAtCommit(tx: Tx, publish: () => Promise<void>) {
+  const stage = publications.get(tx);
+  if (!stage) throw new Error('publication requires an inWorkspace transaction');
+  if (stage.publish) throw new Error('workspace publication already registered');
+  stage.publish = publish;
+}
 
 /** What `sql.json` accepts. */
 type JSONValue = Parameters<Tx['json']>[0];
@@ -19,11 +27,30 @@ export async function inWorkspace<T>(
   fn: (tx: Tx) => Promise<T>,
   userId?: string,
 ): Promise<T> {
-  const result = await sql.begin(async (tx) => {
-    await setScope(tx as unknown as Tx, workspaceId, userId);
-    return fn(tx as unknown as Tx);
-  });
+  const result = await sql.begin((tx) =>
+    inWorkspaceTransaction(tx as unknown as Tx, workspaceId, fn, userId),
+  );
   return result as T;
+}
+
+/** Terminal workspace stage for a control transaction that creates the workspace first. */
+export async function inWorkspaceTransaction<T>(
+  tx: Tx,
+  workspaceId: string,
+  fn: (tx: Tx) => Promise<T>,
+  userId?: string,
+): Promise<T> {
+  if (publications.has(tx)) throw new Error('workspace transaction is already scoped');
+  const stage: { publish?: () => Promise<void> } = {};
+  publications.set(tx, stage);
+  try {
+    await setScope(tx, workspaceId, userId);
+    const result = await fn(tx);
+    await stage.publish?.();
+    return result;
+  } finally {
+    publications.delete(tx);
+  }
 }
 
 /**

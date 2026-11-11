@@ -1516,6 +1516,8 @@ export const extensionJobs = pgTable(
     releaseDigest: text('release_digest').notNull(),
     functionId: uuid('function_id').notNull(),
     input: jsonb('input').notNull(),
+    /** Server-copied IDs/keys only, so an accepted trigger survives public-feed retention. */
+    changeSnapshot: jsonb('change_snapshot'),
     triggerKind: text('trigger_kind').notNull().default('job'),
     inputHash: text('input_hash').notNull(),
     dedupeKey: text('dedupe_key').notNull(),
@@ -1545,6 +1547,12 @@ export const extensionJobs = pgTable(
       .on(t.workspaceId, t.installationId)
       .where(sql`${t.status} = 'running'`),
     index('extension_jobs_due_idx').on(t.status, t.availableAt),
+    index('extension_jobs_retention_idx')
+      .on(t.updatedAt, t.workspaceId)
+      .where(sql`${t.status} in ('succeeded','failed','cancelled')`),
+    index('extension_jobs_expiry_idx')
+      .on(t.expiresAt, t.workspaceId)
+      .where(sql`${t.status} in ('queued','running')`),
     index('extension_jobs_install_idx').on(t.workspaceId, t.installationId, t.createdAt),
     index('extension_jobs_source_idx').on(t.workspaceId, t.sourceItemId),
     foreignKey({
@@ -2002,6 +2010,79 @@ export const sourceParticipants = pgTable(
     ),
     index('source_participants_email_idx').on(t.workspaceId, t.email),
     pgPolicy('source_participants_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+/** Allocated only at transaction end; a cursor can never pass an uncommitted lower position. */
+export const changeCounters = pgTable(
+  'change_counters',
+  {
+    workspaceId: workspaceId().primaryKey(),
+    position: bigint('position', { mode: 'number' }).notNull().default(0),
+    retainedAfter: bigint('retained_after', { mode: 'number' }).notNull().default(0),
+  },
+  (t) => [
+    pgPolicy('change_counters_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const recordChanges = pgTable(
+  'record_changes',
+  {
+    workspaceId: workspaceId(),
+    position: bigint('position', { mode: 'number' }).notNull(),
+    recordId: uuid('record_id').notNull(),
+    objectTypeId: uuid('object_type_id').notNull(),
+    operation: text('operation').notNull(),
+    fieldKeys: jsonb('field_keys').$type<string[]>().notNull(),
+    relatedRecordIds: jsonb('related_record_ids').$type<string[]>().notNull().default([]),
+    originInstallationId: uuid('origin_installation_id'),
+    cause: jsonb('cause').$type<string[]>().notNull().default([]),
+    mergedIntoId: uuid('merged_into_id'),
+    createdAt: timestamptz('created_at').notNull().default(sql`clock_timestamp()`),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.position] }),
+    index('record_changes_record_idx').on(t.workspaceId, t.recordId),
+    index('record_changes_retention_idx').on(t.createdAt),
+    check(
+      'record_changes_operation',
+      sql`${t.operation} in ('create','update','links','delete','merge','retract','supersede','review','forget')`,
+    ),
+    pgPolicy('record_changes_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const changeDispatch = pgTable(
+  'change_dispatch',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    generation: integer('generation').notNull(),
+    position: bigint('position', { mode: 'number' }).notNull().default(0),
+    blockedCycles: integer('blocked_cycles').notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId] }),
+    tenantFk(
+      'change_dispatch_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    pgPolicy('change_dispatch_workspace', {
       for: 'all',
       to: 'retainer_app',
       using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,

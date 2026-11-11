@@ -292,6 +292,7 @@ export class Sources {
         const retract = input.status === 'deleted' && manifest.onSourceDelete === 'retract';
         if (retract && current) {
           await tx`select id from records where id=${current.event_id} for update`;
+          await context.changes?.capture(tx, current.event_id, 'retract');
           await markDeleted(tx, context, [current.event_id]);
           invalidated = await retractEventClaims(tx, context, [current.event_id]);
         }
@@ -515,8 +516,10 @@ export class Sources {
               about: input.event.about,
             },
           );
-          if (current)
+          if (current) {
+            await context.changes?.capture(tx, current.event_id, 'supersede');
             await tx`update source_revisions set is_current=false where id=${current.id}`;
+          }
           const [revision] = await tx<
             { id: string }[]
           >`insert into source_revisions(workspace_id,item_id,event_id,content_digest,provider_revision,previous_event_id)

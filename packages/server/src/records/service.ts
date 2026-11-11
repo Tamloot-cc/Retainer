@@ -12,6 +12,7 @@ import type {
 import { isoDateTimeSchema } from '@retainer/shared';
 import { z } from 'zod';
 import type { Caller } from '../caller.js';
+import { ChangeCollector } from '../changes/collect.js';
 import type { Sql } from '../db/client.js';
 import type { WorkspaceSettings } from '../db/schema.js';
 import {
@@ -113,7 +114,8 @@ export async function withWrite<T>(
           const schema = await getSchema(tx, caller.workspaceId);
           const [workspace] = await tx<{ settings: WorkspaceSettings }[]>`
             select settings from workspaces where id = ${caller.workspaceId}`;
-          return fn(tx, {
+          const changes = await ChangeCollector.forCaller(tx, caller, schema);
+          const result = await fn(tx, {
             workspaceId: caller.workspaceId,
             actor: caller.actor,
             ...(caller.run ? { run: caller.run } : {}),
@@ -121,7 +123,9 @@ export async function withWrite<T>(
             confidenceThreshold:
               workspace?.settings.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD,
             person,
+            changes,
           });
+          return result;
         },
         person?.id,
       );
@@ -137,7 +141,7 @@ export async function withRead<T>(
   sql: Sql,
   caller: Caller,
   fn: (tx: Tx, schema: CompiledSchema) => Promise<T>,
-  options: { privacy?: boolean } = {},
+  options: { privacy?: boolean; schema?: boolean } = {},
 ): Promise<T> {
   const { workspaceId } = caller;
   const person = caller.run ? undefined : caller.person;
@@ -146,6 +150,7 @@ export async function withRead<T>(
     workspaceId,
     async (tx) => {
       if (options.privacy) await lockPrivacyShared(tx, workspaceId);
+      if (options.schema && !caller.run) await lockSchemaShared(tx, workspaceId);
       // A read with a person can see their personal memory on any path
       // (search, an event's citations), so it holds their membership lock
       // and re-checks access first: a removal either committed before, and

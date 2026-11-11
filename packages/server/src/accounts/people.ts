@@ -14,7 +14,7 @@ import type { Sql } from '../db/client.js';
 import { RUNTIME_ROLE } from '../db/client.js';
 import { isUuid } from '../db/ids.js';
 import type { InvitedWorkspace } from '../db/schema.js';
-import { setScope, type Tx } from '../db/tx.js';
+import { inWorkspaceTransaction, type Tx } from '../db/tx.js';
 import { getWorkspace, type Workspace } from '../db/workspaces.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { SYSTEM_ACTOR } from '../schema-engine/engine.js';
@@ -194,17 +194,18 @@ export async function createWorkspaceFor(
     if (!workspaceId) throw new Error('could not find a free workspace slug');
 
     await tx.unsafe(`set local role ${RUNTIME_ROLE}`);
-    await setScope(tx, workspaceId);
-    await seedBaseObjects(tx, workspaceId);
-    if (input.template) {
-      await applyTemplate(tx, {
-        workspaceId,
-        actor: SYSTEM_ACTOR,
-        scopes: ['schema:write'],
-        name: input.template,
-      });
-    }
-    return workspaceId;
+    return inWorkspaceTransaction(tx, workspaceId, async (scoped) => {
+      await seedBaseObjects(scoped, workspaceId);
+      if (input.template) {
+        await applyTemplate(scoped, {
+          workspaceId,
+          actor: SYSTEM_ACTOR,
+          scopes: ['schema:write'],
+          name: input.template,
+        });
+      }
+      return workspaceId;
+    });
   });
   return getWorkspace(sql, id);
 }

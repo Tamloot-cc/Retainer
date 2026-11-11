@@ -122,9 +122,11 @@ export async function forgetRecord(
     workspaceId,
     events.map((r) => r.id),
     handleValues,
+    recordIds,
   );
   const eventIds = sourceErasure.eventIds;
   const erased = [...new Set([...recordIds, ...eventIds])];
+  context.changes?.erase(erased);
   const fileErasure = await collectFileErasure(tx, erased, eventIds, sourceErasure.fileIds);
 
   const reviewCandidates = await findMentions(
@@ -155,6 +157,16 @@ export async function forgetRecord(
   const locked = await lockRecordsForUpdate(tx, workspaceId, [
     ...new Set([...erased, ...affected.map((r) => r.record_id), ...fileErasure.recordIds]),
   ]);
+  for (const record of locked)
+    await context.changes?.capture(
+      tx,
+      record.id,
+      erased.includes(record.id) ? 'forget' : undefined,
+    );
+  const unlinkedEvents = await tx<
+    { event_id: string }[]
+  >`select distinct event_id from event_links where record_id=any(${recordIds}::uuid[]) and event_id<>all(${erased}::uuid[])`;
+  for (const { event_id } of unlinkedEvents) await context.changes?.capture(tx, event_id);
 
   const fileRemoval = await eraseFileReferences(tx, context, fileErasure.fileIds, locked);
 
@@ -231,6 +243,10 @@ export async function forgetRecord(
     delete from event_links
     where workspace_id = ${workspaceId} and record_id = any(${recordIds}::uuid[])`;
   await tx`delete from records where id = any(${erased}::uuid[])`;
+  await tx`delete from record_changes where record_id=any(${erased}::uuid[])`;
+  await tx`update record_changes set related_record_ids=coalesce((select jsonb_agg(value) from jsonb_array_elements(related_record_ids) value where value #>> '{}'<>all(${erased}::text[])),'[]'::jsonb),
+    merged_into_id=case when merged_into_id=any(${erased}::uuid[]) then null else merged_into_id end
+    where related_record_ids ?| ${erased}::text[] or merged_into_id=any(${erased}::uuid[])`;
 
   // Stored responses mentioning any erased row are erased too.
   const orphanedIds = new Set(orphaned.map((f) => f.id));

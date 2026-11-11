@@ -1,5 +1,6 @@
 import { type Actor, type ActorType, isProfileAlias } from '@retainer/shared';
 import type { CallerPerson, RunBinding } from '../caller.js';
+import type { ChangeCollector } from '../changes/collect.js';
 import { isUuid } from '../db/ids.js';
 import type { AssertionStatus, ReviewReason } from '../db/schema.js';
 import { jsonValue, type Tx } from '../db/tx.js';
@@ -19,6 +20,7 @@ export type WriteContext = {
   run?: RunBinding;
   /** Server-only managed-import context; never read from an ordinary record payload. */
   sourceItemId?: string;
+  changes?: ChangeCollector;
   schema: CompiledSchema;
   /** Agent assertions below this confidence wait for review (rule 2.3). */
   confidenceThreshold: number;
@@ -409,6 +411,7 @@ async function applyWinners(
   winners: Map<FieldState, AssertionRow | undefined>,
   identifiersDone: ReadonlySet<FieldState> = new Set(),
 ): Promise<void> {
+  await context.changes?.capture(tx, record.id);
   const data = { ...record.data };
   for (const [field, winner] of winners) {
     if (field.type === 'relation') {
@@ -670,6 +673,7 @@ export async function insertRecord(
     values (${context.workspaceId}, ${object.id}, ${tx.json(context.actor)},
       ${tx.json(context.actor)}, ${privateTo})
     returning id, object_type_id, data, updated_at, deleted_at, merged_into_id`;
+  if (row) context.changes?.created(row.id);
   return row as LockedRecord;
 }
 
@@ -757,6 +761,7 @@ export async function markDeleted(
   ids: readonly string[],
 ): Promise<string[]> {
   if (ids.length === 0) return [];
+  for (const id of ids) await context.changes?.capture(tx, id);
   const deleted = await tx<{ id: string }[]>`
     update records set deleted_at = clock_timestamp(), updated_at = clock_timestamp(),
       updated_by = ${tx.json(context.actor)}

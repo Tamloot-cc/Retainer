@@ -199,6 +199,7 @@ export async function logEvent(
       // seen here, so a retry never lands on a deleted event (6.2, 6.4).
       if (existing.deleted_at) throw retracted(existing.record_id);
       await checkSameEvent(tx, context, existing, object, occurredAt, values);
+      await context.changes?.capture(tx, existing.record_id);
       const stored = await loadLinks(tx, workspaceId, existing.record_id);
       const { rows, changed } = await addLinks(
         tx,
@@ -363,6 +364,7 @@ export async function addEventLinks(
 ): Promise<PresentedRecord & { added: AddedLinks }> {
   const participants = normalizeParticipants(input.participants);
   await lockEvent(tx, context, id);
+  await context.changes?.capture(tx, id);
   const stored = await loadLinks(tx, context.workspaceId, id);
   const { changed, rows } = await addLinks(tx, context.workspaceId, context.schema, id, stored, {
     participants,
@@ -388,6 +390,7 @@ export async function removeEventLink(
 ): Promise<PresentedRecord> {
   requireUser(context.actor, 'remove a participant or an about record');
   await lockEvent(tx, context, id);
+  await context.changes?.capture(tx, id);
   // The about record is locked and followed through merges, as in addLinks,
   // so a merge cannot move its link to the survivor before the delete runs.
   const match =

@@ -224,3 +224,43 @@ raw-byte isolated webhook verification and receipts, commit-ordered feed/change
 dispatch and last-contact, Granola/backfill/gap recovery, and private hosted
 infrastructure/staging/rollback/maintenance proof. The shipped default catalog
 remains empty. No real provider calls, merge or deployment have been performed.
+
+## Commit-ordered changes and durable triggers
+
+The reactive foundation adds the minimal workspace feed, REST/MCP/SDK cursors,
+permanent UUID/key watches, durable dispatcher checkpoints, minimal retained
+trigger metadata, server-propagated cause chains and a depth limit. Record writes,
+schema-driven value/visibility changes, merges, review, event links/retraction,
+event-type moves (old-type tombstone plus new-type creation),
+source supersession and forget publish at the terminal transaction boundary.
+A workspace counter is held until commit; no record lock follows publication.
+Personal memory is excluded, and reads authorize current minimal references.
+
+`headCursor` supports a scan followed by replay without a race window. Expired
+history returns 410. An expired internal dispatcher stops and reports degraded
+health rather than dropping history; an adapter catch-up is required before
+restarting. A direct self-write is skipped and counted quietly; a cross-app
+cycle/depth breach reports `trigger_cycle_blocked`. Queue capacity rolls back
+both jobs and the dispatcher checkpoint.
+
+Forget fences every running installation, clears operational KV, scrubs queued
+and historical references (including retained trigger copies), and restarts
+unrelated durable work under a new fence. Source-bound installations additionally
+advance their identity generation. Maintenance expires abandoned jobs visibly,
+prunes terminal runs and only the expired feed prefix, and exposes identifiers
+only to the narrow cross-workspace discovery role. Worker and dedicated Lambda
+entry points share the same maintenance implementation; hosted scheduling remains
+an infrastructure task.
+
+Evidence: the full unit/integration suite passes 1,348 tests, including 1,063
+server tests against isolated real-Postgres databases. All 65 browser scenarios
+pass against freshly built assets. Targeted cases cover commit ordering,
+rollback, effective-value filtering, schema deletion/type moves, private-record
+exclusion, concurrent dispatch, queue pressure, UUID watches, causation, retention
+and erasure. Account workspace creation uses the same terminal publication stage
+while retaining its existing atomic control transaction. Typecheck, build,
+release and layer checks pass; lint retains existing repository warnings only.
+The current API image passes both disposable Compose proofs: isolated lifecycle
+execution and upload/authorization/revocation/durable physical erasure.
+Last-contact, isolated webhook verification, provider delivery, standalone grants
+and hosted launch work remain. The default catalog remains empty.

@@ -18,6 +18,7 @@ import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
 import { mcpRoute } from '../mcp/route.js';
 import { Sources } from '../sources/service.js';
 import { VERSION } from '../version.js';
+import { changeRoutes } from './routes/changes.js';
 import { commentRoutes } from './routes/comments.js';
 import { runtimeRoutes } from './routes/extension-runtime.js';
 import { extensionRoutes } from './routes/extensions.js';
@@ -89,6 +90,7 @@ export function createApp(deps: AppDeps) {
   recordRoutes(v1, deps.sql);
   memoryRoutes(v1, deps.sql);
   commentRoutes(v1, deps.sql);
+  changeRoutes(v1, deps.sql);
   retrievalRoutes(v1, deps.sql);
   viewRoutes(v1, deps.sql);
   const extensions = new Extensions(

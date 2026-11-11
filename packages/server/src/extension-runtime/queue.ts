@@ -2,10 +2,12 @@ import type { ExtensionManifest, InputSchema } from '@retainer/extension';
 import { nextOccurrence, SYSTEM_LIFECYCLE_FUNCTION_ID } from '@retainer/extension';
 import { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
+import { retainedFloor } from '../db/change-cursor.js';
 import type { Sql } from '../db/client.js';
-import { inWorkspace, jsonValue, lockSchemaShared, type Tx } from '../db/tx.js';
+import { inWorkspace, jsonValue, lockPrivacyShared, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
 import { requestHash } from '../idempotency.js';
+import { getSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
 import { cancelRuns, lockExtension, lockQueue } from './locks.js';
 
@@ -176,7 +178,7 @@ export class ExtensionQueue {
     installation: Installation,
     input: Enqueue,
     cause: string[],
-    kind: 'job' | 'schedule' | 'install' | 'uninstall' = 'job',
+    kind: 'job' | 'schedule' | 'install' | 'uninstall' | 'change' = 'job',
     setupChild = false,
   ) {
     if (
@@ -251,6 +253,164 @@ export class ExtensionQueue {
       const installation = await this.installation(tx, workspace, installationId);
       return { id: await this.insert(tx, installation, input, []) };
     });
+  }
+  /** Trusted dispatcher only. Matching jobs and their cursor commit in the same transaction. */
+  async dispatchChanges(workspace: string, id: string, limit = 100) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
+      throw new Error('invalid change batch limit');
+    let admittedGeneration: number | undefined;
+    try {
+      return await inWorkspace(this.sql, workspace, async (tx) => {
+        await lockPrivacyShared(tx, workspace);
+        await lockSchemaShared(tx, workspace);
+        const installation = await this.installation(tx, workspace, id);
+        admittedGeneration = installation.generation;
+        if (installation.state !== 'active') return { queued: 0, blocked: 0 };
+        const manifest = this.manifest(installation),
+          schema = await getSchema(tx, workspace);
+        const handlers = manifest.functions.filter((fn) => fn.trigger.kind === 'change');
+        if (!handlers.length) return { queued: 0, blocked: 0 };
+        const [checkpoint] = await tx<
+          { position: string; generation: number }[]
+        >`select position::text,generation from change_dispatch where installation_id=${id} for update`;
+        if (!checkpoint || checkpoint.generation !== installation.generation)
+          throw conflict(
+            'dispatcher_not_initialized',
+            'change dispatch must be initialized by setup',
+          );
+        const [counter] = await tx<
+          { position: string; retained_after: string }[]
+        >`select position::text,retained_after::text from change_counters where workspace_id=${workspace}`;
+        const floor = await retainedFloor(
+          tx,
+          workspace,
+          counter?.position ?? '0',
+          counter?.retained_after ?? '0',
+        );
+        if (BigInt(checkpoint.position) < BigInt(floor))
+          throw conflict(
+            'cursor_expired',
+            'change dispatch history expired; rescan current records before restarting the trigger',
+          );
+        const rows = await tx<
+          {
+            position: string;
+            record_id: string;
+            object_type_id: string;
+            operation: string;
+            field_keys: string[];
+            cause: string[];
+            origin_installation_id: string | null;
+            related_record_ids: string[];
+            merged_into_id: string | null;
+          }[]
+        >`
+        select position::text,record_id,object_type_id,operation,field_keys,cause,origin_installation_id,related_record_ids,merged_into_id from record_changes
+        where position>${checkpoint.position}::bigint order by position limit ${limit}`;
+        const relatedIds = [
+          ...new Set(
+            rows.flatMap((row) => [
+              ...row.related_record_ids,
+              ...(row.merged_into_id ? [row.merged_into_id] : []),
+            ]),
+          ),
+        ];
+        const related = relatedIds.length
+          ? await tx<{ id: string; object_type_id: string }[]>`select id,object_type_id from records
+        where id=any(${relatedIds}::uuid[]) and deleted_at is null and merged_into_id is null and private_to_user is null`
+          : [];
+        const relatedTypes = new Map(related.map((record) => [record.id, record.object_type_id]));
+        let queued = 0,
+          blocked = 0,
+          cycles = 0;
+        for (const row of rows)
+          for (const fn of handlers) {
+            if (fn.trigger.kind !== 'change') continue;
+            const object = schema.objectsByUniversalId.get(fn.trigger.objectId);
+            if (object?.state.status !== 'active' || object.hidden)
+              throw conflict(
+                'schema_binding_conflict',
+                'change trigger object binding is unavailable',
+              );
+            const keys = fn.trigger.fieldIds.map(
+              (id) => object.activeFields.find((field) => field.universalId === id)?.key,
+            );
+            if (keys.some((key) => key === undefined))
+              throw conflict(
+                'schema_binding_conflict',
+                'change trigger field binding is unavailable',
+              );
+            const direct =
+              row.object_type_id === object.id &&
+              (!fn.trigger.fieldIds.length ||
+                !['update', 'review'].includes(row.operation) ||
+                keys.some((key) => row.field_keys.includes(key as string)));
+            const relationChanged = row.field_keys.some((key) =>
+              schema.objectsById
+                .get(row.object_type_id)
+                ?.activeFields.some((field) => field.key === key && field.type === 'relation'),
+            );
+            const linksAffected = !['update', 'review'].includes(row.operation) || relationChanged;
+            const indirect =
+              linksAffected &&
+              [...row.related_record_ids, ...(row.merged_into_id ? [row.merged_into_id] : [])].some(
+                (id) => relatedTypes.get(id) === object.id,
+              );
+            if (!direct && !indirect) continue;
+            if (row.cause.includes(id) || row.cause.length >= 8) {
+              blocked++;
+              if (row.origin_installation_id !== id) cycles++;
+              continue;
+            }
+            const changeJobId = await this.insert(
+              tx,
+              installation,
+              {
+                functionId: fn.universalId,
+                input: { changePosition: row.position },
+                dedupeKey: `change:${row.position}:${fn.universalId}`,
+              },
+              row.cause,
+              'change',
+            );
+            await tx`update extension_jobs j set change_snapshot=(to_jsonb(c)-'workspace_id'-'created_at')||jsonb_build_object('position',c.position::text)
+            from record_changes c where j.id=${changeJobId} and j.change_snapshot is null and c.workspace_id=${workspace} and c.position=${row.position}::bigint`;
+            queued++;
+          }
+        const last = rows.at(-1);
+        if (last)
+          await tx`update change_dispatch set position=${last.position}::bigint,blocked_cycles=blocked_cycles+${blocked} where installation_id=${id}`;
+        if (cycles)
+          await tx`update extension_installations set last_error='trigger_cycle_blocked',connection_health='degraded' where id=${id}`;
+        if (!cycles)
+          await tx`update extension_installations set connection_health='ok',last_error=null where id=${id}
+        and last_error in ('quota_exceeded','cursor_expired','schema_binding_conflict','dispatch_unavailable')
+        and not exists(select 1 from extension_jobs where installation_id=${id} and generation=${installation.generation} and status='failed')`;
+        return { queued, blocked };
+      });
+    } catch (error) {
+      const failedGeneration = admittedGeneration;
+      if (failedGeneration !== undefined)
+        try {
+          await inWorkspace(this.sql, workspace, async (tx) => {
+            await lockSchemaShared(tx, workspace);
+            const [current] = await tx<
+              { registration_id: string }[]
+            >`select registration_id from extension_installations where id=${id}`;
+            if (!current) return;
+            await lockExtension(tx, workspace, current.registration_id, true);
+            const code =
+              error instanceof AppError &&
+              ['quota_exceeded', 'cursor_expired', 'schema_binding_conflict'].includes(error.code)
+                ? error.code
+                : 'dispatch_unavailable';
+            await tx`update extension_installations set connection_health='degraded',last_error=${code} where id=${id} and generation=${failedGeneration} and state='active'`;
+          });
+        } catch {
+          /* The durable cursor remains pending even if diagnostics cannot be updated. */
+        }
+      throw error;
+    }
   }
   /** Coordinator discovers IDs only; discovery pool has only the security-definer capability. */
   async discover(discoverySql: Sql, limit = 100) {
@@ -441,6 +601,10 @@ export class ExtensionQueue {
           return false;
         }
       }
+      if (this.manifest(installation).functions.some((fn) => fn.trigger.kind === 'change'))
+        await tx`insert into change_dispatch(workspace_id,installation_id,generation,position)
+          values(${installation.workspace_id},${installation.id},${installation.generation},coalesce((select position from change_counters where workspace_id=${installation.workspace_id}),0))
+          on conflict(workspace_id,installation_id) do update set generation=excluded.generation,position=excluded.position,blocked_cycles=0`;
       await tx`update extension_installations set state='active',connection_health='ok',last_error=null,activated_at=clock_timestamp(),updated_at=now() where id=${installation.id}`;
       return true;
     }

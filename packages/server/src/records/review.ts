@@ -101,6 +101,7 @@ export async function acceptAssertion(
     sourceRecordId: pending.source_record_id,
     observedAt: pending.observed_at,
   });
+  await context.changes?.review(tx, record.id, field.key);
   await tx`
     update field_assertions set status = 'superseded', reviewed_by = ${tx.json(context.actor)},
       reviewed_at = clock_timestamp()
@@ -128,6 +129,9 @@ export async function rejectAssertion(
   if (row.status !== 'pending_review') {
     throw new AppError(409, 'not_pending', `assertion is ${row.status}, not pending_review`);
   }
+  const object = context.schema.fieldOwners.get(row.field_id),
+    field = object?.fieldsById.get(row.field_id);
+  if (field) await context.changes?.review(tx, row.record_id, field.key);
   await tx`
     update field_assertions set status = 'rejected', reviewed_by = ${tx.json(context.actor)},
       reviewed_at = clock_timestamp()

@@ -2,10 +2,12 @@ import { importJWK } from 'jose';
 import { z } from 'zod';
 import { type Config, EXECUTOR_ROLE, ownerDatabaseUrl, SECRET_BROKER_ROLE } from '../config.js';
 import { createSql, type Sql } from '../db/client.js';
+import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../extension-runtime/secrets.js';
 import { RunTokens } from '../extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../extensions/catalog.js';
 import { createFileStorage } from '../file-storage/configuration.js';
+import { ChangeMaintenance } from '../worker/changes.js';
 import { type Executable, ExecutionRegistry, ExtensionExecutor } from '../worker/extensions.js';
 import { FileMaintenance } from '../worker/files.js';
 import { LauncherDriver } from '../worker/launch-driver.js';
@@ -100,14 +102,31 @@ export async function extensionServices(
     const fileStorage = await createFileStorage(config);
     if (config.RETAINER_ROLE === 'files' && !fileStorage)
       throw new Error('file maintenance requires storage configuration');
-    let fileMaintenance: FileMaintenance | undefined;
-    if (fileStorage && options.workerSql) {
-      const discovery = config.RETAINER_EXECUTOR_DATABASE_URL
+    const discovery = options.workerSql
+      ? config.RETAINER_EXECUTOR_DATABASE_URL
         ? createSql(config.RETAINER_EXECUTOR_DATABASE_URL, { max: 1 })
-        : createSql(ownerDatabaseUrl(config), { role: EXECUTOR_ROLE, max: 1 });
-      owned.push(discovery);
-      fileMaintenance = new FileMaintenance(options.workerSql, discovery, fileStorage);
-    }
+        : createSql(ownerDatabaseUrl(config), { role: EXECUTOR_ROLE, max: 1 })
+      : undefined;
+    if (discovery) owned.push(discovery);
+    const fileMaintenance =
+      fileStorage && options.workerSql && discovery
+        ? new FileMaintenance(options.workerSql, discovery, fileStorage)
+        : undefined;
+    const changeQueue =
+      catalog
+        .list()
+        .some((release) => release.manifest.functions.some((fn) => fn.trigger.kind === 'change')) &&
+      options.workerSql
+        ? new ExtensionQueue(options.workerSql, (id, version, digest) => {
+            const release = catalog.get(id, version);
+            if (release.digest !== digest) throw new Error('registered release differs');
+            return release.manifest;
+          })
+        : undefined;
+    const changeMaintenance =
+      options.workerSql && discovery
+        ? new ChangeMaintenance(options.workerSql, discovery, changeQueue)
+        : undefined;
     const activationReady = new Set<string>();
     if (tokens && config.RETAINER_EXTENSION_EXECUTABLES) {
       const entries: unknown = JSON.parse(config.RETAINER_EXTENSION_EXECUTABLES);
@@ -116,7 +135,7 @@ export async function extensionServices(
       for (const release of catalog.list()) {
         if (!release.runtimeEnabled || release.manifest.execution !== 'hosted') continue;
         for (const fn of release.manifest.functions) {
-          if (!['job', 'install', 'uninstall', 'schedule'].includes(fn.trigger.kind))
+          if (!['job', 'install', 'uninstall', 'schedule', 'change'].includes(fn.trigger.kind))
             throw new Error('trigger runtime is unavailable');
           const executable = registry.lookup(
             release.manifest.universalId,
@@ -145,11 +164,7 @@ export async function extensionServices(
       if (!Array.isArray(entries)) throw new Error('executor registry must be an array');
       // ExecutionRegistry performs strict per-entry validation and defensive copies.
       const registry = new ExecutionRegistry(entries as Executable[]);
-      const url = config.RETAINER_EXECUTOR_DATABASE_URL;
-      const discoverySql = url
-        ? createSql(url, { max: 1 })
-        : createSql(ownerDatabaseUrl(config), { role: EXECUTOR_ROLE, max: 1 });
-      owned.push(discoverySql);
+      const discoverySql = discovery as Sql;
       const apiOrigin = config.RETAINER_EXTENSION_API_ORIGIN ?? config.RETAINER_PUBLIC_ORIGIN;
       if (!apiOrigin) throw new Error('executor API origin is required');
       executor = new ExtensionExecutor({
@@ -174,6 +189,7 @@ export async function extensionServices(
       activationReady,
       fileStorage,
       fileMaintenance,
+      changeMaintenance,
       close,
     };
   } catch {

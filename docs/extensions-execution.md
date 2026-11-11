@@ -4,8 +4,9 @@ The default catalog is empty. The deterministic fixture exercises the execution
 platform; it is not a provider integration. Authorized files and durable byte
 erasure are implemented; see [file storage](files.md). Managed source identities,
 immutable revisions, staged upload ownership and source erasure are implemented
-as platform primitives. Provider connection adapters, webhooks, change triggers, standalone OAuth and
-Granola are still in development. Do not enable an ingestion adapter before its
+as platform primitives. Commit-ordered change feeds and durable change triggers are also implemented.
+Provider connection adapters, webhooks, standalone OAuth and Granola are still in
+development. Do not enable an ingestion adapter before its
 source/privacy prerequisites are implemented and tested. Hosted infrastructure
 and deployment remain separate work in `retainer-cloud`.
 
@@ -132,3 +133,35 @@ for inspection. A successful retry clears degraded connection health only when
 no unresolved failures remain in the current generation. Schedule maintenance
 recovers missed ticks and initialization after a worker crash; disabled installs
 accumulate none. An expired worker cannot acknowledge or write after replacement.
+
+## Change feeds and retention recovery
+
+`GET /v1/changes` (`list_changes`, SDK `changes`) returns minimal IDs, permanent
+field keys, operation, cause and cursors; it never carries record bodies.
+Persist `nextCursor` even when authorization filters a page to no visible rows.
+For a full current-record rescan, first capture `headCursor` from a fresh page,
+scan current records, then replay changes after that saved cursor. Writes during
+the scan may be seen twice; recompute from current state. A cursor older than
+30 days returns `410 cursor_expired` rather than silently skipping history.
+
+The dispatcher atomically queues a matching job and advances its own durable
+checkpoint. A job receives only `changePosition`; `get_change`/SDK `change`
+returns its currently authorized minimal snapshot even after public-feed pruning.
+Forget removes retained copies and fences live workers. Direct self-matches are
+counted and skipped; repeated installations in a cause chain or depth beyond
+eight are skipped with a visible `trigger_cycle_blocked` diagnostic.
+
+Queue pressure leaves the checkpoint pending and reports degraded health. If an
+internal cursor expires, dispatch stops with `cursor_expired`. A reviewed adapter
+must offer a current-state catch-up path: disable it to fence old jobs, then
+re-enable with setup that queues the catch-up scan before normal processing.
+The platform does not claim that restarting an arbitrary handler repairs lost
+history. Runtime readiness is granted only after the adapter's scan/replay and
+delete/retraction behavior is verified. The default catalog is still empty.
+
+The regular worker runs bounded dispatch/retention passes. The dedicated hosted
+entry point accepts only `{"task":"dispatch-record-changes"}` and holds the shared
+deployment lock. Its AWS schedule and IAM wiring belong in `retainer-cloud`.
+Retention expires abandoned jobs with a visible `job_expired` result, removes
+terminal diagnostics after 30 days and prunes only the expired feed prefix.
+Source replay receipts and suppression tombstones have separate durable lifetimes.

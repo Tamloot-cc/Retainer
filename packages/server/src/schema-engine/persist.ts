@@ -1,4 +1,5 @@
 import type { Actor } from '@retainer/shared';
+import { ChangeCollector } from '../changes/collect.js';
 import type { Tx } from '../db/tx.js';
 import { identifiersFor } from '../records/derive.js';
 import { rewriteSearchText } from '../records/rebuild-search.js';
@@ -157,6 +158,23 @@ export async function persistSchema(
   ops: DiffOp[],
   actor: Actor,
 ): Promise<number> {
+  const changes = ChangeCollector.forSchema(tx, workspaceId, compileSchema(current, 0));
+  const affectedObjects = ops
+    .flatMap((op) =>
+      'objectId' in op &&
+      (op.kind === 'deprecate_object' ||
+        op.kind === 'deprecate_field' ||
+        (op.kind === 'update_object' && op.property === 'labelFieldId'))
+        ? [current.objects.find((object) => object.universalId === op.objectId)?.id]
+        : [],
+    )
+    .filter((id): id is string => id !== undefined);
+  if (affectedObjects.length) {
+    const records = await tx<
+      { id: string }[]
+    >`select id from records where workspace_id=${workspaceId} and object_type_id=any(${affectedObjects}::uuid[]) order by id for update`;
+    for (const record of records) await changes.capture(tx, record.id);
+  }
   const createdBy = tx.json(actor);
   const currentObjects = new Map(current.objects.map((o) => [o.universalId, o]));
   const objectIds = new Map<string, string>();
@@ -259,6 +277,7 @@ export async function persistSchema(
             actor,
             schema: compileSchema(current, workspace?.schema_version ?? 0),
             confidenceThreshold: 1,
+            changes,
           },
           objectIds.get(op.objectId) as string,
         );

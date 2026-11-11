@@ -109,7 +109,11 @@ export function ExtensionsPage() {
                   {stateLabel(installation.state)} · Version {installation.version}
                 </p>
                 {installation.lastError ? (
-                  <Notice>Needs attention: {installation.lastError.replaceAll('_', ' ')}</Notice>
+                  <Notice>
+                    {installation.lastError === 'cursor_expired'
+                      ? 'Change history expired. This extension needs a catch-up scan before triggers can resume.'
+                      : `Needs attention: ${installation.lastError.replaceAll('_', ' ')}`}
+                  </Notice>
                 ) : null}
                 <Muted>
                   Access: {installation.grantedScopes.join(' and ')} workspace CRM data. Writes are
