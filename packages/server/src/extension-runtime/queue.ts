@@ -10,6 +10,7 @@ import { AppError, notFound } from '../errors.js';
 import { requestHash } from '../idempotency.js';
 import { getSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
+import { failInstallation } from './lifecycle.js';
 import { cancelRuns, lockExtension, lockQueue } from './locks.js';
 
 export type Lease = {
@@ -433,30 +434,55 @@ export class ExtensionQueue {
     const due = await discoverySql<{ workspace_id: string; installation_id: string }[]>`
       select * from retainer_extension_maintenance_due(1000)`;
     for (const item of due) {
-      await inWorkspace(this.sql, item.workspace_id, async (tx) => {
-        await lockSchemaShared(tx, item.workspace_id);
-        const installation = await this.installation(
-          tx,
-          item.workspace_id,
-          item.installation_id,
-          false,
-        );
-        if (installation.state !== 'uninstalling') return;
-        const [expired] =
-          await tx`select 1 where ${installation.cleanup_deadline}::timestamptz<=clock_timestamp()`;
-        if (!expired) return;
-        await cancelRuns(tx, installation.id);
-        await tx`update extension_installations set state='uninstalled',generation=generation+1,
-          last_error='cleanup_deadline_expired',updated_at=now() where id=${installation.id}`;
-        await tx`select retainer_finish_extension_cleanup(${installation.id}::uuid)`;
-      });
+      let generation: number | undefined;
       try {
+        await inWorkspace(this.sql, item.workspace_id, async (tx) => {
+          await lockSchemaShared(tx, item.workspace_id);
+          const installation = await this.installation(
+            tx,
+            item.workspace_id,
+            item.installation_id,
+            false,
+          );
+          generation = installation.generation;
+          if (installation.state !== 'uninstalling') return;
+          const [expired] =
+            await tx`select 1 where ${installation.cleanup_deadline}::timestamptz<=clock_timestamp()`;
+          if (!expired) return;
+          await cancelRuns(tx, installation.id);
+          await tx`update extension_installations set state='uninstalled',generation=generation+1,
+            last_error='cleanup_deadline_expired',updated_at=now() where id=${installation.id}`;
+          await tx`select retainer_finish_extension_cleanup(${installation.id}::uuid)`;
+        });
         await this.scheduleTick(item.workspace_id, item.installation_id);
       } catch (error) {
-        if (!(error instanceof AppError && error.code === 'quota_exceeded')) throw error;
+        // A bad pinned release or a failed cleanup must not block healthy installations.
+        // Keep the occurrence pending and diagnose only the generation we inspected.
+        const failedGeneration = generation;
+        if (failedGeneration === undefined) continue;
+        try {
+          await inWorkspace(this.sql, item.workspace_id, async (tx) => {
+            await lockSchemaShared(tx, item.workspace_id);
+            const current = await this.installation(
+              tx,
+              item.workspace_id,
+              item.installation_id,
+              false,
+            );
+            const code =
+              error instanceof AppError && error.code === 'quota_exceeded'
+                ? 'quota_exceeded'
+                : 'maintenance_unavailable';
+            await tx`update extension_installations set connection_health='degraded',last_error=${code}
+              where id=${current.id} and generation=${failedGeneration} and state in ('active','uninstalling')`;
+          });
+        } catch {
+          /* Pending maintenance is durable even when diagnostics cannot be written. */
+        }
       }
     }
   }
+
   async claim(workspace: string, id: string, owner: string): Promise<ClaimedJob | null> {
     if (!owner || owner.length > 200) throw new Error('invalid lease owner');
     return inWorkspace(this.sql, workspace, async (tx) => {
@@ -574,25 +600,22 @@ export class ExtensionQueue {
     status: string,
     code: string | null,
   ) {
+    if (status === 'failed') {
+      await failInstallation(
+        tx,
+        installation,
+        job,
+        code ?? (job.trigger_kind === 'install' ? 'setup_failed' : 'run_failed'),
+      );
+      return false;
+    }
     if (!['install', 'uninstall'].includes(job.trigger_kind)) {
-      if (status === 'failed')
-        await tx`update extension_installations set connection_health=${['connection_required', 'invalid_connection', 'provider_unauthorized'].includes(code ?? '') ? 'needs_reconnect' : 'degraded'},last_error=${code ?? 'run_failed'},updated_at=now() where id=${installation.id}`;
-      else if (status === 'succeeded') {
+      if (status === 'succeeded') {
         const [failed] =
           await tx`select id from extension_jobs where installation_id=${installation.id} and generation=${installation.generation} and status='failed' limit 1`;
         if (!failed)
           await tx`update extension_installations set connection_health='ok',last_error=null where id=${installation.id}`;
       }
-      return false;
-    }
-    if (status === 'failed') {
-      const state =
-        job.trigger_kind === 'uninstall'
-          ? 'uninstalling'
-          : installation.setup_kind === 'upgrade'
-            ? 'disabled'
-            : 'setup_failed';
-      await tx`update extension_installations set state=${state},connection_health=${['connection_required', 'invalid_connection', 'provider_unauthorized'].includes(code ?? '') ? 'needs_reconnect' : 'degraded'},last_error=${code ?? 'setup_failed'},updated_at=now() where id=${installation.id}`;
       return false;
     }
     if (status !== 'succeeded') return false;

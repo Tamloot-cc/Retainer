@@ -1,6 +1,7 @@
 import { retainedFloor } from '../db/change-cursor.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, lockPrivacyShared, lockSchemaShared } from '../db/tx.js';
+import { failInstallation } from '../extension-runtime/lifecycle.js';
 import { lockExtension, lockQueue } from '../extension-runtime/locks.js';
 import type { ExtensionQueue } from '../extension-runtime/queue.js';
 
@@ -55,21 +56,39 @@ export class ChangeMaintenance {
         pruned += await inWorkspace(this.sql, workspace, async (tx) => {
           await lockPrivacyShared(tx, workspace);
           await lockSchemaShared(tx, workspace);
-          const installations = await tx<
-            { id: string; registration_id: string }[]
-          >`select id,registration_id from extension_installations order by registration_id,id`;
+          const installations = await tx<{ id: string; registration_id: string }[]>`
+            select id,registration_id from extension_installations order by registration_id,id`;
           for (const installation of installations) {
             await lockExtension(tx, workspace, installation.registration_id, true);
             await lockQueue(tx, workspace, installation.id);
           }
+          const locked = await tx<
+            {
+              id: string;
+              generation: number;
+              release_digest: string;
+              setup_kind: string;
+            }[]
+          >`select id,generation,release_digest,setup_kind from extension_installations
+            where id=any(${installations.map((row) => row.id)}::uuid[])`;
+          const current = new Map(locked.map((row) => [row.id, row]));
           const expired = await tx<
-            { installation_id: string; generation: number }[]
+            {
+              id: string;
+              installation_id: string;
+              generation: number;
+              release_digest: string;
+              trigger_kind: string;
+            }[]
           >`update extension_jobs set status='failed',code='job_expired',lease_owner=null,lease_until=null,run_until=null,updated_at=clock_timestamp()
-              where id in(select id from extension_jobs where expires_at<=clock_timestamp() and (status='queued' or status='running' and lease_until<=clock_timestamp())
-                order by expires_at,id limit 1000 for update skip locked) returning installation_id,generation`;
-          for (const job of expired)
-            await tx`update extension_installations set connection_health='degraded',last_error='job_expired'
-              where id=${job.installation_id} and generation=${job.generation} and state='active'`;
+              where id in(select id from extension_jobs where installation_id=any(${installations.map((row) => row.id)}::uuid[]) and expires_at<=clock_timestamp() and (status='queued' or status='running' and lease_until<=clock_timestamp())
+                order by expires_at,id limit 1000 for update skip locked) returning id,installation_id,generation,release_digest,trigger_kind`;
+          for (const job of expired) {
+            await tx`update extension_attempts set status='failed',code='job_expired',finished_at=clock_timestamp()
+              where job_id=${job.id} and finished_at is null`;
+            const installation = current.get(job.installation_id);
+            if (installation) await failInstallation(tx, installation, job, 'job_expired');
+          }
           const jobs =
             await tx`delete from extension_jobs where id in(select id from extension_jobs where status in ('succeeded','failed','cancelled')
               and updated_at<clock_timestamp()-interval '30 days' order by updated_at,id limit 1000 for update skip locked) returning id`;

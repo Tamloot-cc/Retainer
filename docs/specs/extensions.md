@@ -470,7 +470,14 @@ writers, the owner must prove zero live execution leases before DDL: a job
 claimed immediately before a coordinator timeout must not regain write access
 when the API restarts. Environment and host
 updates happen only after that drain. No automatic down-migrations or blind
-release/image pruning are allowed.
+release/image pruning are allowed. Publication may retire an older hosted version
+from active catalog/executable/launcher configuration only after owner inventory
+proves it unreferenced. Preserve every installed/disabled/live-cleanup reference,
+the newest hosted version per registration, and standalone OAuth history. Merge
+the channel with the last completed and prospective running deployment snapshots
+before this selection, so a failed rollout or raced approval cannot lose a pinned
+release. Repeat reference checks after drain and refuse raced approvals. Keep
+immutable metadata and images; configuration retirement grants no deletion rights.
 
 Only reviewed first-party code is supported. This is not a third-party hostile
 code sandbox certification. Logs, tmp files, warm process globals and environment
@@ -495,7 +502,10 @@ Retry transient network/429/5xx errors with jittered exponential delay (30 secon
 base, one-hour cap), maximum ten attempts or 24 hours. Respect bounded
 `RetryLater`/provider retry-after hints. Invalid inputs, revoked grants and schema
 conflicts are terminal. Failed jobs remain visible and can be replayed by an
-admin after fixing the cause. Retain minimal run diagnostics for 30 days; retain
+admin after fixing the cause. Expiration closes unfinished attempts and uses the
+same lifecycle failure transition as execution: an expired install becomes
+`setup_failed`, and an expired upgrade becomes `disabled`, so an admin can retry.
+Retain minimal run diagnostics for 30 days; retain
 source dedupe independent of run retention. Payloads are source IDs, not notes or
 transcripts. Child enqueue dedupe is bound to installation and business operation,
 not a random attempt ID.
@@ -504,7 +514,12 @@ One scheduler tick per minute transactionally locks due schedule rows, inserts
 jobs keyed by `(installation, function, scheduled UTC instant)`, then advances
 `nextDueAt`. UTC-only cron in v1; missed ticks coalesce to one catch-up job, not
 thousands of historical invocations. Multiple scheduler instances must produce
-one occurrence. Disabled installations never accumulate schedule jobs.
+one occurrence. Schedule input must be a closed object containing only required
+`scheduledAt`, a string accepting the scheduler's 24-character UTC timestamp;
+reject incompatible manifests at registration. Isolate maintenance failures per
+installation, keep unaccepted occurrences pending, and mark the inspected
+generation degraded without blocking other workspaces. Disabled installations
+never accumulate schedule jobs.
 
 ### 9.3 Webhooks
 

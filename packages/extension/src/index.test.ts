@@ -86,6 +86,31 @@ describe('strict extension contracts', () => {
       }),
     ).toThrow('local changePosition');
   });
+  it('requires the scheduler-owned UTC timestamp payload at registration', () => {
+    const fn = {
+      universalId: randomUUID(),
+      name: 'poll',
+      description: 'Scheduled poll',
+      handlerDigest: 'b'.repeat(64),
+      trigger: { kind: 'schedule', cron: '* * * * *', timezone: 'UTC' },
+      inputSchema: {
+        type: 'object',
+        properties: { scheduledAt: { type: 'string', maxLength: 24 } },
+        required: ['scheduledAt'],
+        additionalProperties: false,
+      },
+    };
+    expect(defineExtension({ ...fixture(), functions: [fn] }).functions).toHaveLength(1);
+    for (const inputSchema of [
+      { type: 'object', additionalProperties: false },
+      { ...fn.inputSchema, required: [] },
+      { ...fn.inputSchema, properties: { scheduledAt: { type: 'string', maxLength: 23 } } },
+      { ...fn.inputSchema, properties: { ...fn.inputSchema.properties, body: { type: 'string' } } },
+    ])
+      expect(() => defineExtension({ ...fixture(), functions: [{ ...fn, inputSchema }] })).toThrow(
+        'UTC scheduledAt',
+      );
+  });
   it('requires a pinned setup verifier and local-ID-only source ingestion jobs', () => {
     const verifyId = '5c011ac7-a6b8-4bc5-bac5-5c9b70491ab4',
       syncId = '50b706e0-2f74-46d4-b454-d9481ed21b24';

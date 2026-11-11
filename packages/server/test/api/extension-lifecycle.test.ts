@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { ChangeMaintenance } from '../../src/worker/changes.js';
 import { ExecutionRegistry, ExtensionExecutor } from '../../src/worker/extensions.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
@@ -91,6 +92,53 @@ const state = async (id: string) =>
   )[0];
 
 describe('approved runtime lifecycle on real Postgres', () => {
+  it.each(['install', 'upgrade'] as const)(
+    'expires queued and abandoned running %s setup atomically under competing maintenance',
+    async (kind) => {
+      for (const running of [false, true]) {
+        const { workspace, key, id } = await install();
+        if (kind === 'upgrade')
+          await db.owner`update extension_installations set setup_kind='upgrade',state='upgrading' where id=${id}`;
+        const [job] =
+          await db.owner`select id from extension_jobs where installation_id=${id} and trigger_kind='install'`;
+        if (running) await claim(workspace, id);
+        await db.owner`update extension_jobs set expires_at=clock_timestamp()-interval '1 second',lease_until=case when status='running' then clock_timestamp()-interval '1 second' else null end where id=${job?.id}`;
+        const discovery = db.connect({ role: 'retainer_executor' });
+        const results = await Promise.all([
+          new ChangeMaintenance(t.sql, discovery).tick(),
+          new ChangeMaintenance(t.sql, discovery).tick(),
+        ]);
+        expect(results.map((row) => row.failed)).toEqual([0, 0]);
+        expect(await state(id)).toMatchObject({
+          state: kind === 'upgrade' ? 'disabled' : 'setup_failed',
+          last_error: 'job_expired',
+        });
+        expect(
+          (await db.owner`select status,code from extension_jobs where id=${job?.id}`)[0],
+        ).toEqual({ status: 'failed', code: 'job_expired' });
+        const attempts =
+          await db.owner`select status,code,finished_at from extension_attempts where job_id=${job?.id}`;
+        expect(attempts).toHaveLength(running ? 1 : 0);
+        for (const attempt of attempts) {
+          expect(attempt).toMatchObject({
+            status: 'failed',
+            code: 'job_expired',
+            finished_at: expect.any(Date),
+          });
+        }
+        expect(
+          (
+            await t.request(`/v1/extensions/${id}/runs/${job?.id}/retry`, {
+              key,
+              method: 'POST',
+              headers: { 'Idempotency-Key': 'retry-expired-setup' },
+            })
+          ).status,
+        ).toBe(200);
+        expect(await queue().claim(workspace, job?.id, 'after-maintenance')).toBeTruthy();
+      }
+    },
+  );
   it('atomically queues setup, fences CRM until activation, and starts durable children after setup succeeds', async () => {
     const { workspace, key, id } = await install();
     const run = await claim(workspace, id);

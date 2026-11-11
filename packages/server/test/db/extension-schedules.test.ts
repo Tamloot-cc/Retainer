@@ -89,6 +89,39 @@ describe('transactional schedule ticks', () => {
       }),
     ).rejects.toMatchObject({ code: 'invalid_input' });
   });
+  it('isolates a missing pinned release so healthy workspace schedules and jobs still run in the same tick', async () => {
+    const broken = await setup(),
+      healthy = await setup();
+    await broken.queue.scheduleTick(broken.workspace, broken.id);
+    await healthy.queue.scheduleTick(healthy.workspace, healthy.id);
+    const past = new Date('2026-01-01T00:00:00Z');
+    await db.owner`update extension_schedules set next_due_at=${past} where installation_id in (${broken.id},${healthy.id})`;
+    // The owner inventory can still discover an installation whose pinned release is absent locally.
+    const unavailableDigest = 'f'.repeat(64);
+    await db.owner`update extension_installations set release_digest=${unavailableDigest} where id=${broken.id}`;
+    const queue = new ExtensionQueue(t.sql, (id, version, digest) => {
+      if (digest === unavailableDigest) throw new Error('pinned release unavailable');
+      return catalog.get(id, version).manifest;
+    });
+    const discovery = db.connect({ role: 'retainer_executor' });
+    await queue.maintain(discovery);
+    const [diagnostic] =
+      await db.owner`select state,last_error,connection_health from extension_installations where id=${broken.id}`;
+    expect(diagnostic).toEqual({
+      state: 'active',
+      last_error: 'maintenance_unavailable',
+      connection_health: 'degraded',
+    });
+    const [pending] =
+      await db.owner`select next_due_at from extension_schedules where installation_id=${broken.id}`;
+    expect(pending?.next_due_at).toEqual(past);
+    const due = await queue.discover(discovery);
+    const job = due.find((row) => row.workspace_id === healthy.workspace);
+    expect(job).toBeDefined();
+    const run = await queue.claim(healthy.workspace, job?.job_id as string, 'healthy-worker');
+    if (!run) throw new Error('healthy schedule was blocked');
+    await queue.complete(run, { status: 'succeeded' });
+  });
   it('keeps nextDue unchanged when queue quota prevents acceptance, and disabled installations accumulate nothing', async () => {
     const { workspace, id, queue, key } = await setup(1);
     await queue.scheduleTick(workspace, id);
