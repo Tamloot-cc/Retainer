@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { type Config, loadConfig, ownerDatabaseUrl } from '../config.js';
 import { createSql } from '../db/client.js';
 import { applyLogins, loginsPending } from '../db/logins.js';
-import { migrationsPending, runMigrations } from '../db/migrate.js';
+import { migrationHistoryCompatible, migrationsPending, runMigrations } from '../db/migrate.js';
 import { setLogLevel } from '../log.js';
 import { runCli } from '../operator/commands.js';
 import { rebuildSearchText } from '../records/rebuild-search.js';
@@ -45,7 +45,13 @@ const opsEvent = z.discriminatedUnion('command', [
 
 export type OpsEvent = z.input<typeof opsEvent>;
 export type OpsResult =
-  | { command: 'migration-status'; protocol: 1; needsStop: boolean; reasons: string[] }
+  | {
+      command: 'migration-status';
+      protocol: 1;
+      historyChecked: true;
+      needsStop: boolean;
+      reasons: string[];
+    }
   | {
       command: 'migrate';
       logins: { runtime: boolean; control: boolean };
@@ -75,7 +81,8 @@ export function createOpsHandler(config: Config) {
         // SQL can change any write rule. Return early on old schemas rather
         // than querying columns they may not have yet. Any failure is a stop.
         const reasons: string[] = [];
-        if (await migrationsPending(sql)) reasons.push('migrations');
+        if (!(await migrationHistoryCompatible(sql))) reasons.push('incompatible_migrations');
+        else if (await migrationsPending(sql)) reasons.push('migrations');
         else {
           if (await loginsPending(config, sql)) reasons.push('logins');
           // Rebuild batches lock rows, but old writers could still produce
@@ -86,7 +93,13 @@ export function createOpsHandler(config: Config) {
           if (stale?.pending) reasons.push('search');
           if (await workspaceUpgradesPending(sql)) reasons.push('definitions');
         }
-        return { command: 'migration-status', protocol: 1, needsStop: reasons.length > 0, reasons };
+        return {
+          command: 'migration-status',
+          protocol: 1,
+          historyChecked: true,
+          needsStop: reasons.length > 0,
+          reasons,
+        };
       } finally {
         await sql.end({ timeout: 5 });
       }

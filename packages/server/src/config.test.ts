@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,6 +16,22 @@ import {
 import { runtimeConnection } from './db/client.js';
 
 describe('immutable operator release files', () => {
+  it('refuses a mismatched or missing release configuration before any runtime starts', () => {
+    const env = {
+      DATABASE_URL: 'postgres://localhost/test',
+      RETAINER_EXTENSION_CATALOG: '[]',
+      RETAINER_EXTENSION_EXECUTABLES: '[]',
+      RETAINER_EXTENSION_CATALOG_SHA256: createHash('sha256').update('[]').digest('hex'),
+      RETAINER_EXTENSION_EXECUTABLES_SHA256: createHash('sha256').update('[]').digest('hex'),
+    };
+    expect(loadConfig(env).RETAINER_EXTENSION_CATALOG).toBe('[]');
+    expect(() => loadConfig({ ...env, RETAINER_EXTENSION_CATALOG: '[{}]' })).toThrow(
+      'digest mismatch',
+    );
+    expect(() => loadConfig({ ...env, RETAINER_EXTENSION_EXECUTABLES: '' })).toThrow(
+      'digest mismatch',
+    );
+  });
   it('loads bounded catalog/executable JSON without mutating the supplied environment', () => {
     const directory = mkdtempSync(join(tmpdir(), 'retainer-release-config-'));
     try {

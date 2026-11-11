@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import { SIGN_IN_PROVIDERS, type SignInProvider } from '@retainer/shared';
 import { z } from 'zod';
@@ -105,6 +106,20 @@ const configSchema = z
     RETAINER_EXTENSION_EXECUTABLES_FILE: z.preprocess(
       emptyToUndefined,
       z.string().min(1).max(4096).optional(),
+    ),
+    RETAINER_EXTENSION_CATALOG_SHA256: z.preprocess(
+      emptyToUndefined,
+      z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .optional(),
+    ),
+    RETAINER_EXTENSION_EXECUTABLES_SHA256: z.preprocess(
+      emptyToUndefined,
+      z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .optional(),
     ),
     RETAINER_EXTENSION_RUN_PUBLIC_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
     RETAINER_EXTENSION_RUN_PRIVATE_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
@@ -242,17 +257,27 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ['RETAINER_EXTENSION_EXECUTABLES', 'RETAINER_EXTENSION_EXECUTABLES_FILE'],
   ] as const) {
     const file = config[path];
-    if (!file) continue;
-    if (config[value]) throw new Error(`set only one of ${value} and ${path}`);
-    try {
-      const stat = statSync(file);
-      if (!stat.isFile() || stat.size > 2097152) throw new Error('invalid release file');
-      const bytes = readFileSync(file);
-      if (bytes.length > 2097152) throw new Error('invalid release file');
-      config[value] = bytes.toString('utf8');
-    } catch {
-      throw new Error(`cannot load bounded operator release configuration: ${path}`);
+    if (file) {
+      if (config[value]) throw new Error(`set only one of ${value} and ${path}`);
+      try {
+        const stat = statSync(file);
+        if (!stat.isFile() || stat.size > 2097152) throw new Error('invalid release file');
+        const bytes = readFileSync(file);
+        if (bytes.length > 2097152) throw new Error('invalid release file');
+        config[value] = bytes.toString('utf8');
+      } catch {
+        throw new Error(`cannot load bounded operator release configuration: ${path}`);
+      }
     }
+    const expected =
+      value === 'RETAINER_EXTENSION_CATALOG'
+        ? config.RETAINER_EXTENSION_CATALOG_SHA256
+        : config.RETAINER_EXTENSION_EXECUTABLES_SHA256;
+    if (
+      expected &&
+      (!config[value] || createHash('sha256').update(config[value]).digest('hex') !== expected)
+    )
+      throw new Error(`operator release configuration digest mismatch: ${value}`);
   }
   return config;
 }

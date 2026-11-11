@@ -620,3 +620,19 @@ feature commit and dirty worktrees. It runs with the root test command. All 28
 runner tests, ten extension UI tests, development artifact generation and five
 fresh-build extension browser scenarios pass. Production publishing, retained
 image/config aggregation and hosted staging acceptance remain separate work.
+
+## Deployment compatibility preflight
+
+Catalog/executable configuration can pin expected SHA-256 hashes; missing or
+changed bytes fail before a runtime initializes. Migration status now verifies
+every applied journal timestamp/hash and advertises that proof explicitly.
+Unknown newer migrations or modified historical files refuse direct migration
+before DDL and report an incompatible rollback to deployment. Breaking forward
+migrations still use the stopped path.
+
+Twenty-six configuration, migration-status and existing-reference upgrade tests
+pass, alongside server typechecking and lint/layer checks. The private deployment
+suite passes all nine failure/recovery cases, including legacy status without
+history proof, unknown migrations and a missing maintenance responder. These
+failures leave existing traffic and worker state untouched. Hosted provisioning
+and live acceptance remain outstanding.

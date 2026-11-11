@@ -14,11 +14,38 @@ const db = useTestDatabase();
 const ops = () => createOpsHandler(loadConfig({ DATABASE_URL: db.url, LOG_LEVEL: 'error' }));
 
 describe('read-only migration status', () => {
+  it('refuses an unknown applied migration before an older build can migrate or rewrite definitions', async () => {
+    const [future] = await db.owner`insert into drizzle.__drizzle_migrations(hash,created_at)
+      select ${'f'.repeat(64)},max(created_at)+1 from drizzle.__drizzle_migrations returning id`;
+    if (!future) throw new Error('missing future migration fixture');
+    try {
+      const before = await db.owner`select id,definitions_digest from workspaces order by id`;
+      expect(await ops()({ command: 'migration-status' })).toEqual({
+        command: 'migration-status',
+        protocol: 1,
+        historyChecked: true,
+        needsStop: true,
+        reasons: ['incompatible_migrations'],
+      });
+      await expect(ops()({ command: 'migrate' })).rejects.toThrow(
+        'migration history is incompatible',
+      );
+      expect(await db.owner`select id,definitions_digest from workspaces order by id`).toEqual(
+        before,
+      );
+      expect(
+        await db.owner`select id from drizzle.__drizzle_migrations where id=${future.id}`,
+      ).toHaveLength(1);
+    } finally {
+      await db.owner`delete from drizzle.__drizzle_migrations where id=${future.id}`;
+    }
+  });
   it('reports no work on a migrated database without changing its journal', async () => {
     const before = await db.owner`select * from drizzle.__drizzle_migrations`;
     expect(await ops()({ command: 'migration-status' })).toEqual({
       command: 'migration-status',
       protocol: 1,
+      historyChecked: true,
       needsStop: false,
       reasons: [],
     });

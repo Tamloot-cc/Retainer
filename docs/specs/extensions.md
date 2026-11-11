@@ -998,6 +998,14 @@ cloud preflight. Breaking migrations remain allowed with explicit stopped rollou
 failed preflight leaves the old service intact and failed migration leaves workers
 stopped. A code rollback must check schema/protocol compatibility first.
 
+Operator status proves it checked every applied migration timestamp and hash
+against the packaged journal. Unknown newer migrations or changed historical SQL
+produce `incompatible_migrations`; migration refuses before DDL or definition
+upgrades. Deploy requires the explicit `historyChecked` capability and a packaged
+maintenance responder, so an older artifact lacking the check cannot bypass it.
+Packaged catalog and executable files may also pin expected SHA-256 hashes;
+missing or mismatched release configuration fails before runtime initialization.
+
 ## 14. Delivery sequence and acceptance
 
 Production first-party artifact versions use `1.0.<main-history-count>`. The
