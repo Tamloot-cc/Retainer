@@ -326,6 +326,7 @@ describe('SECURITY DEFINER functions', () => {
   // 7.4). Adding one means adding it here, on purpose, with a review.
   const ALLOWED: Record<string, string | null> = {
     retainer_adopt_extension_secret: RUNTIME_ROLE,
+    retainer_admit_secret_run: 'retainer_secret_broker',
     retainer_erase_private_derivatives: RUNTIME_ROLE,
     retainer_extension_jobs_due: 'retainer_executor',
     retainer_extension_maintenance_due: 'retainer_executor',

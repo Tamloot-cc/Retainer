@@ -23,6 +23,14 @@ export const browserExtensionManifest = manifestFixture({
   universalId: 'e0548bb1-47fd-4de8-8edc-759e26a61e36',
   name: 'browser-fixture',
   settings: {
+    signingSecret: {
+      type: 'string',
+      label: 'Generated signing secret',
+      secret: true,
+      generated: true,
+      required: false,
+      reconnect: false,
+    },
     enabled: { type: 'boolean', label: 'Enabled', required: true, secret: false, reconnect: false },
   },
   schema: [

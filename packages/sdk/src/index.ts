@@ -730,6 +730,18 @@ export class RetainerClient {
       `/v1/extensions/${encodeURIComponent(id)}/runtime/secrets/${encodeURIComponent(name)}`,
     );
   }
+  /** Store provider-generated signing/refresh material with revision CAS; live runs only. */
+  setExtensionSecret(
+    id: string,
+    name: string,
+    input: { expectedRevision: number | null; value: string },
+  ) {
+    return this.request<{ revision: number }>(
+      `/v1/extensions/${encodeURIComponent(id)}/runtime/secrets/${encodeURIComponent(name)}`,
+      { method: 'PUT', body: JSON.stringify(input) },
+    );
+  }
+
   disableExtension(id: string) {
     return this.post<ExtensionInstallation>(`/v1/extensions/${encodeURIComponent(id)}/disable`);
   }

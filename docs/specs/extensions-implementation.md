@@ -294,3 +294,26 @@ Typecheck, build, release and layer checks pass; lint retains existing warnings.
 Public ingress, candidate/account binding, pre-verification rate limits,
 receipt/job atomicity, generated connection secrets and provider delivery are
 still outstanding; no webhook adapter is advertised.
+
+## Generated connection secrets and broker-local admission
+
+The connection foundation now declares optional generated secrets, omits them
+from human settings forms, refuses human staging of those values, and allows
+live runs to write only that declared material through revision CAS. SDK and
+REST responses return revisions; ordinary credentials remain read-only to runs.
+Broker admission independently checks live generation/lease/fence and keeps its
+revocation/lease locks through the secret read/write. API metadata validation
+releases its locks first, preventing nested-connection revocation deadlocks and
+writes authorized only by a separate API connection's liveness.
+
+Targeted real-Postgres tests pass for competing refresh writes, encryption and
+read redaction, expired/fenced runs, concurrent revocation and broker-only
+execution grants. A real lease takeover also refuses the old broker fence while
+the replacement can read the current secret. Full regression passes 1,357 tests
+(1,066 server tests against real Postgres); all 65 browser scenarios pass against
+fresh assets, including hidden generated settings during installation/editing.
+Typecheck, build, lint/layer and release checks pass. The current image applies
+the broker capability migration and passes the disposable Compose lifecycle proof. Public webhook bindings, routing, rate limits and atomic receipt/
+job acceptance remain the next task. Provider refresh/reconnect sagas are still
+adapter-specific outstanding work; generated storage alone does not implement
+them.

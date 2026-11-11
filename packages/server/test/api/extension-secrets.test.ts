@@ -1,6 +1,8 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { RetainerClient } from '@retainer/sdk';
 import { generateKeyPair } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { inWorkspace } from '../../src/db/tx.js';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
@@ -14,6 +16,14 @@ const db = useTestDatabase(),
 const manifest = extensionFixture({
   settings: {
     apiKey: { type: 'string', label: 'API key', secret: true, required: true, reconnect: true },
+    signingSecret: {
+      type: 'string',
+      label: 'Signing secret',
+      secret: true,
+      generated: true,
+      required: false,
+      reconnect: false,
+    },
     enabled: { type: 'boolean', label: 'Enabled', secret: false, required: true, reconnect: false },
   },
   functions: [
@@ -213,5 +223,164 @@ describe('broker-only secret storage and opaque approval references', () => {
     await rotated.collectExpired(workspace);
     const rows = await db.owner`select * from extension_secrets where installation_id=${id}`;
     expect(rows).toHaveLength(0);
+  });
+  it('stores generated provider secrets with competing CAS, keeps human credentials immutable and refuses fenced broker calls', async () => {
+    const { workspace, keys, request } = await setup();
+    expect(
+      (
+        await t.request('/v1/extensions/secrets', {
+          key: keys.admin,
+          body: {
+            registrationId: manifest.universalId,
+            version: manifest.version,
+            name: 'signingSecret',
+            value: 'cannot-stage',
+          },
+        })
+      ).status,
+    ).toBe(422);
+    const installed = await install(keys.admin, request),
+      id = installed.body.id as string;
+    await db.owner`update extension_installations set state='active' where id=${id}`;
+    const queue = new ExtensionQueue(t.sql, (id, version) => catalog.get(id, version).manifest);
+    const queued = await queue.enqueue(workspace, id, {
+      functionId,
+      input: {},
+      dedupeKey: 'generated-secret',
+    });
+    const run = await queue.claim(workspace, queued.id, 'secret-writer');
+    if (!run) throw new Error('run missing');
+    const token = await tokens.issue(t.sql, run, manifest.universalId, ['read']);
+    const client = new RetainerClient({
+      baseUrl: 'http://retainer.test',
+      apiKey: token,
+      fetch: t.inProcessFetch,
+    });
+    const put = (name: string, expectedRevision: number | null, value: string) =>
+      t.request(`/v1/extensions/${id}/runtime/secrets/${name}`, {
+        key: token,
+        method: 'PUT',
+        body: { expectedRevision, value },
+      });
+    expect((await put('apiKey', 1, 'forbidden')).status).toBe(403);
+    expect((await put('signingSecret', 2147483648, 'out-of-range')).status).toBe(400);
+    expect(
+      await client.setExtensionSecret(id, 'signingSecret', {
+        expectedRevision: null,
+        value: 'generated-one',
+      }),
+    ).toEqual({ revision: 1 });
+    const results = await Promise.all([
+      put('signingSecret', 1, 'refresh-A'),
+      put('signingSecret', 1, 'refresh-B'),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+    const stored = await client.extensionSecret(id, 'signingSecret');
+    expect(stored.revision).toBe(2);
+    expect(['refresh-A', 'refresh-B']).toContain(stored.value);
+    const detail = await t.request(`/v1/extensions/${id}`, { key: keys.admin });
+    expect(detail.body.secrets).toEqual({ apiKey: true, signingSecret: true });
+    expect(JSON.stringify(detail.body)).not.toContain('refresh-');
+    expect(
+      JSON.stringify(
+        await db.owner`select envelope from extension_secrets where installation_id=${id}`,
+      ),
+    ).not.toContain('refresh-');
+    await db.owner`update extension_jobs set lease_until=clock_timestamp()-interval '1 second' where id=${run.jobId}`;
+    const replacement = await queue.claim(workspace, queued.id, 'replacement-writer');
+    if (!replacement) throw new Error('replacement lease missing');
+    expect(replacement.fence).not.toBe(run.fence);
+    const identity = {
+      workspaceId: workspace,
+      installationId: id,
+      registrationId: manifest.universalId,
+      name: 'signingSecret',
+    };
+    await expect(broker.writeRuntime(identity, run, 2, 'fenced-write')).rejects.toMatchObject({
+      code: 'installation_disabled',
+    });
+    expect((await broker.readRuntime(identity, replacement)).value).toBe(stored.value);
+    await queue.complete(replacement, { status: 'succeeded' });
+    await expect(
+      broker.writeRuntime(
+        {
+          workspaceId: workspace,
+          installationId: id,
+          registrationId: manifest.universalId,
+          name: 'signingSecret',
+        },
+        run,
+        2,
+        'late-write',
+      ),
+    ).rejects.toMatchObject({ code: 'installation_disabled' });
+    await expect(
+      broker.readRuntime(
+        {
+          workspaceId: workspace,
+          installationId: id,
+          registrationId: manifest.universalId,
+          name: 'signingSecret',
+        },
+        run,
+      ),
+    ).rejects.toMatchObject({ code: 'installation_disabled' });
+  });
+  it('holds broker admission through its transaction so concurrent revocation drains it without nested connection locks', async () => {
+    const { workspace, keys, request } = await setup();
+    const installed = await install(keys.admin, request),
+      id = installed.body.id as string;
+    await db.owner`update extension_installations set state='active' where id=${id}`;
+    const queue = new ExtensionQueue(t.sql, (id, version) => catalog.get(id, version).manifest);
+    const queued = await queue.enqueue(workspace, id, {
+      functionId,
+      input: {},
+      dedupeKey: 'broker-drain',
+    });
+    const run = await queue.claim(workspace, queued.id, 'broker-reader');
+    if (!run) throw new Error('run missing');
+    const brokerSql = db.connect({ role: 'retainer_secret_broker' });
+    let entered = () => {},
+      release = () => {};
+    const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      }),
+      paused = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    const read = inWorkspace(brokerSql, workspace, async (tx) => {
+      const [admission] =
+        await tx`select retainer_admit_secret_run(${manifest.universalId}::uuid,${id}::uuid,${run.generation},${run.jobId}::uuid,${run.owner},${run.fence}::bigint,${run.releaseDigest},false) as admitted`;
+      expect(admission?.admitted).toBe(true);
+      entered();
+      await paused;
+      return tx`select envelope from extension_secrets where installation_id=${id}`;
+    });
+    await started;
+    let disable: ReturnType<typeof t.request> | undefined;
+    try {
+      const [probe] =
+        await db.owner`select pg_try_advisory_xact_lock(21061::int4,hashtext(${`${workspace}:${manifest.universalId}`})) as exclusive`;
+      expect(probe?.exclusive).toBe(false);
+      disable = t.request(`/v1/extensions/${id}/disable`, { key: keys.admin, method: 'POST' });
+    } finally {
+      release();
+    }
+    expect(await read).toHaveLength(1);
+    expect((await disable)?.status).toBe(200);
+    await expect(
+      broker.readRuntime(
+        {
+          workspaceId: workspace,
+          installationId: id,
+          registrationId: manifest.universalId,
+          name: 'apiKey',
+        },
+        run,
+      ),
+    ).rejects.toMatchObject({ code: 'installation_disabled' });
+    await expect(
+      t.sql`select retainer_admit_secret_run(${manifest.universalId}::uuid,${id}::uuid,${run.generation},${run.jobId}::uuid,${run.owner},${run.fence}::bigint,${run.releaseDigest},false)`,
+    ).rejects.toMatchObject({ code: '42501' });
   });
 });

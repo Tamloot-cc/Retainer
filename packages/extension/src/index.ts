@@ -140,6 +140,8 @@ export const manifestSchema = z.strictObject({
       label,
       description: z.string().max(2000).optional(),
       secret: z.boolean().default(false),
+      /** Provider-generated secret, writable only by admitted runs; never an admin form input. */
+      generated: z.boolean().optional(),
       reconnect: z.boolean().default(false),
       required: z.boolean().default(false),
     }),
@@ -237,6 +239,9 @@ export function defineExtension(value: unknown): ExtensionManifest {
     throw new Error('unsupported_manifest: duplicate scope');
   if (manifest.execution === 'standalone' && manifest.functions.length)
     throw new Error('unsupported_manifest: standalone apps cannot contain hosted functions');
+  for (const setting of Object.values(manifest.settings))
+    if (setting.generated && (!setting.secret || setting.required))
+      throw new Error('unsupported_manifest: generated secrets must be optional secret settings');
   const routes = manifest.functions
     .filter((f) => 'route' in f.trigger)
     .map((f) => ('route' in f.trigger ? f.trigger.route : ''));

@@ -173,4 +173,16 @@ describe('strict extension contracts', () => {
       }),
     ).toThrow();
   });
+  it('allows optional provider-generated secrets but never treats them as required human settings', () => {
+    const setting = { type: 'string', label: 'Signing secret', secret: true, generated: true };
+    expect(
+      defineExtension({ ...fixture(), settings: { signing: setting } }).settings.signing?.generated,
+    ).toBe(true);
+    expect(() =>
+      defineExtension({ ...fixture(), settings: { signing: { ...setting, required: true } } }),
+    ).toThrow('generated secrets');
+    expect(() =>
+      defineExtension({ ...fixture(), settings: { signing: { ...setting, secret: false } } }),
+    ).toThrow('generated secrets');
+  });
 });

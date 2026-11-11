@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { type Caller, canApproveDestructive } from '../caller.js';
+import { type Caller, canApproveDestructive, type RunBinding } from '../caller.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, type Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
@@ -116,7 +116,7 @@ export class SecretBroker {
       return { pendingSecretId: row.id, installationId, expiresAt: row.expiresAt.toISOString() };
     });
   }
-  /** Caller must hold run admission in its API transaction until this read completes. */
+  /** Trusted operator/internal read. Runtime routes must use readRuntime for broker-local admission. */
   async read(identity: SecretIdentity) {
     return inWorkspace(this.sql, identity.workspaceId, async (tx) => {
       const [row] = await tx<
@@ -130,6 +130,60 @@ export class SecretBroker {
           'requested connection secret is unavailable',
         );
       return { value: this.cipher.decrypt(row.envelope, identity), revision: row.revision };
+    });
+  }
+  private async admit(tx: Tx, identity: SecretIdentity, run: RunBinding, writing: boolean) {
+    if (
+      run.installationId !== identity.installationId ||
+      run.registrationId !== identity.registrationId
+    )
+      throw new AppError(403, 'forbidden', 'secret belongs to another installation');
+    const [admission] = await tx<{ admitted: boolean }[]>`select retainer_admit_secret_run(
+      ${run.registrationId}::uuid,${run.installationId}::uuid,${run.generation},${run.jobId}::uuid,
+      ${run.owner},${run.fence}::bigint,${run.releaseDigest},${writing}) as admitted`;
+    if (!admission?.admitted)
+      throw new AppError(409, 'installation_disabled', 'secret run is no longer admitted');
+  }
+  /** Admission and decryption share this broker transaction, independent of API connection liveness. */
+  async readRuntime(identity: SecretIdentity, run: RunBinding) {
+    return inWorkspace(this.sql, identity.workspaceId, async (tx) => {
+      await this.admit(tx, identity, run, false);
+      const [row] = await tx<
+        { envelope: unknown; revision: number }[]
+      >`select envelope,revision from extension_secrets
+        where installation_id=${identity.installationId} and name=${identity.name} and (delete_after is null or delete_after>clock_timestamp())`;
+      if (!row)
+        throw new AppError(
+          409,
+          'connection_required',
+          'requested connection secret is unavailable',
+        );
+      return { value: this.cipher.decrypt(row.envelope, identity), revision: row.revision };
+    });
+  }
+  /** Generated provider material only; the API checks its pinned manifest declaration first. */
+  async writeRuntime(
+    identity: SecretIdentity,
+    run: RunBinding,
+    expectedRevision: number | null,
+    value: string,
+  ) {
+    const envelope = this.cipher.encrypt(value, identity);
+    return inWorkspace(this.sql, identity.workspaceId, async (tx) => {
+      await this.admit(tx, identity, run, true);
+      const [row] =
+        expectedRevision === null
+          ? await tx<
+              { revision: number }[]
+            >`insert into extension_secrets(workspace_id,installation_id,name,envelope)
+            values(${identity.workspaceId},${identity.installationId},${identity.name},${tx.json(envelope)})
+            on conflict(workspace_id,installation_id,name) do nothing returning revision`
+          : await tx<
+              { revision: number }[]
+            >`update extension_secrets set envelope=${tx.json(envelope)},revision=revision+1
+            where installation_id=${identity.installationId} and name=${identity.name} and revision=${expectedRevision} and delete_after is null returning revision`;
+      if (!row) throw new AppError(409, 'revision_conflict', 'secret revision changed');
+      return { revision: row.revision };
     });
   }
   async rotate(identity: SecretIdentity, expectedRevision: number) {

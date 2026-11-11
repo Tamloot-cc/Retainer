@@ -322,7 +322,14 @@ workspace/installation/key-name data. Keys stay outside the database; retain key
 versions for rotation. Refresh under a per-connection lock, persist rotating
 refresh tokens atomically, and mark `needs_reconnect` on terminal errors. Do not
 log secrets or return them to admin reads. Give a run only its own requested
-secret; redact provider response bodies from error logs. KV is not a secret store.
+secret; redact provider response bodies from error logs. KV is not a secret store. A secret setting may declare `generated: true` only
+when it is optional and secret. Such provider-generated signing/refresh material
+is omitted from human settings forms and cannot be staged by an admin. Live
+runs can write it with revision CAS through `PUT /v1/extensions/:id/runtime/secrets/:name`; runs cannot overwrite human-provided
+credentials. Broker-side admission takes its own schema/installation/lease locks
+in the same transaction as the read/write. Release API validation locks before
+awaiting that broker transaction, avoiding cross-connection revocation deadlocks
+and reliance on the API connection remaining alive.
 
 ## 9. Execution, jobs and triggers
 

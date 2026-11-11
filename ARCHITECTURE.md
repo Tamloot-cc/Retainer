@@ -1706,15 +1706,23 @@ rules stored in tables and enforced by a restrictive RLS policy
 code would only add clearer errors and pre-checks; it is never the
 enforcement. Until then, new code keeps that path open:
 
-1. Every read and write runs as `retainer_app` under RLS. The only
-   `SECURITY DEFINER` functions are the API-key lookup,
+1. Ordinary reads and writes run as `retainer_app` under RLS. Every
+   `SECURITY DEFINER` function is explicitly reviewed in the exact allowlist in
+   `test/db/security.test.ts`, fixes its search path, and grants execution only
+   to its intended role. Account/privacy capabilities include the API-key lookup,
    `retainer_session_access` (7.3), which returns a person's role in one
    workspace, `retainer_token_keys` and `retainer_token_access` (7.3), which
    return the public signing keys and a connected app's person, role and
    workspace, `retainer_workspaces_due` (4.2), which returns workspace IDs
    only, and `retainer_erase_private_derivatives`, which `forget` calls to
-   delete private copies of what it erases and which returns nothing; no read
-   takes a shortcut around RLS, including search and context.
+   delete private copies of what it erases and which returns nothing. Extension
+   capabilities adopt/retire encrypted secrets, expose bounded secret metadata,
+   discover due identifiers, arbitrate execution slots and queue file deletion.
+   `retainer_admit_secret_run` is broker-only: it holds installation and live
+   lease locks through the broker transaction, without returning CRM rows or
+   secret values. API metadata validation releases its locks before awaiting a
+   second broker connection; broker admission rechecks generation/fence itself.
+   Ordinary record reads, search and context take no shortcut around RLS.
 2. Per-request database context is set in one place (`inWorkspace`).
 3. A response mentions another record (conflict errors, merge candidates,
    relation labels, review items, context) only through one shared

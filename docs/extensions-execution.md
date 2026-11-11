@@ -203,3 +203,22 @@ connection, no CRM/environment credential, separate function and bearer
 capabilities, hard termination and cleanup. It does not prove public ingress,
 account routing, rate limiting, durable receipt/job atomicity or provider setup;
 those remain required before any webhook adapter can be activated.
+
+## Provider-generated connection secrets
+
+Optional secret settings can declare `generated: true`. These are hidden from
+human configuration forms and cannot be supplied through pending-secret staging.
+A live run may store a provider's signing/refresh material through SDK
+`setExtensionSecret` (the run-only PUT secret endpoint), with an expected revision
+or `null` for create-only. Competing writes produce one winner and a revision
+conflict. The response contains only the revision. Ordinary human-provided API
+keys remain read-only to runs.
+
+The secret broker checks the installation generation and current lease/fence
+inside its own transaction, holding revocation and lease locks through the
+secret operation. API metadata validation finishes before requesting that broker
+transaction; it does not hold one connection's locks while waiting on another.
+Uninstall cleanup may read its retained connection but cannot write generated
+secrets. This provides encrypted CAS storage, not a claim that arbitrary provider
+refresh calls are exactly once: each adapter must handle provider-specific token
+rotation, uncertain outcomes and reconnect behavior.

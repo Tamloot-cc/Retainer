@@ -110,8 +110,11 @@ export class Extensions {
   ) {
     human(caller);
     const release = this.catalog.get(input.registrationId, input.version);
-    if (!release.manifest.settings[input.name]?.secret)
-      throw new AppError(422, 'invalid_secret', 'setting is not a declared secret');
+    if (
+      !release.manifest.settings[input.name]?.secret ||
+      release.manifest.settings[input.name]?.generated
+    )
+      throw new AppError(422, 'invalid_secret', 'setting is not a declared human-provided secret');
     if (!this.secrets)
       throw new AppError(503, 'connection_required', 'secret broker is not configured');
     return this.secrets.stage(caller, input);
@@ -260,6 +263,7 @@ export class Extensions {
         staged = pending.find((p) => p.id === id);
       if (
         !definition?.secret ||
+        definition.generated ||
         !staged ||
         staged.name !== name ||
         staged.registration_id !== input.registrationId ||

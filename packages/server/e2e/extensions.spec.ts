@@ -10,6 +10,7 @@ test('reviews and approves an installation, changes settings, inspects runs and 
   await page.getByRole('link', { name: 'Extensions', exact: true }).click();
   await page.getByRole('button', { name: 'Set up', exact: true }).click();
   let dialog = page.getByRole('dialog', { name: 'browser-fixture setup' });
+  await expect(dialog.getByLabel('Generated signing secret')).toHaveCount(0);
   await dialog.getByLabel('Enabled (required)').check();
   await dialog.getByRole('button', { name: 'Review installation' }).click();
   await expect(dialog.getByText(/This service can read workspace CRM data/)).toBeVisible();
@@ -22,6 +23,7 @@ test('reviews and approves an installation, changes settings, inspects runs and 
   expect(installed.settings.enabled).toBe(true);
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'browser-fixture settings' });
+  await expect(dialog.getByLabel('Generated signing secret')).toHaveCount(0);
   await dialog.getByLabel('Enabled (required)').uncheck();
   await dialog.getByRole('button', { name: 'Save settings' }).click();
   await expect(dialog).not.toBeVisible();

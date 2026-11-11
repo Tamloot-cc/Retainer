@@ -228,57 +228,59 @@ function SettingFields({
 }) {
   return (
     <>
-      {Object.entries(release.manifest.settings).map(([key, definition]) => {
-        const locked = !!existing && (definition.secret || definition.reconnect);
-        return (
-          <Label key={key}>
-            {definition.label}
-            {definition.required ? ' (required)' : ''}
-            {definition.secret ? (
-              <Input
-                type="password"
-                autoComplete="new-password"
-                value={secrets[key] ?? ''}
-                disabled={locked}
-                required={definition.required && !existing?.secrets?.[key] && !references[key]}
-                placeholder={
-                  existing?.secrets?.[key]
-                    ? 'Connected'
-                    : references[key]
-                      ? 'Provided for approval'
-                      : ''
-                }
-                onChange={(e) => onSecret(key, e.target.value)}
-              />
-            ) : definition.type === 'boolean' ? (
-              <Input
-                type="checkbox"
-                checked={values[key] === true}
-                disabled={locked}
-                onChange={(e) => onChange(key, e.target.checked)}
-              />
-            ) : (
-              <Input
-                type={definition.type === 'number' ? 'number' : 'text'}
-                value={String(values[key] ?? '')}
-                disabled={locked}
-                required={definition.required}
-                onChange={(e) =>
-                  onChange(
-                    key,
-                    definition.type === 'number' ? e.target.valueAsNumber : e.target.value,
-                  )
-                }
-              />
-            )}
-            {locked ? (
-              <Muted small>
-                Changing this connection requires reconnect support from this service.
-              </Muted>
-            ) : null}
-          </Label>
-        );
-      })}
+      {Object.entries(release.manifest.settings)
+        .filter(([, definition]) => !definition.generated)
+        .map(([key, definition]) => {
+          const locked = !!existing && (definition.secret || definition.reconnect);
+          return (
+            <Label key={key}>
+              {definition.label}
+              {definition.required ? ' (required)' : ''}
+              {definition.secret ? (
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={secrets[key] ?? ''}
+                  disabled={locked}
+                  required={definition.required && !existing?.secrets?.[key] && !references[key]}
+                  placeholder={
+                    existing?.secrets?.[key]
+                      ? 'Connected'
+                      : references[key]
+                        ? 'Provided for approval'
+                        : ''
+                  }
+                  onChange={(e) => onSecret(key, e.target.value)}
+                />
+              ) : definition.type === 'boolean' ? (
+                <Input
+                  type="checkbox"
+                  checked={values[key] === true}
+                  disabled={locked}
+                  onChange={(e) => onChange(key, e.target.checked)}
+                />
+              ) : (
+                <Input
+                  type={definition.type === 'number' ? 'number' : 'text'}
+                  value={String(values[key] ?? '')}
+                  disabled={locked}
+                  required={definition.required}
+                  onChange={(e) =>
+                    onChange(
+                      key,
+                      definition.type === 'number' ? e.target.valueAsNumber : e.target.value,
+                    )
+                  }
+                />
+              )}
+              {locked ? (
+                <Muted small>
+                  Changing this connection requires reconnect support from this service.
+                </Muted>
+              ) : null}
+            </Label>
+          );
+        })}
     </>
   );
 }
