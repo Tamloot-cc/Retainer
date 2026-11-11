@@ -24,6 +24,7 @@ import { commentRoutes } from './routes/comments.js';
 import { runtimeRoutes } from './routes/extension-runtime.js';
 import { extensionRoutes } from './routes/extensions.js';
 import { fileRoutes } from './routes/files.js';
+import { lastContactRoutes } from './routes/last-contact.js';
 import { memoryRoutes } from './routes/memory.js';
 import { recordRoutes } from './routes/records.js';
 import { retrievalRoutes } from './routes/retrieval.js';
@@ -105,6 +106,7 @@ export function createApp(deps: AppDeps) {
   );
   extensionRoutes(v1, extensions);
   runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets);
+  lastContactRoutes(v1, deps.sql, extensions.catalog);
   webhookRuntime(v1, deps.webhooks);
   fileRoutes(v1, deps.sql, deps.fileStorage, deps.fileQuota);
   sourceRoutes(

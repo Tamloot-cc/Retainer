@@ -149,10 +149,11 @@ export async function forgetRecord(
   const holdsRecord = tx`field_id = any(${relationFieldIds}::uuid[])
     and jsonb_typeof(value) = 'array' and value ?| ${recordIds}::text[]`;
   const elsewhere = tx`workspace_id = ${workspaceId} and record_id <> all(${erased}::uuid[])`;
+  const supportedByErased = tx`id in(select d.assertion_id from assertion_dependencies d where d.support_record_id=any(${erased}::uuid[]))`;
   const affected = await tx<{ record_id: string }[]>`
     select distinct record_id from field_assertions
     where ${elsewhere}
-      and (source_record_id = any(${eventIds}::uuid[]) or (${pointsAtRecord})
+      and (source_record_id = any(${eventIds}::uuid[]) or ${supportedByErased} or (${pointsAtRecord})
         or (${holdsRecord}))`;
   const locked = await lockRecordsForUpdate(tx, workspaceId, [
     ...new Set([...erased, ...affected.map((r) => r.record_id), ...fileErasure.recordIds]),
@@ -192,7 +193,7 @@ export async function forgetRecord(
 
   const cited = await tx<RemovedClaim[]>`
     delete from field_assertions
-    where ${elsewhere} and source_record_id = any(${eventIds}::uuid[])
+    where ${elsewhere} and (source_record_id = any(${eventIds}::uuid[]) or ${supportedByErased})
     returning record_id, field_id, status`;
   const inboundRelations = await tx<RemovedClaim[]>`
     delete from field_assertions where ${elsewhere} and ${pointsAtRecord}

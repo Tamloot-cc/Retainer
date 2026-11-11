@@ -1156,6 +1156,17 @@ deterministic and testable.
 
 ---
 
+### 4.4 Deterministic extension projections
+
+The release-pinned last-contact capability replaces only the installation's own
+contributed nullable date-time assertions. Its server operation takes schema
+exclusivity while selecting current conversation history and writing citations,
+so relation/event changes cannot interleave. It uses normal assertion precedence
+and source time. `assertion_dependencies` adds normalized support-record edges
+for rolled-up evidence; privacy erasure removes supported claims before support
+FK cascades, even when the cited event survives. Scans are bounded and their
+control cursors are erasable installation KV, never durable job input.
+
 ## 5. Read paths
 
 | Operation                          | What it returns                                                                                                                                    |

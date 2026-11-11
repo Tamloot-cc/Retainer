@@ -1,6 +1,7 @@
 import type { ExecutionResult, Invocation } from '@retainer/extension';
 import { RetainerClient } from '@retainer/sdk';
 import { z } from 'zod';
+import { executeLastContact, LAST_CONTACT_FUNCTION_IDS } from './last-contact.js';
 import { executeWebhookFixture, WEBHOOK_SETUP_ID, WEBHOOK_SYNC_ID } from './webhook-fixture.js';
 
 /** Permanent fixture identity. Production integrations add reviewed, build-time imports here. */
@@ -15,6 +16,8 @@ export async function execute(
   signal: AbortSignal,
   transport: typeof fetch = fetch,
 ): Promise<ExecutionResult> {
+  if (LAST_CONTACT_FUNCTION_IDS.includes(invocation.functionId))
+    return executeLastContact(invocation, signal, transport);
   if ([WEBHOOK_SETUP_ID, WEBHOOK_SYNC_ID].includes(invocation.functionId))
     return executeWebhookFixture(invocation, signal, transport);
   if (![FIXTURE_FUNCTION_ID, FIXTURE_INSTALL_ID].includes(invocation.functionId))

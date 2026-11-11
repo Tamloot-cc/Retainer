@@ -1,6 +1,9 @@
 # Retainer extensions
 
-Status: implementation in progress; control, isolated execution, lifecycle, management UI, file storage, managed sources, commit-ordered change dispatch, isolated verification and durable webhook ingress implemented; provider adapters, last-contact, standalone grants and hosted launch remain. Date: 2026-11-11.
+Status: implementation in progress. Control/lifecycle UI, isolated execution,
+files, managed sources, durable change dispatch, verified webhook ingress and
+deterministic last-contact are implemented. Provider adapters, connection/grant
+management, standalone authorization and hosted launch remain. Date: 2026-11-11.
 See [implementation progress](extensions-implementation.md) for completed and outstanding work.
 
 This spec replaces the exported **Retainer Extensions** proposal supplied as
@@ -517,11 +520,54 @@ fences every live run; all installation KV is cleared because operational values
 may indirectly derive from erased records. Preserve unrelated durable jobs and
 keep immutable backfill bounds in job input. A dispatcher that has fallen behind
 retention stops with degraded `cursor_expired`; it never advances past the gap.
-Disable, rescan and re-enable only through the reviewed adapter catch-up path.
+Disable and re-enable only through the reviewed adapter catch-up path: activation captures a fresh dispatch head, and the adapter queues its current-record backfill while later changes remain durable.
 
 Handlers read current data and recompute deterministically, tolerating duplicate
 or superseded changes. Last-contact recomputes from surviving events, including
 retraction/deletion; it cannot just retain the maximum timestamp ever seen.
+
+### 9.5 Deterministic last contact
+
+The first-party `last-contact` release contributes nullable `lastContactAt`
+`date_time` fields to person and company. It computes the latest current visible
+`conversation` in each record's existing event history at or before server time,
+including the existing one-hop `rollUpEvents` paths. Hidden notes, private memory,
+superseded evidence and deleted events do not count. It respects the workspace's
+rollup settings rather than enabling them implicitly. Moving an event to a
+non-conversation type removes it from this projection.
+
+Its optional manifest `lastContact` capability pins the runtime function UUIDs
+and contributed object/field UUIDs. `POST /v1/extensions/:id/runtime/last-contact`
+requires a live admitted function with write scope; it accepts only record IDs or
+a bounded scan cursor. It never accepts an actor, value, field override or source.
+The server validates current contribution ownership and field compatibility,
+then computes and replaces only that installation actor's previous claims for
+those fields. Each new claim cites the winning conversation and uses its actual
+`occurredAt` as `observedAt`; unlinking the latest event can therefore decrease
+the value without inventing a newer evidence time. No eligible event withdraws
+its own claims. Human values retain ordinary assertion precedence and review
+rules. Identical evidence/path is a no-op, including after a human rejection.
+
+Recomputation takes the privacy lock shared and schema lock exclusive before
+installation/source/record admission, making the event/link snapshot and claim
+replacement atomic with competing writes. `assertion_dependencies` records the
+supporting event and, for a rollup, its intermediate record. Forget collects and
+hard-deletes dependent assertions before those support rows cascade, then
+recomputes affected fields in the same privacy transaction. A surviving event
+cannot preserve a company claim derived through a forgotten person. Subsequent
+work can restore a value from other surviving evidence.
+
+Install/re-enable enqueues an initial paged scan after activation. Conversation,
+person and company change handlers recompute affected IDs and their current
+rollup targets. The scan processes 20 records per API transaction with a fixed
+upper record ID. Scan root/page/cursor/checkpoint lives only in erasable KV;
+child job input is empty, and its dedupe key carries no contact ID. Clearing KV
+restarts with a new operational root so old successful child receipts cannot
+strand the new scan. A 15-minute coalesced schedule resumes stalled scans and
+starts fresh scans after completion, repairing disabled windows and changes to
+other objects' rollup paths. Failed durable jobs remain visible for retry.
+Excessive incremental fanout falls back to the paged scan, never a silently
+truncated update. Direct self-writes remain quiet under cause-chain dispatch.
 
 ## 10. Source ingestion, edits and deletion
 

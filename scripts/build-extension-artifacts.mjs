@@ -6,6 +6,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineExtension } from '../packages/extension/dist/index.js';
+import { lastContactManifest } from '../packages/runner/dist/last-contact.js';
 import { stableJson } from '../packages/server/dist/stable-json.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -276,3 +277,39 @@ if (development) {
     })),
   );
 }
+
+// Reviewed deterministic adapter. Operators explicitly select and package this pinned bundle.
+const lastContact = lastContactManifest({
+  packageDigest,
+  handlerDigest: hash(readFileSync(resolve(root, 'packages/runner/dist/last-contact.js'))),
+  serverVersions: manifest.serverVersions,
+});
+const lastContactDigest = hash(stableJson(lastContact)),
+  lastContactOut = resolve(root, 'artifacts/extensions/last-contact');
+mkdirSync(lastContactOut, { recursive: true });
+const writeLastContact = (name, value) =>
+  writeFileSync(resolve(lastContactOut, name), `${JSON.stringify(value, null, 2)}\n`);
+writeLastContact('manifest.json', lastContact);
+writeLastContact('catalog.json', [
+  { manifest: lastContact, actorCeiling: 'integration', runtimeEnabled: true },
+]);
+writeLastContact('metadata.json', {
+  commit,
+  development,
+  releaseDigest: lastContactDigest,
+  packageDigest,
+  bundleId: 'last-contact',
+  functionIds: lastContact.functions.map((fn) => fn.universalId),
+});
+writeLastContact(
+  'executables.json',
+  lastContact.functions.map((fn) => ({
+    registrationId: lastContact.universalId,
+    releaseDigest: lastContactDigest,
+    functionId: fn.universalId,
+    handlerDigest: fn.handlerDigest,
+    packageDigest,
+    runtimeVersion: 'node24',
+    driverTarget: 'last-contact',
+  })),
+);

@@ -10,8 +10,10 @@ import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { RetainerClient } from '../packages/sdk/dist/index.js';
 
-const withWebhook = process.argv.includes('--webhook');
-const fixture = withWebhook ? 'webhook-fixture' : 'fixture';
+const withWebhook = process.argv.includes('--webhook'),
+  withLastContact = process.argv.includes('--last-contact');
+assert(!(withWebhook && withLastContact));
+const fixture = withWebhook ? 'webhook-fixture' : withLastContact ? 'last-contact' : 'fixture';
 const exec = promisify(execFile),
   root = process.cwd(),
   project = `retainer-extension-compose-${randomUUID().slice(0, 8)}`;
@@ -37,7 +39,11 @@ const runner = JSON.parse(
       [
         'image',
         'inspect',
-        withWebhook ? 'retainer:extension-webhook-fixture' : 'retainer:extension-runner-fixture',
+        withWebhook
+          ? 'retainer:extension-webhook-fixture'
+          : withLastContact
+            ? 'retainer:extension-last-contact'
+            : 'retainer:extension-runner-fixture',
       ],
       {
         encoding: 'utf8',
@@ -142,6 +148,36 @@ try {
   );
   const client = new RetainerClient({ baseUrl: origin, apiKey: credential.key });
   await client.me();
+  let contactCompany, contactPerson;
+  if (withLastContact) {
+    await client.proposeSchemaChange([
+      { op: 'update_field', object: 'person', field: 'company', rollUpEvents: true },
+    ]);
+    contactCompany = (
+      await client.createRecord('company', { values: { name: 'Compose last-contact company' } })
+    ).id;
+    contactPerson = (
+      await client.createRecord('person', {
+        values: { name: 'Compose contact', company: contactCompany },
+      })
+    ).id;
+    await client.logEvent({
+      type: 'conversation',
+      title: 'Older contact',
+      occurredAt: '2026-01-01T12:00:00.000Z',
+      channel: 'last-contact-compose',
+      externalId: 'older',
+      about: [contactCompany],
+    });
+    await client.logEvent({
+      type: 'conversation',
+      title: 'Latest contact',
+      occurredAt: '2026-01-02T12:00:00.000Z',
+      channel: 'last-contact-compose',
+      externalId: 'latest',
+      about: [contactPerson],
+    });
+  }
   const input = {
     registrationId: catalog[0].manifest.universalId,
     version: catalog[0].manifest.version,
@@ -169,12 +205,11 @@ try {
     runs = (await client.extensionRuns(installed.id)).runs;
     if (runs.some((run) => run.status === 'failed'))
       throw new Error('isolated lifecycle fixture failed');
-    if (runs.filter((run) => run.status === 'succeeded').length === (withWebhook ? 1 : 2)) break;
+    if (runs.filter((run) => run.status === 'succeeded').length >= (withWebhook ? 1 : 2)) break;
     await delay(100);
   }
-  assert.equal(
-    runs.filter((run) => run.status === 'succeeded').length,
-    withWebhook ? 1 : 2,
+  assert(
+    runs.filter((run) => run.status === 'succeeded').length >= (withWebhook ? 1 : 2),
     'the expected setup and child work must finish',
   );
   assert.equal((await client.extension(installed.id)).state, 'active');
@@ -257,6 +292,36 @@ try {
     assert.equal((await client.extension(installed.id)).secrets.signing, true);
     assert(!JSON.stringify(await client.extensionRuns(installed.id)).includes(producerSecret));
     assert(!JSON.stringify(await client.extension(installed.id)).includes(producerSecret));
+  } else if (withLastContact) {
+    const expectDate = async (recordId, date) => {
+      for (let attempt = 0; attempt < 600; attempt++) {
+        if ((await client.record(recordId)).fields.lastContactAt === date) return;
+        const inspected = await client.extensionRuns(installed.id);
+        assert(!inspected.runs.some((run) => run.status === 'failed'), 'last-contact work failed');
+        await delay(100);
+      }
+      assert.equal((await client.record(recordId)).fields.lastContactAt, date);
+    };
+    await expectDate(contactPerson, '2026-01-02T12:00:00.000Z');
+    await expectDate(contactCompany, '2026-01-02T12:00:00.000Z');
+    const latest = await client.logEvent({
+      type: 'conversation',
+      title: 'Post-install contact',
+      occurredAt: '2026-01-03T12:00:00.000Z',
+      channel: 'last-contact-compose',
+      externalId: 'after-install',
+      about: [contactPerson],
+    });
+    await expectDate(contactCompany, '2026-01-03T12:00:00.000Z');
+    await client.removeAbout(latest.id, contactPerson);
+    await expectDate(contactCompany, '2026-01-02T12:00:00.000Z');
+    const changes = await client.changes();
+    assert(
+      changes.changes.some(
+        (change) =>
+          change.recordId === contactCompany && change.originInstallationId === installed.id,
+      ),
+    );
   } else {
     const records = await client.queryRecords('company', {
       filter: { name: 'Compose fixture company' },
@@ -284,6 +349,15 @@ try {
       redactedRunInspection: true,
       disable: true,
       uninstall: true,
+      ...(withLastContact
+        ? {
+            derivedLastContact: true,
+            setupBackfill: true,
+            durableChangeDispatch: true,
+            oneHopRollup: true,
+            decreaseOnUnlink: true,
+          }
+        : {}),
       ...(withWebhook
         ? {
             webhookRawSignature: true,

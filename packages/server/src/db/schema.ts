@@ -1073,6 +1073,36 @@ export const fieldAssertions = pgTable(
   ],
 );
 
+/** Additional records whose relationship path supports a derived assertion; erased before FK cascades. */
+export const assertionDependencies = pgTable(
+  'assertion_dependencies',
+  {
+    workspaceId: workspaceId(),
+    assertionId: uuid('assertion_id').notNull(),
+    supportRecordId: uuid('support_record_id').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.assertionId, t.supportRecordId] }),
+    index('assertion_dependencies_support_idx').on(t.workspaceId, t.supportRecordId),
+    tenantFk(
+      'assertion_dependencies_assertion_fk',
+      [t.workspaceId, t.assertionId],
+      [fieldAssertions.workspaceId, fieldAssertions.id],
+    ),
+    tenantFk(
+      'assertion_dependencies_support_fk',
+      [t.workspaceId, t.supportRecordId],
+      [records.workspaceId, records.id],
+    ),
+    pgPolicy('assertion_dependencies_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
 /** A plain-language claim about a record. Superseded, never silently deleted. */
 export const facts = pgTable(
   'facts',

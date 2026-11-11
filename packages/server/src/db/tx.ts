@@ -134,7 +134,7 @@ export async function lockPrivacyShared(tx: Tx, workspaceId: string): Promise<vo
 export type WriteLocks = {
   /** Exclusive only for `forget` (2.1). */
   privacy?: 'shared' | 'exclusive';
-  /** Exclusive only for moving events between types, which no write may interleave with (1.3). */
+  /** Exclusive for event-type moves and deterministic evidence projections; no write may interleave. */
   schema?: 'shared' | 'exclusive';
 };
 

@@ -78,8 +78,8 @@ const DEADLOCK_RETRIES = 3;
  * A record write: one short workspace transaction holding the schema lock
  * in shared mode, so the schema it validated against stays current (3),
  * and the privacy lock, so it serializes with `forget` (2.1). Only
- * `forget` takes the privacy lock exclusively, and only moving events
- * between types takes the schema lock exclusively (1.3).
+ * `forget` takes the privacy lock exclusively, and moving events
+ * between types or an atomic deterministic projection takes the schema lock exclusively.
  *
  * A relation write locks its source record, then its target `FOR KEY
  * SHARE`; merges and cascading deletes lock targets before sources. The two

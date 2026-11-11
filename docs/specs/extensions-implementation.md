@@ -1,10 +1,10 @@
 # Extensions implementation plan
 
 Current status: controls, isolated execution/lifecycle, files/erasure, managed
-sources/revisions, commit-ordered feeds and durable triggers are implemented.
-The isolated verifier protocol is verified; public webhook ingress is still in
-progress. The default catalog is empty. Provider delivery, deterministic
-last-contact, standalone grants and hosted launch remain outstanding.
+sources/revisions, commit-ordered feeds, durable triggers, isolated verification,
+public webhook ingress and deterministic last-contact are implemented and tested.
+The default catalog is empty. Provider adapters, connection refresh/reconnect UX,
+explicit grant changes, standalone grants and hosted launch remain outstanding.
 
 The contract in extensions.md remains the acceptance specification. Implement in
 these dependency-ordered slices; never advertise a trigger before its safety
@@ -365,3 +365,30 @@ inspection uses the generated container name because Docker can transiently key
 connecting endpoints by an endpoint ID. The previous UI checkpoint had 65 passing
 browser tests; this slice changes no UI components. No provider is
 advertised, and the default catalog remains empty.
+
+## Deterministic last contact
+
+A reviewed first-party bundle contributes person/company last-contact date-time
+fields. Its pinned capability delegates value/source selection to the server;
+normal assertions preserve human precedence. Atomic recomputation can lower a
+value after unlink or withdraw it when no current conversation remains. It
+respects current source revision visibility and existing rollup configuration.
+
+Normalized assertion-support edges let privacy delete rolled-up claims when the
+intermediate record is forgotten while the event survives. The erasure transaction
+recomputes affected fields before support FK cascades. Scans use fixed upper IDs,
+20-record pages, operational-only erasable KV and empty durable child inputs.
+Change handlers repair affected contacts immediately; a coalesced schedule resumes
+or restarts scans for recovery and other relation paths. Old failed jobs remain
+visible. No models or provider calls are involved.
+
+The 59 targeted real-Postgres checks across derivation, erasure, managed sources
+and SQL privileges pass. Five runner tests cover pinned capability validation,
+setup retry, cursor privacy, fixed bounds, minimal change batching and rescan
+fallback. All 1,388 tests pass across the server (1,089 with two workers) and other
+packages (299), plus 65 fresh-build browser tests. Typecheck, build, lint,
+release/layer checks pass. The actual isolated adapter Compose proof installs and
+backfills, consumes a later conversation through durable change dispatch, lowers
+the rolled-up company date after unlinking, and verifies disable/uninstall. The
+default catalog remains empty; packaging an artifact is distinct from enabling it
+on a hosted deployment.

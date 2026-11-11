@@ -123,6 +123,16 @@ export const manifestSchema = z.strictObject({
   connection: z.literal('workspace'),
   createPeople: z.enum(['never', 'contacted_first', 'everyone']),
   onSourceDelete: z.enum(['keep', 'retract']),
+  /** Narrow server-computed derivation; only these functions may replace their own derived claims. */
+  lastContact: z
+    .strictObject({
+      functionIds: z.array(uuid).min(1).max(20),
+      fields: z
+        .array(z.strictObject({ objectId: uuid, fieldId: uuid }))
+        .min(1)
+        .max(20),
+    })
+    .optional(),
   /** Reviewed, release-pinned ingestion authority; provider code attests only through setup. */
   source: z
     .strictObject({
@@ -261,6 +271,38 @@ export function defineExtension(value: unknown): ExtensionManifest {
   for (const setting of Object.values(manifest.settings))
     if (setting.generated && (!setting.secret || setting.required))
       throw new Error('unsupported_manifest: generated secrets must be optional secret settings');
+  if (manifest.lastContact) {
+    const policy = manifest.lastContact;
+    if (
+      manifest.execution !== 'hosted' ||
+      !manifest.scopes.includes('read') ||
+      !manifest.scopes.includes('write') ||
+      new Set(policy.functionIds).size !== policy.functionIds.length ||
+      new Set(policy.fields.map((entry) => entry.objectId)).size !== policy.fields.length ||
+      policy.functionIds.some(
+        (id) =>
+          !manifest.functions.some(
+            (fn) =>
+              fn.universalId === id && ['job', 'change', 'schedule'].includes(fn.trigger.kind),
+          ),
+      ) ||
+      policy.fields.some(
+        (entry) =>
+          !manifest.schema.some(
+            (item) =>
+              item.kind === 'field' &&
+              item.objectId === entry.objectId &&
+              item.definition.universalId === entry.fieldId &&
+              item.definition.type === 'date_time' &&
+              item.definition.isNullable !== false &&
+              item.definition.isUnique !== true,
+          ),
+      )
+    )
+      throw new Error(
+        'unsupported_manifest: last-contact requires owned nullable date-time fields and pinned runtime functions',
+      );
+  }
   const hookRoutes = new Set<string>();
   for (const hook of manifest.webhooks ?? []) {
     const verifier = manifest.functions.find((fn) => fn.universalId === hook.verifierFunctionId);

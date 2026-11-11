@@ -742,6 +742,21 @@ export class RetainerClient {
     );
   }
 
+  /** Recompute only the release-pinned last-contact fields. Values, provenance and actor are server-derived. */
+  reconcileLastContact(
+    id: string,
+    input:
+      | { kind: 'scan'; after?: string | null; through?: string }
+      | { kind: 'records'; recordIds: string[] },
+  ) {
+    return this.post<{
+      processed: number;
+      changed: number;
+      nextAfter: string | null;
+      through: string | null;
+    }>(`/v1/extensions/${encodeURIComponent(id)}/runtime/last-contact`, input);
+  }
+
   /** Reserve a durable callback before provider registration returns its signing material. Setup only. */
   prepareExtensionWebhook(id: string, input: { route: string }) {
     return this.post<{ bindingId: string; url: string }>(

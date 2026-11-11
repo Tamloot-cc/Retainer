@@ -498,6 +498,20 @@
       "when": 1794411575432,
       "tag": "0070_webhook_capabilities",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1794412048025,
+      "tag": "0071_assertion_dependencies",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1794412129735,
+      "tag": "0072_assertion_dependency_permissions",
+      "breakpoints": true
     }
   ]
 }
