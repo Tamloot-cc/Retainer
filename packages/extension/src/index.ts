@@ -1,3 +1,7 @@
+import { nextOccurrence } from './cron.js';
+
+export { nextOccurrence } from './cron.js';
+
 import { FIELD_TYPES } from '@retainer/shared';
 import { z } from 'zod';
 
@@ -124,6 +128,7 @@ export const manifestSchema = z.strictObject({
       label,
       description: z.string().max(2000).optional(),
       secret: z.boolean().default(false),
+      reconnect: z.boolean().default(false),
       required: z.boolean().default(false),
     }),
   ),
@@ -161,7 +166,7 @@ function checkInput(schema: InputSchema): void {
       throw new Error('unsupported_manifest: object inputs must reject additional properties');
     if (
       new Set(schema.required).size !== (schema.required?.length ?? 0) ||
-      schema.required?.some((key) => !schema.properties?.[key])
+      schema.required?.some((key) => !Object.hasOwn(schema.properties ?? {}, key))
     )
       throw new Error('unsupported_manifest: required properties must exist and be unique');
     for (const property of Object.values(schema.properties ?? {})) checkInput(property);
@@ -180,6 +185,7 @@ function checkFunction(fn: z.infer<typeof functionSchema>) {
   checkInput(fn.inputSchema);
   // Cron execution is deferred. Still refuse malformed expressions at release registration.
   if (fn.trigger.kind === 'schedule') {
+    nextOccurrence(fn.trigger.cron, new Date('2000-01-01T00:00:00Z'));
     const parts = fn.trigger.cron.split(' ');
     if (
       parts.length !== 5 ||
@@ -238,6 +244,9 @@ export function defineFunction(value: unknown) {
 export const defineView = (value: unknown) => viewSchema.parse(value);
 
 export type ExtensionInstallInput = {
+  /** Set for an upgrade preview and commit. */
+  installationId?: string;
+  secretRefs?: Record<string, string>;
   registrationId: string;
   version: string;
   settings: Record<string, string | boolean | number>;
@@ -257,11 +266,21 @@ export type ExtensionInstallation = {
   registrationId: string;
   version: string;
   releaseDigest: string;
-  state: 'disabled' | 'uninstalled';
+  state:
+    | 'installing'
+    | 'active'
+    | 'setup_failed'
+    | 'disabled'
+    | 'upgrading'
+    | 'uninstalling'
+    | 'uninstalled';
   generation: number;
   settingsRevision: number;
+  secrets?: Record<string, boolean>;
   settings: Record<string, string | boolean | number>;
   grantedActor: 'integration' | 'agent';
   grantedScopes: ('read' | 'write')[];
   createdBy: { type: string; id: string };
 };
+
+export * from './protocol.js';

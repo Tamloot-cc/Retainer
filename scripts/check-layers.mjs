@@ -16,7 +16,18 @@ const MIT_PACKAGES = readdirSync(join(ROOT, 'packages')).filter(
 const LAYERS = [
   [
     'foundation',
-    ['caller', 'config', 'errors', 'log', 'version', 'stable-json', 'idempotency', 'db', 'schema'],
+    [
+      'caller',
+      'config',
+      'errors',
+      'log',
+      'version',
+      'stable-json',
+      'idempotency',
+      'db',
+      'schema',
+      'extension-runtime',
+    ],
   ],
   ['core', ['records', 'memory', 'privacy']],
   ['features', ['views', 'comments', 'retrieval', 'reads']],

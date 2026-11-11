@@ -15,6 +15,7 @@ import type { Sql } from '../db/client.js';
 import type { StoredViewConfig } from '../db/schema.js';
 import { inWorkspace, jsonValue, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
+import { admitRun } from '../extension-runtime/admission.js';
 import { checkAggregateOp } from '../records/aggregate.js';
 import { builtInNames, compileFilter, compileSort, queryInputSchema } from '../records/query.js';
 import { requireObject } from '../records/service.js';
@@ -513,9 +514,11 @@ async function withViews<T>(
   sql: Sql,
   caller: Caller,
   fn: (tx: Tx, schema: CompiledSchema) => Promise<T>,
+  write = false,
 ): Promise<T> {
   return inWorkspace(sql, caller.workspaceId, async (tx) => {
     await lockSchemaShared(tx, caller.workspaceId);
+    if (caller.run) await admitRun(tx, caller.workspaceId, caller.run, write);
     return fn(tx, await getSchema(tx, caller.workspaceId));
   });
 }
@@ -568,7 +571,12 @@ export async function createView(
   objectName: string,
   input: CreateViewInput,
 ): Promise<SavedView> {
-  return withViews(sql, caller, (tx) => createViewInTransaction(tx, caller, objectName, input));
+  return withViews(
+    sql,
+    caller,
+    (tx) => createViewInTransaction(tx, caller, objectName, input),
+    true,
+  );
 }
 
 /** Used by installation control so schema, views and ownership commit together. */
@@ -610,19 +618,22 @@ export async function updateView(
   id: string,
   input: UpdateViewInput,
 ): Promise<SavedView> {
-  return withViews(sql, caller, async (tx, schema) => {
-    const { row, object } = await loadView(tx, schema, caller, id, true);
-    if (input.visibility !== undefined && input.visibility !== row.visibility) {
-      if (!sameActor(row.created_by, caller.actor))
-        throw forbidden('only the person or agent that created a view can change who sees it');
-    }
-    const config = merge(row.config, toStored(tx, object, input));
-    const kind = input.kind ?? row.kind;
-    // Check the kind's field when the request changes either, so a view
-    // whose field was removed can still be renamed or moved.
-    if (input.kind !== undefined || input.groupBy === null || input.dateField === null)
-      requireKindField(kind, presentView(tx, object, { ...row, config }));
-    const [updated] = await tx<ViewRow[]>`
+  return withViews(
+    sql,
+    caller,
+    async (tx, schema) => {
+      const { row, object } = await loadView(tx, schema, caller, id, true);
+      if (input.visibility !== undefined && input.visibility !== row.visibility) {
+        if (!sameActor(row.created_by, caller.actor))
+          throw forbidden('only the person or agent that created a view can change who sees it');
+      }
+      const config = merge(row.config, toStored(tx, object, input));
+      const kind = input.kind ?? row.kind;
+      // Check the kind's field when the request changes either, so a view
+      // whose field was removed can still be renamed or moved.
+      if (input.kind !== undefined || input.groupBy === null || input.dateField === null)
+        requireKindField(kind, presentView(tx, object, { ...row, config }));
+      const [updated] = await tx<ViewRow[]>`
       update views set
         name = ${input.name ?? row.name},
         kind = ${kind},
@@ -633,9 +644,11 @@ export async function updateView(
         updated_at = now()
       where id = ${id}
       returning *`;
-    if (!updated) throw notFound(`view ${id}`);
-    return presentView(tx, object, updated);
-  });
+      if (!updated) throw notFound(`view ${id}`);
+      return presentView(tx, object, updated);
+    },
+    true,
+  );
 }
 
 export async function deleteView(
@@ -643,11 +656,16 @@ export async function deleteView(
   caller: Caller,
   id: string,
 ): Promise<{ id: string; deleted: true }> {
-  return withViews(sql, caller, async (tx, schema) => {
-    await loadView(tx, schema, caller, id, true);
-    await tx`delete from views where id = ${id}`;
-    return { id, deleted: true };
-  });
+  return withViews(
+    sql,
+    caller,
+    async (tx, schema) => {
+      await loadView(tx, schema, caller, id, true);
+      await tx`delete from views where id = ${id}`;
+      return { id, deleted: true };
+    },
+    true,
+  );
 }
 
 /**

@@ -112,9 +112,9 @@ export type WriteLocks = {
 };
 
 /**
- * A record write's locks in one round trip: the schema lock (3), shared
- * unless the write rewrites what other writes resolve against, then the
- * privacy lock, shared or exclusive for `forget`. Postgres evaluates the
+ * A record write's locks in one round trip: privacy first (exclusive for
+ * `forget`), then schema (exclusive when rewriting what other writes resolve
+ * against). This matches the extension/source-import lock order. Postgres evaluates the
  * select list left to right, so the order matches taking them one at a time.
  */
 export async function lockForWrite(
@@ -126,7 +126,7 @@ export async function lockForWrite(
     mode === 'shared'
       ? tx`pg_advisory_xact_lock_shared(${lockClass}::int4, hashtext(${workspaceId}))`
       : tx`pg_advisory_xact_lock(${lockClass}::int4, hashtext(${workspaceId}))`;
-  await tx`select ${lock(SCHEMA_LOCK_CLASS, schema)}, ${lock(PRIVACY_LOCK_CLASS, privacy)}`;
+  await tx`select ${lock(PRIVACY_LOCK_CLASS, privacy)}, ${lock(SCHEMA_LOCK_CLASS, schema)}`;
 }
 
 /** Advisory-lock class for one consolidator run per workspace at a time (4.2). */

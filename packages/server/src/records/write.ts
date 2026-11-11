@@ -1,5 +1,5 @@
 import { type Actor, type ActorType, isProfileAlias } from '@retainer/shared';
-import type { CallerPerson } from '../caller.js';
+import type { CallerPerson, RunBinding } from '../caller.js';
 import { isUuid } from '../db/ids.js';
 import type { AssertionStatus, ReviewReason } from '../db/schema.js';
 import { jsonValue, type Tx } from '../db/tx.js';
@@ -15,6 +15,7 @@ import { compareAssertions, pickWinner, type RankedAssertion, reviewReason } fro
 export type WriteContext = {
   workspaceId: string;
   actor: Actor;
+  run?: RunBinding;
   schema: CompiledSchema;
   /** Agent assertions below this confidence wait for review (rule 2.3). */
   confidenceThreshold: number;

@@ -330,6 +330,83 @@
       "when": 1794378509987,
       "tag": "0046_extensions_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1794384100511,
+      "tag": "0047_extension_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1794384101293,
+      "tag": "0048_extension_jobs_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1794384372560,
+      "tag": "0049_extension_run_deadline",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1794384810025,
+      "tag": "0050_extension_write_budgets",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1794384810802,
+      "tag": "0051_extension_write_budget_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1794385071397,
+      "tag": "0052_extension_secret_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1794385072446,
+      "tag": "0053_extension_secrets",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1794385073234,
+      "tag": "0054_extension_secret_capabilities",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1794385535954,
+      "tag": "0055_extension_dispatch_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1794385537009,
+      "tag": "0056_extension_schedules",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1794385537802,
+      "tag": "0057_extension_schedule_security",
+      "breakpoints": true
     }
   ]
 }

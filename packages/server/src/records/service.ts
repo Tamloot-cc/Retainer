@@ -14,8 +14,9 @@ import { z } from 'zod';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
 import type { WorkspaceSettings } from '../db/schema.js';
-import { inWorkspace, lockForWrite, type Tx, type WriteLocks } from '../db/tx.js';
+import { inWorkspace, lockForWrite, lockSchemaShared, type Tx, type WriteLocks } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
+import { admitRun } from '../extension-runtime/admission.js';
 import { claimIdempotencyKey, requestHash, storeIdempotentResult } from '../idempotency.js';
 import { lockSource, retractEventClaims } from '../memory/events.js';
 import { lockPerson } from '../memory/profiles.js';
@@ -93,7 +94,7 @@ export async function withWrite<T>(
   locks: WriteLocks = {},
   { asPerson = true }: TransactionOptions = {},
 ): Promise<T> {
-  const person = asPerson ? caller.person : undefined;
+  const person = !caller.run && asPerson ? caller.person : undefined;
   for (let attempt = 0; ; attempt++) {
     try {
       return await inWorkspace(
@@ -101,12 +102,14 @@ export async function withWrite<T>(
         caller.workspaceId,
         async (tx) => {
           await lockForWrite(tx, caller.workspaceId, locks);
+          if (caller.run) await admitRun(tx, caller.workspaceId, caller.run, true);
           const schema = await getSchema(tx, caller.workspaceId);
           const [workspace] = await tx<{ settings: WorkspaceSettings }[]>`
             select settings from workspaces where id = ${caller.workspaceId}`;
           return fn(tx, {
             workspaceId: caller.workspaceId,
             actor: caller.actor,
+            ...(caller.run ? { run: caller.run } : {}),
             schema,
             confidenceThreshold:
               workspace?.settings.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD,
@@ -128,7 +131,8 @@ export async function withRead<T>(
   caller: Caller,
   fn: (tx: Tx, schema: CompiledSchema) => Promise<T>,
 ): Promise<T> {
-  const { person, workspaceId } = caller;
+  const { workspaceId } = caller;
+  const person = caller.run ? undefined : caller.person;
   return inWorkspace(
     sql,
     workspaceId,
@@ -137,6 +141,10 @@ export async function withRead<T>(
       // (search, an event's citations), so it holds their membership lock
       // and re-checks access first: a removal either committed before, and
       // the read is refused, or waits for it (personal memory spec 4.3).
+      if (caller.run) {
+        await lockSchemaShared(tx, workspaceId);
+        await admitRun(tx, workspaceId, caller.run);
+      }
       if (person) await lockPerson(tx, { workspaceId, person });
       return fn(tx, await getSchema(tx, workspaceId));
     },

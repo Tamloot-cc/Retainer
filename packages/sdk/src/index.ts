@@ -551,6 +551,53 @@ export class RetainerClient {
   installExtension(input: ExtensionInstallInput & { planDigest: string }, idempotencyKey: string) {
     return this.post<ExtensionInstallation>('/v1/extensions', input, undefined, idempotencyKey);
   }
+  extensionRuns(id: string, options: PageOptions = {}) {
+    const { signal, ...params } = options;
+    return this.get<{
+      runs: {
+        id: string;
+        functionId: string;
+        status: string;
+        attempt: number;
+        generation: number;
+        releaseDigest: string;
+        code: string | null;
+        createdAt: string;
+        updatedAt: string;
+      }[];
+      nextCursor: string | null;
+    }>(`/v1/extensions/${encodeURIComponent(id)}/runs`, params, signal);
+  }
+  retryExtensionRun(id: string, runId: string, idempotencyKey: string) {
+    return this.post<{ id: string; status: string }>(
+      `/v1/extensions/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/retry`,
+      undefined,
+      undefined,
+      idempotencyKey,
+    );
+  }
+  upgradeExtension(
+    id: string,
+    input: ExtensionInstallInput & { planDigest: string },
+    idempotencyKey: string,
+  ) {
+    return this.post<ExtensionInstallation>(
+      `/v1/extensions/${encodeURIComponent(id)}/upgrade`,
+      { ...input, installationId: id },
+      undefined,
+      idempotencyKey,
+    );
+  }
+  updateExtensionSettings(
+    id: string,
+    input: { expectedRevision: number; settings: ExtensionInstallInput['settings'] },
+  ) {
+    return this.send<ExtensionInstallation>(
+      'PATCH',
+      `/v1/extensions/${encodeURIComponent(id)}/settings`,
+      input,
+    );
+  }
   disableExtension(id: string) {
     return this.post<ExtensionInstallation>(`/v1/extensions/${encodeURIComponent(id)}/disable`);
   }

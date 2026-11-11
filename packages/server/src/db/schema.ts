@@ -1427,7 +1427,10 @@ export const extensionInstallations = pgTable(
   (t) => [
     unique('extension_installations_ws_id_uq').on(t.workspaceId, t.id),
     unique('extension_installations_registration_uq').on(t.workspaceId, t.registrationId),
-    check('extension_installations_state', sql`${t.state} in ('disabled', 'uninstalled')`),
+    check(
+      'extension_installations_state',
+      sql`${t.state} in ('installing', 'active', 'setup_failed', 'disabled', 'upgrading', 'uninstalling', 'uninstalled')`,
+    ),
     check('extension_installations_actor', sql`${t.grantedActor} in ('agent', 'integration')`),
     check('extension_installations_generation', sql`${t.generation} > 0`),
     pgPolicy('extension_installations_workspace', {
@@ -1488,6 +1491,217 @@ export const extensionReceipts = pgTable(
     index('extension_receipts_install_idx').on(t.workspaceId, t.installationId),
     unique('extension_receipts_key_uq').on(t.workspaceId, t.key),
     pgPolicy('extension_receipts_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionJobs = pgTable(
+  'extension_jobs',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    generation: integer('generation').notNull(),
+    releaseDigest: text('release_digest').notNull(),
+    functionId: uuid('function_id').notNull(),
+    input: jsonb('input').notNull(),
+    inputHash: text('input_hash').notNull(),
+    dedupeKey: text('dedupe_key').notNull(),
+    cause: jsonb('cause').$type<string[]>().notNull().default([]),
+    status: text('status').notNull().default('queued'),
+    leaseOwner: text('lease_owner'),
+    fence: bigint('fence', { mode: 'number' }).notNull().default(0),
+    leaseUntil: timestamptz('lease_until'),
+    runUntil: timestamptz('run_until'),
+    attempt: integer('attempt').notNull().default(0),
+    cycleAttempt: integer('cycle_attempt').notNull().default(0),
+    availableAt: timestamptz('available_at').notNull().defaultNow(),
+    expiresAt: timestamptz('expires_at').notNull().default(sql`now() + interval '24 hours'`),
+    code: text('code'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('extension_jobs_ws_id_uq').on(t.workspaceId, t.id),
+    unique('extension_jobs_dedupe_uq').on(
+      t.workspaceId,
+      t.installationId,
+      t.generation,
+      t.dedupeKey,
+    ),
+    uniqueIndex('extension_jobs_one_running_uq')
+      .on(t.workspaceId, t.installationId)
+      .where(sql`${t.status} = 'running'`),
+    index('extension_jobs_due_idx').on(t.status, t.availableAt),
+    index('extension_jobs_install_idx').on(t.workspaceId, t.installationId, t.createdAt),
+    tenantFk(
+      'extension_jobs_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    check(
+      'extension_jobs_status',
+      sql`${t.status} in ('queued', 'running', 'succeeded', 'failed', 'cancelled')`,
+    ),
+    pgPolicy('extension_jobs_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionAttempts = pgTable(
+  'extension_attempts',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    jobId: uuid('job_id').notNull(),
+    attempt: integer('attempt').notNull(),
+    fence: bigint('fence', { mode: 'number' }).notNull(),
+    status: text('status').notNull(),
+    code: text('code'),
+    startedAt: timestamptz('started_at').notNull().defaultNow(),
+    finishedAt: timestamptz('finished_at'),
+  },
+  (t) => [
+    tenantFk(
+      'extension_attempts_job_fk',
+      [t.workspaceId, t.jobId],
+      [extensionJobs.workspaceId, extensionJobs.id],
+    ),
+    unique('extension_attempts_job_attempt_uq').on(t.workspaceId, t.jobId, t.attempt),
+    pgPolicy('extension_attempts_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionKv = pgTable(
+  'extension_kv',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    key: text('key').notNull(),
+    value: jsonb('value').notNull(),
+    revision: integer('revision').notNull().default(1),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId, t.key] }),
+    tenantFk(
+      'extension_kv_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    check('extension_kv_value_size', sql`octet_length(${t.value}::text) <= 65536`),
+    pgPolicy('extension_kv_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionWriteBudgets = pgTable(
+  'extension_write_budgets',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    windowStart: timestamptz('window_start').notNull(),
+    count: integer('count').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId] }),
+    tenantFk(
+      'extension_write_budgets_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    pgPolicy('extension_write_budgets_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionPendingSecrets = pgTable(
+  'extension_pending_secrets',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    draftInstallationId: uuid('draft_installation_id').notNull(),
+    registrationId: uuid('registration_id').notNull(),
+    name: text('name').notNull(),
+    envelope: jsonb('envelope').notNull(),
+    createdBy: jsonb('created_by').$type<Actor>().notNull(),
+    createdAt: createdAt(),
+    expiresAt: timestamptz('expires_at').notNull().default(sql`now()+interval '15 minutes'`),
+    consumedAt: timestamptz('consumed_at'),
+  },
+  (t) => [
+    index('extension_pending_secrets_ws_expiry_idx').on(t.workspaceId, t.expiresAt),
+    pgPolicy('extension_pending_secrets_workspace', {
+      for: 'all',
+      to: 'retainer_secret_broker',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const extensionSecrets = pgTable(
+  'extension_secrets',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    name: text('name').notNull(),
+    envelope: jsonb('envelope').notNull(),
+    revision: integer('revision').notNull().default(1),
+    deleteAfter: timestamptz('delete_after'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId, t.name] }),
+    tenantFk(
+      'extension_secrets_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    pgPolicy('extension_secrets_workspace', {
+      for: 'all',
+      to: 'retainer_secret_broker',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionSchedules = pgTable(
+  'extension_schedules',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    functionId: uuid('function_id').notNull(),
+    nextDueAt: timestamptz('next_due_at').notNull(),
+    lastOccurrence: timestamptz('last_occurrence'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId, t.functionId] }),
+    tenantFk(
+      'extension_schedules_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    pgPolicy('extension_schedules_workspace', {
       for: 'all',
       to: 'retainer_app',
       using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,

@@ -26,6 +26,21 @@ export function registerExtensionTools(server: McpServer, extensions: Extensions
     ({ id }) => run(caller, 'read', () => extensions.get(caller, id)),
   );
   server.registerTool(
+    'list_extension_runs',
+    {
+      description:
+        'List paginated extension run status and safe error codes. Provider payloads, tokens and inputs are omitted.',
+      inputSchema: z.strictObject({
+        id: z.uuid(),
+        limit: z.number().int().min(1).max(100).default(50),
+        cursor: z.string().optional(),
+      }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    ({ id, limit, cursor }) =>
+      run(caller, 'read', () => extensions.runs(caller, id, limit, cursor)),
+  );
+  server.registerTool(
     'preview_extension',
     {
       description:

@@ -19,7 +19,11 @@ export const NO_PERSON_SCOPE = '00000000-0000-0000-0000-000000000000';
  * Who claims a key: the write's workspace and the person behind the
  * credential, if any, so two people never share a claim.
  */
-export type Claimant = { workspaceId: string; person?: { id: string } | undefined };
+export type Claimant = {
+  workspaceId: string;
+  person?: { id: string } | undefined;
+  run?: { installationId: string; generation: number };
+};
 
 /**
  * Claims a caller's idempotency key for one operation (6.2), in the same
@@ -47,6 +51,8 @@ export async function claimIdempotencyKey(
     throw new AppError(400, 'invalid_request', 'Idempotency-Key must be 1 to 200 characters');
   }
   const { workspaceId } = claimant;
+  if (claimant.run)
+    operation = `${operation}:extension:${claimant.run.installationId}:${claimant.run.generation}`;
   const personId = claimant.person?.id;
   const personScope = personId ?? NO_PERSON_SCOPE;
   const privateTo = isPrivate && personId ? personId : null;

@@ -75,3 +75,46 @@ Do not deploy or describe this slice as an operational extension platform.
   before its dependents. The resulting image applies migrations and starts;
   `/health` reports database OK and unauthenticated catalog requests return 401.
 - No UI, hosted staging, provider calls or deployment were tested in this slice.
+
+## Control and execution foundation continuation
+
+The next implementation commit adds:
+
+- Additive upgrade planning against recorded contribution ownership, preserved
+  local renames/deprecation, explicit structural/view conflicts, grant increases
+  refused, and durable upgrade receipts. Settings updates use revision CAS and
+  fence prior runs; account settings require reconnect.
+- Workspace RLS jobs, attempts, KV, schedules and write budgets. Claims use
+  leases, monotonic fences, attempt deadlines and short transactions. Checkpoint
+  and child enqueue commit together, including queue/KV quota enforcement.
+- One run per installation, four per workspace and 32 per instance, with one
+  candidate per installation in discovery. A separate coordinator role discovers
+  due IDs; it cannot select job payloads directly.
+- Ed25519 run credentials with a dedicated audience and at most five minutes of
+  validity. CRM writes/reads and view operations recheck lease/generation inside
+  their transactions. Revocation waits for admitted writes. Run idempotency is
+  installation/generation scoped, and CRM writes consume an installation budget.
+- Encrypted pending secrets bound to workspace/installation/registration/name,
+  opaque approval references, broker-only ciphertext permissions, key versions,
+  rotation CAS, run-only retrieval and uninstall deletion deadlines. There is no
+  plaintext provider credential in settings, plans or install receipts.
+- Paginated redacted run diagnostics, durable human-admin retry, read-only MCP
+  run listing, and SDK methods for upgrades/settings/runs.
+- UTC schedule coalescing and a trusted executor protocol that pins artifact,
+  handler and release digests. Tests use an explicitly in-process fixture driver;
+  this is not production isolation evidence.
+
+The write lock order is now privacy then schema, followed by installation and
+run admission, replacing the prerequisite noted above. Existing data/privacy
+regression tests pass with that order.
+
+Current production gates remain: catalog empty, installs disabled, enable
+refused. Signers, brokers, registries and drivers currently require trusted
+injection. Entry-point/configuration wiring, isolated drivers, lifecycle setup
+and cleanup, reconnect/provider OAuth, files/source revisions/erasure/feed,
+Granola, standalone grants and UI remain to be completed. The capability tables
+and test fixture activation do not mean those delivery phases are finished.
+
+Verification: full suite passes with 998 server tests; a subsequent focused run
+also passes the new competing-workspace-capacity case. Typecheck/build/lint and
+layer checks pass. No deployment or provider calls have been performed.

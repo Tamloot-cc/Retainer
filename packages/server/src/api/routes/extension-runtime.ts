@@ -1,0 +1,105 @@
+import type { Hono } from 'hono';
+import { z } from 'zod';
+import type { Sql } from '../../db/client.js';
+import { inWorkspace, lockSchemaShared } from '../../db/tx.js';
+import { AppError, notFound } from '../../errors.js';
+import { admitRun } from '../../extension-runtime/admission.js';
+import { ExtensionQueue, type Lease } from '../../extension-runtime/queue.js';
+import type { SecretBroker } from '../../extension-runtime/secrets.js';
+import type { ExtensionCatalog } from '../../extensions/catalog.js';
+import { idParam, readBody } from '../../http/request.js';
+import type { AppEnv } from '../../http/response.js';
+
+/** A run-only surface. Admin credentials cannot impersonate an installed function. */
+export function runtimeRoutes(
+  app: Hono<AppEnv>,
+  sql: Sql,
+  catalog: ExtensionCatalog,
+  broker?: SecretBroker,
+) {
+  const queue = new ExtensionQueue(sql, (id, version, digest) => {
+    const release = catalog.get(id, version);
+    if (release.digest !== digest)
+      throw new AppError(409, 'incompatible_runtime', 'release digest does not match');
+    return release.manifest;
+  });
+  app.post('/extensions/:id/runs/:run/retry', async (c) =>
+    c.json(
+      await queue.retry(
+        c.get('caller'),
+        idParam(c),
+        idParam(c, 'run'),
+        c.req.header('Idempotency-Key') ?? '',
+      ),
+    ),
+  );
+  app.use('/extensions/:id/runtime/*', async (c, next) => {
+    const caller = c.get('caller'),
+      id = idParam(c);
+    if (!caller.run)
+      throw new AppError(403, 'forbidden', 'this endpoint requires a live run credential');
+    if (caller.run.installationId !== id) throw notFound('extension installation');
+    await next();
+  });
+  const lease = (caller: AppEnv['Variables']['caller']): Lease => {
+    if (!caller.run) throw new AppError(403, 'forbidden', 'run credential required');
+    return { workspaceId: caller.workspaceId, ...caller.run };
+  };
+  app.get('/extensions/:id/runtime/secrets/:name', async (c) => {
+    if (!broker) throw new AppError(503, 'connection_required', 'secret broker is not configured');
+    const caller = c.get('caller'),
+      run = caller.run;
+    if (!run) throw new AppError(403, 'forbidden', 'run credential required');
+    return c.json(
+      await inWorkspace(sql, caller.workspaceId, async (tx) => {
+        await lockSchemaShared(tx, caller.workspaceId);
+        await admitRun(tx, caller.workspaceId, run);
+        const [installation] = await tx<
+          { version: string }[]
+        >`select version from extension_installations where id=${run.installationId}`;
+        if (!installation) throw notFound('extension installation');
+        const release = catalog.get(run.registrationId, installation.version),
+          name = c.req.param('name');
+        if (release.digest !== run.releaseDigest || !release.manifest.settings[name]?.secret)
+          throw notFound('connection secret');
+        return broker.read({
+          workspaceId: caller.workspaceId,
+          installationId: run.installationId,
+          registrationId: run.registrationId,
+          name,
+        });
+      }),
+    );
+  });
+  app.get('/extensions/:id/runtime/kv/:key', async (c) =>
+    c.json(await queue.getKv(lease(c.get('caller')), c.req.param('key'))),
+  );
+  app.post('/extensions/:id/runtime/checkpoint', async (c) =>
+    c.json(
+      await queue.checkpoint(
+        lease(c.get('caller')),
+        await readBody(
+          c,
+          z.strictObject({
+            children: z
+              .array(
+                z.strictObject({
+                  functionId: z.uuid(),
+                  input: z.json(),
+                  dedupeKey: z.string().min(1).max(500),
+                }),
+              )
+              .max(1000),
+            kv: z
+              .strictObject({
+                key: z.string().min(1).max(200),
+                expectedRevision: z.number().int().positive().nullable(),
+                value: z.json(),
+              })
+              .optional(),
+          }),
+        ),
+      ),
+    ),
+  );
+}

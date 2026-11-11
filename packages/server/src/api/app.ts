@@ -8,6 +8,8 @@ import { meRoute, sessionRoutes } from '../auth/session.js';
 import { publicOriginSchema } from '../config.js';
 import type { Sql } from '../db/client.js';
 import { AppError } from '../errors.js';
+import type { SecretBroker } from '../extension-runtime/secrets.js';
+import type { RunTokens } from '../extension-runtime/tokens.js';
 import type { ExtensionCatalog } from '../extensions/catalog.js';
 import { Extensions } from '../extensions/service.js';
 import { type RateLimit, rateLimit } from '../http/rate-limit.js';
@@ -15,6 +17,7 @@ import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
 import { mcpRoute } from '../mcp/route.js';
 import { VERSION } from '../version.js';
 import { commentRoutes } from './routes/comments.js';
+import { runtimeRoutes } from './routes/extension-runtime.js';
 import { extensionRoutes } from './routes/extensions.js';
 import { memoryRoutes } from './routes/memory.js';
 import { recordRoutes } from './routes/records.js';
@@ -28,6 +31,8 @@ export type AppDeps = {
   /** A pool connected as the runtime role, so RLS applies to every query. */
   sql: Sql;
   extensionCatalog?: ExtensionCatalog;
+  runTokens?: RunTokens;
+  extensionSecrets?: SecretBroker;
   webDir?: string;
   publicOrigin?: string;
   /**
@@ -61,7 +66,14 @@ export function createApp(deps: AppDeps) {
   if (!deps.accountsSecret) sessionRoutes(app, deps.sql, publicOrigin);
   const v1 = new Hono<AppEnv>();
   const limit = rateLimit(deps.sql, deps.rateLimit ?? { limit: 0 });
-  v1.use('*', authenticate(deps.sql, { publicOrigin, accountsSecret: deps.accountsSecret }));
+  v1.use(
+    '*',
+    authenticate(deps.sql, {
+      publicOrigin,
+      accountsSecret: deps.accountsSecret,
+      runTokens: deps.runTokens,
+    }),
+  );
   v1.use('*', limit);
   meRoute(v1, deps.sql);
   webReadRoutes(v1, deps.sql);
@@ -72,7 +84,9 @@ export function createApp(deps: AppDeps) {
   commentRoutes(v1, deps.sql);
   retrievalRoutes(v1, deps.sql);
   viewRoutes(v1, deps.sql);
-  extensionRoutes(v1, new Extensions(deps.sql, deps.extensionCatalog));
+  const extensions = new Extensions(deps.sql, deps.extensionCatalog, deps.extensionSecrets);
+  extensionRoutes(v1, extensions);
+  runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets);
   app.route('/v1', v1);
 
   // Accounts mode: apps connect to /mcp over OAuth as well as with API keys

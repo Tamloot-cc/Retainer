@@ -34,6 +34,7 @@ const TOOLS = [
   'get_record',
   'get_timeline',
   'list_comments',
+  'list_extension_runs',
   'list_extensions',
   'list_templates',
   'log_event',

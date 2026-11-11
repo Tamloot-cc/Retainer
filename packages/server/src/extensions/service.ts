@@ -15,13 +15,18 @@ import {
   type Tx,
 } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
+import { admitRun } from '../extension-runtime/admission.js';
+import { cancelRuns, lockExtension as lockInstallation } from '../extension-runtime/locks.js';
+import { pendingSecrets, type SecretBroker } from '../extension-runtime/secrets.js';
 import { loadSchemaState } from '../schema/load.js';
 import { planSchemaChange, runSchemaChange } from '../schema-engine/engine.js';
-import { type SchemaOperation, schemaOperationSchema } from '../schema-engine/operations.js';
 import { createViewInTransaction } from '../views/service.js';
 import { ExtensionCatalog, hash } from './catalog.js';
+import { type ContributionRow, contributionOperations } from './contributions.js';
 
 export const installInputSchema = z.strictObject({
+  installationId: z.uuid().optional(),
+  secretRefs: z.record(z.string(), z.uuid()).optional(),
   registrationId: z.uuid(),
   version: z.string().regex(/^\d+\.\d+\.\d+$/),
   settings: z.record(z.string(), z.union([z.string(), z.boolean(), z.number().finite()])),
@@ -51,6 +56,7 @@ type Row = {
   settings: ExtensionInstallation['settings'];
   granted_actor: ExtensionInstallation['grantedActor'];
   granted_scopes: ExtensionInstallation['grantedScopes'];
+  secret_names?: string[];
   created_by: ExtensionInstallation['createdBy'];
 };
 function present(r: Row): ExtensionInstallation {
@@ -62,39 +68,122 @@ function present(r: Row): ExtensionInstallation {
     state: r.state,
     generation: r.generation,
     settingsRevision: r.settings_revision,
+    secrets: Object.fromEntries((r.secret_names ?? []).map((name) => [name, true])),
     settings: r.settings,
     grantedActor: r.granted_actor,
     grantedScopes: r.granted_scopes,
     createdBy: r.created_by,
   };
 }
-async function lockInstallation(tx: Tx, workspace: string, registration: string) {
-  await tx`select pg_advisory_xact_lock(21061::int4, hashtext(${`${workspace}:${registration}`}))`;
-}
 
 export class Extensions {
   constructor(
     private readonly sql: Sql,
     readonly catalog = new ExtensionCatalog(),
+    readonly secrets?: SecretBroker,
   ) {}
+
+  async stageSecret(
+    caller: Caller,
+    input: {
+      registrationId: string;
+      version: string;
+      installationId?: string;
+      name: string;
+      value: string;
+    },
+  ) {
+    human(caller);
+    const release = this.catalog.get(input.registrationId, input.version);
+    if (!release.manifest.settings[input.name]?.secret)
+      throw new AppError(422, 'invalid_secret', 'setting is not a declared secret');
+    if (!this.secrets)
+      throw new AppError(503, 'connection_required', 'secret broker is not configured');
+    return this.secrets.stage(caller, input);
+  }
 
   async list(caller: Caller) {
     scope(caller, 'read');
-    return inWorkspace(this.sql, caller.workspaceId, async (tx) => ({
-      installations: (
-        await tx<Row[]>`select * from extension_installations order by created_at, id`
-      ).map(present),
-    }));
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      if (caller.run) {
+        await lockSchemaShared(tx, caller.workspaceId);
+        await admitRun(tx, caller.workspaceId, caller.run);
+      }
+      return {
+        installations: (
+          await tx<
+            Row[]
+          >`select i.*,retainer_extension_secret_names(i.id) as secret_names from extension_installations i ${caller.run ? tx`where i.id = ${caller.run.installationId}` : tx``} order by i.created_at, i.id`
+        ).map(present),
+      };
+    });
   }
   async get(caller: Caller, id: string) {
+    if (caller.run && caller.run.installationId !== id) throw notFound('extension installation');
     scope(caller, 'read');
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      if (caller.run) {
+        await lockSchemaShared(tx, caller.workspaceId);
+        await admitRun(tx, caller.workspaceId, caller.run);
+      }
       const [row] = await tx<Row[]>`select * from extension_installations where id = ${id}`;
       if (!row) throw notFound('extension installation');
       const contributions =
         await tx`select kind, universal_id as "universalId", element_id as "elementId"
         from extension_contributions where installation_id = ${id} order by kind, universal_id`;
-      return { ...present(row), contributions };
+      const [presence] = await tx<
+        { names: string[] }[]
+      >`select retainer_extension_secret_names(${id}::uuid) as names`;
+      return {
+        ...present(row),
+        secrets: Object.fromEntries((presence?.names ?? []).map((name) => [name, true])),
+        contributions,
+      };
+    });
+  }
+
+  async runs(caller: Caller, id: string, limit = 50, cursor?: string) {
+    scope(caller, 'read');
+    if (caller.run && caller.run.installationId !== id) throw notFound('extension installation');
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new AppError(400, 'invalid_request', 'limit must be between 1 and 100');
+    let after: string | undefined;
+    if (cursor) {
+      const parsed = z.uuid().safeParse(Buffer.from(cursor, 'base64url').toString());
+      if (!parsed.success) throw new AppError(400, 'invalid_request', 'invalid run cursor');
+      after = parsed.data;
+    }
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await lockSchemaShared(tx, caller.workspaceId);
+      if (caller.run) await admitRun(tx, caller.workspaceId, caller.run);
+      const [installation] = await tx`select id from extension_installations where id=${id}`;
+      if (!installation) throw notFound('extension installation');
+      const rows = await tx<
+        {
+          id: string;
+          functionId: string;
+          status: string;
+          attempt: number;
+          generation: number;
+          releaseDigest: string;
+          code: string | null;
+          createdAt: Date;
+          updatedAt: Date;
+        }[]
+      >`
+        select id,function_id as "functionId",status,attempt,generation,release_digest as "releaseDigest",code,
+          created_at as "createdAt",updated_at as "updatedAt" from extension_jobs where installation_id=${id}
+          ${after ? tx`and id<${after}::uuid` : tx``} order by id desc limit ${limit + 1}`;
+      const page = rows.slice(0, limit),
+        last = page.at(-1);
+      return {
+        runs: page.map((r) => ({
+          ...r,
+          createdAt: r.createdAt.toISOString(),
+          updatedAt: r.updatedAt.toISOString(),
+        })),
+        nextCursor: rows.length > limit && last ? Buffer.from(last.id).toString('base64url') : null,
+      };
     });
   }
 
@@ -114,8 +203,7 @@ export class Extensions {
         );
     }
     for (const [key, definition] of Object.entries(manifest.settings)) {
-      if (definition.secret)
-        throw conflict('connection_required', 'secret broker support is required for this release');
+      if (definition.secret) continue;
       if (definition.required && input.settings[key] === undefined)
         throw new AppError(422, 'invalid_settings', 'required setting missing', { key });
     }
@@ -126,18 +214,76 @@ export class Extensions {
     const [existing] = await tx<
       Row[]
     >`select * from extension_installations where registration_id = ${input.registrationId}`;
-    if (existing && existing.state !== 'uninstalled')
+    if (input.installationId && (!existing || existing.id !== input.installationId))
+      throw notFound('extension installation');
+    if (input.installationId && existing?.state === 'uninstalled')
+      throw conflict('upgrade_conflict', 'reinstall before upgrading');
+    if (!input.installationId && existing && existing.state !== 'uninstalled')
       throw conflict('upgrade_conflict', 'installation exists; use a validated upgrade');
-    if (existing && existing.release_digest !== release.digest)
+    if (!input.installationId && existing && existing.release_digest !== release.digest)
       throw conflict(
         'upgrade_conflict',
-        'reinstall requires the retained release; upgrades are not yet supported',
+        'reinstall requires the retained release; apply a validated upgrade afterward',
       );
+    if (
+      existing &&
+      Object.entries(manifest.settings).some(
+        ([key, def]) => def.reconnect && hash(existing.settings[key]) !== hash(input.settings[key]),
+      )
+    )
+      throw conflict('connection_required', 'account settings require explicit reconnect');
+    const refs = input.secretRefs ?? {};
+    const pending = await pendingSecrets(tx, Object.values(refs));
+    if (pending.length !== Object.keys(refs).length)
+      throw conflict(
+        'connection_required',
+        'a pending secret reference expired or was already used',
+      );
+    const draftId = existing?.id ?? pending[0]?.draft_installation_id;
+    for (const [name, id] of Object.entries(refs)) {
+      const definition = manifest.settings[name],
+        staged = pending.find((p) => p.id === id);
+      if (
+        !definition?.secret ||
+        !staged ||
+        staged.name !== name ||
+        staged.registration_id !== input.registrationId ||
+        staged.draft_installation_id !== draftId
+      )
+        throw conflict(
+          'connection_required',
+          'pending secret is not bound to this installation and setting',
+        );
+      if (existing && existing.state !== 'uninstalled')
+        throw conflict('connection_required', 'credential changes require reconnect');
+    }
+    const [stored] = existing
+      ? await tx<
+          { names: string[] }[]
+        >`select retainer_extension_secret_names(${existing.id}::uuid) as names`
+      : [];
+    for (const [name, definition] of Object.entries(manifest.settings))
+      if (
+        definition.secret &&
+        definition.required &&
+        !Object.hasOwn(refs, name) &&
+        !stored?.names.includes(name)
+      )
+        throw conflict('connection_required', `required secret ${name} is missing`);
     const current = await loadSchemaState(tx, caller.workspaceId);
-    const operations: SchemaOperation[] = [];
+    if (
+      existing &&
+      (manifest.requestedActor !== existing.granted_actor ||
+        manifest.scopes.some((scope) => !existing.granted_scopes.includes(scope)))
+    )
+      throw conflict(
+        'grant_required',
+        'this release requires a separately approved grant increase',
+      );
     const owned = existing
-      ? await tx<{ kind: string; universal_id: string }[]>`
-      select kind, universal_id from extension_contributions where installation_id = ${existing.id}`
+      ? await tx<
+          ContributionRow[]
+        >`select kind, universal_id, element_id, definition from extension_contributions where installation_id = ${existing.id}`
       : [];
     const owns = (kind: string, id: string) =>
       owned.some((o) => o.kind === kind && o.universal_id === id);
@@ -157,31 +303,7 @@ export class Extensions {
     );
     if ([...targets, ...relationTargets].some((id) => HIDDEN_TYPE_IDS.has(id)))
       throw conflict('schema_binding_conflict', 'extensions cannot target internal memory types');
-    for (const contribution of manifest.schema) {
-      const id = contribution.definition.universalId;
-      const found =
-        contribution.kind === 'object'
-          ? current.objects.find((o) => o.universalId === id)
-          : current.objects.flatMap((o) => o.fields).find((f) => f.universalId === id);
-      if (found) {
-        if (!owns(contribution.kind, id))
-          throw conflict(
-            'schema_binding_conflict',
-            `schema identity ${id} belongs to another source`,
-          );
-        // Reinstallation preserves all workspace customizations, including deprecation.
-        continue;
-      }
-      if (owns(contribution.kind, id))
-        throw conflict('schema_binding_conflict', `retained schema identity ${id} was removed`);
-      operations.push(
-        schemaOperationSchema.parse(
-          contribution.kind === 'object'
-            ? { op: 'create_object', object: contribution.definition }
-            : { op: 'create_field', object: contribution.objectId, field: contribution.definition },
-        ),
-      );
-    }
+    const operations = contributionOperations(current, manifest, owned);
     const planned = planSchemaChange(current, operations, 'workspace');
     for (const view of manifest.views) {
       const [manager] = await tx<
@@ -193,7 +315,17 @@ export class Extensions {
           'schema_binding_conflict',
           `view ${view.universalId} belongs to another installation`,
         );
-      if (owns('view', view.universalId)) continue;
+      if (owns('view', view.universalId)) {
+        const retained = owned.find(
+          (c) => c.kind === 'view' && c.universal_id === view.universalId,
+        );
+        if (retained && hash(retained.definition) !== hash(view))
+          throw conflict(
+            'upgrade_conflict',
+            `view ${view.universalId} changed; use a new view identity`,
+          );
+        continue;
+      }
       const object = planned.desired.objects.find(
         (o) => o.universalId === view.objectId && o.status === 'active',
       );
@@ -230,6 +362,9 @@ export class Extensions {
         release: release.digest,
         settings: input.settings,
         settingsRevision: existing?.settings_revision ?? 0,
+        secretRefs: refs,
+        draftId,
+        operation: input.installationId ? 'upgrade' : 'install',
       }),
       schemaVersion: workspace.schema_version,
       generation,
@@ -245,7 +380,7 @@ export class Extensions {
         'Runtime activation is unavailable. This installation remains disabled and cannot ingest data.',
       ],
     };
-    return { preview, release, operations, existing };
+    return { preview, release, operations, existing, draftId };
   }
 
   async preview(caller: Caller, input: ExtensionInstallInput) {
@@ -305,16 +440,28 @@ export class Extensions {
       });
       if (result.status !== 'applied' && result.status !== 'unchanged')
         throw conflict('schema_binding_conflict', 'extension schema could not be applied');
+      if (plan.existing) await cancelRuns(tx, plan.existing.id);
       const manifest = plan.release.manifest;
       const [row] = await tx<Row[]>`insert into extension_installations
-        (workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, settings, created_by)
-        values (${caller.workspaceId}, ${manifest.universalId}, ${manifest.version}, ${plan.release.digest},
+        (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, settings, created_by)
+        values (${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId}, ${manifest.universalId}, ${manifest.version}, ${plan.release.digest},
           ${manifest.requestedActor}, ${tx.json(manifest.scopes)}, ${tx.json(input.settings)}, ${tx.json(caller.actor)})
         on conflict (workspace_id, registration_id) do update set state = 'disabled',
+          version = excluded.version, release_digest = excluded.release_digest,granted_scopes=excluded.granted_scopes,
           generation = extension_installations.generation + 1, settings = excluded.settings,
           settings_revision = extension_installations.settings_revision + 1, updated_at = now()
         returning *`;
       if (!row) throw new Error('installation insert returned no row');
+      for (const [name, reference] of Object.entries(input.secretRefs ?? {})) {
+        const [adopted] = await tx<
+          { ok: boolean }[]
+        >`select retainer_adopt_extension_secret(${reference}::uuid,${row.id}::uuid,${manifest.universalId}::uuid,${name}) as ok`;
+        if (!adopted?.ok)
+          throw conflict(
+            'connection_required',
+            'pending secret expired before installation completed',
+          );
+      }
       const schema = await loadSchemaState(tx, caller.workspaceId);
       const save = async (
         kind: string,
@@ -324,7 +471,8 @@ export class Extensions {
       ) => {
         await tx`insert into extension_contributions (workspace_id, installation_id, kind, universal_id, element_id, definition)
           values (${caller.workspaceId}, ${row.id}, ${kind}, ${universalId}, ${elementId}, ${tx.json(jsonValue(definition))})
-          on conflict (workspace_id, kind, universal_id) do nothing`;
+          on conflict (workspace_id, kind, universal_id) do update set definition = excluded.definition
+            where extension_contributions.installation_id = excluded.installation_id`;
       };
       for (const c of manifest.schema) {
         const element =
@@ -365,10 +513,68 @@ export class Extensions {
         });
         await save('view', view.universalId, created.id, view);
       }
+      const [presence] = await tx<
+        { names: string[] }[]
+      >`select retainer_extension_secret_names(${row.id}::uuid) as names`;
+      row.secret_names = presence?.names ?? [];
       const response = present(row);
       await tx`insert into extension_receipts (workspace_id, key, request_hash, installation_id, generation, response)
         values (${caller.workspaceId}, ${key}, ${requestHash}, ${row.id}, ${row.generation}, ${tx.json(jsonValue(response))})`;
       return response;
+    });
+  }
+
+  async updateSettings(
+    caller: Caller,
+    id: string,
+    input: { expectedRevision: number; settings: ExtensionInstallInput['settings'] },
+  ) {
+    human(caller);
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await lockSchemaShared(tx, caller.workspaceId);
+      const [candidate] = await tx<Row[]>`select * from extension_installations where id = ${id}`;
+      if (!candidate) throw notFound('extension installation');
+      await lockInstallation(tx, caller.workspaceId, candidate.registration_id);
+      const [current] = await tx<Row[]>`select * from extension_installations where id = ${id}`;
+      if (!current) throw notFound('extension installation');
+      if (current.state === 'uninstalled')
+        throw conflict('installation_disabled', 'reinstall before changing settings');
+      if (current.settings_revision !== input.expectedRevision)
+        throw conflict('stale_plan', 'settings revision changed');
+      const release = this.catalog.get(current.registration_id, current.version);
+      if (hash(input.settings) === hash(current.settings)) return present(current);
+      // Account/credential changes need a reconnect flow; never treat them as ordinary settings.
+      for (const [key, definition] of Object.entries(release.manifest.settings)) {
+        if (
+          (definition.secret && Object.hasOwn(input.settings, key)) ||
+          (definition.reconnect && hash(current.settings[key]) !== hash(input.settings[key]))
+        )
+          throw conflict(
+            'connection_required',
+            'use reconnect to change provider credentials or account settings',
+          );
+        if (!definition.secret && definition.required && input.settings[key] === undefined)
+          throw new AppError(422, 'invalid_settings', 'required setting missing', { key });
+      }
+      if (Buffer.byteLength(JSON.stringify(input.settings)) > 65536)
+        throw new AppError(413, 'quota_exceeded', 'settings exceed 64 KiB');
+      for (const [key, value] of Object.entries(input.settings)) {
+        const definition = release.manifest.settings[key];
+        if (!definition || typeof value !== definition.type || definition.secret)
+          throw new AppError(
+            422,
+            'invalid_settings',
+            'unknown, secret or incorrectly typed setting',
+            { key },
+          );
+      }
+      const [updated] = await tx<
+        Row[]
+      >`update extension_installations set settings = ${tx.json(input.settings)},
+        settings_revision = settings_revision + 1, generation = generation + 1, state = 'disabled', updated_at = now()
+        where id = ${id} returning *`;
+      if (!updated) throw notFound('extension installation');
+      return present(updated);
     });
   }
 
@@ -384,10 +590,12 @@ export class Extensions {
       const [current] = await tx<Row[]>`select * from extension_installations where id = ${id}`;
       if (!current) throw notFound('extension installation');
       if (current.state === 'uninstalled' && state === 'disabled') return present(current);
+      await cancelRuns(tx, id);
       const [row] = await tx<Row[]>`update extension_installations set state = ${state},
         generation = generation + case when state = ${state} then 0 else 1 end, updated_at = now()
         where id = ${id} returning *`;
       if (!row) throw notFound('extension installation');
+      if (state === 'uninstalled') await tx`select retainer_retire_extension_secrets(${id}::uuid)`;
       return present(row);
     });
   }

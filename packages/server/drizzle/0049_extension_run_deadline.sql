@@ -1,0 +1,1 @@
+ALTER TABLE "extension_jobs" ADD COLUMN "run_until" timestamp with time zone;

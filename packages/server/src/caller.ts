@@ -9,6 +9,8 @@ import type { ApiKeyScope } from './db/schema.js';
 export type Caller = {
   workspaceId: string;
   actor: Actor;
+  /** A signed, installation-bound execution credential; never reaches personal memory. */
+  run?: RunBinding;
   scopes: readonly ApiKeyScope[];
   /** The signed-in person, in accounts mode. */
   userId?: string;
@@ -46,3 +48,14 @@ export type PersonCheck =
 export function canApproveDestructive(actor: Actor, scopes: readonly ApiKeyScope[]): boolean {
   return actor.type === 'user' && scopes.includes('admin');
 }
+
+export type RunBinding = {
+  installationId: string;
+  registrationId: string;
+  generation: number;
+  jobId: string;
+  owner: string;
+  fence: string;
+  releaseDigest: string;
+  scopes: ('read' | 'write')[];
+};
