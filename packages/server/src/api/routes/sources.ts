@@ -1,3 +1,4 @@
+import { sourceScanSchema } from '@retainer/shared';
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import { requireScope } from '../../auth/middleware.js';
@@ -14,6 +15,14 @@ import {
 import type { Sources } from '../../sources/service.js';
 
 export function sourceRoutes(app: Hono<AppEnv>, sources: Sources) {
+  app.get('/extensions/:id/source-sync', requireScope('read'), async (c) =>
+    c.json(await sources.syncStatus(c.get('caller'), idParam(c))),
+  );
+  app.post('/extensions/:id/source-sync', requireScope('write'), async (c) =>
+    c.json(
+      await sources.beginScan(c.get('caller'), idParam(c), await readBody(c, sourceScanSchema)),
+    ),
+  );
   app.get('/extensions/:id/source', requireScope('read'), async (c) =>
     c.json(await sources.connection(c.get('caller'), idParam(c))),
   );

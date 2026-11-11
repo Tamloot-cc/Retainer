@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, WorkspaceContext } from '../api/client.js';
-import { ExtensionSettings, ExtensionsPage } from './extensions.js';
+import { ExtensionSettings, ExtensionsPage, SourceSyncStatus } from './extensions.js';
 
 type Release = Awaited<ReturnType<typeof api.extensionCatalog>>['releases'][number];
 const release: Release = {
@@ -73,6 +73,20 @@ function mount(element: React.ReactNode, admin = true) {
 }
 afterEach(() => vi.restoreAllMocks());
 describe('generated extension settings and human approval', () => {
+  it('shows successful enumeration separately from pending and failed note imports', async () => {
+    vi.spyOn(api, 'sourceSyncStatus').mockResolvedValue({
+      lastSuccessfulScanAt: '2026-11-11T08:00:00Z',
+      activeScan: null,
+      pendingItems: 4,
+      failedItems: 2,
+    });
+    mount(<SourceSyncStatus installationId="installation" />);
+    expect(await screen.findByText(/Last successful scan:/)).toBeTruthy();
+    expect(screen.getByText('4 pending imports · 2 failed imports')).toBeTruthy();
+    expect(
+      screen.getByText(/A completed scan can still have pending or failed imports/),
+    ).toBeTruthy();
+  });
   it('defaults contact creation safely and makes sharing consent explicit before review', async () => {
     const choices = {
       ...release,

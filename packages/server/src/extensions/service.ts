@@ -525,7 +525,11 @@ export class Extensions {
       });
       if (result.status !== 'applied' && result.status !== 'unchanged')
         throw conflict('schema_binding_conflict', 'extension schema could not be applied');
-      if (plan.existing) await cancelRuns(tx, plan.existing.id);
+      if (plan.existing) {
+        await cancelRuns(tx, plan.existing.id);
+        if (input.reconnect || input.replaceSourceAccount)
+          await tx`delete from source_sync_state where installation_id=${plan.existing.id}`;
+      }
       const manifest = plan.release.manifest;
       const ready = this.activation.has(plan.release.digest);
       const setupKind = input.installationId && !input.reconnect ? 'upgrade' : 'install';
@@ -668,6 +672,8 @@ export class Extensions {
             { key },
           );
       }
+      await cancelRuns(tx, id);
+      await tx`delete from source_sync_state where installation_id=${id}`;
       const [updated] = await tx<
         Row[]
       >`update extension_installations set settings = ${tx.json(input.settings)},

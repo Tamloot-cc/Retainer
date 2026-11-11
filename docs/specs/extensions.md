@@ -726,7 +726,18 @@ remain tracked independently and keep the sync status degraded. Use a fixed
 upper watermark and an overlap window when the provider permits bounded queries;
 otherwise rescan an overlapping window with durable dedupe. Display both last
 successful scan and unresolved item failures; scan completion is not import
-completion. Recover webhook gaps by polling, including private self-hosted servers
+completion. `source.scanFunctionIds` pins the job/schedule functions allowed to
+start scans; the setup verifier can also start one after binding. The typed
+`source_sync_state` row stores only a scan UUID, fixed operation-clock bounds,
+generation and completion clocks. Provider cursors and page data remain in
+privacy-erased KV. Competing starts serialize per installation. Only the pinned
+page job whose input exactly matches the current scan/generation can advance
+success in its atomic children/KV checkpoint. A rolled-back checkpoint cannot
+advertise completion. The read-only source-sync view reports current-generation
+pending and failed source-item jobs separately. Reconnect, account replacement,
+disconnect and settings changes reset scan state; ordinary disable/enable retains
+it for catch-up. Settings changes cancel pending work before advancing the fence.
+Recover webhook gaps by polling, including private self-hosted servers
 without public webhook ingress.
 
 Create-people policy: `never` default, `contacted_first`, or `everyone`, with a

@@ -1,5 +1,6 @@
 import type { ExtensionManifest, InputSchema } from '@retainer/extension';
 import { nextOccurrence, SYSTEM_LIFECYCLE_FUNCTION_ID } from '@retainer/extension';
+import { sourceScanSchema } from '@retainer/shared';
 import { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
 import { retainedFloor } from '../db/change-cursor.js';
@@ -696,6 +697,7 @@ export class ExtensionQueue {
     lease: Lease,
     input: {
       children: Enqueue[];
+      scanComplete?: { scanId: string; through: string };
       kv?: { key: string; expectedRevision: number | null; value: unknown };
     },
   ) {
@@ -740,6 +742,23 @@ export class ExtensionQueue {
         await tx`insert into extension_kv(workspace_id,installation_id,key,value,revision)
           values(${lease.workspaceId},${installation.id},${kv.key},${tx.json(jsonValue(kv.value))},${revision})
           on conflict(workspace_id,installation_id,key) do update set value=excluded.value,revision=excluded.revision`;
+      }
+      if (input.scanComplete) {
+        const scan = sourceScanSchema.safeParse(job.input);
+        if (
+          !this.manifest(installation).source?.scanFunctionIds?.includes(job.function_id) ||
+          job.trigger_kind !== 'job' ||
+          !scan.success ||
+          scan.data.scanId !== input.scanComplete.scanId ||
+          Date.parse(scan.data.through) !== Date.parse(input.scanComplete.through)
+        )
+          throw new AppError(403, 'forbidden', 'only the bound scan job may complete enumeration');
+        const [completed] =
+          await tx`update source_sync_state set completed_at=coalesce(completed_at,clock_timestamp()),
+          last_successful_scan_at=greatest(last_successful_scan_at,upper_bound) where installation_id=${installation.id} and generation=${installation.generation}
+          and scan_id=${scan.data.scanId} and mode=${scan.data.mode}
+          and lower_bound=${scan.data.from}::timestamptz and upper_bound=${scan.data.through}::timestamptz returning scan_id`;
+        if (!completed) throw conflict('scan_conflict', 'source scan changed before completion');
       }
       return { ids, revision };
     });

@@ -1923,6 +1923,38 @@ export const sourceBindings = pgTable(
     }),
   ],
 ).enableRLS();
+// Only operation clocks and fixed bounds survive KV erasure; no provider cursor or payload.
+export const sourceSyncState = pgTable(
+  'source_sync_state',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    generation: integer('generation').notNull(),
+    scanId: uuid('scan_id').notNull(),
+    mode: text('mode').notNull(),
+    lowerBound: timestamptz('lower_bound').notNull(),
+    upperBound: timestamptz('upper_bound').notNull(),
+    startedAt: timestamptz('started_at').notNull().defaultNow(),
+    completedAt: timestamptz('completed_at'),
+    lastSuccessfulScanAt: timestamptz('last_successful_scan_at'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId] }),
+    tenantFk(
+      'source_sync_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    check('source_sync_mode', sql`${t.mode} in ('created','updated')`),
+    check('source_sync_bounds', sql`${t.lowerBound}<=${t.upperBound}`),
+    pgPolicy('source_sync_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
 export const sourceItems = pgTable(
   'source_items',
   {

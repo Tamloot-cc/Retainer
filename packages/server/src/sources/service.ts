@@ -1,5 +1,10 @@
 import type { ExtensionManifest } from '@retainer/extension';
-import { BASE_OBJECT_IDS } from '@retainer/shared';
+import {
+  BASE_OBJECT_IDS,
+  type SourceScan,
+  type SourceSyncStatus,
+  sourceScanSchema,
+} from '@retainer/shared';
 import type { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
 import type { Sql } from '../db/client.js';
@@ -143,6 +148,7 @@ export class Sources {
       await lockExtension(tx, caller.workspaceId, i.registration_id);
       await cancelRuns(tx, id);
       await tx`delete from source_bindings where installation_id=${id}`;
+      await tx`delete from source_sync_state where installation_id=${id}`;
       await tx`update webhook_bindings set state='retired',updated_at=clock_timestamp() where installation_id=${id} and state<>'retired'`;
       await tx`update extension_installations set state='disabled',generation=generation+1,connection_health='needs_reconnect',last_error=null where id=${id}`;
       return { disconnected: true };
@@ -176,6 +182,99 @@ export class Sources {
         sourceAccountId: binding.account_id,
         provider: binding.provider,
         identity: policy.identity,
+      };
+    });
+  }
+  async beginScan(caller: Caller, id: string, raw: SourceScan) {
+    const run = this.runtime(caller, id),
+      input = sourceScanSchema.parse(raw);
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await lockSchemaShared(tx, caller.workspaceId);
+      await admitRun(tx, caller.workspaceId, run, false, 'runtime');
+      const { policy } = await this.release(tx, caller);
+      await this.binding(tx, caller);
+      const [job] =
+        await tx`select function_id,trigger_kind from extension_jobs where id=${run.jobId}`;
+      if (
+        !(
+          (job?.trigger_kind === 'install' && job.function_id === policy.verifyFunctionId) ||
+          (policy.scanFunctionIds ?? []).includes(job?.function_id)
+        )
+      )
+        throw forbidden('only registered source scan functions may begin enumeration');
+      const [clock] = await tx<{ now: Date }[]>`select clock_timestamp() as now`;
+      if (
+        !clock ||
+        Date.parse(input.through) > clock.now.getTime() + 60000 ||
+        Date.parse(input.through) - Date.parse(input.from) > 3660 * 86400000
+      )
+        throw new AppError(
+          422,
+          'invalid_scan',
+          'source scan bounds exceed the allowed clock window',
+        );
+      // The unique installation row serializes competing starts, without taking a queue lock after admission.
+      await tx`insert into source_sync_state(workspace_id,installation_id,generation,scan_id,mode,lower_bound,upper_bound)
+        values(${caller.workspaceId},${id},${run.generation},${input.scanId},${input.mode},${input.from},${input.through})
+        on conflict(workspace_id,installation_id) do nothing`;
+      const [current] =
+        await tx`select *,lower_bound=${input.from}::timestamptz and upper_bound=${input.through}::timestamptz as same_bounds
+        from source_sync_state where installation_id=${id} for update`;
+      if (!current) throw new Error('source scan missing');
+      if (current.scan_id === input.scanId && (!current.same_bounds || current.mode !== input.mode))
+        throw conflict('scan_conflict', 'scan identity was used for different bounds');
+      if (
+        current.scan_id !== input.scanId &&
+        current.completed_at === null &&
+        current.generation === run.generation
+      )
+        throw conflict('scan_conflict', 'an enumeration is already in progress');
+      if (current.scan_id !== input.scanId)
+        await tx`update source_sync_state set generation=${run.generation},scan_id=${input.scanId},mode=${input.mode},
+          lower_bound=${input.from},upper_bound=${input.through},started_at=clock_timestamp(),completed_at=null where installation_id=${id}`;
+      else if (current.generation !== run.generation)
+        await tx`update source_sync_state set generation=${run.generation} where installation_id=${id}`;
+      return { scanId: input.scanId };
+    });
+  }
+  async syncStatus(caller: Caller, id: string): Promise<SourceSyncStatus> {
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await lockSchemaShared(tx, caller.workspaceId);
+      if (caller.run) {
+        this.runtime(caller, id);
+        await admitRun(tx, caller.workspaceId, caller.run, false, 'runtime');
+      }
+      const [installation] =
+        await tx`select registration_id,version,release_digest,generation from extension_installations where id=${id}`;
+      if (
+        !installation ||
+        !this.resolve(
+          installation.registration_id,
+          installation.version,
+          installation.release_digest,
+        ).source
+      )
+        throw notFound('installation source');
+      const [state] = await tx`select * from source_sync_state where installation_id=${id}`;
+      const [counts] = await tx<{ pending: number; failed: number }[]>`select
+        count(*) filter(where status in ('queued','running'))::int as pending,
+        count(*) filter(where status='failed')::int as failed
+        from extension_jobs where installation_id=${id} and generation=${installation.generation} and source_item_id is not null`;
+      return {
+        lastSuccessfulScanAt: state?.last_successful_scan_at?.toISOString() ?? null,
+        activeScan:
+          state && !state.completed_at
+            ? {
+                scanId: state.scan_id,
+                mode: state.mode,
+                from: state.lower_bound.toISOString(),
+                through: state.upper_bound.toISOString(),
+                generation: state.generation,
+                startedAt: state.started_at.toISOString(),
+              }
+            : null,
+        pendingItems: counts?.pending ?? 0,
+        failedItems: counts?.failed ?? 0,
       };
     });
   }

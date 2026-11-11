@@ -140,6 +140,7 @@ export const manifestSchema = z.strictObject({
       identity: z.enum(['account', 'global-resource']),
       verifyFunctionId: uuid,
       syncFunctionIds: z.array(uuid).min(1).max(20),
+      scanFunctionIds: z.array(uuid).min(1).max(20).optional(),
       eventTypeIds: z.array(uuid).min(1).max(20),
       revisionOrder: z.enum(['integer', 'timestamp', 'opaque']),
     })
@@ -379,6 +380,17 @@ export function defineExtension(value: unknown): ExtensionManifest {
       new Set(source.eventTypeIds).size !== source.eventTypeIds.length
     )
       throw new Error('unsupported_manifest: duplicate source binding');
+    const scans = source.scanFunctionIds ?? [];
+    if (
+      new Set(scans).size !== scans.length ||
+      scans.some((id) => source.syncFunctionIds.includes(id))
+    )
+      throw new Error('unsupported_manifest: duplicate source scan binding');
+    for (const id of scans) {
+      const kind = manifest.functions.find((f) => f.universalId === id)?.trigger.kind;
+      if (kind !== 'job' && kind !== 'schedule')
+        throw new Error('unsupported_manifest: source scans require job or schedule functions');
+    }
     for (const id of source.syncFunctionIds) {
       const fn = manifest.functions.find((f) => f.universalId === id);
       const input = fn?.inputSchema;

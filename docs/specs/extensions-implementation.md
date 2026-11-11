@@ -453,3 +453,22 @@ graph. Both optimized images build and run the live proof. Host disk exhaustion
 briefly stopped Docker; unused package/old build cache was reclaimed and Docker
 restarted without deleting containers or database volumes. No provider account
 has been used and the default catalog remains empty.
+
+## Typed enumeration progress
+
+Managed providers can pin scan functions, begin/resume fixed-bound enumerations,
+and atomically complete them in the final children/KV checkpoint. The new RLS
+state contains operation clocks and bounds only; provider cursors and content
+stay in erasable KV. Same-ID bounds changes, competing active scans, unrelated
+functions, old leases and other installations cannot advance success. Reconnect,
+account replacement, disconnect and settings changes reset the watermark;
+ordinary disable/enable preserves it. Settings changes now cancel queued/running
+jobs as well as fencing them.
+
+The API, SDK and Extensions UI expose last successful enumeration separately from
+pending imports and failed imports. Real-Postgres tests cover competing starts,
+rollback on invalid children, atomic final-page enqueue, forged completion,
+credential boundaries, failed item counts and disconnect reset. All 38 targeted
+source/control/queue integration tests and six extension UI tests pass, as does
+workspace typechecking. Provider implementation is the next step; no real provider
+account or hosted deployment has been exercised.

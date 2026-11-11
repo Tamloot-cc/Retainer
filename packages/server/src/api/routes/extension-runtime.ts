@@ -104,6 +104,9 @@ export function runtimeRoutes(
         await readBody(
           c,
           z.strictObject({
+            scanComplete: z
+              .strictObject({ scanId: z.uuid(), through: z.iso.datetime({ offset: true }) })
+              .optional(),
             children: z
               .array(
                 z.strictObject({

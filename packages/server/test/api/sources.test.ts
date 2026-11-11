@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ExtensionManifest } from '@retainer/extension';
-import { BASE_EVENT_TYPE_IDS, type SourceEventImport } from '@retainer/shared';
+import { BASE_EVENT_TYPE_IDS, type SourceEventImport, type SourceScan } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type ClaimedJob, ExtensionQueue } from '../../src/extension-runtime/queue.js';
@@ -70,6 +70,7 @@ async function setup(
       identity: 'account',
       verifyFunctionId: verifyId,
       syncFunctionIds: [syncId],
+      scanFunctionIds: [backfillId],
       eventTypeIds: [BASE_EVENT_TYPE_IDS.conversation],
       revisionOrder: 'integer',
     },
@@ -86,7 +87,21 @@ async function setup(
           additionalProperties: false,
         },
       ),
-      fn(backfillId, 'backfill', { kind: 'job' }, { type: 'object', additionalProperties: false }),
+      fn(
+        backfillId,
+        'backfill',
+        { kind: 'job' },
+        {
+          type: 'object',
+          properties: {
+            scanId: { type: 'string' },
+            from: { type: 'string' },
+            through: { type: 'string' },
+            mode: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      ),
     ] as ExtensionManifest['functions'],
   });
   const catalog = new ExtensionCatalog([
@@ -132,10 +147,10 @@ async function setup(
     accountId = verified.body.sourceAccountId;
     await queue.complete(setupRun, { status: 'succeeded' });
   }
-  async function start(item?: string) {
+  async function start(item?: string, scan?: SourceScan) {
     const job = await queue.enqueue(workspace.id, id, {
       functionId: item ? syncId : backfillId,
-      input: item ? { sourceItemId: item } : {},
+      input: item ? { sourceItemId: item } : (scan ?? {}),
       dedupeKey: randomUUID(),
     });
     const run = await queue.claim(workspace.id, job.id, 'source-worker');
@@ -195,11 +210,151 @@ async function setup(
     event,
     sync,
     syncId,
+    backfillId,
     token,
   };
 }
 
 describe('managed source evidence with real RLS Postgres', () => {
+  const scanInput = (): SourceScan => ({
+    scanId: randomUUID(),
+    mode: 'created',
+    from: new Date(Date.now() - 86400000).toISOString(),
+    through: new Date().toISOString(),
+  });
+  it('serializes competing scan starts and atomically completes enumeration with durable import children', async () => {
+    const h = await setup(),
+      scan = scanInput(),
+      run = await h.start(undefined, scan);
+    const starts = await Promise.all(
+      [scan, { ...scan, scanId: randomUUID() }].map((body) =>
+        h.app.request(`${h.base}/source-sync`, { key: run.key, body }),
+      ),
+    );
+    expect(starts.map((r) => r.status).sort()).toEqual([200, 409]);
+    // Either contender can win. Bind the final-page job to the actual winning bounds.
+    const status = await h.app.request(`${h.base}/source-sync`, { key: h.keys.admin });
+    expect(status.status).toBe(200);
+    const winning = status.body.activeScan;
+    expect(winning).toMatchObject({ mode: scan.mode, from: scan.from, through: scan.through });
+    await h.queue.complete(run.run, { status: 'succeeded' });
+    const final = await h.start(undefined, {
+      scanId: winning.scanId,
+      mode: winning.mode,
+      from: winning.from,
+      through: winning.through,
+    });
+    const item = await h.reserve(final.key);
+    const complete = { scanId: winning.scanId, through: winning.through };
+    // A failed child admission cannot leave a false successful scan or KV checkpoint.
+    const rejected = await h.app.request(`${h.base}/runtime/checkpoint`, {
+      key: final.key,
+      body: {
+        children: [{ functionId: randomUUID(), input: {}, dedupeKey: 'invalid' }],
+        kv: { key: 'page', expectedRevision: null, value: { done: true } },
+        scanComplete: complete,
+      },
+    });
+    expect(rejected.status).toBe(422);
+    expect(
+      (await h.app.request(`${h.base}/source-sync`, { key: final.key })).body.lastSuccessfulScanAt,
+    ).toBeNull();
+    const checkpoint = await h.app.request(`${h.base}/runtime/checkpoint`, {
+      key: final.key,
+      body: {
+        children: [
+          { functionId: h.syncId, input: { sourceItemId: item }, dedupeKey: 'final-import' },
+        ],
+        kv: { key: 'page', expectedRevision: null, value: { done: true } },
+        scanComplete: complete,
+      },
+    });
+    expect(checkpoint.status).toBe(200);
+    expect(
+      (await h.app.request(`${h.base}/source-sync`, { key: h.keys.admin })).body,
+    ).toMatchObject({
+      lastSuccessfulScanAt: winning.through,
+      activeScan: null,
+      pendingItems: 1,
+      failedItems: 0,
+    });
+    await h.queue.complete(final.run, { status: 'succeeded' });
+    const child = await h.queue.claim(h.workspace.id, checkpoint.body.ids[0], 'import');
+    if (!child) throw new Error('missing import child');
+    await h.queue.complete(child, { status: 'failed', code: 'provider_unavailable' });
+    expect(
+      (await h.app.request(`${h.base}/source-sync`, { key: h.keys.admin })).body,
+    ).toMatchObject({
+      lastSuccessfulScanAt: winning.through,
+      pendingItems: 0,
+      failedItems: 1,
+    });
+    expect(
+      (await h.app.request(`${h.base}/source/disconnect`, { key: h.keys.admin, body: {} })).status,
+    ).toBe(200);
+    expect(
+      (await h.app.request(`${h.base}/source-sync`, { key: h.keys.admin })).body,
+    ).toMatchObject({
+      lastSuccessfulScanAt: null,
+      activeScan: null,
+      pendingItems: 0,
+      failedItems: 0,
+    });
+  });
+  it('rejects forged scan completion, bounds changes, unrelated installation credentials and stale leases', async () => {
+    const h = await setup(),
+      scan = scanInput(),
+      run = await h.start(undefined, scan);
+    expect(
+      (await h.app.request(`${h.base}/source-sync`, { key: h.keys.admin, body: scan })).status,
+    ).toBe(404);
+    expect(
+      (await h.app.request(`${h.base}/source-sync`, { key: run.key, body: scan })).status,
+    ).toBe(200);
+    expect(
+      (
+        await h.app.request(`${h.base}/source-sync`, {
+          key: run.key,
+          body: { ...scan, from: new Date(Date.now() - 172800000).toISOString() },
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await h.app.request(`${h.base}/runtime/checkpoint`, {
+          key: run.key,
+          body: {
+            children: [],
+            kv: { key: 'page', expectedRevision: null, value: 'must rollback' },
+            scanComplete: { scanId: randomUUID(), through: scan.through },
+          },
+        })
+      ).status,
+    ).toBe(403);
+    expect(await h.queue.getKv(run.run, 'page')).toBeNull();
+    const other = await setup(),
+      otherRun = await other.start();
+    expect((await h.app.request(`${h.base}/source-sync`, { key: otherRun.key })).status).toBe(404);
+    await h.queue.complete(run.run, { status: 'succeeded' });
+    const itemRun = await h.item();
+    expect(
+      (await h.app.request(`${h.base}/source-sync`, { key: itemRun.key, body: scan })).status,
+    ).toBe(403);
+    expect(
+      (
+        await h.app.request(`${h.base}/runtime/checkpoint`, {
+          key: itemRun.key,
+          body: { children: [], scanComplete: { scanId: scan.scanId, through: scan.through } },
+        })
+      ).status,
+    ).toBe(403);
+    expect((await h.app.request(`${h.base}/disable`, { key: h.keys.admin, body: {} })).status).toBe(
+      200,
+    );
+    expect(
+      (await h.app.request(`${h.base}/source-sync`, { key: itemRun.key, body: scan })).status,
+    ).toBe(409);
+  });
   it('reserves provider pages concurrently with explicit erased-item outcomes and no cross-account authority', async () => {
     const h = await setup(),
       erased = await h.item('erased-note');

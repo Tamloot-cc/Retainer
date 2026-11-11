@@ -121,6 +121,9 @@ export function ExtensionsPage() {
                   Access: {installation.grantedScopes.join(' and ')} workspace CRM data. Writes are
                   attributed to this {installation.grantedActor}.
                 </Muted>
+                {release?.manifest.source ? (
+                  <SourceSyncStatus installationId={installation.id} />
+                ) : null}
                 <Row>
                   <Button onClick={() => setRuns(installation)}>View runs</Button>
                   {admin && release ? (
@@ -616,5 +619,31 @@ function RunDialog({
         </Row>
       </Stack>
     </Dialog>
+  );
+}
+
+export function SourceSyncStatus({ installationId }: { installationId: string }) {
+  const status = useQuery({
+    queryKey: [...queryKey, 'source-sync', installationId],
+    queryFn: ({ signal }) => api.sourceSyncStatus(installationId, signal),
+    refetchInterval: 15000,
+  });
+  if (status.error) return <QueryError error={status.error} retry={() => void status.refetch()} />;
+  if (!status.data) return <Muted>Loading source progress…</Muted>;
+  return (
+    <section aria-label="Source sync progress">
+      <p>
+        {status.data.lastSuccessfulScanAt
+          ? `Last successful scan: ${new Date(status.data.lastSuccessfulScanAt).toLocaleString()}`
+          : 'No successful source scan yet.'}
+      </p>
+      {status.data.activeScan ? <p>Source scan in progress.</p> : null}
+      <p>
+        {status.data.pendingItems} pending imports · {status.data.failedItems} failed imports
+      </p>
+      <Muted small>
+        A completed scan can still have pending or failed imports. View runs for details.
+      </Muted>
+    </section>
   );
 }

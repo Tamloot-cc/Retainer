@@ -591,6 +591,19 @@ export class RetainerClient {
       identity: 'account' | 'global-resource';
     }>(`/v1/extensions/${encodeURIComponent(installationId)}/source`);
   }
+  sourceSyncStatus(installationId: string, signal?: AbortSignal) {
+    return this.get<import('@retainer/shared').SourceSyncStatus>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/source-sync`,
+      {},
+      signal,
+    );
+  }
+  beginSourceScan(installationId: string, input: import('@retainer/shared').SourceScan) {
+    return this.post<{ scanId: string }>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/source-sync`,
+      input,
+    );
+  }
   reserveSourceItems(
     installationId: string,
     input: { sourceAccountId: string; externalIds: string[] },
@@ -747,6 +760,7 @@ export class RetainerClient {
     id: string,
     input: {
       children: { functionId: string; input: unknown; dedupeKey: string }[];
+      scanComplete?: { scanId: string; through: string };
       kv?: { key: string; expectedRevision: number | null; value: unknown };
     },
   ) {

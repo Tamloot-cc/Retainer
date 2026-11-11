@@ -512,6 +512,20 @@
       "when": 1794412129735,
       "tag": "0072_assertion_dependency_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1794416149002,
+      "tag": "0073_source_sync_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1794416162563,
+      "tag": "0074_source_sync_permissions",
+      "breakpoints": true
     }
   ]
 }
