@@ -1,5 +1,11 @@
 # Extensions implementation plan
 
+Current status: controls, isolated execution/lifecycle, files/erasure, managed
+sources/revisions, commit-ordered feeds and durable triggers are implemented.
+The isolated verifier protocol is verified; public webhook ingress is still in
+progress. The default catalog is empty. Provider delivery, deterministic
+last-contact, standalone grants and hosted launch remain outstanding.
+
 The contract in extensions.md remains the acceptance specification. Implement in
 these dependency-ordered slices; never advertise a trigger before its safety
 prerequisites ship. No production deployment is authorized by this plan.
@@ -264,3 +270,27 @@ The current API image passes both disposable Compose proofs: isolated lifecycle
 execution and upload/authorization/revocation/durable physical erasure.
 Last-contact, isolated webhook verification, provider delivery, standalone grants
 and hosted launch work remain. The default catalog remains empty.
+
+## Separate isolated webhook verifier
+
+The next boundary implements a strict raw-byte verifier envelope and bounded
+result, an MIT Standard Webhooks fixture, a separate launcher bearer/function
+capability, a no-network fresh container mode and a five-second host deadline.
+No CRM credential, workspace selector, API origin or executable target is part
+of that envelope. The transport refuses oversized or open-ended results and
+propagates cancellation. Ordinary execution retains its existing API/proxy
+network isolation. A development-only inert verifier bundle includes a hung
+handler for live deadline testing; it cannot be activated as a provider adapter.
+
+Targeted tests pass for exact-byte tampering, signature rotation, timestamp/ID/
+key changes, replay windows, size limits, forged workspace fields, timeout,
+closed result shape and transport limits. The live Docker proof passes for no
+network, non-root/read-only limits, no credential environment, separate bearer
+and function capabilities, forced timeout and ephemeral cleanup. The full suite
+passes 1,354 tests (1,064 server tests against real Postgres). Ordinary isolated
+execution also passes the live sandbox/network proof and the current-image
+Compose lifecycle/public-API proof after the shared launcher refactor.
+Typecheck, build, release and layer checks pass; lint retains existing warnings.
+Public ingress, candidate/account binding, pre-verification rate limits,
+receipt/job atomicity, generated connection secrets and provider delivery are
+still outstanding; no webhook adapter is advertised.

@@ -117,3 +117,60 @@ write('metadata.json', {
 console.log(
   JSON.stringify({ artifactDirectory: relative(root, out), commit, development, releaseDigest }),
 );
+
+if (development) {
+  // An inert catalog entry for testing the separate no-network verifier capability.
+  const verifierIds = [
+    'fb7bdabc-490a-412b-8687-72f2f6f30ba9',
+    '33bb3e43-557d-45ed-8f81-5baf6ee0f66d',
+  ];
+  const verifierHandlerDigest = hash(
+    readFileSync(resolve(root, 'packages/runner/dist/webhooks.js')),
+  );
+  const verifierManifest = defineExtension({
+    ...manifest,
+    universalId: '90ce88f0-cb67-48c7-9dc3-97775cfae1f1',
+    name: 'verifier-fixture',
+    description: 'Inert raw-byte signature and hard-timeout verification fixture.',
+    functions: verifierIds.map((id, i) => ({
+      universalId: id,
+      name: i ? 'timeout' : 'verify',
+      description: i ? 'Prove host-enforced timeout.' : 'Verify a signed source ID only.',
+      handlerDigest: verifierHandlerDigest,
+      timeoutSeconds: 5,
+      trigger: { kind: 'route', route: i ? 'timeout' : 'verify' },
+      inputSchema: { type: 'object', additionalProperties: false },
+    })),
+  });
+  const verifierDigest = hash(stableJson(verifierManifest));
+  const verifierOut = resolve(root, 'artifacts/extensions/verifier-fixture');
+  mkdirSync(verifierOut, { recursive: true });
+  const writeVerifier = (name, value) =>
+    writeFileSync(resolve(verifierOut, name), `${JSON.stringify(value, null, 2)}\n`);
+  writeVerifier('manifest.json', verifierManifest);
+  writeVerifier('catalog.json', [
+    { manifest: verifierManifest, actorCeiling: 'integration', runtimeEnabled: false },
+  ]);
+  writeVerifier('metadata.json', {
+    commit,
+    development,
+    releaseDigest: verifierDigest,
+    packageDigest,
+    handlerDigest: verifierHandlerDigest,
+    bundleId: 'verifier-fixture',
+    functionIds: [],
+    verifierFunctionIds: verifierIds,
+  });
+  writeVerifier(
+    'executables.json',
+    verifierIds.map((functionId) => ({
+      registrationId: verifierManifest.universalId,
+      releaseDigest: verifierDigest,
+      functionId,
+      handlerDigest: verifierHandlerDigest,
+      packageDigest,
+      runtimeVersion: 'node24',
+      driverTarget: 'verifier-fixture',
+    })),
+  );
+}

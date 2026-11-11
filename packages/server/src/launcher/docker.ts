@@ -3,9 +3,13 @@ import { request } from 'node:http';
 import type { Duplex } from 'node:stream';
 import {
   decodeInvocation,
+  decodeVerification,
   type ExecutionResult,
   executionResultSchema,
   type Invocation,
+  type VerificationInvocation,
+  type VerificationResult,
+  verificationResultSchema,
 } from '@retainer/extension';
 import { z } from 'zod';
 
@@ -13,7 +17,8 @@ export const bundleSchema = z.strictObject({
   id: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/),
   image: z.string().regex(/^(?:sha256:|[a-zA-Z0-9._:/-]+@sha256:)[a-f0-9]{64}$/),
   releaseDigest: z.string().regex(/^[a-f0-9]{64}$/),
-  functionIds: z.array(z.uuid()).min(1).max(100),
+  functionIds: z.array(z.uuid()).max(100),
+  verifierFunctionIds: z.array(z.uuid()).max(100).default([]),
 });
 export type Bundle = z.infer<typeof bundleSchema>;
 
@@ -150,7 +155,7 @@ export class DockerSandbox {
       proxyContainer: string;
       proxyOrigin: string;
       apiOrigin: string;
-      bundles: readonly Bundle[];
+      bundles: readonly z.input<typeof bundleSchema>[];
     },
   ) {
     if (
@@ -189,6 +194,9 @@ export class DockerSandbox {
     for (const input of options.bundles) {
       const bundle = bundleSchema.parse(input);
       if (this.bundles.has(bundle.id)) throw new Error('duplicate bundle');
+      const ids = [...bundle.functionIds, ...bundle.verifierFunctionIds];
+      if (!ids.length || new Set(ids).size !== ids.length)
+        throw new Error('duplicate or empty bundle functions');
       this.bundles.set(bundle.id, structuredClone(bundle));
     }
   }
@@ -228,14 +236,7 @@ export class DockerSandbox {
       throw new Error('runner image contains forbidden credential environment');
   }
   async run(bundleId: string, input: Invocation, signal: AbortSignal): Promise<ExecutionResult> {
-    const invocation = decodeInvocation(JSON.stringify(input)),
-      bundle = this.bundles.get(bundleId);
-    if (
-      !bundle ||
-      bundle.releaseDigest !== invocation.releaseDigest ||
-      !bundle.functionIds.includes(invocation.functionId)
-    )
-      throw new Error('unknown execution bundle');
+    const invocation = decodeInvocation(JSON.stringify(input));
     const origin = new URL(invocation.apiOrigin);
     if (
       origin.origin !== new URL(this.options.apiOrigin).origin ||
@@ -246,9 +247,33 @@ export class DockerSandbox {
       origin.hash
     )
       throw new Error('execution API origin differs from configuration');
+    return executionResultSchema.parse(await this.launch(bundleId, invocation, signal, false));
+  }
+  async verify(
+    bundleId: string,
+    input: VerificationInvocation,
+    signal: AbortSignal,
+  ): Promise<VerificationResult> {
+    return verificationResultSchema.parse(
+      await this.launch(bundleId, decodeVerification(JSON.stringify(input)), signal, true),
+    );
+  }
+  private async launch(
+    bundleId: string,
+    invocation: Invocation | VerificationInvocation,
+    signal: AbortSignal,
+    verifying: boolean,
+  ) {
+    const bundle = this.bundles.get(bundleId);
+    if (
+      !bundle ||
+      bundle.releaseDigest !== invocation.releaseDigest ||
+      !(verifying ? bundle.verifierFunctionIds : bundle.functionIds).includes(invocation.functionId)
+    )
+      throw new Error('unknown execution bundle');
     const deadline = new Date(invocation.deadline).getTime();
     const remaining = deadline - Date.now();
-    if (signal.aborted || remaining <= 0 || remaining > 300000)
+    if (signal.aborted || remaining <= 0 || remaining > (verifying ? 5000 : 300000))
       throw new Error('invalid execution deadline');
     if (this.stopped || this.slots >= 32) throw new Error('launcher capacity unavailable');
     this.slots++;
@@ -261,7 +286,7 @@ export class DockerSandbox {
     const nonce = randomUUID(),
       name = `retainer-run-${nonce}`,
       networkName = `${this.options.networkPrefix}-${nonce}`;
-    let network = networkName;
+    let network = verifying ? '' : networkName;
     let container = name,
       attachment: Duplex | undefined;
     const stop = () => {
@@ -271,43 +296,45 @@ export class DockerSandbox {
     signal.addEventListener('abort', stop, { once: true });
     this.active.add(name);
     try {
-      const createdNetwork = await this.engine.json<{ Id: string }>('POST', '/networks/create', {
-        Name: networkName,
-        Driver: 'bridge',
-        Internal: true,
-        EnableIPv6: false,
-        Options: { 'com.docker.network.bridge.gateway_mode_ipv4': 'isolated' },
-        Labels: {
-          'retainer.extension.run': '1',
-          'retainer.extension.launcher': this.options.networkPrefix,
-          'retainer.extension.expires': String(deadline),
-        },
-      });
-      if (!/^[a-f0-9]{64}$/.test(createdNetwork.Id))
-        throw new Error('invalid execution network ID');
-      network = createdNetwork.Id;
-      const inspected = await this.engine.json<{
-        Internal: boolean;
-        EnableIPv6: boolean;
-        Options: Record<string, string>;
-      }>('GET', `/networks/${network}`);
-      if (
-        !inspected.Internal ||
-        inspected.EnableIPv6 ||
-        inspected.Options['com.docker.network.bridge.gateway_mode_ipv4'] !== 'isolated'
-      )
-        throw new Error('execution network isolation is unavailable');
-      for (const [container, origin] of [
-        [this.options.apiContainer, this.options.apiOrigin],
-        [this.options.proxyContainer, this.options.proxyOrigin],
-      ]) {
-        if (!container || !origin) throw new Error('missing trusted endpoint');
-        const connected = await this.engine.call('POST', `/networks/${network}/connect`, {
-          Container: container,
-          EndpointConfig: { Aliases: [new URL(origin).hostname] },
+      if (!verifying) {
+        const createdNetwork = await this.engine.json<{ Id: string }>('POST', '/networks/create', {
+          Name: networkName,
+          Driver: 'bridge',
+          Internal: true,
+          EnableIPv6: false,
+          Options: { 'com.docker.network.bridge.gateway_mode_ipv4': 'isolated' },
+          Labels: {
+            'retainer.extension.run': '1',
+            'retainer.extension.launcher': this.options.networkPrefix,
+            'retainer.extension.expires': String(deadline),
+          },
         });
-        if (connected.status !== 200)
-          throw new Error('failed to connect trusted execution endpoint');
+        if (!/^[a-f0-9]{64}$/.test(createdNetwork.Id))
+          throw new Error('invalid execution network ID');
+        network = createdNetwork.Id;
+        const inspected = await this.engine.json<{
+          Internal: boolean;
+          EnableIPv6: boolean;
+          Options: Record<string, string>;
+        }>('GET', `/networks/${network}`);
+        if (
+          !inspected.Internal ||
+          inspected.EnableIPv6 ||
+          inspected.Options['com.docker.network.bridge.gateway_mode_ipv4'] !== 'isolated'
+        )
+          throw new Error('execution network isolation is unavailable');
+        for (const [container, origin] of [
+          [this.options.apiContainer, this.options.apiOrigin],
+          [this.options.proxyContainer, this.options.proxyOrigin],
+        ]) {
+          if (!container || !origin) throw new Error('missing trusted endpoint');
+          const connected = await this.engine.call('POST', `/networks/${network}/connect`, {
+            Container: container,
+            EndpointConfig: { Aliases: [new URL(origin).hostname] },
+          });
+          if (connected.status !== 200)
+            throw new Error('failed to connect trusted execution endpoint');
+        }
       }
       if (signal.aborted || Date.now() >= deadline)
         throw new Error('execution expired before launch');
@@ -323,19 +350,21 @@ export class DockerSandbox {
           OpenStdin: true,
           StdinOnce: true,
           Tty: false,
-          Env: [
-            `HTTP_PROXY=${this.options.proxyOrigin}`,
-            `HTTPS_PROXY=${this.options.proxyOrigin}`,
-            'NO_PROXY=',
-            'NODE_USE_ENV_PROXY=1',
-          ],
+          Env: verifying
+            ? []
+            : [
+                `HTTP_PROXY=${this.options.proxyOrigin}`,
+                `HTTPS_PROXY=${this.options.proxyOrigin}`,
+                'NO_PROXY=',
+                'NODE_USE_ENV_PROXY=1',
+              ],
           Labels: {
             'retainer.extension.run': '1',
             'retainer.extension.launcher': this.options.networkPrefix,
             'retainer.extension.expires': String(deadline),
           },
           HostConfig: {
-            NetworkMode: network,
+            NetworkMode: verifying ? 'none' : network,
             ReadonlyRootfs: true,
             CapDrop: ['ALL'],
             SecurityOpt: ['no-new-privileges'],
@@ -368,7 +397,9 @@ export class DockerSandbox {
       ]);
       if (exit.StatusCode !== 0) throw new Error('runner failed');
       try {
-        return executionResultSchema.parse(JSON.parse(output.toString()));
+        return verifying
+          ? verificationResultSchema.parse(JSON.parse(output.toString()))
+          : executionResultSchema.parse(JSON.parse(output.toString()));
       } catch {
         throw new Error('invalid runner result');
       }
@@ -377,7 +408,7 @@ export class DockerSandbox {
       signal.removeEventListener('abort', stop);
       attachment?.destroy();
       await this.engine.call('DELETE', `/containers/${container}?force=1`).catch(() => {});
-      await this.removeNetwork(network);
+      if (network) await this.removeNetwork(network);
       this.active.delete(name);
       this.slots--;
     }

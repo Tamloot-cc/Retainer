@@ -1,6 +1,6 @@
 # Retainer extensions
 
-Status: implementation in progress; control, isolated execution, lifecycle, management UI, file storage, managed sources and commit-ordered change dispatch implemented; provider delivery, last-contact and launch remain. Date: 2026-11-11.
+Status: implementation in progress; control, isolated execution, lifecycle, management UI, file storage, managed sources, commit-ordered change dispatch and isolated verifier protocol implemented; provider delivery, last-contact and launch remain. Date: 2026-11-11.
 See [implementation progress](extensions-implementation.md) for completed and outstanding work.
 
 This spec replaces the exported **Retainer Extensions** proposal supplied as
@@ -405,7 +405,17 @@ and one candidate's secret. It has no CRM token or installation enumeration/KV
 API. Run provider verifier code in the bounded verifier runtime, not the API
 process; ingress gives it only the candidate verification material and enforces a
 five-second budget. Provider challenges are explicit registered handlers with no
-CRM access. Generic verifier results cannot choose a second workspace.
+CRM access. Generic verifier results cannot choose a second workspace. The separate verifier
+protocol carries a base64 encoding of exact raw bytes, an allowlisted header map,
+one candidate secret, pinned release/function identity and a five-second deadline.
+It cannot contain an installation/workspace selector, CRM token, API origin or
+executable path. Results contain only verified delivery/source identities,
+rejection or an explicitly allowed bounded plain-text challenge. A dedicated
+launcher bearer can invoke `/verify` only; ordinary execution uses another bearer
+and another function allowlist. Compose verifiers have no network interface
+except loopback and no proxy/API connection. Secrets arrive through stdin,
+never environment or command arguments. The transport result is bounded to
+16 KiB; request bodies remain capped at 256 KiB before envelope encoding.
 
 After successful verification, atomically record the delivery and enqueue its
 job, then answer 202. Duplicate authenticated deliveries answer 202 with no new

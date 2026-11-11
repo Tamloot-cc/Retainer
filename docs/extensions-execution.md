@@ -165,3 +165,41 @@ deployment lock. Its AWS schedule and IAM wiring belong in `retainer-cloud`.
 Retention expires abandoned jobs with a visible `job_expired` result, removes
 terminal diagnostics after 30 days and prunes only the expired feed prefix.
 Source replay receipts and suppression tombstones have separate durable lifetimes.
+
+## Isolated verifier protocol (ingress wiring in progress)
+
+Verifier code has a separate envelope and launcher capability. It receives exact
+raw bytes, selected headers and one candidate secret, and has neither a CRM token
+nor a target workspace selector. Its fresh container uses `NetworkMode=none`,
+no proxy environment and the ordinary non-root/read-only/resource limits. A
+five-second host deadline terminates unresponsive code. Results are bounded to
+16 KiB and cannot name another workspace. The Standard Webhooks fixture checks
+HMAC-SHA256 over message ID, attempt timestamp and exact bytes, a five-minute
+clock tolerance and a rotation signature list, following the
+[published signature contract](https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md).
+This is one provider protocol, not a universal verifier for every webhook.
+
+`RETAINER_VERIFIER_TOKEN` enables the launcher's `/verify` capability. It must be
+at least 32 characters and differ from `RETAINER_LAUNCHER_TOKEN`; neither bearer
+can invoke the other's endpoint. The ingress service will receive only the
+verifier credential. `verifierFunctionIds` in the immutable bundle allowlist are
+separate from ordinary `functionIds`, with duplicates rejected across both.
+
+Development artifact generation also creates an inert `verifier-fixture` bundle.
+It is not runtime-ready and includes an intentionally unresponsive test handler:
+
+```sh
+pnpm build
+node scripts/build-extension-artifacts.mjs --development
+verifier_digest=$(node -p "JSON.parse(require('fs').readFileSync('artifacts/extensions/verifier-fixture/metadata.json')).releaseDigest")
+docker build -f docker/Dockerfile.extension-runner \
+  --build-arg RELEASE_DIGEST="$verifier_digest" --build-arg BUNDLE_ID=verifier-fixture \
+  -t retainer:extension-verifier-fixture .
+pnpm test:extensions:verifier
+```
+
+The disposable real-Docker proof checks raw-byte signatures/tampering, no network
+connection, no CRM/environment credential, separate function and bearer
+capabilities, hard termination and cleanup. It does not prove public ingress,
+account routing, rate limiting, durable receipt/job atomicity or provider setup;
+those remain required before any webhook adapter can be activated.

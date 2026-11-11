@@ -341,3 +341,4 @@ export type ExtensionInstallation = {
 };
 
 export * from './protocol.js';
+export * from './webhook.js';
