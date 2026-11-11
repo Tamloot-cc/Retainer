@@ -511,26 +511,34 @@ transcripts. Child enqueue dedupe is bound to installation and business operatio
 not a random attempt ID.
 
 Pinned-release availability is operational state separate from provider connection
-health and installation lifecycle. A single resolver validates registration,
-version, exact manifest digest and the server's reviewed compatibility set. Its
-nonthrowing result is shared by claim, schedule maintenance and change dispatch.
-Unavailable releases create a workspace-RLS-scoped failure marker bound to the
-installation generation, release digest and immutable local catalog identity
-(including server/runtime/protocol compatibility and order-independent release
-metadata). All three discovery functions require that identity and exclude only
-matching unexpired markers. An older or partial catalog cannot quarantine work
-for a different catalog. API inspection reports `runtimeAvailability` separately
-from `connectionHealth`; the web app explains that pending work is saved.
+health and installation lifecycle. A single resolver validates registration, version,
+exact manifest digest and the server's reviewed compatibility set. Its nonthrowing
+result is shared by claim, schedule maintenance and change dispatch. Unavailable
+releases create a workspace-RLS-scoped failure marker bound to the installation
+generation, release digest and immutable local catalog identity (including
+server/runtime/protocol compatibility and order-independent release metadata). All three
+discovery functions require that identity and exclude only matching markers until
+reconciliation succeeds. An older or partial catalog cannot quarantine work for a
+different catalog. API inspection reports `runtimeAvailability` separately from
+`connectionHealth`; the web app explains that pending work is saved.
+
+Hosted resolution requires explicit operator `runtimeEnabled: true`. A false or absent
+flag pauses existing hosted jobs as well as new activation; restoring it changes catalog
+identity and resumes pending work. Standalone metadata does not require hosted
+execution.
 
 Unavailable work stays queued without consuming execution attempts or advancing
-schedule/change cursors. Retry resolution at most once per installation/catalog
-every five minutes under the installation and queue locks. A changed/restored
-catalog is eligible immediately; successful reinspection clears its own marker
-without changing installation generation or requiring upgrade. Expired jobs,
-cleanup deadlines and erasure continue independently. Collect stale catalog
-markers in bounded batches after 30 days, with workspace deletion cascading them.
-Unexpected per-item claim/acknowledgement errors do not end a worker's loop: finish
-processing peers, then report the operational failure. Admin retry recognizes
+schedule/change cursors. A separate reconciliation pass probes at most 25 known failures
+before execution/change discovery; those probes never consume the execution budget.
+Retry resolution at most once per installation/catalog every five minutes under the
+installation and queue locks. A changed/restored catalog is eligible immediately;
+successful reinspection clears its own marker without changing installation generation
+or requiring upgrade. Expired jobs, cleanup deadlines and erasure continue
+independently. Uninstall remains available when a release cannot load: revoke locally,
+retire callbacks and secrets, and skip unavailable provider cleanup code. Collect stale
+catalog markers in bounded batches after 30 days, with workspace deletion cascading
+them. Unexpected per-item claim/acknowledgement errors do not end a worker's loop:
+finish processing peers, then report the operational failure. Admin retry recognizes
 reserved built-in lifecycle jobs and validates their strict empty input.
 
 One scheduler tick per minute transactionally locks due schedule rows, inserts

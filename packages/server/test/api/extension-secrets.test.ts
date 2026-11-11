@@ -38,7 +38,9 @@ const manifest = extensionFixture({
     },
   ],
 });
-const catalog = new ExtensionCatalog([{ manifest, actorCeiling: 'integration' }]);
+const catalog = new ExtensionCatalog([
+  { manifest, actorCeiling: 'integration', runtimeEnabled: true },
+]);
 const oldKey = randomBytes(32),
   newKey = randomBytes(32),
   cipher = new SecretCipher('old', new Map([['old', oldKey]]));

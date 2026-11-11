@@ -106,7 +106,7 @@ export class ExtensionExecutor {
         );
       const fn = release?.manifest.functions.find((f) => f.universalId === job.functionId);
       if (
-        !release ||
+        release?.runtimeEnabled !== true ||
         !fn ||
         release.manifest.packageDigest !== executable.packageDigest ||
         fn.handlerDigest !== executable.handlerDigest ||
@@ -204,7 +204,7 @@ export class ExtensionExecutor {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
       throw new Error('executor pass limit must be 1–1000');
     if (this.stopped) return { executed: 0, fenced: 0 };
-    await this.queue.maintain(this.options.discoverySql);
+    const maintenance = await this.queue.maintain(this.options.discoverySql);
     const due = await this.queue.discover(this.options.discoverySql, limit);
     let next = 0,
       executed = 0,
@@ -235,6 +235,7 @@ export class ExtensionExecutor {
     const failure = outcomes.find((result) => result.status === 'rejected');
     if (failure?.status === 'rejected') throw failure.reason;
     if (hasFailure) throw firstFailure;
+    if (maintenance.failed) throw new Error('extension runtime reconciliation failed');
     return { executed, fenced };
   }
 }

@@ -56,7 +56,16 @@ export class ExtensionCatalog {
         protocolVersion: 1,
         releases: [...this.releases.values()].sort((a, b) => a.digest.localeCompare(b.digest)),
       }),
-      resolve: (id: string, version: string) => this.get(id, version).manifest,
+      resolve: (id: string, version: string) => {
+        const release = this.get(id, version);
+        if (release.manifest.execution === 'hosted' && release.runtimeEnabled !== true)
+          throw new AppError(
+            409,
+            'incompatible_runtime',
+            'hosted execution is disabled in this catalog',
+          );
+        return release.manifest;
+      },
     });
   }
   list() {

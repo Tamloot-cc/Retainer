@@ -330,6 +330,7 @@ describe('SECURITY DEFINER functions', () => {
     retainer_admit_webhook: 'retainer_secret_broker',
     retainer_webhook_candidate: RUNTIME_ROLE,
     retainer_erase_private_derivatives: RUNTIME_ROLE,
+    retainer_extension_runtime_due: 'retainer_executor',
     retainer_extension_jobs_due: 'retainer_executor',
     retainer_extension_maintenance_due: 'retainer_executor',
     retainer_finish_extension_cleanup: RUNTIME_ROLE,

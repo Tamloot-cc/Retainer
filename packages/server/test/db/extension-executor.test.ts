@@ -30,7 +30,9 @@ const manifest = extensionFixture({
     },
   ],
 });
-const catalog = new ExtensionCatalog([{ manifest, actorCeiling: 'integration' }]),
+const catalog = new ExtensionCatalog([
+    { manifest, actorCeiling: 'integration', runtimeEnabled: true },
+  ]),
   release = catalog.get(manifest.universalId, manifest.version);
 const executable = {
   registrationId: manifest.universalId,

@@ -36,7 +36,9 @@ const manifest = extensionFixture({
     },
   ],
 });
-const catalog = new ExtensionCatalog([{ manifest, actorCeiling: 'integration' }]);
+const catalog = new ExtensionCatalog([
+  { manifest, actorCeiling: 'integration', runtimeEnabled: true },
+]);
 let t: TestApp;
 beforeAll(() => {
   t = startTestApp(db, { extensionCatalog: catalog });

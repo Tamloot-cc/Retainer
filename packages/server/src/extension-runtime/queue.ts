@@ -422,7 +422,29 @@ export class ExtensionQueue {
     return discoverySql<{ workspace_id: string; installation_id: string }[]>`
       select * from retainer_extension_changes_due(${after}::uuid,1000,${this.runtimeIdentity})`;
   }
+  /** Rechecks known failures separately; probes never consume the job-discovery budget. */
+  async reconcile(discoverySql: Sql) {
+    const due = await discoverySql<{ workspace_id: string; installation_id: string }[]>`
+      select * from retainer_extension_runtime_due(25,${this.runtimeIdentity})`;
+    let failed = 0;
+    for (const item of due) {
+      try {
+        await inWorkspace(this.sql, item.workspace_id, async (tx) => {
+          await lockSchemaShared(tx, item.workspace_id);
+          const installation = await this.installation(tx, item.workspace_id, item.installation_id);
+          if (!['active', 'installing', 'upgrading', 'uninstalling'].includes(installation.state))
+            return;
+          await this.availability.inspect(tx, installation, { knownFailureOnly: true });
+        });
+      } catch {
+        // Leave the marker due; inspect is retried without ending this pass.
+        failed++;
+      }
+    }
+    return { failed };
+  }
   async maintain(discoverySql: Sql) {
+    const probes = await this.reconcile(discoverySql);
     const due = await discoverySql<{ workspace_id: string; installation_id: string }[]>`
       select * from retainer_extension_maintenance_due(1000,${this.runtimeIdentity})`;
     for (const item of due) {
@@ -473,6 +495,7 @@ export class ExtensionQueue {
         }
       }
     }
+    return probes;
   }
 
   async claim(workspace: string, id: string, owner: string): Promise<ClaimedJob | null> {

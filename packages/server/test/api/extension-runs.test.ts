@@ -32,7 +32,9 @@ const manifest = extensionFixture({
     },
   ],
 });
-const catalog = new ExtensionCatalog([{ manifest, actorCeiling: 'integration' }]);
+const catalog = new ExtensionCatalog([
+  { manifest, actorCeiling: 'integration', runtimeEnabled: true },
+]);
 let t: TestApp, tokens: RunTokens, signingKey: CryptoKey;
 beforeAll(async () => {
   const keys = await generateKeyPair('EdDSA');

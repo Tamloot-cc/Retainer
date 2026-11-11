@@ -1499,6 +1499,11 @@ export const extensionRuntimeUnavailable = pgTable(
       foreignColumns: [extensionInstallations.workspaceId, extensionInstallations.id],
     }).onDelete('cascade'),
     index('extension_runtime_unavailable_checked_idx').on(t.checkedAt),
+    index('extension_runtime_unavailable_probe_idx').on(
+      t.runtimeIdentity,
+      t.retryAt,
+      t.installationId,
+    ),
     check('extension_runtime_unavailable_identity', sql`${t.runtimeIdentity} ~ '^[a-f0-9]{64}$'`),
     check('extension_runtime_unavailable_generation', sql`${t.generation} > 0`),
     check(

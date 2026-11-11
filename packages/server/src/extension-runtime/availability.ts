@@ -64,12 +64,16 @@ export class RuntimeAvailability {
     return result.manifest;
   }
   /** Caller holds schema, installation and queue locks, with a freshly read generation. */
-  async inspect(tx: Tx, pin: ReleasePin): Promise<ExtensionManifest | null> {
-    const [waiting] =
-      await tx`select 1 from extension_runtime_unavailable where installation_id=${pin.id}
-      and runtime_identity=${this.catalog.identity} and generation=${pin.generation} and release_digest=${pin.release_digest}
-      and retry_at>clock_timestamp()`;
-    if (waiting) return null;
+  async inspect(
+    tx: Tx,
+    pin: ReleasePin,
+    options: { knownFailureOnly?: boolean } = {},
+  ): Promise<ExtensionManifest | null> {
+    const [marker] = await tx<
+      { waiting: boolean }[]
+    >`select retry_at>clock_timestamp() as waiting from extension_runtime_unavailable where installation_id=${pin.id}
+      and runtime_identity=${this.catalog.identity} and generation=${pin.generation} and release_digest=${pin.release_digest}`;
+    if (marker?.waiting || (options.knownFailureOnly && !marker)) return null;
     const result = resolveRelease(this.catalog, pin);
     if (result.available) {
       await tx`delete from extension_runtime_unavailable where installation_id=${pin.id} and runtime_identity=${this.catalog.identity}`;

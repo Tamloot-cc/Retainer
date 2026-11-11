@@ -28,6 +28,7 @@ export class ChangeMaintenance {
       pruned = 0,
       failed = 0;
     if (this.stopped) return { queued, blocked, pruned, failed };
+    if (this.queue) failed += (await this.queue.reconcile(this.discovery)).failed;
     const due = this.queue ? await this.queue.discoverChanges(this.discovery, this.after) : [];
     for (const item of due) {
       if (this.stopped || Date.now() >= deadline) break;

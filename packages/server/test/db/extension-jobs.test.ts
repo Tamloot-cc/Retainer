@@ -37,7 +37,9 @@ const manifest = extensionFixture({
     },
   ],
 });
-const catalog = new ExtensionCatalog([{ manifest, actorCeiling: 'integration' }]);
+const catalog = new ExtensionCatalog([
+  { manifest, actorCeiling: 'integration', runtimeEnabled: true },
+]);
 let t: TestApp;
 beforeAll(() => {
   t = startTestApp(db, { extensionCatalog: catalog });
@@ -290,7 +292,11 @@ describe('durable extension jobs and checkpoints', () => {
       extensionFixture({ functions: manifest.functions }),
     );
     const releases = new ExtensionCatalog(
-      manifests.map((manifest) => ({ manifest, actorCeiling: 'integration' as const })),
+      manifests.map((manifest) => ({
+        manifest,
+        actorCeiling: 'integration' as const,
+        runtimeEnabled: true,
+      })),
     );
     const app = startTestApp(db, { extensionCatalog: releases });
     const { workspace, keys } = await app.setupWorkspace(

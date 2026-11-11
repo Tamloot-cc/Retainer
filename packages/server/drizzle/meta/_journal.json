@@ -603,6 +603,20 @@
       "when": 1794435589120,
       "tag": "0085_extension_runtime_discovery",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1794436667851,
+      "tag": "0086_extension_runtime_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1794436802153,
+      "tag": "0087_extension_runtime_probe_index",
+      "breakpoints": true
     }
   ]
 }

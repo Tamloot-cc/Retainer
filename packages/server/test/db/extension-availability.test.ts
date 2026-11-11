@@ -33,6 +33,7 @@ const broken = manifest(),
 const reviewed = [broken, healthy].map((manifest) => ({
   manifest,
   actorCeiling: 'integration' as const,
+  runtimeEnabled: true,
 }));
 const full = new ExtensionCatalog(reviewed),
   partial = new ExtensionCatalog(reviewed.slice(1));
@@ -167,6 +168,50 @@ describe('catalog-scoped runtime availability', () => {
     });
   });
 
+  it('honors the operator execution flag for existing installations and resumes pending work when re-enabled', async () => {
+    const h = await setup();
+    const disabled = new ExtensionCatalog(
+      reviewed.map((row) =>
+        row.manifest.universalId === broken.universalId ? { ...row, runtimeEnabled: false } : row,
+      ),
+    );
+    const invoke = vi.fn(async () => ({ status: 'succeeded' as const }));
+    expect(await executor(disabled, invoke).tick()).toMatchObject({ executed: 0 });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(
+      (await db.owner`select status,attempt from extension_jobs where id=${h.jobId}`)[0],
+    ).toEqual({ status: 'queued', attempt: 0 });
+    const control = startTestApp(db, { extensionCatalog: disabled, runTokens: tokens });
+    expect(
+      (await control.request(`/v1/extensions/${h.id}`, { key: h.key })).body.runtimeAvailability,
+    ).toMatchObject({ state: 'unavailable', code: 'incompatible_runtime' });
+    expect(await executor(full, invoke).tick()).toMatchObject({ executed: 1 });
+    expect(invoke).toHaveBeenCalledOnce();
+    expect(
+      (await db.owner`select generation from extension_installations where id=${h.id}`)[0]
+        ?.generation,
+    ).toBe(1);
+  });
+
+  it('keeps repeated unavailable probes out of a small execution budget and reconciles independently', async () => {
+    const blocked = [];
+    for (let i = 0; i < 6; i++) blocked.push(await setup());
+    const good = await setup(healthy),
+      queue = new ExtensionQueue(app.sql, partial.runtime);
+    for (const h of blocked) await queue.claim(h.workspace, h.jobId, 'classify');
+    await db.owner`update extension_jobs set available_at=clock_timestamp()-interval '1 hour' where installation_id=any(${blocked.map((h) => h.id)}::uuid[])`;
+    // All blocked releases are due for another probe ahead of the healthy work.
+    await db.owner`update extension_runtime_unavailable set retry_at=clock_timestamp()-interval '1 second'`;
+    expect((await queue.discover(discovery(), 4)).map((row) => row.job_id)).toEqual([good.jobId]);
+    expect(await executor(partial).tick(4)).toMatchObject({ executed: 1 });
+    expect(
+      (await db.owner`select status from extension_jobs where id=${good.jobId}`)[0]?.status,
+    ).toBe('succeeded');
+    expect(
+      await db.owner`select * from extension_runtime_unavailable where retry_at<=clock_timestamp()`,
+    ).toHaveLength(0);
+  });
+
   it('exposes catalog-local availability separately from provider health and enforces workspace isolation', async () => {
     const h = await setup(),
       other = await setup(healthy);
@@ -256,6 +301,30 @@ describe('catalog-scoped runtime availability', () => {
     await queue.complete(run, { status: 'succeeded' });
   });
 
+  it('clears a restored same-catalog failure through the bounded reconciliation path before job discovery', async () => {
+    const h = await setup();
+    let restored = false,
+      probes = 0;
+    const snapshot: RuntimeCatalog = {
+      identity: 'e'.repeat(64),
+      resolve: (id, version) => {
+        probes++;
+        if (!restored) throw new Error('unavailable');
+        return full.runtime.resolve(id, version);
+      },
+    };
+    const queue = new ExtensionQueue(app.sql, snapshot);
+    expect(await queue.claim(h.workspace, h.jobId, 'initial')).toBeNull();
+    restored = true;
+    await db.owner`update extension_runtime_unavailable set retry_at=clock_timestamp()-interval '1 second' where installation_id=${h.id}`;
+    expect(await queue.discover(discovery())).toHaveLength(0);
+    expect(await Promise.all([queue.reconcile(discovery()), queue.reconcile(discovery())])).toEqual(
+      [{ failed: 0 }, { failed: 0 }],
+    );
+    expect(probes).toBe(2);
+    expect((await queue.discover(discovery())).map((row) => row.job_id)).toEqual([h.jobId]);
+  });
+
   it('does not apply a previous generation or digest failure to a changed installation pin', async () => {
     const h = await setup();
     await db.owner`insert into extension_runtime_unavailable(workspace_id,installation_id,runtime_identity,generation,release_digest,code,retry_at)
@@ -269,8 +338,10 @@ describe('catalog-scoped runtime availability', () => {
       input: {},
       dedupeKey: 'next',
     });
+    await db.owner`update extension_installations set generation=2 where id=${h.id}`;
+    await db.owner`update extension_jobs set generation=2 where id=${next.id}`;
     await db.owner`insert into extension_runtime_unavailable(workspace_id,installation_id,runtime_identity,generation,release_digest,code,retry_at)
-      values(${h.workspace},${h.id},${full.runtime.identity},2,${full.get(broken.universalId, broken.version).digest},'release_unavailable',clock_timestamp()+interval '1 day')`;
+      values(${h.workspace},${h.id},${full.runtime.identity},1,${full.get(broken.universalId, broken.version).digest},'release_unavailable',clock_timestamp()+interval '1 day')`;
     expect(await h.queue.claim(h.workspace, next.id, 'changed-generation')).toBeTruthy();
   });
 
@@ -288,6 +359,49 @@ describe('catalog-scoped runtime availability', () => {
       (await db.owner`select status from extension_jobs where id=${bad.jobId}`)[0]?.status,
     ).toBe('queued');
   });
+
+  it.each(['missing', 'unsupported'] as const)(
+    'uninstalls a %s release without loading cleanup code and retires secrets and callbacks',
+    async (kind) => {
+      const h = await setup(),
+        digest = full.get(broken.universalId, broken.version).digest;
+      await db.owner`insert into extension_secrets(workspace_id,installation_id,name,envelope) values(${h.workspace},${h.id},'fixture','{}'::jsonb)`;
+      await db.owner`insert into webhook_bindings(workspace_id,installation_id,registration_id,generation,release_digest,route,secret_name)
+      values(${h.workspace},${h.id},${broken.universalId},1,${digest},'fixture','fixture')`;
+      const catalog =
+        kind === 'missing'
+          ? partial
+          : new ExtensionCatalog([
+              { manifest: { ...broken, serverVersions: ['999.0.0'] }, actorCeiling: 'integration' },
+            ]);
+      const control = startTestApp(db, {
+        extensionCatalog: catalog,
+        runTokens: tokens,
+        extensionActivation: new Set([digest]),
+      });
+      const result = await control.request(`/v1/extensions/${h.id}/uninstall`, {
+        key: h.key,
+        method: 'POST',
+      });
+      expect(result.status).toBe(200);
+      expect(result.body.state).toBe('uninstalled');
+      expect(
+        (
+          await db.owner`select delete_after from extension_secrets where installation_id=${h.id}`
+        )[0]?.delete_after,
+      ).toBeInstanceOf(Date);
+      expect(
+        (await db.owner`select state from webhook_bindings where installation_id=${h.id}`)[0]
+          ?.state,
+      ).toBe('retired');
+      expect(
+        await db.owner`select id from extension_jobs where installation_id=${h.id} and trigger_kind='uninstall'`,
+      ).toHaveLength(0);
+      expect(
+        (await db.owner`select status from extension_jobs where id=${h.jobId}`)[0]?.status,
+      ).toBe('cancelled');
+    },
+  );
 
   it('honors uninstall cleanup deadlines even while the runtime is unavailable', async () => {
     const h = await setup();

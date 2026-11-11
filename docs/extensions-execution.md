@@ -115,7 +115,7 @@ handler succeeds. A server acknowledgement supplies the same lifecycle when no
 hook is declared. Terminal initial setup failure becomes `setup_failed`; failed
 upgrade becomes `disabled`, retaining the new schema and fenced old generation.
 Run inspection returns safe codes, IDs and timestamps, never input or credentials.
-An admin may retry a failed current-generation job. Explicit disable clears the
+An admin may retry a failed current-generation job, including reserved built-in lifecycle jobs. Explicit disable clears the
 failure authorization and prevents a retry from undoing revocation.
 
 Disable cancels runs and schedules after admitted operations drain. Enable
@@ -135,27 +135,30 @@ accumulate none. An expired worker cannot acknowledge or write after replacement
 
 ## Unavailable releases and server upgrades
 
-A missing or incompatible pinned release pauses its pending work in that runtime.
-It does not change provider connection health, discard jobs, consume attempts or
-advance change/schedule cursors. `GET /v1/extensions` and installation inspection
-report `runtimeAvailability`; failure codes and the next probe time are safe
-operator diagnostics. The web app explains when the server cannot run an extension.
+A missing or incompatible pinned release pauses its pending work in that runtime. It
+does not change provider connection health, discard jobs, consume attempts or advance
+change/schedule cursors. `GET /v1/extensions` and installation inspection report
+`runtimeAvailability`; failure codes and the next probe time are safe operator
+diagnostics. The web app explains when the server cannot run an extension.
 
-Discovery skips a matching installation generation, release and catalog failure
-for five minutes, then permits a serialized probe. A restored/changed catalog
-rechecks immediately. Successful resolution resumes the same pending work without
-an upgrade or generation change. Other catalogs' workers remain independent.
-Expired jobs, uninstall cleanup deadlines and erasure keep running. Catalog
-markers older than 30 days are collected; workspace purge deletes them too.
+Discovery skips matching installation generation, release and catalog failures until
+reconciliation succeeds. A separate pass rechecks at most 25 due failures, with a
+five-minute backoff, without consuming execution slots. A restored/changed catalog
+rechecks immediately. Successful resolution resumes the same pending work without an
+upgrade or generation change. Other catalogs' workers remain independent. An admin can
+still uninstall when the release cannot load: local access is revoked, callbacks/secrets
+are retired, and unavailable cleanup code is skipped. Expired jobs, uninstall cleanup
+deadlines and erasure keep running. Catalog markers older than 30 days are collected;
+workspace purge deletes them too.
 
-First-party compatibility is reviewed in `scripts/extension-release.mjs` as an
-exact server-version set. Artifact generation refuses an unreviewed package
-version. Before a server version transition, test and publish a bridge extension
-release with both versions in that set, upgrade every referenced installation
-while the old server runs, then deploy the new server. Disabled installations and
-live cleanup also count as references. Retaining old bytes does not establish
-compatibility, and an incompatible adapter requires an explicit migration/removal
-plan. Hosted preflight keeps refusing a server rollout with unsupported pins.
+First-party compatibility is reviewed in `scripts/extension-release.mjs` as an exact
+server-version set. Artifact generation refuses an unreviewed package version. Before a
+server version transition, test and publish a bridge extension release with both
+versions in that set, upgrade every referenced installation while the old server runs,
+then deploy the new server. Disabled installations and live cleanup also count as
+references. Retaining old bytes does not establish compatibility, and an incompatible
+adapter requires an explicit migration/removal plan. Hosted preflight keeps refusing a
+server rollout with unsupported pins.
 
 ## Change feeds and retention recovery
 

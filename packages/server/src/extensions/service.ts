@@ -872,10 +872,11 @@ export class Extensions {
       const [current] = await tx<Row[]>`select * from extension_installations where id = ${id}`;
       if (!current) throw notFound('extension installation');
       if (['uninstalled', 'uninstalling'].includes(current.state)) return present(current);
+      const resolution =
+        state === 'uninstalled' ? resolveRelease(this.catalog.runtime, current) : undefined;
       const nextState =
-        state === 'uninstalled' &&
-        this.catalog.get(current.registration_id, current.version).manifest.execution ===
-          'hosted' &&
+        resolution?.available &&
+        resolution.manifest.execution === 'hosted' &&
         this.activation.has(current.release_digest)
           ? 'uninstalling'
           : state;
