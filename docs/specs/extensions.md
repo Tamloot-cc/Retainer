@@ -433,25 +433,40 @@ before launching. No arbitrary serialized exceptions, environment dump or secret
 return values. Timeout is 120 seconds by default, hard maximum 300; longer work
 must paginate. Inputs/outputs are at most 64 KiB.
 
-Hosted: separate immutable Lambda versions for first-party bundles, outside the
-DB VPC, with dedicated execution roles permitting only required logging. No DB
-credentials, deployment credentials, instance secrets or S3-wide permissions.
-Use signed upload URLs for file bytes. An egress-capable trusted executor in the
-VPC claims jobs and invokes only registered function versions; it has narrowly
-scoped invocation and signing permissions. This is a new runtime, not the API
-function acquiring outbound internet access.
+Hosted: trusted Lambda coordinators claim jobs and sign scoped run capabilities;
+a separate Lambda handles secret brokering and raw webhook admission. Each has
+its own IAM role and database login. First-party code runs in fresh immutable
+Docker containers on a dedicated execution host, outside the database security
+group, using the same sandbox protocol as Compose. The host has no database,
+provider-secret, deployment or run-signing credentials. Its instance role can
+read only its own small launch configuration, the selected immutable release
+metadata and images. Require IMDSv2 with hop limit one, disable IPv6 metadata,
+and deny container access to the host, metadata and routed private networks.
+File bytes use signed transfer URLs rather than bucket-wide runner permissions.
 
-Self-hosted: Compose includes a trusted launcher and fresh runner container per
-invocation. Only the launcher controls container creation; extension containers
-never mount the Docker socket, host paths or DB network. Drop capabilities, run
-non-root, read-only root FS plus bounded tmpfs, enforce CPU/memory/PID/time limits,
-and destroy the container after every run. The launcher accepts registered
-bundle IDs only. Its host-level privilege is documented; a separate service and
-socket boundary are required, not a promise that arbitrary container execution is
-safe. Deny host/private/link-local destinations except the configured public API
-endpoint, including metadata endpoints. Validate DNS/redirect destinations at the
-egress boundary. Hosted public-network functions still have their own execution
-credentials, so least-privilege IAM is mandatory.
+Compose and hosted execution use a trusted launcher and a fresh runner container
+per invocation. Only the launcher controls container creation; extension
+containers never mount the Docker socket, host paths or DB network. Drop
+capabilities, run non-root, use a read-only root FS plus bounded tmpfs, enforce
+CPU/memory/PID/time limits, and destroy the container after every run. Job
+containers have only an internal network to the trusted egress proxy; signature
+verifiers have no network at all and a five-second hard timeout. Deny
+host/private/link-local destinations except the configured public API endpoint,
+including metadata endpoints. Validate DNS and redirect destinations at the
+proxy. The hosted host requires an operator-reviewed hardened AMI with Docker
+isolated-gateway support; an unsupported host fails closed. This replaces the
+initial proposed per-bundle Lambda execution because containers provide the
+implemented per-invocation process, filesystem and no-network verifier boundary.
+
+The launcher accepts registered bundle IDs only. Its host-level Docker socket
+privilege is documented; a separate service and socket boundary are required.
+Catalog and executable snapshots are packaged immutable files with expected
+SHA-256 hashes, retaining every referenced installed/cleanup release. Deployment
+checks source, schema-history compatibility, image/config identity and release
+inventory before changing traffic, repeats inventory after draining all writers,
+and holds maintenance on migration or post-drain failure. Environment and host
+updates happen only after that drain. No automatic down-migrations or blind
+release/image pruning are allowed.
 
 Only reviewed first-party code is supported. This is not a third-party hostile
 code sandbox certification. Logs, tmp files, warm process globals and environment

@@ -650,3 +650,16 @@ Ten real-Postgres inventory/migration-status tests pass, plus server typecheckin
 and lint/layer checks. The private archive inspector and rollout will consume
 this inventory before changing traffic and again after draining writers;
 that integration and hosted acceptance remain in progress.
+
+
+## Static package and release rollout checks
+
+The private archive inspector checks clean-main source stamps, complete immutable
+release snapshots and exact catalog/executable hashes without executing candidate
+code. Uploaded Lambda code must match the inspected ZIP hash. The owner inventory
+is now consumed before stopping traffic and again after draining writers, so
+concurrent installation approval cannot drop required metadata. External-app-only
+snapshots preserve their catalog entries without creating hosted image entries.
+All thirteen offline deployment cases and nine local Node metadata cases pass.
+The broader public handler/inventory/migration regression passes all 25 tests.
+Hosted provisioning, publication automation and live acceptance remain in progress.
