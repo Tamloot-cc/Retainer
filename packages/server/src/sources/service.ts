@@ -10,7 +10,7 @@ import { type Caller, canApproveDestructive } from '../caller.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, jsonValue, lockForWrite, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
-import { admitRun } from '../extension-runtime/admission.js';
+import { admitCaller, admitRun } from '../extension-runtime/admission.js';
 import { cancelRuns, lockExtension } from '../extension-runtime/locks.js';
 import { requestHash } from '../idempotency.js';
 import { logEvent, retractEventClaims } from '../memory/events.js';
@@ -238,12 +238,15 @@ export class Sources {
     });
   }
   async syncStatus(caller: Caller, id: string): Promise<SourceSyncStatus> {
+    if (caller.installation && caller.installation.installationId !== id)
+      throw notFound('installation source');
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       await lockSchemaShared(tx, caller.workspaceId);
       if (caller.run) {
         this.runtime(caller, id);
         await admitRun(tx, caller.workspaceId, caller.run, false, 'runtime');
       }
+      if (caller.installation) await admitCaller(tx, caller);
       const [installation] =
         await tx`select registration_id,version,release_digest,generation from extension_installations where id=${id}`;
       if (

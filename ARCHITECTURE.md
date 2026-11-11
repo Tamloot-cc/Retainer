@@ -1167,6 +1167,22 @@ for rolled-up evidence; privacy erasure removes supported claims before support
 FK cascades, even when the cited event survives. Scans are bounded and their
 control cursors are erasable installation KV, never durable job input.
 
+### 4.5 Standalone installation credentials
+
+`extension_credentials` binds hash-stored key-mode keys (and installation OAuth
+grant records) to a workspace, installation, approved scope subset and generation.
+The external app actor is the installation, with no personal-memory principal.
+Standalone keys use the REST resource; ordinary MCP OAuth consent stays separate.
+Admission takes the shared installation lock inside each data/metadata transaction
+and precedes idempotency or file authorization. Revoke and control transitions
+take that lock exclusively, draining admitted writes. Re-enable cannot revive an
+old credential. Uploaded-file ownership and change causation use the installation
+identity. Hosted execution capabilities continue to require their leased binding.
+Authentication exposes only minimal current key metadata through the reviewed
+`retainer_lookup_extension_key` function. The client-liveness helper locks only a
+registered OAuth client row and returns a boolean. Both privileged functions fix
+`search_path` and are executable only by the runtime role.
+
 ## 5. Read paths
 
 | Operation                          | What it returns                                                                                                                                    |

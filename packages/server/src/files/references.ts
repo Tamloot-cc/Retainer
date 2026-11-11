@@ -6,7 +6,7 @@ import type { FieldState } from '../schema/types.js';
 /** Called while the record is locked. File row locks serialize attachment against orphan collection. */
 export async function validateFileReferences(
   tx: Tx,
-  context: Pick<Caller, 'actor' | 'run'> & { sourceItemId?: string },
+  context: Pick<Caller, 'actor' | 'run' | 'installation'> & { sourceItemId?: string },
   recordId: string,
   writes: ReadonlyMap<FieldState, unknown>,
 ) {
@@ -41,14 +41,17 @@ export async function validateFileReferences(
         'file must be finalized and ready in this workspace',
         { fileId: id },
       );
-    if (context.run) {
+    if (context.run || context.installation) {
       if (file.source_item_id && file.source_item_id !== context.sourceItemId)
         throw new AppError(
           403,
           'forbidden',
           'managed source uploads may be attached only to their source revision',
         );
-      if (file.installation_id !== context.run.installationId)
+      if (
+        file.installation_id !==
+        (context.run?.installationId ?? context.installation?.installationId)
+      )
         throw new AppError(
           403,
           'forbidden',

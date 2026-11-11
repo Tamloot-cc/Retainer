@@ -66,13 +66,12 @@ export class ChangeCollector {
         >`select cause from extension_jobs where id=${caller.run.jobId}`
       : [];
     const chain = job?.cause ?? [];
+    const origin = caller.run?.installationId ?? caller.installation?.installationId ?? null;
     const collector = new ChangeCollector(
       caller.workspaceId,
       schema,
-      caller.run?.installationId ?? null,
-      caller.run && !chain.includes(caller.run.installationId)
-        ? [...chain, caller.run.installationId]
-        : chain,
+      origin,
+      origin && !chain.includes(origin) ? [...chain, origin] : chain,
     );
     return ChangeCollector.attach(tx, collector);
   }

@@ -841,6 +841,32 @@ export class RetainerClient {
       }[];
     }>(`/v1/extensions/${encodeURIComponent(id)}/runtime/webhooks`);
   }
+  extensionCredentials(id: string, signal?: AbortSignal) {
+    return this.get<{ credentials: import('@retainer/extension').ExtensionCredential[] }>(
+      `/v1/extensions/${encodeURIComponent(id)}/credentials`,
+      {},
+      signal,
+    );
+  }
+  createExtensionKey(
+    id: string,
+    input: { expectedGeneration: number; scopes: ('read' | 'write')[] },
+  ) {
+    return this.post<{
+      id: string;
+      key: string;
+      prefix: string;
+      scopes: ('read' | 'write')[];
+      generation: number;
+      createdAt: string;
+    }>(`/v1/extensions/${encodeURIComponent(id)}/keys`, input);
+  }
+  revokeExtensionCredential(id: string, credentialId: string) {
+    return this.request<{ revoked: boolean }>(
+      `/v1/extensions/${encodeURIComponent(id)}/credentials/${encodeURIComponent(credentialId)}`,
+      { method: 'DELETE' },
+    );
+  }
   disableExtension(id: string) {
     return this.post<ExtensionInstallation>(`/v1/extensions/${encodeURIComponent(id)}/disable`);
   }

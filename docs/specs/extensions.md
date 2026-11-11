@@ -3,8 +3,9 @@
 Status: implementation in progress. Control/lifecycle UI, isolated execution,
 files, managed sources, durable change dispatch, verified webhook ingress and
 deterministic last-contact, reviewed connection/grant management, typed source
-progress and the Granola adapter are implemented locally. Standalone authorization
-and hosted launch remain. Granola is verified against provider fixtures, not a live account. Date: 2026-11-11.
+progress, the Granola adapter and key-mode standalone credentials are implemented
+locally. Accounts-mode standalone OAuth and hosted launch remain. Granola is
+verified against provider fixtures, not a live account. Date: 2026-11-11.
 See [implementation progress](extensions-implementation.md) for completed and outstanding work.
 
 This spec replaces the exported **Retainer Extensions** proposal supplied as
@@ -349,6 +350,23 @@ installation, client, workspace and grant generation; recheck revocation on ever
 request. Key-mode standalone apps use a separate revocable installation key.
 Authorization-code flows use state, PKCE and exact registered redirects; provider
 OAuth connection management is separate from Retainer access authorization.
+
+Key-mode standalone installation approval activates the external app grant without
+hosted setup jobs. A human admin creates an `rti_` key for an explicit subset of
+the approved read/write scopes, with a current-generation precondition. The raw
+256-bit key is returned once; only its hash, safe prefix and grant metadata are
+stored. The admin can list and revoke credentials. At most 20 current unrevoked
+keys are allowed per installation; competing issuances serialize with revocation.
+These keys are accepted only by REST in key mode, with their actor resolved from
+the installation. The installer is audit metadata and personal memory stays
+unavailable. Reads/writes, views, files and schema/installation metadata recheck
+the grant inside their transaction. Individual revoke and disable drain admitted
+writes; the old credential is refused before idempotency replay. Re-enable uses
+a fresh generation and needs a new key. The per-installation write budget is
+shared across keys. Uploaded files belong to the installation and the change feed
+records its causation identity. Hosted execution capabilities (KV, job checkpoint,
+secret broker and managed-source attestation) remain lease-bound; standalone
+services keep their execution state and provider secrets externally.
 
 Non-secret setting definitions may provide a form default and bounded string
 choices. Approval requests still carry explicit values; defaults never contain

@@ -1,9 +1,11 @@
 import type { SchemaOperation } from '@retainer/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useAccount } from '../accounts/context.js';
 import { api, canMutate, useWorkspace } from '../api/client.js';
 import {
   Button,
+  CopyButton,
   Dialog,
   Empty,
   Input,
@@ -29,6 +31,7 @@ const stateLabel = (state: string) =>
   state.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
 
 export function ExtensionsPage() {
+  const accountState = useAccount();
   const { session } = useWorkspace(),
     client = useQueryClient();
   const catalog = useQuery({
@@ -51,6 +54,7 @@ export function ExtensionsPage() {
     reconnect?: boolean;
   } | null>(null);
   const [runs, setRuns] = useState<Installation | null>(null);
+  const [credentials, setCredentials] = useState<Installation | null>(null);
   const refresh = () =>
     Promise.all([
       client.invalidateQueries({ queryKey }),
@@ -126,6 +130,9 @@ export function ExtensionsPage() {
                 ) : null}
                 <Row>
                   <Button onClick={() => setRuns(installation)}>View runs</Button>
+                  {admin && !accountState && release?.manifest.execution === 'standalone' ? (
+                    <Button onClick={() => setCredentials(installation)}>App credentials</Button>
+                  ) : null}
                   {admin && release ? (
                     <Button onClick={() => setSelection({ release, installation })}>
                       Settings
@@ -220,6 +227,12 @@ export function ExtensionsPage() {
             setSelection(null);
             void refresh();
           }}
+        />
+      ) : null}
+      {credentials ? (
+        <InstallationCredentials
+          installation={installed.find((i) => i.id === credentials.id) ?? credentials}
+          onClose={() => setCredentials(null)}
         />
       ) : null}
       {runs ? <RunDialog installation={runs} admin={admin} onClose={() => setRuns(null)} /> : null}
@@ -645,5 +658,128 @@ export function SourceSyncStatus({ installationId }: { installationId: string })
         A completed scan can still have pending or failed imports. View runs for details.
       </Muted>
     </section>
+  );
+}
+
+export function InstallationCredentials({
+  installation,
+  onClose,
+}: {
+  installation: Installation;
+  onClose: () => void;
+}) {
+  const client = useQueryClient();
+  const [scopes, setScopes] = useState<('read' | 'write')[]>(installation.grantedScopes);
+  const [issued, setIssued] = useState<Awaited<ReturnType<typeof api.createExtensionKey>> | null>(
+    null,
+  );
+  const selected = scopes.filter((scope) => installation.grantedScopes.includes(scope));
+  const credentials = useQuery({
+    queryKey: [...queryKey, 'credentials', installation.id],
+    queryFn: ({ signal }) => api.extensionCredentials(installation.id, signal),
+  });
+  const issue = useMutation({
+    mutationFn: () =>
+      api.createExtensionKey(installation.id, {
+        expectedGeneration: installation.generation,
+        scopes: selected,
+      }),
+    onSuccess: (key) => {
+      setIssued(key);
+      void client.invalidateQueries({ queryKey });
+    },
+    onError: () => {
+      void client.invalidateQueries({ queryKey });
+    },
+  });
+  const revoke = useMutation({
+    mutationFn: (id: string) => api.revokeExtensionCredential(installation.id, id),
+    onSuccess: () => client.invalidateQueries({ queryKey }),
+  });
+  return (
+    <Dialog
+      open
+      title="App credentials"
+      onOpenChange={(open) => {
+        if (!open) {
+          setIssued(null);
+          onClose();
+        }
+      }}
+    >
+      <Stack>
+        <p>This key works for this app in this workspace. It has no access to personal memory.</p>
+        {credentials.error ? (
+          <QueryError error={credentials.error} retry={() => void credentials.refetch()} />
+        ) : null}
+        {issue.error ? <Notice>{issue.error.message}</Notice> : null}
+        {revoke.error ? <Notice>{revoke.error.message}</Notice> : null}
+        {issued ? (
+          <Stack>
+            <Notice>Copy this key now. It is shown only once.</Notice>
+            <Input aria-label="Installation key" readOnly value={issued.key} />
+            <CopyButton value={issued.key} label="Copy installation key" />
+          </Stack>
+        ) : (
+          <Stack>
+            {installation.grantedScopes.map((scope) => (
+              <Label key={scope}>
+                <input
+                  type="checkbox"
+                  checked={selected.includes(scope)}
+                  onChange={(event) =>
+                    setScopes(
+                      event.currentTarget.checked
+                        ? [...selected, scope]
+                        : selected.filter((s) => s !== scope),
+                    )
+                  }
+                />
+                {scope === 'read' ? 'Read workspace data' : 'Write workspace data'}
+              </Label>
+            ))}
+            <Button
+              disabled={installation.state !== 'active' || !selected.length || issue.isPending}
+              onClick={() => issue.mutate()}
+            >
+              {issue.isPending ? 'Creating key…' : 'Create installation key'}
+            </Button>
+            {installation.state !== 'active' ? (
+              <Muted>Enable this app before creating a new key.</Muted>
+            ) : null}
+          </Stack>
+        )}
+        {credentials.data?.credentials.length ? (
+          <ul aria-label="App credentials">
+            {credentials.data.credentials.map((credential) => (
+              <li key={credential.id}>
+                <Row>
+                  <span>
+                    {credential.prefix ?? 'OAuth connection'} ·{' '}
+                    {credential.active ? 'Active' : 'Inactive'}
+                  </span>
+                  {credential.active ? (
+                    <Button
+                      disabled={revoke.isPending}
+                      onClick={() => revoke.mutate(credential.id)}
+                    >
+                      Revoke {credential.prefix ?? 'connection'}
+                    </Button>
+                  ) : null}
+                </Row>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <Button
+          onClick={() => {
+            setIssued(null);
+            onClose();
+          }}
+        >
+          Done
+        </Button>
+      </Stack>
+    </Dialog>
   );
 }

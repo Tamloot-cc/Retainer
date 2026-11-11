@@ -5,8 +5,9 @@ import { z } from 'zod';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
 import type { ApiKeyScope } from '../db/schema.js';
-import { inWorkspace } from '../db/tx.js';
+import { inWorkspace, lockSchemaShared } from '../db/tx.js';
 import { AppError } from '../errors.js';
+import { admitCaller } from '../extension-runtime/admission.js';
 import { readBody } from '../http/request.js';
 import type { AppEnv } from '../http/response.js';
 import { hashApiKey } from './keys.js';
@@ -50,6 +51,8 @@ export function requireWebHeader(c: Context, publicOrigin?: string): void {
 }
 async function presentSession(sql: Sql, caller: Caller): Promise<Session> {
   return inWorkspace(sql, caller.workspaceId, async (tx) => {
+    await lockSchemaShared(tx, caller.workspaceId);
+    await admitCaller(tx, caller, false, 'runtime');
     const [workspace] = await tx<
       { id: string; name: string; slug: string }[]
     >`select id, name, slug from workspaces where id = ${caller.workspaceId}`;

@@ -53,6 +53,12 @@ export const browserExtensionManifest = manifestFixture({
     },
   ],
 });
+export const browserStandaloneManifest = manifestFixture({
+  universalId: '671f8022-4cb5-4a53-8633-110a89a69dc7',
+  name: 'browser-app',
+  execution: 'standalone',
+  scopes: ['read', 'write'],
+});
 export const test = base.extend<
   {
     retainer: {
@@ -68,13 +74,25 @@ export const test = base.extend<
       }>;
     };
   },
-  { extensionFixture: boolean; fileStorage: boolean; sourceFixture: boolean }
+  {
+    extensionFixture: boolean;
+    standaloneFixture: boolean;
+    fileStorage: boolean;
+    sourceFixture: boolean;
+  }
 >({
   extensionFixture: [false, { option: true, scope: 'worker' }],
+  standaloneFixture: [false, { option: true, scope: 'worker' }],
   fileStorage: [false, { option: true, scope: 'worker' }],
   sourceFixture: [false, { option: true, scope: 'worker' }],
   retainer: async (
-    { browserName: _browserName, extensionFixture, fileStorage: withFiles, sourceFixture },
+    {
+      browserName: _browserName,
+      extensionFixture,
+      standaloneFixture,
+      fileStorage: withFiles,
+      sourceFixture,
+    },
     use,
   ) => {
     const adminUrl = process.env.DATABASE_URL;
@@ -169,10 +187,15 @@ export const test = base.extend<
             runTokens,
           }
         : {}),
-      ...(extensionFixture
+      ...(extensionFixture || standaloneFixture
         ? {
             extensionCatalog: new ExtensionCatalog([
-              { manifest: browserExtensionManifest, actorCeiling: 'integration' },
+              ...(extensionFixture
+                ? [{ manifest: browserExtensionManifest, actorCeiling: 'integration' as const }]
+                : []),
+              ...(standaloneFixture
+                ? [{ manifest: browserStandaloneManifest, actorCeiling: 'integration' as const }]
+                : []),
             ]),
           }
         : {}),

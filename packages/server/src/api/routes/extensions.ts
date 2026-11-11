@@ -10,7 +10,7 @@ import {
 import { idParam, limitParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 
-export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions) {
+export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMode = true) {
   app.post('/extensions/secrets', requireScope('admin'), async (c) =>
     c.json(
       await extensions.stageSecret(
@@ -27,6 +27,39 @@ export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions) {
         ),
       ),
       201,
+    ),
+  );
+  app.get('/extensions/:id/credentials', requireScope('admin'), async (c) =>
+    c.json(await extensions.credentials(c.get('caller'), idParam(c))),
+  );
+  app.post('/extensions/:id/keys', requireScope('admin'), async (c) => {
+    if (!keyMode)
+      throw new AppError(403, 'forbidden', 'accounts-mode standalone apps connect through OAuth');
+    return c.json(
+      await extensions.issueKey(
+        c.get('caller'),
+        idParam(c),
+        await readBody(
+          c,
+          z.strictObject({
+            expectedGeneration: z.number().int().positive(),
+            scopes: z
+              .array(z.enum(['read', 'write']))
+              .min(1)
+              .max(2),
+          }),
+        ),
+      ),
+      201,
+    );
+  });
+  app.delete('/extensions/:id/credentials/:credential', requireScope('admin'), async (c) =>
+    c.json(
+      await extensions.revokeCredential(
+        c.get('caller'),
+        idParam(c),
+        z.uuid().parse(c.req.param('credential')),
+      ),
     ),
   );
   app.get('/extensions/catalog', requireScope('read'), (c) =>

@@ -446,6 +446,18 @@ export type ExtensionPreview = {
   previousGrants?: { actor: 'integration' | 'agent'; scopes: ('read' | 'write')[] };
   warnings: string[];
 };
+export type ExtensionCredential = {
+  id: string;
+  kind: 'key' | 'oauth';
+  prefix: string | null;
+  clientId: string | null;
+  generation: number;
+  scopes: ('read' | 'write')[];
+  createdAt: string;
+  revokedAt: string | null;
+  active: boolean;
+};
+
 export type ExtensionInstallation = {
   id: string;
   registrationId: string;

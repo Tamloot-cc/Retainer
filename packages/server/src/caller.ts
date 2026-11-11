@@ -11,6 +11,8 @@ export type Caller = {
   actor: Actor;
   /** A signed, installation-bound execution credential; never reaches personal memory. */
   run?: RunBinding;
+  /** A standalone workspace grant; no hosted lease, installer impersonation or personal memory. */
+  installation?: InstallationBinding;
   scopes: readonly ApiKeyScope[];
   /** The signed-in person, in accounts mode. */
   userId?: string;
@@ -57,5 +59,14 @@ export type RunBinding = {
   owner: string;
   fence: string;
   releaseDigest: string;
+  scopes: ('read' | 'write')[];
+};
+
+export type InstallationBinding = {
+  installationId: string;
+  registrationId: string;
+  generation: number;
+  credentialId: string;
+  kind: 'key' | 'oauth';
   scopes: ('read' | 'write')[];
 };

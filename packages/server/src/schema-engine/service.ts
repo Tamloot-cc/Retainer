@@ -2,8 +2,9 @@ import type { SchemaDescription } from '@retainer/shared';
 import { z } from 'zod';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
-import { inWorkspace } from '../db/tx.js';
+import { inWorkspace, lockSchemaShared } from '../db/tx.js';
 import { readWorkspace } from '../db/workspaces.js';
+import { admitCaller } from '../extension-runtime/admission.js';
 import { getSchema } from '../schema/compiled.js';
 import { BUILT_INS, memoryBuiltIn } from './built-ins.js';
 import { runSchemaChange, type SchemaChangeResult } from './engine.js';
@@ -19,6 +20,8 @@ export type { SchemaDescription } from '@retainer/shared';
 export async function describeSchema(sql: Sql, caller: Caller): Promise<SchemaDescription> {
   const { workspaceId } = caller;
   return inWorkspace(sql, workspaceId, async (tx) => {
+    await lockSchemaShared(tx, workspaceId);
+    await admitCaller(tx, caller, false, 'runtime');
     const [workspace, schema] = await Promise.all([
       readWorkspace(tx, workspaceId),
       getSchema(tx, workspaceId),
@@ -35,7 +38,14 @@ export async function describeSchema(sql: Sql, caller: Caller): Promise<SchemaDe
       },
       objects,
       valueFormats: presentValueFormats(objects),
-      builtIns: [...BUILT_INS, memoryBuiltIn(caller.person ? ['workspace', 'me'] : ['workspace'])],
+      builtIns: [
+        ...BUILT_INS,
+        memoryBuiltIn(
+          caller.person && !caller.run && !caller.installation
+            ? ['workspace', 'me']
+            : ['workspace'],
+        ),
+      ],
     };
   });
 }

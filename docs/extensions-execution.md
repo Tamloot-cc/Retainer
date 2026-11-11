@@ -275,3 +275,17 @@ actual Node 24 verifier in non-root, read-only, no-network containers. Signed
 payloads pass; raw-body tampering, mismatched signed event IDs and another
 release digest are refused. The test uses only disposable synthetic signing
 material and never reaches a provider account.
+
+## Standalone app keys in key mode
+
+A reviewed standalone installation becomes active immediately after the admin
+approves its schema and read/write grant. Open **App credentials**, select access
+and create a key. Copy it before closing; only a hash and prefix are stored.
+Use it as a bearer credential for the REST API. Credential lists contain safe
+metadata, and revocation waits for admitted writes to finish. Disable/re-enable,
+settings changes and upgrades invalidate older generations; issue a new key after
+re-enabling. The same app actor owns its uploads across keys. Standalone keys
+access ordinary CRM operations, authorized files, the change feed and their own
+installation metadata. Hosted execution state and provider-secret capabilities
+remain lease-bound. Accounts-mode standalone apps connect through the separate
+installation OAuth consent flow, which is still pending implementation.

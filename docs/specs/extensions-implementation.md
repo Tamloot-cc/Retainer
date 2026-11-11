@@ -3,7 +3,8 @@
 Current status: controls, isolated execution/lifecycle, files/erasure, managed
 sources/revisions, commit-ordered feeds, durable triggers, isolated verification,
 public webhook ingress and deterministic last-contact are implemented and tested.
-The default catalog is empty. Granola and typed sync progress are implemented locally; standalone grants and hosted launch remain outstanding. Reviewed reconnect and grant changes are also implemented.
+The default catalog is empty. Granola, typed sync progress and standalone keys are
+implemented locally; standalone OAuth and hosted launch remain outstanding. Reviewed reconnect and grant changes are also implemented.
 
 The contract in extensions.md remains the acceptance specification. Implement in
 these dependency-ordered slices; never advertise a trigger before its safety
@@ -512,3 +513,35 @@ no-network, non-root raw-signature proof, including body tampering, signed
 payload/header ID mismatch and release-digest fencing. This verifies the packaged
 verifier, not live Granola access or AWS isolation. Standalone authorization and
 private hosted implementation are the next delivery slices.
+
+## Standalone installation keys
+
+A reviewed standalone approval becomes active without hosted jobs. Human admins
+issue hash-stored, shown-once REST installation keys for approved read/write
+scopes, list only safe metadata and revoke them. The new credential table binds
+workspace, installation and generation; the same binding supports the forthcoming
+OAuth grant without fabricating a hosted lease. Key-mode keys are refused by MCP,
+web cookies and accounts-mode REST. Actor class comes from the approved grant;
+keys have no person/installer impersonation. Key creation is capped and serialized.
+
+Credential admission now runs inside record, view, file and metadata transactions
+before idempotency/file authorization. Revoke and disable drain in-flight writes;
+old captured callers cannot replay a write, and re-enable needs a fresh key.
+Installation file ownership, causation identity and a shared write budget apply
+across keys. The UI allows scope selection, displays the returned secret once,
+discards it on closing and exposes explicit prefix-based revocation. Hosted
+KV/queue/secrets/source-verification capabilities stay lease-bound.
+
+Real-Postgres checks cover integration/agent rank, read-only credentials, personal
+memory refusal, cross-installation/workspace boundaries, key-mode resource/mode
+checks, competing key quota and write budgets, revocation races, idempotent replay,
+private upload ownership and authorized shared downloads. Browser tests exercise
+review, shown-once issuance, scope enforcement, revoke and disable/re-enable.
+
+Validation: all 1,432 tests pass (1,110 server, 322 other-package), together with
+67 fresh-build browser tests, typechecking, build, lint and release/layer checks.
+The reviewed privileged-function inventory now explicitly includes minimal
+installation-key lookup and client liveness; both use `pg_catalog, pg_temp` with
+fully qualified tables and runtime-role-only execution. No hosted deployment or
+real external app account has been used. Accounts-mode installation OAuth and
+private hosted implementation remain.

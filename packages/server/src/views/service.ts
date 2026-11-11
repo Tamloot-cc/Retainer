@@ -15,7 +15,7 @@ import type { Sql } from '../db/client.js';
 import type { StoredViewConfig } from '../db/schema.js';
 import { inWorkspace, jsonValue, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
-import { admitRun } from '../extension-runtime/admission.js';
+import { admitCaller } from '../extension-runtime/admission.js';
 import { checkAggregateOp } from '../records/aggregate.js';
 import { builtInNames, compileFilter, compileSort, queryInputSchema } from '../records/query.js';
 import { requireObject } from '../records/service.js';
@@ -518,7 +518,7 @@ async function withViews<T>(
 ): Promise<T> {
   return inWorkspace(sql, caller.workspaceId, async (tx) => {
     await lockSchemaShared(tx, caller.workspaceId);
-    if (caller.run) await admitRun(tx, caller.workspaceId, caller.run, write);
+    await admitCaller(tx, caller, write);
     return fn(tx, await getSchema(tx, caller.workspaceId));
   });
 }

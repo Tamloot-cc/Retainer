@@ -1,4 +1,4 @@
-import type { Caller, RunBinding } from '../caller.js';
+import type { Caller, InstallationBinding, RunBinding } from '../caller.js';
 import type { Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
 import { lockExtension } from './locks.js';
@@ -71,4 +71,83 @@ export async function admitRun(
     actor: { type: installation.granted_actor, id: run.installationId },
     scopes: run.scopes,
   };
+}
+
+/** Caller already holds schema (and privacy for writes); revocation takes the same installation lock exclusively. */
+export async function admitInstallation(
+  tx: Tx,
+  workspace: string,
+  binding: InstallationBinding,
+  write = false,
+) {
+  await lockExtension(tx, workspace, binding.registrationId, true);
+  const [installation] = await tx<
+    {
+      state: string;
+      generation: number;
+      granted_actor: 'agent' | 'integration';
+      granted_scopes: ('read' | 'write')[];
+    }[]
+  >`select i.state,i.generation,i.granted_actor,i.granted_scopes from extension_installations i join workspaces w on w.id=i.workspace_id
+    where i.id=${binding.installationId} and i.registration_id=${binding.registrationId} and w.deletion_scheduled_at is null`;
+  if (installation?.state !== 'active' || installation.generation !== binding.generation)
+    throw new AppError(
+      409,
+      'installation_disabled',
+      'installation is disabled or its generation changed',
+    );
+  const [credential] = await tx<
+    { scopes: ('read' | 'write')[]; client_id: string | null; subject_id: string | null }[]
+  >`
+    select scopes,client_id,subject_id from extension_credentials where id=${binding.credentialId}
+    and installation_id=${binding.installationId} and kind=${binding.kind} and generation=${binding.generation}
+    and revoked_at is null for share`;
+  if (
+    !credential ||
+    binding.scopes.some(
+      (s) => !credential.scopes.includes(s) || !installation.granted_scopes.includes(s),
+    )
+  )
+    throw new AppError(
+      401,
+      'unauthorized',
+      'installation credential was revoked or no longer has access',
+    );
+  if (write && !binding.scopes.includes('write'))
+    throw new AppError(403, 'forbidden', 'installation grant requires write scope');
+  // OAuth additionally checks the registered client through a minimal privileged function.
+  if (binding.kind === 'oauth') {
+    const [client] = await tx<
+      { allowed: boolean }[]
+    >`select retainer_extension_oauth_client_active(${credential.client_id}) as allowed`;
+    if (!client?.allowed) throw new AppError(401, 'unauthorized', 'standalone client is disabled');
+  }
+  if (write) {
+    const [budget] =
+      await tx`insert into extension_write_budgets(workspace_id,installation_id,window_start,count)
+      values(${workspace},${binding.installationId},date_trunc('minute',clock_timestamp()),1)
+      on conflict(workspace_id,installation_id) do update set window_start=excluded.window_start,
+        count=case when extension_write_budgets.window_start<>excluded.window_start then 1 else extension_write_budgets.count+1 end
+      where extension_write_budgets.window_start<>excluded.window_start or extension_write_budgets.count<60 returning count`;
+    if (!budget)
+      throw new AppError(429, 'quota_exceeded', 'installation write budget exceeded', {
+        retryAfterSeconds: 60,
+      });
+  }
+  return {
+    actor: { type: installation.granted_actor, id: binding.installationId },
+    scopes: binding.scopes,
+  };
+}
+
+/** Caller transaction admission, after its schema/privacy locks and before idempotency or file authorization. */
+export async function admitCaller(
+  tx: Tx,
+  caller: Caller,
+  write = false,
+  purpose: 'crm' | 'runtime' = 'crm',
+) {
+  if (caller.run) await admitRun(tx, caller.workspaceId, caller.run, write, purpose);
+  if (caller.installation)
+    await admitInstallation(tx, caller.workspaceId, caller.installation, write);
 }

@@ -1,5 +1,5 @@
 import { type Actor, type ActorType, isProfileAlias } from '@retainer/shared';
-import type { CallerPerson, RunBinding } from '../caller.js';
+import type { CallerPerson, InstallationBinding, RunBinding } from '../caller.js';
 import type { ChangeCollector } from '../changes/collect.js';
 import { isUuid } from '../db/ids.js';
 import type { AssertionStatus, ReviewReason } from '../db/schema.js';
@@ -18,6 +18,7 @@ export type WriteContext = {
   workspaceId: string;
   actor: Actor;
   run?: RunBinding;
+  installation?: InstallationBinding;
   /** Server-only managed-import context; never read from an ordinary record payload. */
   sourceItemId?: string;
   changes?: ChangeCollector;

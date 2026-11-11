@@ -4,7 +4,12 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, WorkspaceContext } from '../api/client.js';
-import { ExtensionSettings, ExtensionsPage, SourceSyncStatus } from './extensions.js';
+import {
+  ExtensionSettings,
+  ExtensionsPage,
+  InstallationCredentials,
+  SourceSyncStatus,
+} from './extensions.js';
 
 type Release = Awaited<ReturnType<typeof api.extensionCatalog>>['releases'][number];
 const release: Release = {
@@ -147,6 +152,52 @@ describe('generated extension settings and human approval', () => {
       grantedScopes: ['read'],
       createdBy: { type: 'user', id: 'admin' },
     };
+  it('creates only selected app access, shows the returned key once and discards it when closing', async () => {
+    const rawKey = 'rti_shown_once_only';
+    vi.spyOn(api, 'extensionCredentials').mockResolvedValue({ credentials: [] });
+    const issue = vi.spyOn(api, 'createExtensionKey').mockResolvedValue({
+      id: 'credential',
+      key: rawKey,
+      prefix: 'rti_shown',
+      generation: 1,
+      scopes: ['read'],
+      createdAt: '2026-11-11T10:00:00Z',
+    });
+    const onClose = vi.fn();
+    mount(<InstallationCredentials installation={installation} onClose={onClose} />);
+    expect(screen.queryByDisplayValue(rawKey)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Create installation key' }));
+    expect(await screen.findByDisplayValue(rawKey)).toBeTruthy();
+    expect(issue).toHaveBeenCalledWith(installation.id, {
+      expectedGeneration: 1,
+      scopes: ['read'],
+    });
+    expect(screen.getByText('Copy this key now. It is shown only once.')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(screen.queryByDisplayValue(rawKey)).toBeNull();
+  });
+  it('lists safe credential prefixes and explicitly revokes the selected app credential', async () => {
+    vi.spyOn(api, 'extensionCredentials').mockResolvedValue({
+      credentials: [
+        {
+          id: 'credential',
+          kind: 'key',
+          prefix: 'rti_visible',
+          clientId: null,
+          generation: 1,
+          scopes: ['read'],
+          createdAt: '2026-11-11T10:00:00Z',
+          revokedAt: null,
+          active: true,
+        },
+      ],
+    });
+    const revoke = vi.spyOn(api, 'revokeExtensionCredential').mockResolvedValue({ revoked: true });
+    mount(<InstallationCredentials installation={installation} onClose={() => {}} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Revoke rti_visible' }));
+    await vi.waitFor(() => expect(revoke).toHaveBeenCalledWith(installation.id, 'credential'));
+  });
   it('keeps credential edits behind reconnect review and sends only staged references after human approval', async () => {
     vi.spyOn(api, 'stageExtensionSecret').mockResolvedValue({
       pendingSecretId: 'new-reference',

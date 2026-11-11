@@ -526,6 +526,20 @@
       "when": 1794416162563,
       "tag": "0074_source_sync_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1794418341329,
+      "tag": "0075_standalone_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1794418445984,
+      "tag": "0076_standalone_credential_security",
+      "breakpoints": true
     }
   ]
 }

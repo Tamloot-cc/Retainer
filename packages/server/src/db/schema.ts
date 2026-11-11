@@ -1478,6 +1478,52 @@ export const extensionInstallations = pgTable(
   ],
 ).enableRLS();
 
+// Standalone credentials bind a reviewed workspace grant, never the installer's ongoing membership.
+export const extensionCredentials = pgTable(
+  'extension_credentials',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    generation: integer('generation').notNull(),
+    kind: text('kind').notNull(),
+    keyHash: text('key_hash'),
+    prefix: text('prefix'),
+    clientId: text('client_id'),
+    subjectId: text('subject_id'),
+    scopes: jsonb('scopes').$type<('read' | 'write')[]>().notNull(),
+    createdBy: jsonb('created_by').$type<Actor>().notNull(),
+    createdAt: createdAt(),
+    revokedAt: timestamptz('revoked_at'),
+  },
+  (t) => [
+    unique('extension_credentials_ws_id_uq').on(t.workspaceId, t.id),
+    unique('extension_credentials_hash_uq').on(t.keyHash),
+    tenantFk(
+      'extension_credentials_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    index('extension_credentials_install_idx').on(t.workspaceId, t.installationId),
+    check(
+      'extension_credentials_kind',
+      sql`(${t.kind}='key' and ${t.keyHash} is not null and ${t.prefix} is not null and ${t.clientId} is null and ${t.subjectId} is null)
+      or (${t.kind}='oauth' and ${t.keyHash} is null and ${t.prefix} is null and ${t.clientId} is not null and ${t.subjectId} is not null)`,
+    ),
+    check('extension_credentials_generation', sql`${t.generation}>0`),
+    check(
+      'extension_credentials_scopes',
+      sql`jsonb_typeof(${t.scopes})='array' and jsonb_array_length(${t.scopes}) between 1 and 2 and ${t.scopes}<@'["read","write"]'::jsonb`,
+    ),
+    pgPolicy('extension_credentials_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
 export const extensionContributions = pgTable(
   'extension_contributions',
   {

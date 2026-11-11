@@ -24,7 +24,7 @@ import {
   type WriteLocks,
 } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
-import { admitRun } from '../extension-runtime/admission.js';
+import { admitCaller } from '../extension-runtime/admission.js';
 import { claimIdempotencyKey, requestHash, storeIdempotentResult } from '../idempotency.js';
 import { lockSource, retractEventClaims } from '../memory/events.js';
 import { lockPerson } from '../memory/profiles.js';
@@ -102,7 +102,7 @@ export async function withWrite<T>(
   locks: WriteLocks = {},
   { asPerson = true }: TransactionOptions = {},
 ): Promise<T> {
-  const person = !caller.run && asPerson ? caller.person : undefined;
+  const person = !caller.run && !caller.installation && asPerson ? caller.person : undefined;
   for (let attempt = 0; ; attempt++) {
     try {
       return await inWorkspace(
@@ -110,7 +110,7 @@ export async function withWrite<T>(
         caller.workspaceId,
         async (tx) => {
           await lockForWrite(tx, caller.workspaceId, locks);
-          if (caller.run) await admitRun(tx, caller.workspaceId, caller.run, true);
+          await admitCaller(tx, caller, true);
           const schema = await getSchema(tx, caller.workspaceId);
           const [workspace] = await tx<{ settings: WorkspaceSettings }[]>`
             select settings from workspaces where id = ${caller.workspaceId}`;
@@ -119,6 +119,7 @@ export async function withWrite<T>(
             workspaceId: caller.workspaceId,
             actor: caller.actor,
             ...(caller.run ? { run: caller.run } : {}),
+            ...(caller.installation ? { installation: caller.installation } : {}),
             schema,
             confidenceThreshold:
               workspace?.settings.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD,
@@ -144,20 +145,21 @@ export async function withRead<T>(
   options: { privacy?: boolean; schema?: boolean } = {},
 ): Promise<T> {
   const { workspaceId } = caller;
-  const person = caller.run ? undefined : caller.person;
+  const person = caller.run || caller.installation ? undefined : caller.person;
   return inWorkspace(
     sql,
     workspaceId,
     async (tx) => {
       if (options.privacy) await lockPrivacyShared(tx, workspaceId);
-      if (options.schema && !caller.run) await lockSchemaShared(tx, workspaceId);
+      if (options.schema && !caller.run && !caller.installation)
+        await lockSchemaShared(tx, workspaceId);
       // A read with a person can see their personal memory on any path
       // (search, an event's citations), so it holds their membership lock
       // and re-checks access first: a removal either committed before, and
       // the read is refused, or waits for it (personal memory spec 4.3).
-      if (caller.run) {
+      if (caller.run || caller.installation) {
         await lockSchemaShared(tx, workspaceId);
-        await admitRun(tx, workspaceId, caller.run);
+        await admitCaller(tx, caller);
       }
       if (person) await lockPerson(tx, { workspaceId, person });
       return fn(tx, await getSchema(tx, workspaceId));

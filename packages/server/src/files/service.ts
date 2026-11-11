@@ -29,8 +29,8 @@ type Row = {
   upload_expires_at: Date;
 };
 const owner = (row: Row, caller: Caller) =>
-  caller.run
-    ? row.installation_id === caller.run.installationId
+  caller.run || caller.installation
+    ? row.installation_id === (caller.run?.installationId ?? caller.installation?.installationId)
     : row.installation_id === null &&
       row.created_by.type === caller.actor.type &&
       row.created_by.id === caller.actor.id;
@@ -60,8 +60,8 @@ export class Files {
       );
     const requestKey = requestHash({
       actor: caller.actor,
-      installation: caller.run?.installationId ?? null,
-      generation: caller.run?.generation ?? null,
+      installation: caller.run?.installationId ?? caller.installation?.installationId ?? null,
+      generation: caller.run?.generation ?? caller.installation?.generation ?? null,
       key,
     });
     const digest = requestHash({ metadata, sourceItemId: sourceItemId ?? null });
@@ -113,7 +113,7 @@ export class Files {
         const [row] = await tx<
           Row[]
         >`insert into files(workspace_id,installation_id,storage_id,object_key,metadata,bytes,created_by,request_key,request_hash,source_item_id)
-        values(${caller.workspaceId},${caller.run?.installationId ?? null},${storage.id},${randomBytes(32).toString('hex')},${tx.json(metadata)},${metadata.bytes},${tx.json(caller.actor)},${requestKey},${digest},${sourceItemId ?? null}) returning *`;
+        values(${caller.workspaceId},${caller.run?.installationId ?? caller.installation?.installationId ?? null},${storage.id},${randomBytes(32).toString('hex')},${tx.json(metadata)},${metadata.bytes},${tx.json(caller.actor)},${requestKey},${digest},${sourceItemId ?? null}) returning *`;
         if (!row) throw new Error('upload intent insert returned no row');
         return row;
       },

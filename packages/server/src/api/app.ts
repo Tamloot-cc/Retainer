@@ -85,6 +85,7 @@ export function createApp(deps: AppDeps) {
       publicOrigin,
       accountsSecret: deps.accountsSecret,
       runTokens: deps.runTokens,
+      installationKeys: !deps.accountsSecret,
     }),
   );
   v1.use('*', limit);
@@ -104,7 +105,7 @@ export function createApp(deps: AppDeps) {
     deps.extensionSecrets,
     deps.extensionActivation,
   );
-  extensionRoutes(v1, extensions);
+  extensionRoutes(v1, extensions, !deps.accountsSecret);
   runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets);
   lastContactRoutes(v1, deps.sql, extensions.catalog);
   webhookRuntime(v1, deps.webhooks);
