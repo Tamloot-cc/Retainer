@@ -1023,7 +1023,9 @@ Operator status proves it checked every applied migration timestamp and hash
 against the packaged journal. Unknown newer migrations or changed historical SQL
 produce `incompatible_migrations`; migration refuses before DDL or definition
 upgrades. Deploy requires the explicit `historyChecked` capability and a packaged
-maintenance responder, so an older artifact lacking the check cannot bypass it.
+maintenance responder, so an older artifact lacking the check cannot bypass it. Candidate release inventory includes only manifests whose exact
+`serverVersions` support the packaged server version; retaining incompatible
+bytes cannot make a referenced installation safe to dispatch.
 Packaged catalog and executable files may also pin expected SHA-256 hashes;
 missing or mismatched release configuration fails before runtime initialization.
 

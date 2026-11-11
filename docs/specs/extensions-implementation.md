@@ -721,6 +721,19 @@ also recover their first deployment without an earlier routing marker.
 
 The complete server rerun passes all 1,134 tests; the unchanged other packages
 and real-Git release test bring the total to 1,462. All 68 browser tests and the
-fresh container proofs listed above pass. The remaining cloud failure-injection
-rerun and final packaging/read-back are being completed; no hosted/live claim is
-made from these local results.
+fresh container proofs listed above pass. Final cloud checks pass all 23 Terraform scenarios, 15 metadata/publication/key
+cases and 19 deployment failure/recovery cases, including a failure injected at
+every AWS command boundary followed by recovery. The current 23 MB Lambda ZIP
+imports all eight entry points under actual Node 24 without network access; the
+inspector correctly refuses its local feature-branch provenance. The latest
+server image also passes fresh sandbox and public Compose lifecycle proofs.
+All work remains committed locally. Hosted/AMI and real Granola acceptance have
+not been performed; no PR, push, merge, registry publication or AWS deployment
+has occurred.
+
+The release inventory advertises only manifest hashes compatible with the
+packaged server version. Merely retaining incompatible manifest bytes cannot
+make an installed version usable during rollback or a server-version change.
+The publisher also verifies a real Ed25519 private/public key match before
+applying hosted configuration. Operator bootstrap and live acceptance procedures
+are documented in the private cloud repository.
