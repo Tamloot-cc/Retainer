@@ -605,3 +605,18 @@ pass, as do server typechecking and lint/layer checks. The private cloud worktre
 has separate function IAM roles with the legacy API role preserved, verified by
 all 17 existing Terraform tests. Storage provisioning and deployment recovery
 are being implemented separately; hosted execution and acceptance remain pending.
+
+## Immutable first-party release versions
+
+Artifact generation now verifies clean main ancestry rather than a branch name,
+supporting CI's detached SHA checkout. Production patch versions derive from the
+append-only main history count, so later code cannot mutate a fixed `1.0.0`
+release. Development bundles remain marked and retain fixture versions. The
+catalog UI offers the newest numeric version once per registration, preserving
+the exact installed metadata needed for settings and explicit upgrade review.
+
+A real temporary-Git test covers detached builds, advancing main, an unreviewed
+feature commit and dirty worktrees. It runs with the root test command. All 28
+runner tests, ten extension UI tests, development artifact generation and five
+fresh-build extension browser scenarios pass. Production publishing, retained
+image/config aggregation and hosted staging acceptance remain separate work.

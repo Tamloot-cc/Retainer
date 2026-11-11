@@ -95,6 +95,7 @@ export const GRANOLA_EVENTS = ['note.access_granted', 'note.edited', 'note.gener
 
 /** API access is verified, while the human explicitly approves sharing everything this credential can read. */
 export function granolaManifest(build: {
+  version?: string;
   packageDigest: string;
   handlerDigest: string;
   verifierDigest: string;
@@ -119,7 +120,7 @@ export function granolaManifest(build: {
     manifestVersion: 1,
     universalId: GRANOLA.registration,
     name: 'granola',
-    version: '1.0.0',
+    version: build.version ?? '1.0.0',
     description:
       'Import shared summaries and transcript files from an explicitly shared Granola API credential. Private notes and photos are excluded.',
     packageDigest: build.packageDigest,

@@ -5,6 +5,11 @@ a deterministic test fixture, last-contact and Granola adapters. The default
 server catalog remains empty; these bundles require explicit operator review
 and activation.
 
+Production artifacts require a clean commit on `origin/main`; a detached CI
+checkout is supported. Their patch version follows the append-only main history
+count. Deployment must retain prior reviewed versions and pinned images for
+existing installations; a published version is never rebuilt under a new digest.
+
 Each invocation arrives on stdin in a fresh Node 24 container. The entry point
 checks the baked release digest, function ID, protocol, input size and deadline.
 It emits one bounded status/code result and exits; errors never serialize provider

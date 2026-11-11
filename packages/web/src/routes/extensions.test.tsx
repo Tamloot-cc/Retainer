@@ -78,6 +78,20 @@ function mount(element: React.ReactNode, admin = true) {
 }
 afterEach(() => vi.restoreAllMocks());
 describe('generated extension settings and human approval', () => {
+  it('offers the newest numeric version once while retaining older installed release metadata', async () => {
+    vi.spyOn(api, 'extensionCatalog').mockResolvedValue({
+      releases: ['1.0.1', '1.0.10', '1.0.2'].map((version) => ({
+        ...release,
+        manifest: { ...release.manifest, version },
+      })),
+    });
+    vi.spyOn(api, 'extensions').mockResolvedValue({ installations: [] });
+    mount(<ExtensionsPage />);
+    expect(await screen.findByText('Fixture · 1.0.10')).toBeTruthy();
+    expect(screen.queryByText('Fixture · 1.0.1')).toBeNull();
+    expect(screen.queryByText('Fixture · 1.0.2')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Set up' })).toHaveLength(1);
+  });
   it('shows successful enumeration separately from pending and failed note imports', async () => {
     vi.spyOn(api, 'sourceSyncStatus').mockResolvedValue({
       lastSuccessfulScanAt: '2026-11-11T08:00:00Z',

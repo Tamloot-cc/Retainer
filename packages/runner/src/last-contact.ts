@@ -24,6 +24,7 @@ export const LAST_CONTACT_FUNCTION_IDS: string[] = [
 ];
 const empty = { type: 'object' as const, additionalProperties: false as const };
 export function lastContactManifest(build: {
+  version?: string;
   packageDigest: string;
   handlerDigest: string;
   serverVersions: string[];
@@ -51,7 +52,7 @@ export function lastContactManifest(build: {
     manifestVersion: 1,
     universalId: LAST_CONTACT.registration,
     name: 'last-contact',
-    version: '1.0.0',
+    version: build.version ?? '1.0.0',
     description:
       'Derive last contact from current conversation history, including one-hop event rollups. Human overrides keep normal precedence.',
     packageDigest: build.packageDigest,

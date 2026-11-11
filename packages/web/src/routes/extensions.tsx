@@ -89,6 +89,15 @@ export function ExtensionsPage() {
       </Page>
     );
   const installed = installations.data.installations;
+  const newest = new Map<string, Release>();
+  for (const release of catalog.data.releases) {
+    const previous = newest.get(release.manifest.universalId);
+    if (
+      !previous ||
+      release.manifest.version.localeCompare(previous.manifest.version, 'en', { numeric: true }) > 0
+    )
+      newest.set(release.manifest.universalId, release);
+  }
   return (
     <Page
       title="Extensions"
@@ -186,14 +195,15 @@ export function ExtensionsPage() {
             </Panel>
           );
         })}
-        {catalog.data.releases.map((release) => {
+        {[...newest.values()].map((release) => {
           const installation = installed.find(
             (i) => i.registrationId === release.manifest.universalId,
           );
           const upgrade =
             installation &&
             installation.state !== 'uninstalled' &&
-            installation.version !== release.manifest.version;
+            release.manifest.version.localeCompare(installation.version, 'en', { numeric: true }) >
+              0;
           if (installation && installation.state !== 'uninstalled' && !upgrade) return null;
           return (
             <Panel

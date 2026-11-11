@@ -9,16 +9,12 @@ import { defineExtension } from '../packages/extension/dist/index.js';
 import { granolaManifest } from '../packages/runner/dist/granola-contract.js';
 import { lastContactManifest } from '../packages/runner/dist/last-contact.js';
 import { stableJson } from '../packages/server/dist/stable-json.js';
+import { extensionRelease } from './extension-release.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 const development = process.argv.includes('--development');
-const commit = git('rev-parse', 'HEAD'),
-  branch = git('branch', '--show-current');
-if (!development && (branch !== 'main' || git('status', '--porcelain')))
-  throw new Error(
-    'production extension artifacts require a clean main checkout; use --development only for local fixtures',
-  );
+const { commit, version } = extensionRelease(git, development);
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const files = [];
 const walk = (path) => {
@@ -44,7 +40,7 @@ const manifest = defineExtension({
   manifestVersion: 1,
   universalId: 'e0548bb1-47fd-4de8-8edc-759e26a61e36',
   name: 'fixture',
-  version: '1.0.0',
+  version,
   description: 'Deterministic first-party adapter for execution verification.',
   packageDigest,
   serverVersions: [JSON.parse(readFileSync(resolve(root, 'packages/server/package.json'))).version],
@@ -109,6 +105,7 @@ write(
 );
 write('metadata.json', {
   commit,
+  version: manifest.version,
   development,
   releaseDigest,
   handlerDigest,
@@ -287,6 +284,7 @@ if (development) {
 
 // Reviewed deterministic adapter. Operators explicitly select and package this pinned bundle.
 const lastContact = lastContactManifest({
+  version,
   packageDigest,
   handlerDigest: hash(readFileSync(resolve(root, 'packages/runner/dist/last-contact.js'))),
   serverVersions: manifest.serverVersions,
@@ -302,6 +300,7 @@ writeLastContact('catalog.json', [
 ]);
 writeLastContact('metadata.json', {
   commit,
+  version: lastContact.version,
   development,
   releaseDigest: lastContactDigest,
   packageDigest,
@@ -323,6 +322,7 @@ writeLastContact(
 
 // Provider packaging is opt-in; emitting artifacts never changes the default server catalog.
 const granola = granolaManifest({
+  version,
   packageDigest,
   handlerDigest: hash(readFileSync(resolve(root, 'packages/runner/dist/granola.js'))),
   verifierDigest: hash(readFileSync(resolve(root, 'packages/runner/dist/webhooks.js'))),
@@ -339,6 +339,7 @@ writeGranola('catalog.json', [
 ]);
 writeGranola('metadata.json', {
   commit,
+  version: granola.version,
   development,
   releaseDigest: granolaDigest,
   packageDigest,

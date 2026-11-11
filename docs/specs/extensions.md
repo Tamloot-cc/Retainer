@@ -1000,6 +1000,15 @@ stopped. A code rollback must check schema/protocol compatibility first.
 
 ## 14. Delivery sequence and acceptance
 
+Production first-party artifact versions use `1.0.<main-history-count>`. The
+builder requires a clean commit reachable from `origin/main`, including a
+detached CI checkout; main history must remain append-only. Development artifacts
+remain explicitly marked and cannot be published as production. Retain prior
+catalog entries, executable mappings and immutable images while installations
+still reference them. Never rebuild a published version under a different image
+digest. Setup and upgrade UI offers the newest compatible numeric version while
+installed controls resolve their exact reviewed release.
+
 1. **Control foundation:** registrations, manifests, install/preview, contributions,
    saved views, grants, settings/secrets, RLS, SDK and UI. No trigger activation.
 2. **Execution:** leased queue, scheduler, drivers, runtime broker, webhook verifier,
