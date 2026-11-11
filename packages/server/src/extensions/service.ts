@@ -17,6 +17,7 @@ import {
 import { AppError, forbidden, notFound } from '../errors.js';
 import { admitRun } from '../extension-runtime/admission.js';
 import { cancelRuns, lockExtension as lockInstallation } from '../extension-runtime/locks.js';
+import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { pendingSecrets, type SecretBroker } from '../extension-runtime/secrets.js';
 import { loadSchemaState } from '../schema/load.js';
 import { planSchemaChange, runSchemaChange } from '../schema-engine/engine.js';
@@ -57,6 +58,8 @@ type Row = {
   granted_actor: ExtensionInstallation['grantedActor'];
   granted_scopes: ExtensionInstallation['grantedScopes'];
   secret_names?: string[];
+  connection_health: 'ok' | 'needs_reconnect' | 'degraded';
+  last_error: string | null;
   created_by: ExtensionInstallation['createdBy'];
 };
 function present(r: Row): ExtensionInstallation {
@@ -66,6 +69,8 @@ function present(r: Row): ExtensionInstallation {
     version: r.version,
     releaseDigest: r.release_digest,
     state: r.state,
+    connectionHealth: r.connection_health,
+    lastError: r.last_error,
     generation: r.generation,
     settingsRevision: r.settings_revision,
     secrets: Object.fromEntries((r.secret_names ?? []).map((name) => [name, true])),
@@ -81,7 +86,16 @@ export class Extensions {
     private readonly sql: Sql,
     readonly catalog = new ExtensionCatalog(),
     readonly secrets?: SecretBroker,
+    private readonly activation: ReadonlySet<string> = new Set(),
   ) {}
+  private queue() {
+    return new ExtensionQueue(this.sql, (id, version, digest) => {
+      const release = this.catalog.get(id, version);
+      if (release.digest !== digest)
+        throw conflict('incompatible_runtime', 'release differs from installation');
+      return release.manifest;
+    });
+  }
 
   async stageSecret(
     caller: Caller,
@@ -204,7 +218,7 @@ export class Extensions {
     }
     for (const [key, definition] of Object.entries(manifest.settings)) {
       if (definition.secret) continue;
-      if (definition.required && input.settings[key] === undefined)
+      if (definition.required && !Object.hasOwn(input.settings, key))
         throw new AppError(422, 'invalid_settings', 'required setting missing', { key });
     }
     const [workspace] = await tx<
@@ -216,7 +230,7 @@ export class Extensions {
     >`select * from extension_installations where registration_id = ${input.registrationId}`;
     if (input.installationId && (!existing || existing.id !== input.installationId))
       throw notFound('extension installation');
-    if (input.installationId && existing?.state === 'uninstalled')
+    if (input.installationId && ['uninstalled', 'uninstalling'].includes(existing?.state ?? ''))
       throw conflict('upgrade_conflict', 'reinstall before upgrading');
     if (!input.installationId && existing && existing.state !== 'uninstalled')
       throw conflict('upgrade_conflict', 'installation exists; use a validated upgrade');
@@ -365,6 +379,7 @@ export class Extensions {
         secretRefs: refs,
         draftId,
         operation: input.installationId ? 'upgrade' : 'install',
+        runtimeReady: this.activation.has(release.digest),
       }),
       schemaVersion: workspace.schema_version,
       generation,
@@ -376,9 +391,11 @@ export class Extensions {
         action: owns('view', view.universalId) ? 'retain' : 'create',
       })),
       grants: { actor: manifest.requestedActor, scopes: manifest.scopes },
-      warnings: [
-        'Runtime activation is unavailable. This installation remains disabled and cannot ingest data.',
-      ],
+      warnings: this.activation.has(release.digest)
+        ? []
+        : [
+            'Runtime activation is unavailable. This installation remains disabled and cannot ingest data.',
+          ],
     };
     return { preview, release, operations, existing, draftId };
   }
@@ -442,11 +459,15 @@ export class Extensions {
         throw conflict('schema_binding_conflict', 'extension schema could not be applied');
       if (plan.existing) await cancelRuns(tx, plan.existing.id);
       const manifest = plan.release.manifest;
+      const ready = this.activation.has(plan.release.digest);
+      const setupKind = input.installationId ? 'upgrade' : 'install';
+      const state = ready ? (setupKind === 'upgrade' ? 'upgrading' : 'installing') : 'disabled';
       const [row] = await tx<Row[]>`insert into extension_installations
-        (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, settings, created_by)
+        (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, settings, created_by, state, setup_kind)
         values (${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId}, ${manifest.universalId}, ${manifest.version}, ${plan.release.digest},
-          ${manifest.requestedActor}, ${tx.json(manifest.scopes)}, ${tx.json(input.settings)}, ${tx.json(caller.actor)})
-        on conflict (workspace_id, registration_id) do update set state = 'disabled',
+          ${manifest.requestedActor}, ${tx.json(manifest.scopes)}, ${tx.json(input.settings)}, ${tx.json(caller.actor)}, ${state}, ${setupKind})
+        on conflict (workspace_id, registration_id) do update set state = excluded.state,setup_kind=excluded.setup_kind,
+          last_error=null,connection_health='needs_reconnect',activated_at=null,cleanup_deadline=null,
           version = excluded.version, release_digest = excluded.release_digest,granted_scopes=excluded.granted_scopes,
           generation = extension_installations.generation + 1, settings = excluded.settings,
           settings_revision = extension_installations.settings_revision + 1, updated_at = now()
@@ -517,6 +538,7 @@ export class Extensions {
         { names: string[] }[]
       >`select retainer_extension_secret_names(${row.id}::uuid) as names`;
       row.secret_names = presence?.names ?? [];
+      if (ready) await this.queue().enqueueLifecycle(tx, caller.workspaceId, row.id, 'install');
       const response = present(row);
       await tx`insert into extension_receipts (workspace_id, key, request_hash, installation_id, generation, response)
         values (${caller.workspaceId}, ${key}, ${requestHash}, ${row.id}, ${row.generation}, ${tx.json(jsonValue(response))})`;
@@ -553,7 +575,7 @@ export class Extensions {
             'connection_required',
             'use reconnect to change provider credentials or account settings',
           );
-        if (!definition.secret && definition.required && input.settings[key] === undefined)
+        if (!definition.secret && definition.required && !Object.hasOwn(input.settings, key))
           throw new AppError(422, 'invalid_settings', 'required setting missing', { key });
       }
       if (Buffer.byteLength(JSON.stringify(input.settings)) > 65536)
@@ -578,6 +600,45 @@ export class Extensions {
     });
   }
 
+  async enable(caller: Caller, id: string) {
+    human(caller);
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await lockSchemaShared(tx, caller.workspaceId);
+      const [candidate] = await tx<Row[]>`select * from extension_installations where id=${id}`;
+      if (!candidate) throw notFound('extension installation');
+      await lockInstallation(tx, caller.workspaceId, candidate.registration_id);
+      const [current] = await tx<Row[]>`select * from extension_installations where id=${id}`;
+      if (!current) throw notFound('extension installation');
+      if (['active', 'installing', 'upgrading'].includes(current.state)) return present(current);
+      if (['uninstalled', 'uninstalling'].includes(current.state))
+        throw conflict('installation_disabled', 'reinstall before enabling');
+      if (!this.activation.has(current.release_digest))
+        throw conflict(
+          'incompatible_runtime',
+          'no reviewed executable is deployed for this release',
+        );
+      const plan = await this.plan(tx, caller, {
+        installationId: id,
+        registrationId: current.registration_id,
+        version: current.version,
+        settings: current.settings,
+      });
+      if (plan.operations.length)
+        throw conflict(
+          'schema_binding_conflict',
+          'retained schema bindings must be repaired with a validated upgrade',
+        );
+      await cancelRuns(tx, id);
+      const [row] = await tx<
+        Row[]
+      >`update extension_installations set state='installing',setup_kind='install',generation=generation+1,
+        connection_health='needs_reconnect',last_error=null,activated_at=null,updated_at=now() where id=${id} returning *`;
+      if (!row) throw notFound('extension installation');
+      await this.queue().enqueueLifecycle(tx, caller.workspaceId, id, 'install');
+      return present(row);
+    });
+  }
+
   async transition(caller: Caller, id: string, state: 'disabled' | 'uninstalled') {
     human(caller);
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
@@ -589,13 +650,22 @@ export class Extensions {
       // since the routing lookup. Disable must never reverse an uninstall.
       const [current] = await tx<Row[]>`select * from extension_installations where id = ${id}`;
       if (!current) throw notFound('extension installation');
-      if (current.state === 'uninstalled' && state === 'disabled') return present(current);
+      if (['uninstalled', 'uninstalling'].includes(current.state)) return present(current);
+      const nextState =
+        state === 'uninstalled' && this.activation.has(current.release_digest)
+          ? 'uninstalling'
+          : state;
       await cancelRuns(tx, id);
-      const [row] = await tx<Row[]>`update extension_installations set state = ${state},
-        generation = generation + case when state = ${state} then 0 else 1 end, updated_at = now()
+      const [row] = await tx<
+        Row[]
+      >`update extension_installations set state = ${nextState},last_error=null,
+        cleanup_deadline=case when ${nextState}='uninstalling' then clock_timestamp()+interval '24 hours' else null end,
+        generation = generation + case when state = ${nextState} and last_error is null then 0 else 1 end, updated_at = now()
         where id = ${id} returning *`;
       if (!row) throw notFound('extension installation');
       if (state === 'uninstalled') await tx`select retainer_retire_extension_secrets(${id}::uuid)`;
+      if (nextState === 'uninstalling')
+        await this.queue().enqueueLifecycle(tx, caller.workspaceId, id, 'uninstall');
       return present(row);
     });
   }

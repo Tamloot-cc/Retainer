@@ -31,6 +31,7 @@ export type AppDeps = {
   /** A pool connected as the runtime role, so RLS applies to every query. */
   sql: Sql;
   extensionCatalog?: ExtensionCatalog;
+  extensionActivation?: ReadonlySet<string>;
   runTokens?: RunTokens;
   extensionSecrets?: SecretBroker;
   webDir?: string;
@@ -84,7 +85,12 @@ export function createApp(deps: AppDeps) {
   commentRoutes(v1, deps.sql);
   retrievalRoutes(v1, deps.sql);
   viewRoutes(v1, deps.sql);
-  const extensions = new Extensions(deps.sql, deps.extensionCatalog, deps.extensionSecrets);
+  const extensions = new Extensions(
+    deps.sql,
+    deps.extensionCatalog,
+    deps.extensionSecrets,
+    deps.extensionActivation,
+  );
   extensionRoutes(v1, extensions);
   runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets);
   app.route('/v1', v1);

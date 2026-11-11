@@ -9,11 +9,13 @@ export async function admitRun(
   workspace: string,
   run: RunBinding,
   write = false,
+  purpose: 'crm' | 'runtime' | 'authenticate' = 'crm',
 ): Promise<Pick<Caller, 'actor' | 'scopes'>> {
   // The registration ID comes from the signed binding; the workspace is the verified credential's.
   await lockExtension(tx, workspace, run.registrationId, true);
   const [installation] = await tx<
     {
+      cleanup_live: boolean | null;
       generation: number;
       state: string;
       release_digest: string;
@@ -21,10 +23,10 @@ export async function admitRun(
       granted_scopes: ('read' | 'write')[];
     }[]
   >`
-    select generation,state,release_digest,granted_actor,granted_scopes from extension_installations
+    select cleanup_deadline>clock_timestamp() as cleanup_live,generation,state,release_digest,granted_actor,granted_scopes from extension_installations
     where id=${run.installationId} and registration_id=${run.registrationId}`;
   if (
-    installation?.state !== 'active' ||
+    !installation ||
     installation.generation !== run.generation ||
     installation.release_digest !== run.releaseDigest
   )
@@ -35,11 +37,21 @@ export async function admitRun(
     );
   // Hold a shared row lock through commit so lease takeover cannot overtake an admitted write.
   const [job] =
-    await tx`select id from extension_jobs where id=${run.jobId} and installation_id=${run.installationId}
+    await tx`select trigger_kind from extension_jobs where id=${run.jobId} and installation_id=${run.installationId}
     and generation=${run.generation} and release_digest=${run.releaseDigest} and status='running'
     and lease_owner=${run.owner} and fence=${run.fence}::bigint
     and lease_until>clock_timestamp() and run_until>clock_timestamp() for share`;
   if (!job) throw new AppError(409, 'lease_expired', 'run lease expired or was replaced');
+  const ordinary =
+    !['install', 'uninstall'].includes(job.trigger_kind) && installation.state === 'active';
+  const setup =
+    job.trigger_kind === 'install' && ['installing', 'upgrading'].includes(installation.state);
+  const cleanup =
+    job.trigger_kind === 'uninstall' &&
+    installation.state === 'uninstalling' &&
+    installation.cleanup_live === true;
+  if (!ordinary && !(purpose !== 'crm' && (setup || cleanup)))
+    throw new AppError(409, 'installation_disabled', 'this lifecycle run cannot access CRM data');
   if (run.scopes.some((scope) => !installation.granted_scopes.includes(scope)))
     throw new AppError(403, 'forbidden', 'run scopes exceed the current installation grant');
   if (write) {

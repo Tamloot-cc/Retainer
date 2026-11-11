@@ -18,6 +18,7 @@ export async function lockQueue(tx: Tx, workspace: string, installation: string)
 
 /** Called with the installation lock exclusive, after admitted operations drain. */
 export async function cancelRuns(tx: Tx, installationId: string) {
+  await tx`delete from extension_schedules where installation_id=${installationId}`;
   await tx`update extension_attempts set status='cancelled',code='installation_disabled',finished_at=now()
     where finished_at is null and job_id in (select id from extension_jobs where installation_id=${installationId})`;
   await tx`update extension_jobs set status='cancelled',code='installation_disabled',lease_owner=null,lease_until=null,updated_at=now()

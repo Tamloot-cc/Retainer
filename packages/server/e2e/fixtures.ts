@@ -2,22 +2,48 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { test as base, expect } from '@playwright/test';
+import { BASE_OBJECT_IDS } from '@retainer/shared';
 import postgres from 'postgres';
 import { createApp } from '../src/api/app.js';
 import { createApiKey } from '../src/auth/keys.js';
 import { createSql, RUNTIME_ROLE } from '../src/db/client.js';
+import { ExtensionCatalog } from '../src/extensions/catalog.js';
 import { consolidateWorkspace } from '../src/worker/consolidate.js';
 import { createWorkspace } from '../src/workspaces/workspaces.js';
-export const test = base.extend<{
-  retainer: {
-    url: string;
-    keys: { user: string; writer: string; agent: string; reader: string; other: string };
-    request: (path: string, body?: unknown, key?: string, method?: string) => Promise<any>;
-    /** Runs the consolidator once, which suggests merges. */
-    consolidate: () => Promise<unknown>;
-  };
-}>({
-  retainer: async ({ browserName: _browserName }, use) => {
+import { extensionFixture as manifestFixture } from '../test/helpers/extensions.js';
+export const browserExtensionManifest = manifestFixture({
+  universalId: 'e0548bb1-47fd-4de8-8edc-759e26a61e36',
+  name: 'browser-fixture',
+  settings: {
+    enabled: { type: 'boolean', label: 'Enabled', required: true, secret: false, reconnect: false },
+  },
+  schema: [
+    {
+      kind: 'field',
+      objectId: BASE_OBJECT_IDS.company,
+      definition: {
+        universalId: '2384b956-709d-4edc-8aab-807c51027565',
+        name: 'fixtureStatus',
+        label: 'Fixture status',
+        type: 'text',
+      },
+    },
+  ],
+});
+export const test = base.extend<
+  {
+    retainer: {
+      url: string;
+      keys: { user: string; writer: string; agent: string; reader: string; other: string };
+      request: (path: string, body?: unknown, key?: string, method?: string) => Promise<any>;
+      /** Runs the consolidator once, which suggests merges. */
+      consolidate: () => Promise<unknown>;
+    };
+  },
+  { extensionFixture: boolean }
+>({
+  extensionFixture: [false, { option: true, scope: 'worker' }],
+  retainer: async ({ browserName: _browserName, extensionFixture }, use) => {
     const adminUrl = process.env.DATABASE_URL;
     if (!adminUrl) throw new Error('DATABASE_URL is required');
     const name = `retainer_browser_${randomBytes(6).toString('hex')}`;
@@ -73,6 +99,13 @@ export const test = base.extend<{
     ).key;
     const app = createApp({
       sql,
+      ...(extensionFixture
+        ? {
+            extensionCatalog: new ExtensionCatalog([
+              { manifest: browserExtensionManifest, actorCeiling: 'integration' },
+            ]),
+          }
+        : {}),
       webDir: fileURLToPath(new URL('../../web/dist', import.meta.url)),
     });
     const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' });

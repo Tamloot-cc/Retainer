@@ -97,12 +97,7 @@ export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions) {
       c.json(await extensions.transition(c.get('caller'), idParam(c), state)),
     );
   }
-  app.post('/extensions/:id/enable', requireScope('admin'), async (c) => {
-    await extensions.get(c.get('caller'), idParam(c));
-    throw new AppError(
-      409,
-      'incompatible_runtime',
-      'extension execution and ingestion safety are not available; installation remains disabled',
-    );
-  });
+  app.post('/extensions/:id/enable', requireScope('admin'), async (c) =>
+    c.json(await extensions.enable(c.get('caller'), idParam(c))),
+  );
 }

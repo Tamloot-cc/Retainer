@@ -1,7 +1,9 @@
 import { handle, type LambdaContext, type LambdaEvent } from 'hono/aws-lambda';
+import type { AppDeps } from '../api/app.js';
 import { createApp } from '../api/app.js';
 import { type Config, loadConfig, rateLimitPerMinute } from '../config.js';
 import { createApiSql, type Sql } from '../db/client.js';
+import { extensionServices } from '../extension-control/configuration.js';
 import { setLogLevel } from '../log.js';
 import { requireEdge } from './edge.js';
 
@@ -18,10 +20,12 @@ export function createApiHandler(
   // One request at a time per instance; a small pool keeps the total number
   // of connections bounded by the function's concurrency.
   sql: Sql = createApiSql(config, { max: config.RETAINER_DB_POOL_MAX }),
+  extensions: Pick<AppDeps, 'extensionCatalog' | 'runTokens' | 'extensionActivation'> = {},
 ) {
   setLogLevel(config.LOG_LEVEL);
   const app = createApp({
     sql,
+    ...extensions,
     webDir: config.RETAINER_WEB_DIR,
     publicOrigin: config.RETAINER_PUBLIC_ORIGIN,
     // Checks people's session cookies; never loads Better Auth (4.4).
@@ -31,10 +35,18 @@ export function createApiHandler(
   return requireEdge(config.RETAINER_EDGE_SECRET, handle(app));
 }
 
-let cached: ReturnType<typeof createApiHandler> | undefined;
-
+let cached: Promise<ReturnType<typeof createApiHandler>> | undefined;
 /** The Lambda entry point (`dist/lambda/api.handler`). */
-export const handler = (event: LambdaEvent, context: LambdaContext) => {
-  cached ??= createApiHandler(loadConfig());
-  return cached(event, context);
+export const handler = async (event: LambdaEvent, context: LambdaContext) => {
+  cached ??= (async () => {
+    const config = loadConfig(),
+      sql = createApiSql(config, { max: config.RETAINER_DB_POOL_MAX });
+    const extensions = await extensionServices(config);
+    return createApiHandler(config, sql, {
+      extensionCatalog: extensions.catalog,
+      extensionActivation: extensions.activationReady,
+      ...(extensions.tokens ? { runTokens: extensions.tokens } : {}),
+    });
+  })();
+  return (await cached)(event, context);
 };

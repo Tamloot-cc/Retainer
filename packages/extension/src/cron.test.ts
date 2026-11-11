@@ -22,9 +22,20 @@ describe('UTC cron', () => {
     expect(() => nextOccurrence('0 0 31 2 *', new Date('2026-01-01T00:00:00Z'))).toThrow(
       'no occurrence',
     );
-    expect(() => nextOccurrence('*/5 * * * *', new Date())).toThrow('invalid UTC cron');
+    expect(() => nextOccurrence('*/0 * * * *', new Date())).toThrow('invalid UTC cron step');
     expect(() => nextOccurrence('* * * * *', new Date('invalid'))).toThrow(
       'invalid scheduling time',
+    );
+  });
+  it('supports steps, lists, ranges, names and Sunday aliases', () => {
+    expect(
+      nextOccurrence('*/15 9-17 * * MON-FRI', new Date('2026-11-11T09:16:00Z')).toISOString(),
+    ).toBe('2026-11-11T09:30:00.000Z');
+    expect(nextOccurrence('5,35 * * * *', new Date('2026-11-11T09:10:00Z')).toISOString()).toBe(
+      '2026-11-11T09:35:00.000Z',
+    );
+    expect(nextOccurrence('0 0 * JAN 7', new Date('2026-12-31T20:00:00Z')).toISOString()).toBe(
+      '2027-01-03T00:00:00.000Z',
     );
   });
 });

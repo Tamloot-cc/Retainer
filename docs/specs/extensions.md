@@ -1,6 +1,6 @@
 # Retainer extensions
 
-Status: implementation in progress; inert control foundation only. Date: 2026-11-11.
+Status: implementation in progress; control, isolated execution, lifecycle and management UI implemented; ingestion and launch remain. Date: 2026-11-11.
 See [implementation progress](extensions-implementation.md) for completed and outstanding work.
 
 This spec replaces the exported **Retainer Extensions** proposal supplied as

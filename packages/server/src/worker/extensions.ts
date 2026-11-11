@@ -39,8 +39,8 @@ export class ExecutionRegistry {
       this.entries.set(key, structuredClone(value));
     }
   }
-  get(job: ClaimedJob) {
-    const value = this.entries.get(`${job.registrationId}:${job.releaseDigest}:${job.functionId}`);
+  lookup(registrationId: string, releaseDigest: string, functionId: string) {
+    const value = this.entries.get(`${registrationId}:${releaseDigest}:${functionId}`);
     if (!value)
       throw new AppError(
         409,
@@ -49,11 +49,16 @@ export class ExecutionRegistry {
       );
     return structuredClone(value);
   }
+  get(job: ClaimedJob) {
+    return this.lookup(job.registrationId, job.releaseDigest, job.functionId);
+  }
 }
 
 /** Trusted coordinator only. It holds no DB transaction while an execution is running. */
 export class ExtensionExecutor {
   readonly queue: ExtensionQueue;
+  private readonly active = new Set<AbortController>();
+  private stopped = false;
   constructor(
     private readonly options: {
       sql: Sql;
@@ -93,11 +98,15 @@ export class ExtensionExecutor {
     });
   }
   async execute(job: ClaimedJob) {
+    if (job.system) return this.acknowledge(job, { status: 'succeeded' });
     const controller = new AbortController();
+    this.active.add(controller);
+    if (this.stopped) controller.abort();
     let heartbeat: ReturnType<typeof setInterval> | undefined,
       timeout: ReturnType<typeof setTimeout> | undefined;
     let result: ExecutionResult;
     try {
+      if (controller.signal.aborted) throw new Error('executor stopped');
       const executable = this.options.registry.get(job);
       const release = this.options.catalog
         .list()
@@ -177,9 +186,14 @@ export class ExtensionExecutor {
       if (heartbeat) clearInterval(heartbeat);
       if (timeout) clearTimeout(timeout);
       controller.abort();
+      this.active.delete(controller);
     }
+    return this.acknowledge(job, result);
+  }
+  private async acknowledge(job: ClaimedJob, result: ExecutionResult) {
     try {
-      await this.queue.complete(job, result);
+      const completed = await this.queue.complete(job, result);
+      if (completed.activated) await this.queue.scheduleTick(job.workspaceId, job.installationId);
       return result.status;
     } catch (error) {
       if (
@@ -191,13 +205,20 @@ export class ExtensionExecutor {
       throw error;
     }
   }
+  stop() {
+    this.stopped = true;
+    for (const controller of this.active) controller.abort();
+  }
   async tick() {
+    if (this.stopped) return { executed: 0, fenced: 0 };
+    await this.queue.maintain(this.options.discoverySql);
     const due = await this.queue.discover(this.options.discoverySql, 1000);
     let next = 0,
       executed = 0,
       fenced = 0;
     const worker = async () => {
       for (;;) {
+        if (this.stopped) return;
         const item = due[next++];
         if (!item) return;
         const job = await this.queue.claim(item.workspace_id, item.job_id, this.options.owner);

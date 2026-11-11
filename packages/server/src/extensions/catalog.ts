@@ -7,6 +7,7 @@ import { VERSION } from '../version.js';
 export type ReviewedRelease = {
   manifest: ExtensionManifest;
   actorCeiling: 'integration' | 'agent';
+  runtimeEnabled?: boolean;
 };
 export const hash = (value: unknown) =>
   createHash('sha256').update(stableJson(value)).digest('hex');

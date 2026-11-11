@@ -118,3 +118,38 @@ and test fixture activation do not mean those delivery phases are finished.
 Verification: full suite passes with 998 server tests; a subsequent focused run
 also passes the new competing-workspace-capacity case. Typecheck/build/lint and
 layer checks pass. No deployment or provider calls have been performed.
+
+## Isolated execution, lifecycle and UI continuation
+
+The next milestone adds the MIT Node 24 runner; immutable artifact/image maps;
+a dedicated Docker launcher; fresh internal isolated-gateway execution networks;
+DNS-pinned egress validation; configuration and dedicated runtime API entry;
+Compose API/executor/launcher/proxy separation; public install/enable/uninstall
+sagas; restricted setup/cleanup credentials; bounded cleanup reaping; automatic
+schedule maintenance; safe failure health and admin retry; and a generated
+extension management UI with human approval previews and run inspection.
+
+The default catalog is still empty. Only the deterministic fixture is marked
+runtime-ready in development artifacts. Provider ingestion is not advertised.
+The runtime refuses readiness for trigger kinds whose ingress/dispatcher is not
+implemented. See [execution and verification runbook](../extensions-execution.md).
+
+Evidence: real Compose/Postgres/public API approval -> isolated setup -> atomic
+child checkpoint -> isolated child -> attributed CRM write -> redacted inspection
+-> disable -> bounded uninstall. A separate live Docker test checks CPU/memory/PID,
+read-only/non-root/no-mount execution, denied metadata/private/raw internet access
+and ephemeral resource cleanup. Browser tests verify preview-before-approval,
+settings CAS, run inspection, uninstall/reinstall retention and reader permissions.
+Full unit/integration rerun passes 1,293 tests, including 1,011 server tests
+against isolated real-Postgres databases. An earlier large fan-out timeout under
+concurrent Docker activity passed on its focused rerun and in the subsequent
+full run. Typecheck, build, lint and release checks pass; the two new browser
+scenarios pass against freshly built assets.
+
+Outstanding acceptance remains substantial: provider connection verification and
+refresh/reconnect, explicit grant changes, standalone installation REST/OAuth,
+files/storage/erasure, immutable managed source revisions/participant policy,
+webhook verifier and receipt queue, commit-ordered feed/change dispatch, Granola,
+and private hosted infrastructure/staging/rollback/maintenance proof. Earlier
+'inert-only' descriptions above document the previous checkpoints, not current
+runtime-ready fixture behavior. No merge or deployment has been performed.

@@ -53,7 +53,7 @@ export function runtimeRoutes(
     return c.json(
       await inWorkspace(sql, caller.workspaceId, async (tx) => {
         await lockSchemaShared(tx, caller.workspaceId);
-        await admitRun(tx, caller.workspaceId, run);
+        await admitRun(tx, caller.workspaceId, run, false, 'runtime');
         const [installation] = await tx<
           { version: string }[]
         >`select version from extension_installations where id=${run.installationId}`;

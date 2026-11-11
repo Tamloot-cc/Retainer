@@ -1,5 +1,5 @@
 import type { ExtensionManifest, InputSchema } from '@retainer/extension';
-import { nextOccurrence } from '@retainer/extension';
+import { nextOccurrence, SYSTEM_LIFECYCLE_FUNCTION_ID } from '@retainer/extension';
 import { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
 import type { Sql } from '../db/client.js';
@@ -7,7 +7,7 @@ import { inWorkspace, jsonValue, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
 import { requestHash } from '../idempotency.js';
 import { stableJson } from '../stable-json.js';
-import { lockExtension, lockQueue } from './locks.js';
+import { cancelRuns, lockExtension, lockQueue } from './locks.js';
 
 export type Lease = {
   workspaceId: string;
@@ -18,6 +18,8 @@ export type Lease = {
 };
 export type Enqueue = { functionId: string; input: unknown; dedupeKey: string };
 export type ClaimedJob = Lease & {
+  triggerKind: string;
+  system: boolean;
   registrationId: string;
   scopes: ('read' | 'write')[];
   generation: number;
@@ -35,6 +37,11 @@ type Installation = {
   release_digest: string;
   generation: number;
   state: string;
+  setup_kind: string;
+  last_error: string | null;
+  activated_at: Date | null;
+  cleanup_deadline: Date | null;
+  cleanup_live: boolean | null;
   granted_scopes: ('read' | 'write')[];
 };
 type Job = {
@@ -43,6 +50,7 @@ type Job = {
   generation: number;
   release_digest: string;
   function_id: string;
+  trigger_kind: string;
   input: unknown;
   input_hash: string;
   dedupe_key: string;
@@ -63,6 +71,12 @@ export type ResolveRelease = (
 ) => ExtensionManifest;
 const unavailable = () =>
   new AppError(409, 'installation_disabled', 'installation is disabled or its generation changed');
+const runnable = (i: Installation, kind: string) =>
+  kind === 'install'
+    ? ['installing', 'upgrading'].includes(i.state)
+    : kind === 'uninstall'
+      ? i.state === 'uninstalling' && i.cleanup_live === true
+      : i.state === 'active';
 const expired = () => new AppError(409, 'lease_expired', 'run lease expired or was replaced');
 const conflict = (code: string, message: string) => new AppError(409, code, message);
 
@@ -122,16 +136,21 @@ export class ExtensionQueue {
     private readonly limits = { queued: 10000, kvBytes: 1048576 },
   ) {}
 
-  private async installation(tx: Tx, workspace: string, id: string): Promise<Installation> {
+  private async installation(
+    tx: Tx,
+    workspace: string,
+    id: string,
+    shared = true,
+  ): Promise<Installation> {
     const [candidate] = await tx<
       Installation[]
-    >`select * from extension_installations where id=${id}`;
+    >`select *,cleanup_deadline>clock_timestamp() as cleanup_live from extension_installations where id=${id}`;
     if (!candidate) throw notFound('extension installation');
-    await lockExtension(tx, workspace, candidate.registration_id, true);
+    await lockExtension(tx, workspace, candidate.registration_id, shared);
     await lockQueue(tx, workspace, id);
     const [current] = await tx<
       Installation[]
-    >`select * from extension_installations where id=${id}`;
+    >`select *,cleanup_deadline>clock_timestamp() as cleanup_live from extension_installations where id=${id}`;
     if (!current) throw notFound('extension installation');
     return current;
   }
@@ -157,17 +176,24 @@ export class ExtensionQueue {
     installation: Installation,
     input: Enqueue,
     cause: string[],
-    kind: 'job' | 'schedule' = 'job',
+    kind: 'job' | 'schedule' | 'install' | 'uninstall' = 'job',
+    setupChild = false,
   ) {
-    if (installation.state !== 'active') throw unavailable();
+    if (
+      !runnable(installation, kind) &&
+      !(setupChild && kind === 'job' && ['installing', 'upgrading'].includes(installation.state))
+    )
+      throw unavailable();
     if (!input.dedupeKey || input.dedupeKey.length > 500)
       throw new AppError(422, 'invalid_input', 'dedupe key must contain 1–500 characters');
     const fn = this.manifest(installation).functions.find(
       (f) => f.universalId === input.functionId,
     );
-    if (fn?.trigger.kind !== kind)
+    const system =
+      input.functionId === SYSTEM_LIFECYCLE_FUNCTION_ID && ['install', 'uninstall'].includes(kind);
+    if (!system && fn?.trigger.kind !== kind)
       throw new AppError(422, 'invalid_input', 'only registered job functions can be enqueued');
-    validateInput(fn.inputSchema, input.input);
+    if (fn) validateInput(fn.inputSchema, input.input);
     if (Buffer.byteLength(stableJson(input.input)) > 65536)
       throw new AppError(413, 'quota_exceeded', 'job input exceeds 64 KiB');
     const hash = requestHash({ functionId: input.functionId, input: input.input, cause });
@@ -187,11 +213,29 @@ export class ExtensionQueue {
         retryAfterSeconds: 60,
       });
     const [job] = await tx<{ id: string }[]>`insert into extension_jobs
-      (workspace_id,installation_id,generation,release_digest,function_id,input,input_hash,dedupe_key,cause)
+      (workspace_id,installation_id,generation,release_digest,function_id,input,input_hash,dedupe_key,cause,trigger_kind)
       values (${installation.workspace_id},${installation.id},${installation.generation},${installation.release_digest},
-        ${input.functionId},${tx.json(jsonValue(input.input))},${hash},${input.dedupeKey},${tx.json(cause)}) returning id`;
+        ${input.functionId},${tx.json(jsonValue(input.input))},${hash},${input.dedupeKey},${tx.json(cause)},${kind}) returning id`;
     if (!job) throw new Error('job insert returned no row');
     return job.id;
+  }
+  /** Trusted control transaction only. Runtime payloads never select lifecycle kinds. */
+  async enqueueLifecycle(tx: Tx, workspace: string, id: string, kind: 'install' | 'uninstall') {
+    const installation = await this.installation(tx, workspace, id);
+    const functions = this.manifest(installation).functions.filter(
+      (fn) => fn.trigger.kind === kind,
+    );
+    const ids = functions.length
+      ? functions.map((fn) => fn.universalId)
+      : [SYSTEM_LIFECYCLE_FUNCTION_ID];
+    for (const functionId of ids)
+      await this.insert(
+        tx,
+        installation,
+        { functionId, input: {}, dedupeKey: `lifecycle:${kind}:${functionId}` },
+        [],
+        kind,
+      );
   }
   /** Trusted ingress/scheduler entry. Runtime children use checkpoint so cause is server-derived. */
   async enqueue(workspace: string, installationId: string, input: Enqueue) {
@@ -209,18 +253,45 @@ export class ExtensionQueue {
       { workspace_id: string; job_id: string }[]
     >`select * from retainer_extension_jobs_due(${limit})`;
   }
+  async maintain(discoverySql: Sql) {
+    const due = await discoverySql<{ workspace_id: string; installation_id: string }[]>`
+      select * from retainer_extension_maintenance_due(1000)`;
+    for (const item of due) {
+      await inWorkspace(this.sql, item.workspace_id, async (tx) => {
+        await lockSchemaShared(tx, item.workspace_id);
+        const installation = await this.installation(
+          tx,
+          item.workspace_id,
+          item.installation_id,
+          false,
+        );
+        if (installation.state !== 'uninstalling') return;
+        const [expired] =
+          await tx`select 1 where ${installation.cleanup_deadline}::timestamptz<=clock_timestamp()`;
+        if (!expired) return;
+        await cancelRuns(tx, installation.id);
+        await tx`update extension_installations set state='uninstalled',generation=generation+1,
+          last_error='cleanup_deadline_expired',updated_at=now() where id=${installation.id}`;
+        await tx`select retainer_finish_extension_cleanup(${installation.id}::uuid)`;
+      });
+      try {
+        await this.scheduleTick(item.workspace_id, item.installation_id);
+      } catch (error) {
+        if (!(error instanceof AppError && error.code === 'quota_exceeded')) throw error;
+      }
+    }
+  }
   async claim(workspace: string, id: string, owner: string): Promise<ClaimedJob | null> {
     if (!owner || owner.length > 200) throw new Error('invalid lease owner');
     return inWorkspace(this.sql, workspace, async (tx) => {
       await lockSchemaShared(tx, workspace);
       const [candidate] = await tx<Job[]>`select * from extension_jobs where id=${id}`;
       if (!candidate) return null;
-      const installation = await this.installation(tx, workspace, candidate.installation_id);
+      const installation = await this.installation(tx, workspace, candidate.installation_id, false);
       const [job] = await tx<Job[]>`select * from extension_jobs where id=${id}
         and ((status='queued' and available_at<=now()) or (status='running' and lease_until<=clock_timestamp())) for update skip locked`;
       if (!job) return null;
       if (
-        installation.state !== 'active' ||
         job.generation !== installation.generation ||
         job.release_digest !== installation.release_digest
       ) {
@@ -229,20 +300,26 @@ export class ExtensionQueue {
           where job_id=${id} and finished_at is null`;
         return null;
       }
+      if (!runnable(installation, job.trigger_kind)) return null;
       const fn = this.manifest(installation).functions.find(
         (f) => f.universalId === job.function_id,
       );
-      if (fn?.trigger.kind !== 'job' && fn?.trigger.kind !== 'schedule')
+      const system =
+        job.function_id === SYSTEM_LIFECYCLE_FUNCTION_ID &&
+        ['install', 'uninstall'].includes(job.trigger_kind);
+      if (!system && fn?.trigger.kind !== job.trigger_kind)
         throw new AppError(
           409,
           'incompatible_runtime',
           'job function is unavailable in pinned release',
         );
+      const timeout = fn?.timeoutSeconds ?? 30;
       const [exhausted] =
         await tx`select 1 where ${job.expires_at}<=clock_timestamp() or ${job.cycle_attempt}>=10`;
       if (exhausted) {
         await tx`update extension_jobs set status='failed',code='retry_exhausted',lease_until=null where id=${id}`;
         await tx`update extension_attempts set status='failed',code='retry_exhausted',finished_at=now() where job_id=${id} and finished_at is null`;
+        await this.finishLifecycle(tx, installation, job, 'failed', 'retry_exhausted');
         return null;
       }
       const [other] =
@@ -257,7 +334,7 @@ export class ExtensionQueue {
       const [claimed] = await tx<
         Job[]
       >`update extension_jobs set status='running',lease_owner=${owner},
-        fence=fence+1,lease_until=clock_timestamp()+least(60,${fn.timeoutSeconds})*interval '1 second',run_until=clock_timestamp()+${fn.timeoutSeconds}*interval '1 second',attempt=attempt+1,cycle_attempt=cycle_attempt+1,updated_at=now()
+        fence=fence+1,lease_until=clock_timestamp()+least(60,${timeout})*interval '1 second',run_until=clock_timestamp()+${timeout}*interval '1 second',attempt=attempt+1,cycle_attempt=cycle_attempt+1,updated_at=now()
         where id=${id} returning *`;
       if (!claimed) throw new Error('claim returned no row');
       await tx`insert into extension_attempts(workspace_id,job_id,attempt,fence,status)
@@ -268,6 +345,8 @@ export class ExtensionQueue {
         jobId: id,
         owner,
         fence: String(claimed.fence),
+        triggerKind: claimed.trigger_kind,
+        system,
         registrationId: installation.registration_id,
         scopes: installation.granted_scopes,
         generation: claimed.generation,
@@ -282,17 +361,25 @@ export class ExtensionQueue {
   private async withLease<T>(
     lease: Lease,
     fn: (tx: Tx, installation: Installation, job: Job) => Promise<T>,
+    exclusive = false,
   ) {
     return inWorkspace(this.sql, lease.workspaceId, async (tx) => {
       await lockSchemaShared(tx, lease.workspaceId);
-      const installation = await this.installation(tx, lease.workspaceId, lease.installationId);
-      if (installation.state !== 'active') throw unavailable();
+      const installation = await this.installation(
+        tx,
+        lease.workspaceId,
+        lease.installationId,
+        !exclusive,
+      );
+      if (!['active', 'installing', 'upgrading', 'uninstalling'].includes(installation.state))
+        throw unavailable();
       const [job] = await tx<
         Job[]
       >`select * from extension_jobs where id=${lease.jobId} and installation_id=${lease.installationId}
         and status='running' and lease_owner=${lease.owner} and fence=${lease.fence}::bigint
         and generation=${installation.generation} and release_digest=${installation.release_digest} and lease_until>clock_timestamp() and run_until>clock_timestamp() for update`;
       if (!job) throw expired();
+      if (!runnable(installation, job.trigger_kind)) throw unavailable();
       return fn(tx, installation, job);
     });
   }
@@ -303,6 +390,47 @@ export class ExtensionQueue {
       >`update extension_jobs set lease_until=least(run_until,clock_timestamp()+interval '60 seconds'),updated_at=now() where id=${lease.jobId} returning lease_until as deadline`;
       return row;
     });
+  }
+  private async finishLifecycle(
+    tx: Tx,
+    installation: Installation,
+    job: Job,
+    status: string,
+    code: string | null,
+  ) {
+    if (!['install', 'uninstall'].includes(job.trigger_kind)) {
+      if (status === 'failed')
+        await tx`update extension_installations set connection_health='degraded',last_error=${code ?? 'run_failed'},updated_at=now() where id=${installation.id}`;
+      else if (status === 'succeeded') {
+        const [failed] =
+          await tx`select id from extension_jobs where installation_id=${installation.id} and generation=${installation.generation} and status='failed' limit 1`;
+        if (!failed)
+          await tx`update extension_installations set connection_health='ok',last_error=null where id=${installation.id}`;
+      }
+      return false;
+    }
+    if (status === 'failed') {
+      const state =
+        job.trigger_kind === 'uninstall'
+          ? 'uninstalling'
+          : installation.setup_kind === 'upgrade'
+            ? 'disabled'
+            : 'setup_failed';
+      await tx`update extension_installations set state=${state},connection_health='degraded',last_error=${code ?? 'setup_failed'},updated_at=now() where id=${installation.id}`;
+      return false;
+    }
+    if (status !== 'succeeded') return false;
+    const [pending] =
+      await tx`select id from extension_jobs where installation_id=${installation.id}
+      and generation=${installation.generation} and trigger_kind=${job.trigger_kind} and status<>'succeeded' limit 1`;
+    if (pending) return false;
+    if (job.trigger_kind === 'install') {
+      await tx`update extension_installations set state='active',connection_health='ok',last_error=null,activated_at=clock_timestamp(),updated_at=now() where id=${installation.id}`;
+      return true;
+    }
+    await tx`update extension_installations set state='uninstalled',last_error=null,updated_at=now() where id=${installation.id}`;
+    await tx`select retainer_finish_extension_cleanup(${installation.id}::uuid)`;
+    return false;
   }
   async complete(
     lease: Lease,
@@ -316,25 +444,34 @@ export class ExtensionQueue {
         .optional(),
       retryAfterSeconds: z.number().int().min(0).max(3600).optional(),
     }).parse(result);
-    return this.withLease(lease, async (tx, _installation, job) => {
-      const status =
-        result.status === 'retry' ? (job.cycle_attempt >= 10 ? 'failed' : 'queued') : result.status;
-      const code =
-        job.cycle_attempt >= 10 && result.status === 'retry'
-          ? 'retry_exhausted'
-          : (result.code ?? null);
-      const delay = Math.min(
-        3600,
-        Math.max(
-          result.retryAfterSeconds ?? 0,
-          30 * 2 ** (job.cycle_attempt - 1) * (0.5 + Math.random()),
-        ),
-      );
-      await tx`update extension_jobs set status=${status},code=${code},lease_owner=null,lease_until=null,
+    return this.withLease(
+      lease,
+      async (tx, installation, job) => {
+        const status =
+          result.status === 'retry'
+            ? job.cycle_attempt >= 10
+              ? 'failed'
+              : 'queued'
+            : result.status;
+        const code =
+          job.cycle_attempt >= 10 && result.status === 'retry'
+            ? 'retry_exhausted'
+            : (result.code ?? null);
+        const delay = Math.min(
+          3600,
+          Math.max(
+            result.retryAfterSeconds ?? 0,
+            30 * 2 ** (job.cycle_attempt - 1) * (0.5 + Math.random()),
+          ),
+        );
+        await tx`update extension_jobs set status=${status},code=${code},lease_owner=null,lease_until=null,
         available_at=now()+${delay}*interval '1 second',updated_at=now() where id=${job.id}`;
-      await tx`update extension_attempts set status=${result.status},code=${code},finished_at=now() where job_id=${job.id} and attempt=${job.attempt}`;
-      return { status };
-    });
+        await tx`update extension_attempts set status=${result.status},code=${code},finished_at=now() where job_id=${job.id} and attempt=${job.attempt}`;
+        const activated = await this.finishLifecycle(tx, installation, job, status, code);
+        return { status, activated };
+      },
+      true,
+    );
   }
   async checkpoint(
     lease: Lease,
@@ -346,9 +483,20 @@ export class ExtensionQueue {
     if (input.children.length > 1000)
       throw new AppError(413, 'quota_exceeded', 'checkpoint has too many child jobs');
     return this.withLease(lease, async (tx, installation, job) => {
+      if (job.trigger_kind === 'uninstall')
+        throw new AppError(403, 'forbidden', 'cleanup runs cannot modify runtime state');
       const ids = [];
       for (const child of input.children)
-        ids.push(await this.insert(tx, installation, child, job.cause));
+        ids.push(
+          await this.insert(
+            tx,
+            installation,
+            child,
+            job.cause,
+            'job',
+            job.trigger_kind === 'install',
+          ),
+        );
       let revision: number | undefined;
       if (input.kv) {
         const kv = input.kv;
@@ -389,7 +537,12 @@ export class ExtensionQueue {
       for (const fn of manifest.functions) {
         if (fn.trigger.kind !== 'schedule') continue;
         await tx`insert into extension_schedules(workspace_id,installation_id,function_id,next_due_at)
-          values(${workspace},${installationId},${fn.universalId},${nextOccurrence(fn.trigger.cron, clock.now)})
+          values(${workspace},${installationId},${fn.universalId},${nextOccurrence(fn.trigger.cron, installation.activated_at ?? clock.now)})
+          on conflict(workspace_id,installation_id,function_id) do nothing`;
+      }
+      if (!manifest.functions.some((fn) => fn.trigger.kind === 'schedule')) {
+        await tx`insert into extension_schedules(workspace_id,installation_id,function_id,next_due_at)
+          values(${workspace},${installationId},${SYSTEM_LIFECYCLE_FUNCTION_ID},'infinity'::timestamptz)
           on conflict(workspace_id,installation_id,function_id) do nothing`;
       }
       const due = await tx<
@@ -427,8 +580,7 @@ export class ExtensionQueue {
       throw new AppError(400, 'invalid_request', 'Idempotency-Key must contain 1–200 characters');
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       await lockSchemaShared(tx, caller.workspaceId);
-      const installation = await this.installation(tx, caller.workspaceId, installationId);
-      if (installation.state !== 'active') throw unavailable();
+      const installation = await this.installation(tx, caller.workspaceId, installationId, false);
       const hash = requestHash({
         operation: 'retry_run',
         jobId,
@@ -458,9 +610,18 @@ export class ExtensionQueue {
       const fn = this.manifest(installation).functions.find(
         (f) => f.universalId === job.function_id,
       );
-      if (fn?.trigger.kind !== 'job' && fn?.trigger.kind !== 'schedule')
+      const setupRetry =
+        job.trigger_kind === 'install' &&
+        (installation.state === 'setup_failed' ||
+          (installation.state === 'disabled' &&
+            !!installation.last_error &&
+            installation.setup_kind === 'upgrade'));
+      if (!runnable(installation, job.trigger_kind) && !setupRetry) throw unavailable();
+      if (fn?.trigger.kind !== job.trigger_kind)
         throw conflict('incompatible_runtime', 'job function is unavailable');
       validateInput(fn.inputSchema, job.input);
+      if (setupRetry)
+        await tx`update extension_installations set state=${installation.setup_kind === 'upgrade' ? 'upgrading' : 'installing'},last_error=null where id=${installationId}`;
       await tx`update extension_jobs set status='queued',code=null,cycle_attempt=0,fence=fence+1,
         lease_owner=null,lease_until=null,run_until=null,available_at=clock_timestamp(),expires_at=clock_timestamp()+interval '24 hours',updated_at=now() where id=${jobId}`;
       const response = { id: jobId, status: 'queued' };
@@ -470,7 +631,9 @@ export class ExtensionQueue {
     });
   }
   async getKv(lease: Lease, key: string) {
-    return this.withLease(lease, async (tx) => {
+    return this.withLease(lease, async (tx, _installation, job) => {
+      if (job.trigger_kind === 'uninstall')
+        throw new AppError(403, 'forbidden', 'cleanup runs cannot read runtime state');
       const [row] = await tx<
         { value: unknown; revision: number }[]
       >`select value,revision from extension_kv where installation_id=${lease.installationId} and key=${key}`;

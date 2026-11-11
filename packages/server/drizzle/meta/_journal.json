@@ -407,6 +407,20 @@
       "when": 1794385537802,
       "tag": "0057_extension_schedule_security",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1794389654016,
+      "tag": "0058_extension_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1794389654841,
+      "tag": "0059_extension_lifecycle_capabilities",
+      "breakpoints": true
     }
   ]
 }

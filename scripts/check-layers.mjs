@@ -32,8 +32,22 @@ const LAYERS = [
   ['core', ['records', 'memory', 'privacy']],
   ['features', ['views', 'comments', 'retrieval', 'reads']],
   ['admin', ['schema-engine', 'templates', 'workspaces', 'extensions']],
-  ['interfaces', ['http', 'auth', 'api', 'mcp', 'worker', 'operator', 'accounts']],
-  ['entry', ['index', 'cli', 'lambda']],
+  [
+    'interfaces',
+    [
+      'http',
+      'auth',
+      'api',
+      'mcp',
+      'worker',
+      'operator',
+      'accounts',
+      'egress',
+      'launcher',
+      'extension-control',
+    ],
+  ],
+  ['entry', ['index', 'cli', 'lambda', 'egress-proxy', 'extension-launcher']],
 ];
 // Events are records, so these modules depend on each other by design.
 const MAY_SHARE_A_CYCLE = 'core';

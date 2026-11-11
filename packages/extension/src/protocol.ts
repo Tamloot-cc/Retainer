@@ -1,3 +1,5 @@
+export const SYSTEM_LIFECYCLE_FUNCTION_ID = 'b150f9ad-0629-44d0-a103-67fa9b93426b';
+
 import { z } from 'zod';
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/);

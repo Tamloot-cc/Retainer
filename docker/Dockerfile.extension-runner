@@ -1,0 +1,21 @@
+# syntax=docker/dockerfile:1
+FROM node:24-slim AS build
+RUN corepack enable
+WORKDIR /app
+COPY pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs package.json tsconfig.base.json ./
+RUN corepack install
+COPY packages ./packages
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @retainer/shared build && pnpm --filter @retainer/extension build && pnpm --filter @retainer/sdk build && pnpm --filter @retainer/runner build
+RUN pnpm --filter @retainer/runner deploy --legacy --prod /out
+
+FROM node:24-slim
+ARG RELEASE_DIGEST
+ARG BUNDLE_ID
+LABEL retainer.extension.protocol="1" retainer.extension.runtime="node24" retainer.extension.release=$RELEASE_DIGEST retainer.extension.bundle=$BUNDLE_ID
+ENV NODE_ENV=production
+ENV RETAINER_BUNDLED_RELEASE_DIGEST=$RELEASE_DIGEST
+WORKDIR /app
+COPY --from=build /out ./
+USER 65532:65532
+ENTRYPOINT ["node", "--use-env-proxy", "dist/index.js"]

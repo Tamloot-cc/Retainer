@@ -30,6 +30,8 @@ export const RUNTIME_ROLE = 'retainer_app';
  * runtime role. No BYPASSRLS and no DDL.
  */
 export const CONTROL_ROLE = 'retainer_control';
+export const SECRET_BROKER_ROLE = 'retainer_secret_broker';
+export const EXECUTOR_ROLE = 'retainer_executor';
 
 const emptyToUndefined = (value: unknown) => (value === '' ? undefined : value);
 
@@ -75,11 +77,29 @@ const configSchema = z
      * Without it, account work connects as the owner and switches role.
      */
     RETAINER_CONTROL_DATABASE_URL: loginUrl(CONTROL_ROLE),
+    RETAINER_SECRET_BROKER_DATABASE_URL: loginUrl(SECRET_BROKER_ROLE),
+    RETAINER_EXECUTOR_DATABASE_URL: loginUrl(EXECUTOR_ROLE),
+    RETAINER_EXTENSION_CATALOG: z.preprocess(emptyToUndefined, z.string().max(2097152).optional()),
+    RETAINER_EXTENSION_EXECUTABLES: z.preprocess(
+      emptyToUndefined,
+      z.string().max(2097152).optional(),
+    ),
+    RETAINER_EXTENSION_RUN_PUBLIC_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    RETAINER_EXTENSION_RUN_PRIVATE_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    RETAINER_EXTENSION_RUN_KEY_ID: z.string().default('v1'),
+    RETAINER_EXTENSION_API_ORIGIN: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
+    RETAINER_EXTENSION_ISSUER: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
+    RETAINER_EXTENSION_SECRET_KEYS: z.preprocess(emptyToUndefined, z.string().optional()),
+    RETAINER_EXTENSION_LAUNCHER_ORIGIN: z.preprocess(
+      emptyToUndefined,
+      publicOriginSchema.optional(),
+    ),
+    RETAINER_LAUNCHER_TOKEN: z.preprocess(emptyToUndefined, z.string().min(32).optional()),
     /**
      * `control` serves only /account: sign-in and account management. `all`
      * serves everything, including /account in accounts mode.
      */
-    RETAINER_ROLE: z.enum(['api', 'worker', 'control', 'all']).default('all'),
+    RETAINER_ROLE: z.enum(['api', 'worker', 'control', 'extensions', 'all']).default('all'),
     /**
      * Turns on accounts mode (accounts spec 4.1): people sign in with Google,
      * Microsoft or a passkey. Signs session cookies, so changing it signs

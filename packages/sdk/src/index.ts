@@ -598,6 +598,43 @@ export class RetainerClient {
       input,
     );
   }
+  enableExtension(id: string) {
+    return this.post<ExtensionInstallation>(`/v1/extensions/${encodeURIComponent(id)}/enable`);
+  }
+  stageExtensionSecret(input: {
+    registrationId: string;
+    version: string;
+    installationId?: string;
+    name: string;
+    value: string;
+  }) {
+    return this.post<{ pendingSecretId: string; installationId: string; expiresAt: string }>(
+      '/v1/extensions/secrets',
+      input,
+    );
+  }
+  extensionCheckpoint(
+    id: string,
+    input: {
+      children: { functionId: string; input: unknown; dedupeKey: string }[];
+      kv?: { key: string; expectedRevision: number | null; value: unknown };
+    },
+  ) {
+    return this.post<{ ids: string[]; revision?: number }>(
+      `/v1/extensions/${encodeURIComponent(id)}/runtime/checkpoint`,
+      input,
+    );
+  }
+  extensionKv(id: string, key: string) {
+    return this.get<{ value: unknown; revision: number } | null>(
+      `/v1/extensions/${encodeURIComponent(id)}/runtime/kv/${encodeURIComponent(key)}`,
+    );
+  }
+  extensionSecret(id: string, name: string) {
+    return this.get<{ value: string; revision: number }>(
+      `/v1/extensions/${encodeURIComponent(id)}/runtime/secrets/${encodeURIComponent(name)}`,
+    );
+  }
   disableExtension(id: string) {
     return this.post<ExtensionInstallation>(`/v1/extensions/${encodeURIComponent(id)}/disable`);
   }

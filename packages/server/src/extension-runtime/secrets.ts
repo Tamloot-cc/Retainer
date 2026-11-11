@@ -122,7 +122,7 @@ export class SecretBroker {
       const [row] = await tx<
         { envelope: unknown; revision: number }[]
       >`select envelope,revision from extension_secrets
-        where installation_id=${identity.installationId} and name=${identity.name} and delete_after is null`;
+        where installation_id=${identity.installationId} and name=${identity.name} and (delete_after is null or delete_after>clock_timestamp())`;
       if (!row)
         throw new AppError(
           409,

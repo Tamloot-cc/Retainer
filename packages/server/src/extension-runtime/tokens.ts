@@ -36,6 +36,7 @@ export class RunTokens {
     },
   ) {}
   async issue(sql: Sql, job: ClaimedJob, registrationId: string, scopes: ('read' | 'write')[]) {
+    if (job.system) throw new Error('system lifecycle jobs have no run credentials');
     const key = this.options.signingKey;
     if (!key) throw new Error('run signing key is unavailable');
     const run: RunBinding = {
@@ -50,7 +51,7 @@ export class RunTokens {
     };
     await inWorkspace(sql, job.workspaceId, async (tx) => {
       await lockSchemaShared(tx, job.workspaceId);
-      await admitRun(tx, job.workspaceId, run);
+      await admitRun(tx, job.workspaceId, run, false, 'authenticate');
     });
     const expiry = Math.min(
       Math.floor(Date.now() / 1000) + 300,
@@ -94,7 +95,7 @@ export class RunTokens {
         run = binding.parse(payload.run);
       return await inWorkspace(sql, workspaceId, async (tx) => {
         await lockSchemaShared(tx, workspaceId);
-        const authority = await admitRun(tx, workspaceId, run);
+        const authority = await admitRun(tx, workspaceId, run, false, 'authenticate');
         return { workspaceId, ...authority, run };
       });
     } catch (error) {

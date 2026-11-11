@@ -1,4 +1,5 @@
 import { nextOccurrence } from './cron.js';
+import { SYSTEM_LIFECYCLE_FUNCTION_ID } from './protocol.js';
 
 export { nextOccurrence } from './cron.js';
 
@@ -184,21 +185,8 @@ function checkInput(schema: InputSchema): void {
 function checkFunction(fn: z.infer<typeof functionSchema>) {
   checkInput(fn.inputSchema);
   // Cron execution is deferred. Still refuse malformed expressions at release registration.
-  if (fn.trigger.kind === 'schedule') {
+  if (fn.trigger.kind === 'schedule')
     nextOccurrence(fn.trigger.cron, new Date('2000-01-01T00:00:00Z'));
-    const parts = fn.trigger.cron.split(' ');
-    if (
-      parts.length !== 5 ||
-      parts.some(
-        (part, i) =>
-          part !== '*' &&
-          (!/^\d+$/.test(part) ||
-            Number(part) > ([59, 23, 31, 12, 6][i] ?? -1) ||
-            Number(part) < (i === 2 || i === 3 ? 1 : 0)),
-      )
-    )
-      throw new Error('unsupported_manifest: cron supports five UTC wildcard or numeric fields');
-  }
 }
 export function defineExtension(value: unknown): ExtensionManifest {
   bounded(value);
@@ -215,6 +203,8 @@ export function defineExtension(value: unknown): ExtensionManifest {
         : [s.definition.universalId],
     ),
   ];
+  if (manifest.functions.some((fn) => fn.universalId === SYSTEM_LIFECYCLE_FUNCTION_ID))
+    throw new Error('unsupported_manifest: reserved lifecycle function ID');
   if (new Set(ids).size !== ids.length)
     throw new Error('unsupported_manifest: duplicate universal ID');
   if (new Set(manifest.scopes).size !== manifest.scopes.length)
@@ -228,6 +218,9 @@ export function defineExtension(value: unknown): ExtensionManifest {
     throw new Error('unsupported_manifest: duplicate route');
   if (new Set(manifest.functions.map((f) => f.name)).size !== manifest.functions.length)
     throw new Error('unsupported_manifest: duplicate function name');
+  for (const definition of Object.values(manifest.settings))
+    if (definition.secret && definition.type !== 'string')
+      throw new Error('unsupported_manifest: secrets must be strings');
   for (const fn of manifest.functions) checkFunction(fn);
   for (const view of manifest.views) {
     if (new Set(view.fieldIds).size !== view.fieldIds.length)
@@ -276,6 +269,8 @@ export type ExtensionInstallation = {
     | 'uninstalled';
   generation: number;
   settingsRevision: number;
+  lastError?: string | null;
+  connectionHealth?: 'ok' | 'needs_reconnect' | 'degraded';
   secrets?: Record<string, boolean>;
   settings: Record<string, string | boolean | number>;
   grantedActor: 'integration' | 'agent';

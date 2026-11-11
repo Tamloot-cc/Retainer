@@ -1,0 +1,19 @@
+{
+  "name": "@retainer/runner",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Fresh-process runtime for release-bundled first-party Retainer functions.",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@retainer/extension": "workspace:*",
+    "@retainer/sdk": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

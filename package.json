@@ -20,7 +20,10 @@
     "retainer": "pnpm --silent --filter @retainer/server cli",
     "dev:web": "pnpm --filter @retainer/web dev",
     "test:web": "pnpm --filter @retainer/server test:web",
-    "release:check": "node scripts/check-release.mjs"
+    "release:check": "node scripts/check-release.mjs",
+    "test:extensions:sandbox": "node scripts/test-extension-sandbox.mjs",
+    "build:extensions": "pnpm build && node scripts/build-extension-artifacts.mjs",
+    "test:extensions:compose": "node scripts/test-extension-compose.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.6",

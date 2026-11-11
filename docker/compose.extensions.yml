@@ -1,0 +1,116 @@
+# Optional first-party execution services. Combine with compose.yml after building immutable bundles.
+# The default catalog stays empty; this file does not bypass installation approval or activation gates.
+services:
+  retainer:
+    image: retainer:extensions-review
+    container_name: ${RETAINER_EXECUTION_API_CONTAINER:-retainer-extension-api}
+    environment:
+      RETAINER_ROLE: api
+      RETAINER_EXTENSION_EXECUTABLES: "${RETAINER_EXTENSION_EXECUTABLES:-[]}"
+      RETAINER_EXTENSION_CATALOG: "${RETAINER_EXTENSION_CATALOG:-[]}"
+      RETAINER_EXTENSION_RUN_PUBLIC_KEY: "${RETAINER_EXTENSION_RUN_PUBLIC_KEY:-}"
+      RETAINER_EXTENSION_RUN_KEY_ID: "${RETAINER_EXTENSION_RUN_KEY_ID:-v1}"
+      RETAINER_EXTENSION_ISSUER: "${RETAINER_EXTENSION_ISSUER:-}"
+      RETAINER_EXTENSION_SECRET_KEYS: "${RETAINER_EXTENSION_SECRET_KEYS:-}"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  extension-egress:
+    image: retainer:extensions-review
+    container_name: ${RETAINER_EXECUTION_PROXY_CONTAINER:-retainer-extension-egress}
+    command: ["node", "dist/egress-proxy.js"]
+    environment:
+      RETAINER_EXECUTION_API_ORIGINS: http://retainer:8787
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,size=16m"
+    networks: [extension-egress]
+
+  extension-launcher:
+    image: retainer:extensions-review
+    command: ["node", "dist/extension-launcher.js"]
+    user: "0:0"
+    environment:
+      RETAINER_LAUNCHER_TOKEN: "${RETAINER_LAUNCHER_TOKEN:?set a random launcher token}"
+      RETAINER_EXECUTION_API_CONTAINER: "${RETAINER_EXECUTION_API_CONTAINER:-retainer-extension-api}"
+      RETAINER_EXECUTION_PROXY_CONTAINER: "${RETAINER_EXECUTION_PROXY_CONTAINER:-retainer-extension-egress}"
+      RETAINER_EXECUTION_NETWORK_PREFIX: "${RETAINER_EXECUTION_NETWORK_PREFIX:-retainer-extension-run}"
+      RETAINER_EXECUTION_API_ORIGIN: http://retainer:8787
+      RETAINER_EXECUTION_PROXY: http://extension-egress:3128
+      RETAINER_EXTENSION_BUNDLES: "${RETAINER_EXTENSION_BUNDLES:?set immutable first-party bundle metadata}"
+    volumes:
+      - "${RETAINER_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock"
+    read_only: true
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,size=16m"
+    networks: [extension-control]
+    depends_on:
+      retainer:
+        condition: service_healthy
+      extension-egress:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:9000/health').then(r=>r.json()).then(r=>{if(r.protocolVersion!==1||r.runtimeVersion!=='node24')process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  extension-executor:
+    image: retainer:extensions-review
+    environment:
+      DATABASE_URL: postgres://retainer:retainer@postgres:5432/retainer
+      RETAINER_ROLE: worker
+      RETAINER_PUBLIC_ORIGIN: "${RETAINER_PUBLIC_ORIGIN:-}"
+      RETAINER_EXTENSION_API_ORIGIN: http://retainer:8787
+      RETAINER_EXTENSION_ISSUER: "${RETAINER_EXTENSION_ISSUER:-}"
+      RETAINER_EXTENSION_CATALOG: "${RETAINER_EXTENSION_CATALOG:-[]}"
+      RETAINER_EXTENSION_EXECUTABLES: "${RETAINER_EXTENSION_EXECUTABLES:-[]}"
+      RETAINER_EXTENSION_RUN_PUBLIC_KEY: "${RETAINER_EXTENSION_RUN_PUBLIC_KEY:-}"
+      RETAINER_EXTENSION_RUN_PRIVATE_KEY: "${RETAINER_EXTENSION_RUN_PRIVATE_KEY:-}"
+      RETAINER_EXTENSION_RUN_KEY_ID: "${RETAINER_EXTENSION_RUN_KEY_ID:-v1}"
+      RETAINER_EXTENSION_LAUNCHER_ORIGIN: http://extension-launcher:9000
+      RETAINER_LAUNCHER_TOKEN: "${RETAINER_LAUNCHER_TOKEN:?set a random launcher token}"
+      RETAINER_SUPPRESSION_KEY: "${RETAINER_SUPPRESSION_KEY:-}"
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,size=16m"
+    networks: [default, extension-control]
+    stop_grace_period: 30s
+    depends_on:
+      extension-launcher:
+        condition: service_healthy
+      retainer:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://extension-launcher:9000/health').then(r=>r.json()).then(r=>{if(r.protocolVersion!==1)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+networks:
+  extension-egress: {}
+  extension-control:
+    internal: true

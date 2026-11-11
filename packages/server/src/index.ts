@@ -16,6 +16,8 @@ import {
   type Sql,
 } from './db/client.js';
 import { applyLogins } from './db/logins.js';
+import { createExtensionControlApp } from './extension-control/app.js';
+import { extensionServices } from './extension-control/configuration.js';
 import { log, setLogLevel } from './log.js';
 import { bootstrap, firstBootBanner } from './operator/bootstrap.js';
 import { rebuildSearchText } from './records/rebuild-search.js';
@@ -78,12 +80,28 @@ if (accountsMode(config) && (role === 'all' || role === 'control')) {
   stops.push(startPurger({ sql: control }).stop);
 }
 
-if (role === 'api' || role === 'all' || role === 'control') {
+const extensionApiSql =
+  role === 'api' || role === 'all' || role === 'extensions'
+    ? pool(createApiSql(config, { max: config.RETAINER_DB_POOL_MAX }))
+    : undefined;
+const extensionWorkerSql =
+  role === 'worker' || role === 'all'
+    ? pool(createRuntimeSql(config, { max: config.RETAINER_DB_POOL_MAX }))
+    : undefined;
+const extensions = await extensionServices(config, {
+  broker: role === 'all' || role === 'extensions',
+  ...(extensionWorkerSql ? { workerSql: extensionWorkerSql } : {}),
+});
+if (role === 'api' || role === 'all' || role === 'control' || role === 'extensions') {
   const app =
     role === 'control'
       ? undefined
-      : createApp({
-          sql: pool(createApiSql(config, { max: config.RETAINER_DB_POOL_MAX })),
+      : (role === 'extensions' ? createExtensionControlApp : createApp)({
+          sql: extensionApiSql as Sql,
+          extensionCatalog: extensions.catalog,
+          extensionActivation: extensions.activationReady,
+          ...(extensions.tokens ? { runTokens: extensions.tokens } : {}),
+          ...(extensions.broker ? { extensionSecrets: extensions.broker } : {}),
           webDir: config.RETAINER_WEB_DIR,
           // The same origin /account issues OAuth tokens for, even in its own container.
           publicOrigin: accountsMode(config)
@@ -123,11 +141,34 @@ if (config.RETAINER_ROLE === 'worker' || config.RETAINER_ROLE === 'all') {
     intervalMinutes: config.RETAINER_CONSOLIDATE_INTERVAL_MINUTES,
   });
   stops.push(worker.stop);
+  if (extensions.executor) {
+    let running = Promise.resolve(),
+      busy = false;
+    const tick = () => {
+      if (busy) return;
+      busy = true;
+      running = (extensions.executor as NonNullable<typeof extensions.executor>)
+        .tick()
+        .then(() => {})
+        .catch(() => log.error('Extension executor tick failed.'))
+        .finally(() => {
+          busy = false;
+        });
+    };
+    const timer = setInterval(tick, 1000);
+    tick();
+    stops.push(async () => {
+      clearInterval(timer);
+      extensions.executor?.stop();
+      await running;
+    });
+  }
 }
 
 async function shutdown(signal: string) {
   log.info(`${signal} received, shutting down.`);
   await Promise.allSettled(stops.map((stop) => stop()));
+  await extensions.close();
   await Promise.allSettled(pools.map((sql) => sql.end({ timeout: 5 })));
   process.exit(0);
 }

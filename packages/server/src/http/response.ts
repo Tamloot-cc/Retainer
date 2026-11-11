@@ -51,5 +51,14 @@ export function errorBody(error: AppError): ErrorBody {
 }
 
 export function errorResponse(c: Context, error: AppError) {
+  const retry = error.details?.retryAfterSeconds;
+  if (
+    error.status === 429 &&
+    typeof retry === 'number' &&
+    Number.isInteger(retry) &&
+    retry > 0 &&
+    retry <= 3600
+  )
+    c.header('Retry-After', String(retry));
   return c.json(errorBody(error), error.status as ContentfulStatusCode);
 }
