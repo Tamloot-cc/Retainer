@@ -12,6 +12,7 @@ import type { Sql } from '../db/client.js';
 import { inWorkspace, lockForWrite, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { admitRun } from '../extension-runtime/admission.js';
+import { resolveRelease } from '../extension-runtime/availability.js';
 import { lockExtension, lockQueue } from '../extension-runtime/locks.js';
 import { ExtensionQueue } from '../extension-runtime/queue.js';
 import type { SecretBroker } from '../extension-runtime/secrets.js';
@@ -110,30 +111,30 @@ export class Webhooks {
     this.queue = new ExtensionQueue(options.sql, options.catalog.runtime);
   }
   private contract(candidate: Candidate, route: string) {
-    const release = this.options.catalog.get(candidate.registration_id, candidate.version);
-    const hook = release.manifest.webhooks?.find((entry) => entry.route === route);
-    if (!hook || release.digest !== candidate.release_digest)
+    const resolution = resolveRelease(this.options.catalog.runtime, candidate);
+    if (!resolution.available)
       throw new AppError(503, 'incompatible_runtime', 'webhook release is unavailable');
-    const fn = release.manifest.functions.find(
-      (entry) => entry.universalId === hook.verifierFunctionId,
-    );
+    const manifest = resolution.manifest;
+    const hook = manifest.webhooks?.find((entry) => entry.route === route);
+    if (!hook) throw new AppError(503, 'incompatible_runtime', 'webhook release is unavailable');
+    const fn = manifest.functions.find((entry) => entry.universalId === hook.verifierFunctionId);
     const executable = this.options.registry.lookup(
       candidate.registration_id,
-      release.digest,
+      candidate.release_digest,
       hook.verifierFunctionId,
     );
     if (
       !fn ||
       executable.handlerDigest !== fn.handlerDigest ||
-      executable.packageDigest !== release.manifest.packageDigest ||
-      executable.runtimeVersion !== release.manifest.runtimeVersion
+      executable.packageDigest !== manifest.packageDigest ||
+      executable.runtimeVersion !== manifest.runtimeVersion
     )
       throw new AppError(
         503,
         'incompatible_runtime',
         'webhook executable differs from pinned release',
       );
-    return { release, hook, executable };
+    return { hook, executable };
   }
   private address(bindingId: string, route: string) {
     return {
