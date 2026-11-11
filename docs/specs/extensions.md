@@ -1,6 +1,7 @@
 # Retainer extensions
 
-Status: implementation spec; not implemented. Date: 2026-11-11.
+Status: implementation in progress; inert control foundation only. Date: 2026-11-11.
+See [implementation progress](extensions-implementation.md) for completed and outstanding work.
 
 This spec replaces the exported **Retainer Extensions** proposal supplied as
 `Retainer Extensions (1).html` (the [original artifact](https://claude.ai/artifact/LYCoHUAtziuj1dQM7ZYbFy)).
@@ -33,19 +34,19 @@ v1, not a claim that all primitives exist already.
 
 ## 2. Critical evaluation of the proposal
 
-| Finding | Severity and consequence | Resolution |
-| --- | --- | --- |
-| The manifest chooses `integration` versus `agent`. | High: package input would choose assertion precedence and could impersonate a more authoritative writer. | A reviewed registration permits an actor class; installation approval grants it; credentials enforce it. Never `user` or `system`. |
-| Repeated `logEvent` is described as updating an edited note. | High: current code returns `event_conflict` when initial values differ. Even a direct edit would leave derived assertions/facts citing obsolete evidence. | Add an explicit source-revision import operation; keep ordinary `logEvent` semantics. See §10. |
-| Erasure is said to need nothing beyond suppressed emails. | High: transcripts, queued payloads, KV, files and provider identities can retain or recreate erased content. | Extend erasure to every new store and suppress source identity across revisions/reinstallation. |
-| Existing Postgres scheduling is described as a reusable job queue. | High delivery risk: today's worker schedules consolidator passes; it has no general leased extension jobs, acknowledgements or retry state. | Build those primitives explicitly in Postgres. |
-| A container without the database network is treated as the sandbox. | High: it does not by itself isolate runs, credentials, host access or metadata endpoints. | Separate the trusted launcher from fresh execution containers and enforce resource/network limits. First-party trust remains explicit. |
-| A server-route function can find arbitrary installations and read their KV. | High: a public webhook creates a cross-workspace capability. | Narrow routing to one server-selected candidate; expose only its verification secret to a bounded verifier. |
-| Skipping own writes is the loop protection. | Medium: A → B → A still loops, and retries can emit duplicate jobs. | Server-propagated causation chain, deduplication and depth limit. |
-| Cursor moves after work is enqueued. | High if enqueue is not durable/atomic: crashes lose notes or advance past failed pages. | Transactional page checkpoint plus durable child jobs, bounded overlap, visible unresolved failures. |
-| Existing OAuth is assumed sufficient for standalone apps. | High: existing OAuth is person-bound, agent-ranked, and restricted to the MCP audience. | Add explicit installation grants and REST resource support; preserve existing MCP consent semantics. |
-| Files stay out of assertion history. | Incorrect as stated: file bytes should stay out, but references must retain provenance and historical meaning. | Store immutable references in assertions; manage bytes through authorized storage. |
-| SDK/runner MIT licensing is said to reproduce Twenty's license exception. | Unsupported legal conclusion. | Keep package boundaries; make no equivalence claim. Third-party distribution policy is outside this spec. |
+| Finding                                                                     | Severity and consequence                                                                                                                                  | Resolution                                                                                                                             |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| The manifest chooses `integration` versus `agent`.                          | High: package input would choose assertion precedence and could impersonate a more authoritative writer.                                                  | A reviewed registration permits an actor class; installation approval grants it; credentials enforce it. Never `user` or `system`.     |
+| Repeated `logEvent` is described as updating an edited note.                | High: current code returns `event_conflict` when initial values differ. Even a direct edit would leave derived assertions/facts citing obsolete evidence. | Add an explicit source-revision import operation; keep ordinary `logEvent` semantics. See §10.                                         |
+| Erasure is said to need nothing beyond suppressed emails.                   | High: transcripts, queued payloads, KV, files and provider identities can retain or recreate erased content.                                              | Extend erasure to every new store and suppress source identity across revisions/reinstallation.                                        |
+| Existing Postgres scheduling is described as a reusable job queue.          | High delivery risk: today's worker schedules consolidator passes; it has no general leased extension jobs, acknowledgements or retry state.               | Build those primitives explicitly in Postgres.                                                                                         |
+| A container without the database network is treated as the sandbox.         | High: it does not by itself isolate runs, credentials, host access or metadata endpoints.                                                                 | Separate the trusted launcher from fresh execution containers and enforce resource/network limits. First-party trust remains explicit. |
+| A server-route function can find arbitrary installations and read their KV. | High: a public webhook creates a cross-workspace capability.                                                                                              | Narrow routing to one server-selected candidate; expose only its verification secret to a bounded verifier.                            |
+| Skipping own writes is the loop protection.                                 | Medium: A → B → A still loops, and retries can emit duplicate jobs.                                                                                       | Server-propagated causation chain, deduplication and depth limit.                                                                      |
+| Cursor moves after work is enqueued.                                        | High if enqueue is not durable/atomic: crashes lose notes or advance past failed pages.                                                                   | Transactional page checkpoint plus durable child jobs, bounded overlap, visible unresolved failures.                                   |
+| Existing OAuth is assumed sufficient for standalone apps.                   | High: existing OAuth is person-bound, agent-ranked, and restricted to the MCP audience.                                                                   | Add explicit installation grants and REST resource support; preserve existing MCP consent semantics.                                   |
+| Files stay out of assertion history.                                        | Incorrect as stated: file bytes should stay out, but references must retain provenance and historical meaning.                                            | Store immutable references in assertions; manage bytes through authorized storage.                                                     |
+| SDK/runner MIT licensing is said to reproduce Twenty's license exception.   | Unsupported legal conclusion.                                                                                                                             | Keep package boundaries; make no equivalence claim. Third-party distribution policy is outside this spec.                              |
 
 The proposal's strongest choices remain: one installation per workspace/account,
 API-only writes, no model inside Retainer, deterministic ingestion, explicit
@@ -73,15 +74,15 @@ Neither is sufficient as extension ownership or permanent source deduplication.
 
 Twenty paths below are relative to the reference checkout:
 
-| Evidence | What to adopt or distinguish |
-| --- | --- |
-| `packages/twenty-server/src/engine/core-modules/application/application.entity.ts` | Registration versus workspace installation; stable universal identity and installed version. |
-| `packages/twenty-server/src/engine/core-modules/application/application-manifest/application-manifest-apply.service.ts` | Shared apply pipeline and version persistence after successful synchronization. Its optional inference of deletion from omission is not adopted. |
-| `packages/twenty-server/src/engine/core-modules/application/application-manifest/utils/preserve-application-local-metadata-state.util.ts` | Preserve workspace-local overrides and activation state. Retainer starts with explicit conflicts rather than a general override engine. |
-| `packages/twenty-shared/src/application/manifestType.ts` | Declarative manifest with stable entities. Functions, screens, AI and workflow entries demonstrate the much larger scope we are not copying wholesale. |
-| `packages/twenty-server/src/engine/core-modules/application/application-manifest/services/application-uninstall.service.ts` | Hooks need retry/completion bookkeeping and cannot be a prerequisite for access revocation. |
-| `packages/twenty-apps/public/granola/src/logic-functions/granola-webhook-resolver.ts` | The actual resolver uses a registration query parameter and server KV to locate a workspace; it forwards signature headers to the target. The proposal's `webhook-id` account lookup is illustrative, not this implementation. |
-| `packages/twenty-apps/public/granola/src/logic-functions/granola-sync-note.ts` and `utils/sync-granola-note-to-call-recording-or-throw.util.ts` | Fetch externally, then upsert a call recording with transcript content. Retainer needs different provenance and revision semantics. |
+| Evidence                                                                                                                                        | What to adopt or distinguish                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/twenty-server/src/engine/core-modules/application/application.entity.ts`                                                              | Registration versus workspace installation; stable universal identity and installed version.                                                                                                                                   |
+| `packages/twenty-server/src/engine/core-modules/application/application-manifest/application-manifest-apply.service.ts`                         | Shared apply pipeline and version persistence after successful synchronization. Its optional inference of deletion from omission is not adopted.                                                                               |
+| `packages/twenty-server/src/engine/core-modules/application/application-manifest/utils/preserve-application-local-metadata-state.util.ts`       | Preserve workspace-local overrides and activation state. Retainer starts with explicit conflicts rather than a general override engine.                                                                                        |
+| `packages/twenty-shared/src/application/manifestType.ts`                                                                                        | Declarative manifest with stable entities. Functions, screens, AI and workflow entries demonstrate the much larger scope we are not copying wholesale.                                                                         |
+| `packages/twenty-server/src/engine/core-modules/application/application-manifest/services/application-uninstall.service.ts`                     | Hooks need retry/completion bookkeeping and cannot be a prerequisite for access revocation.                                                                                                                                    |
+| `packages/twenty-apps/public/granola/src/logic-functions/granola-webhook-resolver.ts`                                                           | The actual resolver uses a registration query parameter and server KV to locate a workspace; it forwards signature headers to the target. The proposal's `webhook-id` account lookup is illustrative, not this implementation. |
+| `packages/twenty-apps/public/granola/src/logic-functions/granola-sync-note.ts` and `utils/sync-granola-note-to-call-recording-or-throw.util.ts` | Fetch externally, then upsert a call recording with transcript content. Retainer needs different provenance and revision semantics.                                                                                            |
 
 Cloud evidence: `README.md`, `infra/aws/functions.tf`, `api.tf`, `schedule.tf`,
 `build.sh`, and `deploy.sh`. API/consolidator/ops have isolated networking;
@@ -148,18 +149,20 @@ Illustrative manifest (UUIDs below must be allocated permanently before shipping
   },
   "schema": [],
   "views": [],
-  "functions": [{
-    "universalId": "64d5d722-e6f8-42bd-ad34-f522632473c0",
-    "name": "sync-note",
-    "trigger": { "kind": "job" },
-    "inputSchema": {
-      "type": "object",
-      "properties": { "noteId": { "type": "string", "maxLength": 500 } },
-      "required": ["noteId"],
-      "additionalProperties": false
-    },
-    "timeoutSeconds": 120
-  }]
+  "functions": [
+    {
+      "universalId": "64d5d722-e6f8-42bd-ad34-f522632473c0",
+      "name": "sync-note",
+      "trigger": { "kind": "job" },
+      "inputSchema": {
+        "type": "object",
+        "properties": { "noteId": { "type": "string", "maxLength": 500 } },
+        "required": ["noteId"],
+        "additionalProperties": false
+      },
+      "timeoutSeconds": 120
+    }
+  ]
 }
 ```
 
@@ -190,20 +193,20 @@ All new workspace tables have workspace RLS, composite workspace foreign keys
 where applicable, and access through `retainer_app`; secrets use a separate broker
 role with no ordinary read grants. Generate migrations from Drizzle.
 
-| Store | Essential data and constraints |
-| --- | --- |
-| Registrations/releases | Global reviewed identity, actor ceiling, immutable manifest/digests, allowed executables, protocol/runtime range; no workspace-editable publisher metadata. |
-| Installations | Workspace, registration, installed release, desired release, state, generation, granted scopes/actor, settings, mapping, installer actor/user, source-account namespace, last error; unique workspace/registration. |
-| Contributions | Installation, element kind, universal ID, actual object/field/view ID and last applied definition; unique managing installation per element. References to shared elements are bindings, not ownership. |
-| Grants | Installation/generation, scopes, credential hash or OAuth consent/client reference, expiry and revocation. No plaintext bearer tokens. |
-| Secrets/connections | Encrypted value, key version, installation, provider, refresh revision and status. Separate from KV and settings responses. |
-| KV | Installation/key, bounded JSON value, revision for compare-and-set. 64 KiB/value, 1 MiB/installation default. No transcripts, credentials or arbitrary record copies. |
-| Jobs/attempts | Workspace, installation/generation, release/function ID, input, dedupe key, causation, status, lease owner/fence/deadline, attempt, available time, outcome. Unique installation/generation/dedupe key. |
-| Webhook receipts | Route/account binding, delivery identity/digest, accepted time, job ID; unique binding/delivery ID. Payload retention bounded and erased with its source. |
-| Schedule state | Installation/function, next due time, last scheduled occurrence; unique job key per scheduled UTC instant. |
-| Change outbox/feed | Workspace commit-ordered position, operation, record ID, changed field keys, origin installation, cause chain; no before/after record bodies. |
-| Source items/revisions | Stable account-scoped external identity, current revision/event, provider ordering marker, content digest and suppression identity. Revision uniqueness is durable, not the request-idempotency TTL. |
-| Files/references | Workspace, immutable opaque ID, storage key, checksum, media type, byte length, upload state/expiry, reference edges and deletion state. |
+| Store                  | Essential data and constraints                                                                                                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Registrations/releases | Global reviewed identity, actor ceiling, immutable manifest/digests, allowed executables, protocol/runtime range; no workspace-editable publisher metadata.                                                         |
+| Installations          | Workspace, registration, installed release, desired release, state, generation, granted scopes/actor, settings, mapping, installer actor/user, source-account namespace, last error; unique workspace/registration. |
+| Contributions          | Installation, element kind, universal ID, actual object/field/view ID and last applied definition; unique managing installation per element. References to shared elements are bindings, not ownership.             |
+| Grants                 | Installation/generation, scopes, credential hash or OAuth consent/client reference, expiry and revocation. No plaintext bearer tokens.                                                                              |
+| Secrets/connections    | Encrypted value, key version, installation, provider, refresh revision and status. Separate from KV and settings responses.                                                                                         |
+| KV                     | Installation/key, bounded JSON value, revision for compare-and-set. 64 KiB/value, 1 MiB/installation default. No transcripts, credentials or arbitrary record copies.                                               |
+| Jobs/attempts          | Workspace, installation/generation, release/function ID, input, dedupe key, causation, status, lease owner/fence/deadline, attempt, available time, outcome. Unique installation/generation/dedupe key.             |
+| Webhook receipts       | Route/account binding, delivery identity/digest, accepted time, job ID; unique binding/delivery ID. Payload retention bounded and erased with its source.                                                           |
+| Schedule state         | Installation/function, next due time, last scheduled occurrence; unique job key per scheduled UTC instant.                                                                                                          |
+| Change outbox/feed     | Workspace commit-ordered position, operation, record ID, changed field keys, origin installation, cause chain; no before/after record bodies.                                                                       |
+| Source items/revisions | Stable account-scoped external identity, current revision/event, provider ordering marker, content digest and suppression identity. Revision uniqueness is durable, not the request-idempotency TTL.                |
+| Files/references       | Workspace, immutable opaque ID, storage key, checksum, media type, byte length, upload state/expiry, reference edges and deletion state.                                                                            |
 
 Global lock order is deployment lock → privacy lock → schema lock → installation
 lock → source/connection identity locks → sorted record locks → feed counter.
@@ -578,19 +581,19 @@ installation ID must match the credential; cross-workspace references return 404
 Lifecycle endpoints require human admin plus the existing schema scope where
 schema changes occur. Read-only preview may be available to schema-capable agents.
 
-| Interface | Contract |
-| --- | --- |
-| `GET /v1/extensions/catalog` | Bundled compatible releases/capabilities; no secrets. |
-| `GET /v1/extensions` and `GET /v1/extensions/:id` | Installed state, release, grants, health, settings with secret-presence flags, contributions and sync status. |
-| `POST /v1/extensions/preview` | Registration/release, mappings and settings references → plan digest, schema/view diff, grant changes, warnings/conflicts. |
-| `POST /v1/extensions` | Commit install using plan digest and idempotency key → installation and lifecycle job. |
-| `POST /v1/extensions/:id/upgrade` | Commit an upgrade preview; no implicit permission increase. |
-| `POST /v1/extensions/:id/disable`, `/enable`, `/uninstall` | Generation-fenced lifecycle transitions; enable validates connection and mappings. |
-| `PATCH /v1/extensions/:id/settings` | Expected settings revision, validated settings/secret references; credential/account changes require reconnect and fence old jobs. |
-| `GET /v1/extensions/:id/runs`, `POST /v1/extensions/:id/runs/:run/retry` | Paginated redacted diagnostics and admin retry; no raw provider bodies. |
-| `POST /v1/extensions/:id/source-events` | Revision-aware managed source import (§10). |
-| `POST /v1/files/uploads`, `POST /v1/files/:id/finalize`, `GET /v1/files/:id/download` | Intent/finalize/authorized download; attachment references remain ordinary record writes. |
-| `GET /v1/changes` | Cursor-based workspace feed (§9.4). |
+| Interface                                                                             | Contract                                                                                                                           |
+| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/extensions/catalog`                                                          | Bundled compatible releases/capabilities; no secrets.                                                                              |
+| `GET /v1/extensions` and `GET /v1/extensions/:id`                                     | Installed state, release, grants, health, settings with secret-presence flags, contributions and sync status.                      |
+| `POST /v1/extensions/preview`                                                         | Registration/release, mappings and settings references → plan digest, schema/view diff, grant changes, warnings/conflicts.         |
+| `POST /v1/extensions`                                                                 | Commit install using plan digest and idempotency key → installation and lifecycle job.                                             |
+| `POST /v1/extensions/:id/upgrade`                                                     | Commit an upgrade preview; no implicit permission increase.                                                                        |
+| `POST /v1/extensions/:id/disable`, `/enable`, `/uninstall`                            | Generation-fenced lifecycle transitions; enable validates connection and mappings.                                                 |
+| `PATCH /v1/extensions/:id/settings`                                                   | Expected settings revision, validated settings/secret references; credential/account changes require reconnect and fence old jobs. |
+| `GET /v1/extensions/:id/runs`, `POST /v1/extensions/:id/runs/:run/retry`              | Paginated redacted diagnostics and admin retry; no raw provider bodies.                                                            |
+| `POST /v1/extensions/:id/source-events`                                               | Revision-aware managed source import (§10).                                                                                        |
+| `POST /v1/files/uploads`, `POST /v1/files/:id/finalize`, `GET /v1/files/:id/download` | Intent/finalize/authorized download; attachment references remain ordinary record writes.                                          |
+| `GET /v1/changes`                                                                     | Cursor-based workspace feed (§9.4).                                                                                                |
 
 Installation-scoped runtime endpoints provide KV get/CAS, enqueue/checkpoint,
 connection retrieval and file intents; reject admin credentials where a run-only
@@ -675,18 +678,18 @@ Every phase includes unit, real-Postgres integration, API and agent scenarios;
 UI changes also use a fresh `pnpm build` before Playwright. Each test file has a
 fresh database. Add these required adversarial cases, not only happy paths:
 
-| Area | Required evidence |
-| --- | --- |
+| Area           | Required evidence                                                                                                                                                                                         |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Install/schema | Concurrent installs create one installation; stale preview races schema edit; collision rolls back schema/views/install together; deprecated field remains deprecated; user-edited view survives upgrade. |
-| Authorization | Manifest cannot choose user/system actor; runtime cannot escalate scope or touch another installation; personal memory inaccessible; standalone REST token cannot widen MCP consent. |
-| Revocation | Disable races a write, replay, lease renewal and upload-finalize; no old API write commits after disable returns; cleanup cannot write CRM. |
-| Jobs | Crash before/after provider call; lost acknowledgement; expired worker resumes after lease takeover; child enqueue/checkpoint atomicity; queue quota leaves cursor unchanged. |
-| Webhooks | Forged account hint, ambiguous binding, bad raw-body signature, replay, duplicate delivery, verifier timeout and DB outage; 202 only follows durable acceptance. |
-| Changes | Concurrent transaction commits cannot be skipped by a cursor; dispatcher crash replays safely; A → B → A blocked; removed/merged records and field renames handled; private rows absent. |
-| Imports | Same revision concurrent twice creates one event; edit retires old evidence/derivatives atomically; older fetched version cannot win; suppressed source never returns after reinstall. |
-| Files/privacy | Cross-workspace IDs and forged finalize rejected; unattached upload collected; historical references retained; forget racing import/download/worker; storage deletion failures remain visible. |
-| Lifecycle | Timeout after subscription creation does not duplicate hooks; uninstall works while provider is down; reconnect fences old account; rollback preserves data. |
-| Deployment | Main artifact/digest match, incompatible runner rejected, stopped migration fences all writers, worker recovery after outage, narrow IAM and no DB access from execution. |
+| Authorization  | Manifest cannot choose user/system actor; runtime cannot escalate scope or touch another installation; personal memory inaccessible; standalone REST token cannot widen MCP consent.                      |
+| Revocation     | Disable races a write, replay, lease renewal and upload-finalize; no old API write commits after disable returns; cleanup cannot write CRM.                                                               |
+| Jobs           | Crash before/after provider call; lost acknowledgement; expired worker resumes after lease takeover; child enqueue/checkpoint atomicity; queue quota leaves cursor unchanged.                             |
+| Webhooks       | Forged account hint, ambiguous binding, bad raw-body signature, replay, duplicate delivery, verifier timeout and DB outage; 202 only follows durable acceptance.                                          |
+| Changes        | Concurrent transaction commits cannot be skipped by a cursor; dispatcher crash replays safely; A → B → A blocked; removed/merged records and field renames handled; private rows absent.                  |
+| Imports        | Same revision concurrent twice creates one event; edit retires old evidence/derivatives atomically; older fetched version cannot win; suppressed source never returns after reinstall.                    |
+| Files/privacy  | Cross-workspace IDs and forged finalize rejected; unattached upload collected; historical references retained; forget racing import/download/worker; storage deletion failures remain visible.            |
+| Lifecycle      | Timeout after subscription creation does not duplicate hooks; uninstall works while provider is down; reconnect fences old account; rollback preserves data.                                              |
+| Deployment     | Main artifact/digest match, incompatible runner rejected, stopped migration fences all writers, worker recovery after outage, narrow IAM and no DB access from execution.                                 |
 
 Definition of done: an admin installs Granola, safely imports history and edits,
 receives and recovers missed notifications, inspects/retries failures, disables

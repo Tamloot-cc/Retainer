@@ -8,11 +8,14 @@ import { meRoute, sessionRoutes } from '../auth/session.js';
 import { publicOriginSchema } from '../config.js';
 import type { Sql } from '../db/client.js';
 import { AppError } from '../errors.js';
+import type { ExtensionCatalog } from '../extensions/catalog.js';
+import { Extensions } from '../extensions/service.js';
 import { type RateLimit, rateLimit } from '../http/rate-limit.js';
 import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
 import { mcpRoute } from '../mcp/route.js';
 import { VERSION } from '../version.js';
 import { commentRoutes } from './routes/comments.js';
+import { extensionRoutes } from './routes/extensions.js';
 import { memoryRoutes } from './routes/memory.js';
 import { recordRoutes } from './routes/records.js';
 import { retrievalRoutes } from './routes/retrieval.js';
@@ -24,6 +27,7 @@ import { webReadRoutes } from './routes/web-read.js';
 export type AppDeps = {
   /** A pool connected as the runtime role, so RLS applies to every query. */
   sql: Sql;
+  extensionCatalog?: ExtensionCatalog;
   webDir?: string;
   publicOrigin?: string;
   /**
@@ -68,6 +72,7 @@ export function createApp(deps: AppDeps) {
   commentRoutes(v1, deps.sql);
   retrievalRoutes(v1, deps.sql);
   viewRoutes(v1, deps.sql);
+  extensionRoutes(v1, new Extensions(deps.sql, deps.extensionCatalog));
   app.route('/v1', v1);
 
   // Accounts mode: apps connect to /mcp over OAuth as well as with API keys
@@ -93,7 +98,12 @@ export function createApp(deps: AppDeps) {
       });
     }
   }
-  mcpRoute(app, deps.sql, { publicOrigin, oauth, rateLimit: limit });
+  mcpRoute(app, deps.sql, {
+    publicOrigin,
+    oauth,
+    rateLimit: limit,
+    extensionCatalog: deps.extensionCatalog,
+  });
 
   if (deps.webDir) {
     const root = resolve(deps.webDir);

@@ -57,7 +57,7 @@ export function ownerFor(actor: Actor): SchemaOwner {
  * On the trusted path, the engine also protects the elements server code
  * depends on, which older workspaces may not have protected yet.
  */
-function plan(
+export function planSchemaChange(
   current: SchemaState,
   operations: SchemaOperation[],
   owner: SchemaOwner,
@@ -100,7 +100,7 @@ export async function runSchemaChange(
   const { workspaceId, actor } = request;
   await lockSchemaExclusive(tx, workspaceId);
   const current = await loadSchemaState(tx, workspaceId);
-  const { desired, ops } = plan(
+  const { desired, ops } = planSchemaChange(
     current,
     request.operations,
     request.owner ?? ownerFor(actor),
@@ -193,9 +193,9 @@ export async function decideSchemaChange(
 
   const current = await loadSchemaState(tx, workspaceId);
   const operations = row.request as SchemaOperation[];
-  let planned: ReturnType<typeof plan>;
+  let planned: ReturnType<typeof planSchemaChange>;
   try {
-    planned = plan(current, operations, ownerFor(row.requested_by));
+    planned = planSchemaChange(current, operations, ownerFor(row.requested_by));
     await checkExistingRecords(tx, workspaceId, current, planned.desired, planned.ops);
   } catch (error) {
     if (!(error instanceof SchemaValidationError || error instanceof SchemaCheckError)) throw error;

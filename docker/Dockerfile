@@ -10,7 +10,7 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs package.json tsconfig.base
 RUN corepack install
 COPY packages ./packages
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter @retainer/shared build && pnpm --filter @retainer/sdk build && pnpm --filter @retainer/web build && pnpm --filter @retainer/server build
+RUN pnpm --filter @retainer/shared build && pnpm --filter @retainer/extension build && pnpm --filter @retainer/sdk build && pnpm --filter @retainer/web build && pnpm --filter @retainer/server build
 RUN pnpm --filter @retainer/server deploy --legacy --prod /out
 
 FROM node:26-slim

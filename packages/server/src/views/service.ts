@@ -568,27 +568,36 @@ export async function createView(
   objectName: string,
   input: CreateViewInput,
 ): Promise<SavedView> {
-  return withViews(sql, caller, async (tx, schema) => {
-    const object = requireObject(schema, objectName);
-    const config = merge({}, toStored(tx, object, input));
-    requireKindField(input.kind, config);
-    let { position } = input;
-    if (position === undefined) {
-      const [last] = await tx<{ max: number | null }[]>`
+  return withViews(sql, caller, (tx) => createViewInTransaction(tx, caller, objectName, input));
+}
+
+/** Used by installation control so schema, views and ownership commit together. */
+export async function createViewInTransaction(
+  tx: Tx,
+  caller: Caller,
+  objectName: string,
+  input: CreateViewInput,
+): Promise<SavedView> {
+  const schema = await getSchema(tx, caller.workspaceId);
+  const object = requireObject(schema, objectName);
+  const config = merge({}, toStored(tx, object, input));
+  requireKindField(input.kind, config);
+  let { position } = input;
+  if (position === undefined) {
+    const [last] = await tx<{ max: number | null }[]>`
         select max(v.position) as max from views v
         where v.object_type_id = ${object.id} and ${visibleTo(tx, caller.actor)}`;
-      position = (last?.max ?? 0) + 1;
-    }
-    const [row] = await tx<ViewRow[]>`
+    position = (last?.max ?? 0) + 1;
+  }
+  const [row] = await tx<ViewRow[]>`
       insert into views (workspace_id, object_type_id, name, kind, visibility, position, config,
         created_by, updated_by)
       values (${caller.workspaceId}, ${object.id}, ${input.name}, ${input.kind}, ${input.visibility},
         ${position}, ${tx.json(jsonValue(config))}, ${tx.json(caller.actor)},
         ${tx.json(caller.actor)})
       returning *`;
-    if (!row) throw new Error('view insert returned no row');
-    return presentView(tx, object, row);
-  });
+  if (!row) throw new Error('view insert returned no row');
+  return presentView(tx, object, row);
 }
 
 /**

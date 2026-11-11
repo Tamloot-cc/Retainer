@@ -1861,7 +1861,7 @@ from its own layer and the ones below it:
 | ---------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | Entry      | `index`, `cli`, `lambda`                                                                     | Starting the server, the CLI and the Lambda functions                             |
 | Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`                               | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
-| Admin      | `schema-engine`, `templates`, `workspaces`                                                   | Changing a schema and creating workspaces                                         |
+| Admin      | `schema-engine`, `templates`, `workspaces`, `extensions`                                     | Changing a schema and creating workspaces                                         |
 | Features   | `views`, `comments`, `retrieval`, `reads`                                                    | Built on records and memory                                                       |
 | Core       | `records`, `memory`, `privacy`                                                               | The write rules                                                                   |
 | Foundation | `db`, `schema`, `caller`, `idempotency`, `stable-json`, `config`, `errors`, `log`, `version` | The database and reading a schema                                                 |

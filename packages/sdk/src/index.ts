@@ -1,3 +1,9 @@
+import type {
+  ExtensionInstallation,
+  ExtensionInstallInput,
+  ExtensionManifest,
+  ExtensionPreview,
+} from '@retainer/extension';
 import { isMaintenance, maintenanceFetch } from './maintenance.js';
 
 export { isMaintenance, retryAfterMs, waitForRetry } from './maintenance.js';
@@ -523,6 +529,33 @@ export class RetainerClient {
       facts: PresentedFact[];
       nextCursors: { assertions: string | null; facts: string | null };
     }>(`/v1/events/${encodeURIComponent(id)}/claims`, params, signal);
+  }
+  extensionCatalog(signal?: AbortSignal) {
+    return this.get<{
+      releases: { manifest: ExtensionManifest; digest: string; actorCeiling: string }[];
+    }>('/v1/extensions/catalog', {}, signal);
+  }
+  extensions(signal?: AbortSignal) {
+    return this.get<{ installations: ExtensionInstallation[] }>('/v1/extensions', {}, signal);
+  }
+  extension(id: string, signal?: AbortSignal) {
+    return this.get<
+      ExtensionInstallation & {
+        contributions: { kind: string; universalId: string; elementId: string }[];
+      }
+    >(`/v1/extensions/${encodeURIComponent(id)}`, {}, signal);
+  }
+  previewExtension(input: ExtensionInstallInput) {
+    return this.post<ExtensionPreview>('/v1/extensions/preview', input);
+  }
+  installExtension(input: ExtensionInstallInput & { planDigest: string }, idempotencyKey: string) {
+    return this.post<ExtensionInstallation>('/v1/extensions', input, undefined, idempotencyKey);
+  }
+  disableExtension(id: string) {
+    return this.post<ExtensionInstallation>(`/v1/extensions/${encodeURIComponent(id)}/disable`);
+  }
+  uninstallExtension(id: string) {
+    return this.post<ExtensionInstallation>(`/v1/extensions/${encodeURIComponent(id)}/uninstall`);
   }
   schemaChanges(options: PageOptions & { status?: string } = {}) {
     const { signal, ...params } = options;

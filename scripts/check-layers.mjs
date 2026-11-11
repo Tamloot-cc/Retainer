@@ -20,7 +20,7 @@ const LAYERS = [
   ],
   ['core', ['records', 'memory', 'privacy']],
   ['features', ['views', 'comments', 'retrieval', 'reads']],
-  ['admin', ['schema-engine', 'templates', 'workspaces']],
+  ['admin', ['schema-engine', 'templates', 'workspaces', 'extensions']],
   ['interfaces', ['http', 'auth', 'api', 'mcp', 'worker', 'operator', 'accounts']],
   ['entry', ['index', 'cli', 'lambda']],
 ];

@@ -9,6 +9,7 @@ if (existsSync(envFile) && !process.env.CI) process.loadEnvFile(envFile);
 // Tests import the MIT packages from source so they never run against a
 // stale build.
 const alias = {
+  '@retainer/extension': fileURLToPath(new URL('../extension/src/index.ts', import.meta.url)),
   '@retainer/shared': fileURLToPath(new URL('../shared/src/index.ts', import.meta.url)),
   '@retainer/sdk': fileURLToPath(new URL('../sdk/src/index.ts', import.meta.url)),
 };

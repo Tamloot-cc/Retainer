@@ -22,6 +22,7 @@ import {
   index,
   integer,
   jsonb,
+  pgPolicy,
   pgTable,
   primaryKey,
   real,
@@ -1403,3 +1404,94 @@ export const workspaceRequestCounts = pgTable('workspace_request_counts', {
   windowStart: timestamptz('window_start').notNull(),
   count: integer('count').notNull(),
 });
+
+// Extension control is deliberately inert until runtime admission is available.
+export const extensionInstallations = pgTable(
+  'extension_installations',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    registrationId: uuid('registration_id').notNull(),
+    version: text('version').notNull(),
+    releaseDigest: text('release_digest').notNull(),
+    state: text('state').notNull().default('disabled'),
+    generation: integer('generation').notNull().default(1),
+    grantedActor: text('granted_actor').notNull(),
+    grantedScopes: jsonb('granted_scopes').notNull(),
+    settings: jsonb('settings').notNull().default({}),
+    settingsRevision: integer('settings_revision').notNull().default(1),
+    createdBy: jsonb('created_by').$type<Actor>().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('extension_installations_ws_id_uq').on(t.workspaceId, t.id),
+    unique('extension_installations_registration_uq').on(t.workspaceId, t.registrationId),
+    check('extension_installations_state', sql`${t.state} in ('disabled', 'uninstalled')`),
+    check('extension_installations_actor', sql`${t.grantedActor} in ('agent', 'integration')`),
+    check('extension_installations_generation', sql`${t.generation} > 0`),
+    pgPolicy('extension_installations_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionContributions = pgTable(
+  'extension_contributions',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    kind: text('kind').notNull(),
+    universalId: uuid('universal_id').notNull(),
+    elementId: uuid('element_id').notNull(),
+    definition: jsonb('definition').notNull(),
+  },
+  (t) => [
+    tenantFk(
+      'extension_contributions_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    index('extension_contributions_install_idx').on(t.workspaceId, t.installationId),
+    unique('extension_contributions_owner_uq').on(t.workspaceId, t.kind, t.universalId),
+    pgPolicy('extension_contributions_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionReceipts = pgTable(
+  'extension_receipts',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    key: text('key').notNull(),
+    requestHash: text('request_hash').notNull(),
+    installationId: uuid('installation_id').notNull(),
+    generation: integer('generation').notNull(),
+    response: jsonb('response').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    tenantFk(
+      'extension_receipts_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    index('extension_receipts_install_idx').on(t.workspaceId, t.installationId),
+    unique('extension_receipts_key_uq').on(t.workspaceId, t.key),
+    pgPolicy('extension_receipts_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
