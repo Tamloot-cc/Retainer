@@ -742,6 +742,35 @@ export class RetainerClient {
     );
   }
 
+  /** Reserve a durable callback before provider registration returns its signing material. Setup only. */
+  prepareExtensionWebhook(id: string, input: { route: string }) {
+    return this.post<{ bindingId: string; url: string }>(
+      `/v1/extensions/${encodeURIComponent(id)}/runtime/webhooks/prepare`,
+      input,
+    );
+  }
+  /** Registered setup verifier only, after attesting its provider source account. */
+  bindExtensionWebhook(
+    id: string,
+    input: { route: string; accountHint?: string; subscriptionId?: string },
+  ) {
+    return this.post<{ bindingId: string; url: string }>(
+      `/v1/extensions/${encodeURIComponent(id)}/runtime/webhooks`,
+      input,
+    );
+  }
+  extensionWebhooks(id: string) {
+    return this.get<{
+      bindings: {
+        bindingId: string;
+        route: string;
+        subscriptionId: string | null;
+        active: boolean;
+        state: 'pending' | 'active' | 'retired';
+        url: string;
+      }[];
+    }>(`/v1/extensions/${encodeURIComponent(id)}/runtime/webhooks`);
+  }
   disableExtension(id: string) {
     return this.post<ExtensionInstallation>(`/v1/extensions/${encodeURIComponent(id)}/disable`);
   }

@@ -18,6 +18,7 @@ import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
 import { mcpRoute } from '../mcp/route.js';
 import { Sources } from '../sources/service.js';
 import { VERSION } from '../version.js';
+import type { Webhooks } from '../webhooks/service.js';
 import { changeRoutes } from './routes/changes.js';
 import { commentRoutes } from './routes/comments.js';
 import { runtimeRoutes } from './routes/extension-runtime.js';
@@ -31,8 +32,10 @@ import { sourceRoutes } from './routes/sources.js';
 import { templateRoutes } from './routes/templates.js';
 import { viewRoutes } from './routes/views.js';
 import { webReadRoutes } from './routes/web-read.js';
+import { webhookIngress, webhookRuntime } from './routes/webhooks.js';
 
 export type AppDeps = {
+  webhooks?: Webhooks | undefined;
   fileStorage?: FileStorage | undefined;
   fileQuota?: number | undefined;
   /** A pool connected as the runtime role, so RLS applies to every query. */
@@ -71,6 +74,7 @@ export function createApp(deps: AppDeps) {
     }
   });
 
+  webhookIngress(app, deps.webhooks);
   if (!deps.accountsSecret) sessionRoutes(app, deps.sql, publicOrigin);
   const v1 = new Hono<AppEnv>();
   const limit = rateLimit(deps.sql, deps.rateLimit ?? { limit: 0 });
@@ -101,6 +105,7 @@ export function createApp(deps: AppDeps) {
   );
   extensionRoutes(v1, extensions);
   runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets);
+  webhookRuntime(v1, deps.webhooks);
   fileRoutes(v1, deps.sql, deps.fileStorage, deps.fileQuota);
   sourceRoutes(
     v1,

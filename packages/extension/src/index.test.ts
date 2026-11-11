@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { defineExtension, defineFunction } from './index.js';
 
@@ -184,5 +185,96 @@ describe('strict extension contracts', () => {
     expect(() =>
       defineExtension({ ...fixture(), settings: { signing: { ...setting, secret: false } } }),
     ).toThrow('generated secrets');
+  });
+  it('pins webhook routing, source sync authority and a five-second verifier separately', () => {
+    const installId = randomUUID(),
+      syncId = randomUUID(),
+      verifyId = randomUUID();
+    const fn = (
+      id: string,
+      name: string,
+      trigger: unknown,
+      inputSchema: unknown,
+      timeoutSeconds = 120,
+    ) => ({
+      universalId: id,
+      name,
+      trigger,
+      inputSchema,
+      timeoutSeconds,
+      description: 'Fixture',
+      handlerDigest: 'b'.repeat(64),
+    });
+    const valid = {
+      ...fixture(),
+      settings: {
+        signing: { type: 'string', label: 'Signing key', secret: true, generated: true },
+      },
+      source: {
+        provider: 'fixture',
+        identity: 'account',
+        verifyFunctionId: installId,
+        syncFunctionIds: [syncId],
+        eventTypeIds: [randomUUID()],
+        revisionOrder: 'opaque',
+      },
+      functions: [
+        fn(
+          installId,
+          'setup',
+          { kind: 'install' },
+          { type: 'object', additionalProperties: false },
+        ),
+        fn(
+          syncId,
+          'sync',
+          { kind: 'job' },
+          {
+            type: 'object',
+            properties: { sourceItemId: { type: 'string', maxLength: 36 } },
+            required: ['sourceItemId'],
+            additionalProperties: false,
+          },
+        ),
+        fn(
+          verifyId,
+          'verify',
+          { kind: 'route', route: 'notes' },
+          { type: 'object', additionalProperties: false },
+          5,
+        ),
+      ],
+      webhooks: [
+        {
+          route: 'notes',
+          verifierFunctionId: verifyId,
+          syncFunctionId: syncId,
+          secretSetting: 'signing',
+          headers: ['webhook-id', 'webhook-timestamp', 'webhook-signature'],
+        },
+      ],
+    };
+    expect(defineExtension(valid).webhooks).toHaveLength(1);
+    for (const change of [
+      { verifierFunctionId: syncId },
+      { syncFunctionId: installId },
+      { secretSetting: 'notDeclared' },
+      { accountHeader: 'provider-account' },
+      { headers: ['authorization'] },
+    ])
+      expect(() =>
+        defineExtension({ ...valid, webhooks: [{ ...valid.webhooks[0], ...change }] }),
+      ).toThrow();
+    expect(() =>
+      defineExtension({ ...valid, webhooks: [valid.webhooks[0], valid.webhooks[0]] }),
+    ).toThrow('webhook contract');
+    expect(() =>
+      defineExtension({
+        ...valid,
+        functions: valid.functions.map((value) =>
+          value.universalId === verifyId ? { ...value, timeoutSeconds: 6 } : value,
+        ),
+      }),
+    ).toThrow('webhook contract');
   });
 });

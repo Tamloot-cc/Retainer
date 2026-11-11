@@ -7,15 +7,17 @@ import { SecretBroker, SecretCipher } from '../extension-runtime/secrets.js';
 import { RunTokens } from '../extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../extensions/catalog.js';
 import { createFileStorage } from '../file-storage/configuration.js';
+import { Webhooks } from '../webhooks/service.js';
 import { ChangeMaintenance } from '../worker/changes.js';
 import { type Executable, ExecutionRegistry, ExtensionExecutor } from '../worker/extensions.js';
 import { FileMaintenance } from '../worker/files.js';
 import { LauncherDriver } from '../worker/launch-driver.js';
+import { LauncherVerifier } from '../worker/verifier-driver.js';
 
 /** These are operator-provisioned release inputs. Workspace APIs cannot change them. */
 export async function extensionServices(
   config: Config,
-  options: { broker?: boolean; workerSql?: Sql } = {},
+  options: { broker?: boolean; workerSql?: Sql; ingressSql?: Sql } = {},
 ) {
   const owned: Sql[] = [];
   const close = () => Promise.all(owned.map((pool) => pool.end({ timeout: 5 }))).then(() => {});
@@ -135,7 +137,15 @@ export async function extensionServices(
       for (const release of catalog.list()) {
         if (!release.runtimeEnabled || release.manifest.execution !== 'hosted') continue;
         for (const fn of release.manifest.functions) {
-          if (!['job', 'install', 'uninstall', 'schedule', 'change'].includes(fn.trigger.kind))
+          if (['route', 'serverRoute'].includes(fn.trigger.kind)) {
+            if (
+              !config.RETAINER_EXTENSION_VERIFIER_ORIGIN ||
+              !release.manifest.webhooks?.some((hook) => hook.verifierFunctionId === fn.universalId)
+            )
+              throw new Error('verifier runtime is unavailable');
+          } else if (
+            !['job', 'install', 'uninstall', 'schedule', 'change'].includes(fn.trigger.kind)
+          )
             throw new Error('trigger runtime is unavailable');
           const executable = registry.lookup(
             release.manifest.universalId,
@@ -150,6 +160,32 @@ export async function extensionServices(
         }
         activationReady.add(release.digest);
       }
+    }
+    let webhooks: Webhooks | undefined;
+    if (options.ingressSql && config.RETAINER_EXTENSION_VERIFIER_ORIGIN) {
+      if (
+        !broker ||
+        !config.RETAINER_VERIFIER_TOKEN ||
+        !config.RETAINER_PUBLIC_ORIGIN ||
+        !config.RETAINER_EXTENSION_EXECUTABLES
+      )
+        throw new Error('webhook ingress configuration is incomplete');
+      if (config.RETAINER_VERIFIER_TOKEN === config.RETAINER_LAUNCHER_TOKEN)
+        throw new Error('verifier and executor credentials must differ');
+      const entries: unknown = JSON.parse(config.RETAINER_EXTENSION_EXECUTABLES);
+      if (!Array.isArray(entries)) throw new Error('invalid verifier registry');
+      webhooks = new Webhooks({
+        sql: options.ingressSql,
+        catalog,
+        broker,
+        registry: new ExecutionRegistry(entries as Executable[]),
+        driver: new LauncherVerifier(
+          config.RETAINER_EXTENSION_VERIFIER_ORIGIN,
+          config.RETAINER_VERIFIER_TOKEN,
+        ),
+        publicOrigin: config.RETAINER_PUBLIC_ORIGIN,
+        rateLimit: config.RETAINER_WEBHOOK_RATE_LIMIT,
+      });
     }
     let executor: ExtensionExecutor | undefined;
     if (options.workerSql && config.RETAINER_EXTENSION_EXECUTABLES) {
@@ -185,6 +221,7 @@ export async function extensionServices(
       catalog,
       tokens,
       broker,
+      webhooks,
       executor,
       activationReady,
       fileStorage,

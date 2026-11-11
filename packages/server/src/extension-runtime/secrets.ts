@@ -177,13 +177,42 @@ export class SecretBroker {
               { revision: number }[]
             >`insert into extension_secrets(workspace_id,installation_id,name,envelope)
             values(${identity.workspaceId},${identity.installationId},${identity.name},${tx.json(envelope)})
-            on conflict(workspace_id,installation_id,name) do nothing returning revision`
+            on conflict(workspace_id,installation_id,name) do update set envelope=excluded.envelope,revision=extension_secrets.revision+1,delete_after=null
+            where extension_secrets.delete_after is not null returning revision`
           : await tx<
               { revision: number }[]
-            >`update extension_secrets set envelope=${tx.json(envelope)},revision=revision+1
-            where installation_id=${identity.installationId} and name=${identity.name} and revision=${expectedRevision} and delete_after is null returning revision`;
+            >`update extension_secrets set envelope=${tx.json(envelope)},revision=revision+1,delete_after=null
+            where installation_id=${identity.installationId} and name=${identity.name} and revision=${expectedRevision} returning revision`;
       if (!row) throw new AppError(409, 'revision_conflict', 'secret revision changed');
       return { revision: row.revision };
+    });
+  }
+  /** Public ingress gets exactly one admitted candidate's signing secret, with no CRM authority. */
+  async readWebhook(
+    workspace: string,
+    bindingId: string,
+    generation: number,
+    releaseDigest: string,
+  ) {
+    return inWorkspace(this.sql, workspace, async (tx) => {
+      const [admitted] = await tx<
+        { installation_id: string; registration_id: string; secret_name: string }[]
+      >`select * from retainer_admit_webhook(${bindingId}::uuid,${generation},${releaseDigest})`;
+      if (!admitted)
+        throw new AppError(409, 'installation_disabled', 'webhook candidate is no longer admitted');
+      const identity = {
+        workspaceId: workspace,
+        installationId: admitted.installation_id,
+        registrationId: admitted.registration_id,
+        name: admitted.secret_name,
+      };
+      const [row] = await tx<
+        { envelope: unknown; revision: number }[]
+      >`select envelope,revision from extension_secrets
+        where installation_id=${identity.installationId} and name=${identity.name} and delete_after is null`;
+      if (!row)
+        throw new AppError(503, 'connection_required', 'webhook signing secret is not available');
+      return { value: this.cipher.decrypt(row.envelope, identity), revision: row.revision };
     });
   }
   async rotate(identity: SecretIdentity, expectedRevision: number) {

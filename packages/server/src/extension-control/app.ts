@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppDeps } from '../api/app.js';
 import { runtimeRoutes } from '../api/routes/extension-runtime.js';
 import { extensionRoutes } from '../api/routes/extensions.js';
+import { webhookIngress, webhookRuntime } from '../api/routes/webhooks.js';
 import { authenticate } from '../auth/middleware.js';
 import { AppError } from '../errors.js';
 import { Extensions } from '../extensions/service.js';
@@ -23,6 +24,7 @@ export function createExtensionControlApp(deps: AppDeps) {
       return c.json({ status: 'unavailable', protocolVersion: 1 }, 503);
     }
   });
+  webhookIngress(app, deps.webhooks);
   const v1 = new Hono<AppEnv>();
   v1.use(
     '*',
@@ -41,6 +43,7 @@ export function createExtensionControlApp(deps: AppDeps) {
   );
   extensionRoutes(v1, extensions);
   runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets);
+  webhookRuntime(v1, deps.webhooks);
   app.route('/v1', v1);
   return app;
 }

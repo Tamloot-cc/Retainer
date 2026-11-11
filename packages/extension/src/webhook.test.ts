@@ -40,6 +40,9 @@ describe('verifier protocol', () => {
       { rawBody: Buffer.alloc(262145).toString('base64') },
       { rawBody: 'not base64' },
       { headers: { 'Invalid-Header': 'value' } },
+      { headers: { authorization: 'Bearer crm-token' } },
+      { headers: { cookie: 'human-session' } },
+      { headers: { 'x-retainer-edge-secret': 'infrastructure-secret' } },
       { headers: Object.fromEntries(Array.from({ length: 33 }, (_, i) => [`h-${i}`, 'v'])) },
       { secret: '😀'.repeat(17000) },
     ])

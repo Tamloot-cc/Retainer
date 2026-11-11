@@ -173,4 +173,106 @@ if (development) {
       driverTarget: 'verifier-fixture',
     })),
   );
+  const sourceSetupId = 'f98346c4-78bb-4e53-8428-75362e54e1bb';
+  const sourceSyncId = 'ed65308e-33ec-4c33-a64c-2c9675c40be2';
+  const sourceHandlerDigest = hash(
+    readFileSync(resolve(root, 'packages/runner/dist/webhook-fixture.js')),
+  );
+  const sourceManifest = defineExtension({
+    ...manifest,
+    universalId: 'f02e6552-1ae9-485c-b6bf-fb34f3a75896',
+    name: 'webhook-fixture',
+    description: 'Development-only isolated webhook-to-managed-source proof; no real provider.',
+    source: {
+      provider: 'webhook-fixture',
+      identity: 'account',
+      verifyFunctionId: sourceSetupId,
+      syncFunctionIds: [sourceSyncId],
+      eventTypeIds: ['564ad764-a57c-4741-ad63-61604fa4cf5a'],
+      revisionOrder: 'integer',
+    },
+    settings: {
+      fixtureKey: {
+        type: 'string',
+        label: 'Disposable fixture producer key',
+        secret: true,
+        required: true,
+        reconnect: true,
+      },
+      signing: { type: 'string', label: 'Generated signing key', secret: true, generated: true },
+    },
+    webhooks: [
+      {
+        route: 'notes',
+        verifierFunctionId: verifierIds[0],
+        syncFunctionId: sourceSyncId,
+        secretSetting: 'signing',
+        headers: ['webhook-id', 'webhook-timestamp', 'webhook-signature'],
+      },
+    ],
+    functions: [
+      {
+        universalId: sourceSetupId,
+        name: 'setup',
+        description: 'Prepare a disposable source and its callback.',
+        handlerDigest: sourceHandlerDigest,
+        timeoutSeconds: 120,
+        trigger: { kind: 'install' },
+        inputSchema: { type: 'object', additionalProperties: false },
+      },
+      {
+        universalId: sourceSyncId,
+        name: 'sync',
+        description: 'Import one deterministic fixture note.',
+        handlerDigest: sourceHandlerDigest,
+        timeoutSeconds: 120,
+        trigger: { kind: 'job' },
+        inputSchema: {
+          type: 'object',
+          properties: { sourceItemId: { type: 'string', maxLength: 36 } },
+          required: ['sourceItemId'],
+          additionalProperties: false,
+        },
+      },
+      {
+        universalId: verifierIds[0],
+        name: 'verify',
+        description: 'Verify exact raw bytes without CRM access.',
+        handlerDigest: verifierHandlerDigest,
+        timeoutSeconds: 5,
+        trigger: { kind: 'route', route: 'notes' },
+        inputSchema: { type: 'object', additionalProperties: false },
+      },
+    ],
+  });
+  const sourceDigest = hash(stableJson(sourceManifest)),
+    sourceOut = resolve(root, 'artifacts/extensions/webhook-fixture');
+  mkdirSync(sourceOut, { recursive: true });
+  const writeSource = (name, value) =>
+    writeFileSync(resolve(sourceOut, name), `${JSON.stringify(value, null, 2)}\n`);
+  writeSource('manifest.json', sourceManifest);
+  writeSource('catalog.json', [
+    { manifest: sourceManifest, actorCeiling: 'integration', runtimeEnabled: true },
+  ]);
+  writeSource('metadata.json', {
+    commit,
+    development,
+    releaseDigest: sourceDigest,
+    packageDigest,
+    bundleId: 'webhook-fixture',
+    functionIds: [sourceSetupId, sourceSyncId],
+    verifierFunctionIds: [verifierIds[0]],
+  });
+  writeSource(
+    'executables.json',
+    sourceManifest.functions.map((fn) => ({
+      registrationId: sourceManifest.universalId,
+      releaseDigest: sourceDigest,
+      functionId: fn.universalId,
+      handlerDigest: fn.handlerDigest,
+      packageDigest,
+      runtimeVersion: 'node24',
+      driverTarget: 'webhook-fixture',
+    })),
+  );
 }

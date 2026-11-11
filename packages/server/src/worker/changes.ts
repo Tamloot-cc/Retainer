@@ -73,10 +73,20 @@ export class ChangeMaintenance {
           const jobs =
             await tx`delete from extension_jobs where id in(select id from extension_jobs where status in ('succeeded','failed','cancelled')
               and updated_at<clock_timestamp()-interval '30 days' order by updated_at,id limit 1000 for update skip locked) returning id`;
+          const receipts =
+            await tx`with expired as (select workspace_id,binding_id,delivery_hash from webhook_receipts
+              where created_at<clock_timestamp()-interval '7 days' order by created_at,binding_id,delivery_hash limit 10000 for update skip locked)
+            delete from webhook_receipts r using expired e where r.workspace_id=e.workspace_id and r.binding_id=e.binding_id and r.delivery_hash=e.delivery_hash returning r.binding_id`;
+          const bindings =
+            await tx`delete from webhook_bindings where id in(select b.id from webhook_bindings b
+              where b.state='retired' and b.updated_at<clock_timestamp()-interval '30 days'
+              and not exists(select 1 from webhook_receipts r where r.binding_id=b.id)
+              order by b.updated_at,b.id limit 1000 for update skip locked) returning id`;
+          const removed = jobs.length + receipts.length + bindings.length;
           const [counter] = await tx<
             { position: string; retained_after: string }[]
           >`select position::text,retained_after::text from change_counters where workspace_id=${workspace} for update`;
-          if (!counter) return jobs.length;
+          if (!counter) return removed;
           const floor = await retainedFloor(
             tx,
             workspace,
@@ -86,7 +96,7 @@ export class ChangeMaintenance {
           const rows =
             await tx`delete from record_changes where workspace_id=${workspace} and position<=${floor}::bigint returning position`;
           await tx`update change_counters set retained_after=${floor}::bigint where workspace_id=${workspace}`;
-          return rows.length + jobs.length;
+          return rows.length + removed;
         });
       } catch {
         failed++;

@@ -90,6 +90,9 @@ const extensionWorkerSql =
     : undefined;
 const extensions = await extensionServices(config, {
   broker: role === 'all' || role === 'api' || role === 'extensions',
+  ...(extensionApiSql && ['all', 'api', 'extensions'].includes(role)
+    ? { ingressSql: extensionApiSql }
+    : {}),
   ...(extensionWorkerSql ? { workerSql: extensionWorkerSql } : {}),
 });
 if (role === 'api' || role === 'all' || role === 'control' || role === 'extensions') {
@@ -102,6 +105,7 @@ if (role === 'api' || role === 'all' || role === 'control' || role === 'extensio
           fileQuota: config.RETAINER_FILE_QUOTA_BYTES,
           extensionCatalog: extensions.catalog,
           extensionActivation: extensions.activationReady,
+          webhooks: extensions.webhooks,
           ...(extensions.tokens ? { runTokens: extensions.tokens } : {}),
           ...(extensions.broker ? { extensionSecrets: extensions.broker } : {}),
           webDir: config.RETAINER_WEB_DIR,

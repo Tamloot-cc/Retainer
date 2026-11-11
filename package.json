@@ -25,7 +25,8 @@
     "build:extensions": "pnpm build && node scripts/build-extension-artifacts.mjs",
     "test:extensions:compose": "node scripts/test-extension-compose.mjs",
     "test:files:compose": "node scripts/test-files-compose.mjs",
-    "test:extensions:verifier": "node scripts/test-extension-verifier.mjs"
+    "test:extensions:verifier": "node scripts/test-extension-verifier.mjs",
+    "test:extensions:webhooks": "node scripts/test-extension-compose.mjs --webhook"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.6",

@@ -1,6 +1,7 @@
 import type { ExecutionResult, Invocation } from '@retainer/extension';
 import { RetainerClient } from '@retainer/sdk';
 import { z } from 'zod';
+import { executeWebhookFixture, WEBHOOK_SETUP_ID, WEBHOOK_SYNC_ID } from './webhook-fixture.js';
 
 /** Permanent fixture identity. Production integrations add reviewed, build-time imports here. */
 export const FIXTURE_FUNCTION_ID = '07c46550-e0f9-4f2e-b469-4a90931f1970';
@@ -14,6 +15,8 @@ export async function execute(
   signal: AbortSignal,
   transport: typeof fetch = fetch,
 ): Promise<ExecutionResult> {
+  if ([WEBHOOK_SETUP_ID, WEBHOOK_SYNC_ID].includes(invocation.functionId))
+    return executeWebhookFixture(invocation, signal, transport);
   if (![FIXTURE_FUNCTION_ID, FIXTURE_INSTALL_ID].includes(invocation.functionId))
     return { status: 'failed', code: 'function_not_bundled' };
   const sdk = new RetainerClient({

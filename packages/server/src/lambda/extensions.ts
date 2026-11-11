@@ -11,11 +11,12 @@ async function createHandler() {
   const config = loadConfig();
   setLogLevel(config.LOG_LEVEL);
   const sql = createApiSql(config, { max: config.RETAINER_DB_POOL_MAX });
-  const services = await extensionServices(config, { broker: true });
+  const services = await extensionServices(config, { broker: true, ingressSql: sql });
   const app = createExtensionControlApp({
     sql,
     extensionCatalog: services.catalog,
     extensionActivation: services.activationReady,
+    webhooks: services.webhooks,
     ...(services.tokens ? { runTokens: services.tokens } : {}),
     ...(services.broker ? { extensionSecrets: services.broker } : {}),
     publicOrigin: config.RETAINER_PUBLIC_ORIGIN,

@@ -2090,3 +2090,122 @@ export const changeDispatch = pgTable(
     }),
   ],
 ).enableRLS();
+
+/** Opaque subscription routing. Authentication still requires its one candidate's secret. */
+export const webhookBindings = pgTable(
+  'webhook_bindings',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    registrationId: uuid('registration_id').notNull(),
+    generation: integer('generation').notNull(),
+    releaseDigest: text('release_digest').notNull(),
+    sourceAccountId: uuid('source_account_id'),
+    state: text('state').notNull().default('pending'),
+    subscriptionId: text('subscription_id'),
+    route: text('route').notNull(),
+    secretName: text('secret_name').notNull(),
+    accountHintHash: text('account_hint_hash'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('webhook_bindings_ws_id_uq').on(t.workspaceId, t.id),
+    check('webhook_bindings_state_ck', sql`${t.state} in ('pending','active','retired')`),
+    check(
+      'webhook_bindings_source_ck',
+      sql`${t.state}<>'active' or ${t.sourceAccountId} is not null`,
+    ),
+    uniqueIndex('webhook_bindings_install_route_uq')
+      .on(t.workspaceId, t.installationId, t.route)
+      .where(sql`${t.state}<>'retired'`),
+    uniqueIndex('webhook_bindings_account_uq')
+      .on(t.registrationId, t.route, t.accountHintHash)
+      .where(sql`${t.state}='active' and ${t.accountHintHash} is not null`),
+    index('webhook_bindings_install_idx').on(t.workspaceId, t.installationId),
+    index('webhook_bindings_source_idx').on(t.workspaceId, t.sourceAccountId),
+    index('webhook_bindings_retention_idx')
+      .on(t.updatedAt, t.workspaceId)
+      .where(sql`${t.state}='retired'`),
+    tenantFk(
+      'webhook_bindings_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    tenantFk(
+      'webhook_bindings_account_fk',
+      [t.workspaceId, t.sourceAccountId],
+      [sourceAccounts.workspaceId, sourceAccounts.id],
+    ),
+    pgPolicy('webhook_bindings_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const webhookReceipts = pgTable(
+  'webhook_receipts',
+  {
+    workspaceId: workspaceId(),
+    bindingId: uuid('binding_id').notNull(),
+    deliveryHash: text('delivery_hash').notNull(),
+    bodyDigest: text('body_digest').notNull(),
+    sourceItemId: uuid('source_item_id').notNull(),
+    jobId: uuid('job_id').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.bindingId, t.deliveryHash] }),
+    tenantFk(
+      'webhook_receipts_binding_fk',
+      [t.workspaceId, t.bindingId],
+      [webhookBindings.workspaceId, webhookBindings.id],
+    ),
+    tenantFk(
+      'webhook_receipts_source_fk',
+      [t.workspaceId, t.sourceItemId],
+      [sourceItems.workspaceId, sourceItems.id],
+    ),
+    tenantFk(
+      'webhook_receipts_job_fk',
+      [t.workspaceId, t.jobId],
+      [extensionJobs.workspaceId, extensionJobs.id],
+    ),
+    index('webhook_receipts_job_idx').on(t.workspaceId, t.jobId),
+    index('webhook_receipts_workspace_expiry_idx').on(t.workspaceId, t.createdAt),
+    index('webhook_receipts_expiry_idx').on(t.createdAt, t.workspaceId),
+    index('webhook_receipts_source_idx').on(t.workspaceId, t.sourceItemId),
+    pgPolicy('webhook_receipts_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const webhookRequestCounts = pgTable(
+  'webhook_request_counts',
+  {
+    workspaceId: workspaceId(),
+    bindingId: uuid('binding_id').notNull(),
+    windowStart: timestamptz('window_start').notNull(),
+    count: integer('count').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.bindingId] }),
+    tenantFk(
+      'webhook_counts_binding_fk',
+      [t.workspaceId, t.bindingId],
+      [webhookBindings.workspaceId, webhookBindings.id],
+    ),
+    pgPolicy('webhook_counts_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();

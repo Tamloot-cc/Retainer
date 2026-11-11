@@ -2,7 +2,7 @@
 // A real Compose/API/Postgres/worker/launcher/runner scenario. Only this project's resources are removed.
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
+import { createHmac, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -10,6 +10,8 @@ import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { RetainerClient } from '../packages/sdk/dist/index.js';
 
+const withWebhook = process.argv.includes('--webhook');
+const fixture = withWebhook ? 'webhook-fixture' : 'fixture';
 const exec = promisify(execFile),
   root = process.cwd(),
   project = `retainer-extension-compose-${randomUUID().slice(0, 8)}`;
@@ -25,14 +27,22 @@ const freePort = async () => {
 const port = await freePort(),
   pgPort = await freePort(),
   origin = `http://127.0.0.1:${port}`;
-const catalog = JSON.parse(readFileSync('artifacts/extensions/fixture/catalog.json'));
-const executables = JSON.parse(readFileSync('artifacts/extensions/fixture/executables.json'));
-const metadata = JSON.parse(readFileSync('artifacts/extensions/fixture/metadata.json'));
+const catalog = JSON.parse(readFileSync(`artifacts/extensions/${fixture}/catalog.json`));
+const executables = JSON.parse(readFileSync(`artifacts/extensions/${fixture}/executables.json`));
+const metadata = JSON.parse(readFileSync(`artifacts/extensions/${fixture}/metadata.json`));
 const runner = JSON.parse(
   (
-    await exec('docker', ['image', 'inspect', 'retainer:extension-runner-fixture'], {
-      encoding: 'utf8',
-    })
+    await exec(
+      'docker',
+      [
+        'image',
+        'inspect',
+        withWebhook ? 'retainer:extension-webhook-fixture' : 'retainer:extension-runner-fixture',
+      ],
+      {
+        encoding: 'utf8',
+      },
+    )
   ).stdout,
 )[0];
 assert.equal(
@@ -53,7 +63,14 @@ const environment = {
   RETAINER_EXTENSION_ISSUER: origin,
   RETAINER_SUPPRESSION_KEY: randomBytes(32).toString('hex'),
   RETAINER_LAUNCHER_TOKEN: randomBytes(32).toString('hex'),
-  RETAINER_EXTENSION_SECRET_KEYS: '',
+  RETAINER_EXTENSION_SECRET_KEYS: withWebhook
+    ? JSON.stringify({
+        currentVersion: 'fixture',
+        keys: { fixture: randomBytes(32).toString('base64') },
+      })
+    : '',
+  RETAINER_EXTENSION_VERIFIER_ORIGIN: withWebhook ? 'http://extension-launcher:9000' : '',
+  RETAINER_VERIFIER_TOKEN: withWebhook ? randomBytes(32).toString('hex') : '',
   RETAINER_SUPPRESSION_PREVIOUS_KEYS: '',
   RETAINER_EXTENSION_CATALOG: JSON.stringify(catalog),
   RETAINER_EXTENSION_EXECUTABLES: JSON.stringify(executables),
@@ -61,10 +78,11 @@ const environment = {
   RETAINER_EXTENSION_RUN_PRIVATE_KEY: JSON.stringify(keypair.privateKey.export({ format: 'jwk' })),
   RETAINER_EXTENSION_BUNDLES: JSON.stringify([
     {
-      id: 'fixture',
+      id: fixture,
       image: runner.Id,
       releaseDigest: metadata.releaseDigest,
       functionIds: metadata.functionIds,
+      verifierFunctionIds: metadata.verifierFunctionIds ?? [],
     },
   ]),
   RETAINER_DOCKER_SOCKET: dockerHost.slice('unix://'.length),
@@ -129,6 +147,17 @@ try {
     version: catalog[0].manifest.version,
     settings: {},
   };
+  const producerKey = randomBytes(32),
+    producerSecret = `whsec_${producerKey.toString('base64')}`;
+  if (withWebhook) {
+    const staged = await client.stageExtensionSecret({
+      registrationId: input.registrationId,
+      version: input.version,
+      name: 'fixtureKey',
+      value: producerSecret,
+    });
+    input.secretRefs = { fixtureKey: staged.pendingSecretId };
+  }
   const preview = await client.previewExtension(input);
   const installed = await client.installExtension(
     { ...input, planDigest: preview.planDigest },
@@ -140,21 +169,104 @@ try {
     runs = (await client.extensionRuns(installed.id)).runs;
     if (runs.some((run) => run.status === 'failed'))
       throw new Error('isolated lifecycle fixture failed');
-    if (runs.filter((run) => run.status === 'succeeded').length === 2) break;
+    if (runs.filter((run) => run.status === 'succeeded').length === (withWebhook ? 1 : 2)) break;
     await delay(100);
   }
   assert.equal(
     runs.filter((run) => run.status === 'succeeded').length,
-    2,
-    'setup and its durable child must both finish',
+    withWebhook ? 1 : 2,
+    'the expected setup and child work must finish',
   );
   assert.equal((await client.extension(installed.id)).state, 'active');
-  const records = await client.queryRecords('company', {
-    filter: { name: 'Compose fixture company' },
-  });
-  assert.equal(records.records.length, 1);
+  let callback;
+  if (withWebhook) {
+    // Operator-side metadata only: signing material remains unreadable to the admin API.
+    const bindingId = (
+      await compose(
+        'exec',
+        '-T',
+        'postgres',
+        'psql',
+        '-U',
+        'retainer',
+        '-d',
+        'retainer',
+        '-Atc',
+        `select id from webhook_bindings where installation_id='${installed.id}' and state='active'`,
+      )
+    ).trim();
+    assert.match(bindingId, /^[a-f0-9-]{36}$/);
+    callback = `${origin}/extensions/hooks/installations/${bindingId}/notes`;
+    const deliver = (signatureBody, body = signatureBody) => {
+      const delivery = 'compose-delivery-1',
+        stamp = String(Math.floor(Date.now() / 1000));
+      return fetch(callback, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'webhook-id': delivery,
+          'webhook-timestamp': stamp,
+          'webhook-signature': `v1,${createHmac('sha256', producerKey).update(`${delivery}.${stamp}.${signatureBody}`).digest('base64')}`,
+        },
+        body,
+      });
+    };
+    const body = '{ "externalId": "compose-note-1" }';
+    assert.equal((await deliver(body, '{"externalId":"compose-note-1"}')).status, 401);
+    const accepted = await Promise.all([deliver(body), deliver(body)]);
+    assert.deepEqual(
+      accepted.map((response) => response.status),
+      [202, 202],
+    );
+    for (let attempt = 0; attempt < 600; attempt++) {
+      runs = (await client.extensionRuns(installed.id)).runs;
+      if (runs.some((run) => run.status === 'failed'))
+        throw new Error('isolated webhook import failed');
+      if (runs.filter((run) => run.status === 'succeeded').length === 2) break;
+      await delay(100);
+    }
+    assert.equal(runs.filter((run) => run.status === 'succeeded').length, 2);
+    const notes = await client.queryEvents({ filter: { type: 'conversation' } });
+    assert.equal(notes.records.length, 1);
+    assert.equal(notes.records[0].event.title, 'Compose webhook note');
+    assert.equal(notes.records[0].event.source.current, true);
+    assert.deepEqual(notes.records[0].createdBy, { type: 'integration', id: installed.id });
+    const receiptCount = (
+      await compose(
+        'exec',
+        '-T',
+        'postgres',
+        'psql',
+        '-U',
+        'retainer',
+        '-d',
+        'retainer',
+        '-Atc',
+        `select count(*) from webhook_receipts where binding_id='${bindingId}'`,
+      )
+    ).trim();
+    assert.equal(receiptCount, '1');
+    const changes = await client.changes();
+    assert(
+      changes.changes.some(
+        (change) =>
+          change.recordId === notes.records[0].id && change.originInstallationId === installed.id,
+      ),
+    );
+    assert(!JSON.stringify(changes).includes('compose-note-1'));
+    assert.equal((await client.extension(installed.id)).secrets.signing, true);
+    assert(!JSON.stringify(await client.extensionRuns(installed.id)).includes(producerSecret));
+    assert(!JSON.stringify(await client.extension(installed.id)).includes(producerSecret));
+  } else {
+    const records = await client.queryRecords('company', {
+      filter: { name: 'Compose fixture company' },
+    });
+    assert.equal(records.records.length, 1);
+  }
   await client.disableExtension(installed.id);
   assert.equal((await client.extension(installed.id)).state, 'disabled');
+  if (withWebhook)
+    assert.equal((await fetch(callback, { method: 'POST', body: '{}' })).status, 404);
   assert.equal((await client.uninstallExtension(installed.id)).state, 'uninstalling');
   for (let attempt = 0; attempt < 300; attempt++) {
     if ((await client.extension(installed.id)).state === 'uninstalled') break;
@@ -172,6 +284,15 @@ try {
       redactedRunInspection: true,
       disable: true,
       uninstall: true,
+      ...(withWebhook
+        ? {
+            webhookRawSignature: true,
+            tamperingRejected: true,
+            durableDuplicateReceipt: true,
+            isolatedSourceImport: true,
+            generatedSigningSecret: true,
+          }
+        : {}),
     }),
   );
 } finally {

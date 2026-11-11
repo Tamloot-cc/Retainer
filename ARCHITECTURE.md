@@ -1718,6 +1718,9 @@ enforcement. Until then, new code keeps that path open:
    delete private copies of what it erases and which returns nothing. Extension
    capabilities adopt/retire encrypted secrets, expose bounded secret metadata,
    discover due identifiers, arbitrate execution slots and queue file deletion.
+   Webhook routing resolves only one candidate from an opaque binding or a
+   declared account hint; a broker-only admission checks that candidate before
+   returning its connection-secret identity, never the secret or CRM rows.
    `retainer_admit_secret_run` is broker-only: it holds installation and live
    lease locks through the broker transaction, without returning CRM rows or
    secret values. API metadata validation releases its locks before awaiting a
@@ -1870,7 +1873,7 @@ from its own layer and the ones below it:
 | Layer      | Modules                                                                                                                           | Holds                                                                             |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | Entry      | `index`, `cli`, `lambda`, `egress-proxy`, `extension-launcher`, `file-server`                                                     | Starting the server, the CLI and the Lambda functions                             |
-| Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`, `egress`, `launcher`, `extension-control`                         | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
+| Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`, `egress`, `launcher`, `extension-control`, `webhooks`             | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
 | Admin      | `schema-engine`, `templates`, `workspaces`, `extensions`                                                                          | Changing a schema and creating workspaces                                         |
 | Features   | `views`, `comments`, `retrieval`, `reads`                                                                                         | Built on records and memory                                                       |
 | Core       | `records`, `memory`, `privacy`, `files`, `sources`, `changes`                                                                     | The write rules                                                                   |

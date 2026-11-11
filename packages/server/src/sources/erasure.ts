@@ -52,6 +52,7 @@ export async function prepareSourceErasure(
   const files = await tx<
     { id: string }[]
   >`select id from files where source_item_id=any(${ids}::uuid[]) and state<>'erased'`;
+  await tx`delete from webhook_receipts where source_item_id=any(${ids}::uuid[])`;
   await tx`delete from source_receipts where item_id=any(${ids}::uuid[])`;
   await tx`delete from source_participants where item_id=any(${ids}::uuid[])`;
   await tx`delete from source_revisions where item_id=any(${ids}::uuid[])`;

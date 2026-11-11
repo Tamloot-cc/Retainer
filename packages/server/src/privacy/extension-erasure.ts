@@ -34,6 +34,7 @@ export async function eraseExtensionState(
         last_error=case when state in ('installing','upgrading') then 'privacy_setup_restart_required' else last_error end where id=${installation.id}`;
       await tx`update source_bindings set generation=${generation} where installation_id=${installation.id}`;
       await tx`update change_dispatch set generation=${generation} where installation_id=${installation.id}`;
+      await tx`update webhook_bindings set generation=${generation} where installation_id=${installation.id} and state<>'retired'`;
     }
     await tx`update extension_attempts set status='cancelled',code='privacy_erased',finished_at=clock_timestamp()
       where finished_at is null and job_id in(select id from extension_jobs where installation_id=${installation.id})`;

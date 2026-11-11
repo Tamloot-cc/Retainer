@@ -17,10 +17,20 @@ export class ExtensionCatalog {
   private readonly releases = new Map<string, ReviewedRelease & { digest: string }>();
   constructor(releases: readonly ReviewedRelease[] = []) {
     const actors = new Map<string, string>();
+    const locators = new Map<string, string>();
     for (const release of releases) {
       const manifest = defineExtension(release.manifest);
       if (release.actorCeiling !== manifest.requestedActor)
         throw new Error('registration does not permit requested actor');
+      for (const hook of manifest.webhooks ?? []) {
+        const key = `${manifest.universalId}:${hook.route}`,
+          locator = hook.accountHeader ?? '';
+        if (locators.has(key) && locators.get(key) !== locator)
+          throw new Error(
+            'registration webhook locator cannot change across releases; use a new route',
+          );
+        locators.set(key, locator);
+      }
       const priorActor = actors.get(manifest.universalId);
       if (priorActor && priorActor !== release.actorCeiling)
         throw new Error('registration actor ceiling cannot change across releases');

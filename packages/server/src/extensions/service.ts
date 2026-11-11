@@ -689,7 +689,10 @@ export class Extensions {
         generation = generation + case when state = ${nextState} and last_error is null then 0 else 1 end, updated_at = now()
         where id = ${id} returning *`;
       if (!row) throw notFound('extension installation');
-      if (state === 'uninstalled') await tx`select retainer_retire_extension_secrets(${id}::uuid)`;
+      if (state === 'uninstalled') {
+        await tx`update webhook_bindings set state='retired',updated_at=clock_timestamp() where installation_id=${id} and state<>'retired'`;
+        await tx`select retainer_retire_extension_secrets(${id}::uuid)`;
+      }
       if (nextState === 'uninstalling')
         await this.queue().enqueueLifecycle(tx, caller.workspaceId, id, 'uninstall');
       return present(row);

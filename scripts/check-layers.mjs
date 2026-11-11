@@ -46,6 +46,7 @@ const LAYERS = [
       'egress',
       'launcher',
       'extension-control',
+      'webhooks',
     ],
   ],
   ['entry', ['index', 'cli', 'lambda', 'egress-proxy', 'extension-launcher', 'file-server']],

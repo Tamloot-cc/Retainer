@@ -327,6 +327,8 @@ describe('SECURITY DEFINER functions', () => {
   const ALLOWED: Record<string, string | null> = {
     retainer_adopt_extension_secret: RUNTIME_ROLE,
     retainer_admit_secret_run: 'retainer_secret_broker',
+    retainer_admit_webhook: 'retainer_secret_broker',
+    retainer_webhook_candidate: RUNTIME_ROLE,
     retainer_erase_private_derivatives: RUNTIME_ROLE,
     retainer_extension_jobs_due: 'retainer_executor',
     retainer_extension_maintenance_due: 'retainer_executor',

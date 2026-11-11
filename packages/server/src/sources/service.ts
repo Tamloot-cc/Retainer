@@ -23,6 +23,7 @@ import {
   sourceUnavailableSchema,
 } from './contract.js';
 import { compareRevision, type SourcePolicy, sourceIdentityChannel } from './policy.js';
+import { reserveSourceItem } from './reserve.js';
 
 type Resolve = (registration: string, version: string, digest: string) => ExtensionManifest;
 type Binding = {
@@ -141,6 +142,7 @@ export class Sources {
       await lockExtension(tx, caller.workspaceId, i.registration_id);
       await cancelRuns(tx, id);
       await tx`delete from source_bindings where installation_id=${id}`;
+      await tx`update webhook_bindings set state='retired',updated_at=clock_timestamp() where installation_id=${id} and state<>'retired'`;
       await tx`update extension_installations set state='disabled',generation=generation+1,connection_health='needs_reconnect',last_error=null where id=${id}`;
       return { disconnected: true };
     });
@@ -171,22 +173,7 @@ export class Sources {
       async (tx) => {
         const binding = await this.binding(tx, caller);
         if (binding.account_id !== input.sourceAccountId) throw notFound('source account');
-        const channel = sourceIdentityChannel(
-          binding.registration_id,
-          binding.provider,
-          binding.namespace,
-        );
-        if (await isEventIdentitySuppressed(tx, caller.workspaceId, channel, input.externalId))
-          throw conflict(
-            'source_erased',
-            'this source identity was erased and cannot be imported again',
-          );
-        const [item] = await tx<
-          Item[]
-        >`insert into source_items(workspace_id,account_id,external_id)
-        values(${caller.workspaceId},${binding.account_id},${input.externalId})
-        on conflict(workspace_id,account_id,external_id) do update set external_id=excluded.external_id returning *`;
-        if (!item) throw new Error('source item insert returned no row');
+        const item = await reserveSourceItem(tx, caller.workspaceId, binding, input.externalId);
         await this.usable(tx, caller, binding, item);
         return { sourceItemId: item.id };
       },

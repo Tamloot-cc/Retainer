@@ -317,3 +317,51 @@ the broker capability migration and passes the disposable Compose lifecycle proo
 job acceptance remain the next task. Provider refresh/reconnect sagas are still
 adapter-specific outstanding work; generated storage alone does not implement
 them.
+
+## Verified webhook acceptance
+
+Release-pinned callback descriptors select a bounded verifier, a managed-source
+sync job, one signing secret and a header allowlist. Opaque callbacks and verified
+account-header locators select exactly one candidate; hints never authenticate.
+Setup-only reservation creates a retry-stable pending callback before provider
+registration returns its signing key and identity proof. It grants no source
+access. Setup-only binding then requires an already attested source account and
+keeps that reserved URL. Activation requires all declared callbacks and live
+signing material. Explicit
+disconnect/uninstall permanently retires old callback addresses, and a reconnect
+gets a fresh identity. Account-locator changes require a new public route.
+
+Ingress preserves exact raw bytes, excludes browser/Retainer credentials, limits
+body/header sizes, counts requests in Postgres before verification, and enforces
+the verifier deadline outside a database transaction. Broker admission reads one
+candidate secret. Receipt, local source reservation and job enqueue then commit
+in one privacy/schema/installation/queue transaction, rechecking live generation.
+Duplicates create no extra job; conflicting authenticated bodies are refused.
+Failure to persist returns 503. Forgotten source receipts are erased, in-flight
+verifications are fenced, and permanent source suppression refuses replays.
+
+Source sync jobs receive only a local item ID. A dedicated extension-service
+configuration owns the verifier bearer; metadata-only services need no such
+credential. The Compose API can reach only the launcher's separately authenticated
+verifier capability. The ordinary worker prunes seven-day receipt dedupe and
+retired callback metadata, even with an empty executable catalog.
+
+The controlled verifier seam injects rejection, hangs and invalid outputs. Real
+Postgres cases exercise concurrent duplicates, atomic rollback on injected receipt
+failure, capacity/rate limits, raw-byte preservation, setup challenges, signing
+rotation, source erasure, revocation, reconnect and retention. The real Compose
+proof sends signed public callbacks through a no-network verifier and a fresh
+isolated source runner: tampering is rejected, two concurrent deliveries produce
+one receipt/job/event, integration provenance is preserved, and disable/uninstall
+revoke ingress. It uses a synthetic provider, not Granola credentials.
+
+Validation: all 1,377 tests pass across the server (1,083, with two workers) and
+MIT/web packages (294). Typecheck, build, lint and release/layer checks pass.
+The existing large rollup fan-out test timed out under default parallel load;
+its unchanged isolated case and full server run with two workers pass. Rebuilt
+images pass the live public-webhook Compose proof, ordinary lifecycle Compose
+proof, sandbox resource/network checks and separate verifier proof. The sandbox
+inspection uses the generated container name because Docker can transiently key
+connecting endpoints by an endpoint ID. The previous UI checkpoint had 65 passing
+browser tests; this slice changes no UI components. No provider is
+advertised, and the default catalog remains empty.

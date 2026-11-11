@@ -108,6 +108,12 @@ const configSchema = z
       publicOriginSchema.optional(),
     ),
     RETAINER_LAUNCHER_TOKEN: z.preprocess(emptyToUndefined, z.string().min(32).optional()),
+    RETAINER_EXTENSION_VERIFIER_ORIGIN: z.preprocess(
+      emptyToUndefined,
+      publicOriginSchema.optional(),
+    ),
+    RETAINER_VERIFIER_TOKEN: z.preprocess(emptyToUndefined, z.string().min(32).optional()),
+    RETAINER_WEBHOOK_RATE_LIMIT: z.coerce.number().int().min(1).max(10000).default(100),
     /**
      * `control` serves only /account: sign-in and account management. `all`
      * serves everything, including /account in accounts mode.

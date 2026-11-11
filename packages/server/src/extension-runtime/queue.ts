@@ -228,6 +228,14 @@ export class ExtensionQueue {
     if (!job) throw new Error('job insert returned no row');
     return job.id;
   }
+  /** Trusted verified ingress only; receipt and source reservation share the caller's transaction. */
+  async enqueueWebhook(tx: Tx, workspace: string, id: string, generation: number, input: Enqueue) {
+    const installation = await this.installation(tx, workspace, id);
+    if (installation.generation !== generation) throw unavailable();
+    if (!this.manifest(installation).source?.syncFunctionIds.includes(input.functionId))
+      throw new AppError(403, 'forbidden', 'webhook target must be a pinned source sync function');
+    return { id: await this.insert(tx, installation, input, []) };
+  }
   /** Trusted control transaction only. Runtime payloads never select lifecycle kinds. */
   async enqueueLifecycle(tx: Tx, workspace: string, id: string, kind: 'install' | 'uninstall') {
     const installation = await this.installation(tx, workspace, id);
@@ -598,6 +606,30 @@ export class ExtensionQueue {
         if (!verified) {
           await tx`update extension_installations set state=${installation.setup_kind === 'upgrade' ? 'disabled' : 'setup_failed'},connection_health='needs_reconnect',last_error='source_verification_required' where id=${installation.id}`;
           await tx`update extension_jobs set status='failed',code='source_verification_required' where id=${job.id}`;
+          return false;
+        }
+      }
+      const hooks = this.manifest(installation).webhooks ?? [];
+      if (hooks.length) {
+        const bindings = await tx<
+          { route: string; secret_name: string }[]
+        >`select b.route,b.secret_name from webhook_bindings b
+          join source_bindings s on s.installation_id=b.installation_id and s.generation=b.generation and s.account_id=b.source_account_id
+          where b.installation_id=${installation.id} and b.generation=${installation.generation} and b.release_digest=${installation.release_digest} and b.state='active'`;
+        const [ready] = await tx<
+          { names: string[] }[]
+        >`select retainer_extension_secret_names(${installation.id}::uuid) as names`;
+        if (
+          hooks.some(
+            (hook) =>
+              !bindings.some(
+                (binding) =>
+                  binding.route === hook.route && binding.secret_name === hook.secretSetting,
+              ) || !ready?.names.includes(hook.secretSetting),
+          )
+        ) {
+          await tx`update extension_installations set state=${installation.setup_kind === 'upgrade' ? 'disabled' : 'setup_failed'},connection_health='needs_reconnect',last_error='webhook_binding_required' where id=${installation.id}`;
+          await tx`update extension_jobs set status='failed',code='webhook_binding_required' where id=${job.id}`;
           return false;
         }
       }

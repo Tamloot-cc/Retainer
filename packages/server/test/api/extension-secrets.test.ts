@@ -383,4 +383,77 @@ describe('broker-only secret storage and opaque approval references', () => {
       t.sql`select retainer_admit_secret_run(${manifest.universalId}::uuid,${id}::uuid,${run.generation},${run.jobId}::uuid,${run.owner},${run.fence}::bigint,${run.releaseDigest},false)`,
     ).rejects.toMatchObject({ code: '42501' });
   });
+  it('requires fresh human credentials on reinstall and replaces retired generated material under the new grant', async () => {
+    const h = await setup();
+    const installed = await install(h.keys.admin, h.request),
+      id = installed.body.id as string;
+    await db.owner`update extension_installations set state='active' where id=${id}`;
+    const queue = new ExtensionQueue(t.sql, (id, version) => catalog.get(id, version).manifest);
+    const initial = await queue.enqueue(h.workspace, id, {
+      functionId,
+      input: {},
+      dedupeKey: 'before-reinstall',
+    });
+    const old = await queue.claim(h.workspace, initial.id, 'old-grant');
+    if (!old) throw new Error('initial lease missing');
+    const identity = {
+      workspaceId: h.workspace,
+      installationId: id,
+      registrationId: manifest.universalId,
+      name: 'signingSecret',
+    };
+    await broker.writeRuntime(identity, old, null, 'old-signing-material');
+    await queue.complete(old, { status: 'succeeded' });
+    expect(
+      (await t.request(`/v1/extensions/${id}/uninstall`, { key: h.keys.admin, method: 'POST' }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await t.request('/v1/extensions/preview', { key: h.keys.admin, body: h.input })).body.error
+        .code,
+    ).toBe('connection_required');
+    const stage = await t.request('/v1/extensions/secrets', {
+      key: h.keys.admin,
+      body: {
+        registrationId: manifest.universalId,
+        version: manifest.version,
+        installationId: id,
+        name: 'apiKey',
+        value: 'fresh-provider-credential',
+      },
+    });
+    expect(stage.status).toBe(201);
+    const input = { ...h.input, secretRefs: { apiKey: stage.body.pendingSecretId } };
+    const plan = await t.request('/v1/extensions/preview', { key: h.keys.admin, body: input });
+    expect(plan.status).toBe(200);
+    expect(
+      (
+        await t.request('/v1/extensions', {
+          key: h.keys.admin,
+          headers: { 'Idempotency-Key': randomUUID() },
+          body: { ...input, planDigest: plan.body.planDigest },
+        })
+      ).status,
+    ).toBe(201);
+    await db.owner`update extension_installations set state='active' where id=${id}`;
+    const next = await queue.enqueue(h.workspace, id, {
+      functionId,
+      input: {},
+      dedupeKey: 'after-reinstall',
+    });
+    const run = await queue.claim(h.workspace, next.id, 'new-grant');
+    if (!run) throw new Error('new lease missing');
+    expect(run.generation).not.toBe(old.generation);
+    expect(await broker.writeRuntime(identity, run, null, 'fresh-signing-material')).toEqual({
+      revision: 2,
+    });
+    await expect(
+      broker.writeRuntime(identity, run, null, 'cannot-replace-live-material'),
+    ).rejects.toMatchObject({ code: 'revision_conflict' });
+    await broker.collectExpired(h.workspace);
+    expect((await broker.readRuntime(identity, run)).value).toBe('fresh-signing-material');
+    await expect(broker.writeRuntime(identity, old, 2, 'old-grant-write')).rejects.toMatchObject({
+      code: 'installation_disabled',
+    });
+  });
 });

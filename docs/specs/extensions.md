@@ -1,6 +1,6 @@
 # Retainer extensions
 
-Status: implementation in progress; control, isolated execution, lifecycle, management UI, file storage, managed sources, commit-ordered change dispatch and isolated verifier protocol implemented; provider delivery, last-contact and launch remain. Date: 2026-11-11.
+Status: implementation in progress; control, isolated execution, lifecycle, management UI, file storage, managed sources, commit-ordered change dispatch, isolated verification and durable webhook ingress implemented; provider adapters, last-contact, standalone grants and hosted launch remain. Date: 2026-11-11.
 See [implementation progress](extensions-implementation.md) for completed and outstanding work.
 
 This spec replaces the exported **Retainer Extensions** proposal supplied as
@@ -142,10 +142,16 @@ Illustrative manifest (UUIDs below must be allocated permanently before shipping
   "requestedActor": "integration",
   "scopes": ["read", "write"],
   "connection": "workspace",
-  "createPeople": true,
+  "createPeople": "contacted_first",
   "onSourceDelete": "keep",
   "settings": {
-    "apiKey": { "type": "string", "secret": true, "required": true }
+    "apiKey": {
+      "type": "string",
+      "label": "Workspace API key",
+      "secret": true,
+      "required": true,
+      "reconnect": true
+    }
   },
   "schema": [],
   "views": [],
@@ -156,8 +162,8 @@ Illustrative manifest (UUIDs below must be allocated permanently before shipping
       "trigger": { "kind": "job" },
       "inputSchema": {
         "type": "object",
-        "properties": { "noteId": { "type": "string", "maxLength": 500 } },
-        "required": ["noteId"],
+        "properties": { "sourceItemId": { "type": "string", "maxLength": 36 } },
+        "required": ["sourceItemId"],
         "additionalProperties": false
       },
       "timeoutSeconds": 120
@@ -168,8 +174,10 @@ Illustrative manifest (UUIDs below must be allocated permanently before shipping
 
 Required release metadata outside this example: package SHA-256, supported server
 version range, runtime version, descriptions, settings labels, and handler digest
-for each function. Registration is an operator/release action, not a workspace
-API. Reject unknown manifest versions, entry kinds, duplicate IDs, unresolved
+for each function. A complete source adapter additionally declares the source
+identity/verifier/ordering contract (§10), its install verifier, and its webhook
+contracts (§9.3); the small example is not an executable Granola release.
+Registration is an operator/release action, not a workspace API. Reject unknown manifest versions, entry kinds, duplicate IDs, unresolved
 references, unsupported settings/schema types and mutable same-version digests.
 Reject executable settings defaults and remote code references. Maximum manifest
 size is 1 MiB; settings JSON 64 KiB excluding separately stored secrets.
@@ -407,9 +415,40 @@ candidate installation. Provider-supplied identifiers are routing hints, never
 authorization. Account binding is verified during setup and unique within the
 registration/provider subscription namespace. Reject ambiguous bindings.
 
+A release pins a `webhooks` array: route, verifier function UUID, source-sync job
+function UUID, secret setting, required header allowlist, optional account header
+and explicit challenge support. The verifier is a `route` or `serverRoute`
+function with at most five seconds; the sync target must belong to the pinned
+managed-source capability. Normal routes use an opaque binding. A `serverRoute`
+requires an account-scoped source and a header whose value matches the provider
+account identity already attested by the setup verifier. Only that setup verifier
+may bind a callback. The account locator contract cannot change across releases
+under the same public route; allocate a new route when it changes. A global-resource
+provider uses the opaque route. In particular, Granola's `webhook-id` identifies
+a delivery and is not a provider account locator.
+
+The pinned setup verifier first reserves a durable opaque callback with
+`POST /v1/extensions/:id/runtime/webhooks/prepare`. This pending binding has no
+source-account grant and survives setup retries, including uncertainty after a
+provider creates its subscription. It lets providers return their one-time
+signing material and connection proof before `/source/verify` and webhook binding.
+Normal deliveries return 503 until setup activates; only explicitly registered,
+authenticated challenges can answer 200. Missing signing material also returns
+503. Pending addresses are not searchable by account locator. Binding attaches
+the verified source account to that same address; activation requires all declared
+callbacks and live signing material. Pending callbacks are operational setup
+metadata, never provider payload or secret storage.
+
+Bindings are idempotent across retries for the same connected account. Explicit
+disconnect/uninstall retires their addresses; reconnect creates a fresh opaque
+binding, even when the provider reuses a delivery ID. Ordinary disable retains
+the configured address but generation/state checks stop it immediately. Source
+erasure advances the retained binding's generation along with its source binding,
+so unrelated notifications continue and in-flight old verifications cannot commit.
+
 Verification consumes exact raw bytes, required headers, timestamp/replay checks
-and one candidate's secret. It has no CRM token or installation enumeration/KV
-API. Run provider verifier code in the bounded verifier runtime, not the API
+and one candidate's secret. It has no CRM token or installation enumeration/KV API. Authorization, cookie,
+proxy-authorization and platform `x-retainer-*` headers cannot be forwarded. Run provider verifier code in the bounded verifier runtime, not the API
 process; ingress gives it only the candidate verification material and enforces a
 five-second budget. Provider challenges are explicit registered handlers with no
 CRM access. Generic verifier results cannot choose a second workspace. The separate verifier
@@ -426,10 +465,18 @@ never environment or command arguments. The transport result is bounded to
 
 After successful verification, atomically record the delivery and enqueue its
 job, then answer 202. Duplicate authenticated deliveries answer 202 with no new
-job. Persistence unavailable means 503, never a false acknowledgement. Reject bad
+job. Reusing an authenticated delivery identity with a different body returns
+`409 delivery_conflict`. The verifier returns only delivery/source external
+identities; the server reserves the local source item and enqueues its ID in that
+same transaction. Erased/deleted sources are refused rather than acknowledged as
+new work. Persistence unavailable means 503, never a false acknowledgement. Reject bad
 signatures with 401, oversized bodies with 413 (256 KiB default), and rate-limit
-before invoking the verifier. Retain receipt dedupe for seven days; source
-idempotency remains permanent. Routes must follow provider-specific signature
+before invoking the verifier (100 requests/minute per binding by default).
+A body not received within ten seconds returns 408; setup not yet active returns
+503 for normal deliveries. Only explicitly registered plain-text challenges can
+answer 200 without an ingestion job. Retain receipt dedupe for seven days; source
+idempotency remains permanent. Maintenance prunes retired callback metadata after
+30 days; pending physical file erasure has its separate durable lifetime. Routes must follow provider-specific signature
 contracts; the example header names are not a universal protocol.
 
 ### 9.4 Change feed and loop prevention

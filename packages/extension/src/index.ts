@@ -1,5 +1,6 @@
 import { nextOccurrence } from './cron.js';
 import { SYSTEM_LIFECYCLE_FUNCTION_ID } from './protocol.js';
+import { verifierHeaderAllowed } from './webhook.js';
 
 export { nextOccurrence } from './cron.js';
 
@@ -133,6 +134,24 @@ export const manifestSchema = z.strictObject({
       revisionOrder: z.enum(['integer', 'timestamp', 'opaque']),
     })
     .optional(),
+  /** Release-owned ingress contracts; workspace settings cannot choose verifiers or job functions. */
+  webhooks: z
+    .array(
+      z.strictObject({
+        route: name,
+        verifierFunctionId: uuid,
+        syncFunctionId: uuid,
+        secretSetting: name,
+        headers: z.array(z.string().refine(verifierHeaderAllowed)).min(1).max(20),
+        accountHeader: z
+          .string()
+          .regex(/^[a-z0-9-]{1,100}$/)
+          .optional(),
+        challenge: z.boolean().optional(),
+      }),
+    )
+    .max(20)
+    .optional(),
   settings: z.record(
     name,
     z.strictObject({
@@ -242,6 +261,28 @@ export function defineExtension(value: unknown): ExtensionManifest {
   for (const setting of Object.values(manifest.settings))
     if (setting.generated && (!setting.secret || setting.required))
       throw new Error('unsupported_manifest: generated secrets must be optional secret settings');
+  const hookRoutes = new Set<string>();
+  for (const hook of manifest.webhooks ?? []) {
+    const verifier = manifest.functions.find((fn) => fn.universalId === hook.verifierFunctionId);
+    if (
+      manifest.execution !== 'hosted' ||
+      !manifest.source ||
+      !manifest.source.syncFunctionIds.includes(hook.syncFunctionId) ||
+      !verifier ||
+      !['route', 'serverRoute'].includes(verifier.trigger.kind) ||
+      !('route' in verifier.trigger) ||
+      verifier.trigger.route !== hook.route ||
+      verifier.timeoutSeconds > 5 ||
+      !manifest.settings[hook.secretSetting]?.secret ||
+      new Set(hook.headers).size !== hook.headers.length ||
+      hookRoutes.has(hook.route) ||
+      (verifier.trigger.kind === 'serverRoute') !== (hook.accountHeader !== undefined) ||
+      (hook.accountHeader !== undefined &&
+        (manifest.source.identity !== 'account' || !hook.headers.includes(hook.accountHeader)))
+    )
+      throw new Error('unsupported_manifest: invalid pinned webhook contract');
+    hookRoutes.add(hook.route);
+  }
   const routes = manifest.functions
     .filter((f) => 'route' in f.trigger)
     .map((f) => ('route' in f.trigger ? f.trigger.route : ''));

@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
 export const MAX_WEBHOOK_BYTES = 262144;
+/** Standard Retainer/browser credentials never belong in a provider verification envelope. */
+export const verifierHeaderAllowed = (name: string) =>
+  /^[a-z0-9-]{1,100}$/.test(name) &&
+  !name.startsWith('x-retainer-') &&
+  !['authorization', 'proxy-authorization', 'cookie', 'set-cookie'].includes(name);
 export const verificationInvocationSchema = z.strictObject({
   protocolVersion: z.literal(1),
   kind: z.literal('webhook'),
@@ -20,7 +25,7 @@ export const verificationInvocationSchema = z.strictObject({
       }
     }),
   headers: z
-    .record(z.string().regex(/^[a-z0-9-]{1,100}$/), z.string().max(8192))
+    .record(z.string().refine(verifierHeaderAllowed), z.string().max(8192))
     .refine(
       (value) =>
         Object.keys(value).length <= 32 &&

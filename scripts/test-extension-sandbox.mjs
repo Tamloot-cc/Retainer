@@ -122,7 +122,10 @@ try {
     container.Name.startsWith('retainer-run-'),
   );
   assert(runner);
-  const container = JSON.parse(await docker('container', 'inspect', runner[0]))[0];
+  // Docker may briefly key a connecting network endpoint by ep-<id> rather than its container ID.
+  // The generated container name remains the actual container identity during that transition.
+  const runnerName = runner[1].Name;
+  const container = JSON.parse(await docker('container', 'inspect', runnerName))[0];
   assert.equal(container.Config.User, '65532:65532');
   assert.equal(container.HostConfig.ReadonlyRootfs, true);
   assert.deepEqual(container.HostConfig.CapDrop, ['ALL']);
@@ -140,7 +143,7 @@ try {
   );
   const probe = `(async()=>{const fs=require('node:fs'),net=require('node:net');const urls=['http://169.254.169.254/latest/meta-data/','http://127.0.0.1:8787/','http://10.0.0.1/','http://retainer-extensions-test:5432/'];const denied=await Promise.all(urls.map(async url=>{try{const r=await fetch(url,{signal:AbortSignal.timeout(1500)});return r.status===403;}catch{return true;}}));let readonly=false;try{fs.writeFileSync('/sandbox-write-probe','no');}catch(e){readonly=e.code==='EROFS'||e.code==='EACCES';}const rawBlocked=await new Promise(resolve=>{const s=net.connect({host:'1.1.1.1',port:443});s.setTimeout(1500,()=>{s.destroy();resolve(true);});s.on('connect',()=>{s.destroy();resolve(false);});s.on('error',()=>resolve(true));});const api=await fetch('http://fixture-api:8787/health',{signal:AbortSignal.timeout(1500)});console.log(JSON.stringify({denied,readonly,rawBlocked,api:api.status,noDockerSocket:!fs.existsSync('/var/run/docker.sock')}));})().catch(()=>process.exit(1));`;
   const result = JSON.parse(
-    await docker('exec', runner[0], 'node', '--use-env-proxy', '-e', probe),
+    await docker('exec', runnerName, 'node', '--use-env-proxy', '-e', probe),
   );
   assert(result.denied.every(Boolean));
   assert(result.readonly);
@@ -149,7 +152,7 @@ try {
   assert.equal(result.api, 200);
   assert.deepEqual(await activeRun, { status: 'succeeded' });
   activeRun = undefined;
-  await assert.rejects(() => docker('container', 'inspect', runner[0]));
+  await assert.rejects(() => docker('container', 'inspect', runnerName));
   await assert.rejects(() => docker('network', 'inspect', executionNetwork.Id));
   assert.deepEqual(await sandbox.run(bundleId, invocation(), new AbortController().signal), {
     status: 'succeeded',
