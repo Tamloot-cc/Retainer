@@ -593,6 +593,97 @@ describe('verified public ingress with real Postgres', () => {
       await db.owner`select distinct account_id from source_items where workspace_id=${h.workspace}`;
     expect(accounts).toHaveLength(2);
   });
+  it('reconnects through a reviewed plan, preserving the verified account unless replacement is explicitly approved', async () => {
+    const h = await setup();
+    const reconnect = async (replaceSourceAccount: boolean) => {
+      const input = {
+        installationId: h.id,
+        registrationId: manifest.universalId,
+        version: manifest.version,
+        settings: {},
+        reconnect: true,
+        replaceSourceAccount,
+      };
+      const preview = await h.app.request('/v1/extensions/preview', {
+        key: h.keys.admin,
+        body: input,
+      });
+      expect(preview.status).toBe(200);
+      const committed = await h.app.request(`/v1/extensions/${h.id}/reconnect`, {
+        key: h.keys.admin,
+        body: { ...input, planDigest: preview.body.planDigest },
+        headers: { 'Idempotency-Key': randomUUID() },
+      });
+      expect(committed.status).toBe(200);
+      expect(committed.body.state).toBe('installing');
+      const [job] =
+        await db.owner`select j.id from extension_jobs j join extension_installations i on i.id=j.installation_id and i.generation=j.generation where i.id=${h.id} and j.trigger_kind='install' and j.status='queued'`;
+      const run = await h.queue.claim(h.workspace, job?.id, 'reconnect');
+      if (!run) throw new Error('setup missing');
+      const token = await tokens.issue(h.app.sql, run, manifest.universalId, ['read', 'write']);
+      return { run, token };
+    };
+    const retained = await reconnect(false);
+    expect((await h.send('during-setup')).status).toBe(404);
+    expect(
+      (
+        await h.app.request(`/v1/extensions/${h.id}/source/verify`, {
+          key: retained.token,
+          body: { accountId: 'different-account', sharing: 'workspace' },
+        })
+      ).body.error.code,
+    ).toBe('source_account_changed');
+    expect(
+      (
+        await h.app.request(`/v1/extensions/${h.id}/source/verify`, {
+          key: retained.token,
+          body: { accountId: h.account, sharing: 'workspace' },
+        })
+      ).status,
+    ).toBe(200);
+    const bind = async (token: string, route: string, accountHint?: string) =>
+      h.app.request(`/v1/extensions/${h.id}/runtime/webhooks`, {
+        key: token,
+        body: { route, ...(accountHint ? { accountHint } : {}) },
+      });
+    expect((await bind(retained.token, 'notes')).body.bindingId).toBe(h.bound.body.bindingId);
+    expect((await bind(retained.token, 'global-notes', h.account)).status).toBe(201);
+    await h.queue.complete(retained.run, { status: 'succeeded' });
+    expect((await h.send('same-account-reconnected')).status).toBe(202);
+    const replaced = await reconnect(true);
+    expect((await h.send('old-account-revoked')).status).toBe(404);
+    expect(
+      (
+        await h.app.request(`/v1/extensions/${h.id}/source/verify`, {
+          key: replaced.token,
+          body: { accountId: 'new-account', sharing: 'workspace' },
+        })
+      ).status,
+    ).toBe(200);
+    const fresh = await bind(replaced.token, 'notes');
+    expect(fresh.body.bindingId).not.toBe(h.bound.body.bindingId);
+    expect((await bind(replaced.token, 'global-notes', 'new-account')).status).toBe(201);
+    await h.queue.complete(replaced.run, { status: 'succeeded' });
+    expect(
+      (await h.send('new-account', undefined, { path: new URL(fresh.body.url).pathname })).status,
+    ).toBe(202);
+    expect((await h.send('old-still-revoked')).status).toBe(404);
+  });
+  it('reports a terminal provider credential failure as needing reconnect while preserving installed data', async () => {
+    const h = await setup();
+    expect((await h.send('auth-failure')).status).toBe(202);
+    const [job] =
+      await db.owner`select id from extension_jobs where installation_id=${h.id} and trigger_kind='job' and status='queued'`;
+    const run = await h.queue.claim(h.workspace, job?.id, 'provider-auth');
+    if (!run) throw new Error('job missing');
+    await h.queue.complete(run, { status: 'failed', code: 'provider_unauthorized' });
+    const detail = await h.app.request(`/v1/extensions/${h.id}`, { key: h.keys.admin });
+    expect(detail.body).toMatchObject({
+      state: 'active',
+      connectionHealth: 'needs_reconnect',
+      lastError: 'provider_unauthorized',
+    });
+  });
   it('prunes seven-day receipts and retired callbacks through the bounded worker even without executable catalog entries', async () => {
     const h = await setup();
     expect((await h.send('old')).status).toBe(202);
@@ -714,6 +805,12 @@ describe('verified public ingress with real Postgres', () => {
         const attempts = await Promise.all([prepare(), prepare()]);
         expect(attempts.map((result) => result.body.bindingId)).toEqual([bindingId, bindingId]);
         expect((await prepare(admin)).status).toBe(403);
+        const ownMetadata = await app.request(`/v1/extensions/${id}`, { key: token });
+        expect(ownMetadata.status).toBe(200);
+        expect(ownMetadata.body.settings).toEqual({});
+        expect(
+          (await app.request('/v1/objects/person/query', { key: token, body: {} })).status,
+        ).toBe(409);
         const [pending] =
           await db.owner`select state,source_account_id from webhook_bindings where id=${bindingId}`;
         expect(pending).toEqual({ state: 'pending', source_account_id: null });

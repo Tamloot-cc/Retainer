@@ -73,6 +73,86 @@ function mount(element: React.ReactNode, admin = true) {
 }
 afterEach(() => vi.restoreAllMocks());
 describe('generated extension settings and human approval', () => {
+  const installation: NonNullable<React.ComponentProps<typeof ExtensionSettings>['installation']> =
+    {
+      id: 'installation',
+      registrationId: release.manifest.universalId,
+      version: '1.0.0',
+      releaseDigest: release.digest,
+      state: 'active',
+      generation: 1,
+      settingsRevision: 1,
+      settings: { enabled: true },
+      secrets: { apiKey: true },
+      grantedActor: 'agent',
+      grantedScopes: ['read'],
+      createdBy: { type: 'user', id: 'admin' },
+    };
+  it('keeps credential edits behind reconnect review and sends only staged references after human approval', async () => {
+    vi.spyOn(api, 'stageExtensionSecret').mockResolvedValue({
+      pendingSecretId: 'new-reference',
+      installationId: installation.id,
+      expiresAt: '2099-01-01T00:00:00Z',
+    });
+    const plan = vi
+      .spyOn(api, 'previewExtension')
+      .mockResolvedValue({ ...preview, previousGrants: { actor: 'agent', scopes: ['read'] } });
+    const reconnect = vi
+      .spyOn(api, 'reconnectExtension')
+      .mockResolvedValue({ ...installation, generation: 2, state: 'installing' });
+    const update = vi.spyOn(api, 'updateExtensionSettings');
+    mount(
+      <ExtensionSettings
+        release={release}
+        installation={installation}
+        reconnect
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    await userEvent.type(screen.getByLabelText('API key (required)'), 'new-sensitive-key');
+    await userEvent.click(screen.getByRole('button', { name: 'Review reconnect' }));
+    expect(await screen.findByRole('button', { name: 'Approve reconnect' })).toBeTruthy();
+    expect(reconnect).not.toHaveBeenCalled();
+    expect(plan.mock.calls[0]?.[0]).toMatchObject({
+      installationId: installation.id,
+      reconnect: true,
+      replaceSourceAccount: false,
+      grantChange: true,
+      secretRefs: { apiKey: 'new-reference' },
+    });
+    expect(JSON.stringify(plan.mock.calls)).not.toContain('new-sensitive-key');
+    await userEvent.click(screen.getByRole('button', { name: 'Approve reconnect' }));
+    await vi.waitFor(() => expect(reconnect).toHaveBeenCalledTimes(1));
+    expect(update).not.toHaveBeenCalled();
+    expect(JSON.stringify(reconnect.mock.calls)).not.toContain('new-sensitive-key');
+  });
+  it('shows the previous access and a distinct approval button when an upgrade requests more access', async () => {
+    const upgraded = { ...release, manifest: { ...release.manifest, version: '1.1.0' } };
+    vi.spyOn(api, 'previewExtension').mockResolvedValue({
+      ...preview,
+      previousGrants: { actor: 'agent', scopes: ['read'] },
+    });
+    const upgrade = vi
+      .spyOn(api, 'upgradeExtension')
+      .mockResolvedValue({ ...installation, version: '1.1.0' });
+    mount(
+      <ExtensionSettings
+        release={upgraded}
+        installation={installation}
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Review installation' }));
+    expect(
+      await screen.findByText(/This approval changes access from read as an agent/),
+    ).toBeTruthy();
+    expect(upgrade).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Approve access and upgrade' }));
+    await vi.waitFor(() => expect(upgrade).toHaveBeenCalledTimes(1));
+  });
+
   it('stages secrets separately, shows the approval, and sends opaque references with a durable retry key', async () => {
     const stage = vi.spyOn(api, 'stageExtensionSecret').mockResolvedValue({
       pendingSecretId: 'opaque-reference',

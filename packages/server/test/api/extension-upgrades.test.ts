@@ -16,6 +16,7 @@ const registrationId = randomUUID(),
 const title = { universalId: titleId, name: 'name', label: 'Name', type: 'text' as const };
 const status = { universalId: fieldId, name: 'status', label: 'Status', type: 'text' as const };
 const base = extensionFixture({
+  requestedActor: 'agent',
   universalId: registrationId,
   settings: {
     enabled: { type: 'boolean', label: 'Enabled', required: true, secret: false, reconnect: false },
@@ -72,7 +73,12 @@ const bad = extensionFixture({
   version: '2.0.0',
   schema: [{ kind: 'field', objectId, definition: { ...status, type: 'number' } }],
 });
-const grant = extensionFixture({ ...next, version: '3.0.0', scopes: ['read', 'write'] });
+const grant = extensionFixture({
+  ...next,
+  requestedActor: 'integration',
+  version: '3.0.0',
+  scopes: ['read', 'write'],
+});
 const renamed = extensionFixture({
   ...base,
   version: '4.0.0',
@@ -146,6 +152,68 @@ describe('additive extension upgrades', () => {
       sdk.previewExtension({ ...input, installationId: installed.id, version: '4.0.0' }),
     ).rejects.toMatchObject({ code: 'upgrade_conflict', details: { properties: ['label'] } });
     expect((await sdk.extension(installed.id)).version).toBe('1.0.0');
+  });
+  it('requires a distinct human approval plan for scope and actor increases and atomically replaces the grant', async () => {
+    expect(() => new ExtensionCatalog([{ manifest: grant, actorCeiling: 'agent' }])).toThrow(
+      'does not permit requested actor',
+    );
+    expect(
+      () =>
+        new ExtensionCatalog([
+          { manifest: base, actorCeiling: 'agent' },
+          { manifest: grant, actorCeiling: 'integration' },
+        ]),
+    ).toThrow('ceiling cannot change');
+    const { sdk, installed, input, keys } = await setup();
+    const upgrade = { ...input, installationId: installed.id, version: '3.0.0', grantChange: true };
+    const plan = await sdk.previewExtension(upgrade);
+    expect(plan.previousGrants).toEqual({ actor: 'agent', scopes: ['read'] });
+    expect(plan.grants).toEqual({ actor: 'integration', scopes: ['read', 'write'] });
+    const agent = new RetainerClient({
+      baseUrl: 'http://retainer.test/',
+      apiKey: keys.agent,
+      fetch: t.inProcessFetch,
+    });
+    await expect(
+      agent.upgradeExtension(
+        installed.id,
+        { ...upgrade, planDigest: plan.planDigest },
+        'agent-grant',
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      sdk.upgradeExtension(
+        installed.id,
+        { ...upgrade, grantChange: false, planDigest: plan.planDigest },
+        'ordinary-upgrade',
+      ),
+    ).rejects.toMatchObject({ code: 'grant_required' });
+    expect((await sdk.extension(installed.id)).grantedActor).toBe('agent');
+    const results = await Promise.all([
+      sdk.upgradeExtension(
+        installed.id,
+        { ...upgrade, planDigest: plan.planDigest },
+        'approve-grant',
+      ),
+      sdk.upgradeExtension(
+        installed.id,
+        { ...upgrade, planDigest: plan.planDigest },
+        'approve-grant',
+      ),
+    ]);
+    expect(results[0]).toEqual(results[1]);
+    expect(results[0]).toMatchObject({
+      grantedActor: 'integration',
+      grantedScopes: ['read', 'write'],
+      generation: 2,
+    });
+    await expect(
+      sdk.upgradeExtension(
+        installed.id,
+        { ...upgrade, planDigest: plan.planDigest },
+        'stale-grant',
+      ),
+    ).rejects.toMatchObject({ code: 'stale_plan' });
   });
   it('updates publisher labels when unmodified, retains omitted schema and deprecated fields', async () => {
     const { sdk, installed, input } = await setup();

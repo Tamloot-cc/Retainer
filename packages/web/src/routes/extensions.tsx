@@ -47,6 +47,7 @@ export function ExtensionsPage() {
   const [selection, setSelection] = useState<{
     release: Release;
     installation?: Installation;
+    reconnect?: boolean;
   } | null>(null);
   const [runs, setRuns] = useState<Installation | null>(null);
   const refresh = () =>
@@ -126,6 +127,19 @@ export function ExtensionsPage() {
                       Settings
                     </Button>
                   ) : null}
+                  {admin &&
+                  release &&
+                  !['uninstalled', 'uninstalling'].includes(installation.state) &&
+                  (release.manifest.source ||
+                    Object.values(release.manifest.settings).some(
+                      (setting) => setting.reconnect,
+                    )) ? (
+                    <Button
+                      onClick={() => setSelection({ release, installation, reconnect: true })}
+                    >
+                      Reconnect
+                    </Button>
+                  ) : null}
                   {admin && ['disabled', 'setup_failed'].includes(installation.state) ? (
                     <Button
                       disabled={action.isPending}
@@ -195,7 +209,7 @@ export function ExtensionsPage() {
       </Stack>
       {selection ? (
         <ExtensionSettings
-          key={`${selection.release.digest}:${selection.installation?.id ?? 'new'}`}
+          key={`${selection.release.digest}:${selection.installation?.id ?? 'new'}:${selection.reconnect ? 'reconnect' : 'settings'}`}
           {...selection}
           onClose={() => setSelection(null)}
           onSaved={() => {
@@ -217,6 +231,7 @@ function SettingFields({
   onSecret,
   existing,
   references,
+  allowConnectionEdit = false,
 }: {
   release: Release;
   values: Settings;
@@ -225,13 +240,15 @@ function SettingFields({
   onSecret: (key: string, value: string) => void;
   existing?: Installation;
   references: Record<string, string>;
+  allowConnectionEdit?: boolean;
 }) {
   return (
     <>
       {Object.entries(release.manifest.settings)
         .filter(([, definition]) => !definition.generated)
         .map(([key, definition]) => {
-          const locked = !!existing && (definition.secret || definition.reconnect);
+          const locked =
+            !!existing && !allowConnectionEdit && (definition.secret || definition.reconnect);
           return (
             <Label key={key}>
               {definition.label}
@@ -274,9 +291,7 @@ function SettingFields({
                 />
               )}
               {locked ? (
-                <Muted small>
-                  Changing this connection requires reconnect support from this service.
-                </Muted>
+                <Muted small>Use Reconnect to change credentials or account settings.</Muted>
               ) : null}
             </Label>
           );
@@ -288,11 +303,13 @@ function SettingFields({
 export function ExtensionSettings({
   release,
   installation,
+  reconnect = false,
   onClose,
   onSaved,
 }: {
   release: Release;
   installation?: Installation;
+  reconnect?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -307,6 +324,11 @@ export function ExtensionSettings({
     ),
     ...installation?.settings,
   }));
+  const [replaceSourceAccount, setReplaceSourceAccount] = useState(false);
+  const grantIncrease =
+    !!retained &&
+    ((release.manifest.requestedActor === 'integration' && retained.grantedActor === 'agent') ||
+      release.manifest.scopes.some((scope) => !retained.grantedScopes.includes(scope)));
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [draftInstallationId, setDraftInstallationId] = useState(installation?.id);
   const [references, setReferences] = useState<Record<string, string>>({});
@@ -334,6 +356,8 @@ export function ExtensionSettings({
         ...(retained ? { installationId: retained.id } : {}),
         registrationId: release.manifest.universalId,
         version: release.manifest.version,
+        ...(reconnect ? { reconnect: true, replaceSourceAccount } : {}),
+        ...(grantIncrease ? { grantChange: true } : {}),
         settings: values,
         ...(Object.keys(refs).length ? { secretRefs: refs } : {}),
       };
@@ -343,12 +367,18 @@ export function ExtensionSettings({
   });
   const save = useMutation({
     mutationFn: async () => {
-      if (retained && !upgrade)
+      if (retained && !upgrade && !reconnect)
         return api.updateExtensionSettings(retained.id, {
           expectedRevision: retained.settingsRevision,
           settings: values,
         });
       if (!plan) throw new Error('Review the installation before approval.');
+      if (reconnect && retained)
+        return api.reconnectExtension(
+          retained.id,
+          { ...plan.input, planDigest: plan.preview.planDigest },
+          plan.key,
+        );
       return upgrade && installation
         ? api.upgradeExtension(
             installation.id,
@@ -361,14 +391,14 @@ export function ExtensionSettings({
   });
   const busy = review.isPending || save.isPending;
   const error = save.error ?? review.error;
-  const updating = !!retained && !upgrade;
+  const updating = !!retained && !upgrade && !reconnect;
   return (
     <Dialog
       open
       onOpenChange={(open) => {
         if (!open && !busy) onClose();
       }}
-      title={`${release.manifest.name} ${updating ? 'settings' : upgrade ? 'upgrade' : 'setup'}`}
+      title={`${release.manifest.name} ${reconnect ? 'reconnect' : updating ? 'settings' : upgrade ? 'upgrade' : 'setup'}`}
     >
       <form
         onSubmit={(e) => {
@@ -387,6 +417,7 @@ export function ExtensionSettings({
               secrets={secrets}
               {...(retained ? { existing: retained } : {})}
               references={references}
+              allowConnectionEdit={reconnect}
               onChange={(key, value) => {
                 setValues((v) => ({ ...v, [key]: value }));
                 setPlan(null);
@@ -401,6 +432,20 @@ export function ExtensionSettings({
                 setPlan(null);
               }}
             />
+            {reconnect && release.manifest.source ? (
+              <Label>
+                <Input
+                  type="checkbox"
+                  checked={replaceSourceAccount}
+                  onChange={(event) => setReplaceSourceAccount(event.target.checked)}
+                />
+                Use a different provider account
+                <Muted small>
+                  Retire the previous account binding and callback addresses. Imported evidence
+                  stays in its existing namespace.
+                </Muted>
+              </Label>
+            ) : null}
           </fieldset>
           {updating ? (
             <Muted>
@@ -415,6 +460,14 @@ export function ExtensionSettings({
                   This service can {plan.preview.grants.scopes.join(' and ')} workspace CRM data.
                   Its writes are attributed to an {plan.preview.grants.actor}.
                 </p>
+                {plan.preview.previousGrants ? (
+                  <Notice>
+                    This approval changes access from{' '}
+                    {plan.preview.previousGrants.scopes.join(' and ')} as an{' '}
+                    {plan.preview.previousGrants.actor} to{' '}
+                    {plan.preview.grants.scopes.join(' and ')} as an {plan.preview.grants.actor}.
+                  </Notice>
+                ) : null}
                 <p>
                   People creation: {release.manifest.createPeople.replaceAll('_', ' ')}. When source
                   content is deleted:{' '}
@@ -446,9 +499,13 @@ export function ExtensionSettings({
                   <Button variant="primary" disabled={busy} onClick={() => save.mutate()}>
                     {save.isPending
                       ? 'Approving…'
-                      : upgrade
-                        ? 'Approve upgrade'
-                        : 'Approve installation'}
+                      : reconnect
+                        ? 'Approve reconnect'
+                        : grantIncrease
+                          ? 'Approve access and upgrade'
+                          : upgrade
+                            ? 'Approve upgrade'
+                            : 'Approve installation'}
                   </Button>
                   <Button disabled={busy} onClick={() => setPlan(null)}>
                     Edit settings
@@ -458,7 +515,13 @@ export function ExtensionSettings({
             </Panel>
           ) : (
             <Button type="submit" variant="primary" disabled={busy}>
-              {busy ? 'Working…' : updating ? 'Save settings' : 'Review installation'}
+              {busy
+                ? 'Working…'
+                : updating
+                  ? 'Save settings'
+                  : reconnect
+                    ? 'Review reconnect'
+                    : 'Review installation'}
             </Button>
           )}
         </Stack>

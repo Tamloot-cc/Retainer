@@ -74,6 +74,19 @@ export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions) {
       ),
     );
   });
+  app.post('/extensions/:id/reconnect', requireScope('admin'), async (c) => {
+    const id = idParam(c),
+      input = await readBody(c, commitInputSchema);
+    if (!input.reconnect || input.installationId !== id)
+      throw new AppError(
+        400,
+        'invalid_request',
+        'review a reconnect plan for this installation first',
+      );
+    return c.json(
+      await extensions.install(c.get('caller'), input, c.req.header('Idempotency-Key') ?? ''),
+    );
+  });
   app.patch('/extensions/:id/settings', requireScope('admin'), async (c) =>
     c.json(
       await extensions.updateSettings(

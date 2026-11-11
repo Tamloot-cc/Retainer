@@ -389,6 +389,12 @@ export const defineView = (value: unknown) => viewSchema.parse(value);
 export type ExtensionInstallInput = {
   /** Set for an upgrade preview and commit. */
   installationId?: string;
+  /** Explicitly review a new credential/account connection on the current release. */
+  reconnect?: boolean;
+  /** Retire the old source binding and callback addresses; retained evidence keeps its namespace. */
+  replaceSourceAccount?: boolean;
+  /** Request a separate approval plan for increased access; never grants access on preview. */
+  grantChange?: boolean;
   secretRefs?: Record<string, string>;
   registrationId: string;
   version: string;
@@ -402,6 +408,7 @@ export type ExtensionPreview = {
   operations: unknown[];
   views: { universalId: string; name: string; action: 'create' | 'retain' }[];
   grants: { actor: 'integration' | 'agent'; scopes: ('read' | 'write')[] };
+  previousGrants?: { actor: 'integration' | 'agent'; scopes: ('read' | 'write')[] };
   warnings: string[];
 };
 export type ExtensionInstallation = {

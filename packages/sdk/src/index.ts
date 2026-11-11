@@ -683,6 +683,18 @@ export class RetainerClient {
       idempotencyKey,
     );
   }
+  reconnectExtension(
+    id: string,
+    input: ExtensionInstallInput & { planDigest: string },
+    idempotencyKey: string,
+  ) {
+    return this.post<ExtensionInstallation>(
+      `/v1/extensions/${encodeURIComponent(id)}/reconnect`,
+      input,
+      undefined,
+      idempotencyKey,
+    );
+  }
   updateExtensionSettings(
     id: string,
     input: { expectedRevision: number; settings: ExtensionInstallInput['settings'] },

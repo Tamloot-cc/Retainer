@@ -3,8 +3,7 @@
 Current status: controls, isolated execution/lifecycle, files/erasure, managed
 sources/revisions, commit-ordered feeds, durable triggers, isolated verification,
 public webhook ingress and deterministic last-contact are implemented and tested.
-The default catalog is empty. Provider adapters, connection refresh/reconnect UX,
-explicit grant changes, standalone grants and hosted launch remain outstanding.
+The default catalog is empty. Provider adapters, standalone grants and hosted launch remain outstanding. Reviewed reconnect and grant changes are also implemented.
 
 The contract in extensions.md remains the acceptance specification. Implement in
 these dependency-ordered slices; never advertise a trigger before its safety
@@ -392,3 +391,30 @@ backfills, consumes a later conversation through durable change dispatch, lowers
 the rolled-up company date after unlinking, and verifies disable/uninstall. The
 default catalog remains empty; packaging an artifact is distinct from enabling it
 on a hosted deployment.
+
+## Reviewed reconnect and grant changes
+
+Same-release reconnect plans accept newly staged credential references and
+connection settings, then require explicit human approval. They atomically adopt
+secrets, cancel prior runs and advance generation before setup. The existing
+verified source account is retained by default; explicit account replacement
+retires source bindings and old callbacks while keeping imported evidence.
+Lifecycle code can read its own safe settings/metadata, never CRM data.
+
+Grant-increase plans explicitly show prior/new scopes and actor, bind them into
+the approval digest and replace the approved grant atomically. Catalog actor
+ceilings remain immutable maxima. A lower agent grant under an integration
+ceiling can be raised only through this approval path; agent-only ceilings cannot
+be raised. Terminal provider authentication errors mark connection health as
+needing reconnect. Settings, reconnect and increased-access approval have distinct
+management UI controls.
+
+Real-Postgres tests cover concurrent reconnect/adoption receipts, non-human
+refusal, stale approvals, unchanged-account verification, explicit replacement,
+old callback fencing, scope/actor increases and terminal authentication health.
+UI tests prove that credential entry/review does not commit before approval and
+that only opaque secret references enter approval requests. All 1,394 tests pass across the server (1,093 with two workers) and other
+packages (301). Typecheck/build/lint and release/layer checks pass. The 66
+fresh-build browser tests include reconnect review: account settings and
+generation remain unchanged until human approval, then the reviewed replacement
+commits. No live provider credentials were used.

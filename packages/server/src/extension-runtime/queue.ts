@@ -575,7 +575,7 @@ export class ExtensionQueue {
   ) {
     if (!['install', 'uninstall'].includes(job.trigger_kind)) {
       if (status === 'failed')
-        await tx`update extension_installations set connection_health='degraded',last_error=${code ?? 'run_failed'},updated_at=now() where id=${installation.id}`;
+        await tx`update extension_installations set connection_health=${['connection_required', 'invalid_connection', 'provider_unauthorized'].includes(code ?? '') ? 'needs_reconnect' : 'degraded'},last_error=${code ?? 'run_failed'},updated_at=now() where id=${installation.id}`;
       else if (status === 'succeeded') {
         const [failed] =
           await tx`select id from extension_jobs where installation_id=${installation.id} and generation=${installation.generation} and status='failed' limit 1`;
@@ -591,7 +591,7 @@ export class ExtensionQueue {
           : installation.setup_kind === 'upgrade'
             ? 'disabled'
             : 'setup_failed';
-      await tx`update extension_installations set state=${state},connection_health='degraded',last_error=${code ?? 'setup_failed'},updated_at=now() where id=${installation.id}`;
+      await tx`update extension_installations set state=${state},connection_health=${['connection_required', 'invalid_connection', 'provider_unauthorized'].includes(code ?? '') ? 'needs_reconnect' : 'degraded'},last_error=${code ?? 'setup_failed'},updated_at=now() where id=${installation.id}`;
       return false;
     }
     if (status !== 'succeeded') return false;

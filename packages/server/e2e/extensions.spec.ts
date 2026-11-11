@@ -53,6 +53,33 @@ test('reviews and approves an installation, changes settings, inspects runs and 
     installed.id,
   );
 });
+test('reviews a reconnect before changing account settings or revoking the current generation', async ({
+  page,
+  retainer: r,
+}) => {
+  await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'Extensions', exact: true }).click();
+  await page.getByRole('button', { name: 'Set up', exact: true }).click();
+  let dialog = page.getByRole('dialog', { name: 'browser-fixture setup' });
+  await dialog.getByLabel('Provider account').fill('original-account');
+  await dialog.getByRole('button', { name: 'Review installation' }).click();
+  await dialog.getByRole('button', { name: 'Approve installation' }).click();
+  await expect(dialog).not.toBeVisible();
+  const initial = (await r.request('/extensions', undefined, r.keys.user)).installations[0];
+  await page.getByRole('button', { name: 'Reconnect', exact: true }).click();
+  dialog = page.getByRole('dialog', { name: 'browser-fixture reconnect' });
+  await dialog.getByLabel('Provider account').fill('reconnected-account');
+  await dialog.getByRole('button', { name: 'Review reconnect' }).click();
+  await expect(dialog.getByText(/Reconnect stops current runs/)).toBeVisible();
+  expect((await r.request(`/extensions/${initial.id}`, undefined, r.keys.user)).generation).toBe(
+    initial.generation,
+  );
+  await dialog.getByRole('button', { name: 'Approve reconnect' }).click();
+  await expect(dialog).not.toBeVisible();
+  const reconnected = await r.request(`/extensions/${initial.id}`, undefined, r.keys.user);
+  expect(reconnected.settings.account).toBe('reconnected-account');
+  expect(reconnected.generation).toBe(initial.generation + 1);
+});
 test('shows the catalog to a reader without installation controls', async ({
   page,
   retainer: r,

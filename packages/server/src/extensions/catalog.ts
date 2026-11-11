@@ -20,7 +20,7 @@ export class ExtensionCatalog {
     const locators = new Map<string, string>();
     for (const release of releases) {
       const manifest = defineExtension(release.manifest);
-      if (release.actorCeiling !== manifest.requestedActor)
+      if (release.actorCeiling === 'agent' && manifest.requestedActor === 'integration')
         throw new Error('registration does not permit requested actor');
       for (const hook of manifest.webhooks ?? []) {
         const key = `${manifest.universalId}:${hook.route}`,

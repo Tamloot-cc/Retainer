@@ -2,8 +2,8 @@
 
 Status: implementation in progress. Control/lifecycle UI, isolated execution,
 files, managed sources, durable change dispatch, verified webhook ingress and
-deterministic last-contact are implemented. Provider adapters, connection/grant
-management, standalone authorization and hosted launch remain. Date: 2026-11-11.
+deterministic last-contact and reviewed connection/grant management are
+implemented. Provider adapters, standalone authorization and hosted launch remain. Date: 2026-11-11.
 See [implementation progress](extensions-implementation.md) for completed and outstanding work.
 
 This spec replaces the exported **Retainer Extensions** proposal supplied as
@@ -286,6 +286,25 @@ writes. Explicit data/schema deletion is a separate normal Retainer operation.
 Reinstall reuses surviving schema bindings and suppression namespace; it cannot
 resurrect forgotten sources or silently reset user customizations.
 
+Credential/account changes use a separate reconnect preview and commit with
+`reconnect: true`, the current installation ID/release, non-secret settings and
+new opaque pending-secret references. `POST /v1/extensions/:id/reconnect` requires
+the matching reviewed plan and human admin approval. It atomically adopts the
+staged credentials, cancels old runs, advances generation and starts setup; no
+schema repair is folded into reconnect. By default the existing source-account
+namespace is retained and the provider verifier must attest that same account.
+Explicit `replaceSourceAccount: true` retires the old source binding and callback
+addresses before setup. Previously imported evidence remains. The management UI
+separates ordinary settings, reconnect review and account replacement.
+
+An upgrade that increases scopes or changes an agent grant to integration is
+rejected without `grantChange: true`. That flag requests a separate review plan;
+it never grants access on preview. The plan includes previous/new grants and binds
+them, the current generation and settings revision in its digest. The UI labels
+approval of increased access explicitly. Human commit replaces actor/scopes and
+fences previous credentials atomically. An immutable integration actor ceiling
+permits agent or integration grants; an agent ceiling can never permit integration.
+
 ## 8. Authorization, actors and secret handling
 
 A run token contains issuer, audience, expiry (at most five minutes), installation,
@@ -302,6 +321,8 @@ schema changes use lifecycle control. Platform operations (KV, enqueue, files,
 connections) require explicit installation-bound capabilities. All writes still
 use assertions and existing precedence. Never accept Actor, workspace, generation
 or causation overrides from payloads.
+
+Lifecycle functions can read their own non-secret installation settings, secret-presence flags and redacted run metadata. They cannot read CRM records before activation or during cleanup.
 
 A run has no `Caller.person` and cannot read personal memory. V1 permissions are
 workspace-wide within the existing scopes; install UI must say so. A mapping or
@@ -443,7 +464,7 @@ callbacks and live signing material. Pending callbacks are operational setup
 metadata, never provider payload or secret storage.
 
 Bindings are idempotent across retries for the same connected account. Explicit
-disconnect/uninstall retires their addresses; reconnect creates a fresh opaque
+disconnect/uninstall retires their addresses; reconnect after disconnect or explicit account replacement creates a fresh opaque
 binding, even when the provider reuses a delivery ID. Ordinary disable retains
 the configured address but generation/state checks stop it immediately. Source
 erasure advances the retained binding's generation along with its source binding,
@@ -763,6 +784,7 @@ schema changes occur. Read-only preview may be available to schema-capable agent
 | `POST /v1/extensions`                                                                 | Commit install using plan digest and idempotency key → installation and lifecycle job.                                             |
 | `POST /v1/extensions/:id/upgrade`                                                     | Commit an upgrade preview; no implicit permission increase.                                                                        |
 | `POST /v1/extensions/:id/disable`, `/enable`, `/uninstall`                            | Generation-fenced lifecycle transitions; enable validates connection and mappings.                                                 |
+| `POST /v1/extensions/:id/reconnect`                                                   | Reviewed same-release credential/account replacement; human approval and stale-plan fencing.                                       |
 | `PATCH /v1/extensions/:id/settings`                                                   | Expected settings revision, validated settings/secret references; credential/account changes require reconnect and fence old jobs. |
 | `GET /v1/extensions/:id/runs`, `POST /v1/extensions/:id/runs/:run/retry`              | Paginated redacted diagnostics and admin retry; no raw provider bodies.                                                            |
 | `POST /v1/extensions/:id/source-events`                                               | Revision-aware managed source import (§10).                                                                                        |

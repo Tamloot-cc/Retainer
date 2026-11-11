@@ -28,6 +28,9 @@ import { type ContributionRow, contributionOperations } from './contributions.js
 
 export const installInputSchema = z.strictObject({
   installationId: z.uuid().optional(),
+  reconnect: z.boolean().optional(),
+  replaceSourceAccount: z.boolean().optional(),
+  grantChange: z.boolean().optional(),
   secretRefs: z.record(z.string(), z.uuid()).optional(),
   registrationId: z.uuid(),
   version: z.string().regex(/^\d+\.\d+\.\d+$/),
@@ -125,7 +128,7 @@ export class Extensions {
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       if (caller.run) {
         await lockSchemaShared(tx, caller.workspaceId);
-        await admitRun(tx, caller.workspaceId, caller.run);
+        await admitRun(tx, caller.workspaceId, caller.run, false, 'runtime');
       }
       return {
         installations: (
@@ -142,7 +145,7 @@ export class Extensions {
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       if (caller.run) {
         await lockSchemaShared(tx, caller.workspaceId);
-        await admitRun(tx, caller.workspaceId, caller.run);
+        await admitRun(tx, caller.workspaceId, caller.run, false, 'runtime');
       }
       const [row] = await tx<Row[]>`select * from extension_installations where id = ${id}`;
       if (!row) throw notFound('extension installation');
@@ -173,7 +176,7 @@ export class Extensions {
     }
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       await lockSchemaShared(tx, caller.workspaceId);
-      if (caller.run) await admitRun(tx, caller.workspaceId, caller.run);
+      if (caller.run) await admitRun(tx, caller.workspaceId, caller.run, false, 'runtime');
       const [installation] = await tx`select id from extension_installations where id=${id}`;
       if (!installation) throw notFound('extension installation');
       const rows = await tx<
@@ -234,6 +237,16 @@ export class Extensions {
     >`select * from extension_installations where registration_id = ${input.registrationId}`;
     if (input.installationId && (!existing || existing.id !== input.installationId))
       throw notFound('extension installation');
+    if (input.reconnect && (!input.installationId || existing?.version !== input.version))
+      throw conflict(
+        'connection_required',
+        'reconnect the current installed release; upgrade separately',
+      );
+    if (input.replaceSourceAccount && (!input.reconnect || !manifest.source))
+      throw conflict(
+        'connection_required',
+        'source account replacement requires an explicit reconnect',
+      );
     if (input.installationId && ['uninstalled', 'uninstalling'].includes(existing?.state ?? ''))
       throw conflict('upgrade_conflict', 'reinstall before upgrading');
     if (!input.installationId && existing && existing.state !== 'uninstalled')
@@ -245,6 +258,7 @@ export class Extensions {
       );
     if (
       existing &&
+      !input.reconnect &&
       Object.entries(manifest.settings).some(
         ([key, def]) => def.reconnect && hash(existing.settings[key]) !== hash(input.settings[key]),
       )
@@ -273,7 +287,7 @@ export class Extensions {
           'connection_required',
           'pending secret is not bound to this installation and setting',
         );
-      if (existing && existing.state !== 'uninstalled')
+      if (existing && existing.state !== 'uninstalled' && !input.reconnect)
         throw conflict('connection_required', 'credential changes require reconnect');
     }
     const [stored] = existing
@@ -292,8 +306,9 @@ export class Extensions {
     const current = await loadSchemaState(tx, caller.workspaceId);
     if (
       existing &&
-      (manifest.requestedActor !== existing.granted_actor ||
-        manifest.scopes.some((scope) => !existing.granted_scopes.includes(scope)))
+      ((manifest.requestedActor === 'integration' && existing.granted_actor === 'agent') ||
+        manifest.scopes.some((scope) => !existing.granted_scopes.includes(scope))) &&
+      !input.grantChange
     )
       throw conflict(
         'grant_required',
@@ -397,6 +412,12 @@ export class Extensions {
         draftId,
         operation: input.installationId ? 'upgrade' : 'install',
         runtimeReady: this.activation.has(release.digest),
+        reconnect: input.reconnect === true,
+        replaceSourceAccount: input.replaceSourceAccount === true,
+        grantChange: input.grantChange === true,
+        currentGrants: existing
+          ? { actor: existing.granted_actor, scopes: existing.granted_scopes }
+          : null,
       }),
       schemaVersion: workspace.schema_version,
       generation,
@@ -408,7 +429,17 @@ export class Extensions {
         action: owns('view', view.universalId) ? 'retain' : 'create',
       })),
       grants: { actor: manifest.requestedActor, scopes: manifest.scopes },
+      ...(existing && input.grantChange
+        ? { previousGrants: { actor: existing.granted_actor, scopes: existing.granted_scopes } }
+        : {}),
       warnings: [
+        ...(input.reconnect
+          ? [
+              input.replaceSourceAccount
+                ? 'Reconnect stops current runs and retires the previous source account binding and callback addresses. Previously imported evidence stays in this workspace.'
+                : 'Reconnect stops current runs and verifies the new credentials against the retained source account. A different account requires explicit account replacement.',
+            ]
+          : []),
         ...(manifest.source
           ? [
               `Provider content is shared with everyone in this Retainer workspace. Source identity: ${manifest.source.identity}.`,
@@ -473,6 +504,11 @@ export class Extensions {
       const plan = await this.plan(tx, caller, input);
       if (plan.preview.planDigest !== input.planDigest)
         throw conflict('stale_plan', 'schema, settings or installation changed; preview again');
+      if (input.reconnect && plan.operations.length)
+        throw conflict(
+          'schema_binding_conflict',
+          'repair schema bindings through a validated upgrade before reconnecting',
+        );
       const result = await runSchemaChange(tx, {
         workspaceId: caller.workspaceId,
         actor: caller.actor,
@@ -486,7 +522,7 @@ export class Extensions {
       if (plan.existing) await cancelRuns(tx, plan.existing.id);
       const manifest = plan.release.manifest;
       const ready = this.activation.has(plan.release.digest);
-      const setupKind = input.installationId ? 'upgrade' : 'install';
+      const setupKind = input.installationId && !input.reconnect ? 'upgrade' : 'install';
       const state = ready ? (setupKind === 'upgrade' ? 'upgrading' : 'installing') : 'disabled';
       const [row] = await tx<Row[]>`insert into extension_installations
         (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, settings, created_by, state, setup_kind)
@@ -494,11 +530,15 @@ export class Extensions {
           ${manifest.requestedActor}, ${tx.json(manifest.scopes)}, ${tx.json(input.settings)}, ${tx.json(caller.actor)}, ${state}, ${setupKind})
         on conflict (workspace_id, registration_id) do update set state = excluded.state,setup_kind=excluded.setup_kind,
           last_error=null,connection_health='needs_reconnect',activated_at=null,cleanup_deadline=null,
-          version = excluded.version, release_digest = excluded.release_digest,granted_scopes=excluded.granted_scopes,
+          version = excluded.version, release_digest = excluded.release_digest,granted_scopes=excluded.granted_scopes,granted_actor=excluded.granted_actor,
           generation = extension_installations.generation + 1, settings = excluded.settings,
           settings_revision = extension_installations.settings_revision + 1, updated_at = now()
         returning *`;
       if (!row) throw new Error('installation insert returned no row');
+      if (input.replaceSourceAccount) {
+        await tx`delete from source_bindings where installation_id=${row.id}`;
+        await tx`update webhook_bindings set state='retired',updated_at=clock_timestamp() where installation_id=${row.id} and state<>'retired'`;
+      }
       for (const [name, reference] of Object.entries(input.secretRefs ?? {})) {
         const [adopted] = await tx<
           { ok: boolean }[]

@@ -96,6 +96,55 @@ async function install(key: string, input: unknown) {
   });
 }
 describe('broker-only secret storage and opaque approval references', () => {
+  it('reviews and atomically adopts a reconnected credential without exposing it, rejecting stale plans and non-human approval', async () => {
+    const h = await setup(),
+      initial = await install(h.keys.admin, h.request),
+      id = initial.body.id as string;
+    const staged = await t.request('/v1/extensions/secrets', {
+      key: h.keys.admin,
+      body: {
+        registrationId: manifest.universalId,
+        version: manifest.version,
+        installationId: id,
+        name: 'apiKey',
+        value: 'replacement-provider-secret',
+      },
+    });
+    expect(staged.status).toBe(201);
+    const input = {
+      ...h.input,
+      installationId: id,
+      reconnect: true,
+      secretRefs: { apiKey: staged.body.pendingSecretId },
+    };
+    const preview = await t.request('/v1/extensions/preview', { key: h.keys.admin, body: input });
+    expect(preview.status).toBe(200);
+    expect(JSON.stringify(preview.body)).not.toContain('replacement-provider-secret');
+    const commit = (key: string, receipt = 'reconnect') =>
+      t.request(`/v1/extensions/${id}/reconnect`, {
+        key,
+        body: { ...input, planDigest: preview.body.planDigest },
+        headers: { 'Idempotency-Key': receipt },
+      });
+    expect((await commit(h.keys.agent)).status).toBe(403);
+    const identity = {
+      workspaceId: h.workspace,
+      installationId: id,
+      registrationId: manifest.universalId,
+      name: 'apiKey',
+    };
+    expect((await broker.read(identity)).value).toBe('fixture-provider-secret');
+    const results = await Promise.all([commit(h.keys.admin), commit(h.keys.admin)]);
+    expect(results.map((result) => result.status)).toEqual([200, 200]);
+    expect(results[0]?.body).toEqual(results[1]?.body);
+    expect(results[0]?.body.generation).toBe(initial.body.generation + 1);
+    expect((await broker.read(identity)).value).toBe('replacement-provider-secret');
+    expect((await commit(h.keys.admin, 'new-stale-request')).status).toBe(409);
+    expect(
+      JSON.stringify(await t.request(`/v1/extensions/${id}`, { key: h.keys.admin })),
+    ).not.toContain('replacement-provider-secret');
+  });
+
   it('stages encrypted secrets, keeps them out of plans/settings/receipts, and denies ordinary SQL reads', async () => {
     const { workspace, keys, input, request, stage } = await setup();
     expect(

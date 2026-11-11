@@ -32,6 +32,13 @@ export const browserExtensionManifest = manifestFixture({
       reconnect: false,
     },
     enabled: { type: 'boolean', label: 'Enabled', required: true, secret: false, reconnect: false },
+    account: {
+      type: 'string',
+      label: 'Provider account',
+      required: false,
+      secret: false,
+      reconnect: true,
+    },
   },
   schema: [
     {
