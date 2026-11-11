@@ -3,7 +3,7 @@
 Current status: controls, isolated execution/lifecycle, files/erasure, managed
 sources/revisions, commit-ordered feeds, durable triggers, isolated verification,
 public webhook ingress and deterministic last-contact are implemented and tested.
-The default catalog is empty. Provider adapters, standalone grants and hosted launch remain outstanding. Reviewed reconnect and grant changes are also implemented.
+The default catalog is empty. Granola and typed sync progress are implemented locally; standalone grants and hosted launch remain outstanding. Reviewed reconnect and grant changes are also implemented.
 
 The contract in extensions.md remains the acceptance specification. Implement in
 these dependency-ordered slices; never advertise a trigger before its safety
@@ -472,3 +472,43 @@ credential boundaries, failed item counts and disconnect reset. All 38 targeted
 source/control/queue integration tests and six extension UI tests pass, as does
 workspace typechecking. Provider implementation is the next step; no real provider
 account or hosted deployment has been exercised.
+
+## Reviewed Granola adapter
+
+The MIT runner now bundles Granola setup, fixed-bound daily/incremental scans,
+local-ID ingestion, optional signed webhooks and owned-endpoint cleanup. The
+contract distinguishes verified credential access and human sharing consent from
+organization ownership. It pins provider URLs, normalizes resource identity,
+excludes private notes/photos, preserves full transcript files with pagination,
+and rejects a revision that changes mid-fetch. API errors are static/redacted;
+404 is unavailable and explicit provider deletion is separate. Lost webhook
+signing secrets recover by recreating only exact own unredacted callback URLs.
+
+Unit provider fixtures cover complete paginated transcripts, mid-fetch edits,
+wrong identity, pagination stalls, signed event/body identity, participant contact
+evidence, empty pages, incremental old-note edits, workspace-scope proof and
+owned-only cleanup. Real-Postgres API fixtures exercise the actual adapter,
+credential broker, reviewed installation, durable scan/import checkpoints,
+private byte upload/download, immutable edits, availability recovery, reconnect,
+uninstall and erasure suppression across re-enumeration. Runner subpath exports
+support these integration tests; the server imports no runner code in production.
+Production artifact generation emits an opt-in Granola bundle; the default catalog
+remains empty. No live Granola account or AWS deployment has been used.
+
+Webhook reuse is bound to the same provider-credential and signing-secret
+revisions in erasable operational KV. A rotated API key proves workspace scope
+again by creating the endpoint; listing an old workspace endpoint as a personal
+admin is not proof that the new key is workspace-scoped.
+
+Validation: 1,422 tests pass across the server (1,102 with two workers) and other
+packages (320, including the latest 28 runner tests). All 66 fresh-build browser
+tests pass, as do typecheck/build/lint, layer and release checks. The first full
+server run hit the previously observed large-fan-out seed timeout; the unchanged
+11-test rollup file passed alone in eight seconds and a fresh full server run
+passed in 74 seconds. No timeout, fixture size or assertions were relaxed.
+
+The immutable Granola Node 24 image also builds and passes the separate
+no-network, non-root raw-signature proof, including body tampering, signed
+payload/header ID mismatch and release-digest fencing. This verifies the packaged
+verifier, not live Granola access or AWS isolation. Standalone authorization and
+private hosted implementation are the next delivery slices.

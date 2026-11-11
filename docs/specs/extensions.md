@@ -2,8 +2,9 @@
 
 Status: implementation in progress. Control/lifecycle UI, isolated execution,
 files, managed sources, durable change dispatch, verified webhook ingress and
-deterministic last-contact and reviewed connection/grant management are
-implemented. Provider adapters, standalone authorization and hosted launch remain. Date: 2026-11-11.
+deterministic last-contact, reviewed connection/grant management, typed source
+progress and the Granola adapter are implemented locally. Standalone authorization
+and hosted launch remain. Granola is verified against provider fixtures, not a live account. Date: 2026-11-11.
 See [implementation progress](extensions-implementation.md) for completed and outstanding work.
 
 This spec replaces the exported **Retainer Extensions** proposal supplied as
@@ -643,8 +644,15 @@ have a stable provider-wide namespace; it makes no claim to verify an account ID
 that the provider does not expose. Neither strategy uses a mutable display name,
 credential hash or installation ID as the durable source namespace. Provider
 credential ownership and explicit Retainer workspace-sharing approval remain
-separate checks. Granola's account-verification/sharing adapter remains a delivery
-requirement; a global namespace alone does not satisfy it.
+separate checks. Granola does not document an account/workspace identity endpoint.
+Its v1 connection is therefore explicitly labelled a human-supplied shared API
+credential: a successful authenticated list verifies access, and required
+`shareAccessibleNotes` consent approves sharing its accessible summaries and
+transcripts with the Retainer workspace. It does not claim organization ownership.
+Optional webhooks require the provider to return exactly workspace scope and a
+null creator; a null creator by itself is insufficient. The reviewed global
+resource namespace uses Granola's case-insensitive note IDs, normalized to lower
+case, and survives key rotation/reinstallation.
 
 A live managed-source run can read its current local binding with
 `GET /v1/extensions/:id/source`. Normal keys cannot use this runtime metadata
@@ -739,6 +747,50 @@ disconnect and settings changes reset scan state; ordinary disable/enable retain
 it for catch-up. Settings changes cancel pending work before advancing the fence.
 Recover webhook gaps by polling, including private self-hosted servers
 without public webhook ingress.
+
+### Granola provider contract
+
+The reviewed adapter uses only the fixed public API origin, refuses redirects,
+paces requests, bounds response/transcript bytes and returns static diagnostic
+codes. It lists all accessible notes rather than using search. The initial
+created-time backfill uses daily windows with overlap; expired/invalid cursors
+restart a smaller window, down to a visible minimum-window failure. Incremental
+polls use `updated_after` from the last complete scan with overlap and deliberately
+omit `created_after`, so later edits to old imported notes are discoverable.
+Cursors and recent cursor hashes remain in erased KV. Empty pages with `hasMore`
+continue; repeated cursors fail visibly. KV erasure starts a new random child
+identity epoch without weakening permanent source suppression.
+
+A note's `updated_at` orders revisions. Meeting time comes from calendar start,
+then the first transcript segment, then creation time. Only shared summary, title,
+participants, source URL and complete transcript files are imported. Private notes
+and photos are excluded in v1. Inline-transcript 413 switches to paginated fetches;
+a metadata recheck rejects edits during that fetch. Oversized content fails rather
+than being truncated. A 404 means unavailable, never deleted; a documented
+non-null `deleted_at` is definitive deletion evidence. Authentication failures
+require reconnect. Polling repairs callback gaps; newly shared old unchanged notes
+outside the initial window need an explicit larger rescan when callbacks are off.
+
+Webhook setup prepares the stable local URL before provider creation, requests
+exact workspace scope and stores the one-time signing secret through broker CAS.
+Recovery lists only exact unredacted own callback URLs; if the matching secret is
+lost, it deletes/recreates its own endpoint. Other and redacted endpoints are
+untouched. The raw-byte verifier checks the signature and requires header
+`webhook-id` to equal payload `event_id`, returning only authenticated IDs.
+Uninstall cleans up owned endpoints within the existing cleanup deadline;
+provider outages remain visible and cannot imply successful remote cleanup.
+
+Webhook reuse is bound to the same provider-credential and signing-secret
+revisions in erasable operational KV. A rotated API key proves workspace scope
+again by creating the endpoint; listing an old workspace endpoint as a personal
+admin is not proof that the new key is workspace-scoped.
+
+Provider contract references: [API access](https://docs.granola.ai/introduction),
+[list notes](https://docs.granola.ai/api-reference/list-notes),
+[get note](https://docs.granola.ai/api-reference/get-note),
+[paginated transcript](https://docs.granola.ai/api-reference/get-transcript), and
+[webhooks](https://docs.granola.ai/webhooks). These were checked on 2026-11-11;
+provider fixtures establish local behavior, not a live account or hosted proof.
 
 Create-people policy: `never` default, `contacted_first`, or `everyone`, with a
 standard visible setting. Enforce it server-side for the managed participant

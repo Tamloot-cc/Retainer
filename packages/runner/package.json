@@ -16,5 +16,9 @@
     "@retainer/sdk": "workspace:*",
     "@retainer/shared": "workspace:*",
     "zod": "^4.6.7"
+  },
+  "exports": {
+    "./granola": "./dist/granola.js",
+    "./granola-contract": "./dist/granola-contract.js"
   }
 }

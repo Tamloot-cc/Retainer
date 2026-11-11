@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { VerificationInvocation, VerificationResult } from '@retainer/extension';
 import { z } from 'zod';
+import { GRANOLA, granolaNoteId, granolaTime } from './granola-contract.js';
 
 export const FIXTURE_WEBHOOK_ID = 'fb7bdabc-490a-412b-8687-72f2f6f30ba9';
 export const FIXTURE_VERIFIER_TIMEOUT_ID = '33bb3e43-557d-45ed-8f81-5baf6ee0f66d';
@@ -43,10 +44,23 @@ export function verifyStandardWebhook(
 export async function verifyWebhook(input: VerificationInvocation): Promise<VerificationResult> {
   // Deliberately unresponsive development fixture proves host-enforced termination.
   if (input.functionId === FIXTURE_VERIFIER_TIMEOUT_ID) return new Promise(() => {});
-  if (input.functionId !== FIXTURE_WEBHOOK_ID) return { status: 'rejected' };
+  if (![FIXTURE_WEBHOOK_ID, GRANOLA.verifier].includes(input.functionId))
+    return { status: 'rejected' };
   const deliveryId = verifyStandardWebhook(input);
   if (!deliveryId) return { status: 'rejected' };
   try {
+    if (input.functionId === GRANOLA.verifier) {
+      const payload = z
+        .object({
+          event_id: z.uuid(),
+          event_type: z.enum(['note.generated', 'note.edited', 'note.access_granted']),
+          note_id: granolaNoteId,
+          occurred_at: granolaTime,
+        })
+        .parse(JSON.parse(Buffer.from(input.rawBody, 'base64').toString('utf8')));
+      if (payload.event_id !== deliveryId) return { status: 'rejected' };
+      return { status: 'verified', deliveryId, externalId: payload.note_id };
+    }
     const payload = z
       .strictObject({ externalId: z.string().min(1).max(500) })
       .parse(JSON.parse(Buffer.from(input.rawBody, 'base64').toString('utf8')));

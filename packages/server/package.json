@@ -43,7 +43,8 @@
     "@playwright/test": "^1.65.0",
     "@retainer/sdk": "workspace:*",
     "drizzle-kit": "^0.31.11",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "@retainer/runner": "workspace:*"
   },
   "bin": {
     "retainer": "./dist/cli.js"

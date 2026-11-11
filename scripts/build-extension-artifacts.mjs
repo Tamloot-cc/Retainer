@@ -6,6 +6,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineExtension } from '../packages/extension/dist/index.js';
+import { granolaManifest } from '../packages/runner/dist/granola-contract.js';
 import { lastContactManifest } from '../packages/runner/dist/last-contact.js';
 import { stableJson } from '../packages/server/dist/stable-json.js';
 
@@ -317,5 +318,47 @@ writeLastContact(
     packageDigest,
     runtimeVersion: 'node24',
     driverTarget: 'last-contact',
+  })),
+);
+
+// Provider packaging is opt-in; emitting artifacts never changes the default server catalog.
+const granola = granolaManifest({
+  packageDigest,
+  handlerDigest: hash(readFileSync(resolve(root, 'packages/runner/dist/granola.js'))),
+  verifierDigest: hash(readFileSync(resolve(root, 'packages/runner/dist/webhooks.js'))),
+  serverVersions: manifest.serverVersions,
+});
+const granolaDigest = hash(stableJson(granola)),
+  granolaOut = resolve(root, 'artifacts/extensions/granola');
+mkdirSync(granolaOut, { recursive: true });
+const writeGranola = (name, value) =>
+  writeFileSync(resolve(granolaOut, name), `${JSON.stringify(value, null, 2)}\n`);
+writeGranola('manifest.json', granola);
+writeGranola('catalog.json', [
+  { manifest: granola, actorCeiling: 'integration', runtimeEnabled: true },
+]);
+writeGranola('metadata.json', {
+  commit,
+  development,
+  releaseDigest: granolaDigest,
+  packageDigest,
+  bundleId: 'granola',
+  functionIds: granola.functions
+    .filter((f) => f.trigger.kind !== 'route')
+    .map((f) => f.universalId),
+  verifierFunctionIds: granola.functions
+    .filter((f) => f.trigger.kind === 'route')
+    .map((f) => f.universalId),
+});
+writeGranola(
+  'executables.json',
+  granola.functions.map((fn) => ({
+    registrationId: granola.universalId,
+    releaseDigest: granolaDigest,
+    functionId: fn.universalId,
+    handlerDigest: fn.handlerDigest,
+    packageDigest,
+    runtimeVersion: 'node24',
+    driverTarget: 'granola',
   })),
 );

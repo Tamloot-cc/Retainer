@@ -5,7 +5,7 @@ platform; it is not a provider integration. Authorized files and durable byte
 erasure are implemented; see [file storage](files.md). Managed source identities,
 immutable revisions, staged upload ownership and source erasure are implemented
 as platform primitives. Commit-ordered change feeds and durable change triggers are also implemented.
-Verified public webhooks, reviewed reconnect/grant changes and deterministic last-contact are implemented. Provider adapters, standalone OAuth and Granola remain in development. Do not enable an ingestion adapter before its
+Verified public webhooks, reviewed reconnect/grant changes and deterministic last-contact are implemented. The Granola adapter and typed sync progress are implemented locally; standalone OAuth remains in development. Do not enable an ingestion adapter before its
 source/privacy prerequisites are implemented and tested. Hosted infrastructure
 and deployment remain separate work in `retainer-cloud`.
 
@@ -243,3 +243,35 @@ source job, staged ownership, upload/finalization, immutable source import and
 an authorized download with a real Compose byte volume and Postgres. Build the
 API and generated webhook-fixture image first, as for the webhook verification
 command. This proof uses no real provider account.
+
+## Granola bundle
+
+The artifact builder also emits `artifacts/extensions/granola/` with the reviewed
+manifest, catalog, executable registry and immutable metadata. Build the Node 24
+runner image with that directory's digest and `BUNDLE_ID=granola`, and explicitly
+select its catalog and ordinary/verifier executables in the existing runtime
+configuration. Emitting artifacts never enables the default empty catalog.
+Use the files overlay for transcript uploads. A verifier service can stay on a
+private deployment; receiving public Granola notifications is optional.
+
+An admin supplies a Granola API key and explicitly approves sharing the accessible
+summaries/transcripts. The default creates no people and imports 31 days of
+history. `contacted_first` requires explicit owner/organizer evidence. Webhooks
+are off by default; enabling them requires public HTTPS and a workspace API key.
+Use reconnect for key rotation, and an explicit larger backfill for newly shared
+old notes when polling alone cannot discover them. The Extensions page reports
+last successful enumeration separately from pending/failed imports.
+
+The Granola transport, mapping, verifier and lifecycle have deterministic provider
+fixtures. API integration tests use real RLS Postgres, the secret broker and file
+byte storage. They cover backfill, edits, availability recovery, reviewed key
+rotation, uninstall and suppressed reimport after erasure. They do not call a
+real Granola account. Hosted deployment and provider-account acceptance remain
+separate launch evidence.
+
+After building `retainer:extension-granola` with the emitted digest, run
+`pnpm test:extensions:granola-bundle`. It checks the immutable labels and runs the
+actual Node 24 verifier in non-root, read-only, no-network containers. Signed
+payloads pass; raw-body tampering, mismatched signed event IDs and another
+release digest are refused. The test uses only disposable synthetic signing
+material and never reaches a provider account.

@@ -28,7 +28,8 @@
     "test:extensions:verifier": "node scripts/test-extension-verifier.mjs",
     "test:extensions:webhooks": "node scripts/test-extension-compose.mjs --webhook",
     "test:extensions:last-contact": "node scripts/test-extension-compose.mjs --last-contact",
-    "test:extensions:files": "node scripts/test-extension-compose.mjs --webhook --files"
+    "test:extensions:files": "node scripts/test-extension-compose.mjs --webhook --files",
+    "test:extensions:granola-bundle": "node scripts/test-granola-bundle.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.6",
