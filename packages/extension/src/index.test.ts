@@ -24,6 +24,27 @@ export const fixture = () => ({
   functions: [],
 });
 describe('strict extension contracts', () => {
+  it('refuses secret defaults, invalid choice defaults and preselected sharing consent', () => {
+    const setting = {
+      type: 'string',
+      label: 'Contact creation',
+      options: ['never', 'everyone'],
+      default: 'never',
+    };
+    expect(
+      defineExtension({ ...fixture(), settings: { policy: setting } }).settings.policy?.default,
+    ).toBe('never');
+    for (const invalid of [
+      { ...setting, secret: true },
+      { ...setting, default: 'invalid' },
+      { ...setting, options: ['never', 'never'] },
+      { type: 'boolean', label: 'Share', required: true, consent: true, default: true },
+    ])
+      expect(() => defineExtension({ ...fixture(), settings: { policy: invalid } })).toThrow(
+        'setting default',
+      );
+  });
+
   it('bounds change handlers to a local feed position and refuses caller-supplied record bodies', () => {
     const input = {
       ...fixture(),
@@ -170,7 +191,7 @@ describe('strict extension contracts', () => {
     expect(() =>
       defineExtension({
         ...fixture(),
-        settings: { key: { type: 'string', label: 'Key', default: 'secret' } },
+        settings: { key: { type: 'string', label: 'Key', secret: true, default: 'secret' } },
       }),
     ).toThrow();
   });

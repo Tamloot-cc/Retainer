@@ -4,8 +4,16 @@ RUN corepack enable
 WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs package.json tsconfig.base.json ./
 RUN corepack install
-COPY packages ./packages
-RUN pnpm install --frozen-lockfile
+# Cache dependency installation independently from source, and install only the MIT runner graph.
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/extension/package.json ./packages/extension/
+COPY packages/sdk/package.json ./packages/sdk/
+COPY packages/runner/package.json ./packages/runner/
+RUN pnpm install --filter @retainer/runner... --filter . --frozen-lockfile
+COPY packages/shared ./packages/shared
+COPY packages/extension ./packages/extension
+COPY packages/sdk ./packages/sdk
+COPY packages/runner ./packages/runner
 RUN pnpm --filter @retainer/shared build && pnpm --filter @retainer/extension build && pnpm --filter @retainer/sdk build && pnpm --filter @retainer/runner build
 RUN pnpm --filter @retainer/runner deploy --legacy --prod /out
 

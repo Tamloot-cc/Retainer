@@ -73,6 +73,51 @@ function mount(element: React.ReactNode, admin = true) {
 }
 afterEach(() => vi.restoreAllMocks());
 describe('generated extension settings and human approval', () => {
+  it('defaults contact creation safely and makes sharing consent explicit before review', async () => {
+    const choices = {
+      ...release,
+      manifest: {
+        ...release.manifest,
+        settings: {
+          share: {
+            type: 'boolean' as const,
+            label: 'Share accessible notes',
+            description: 'Everyone in this Retainer workspace can read imported notes.',
+            secret: false,
+            reconnect: true,
+            required: true,
+            default: false,
+            consent: true,
+          },
+          createPeople: {
+            type: 'string' as const,
+            label: 'Create contacts',
+            secret: false,
+            reconnect: false,
+            required: true,
+            default: 'never',
+            options: ['never', 'contacted_first', 'everyone'],
+          },
+        },
+      },
+    };
+    const plan = vi.spyOn(api, 'previewExtension').mockResolvedValue(preview);
+    mount(<ExtensionSettings release={choices} onClose={() => {}} onSaved={() => {}} />);
+    expect(
+      screen.getByText('Everyone in this Retainer workspace can read imported notes.'),
+    ).toBeTruthy();
+    expect(
+      (screen.getByRole('checkbox', { name: /^Share accessible notes/ }) as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+    await userEvent.click(screen.getByRole('button', { name: 'Review installation' }));
+    expect(plan).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('checkbox', { name: /^Share accessible notes/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Review installation' }));
+    await vi.waitFor(() => expect(plan).toHaveBeenCalledTimes(1));
+    expect(plan.mock.calls[0]?.[0].settings).toEqual({ share: true, createPeople: 'never' });
+  });
+
   const installation: NonNullable<React.ComponentProps<typeof ExtensionSettings>['installation']> =
     {
       id: 'installation',

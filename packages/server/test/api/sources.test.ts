@@ -200,6 +200,96 @@ async function setup(
 }
 
 describe('managed source evidence with real RLS Postgres', () => {
+  it('reserves provider pages concurrently with explicit erased-item outcomes and no cross-account authority', async () => {
+    const h = await setup(),
+      erased = await h.item('erased-note');
+    const imported = await h.sync(erased.key, erased.itemId, '1', null);
+    expect(imported.status).toBe(200);
+    expect(
+      (
+        await h.app.request(`/v1/records/${imported.body.eventId}/forget`, {
+          key: h.keys.admin,
+          body: {},
+        })
+      ).status,
+    ).toBe(200);
+    const scan = await h.start();
+    const connection = await h.app.request(`${h.base}/source`, { key: scan.key });
+    expect(connection.body).toEqual({
+      sourceAccountId: h.accountId,
+      provider: 'fixture',
+      identity: 'account',
+    });
+    expect((await h.app.request(`${h.base}/source`, { key: h.keys.admin })).status).toBe(404);
+    const reserve = () =>
+      h.app.request(`${h.base}/source-items/batch`, {
+        key: scan.key,
+        body: { sourceAccountId: h.accountId, externalIds: ['erased-note', 'surviving-note'] },
+      });
+    const results = await Promise.all([reserve(), reserve()]);
+    expect(results.map((result) => result.status)).toEqual([201, 201]);
+    expect(results[0]?.body).toEqual(results[1]?.body);
+    expect(results[0]?.body.items[0]).toEqual({ externalId: 'erased-note', code: 'source_erased' });
+    expect(results[0]?.body.items[1].sourceItemId).toMatch(/^[a-f0-9-]{36}$/);
+    expect(
+      await db.owner`select id from source_items where workspace_id=${h.workspace.id} and external_id='surviving-note'`,
+    ).toHaveLength(1);
+    const rejected = await h.app.request(`${h.base}/source-items/batch`, {
+      key: scan.key,
+      body: { sourceAccountId: randomUUID(), externalIds: ['must-not-reserve'] },
+    });
+    expect(rejected.status).toBe(404);
+    expect(
+      await db.owner`select id from source_items where workspace_id=${h.workspace.id} and external_id='must-not-reserve'`,
+    ).toHaveLength(0);
+    expect(
+      (
+        await h.app.request(`${h.base}/source-items/batch`, {
+          key: scan.key,
+          body: { sourceAccountId: h.accountId, externalIds: ['duplicate', 'duplicate'] },
+        })
+      ).status,
+    ).toBe(400);
+  });
+  it('repairs transient unavailability by replaying the same current immutable receipt', async () => {
+    const h = await setup(),
+      source = await h.item();
+    const first = await h.sync(source.key, source.itemId, '1', null);
+    expect(first.status).toBe(200);
+    expect(
+      (
+        await h.app.request(`${h.base}/source-items/${source.itemId}/unavailable`, {
+          key: source.key,
+          body: { status: 'unavailable' },
+        })
+      ).status,
+    ).toBe(200);
+    expect((await h.sync(source.key, source.itemId, '1', null)).body).toEqual(first.body);
+    const [item] = await db.owner`select state from source_items where id=${source.itemId}`;
+    expect(item?.state).toBe('live');
+    const second = await h.sync(
+      source.key,
+      source.itemId,
+      '2',
+      first.body.revisionId,
+      h.event('Edited'),
+    );
+    expect(second.status).toBe(200);
+    await h.app.request(`${h.base}/source-items/${source.itemId}/unavailable`, {
+      key: source.key,
+      body: { status: 'unavailable' },
+    });
+    expect((await h.sync(source.key, source.itemId, '1', null)).body).toEqual(first.body);
+    const [stillUnavailable] =
+      await db.owner`select state from source_items where id=${source.itemId}`;
+    expect(stillUnavailable?.state).toBe('unavailable');
+    expect(
+      (await h.sync(source.key, source.itemId, '2', first.body.revisionId, h.event('Edited'))).body,
+    ).toEqual(second.body);
+    const [recovered] = await db.owner`select state from source_items where id=${source.itemId}`;
+    expect(recovered?.state).toBe('live');
+  });
+
   it('requires a pinned setup attestation and refuses ordinary credentials', async () => {
     const h = await setup('never', false);
     expect(
@@ -622,12 +712,20 @@ describe('managed source evidence with real RLS Postgres', () => {
         .status,
     ).toBe(200);
     const [field] =
-      await db.owner`select key from fields where workspace_id=${h.workspace.id} and type='files'`;
+      await db.owner`select key,universal_id from fields where workspace_id=${h.workspace.id} and type='files'`;
     const imported = await h.sync(s.key, s.itemId, '1', null, {
       ...h.event('Transcript'),
-      fields: { [field?.key]: [intent.body.id] },
+      fields: { [field?.universal_id]: [intent.body.id] },
     } as ReturnType<typeof h.event>);
     expect(imported.status).toBe(200);
+    expect(
+      (
+        await h.sync(s.key, s.itemId, '2', imported.body.revisionId, {
+          ...h.event('Transcript'),
+          fields: { [field?.key]: [intent.body.id], [field?.universal_id]: [intent.body.id] },
+        })
+      ).body.error.code,
+    ).toBe('invalid_source_field');
     const download = await h.app.request(`/v1/files/${intent.body.id}/download`, {
       key: h.keys.admin,
       method: 'POST',

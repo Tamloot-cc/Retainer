@@ -9,6 +9,14 @@ export const reserveSourceSchema = z.strictObject({
   sourceAccountId: z.uuid(),
   externalId: z.string().min(1).max(500),
 });
+export const reserveSourceBatchSchema = z
+  .strictObject({
+    sourceAccountId: z.uuid(),
+    externalIds: z.array(z.string().min(1).max(500)).min(1).max(30),
+  })
+  .refine((input) => new Set(input.externalIds).size === input.externalIds.length, {
+    message: 'duplicate source identities',
+  });
 export const prepareSourceSchema = z.strictObject({
   participants: z
     .array(

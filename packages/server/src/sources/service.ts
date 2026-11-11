@@ -3,7 +3,7 @@ import { BASE_OBJECT_IDS } from '@retainer/shared';
 import type { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
 import type { Sql } from '../db/client.js';
-import { inWorkspace, jsonValue, lockForWrite, type Tx } from '../db/tx.js';
+import { inWorkspace, jsonValue, lockForWrite, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { admitRun } from '../extension-runtime/admission.js';
 import { cancelRuns, lockExtension } from '../extension-runtime/locks.js';
@@ -15,6 +15,7 @@ import { normalizeFieldValue } from '../records/values.js';
 import { insertRecord, markDeleted, type WriteContext, writeFields } from '../records/write.js';
 import {
   prepareSourceSchema,
+  reserveSourceBatchSchema,
   reserveSourceSchema,
   type SourceEventInput,
   type SourceResult,
@@ -164,6 +165,73 @@ export class Sources {
         'this source identity was erased and cannot be imported again',
       );
   }
+  async connection(caller: Caller, id: string) {
+    const run = this.runtime(caller, id);
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await lockSchemaShared(tx, caller.workspaceId);
+      await admitRun(tx, caller.workspaceId, run, false, 'runtime');
+      const { policy } = await this.release(tx, caller),
+        binding = await this.binding(tx, caller);
+      return {
+        sourceAccountId: binding.account_id,
+        provider: binding.provider,
+        identity: policy.identity,
+      };
+    });
+  }
+  /** A provider page reserves only identities; its durable enqueue/checkpoint follows separately. */
+  async reserveBatch(caller: Caller, id: string, raw: z.input<typeof reserveSourceBatchSchema>) {
+    this.runtime(caller, id);
+    const input = reserveSourceBatchSchema.parse(raw);
+    return withWrite(
+      this.sql,
+      caller,
+      async (tx) => {
+        const binding = await this.binding(tx, caller);
+        if (binding.account_id !== input.sourceAccountId) throw notFound('source account');
+        const results = new Map<
+          string,
+          | {
+              externalId: string;
+              sourceItemId: string;
+              state: string;
+              providerRevision: string | null;
+            }
+          | { externalId: string; code: 'source_erased' | 'source_deleted' }
+        >();
+        // Stable lock order lets overlapping page reservations compete without per-item deadlocks.
+        for (const externalId of [...input.externalIds].sort()) {
+          try {
+            const item = await reserveSourceItem(tx, caller.workspaceId, binding, externalId);
+            await this.usable(tx, caller, binding, item);
+            results.set(
+              externalId,
+              ['retracted', 'deleted'].includes(item.state)
+                ? { externalId, code: 'source_deleted' }
+                : {
+                    externalId,
+                    sourceItemId: item.id,
+                    state: item.state,
+                    providerRevision: item.provider_revision,
+                  },
+            );
+          } catch (error) {
+            if (!(error instanceof AppError) || error.code !== 'source_erased') throw error;
+            results.set(externalId, { externalId, code: 'source_erased' });
+          }
+        }
+        return {
+          items: input.externalIds.map((externalId) => {
+            const result = results.get(externalId);
+            if (!result) throw new Error('source reservation result missing');
+            return result;
+          }),
+        };
+      },
+      {},
+      { asPerson: false },
+    );
+  }
   async reserve(caller: Caller, id: string, raw: z.input<typeof reserveSourceSchema>) {
     this.runtime(caller, id);
     const input = reserveSourceSchema.parse(raw);
@@ -309,12 +377,19 @@ export class Sources {
     const fields: Record<string, unknown> = {},
       canonicalFields: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(input.event.fields)) {
-      const field = object.activeFields.find((f) => f.key === key);
+      const field = object.activeFields.find((f) => f.key === key || f.universalId === key);
       if (!field || field.coreRole || field.settings.isInverse)
         throw new AppError(
           422,
           'invalid_source_field',
-          'source fields must use writable permanent field keys',
+          'source fields must use writable field universal IDs or permanent keys',
+          { key },
+        );
+      if (Object.hasOwn(fields, field.name))
+        throw new AppError(
+          422,
+          'invalid_source_field',
+          'a source field was supplied through more than one identity',
           { key },
         );
       const normalized = normalizeFieldValue(field, value);
@@ -332,9 +407,9 @@ export class Sources {
             'invalid_files',
             'source files must be ready uploads bound to this source item',
           );
-        canonicalFields[key] =
+        canonicalFields[field.key] =
           normalized === null ? null : ids.map((id) => rows.find((r) => r.id === id)?.metadata);
-      } else canonicalFields[key] = normalized;
+      } else canonicalFields[field.key] = normalized;
     }
     const participants = [
       ...new Map(input.event.participants.map((p) => [p.email, p])).values(),
@@ -441,6 +516,10 @@ export class Sources {
               'source_revision_conflict',
               'provider revision was already imported with different content',
             );
+          // A successful current lookup repairs availability without replacing immutable evidence.
+          // Replaying a historical receipt must not mark a different current revision available.
+          await tx`update source_items set state='live',updated_at=clock_timestamp() where id=${item.id} and state='unavailable'
+            and exists(select 1 from source_revisions where item_id=${item.id} and id=${receipt.response.revisionId} and is_current)`;
           return receipt.response;
         }
         const [current] = await tx<

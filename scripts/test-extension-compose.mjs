@@ -11,8 +11,10 @@ import { promisify } from 'node:util';
 import { RetainerClient } from '../packages/sdk/dist/index.js';
 
 const withWebhook = process.argv.includes('--webhook'),
-  withLastContact = process.argv.includes('--last-contact');
+  withLastContact = process.argv.includes('--last-contact'),
+  withFiles = process.argv.includes('--files');
 assert(!(withWebhook && withLastContact));
+assert(!withFiles || withWebhook);
 const fixture = withWebhook ? 'webhook-fixture' : withLastContact ? 'last-contact' : 'fixture';
 const exec = promisify(execFile),
   root = process.cwd(),
@@ -28,6 +30,7 @@ const freePort = async () => {
 };
 const port = await freePort(),
   pgPort = await freePort(),
+  filePort = await freePort(),
   origin = `http://127.0.0.1:${port}`;
 const catalog = JSON.parse(readFileSync(`artifacts/extensions/${fixture}/catalog.json`));
 const executables = JSON.parse(readFileSync(`artifacts/extensions/${fixture}/executables.json`));
@@ -77,6 +80,12 @@ const environment = {
     : '',
   RETAINER_EXTENSION_VERIFIER_ORIGIN: withWebhook ? 'http://extension-launcher:9000' : '',
   RETAINER_VERIFIER_TOKEN: withWebhook ? randomBytes(32).toString('hex') : '',
+  ...(withFiles
+    ? {
+        RETAINER_FILE_PUBLIC_ORIGIN: `http://127.0.0.1:${filePort}`,
+        RETAINER_FILE_SIGNING_KEY: randomBytes(32).toString('base64'),
+      }
+    : {}),
   RETAINER_SUPPRESSION_PREVIOUS_KEYS: '',
   RETAINER_EXTENSION_CATALOG: JSON.stringify(catalog),
   RETAINER_EXTENSION_EXECUTABLES: JSON.stringify(executables),
@@ -99,7 +108,7 @@ const environment = {
 const override = resolve(temp, 'ports.yml');
 writeFileSync(
   override,
-  `services:\n  postgres:\n    ports: !override ["127.0.0.1:${pgPort}:5432"]\n  retainer:\n    ports: !override ["127.0.0.1:${port}:8787"]\n`,
+  `services:\n  postgres:\n    ports: !override ["127.0.0.1:${pgPort}:5432"]\n  retainer:\n    ports: !override ["127.0.0.1:${port}:8787"]\n${withFiles ? `  file-bytes:\n    image: retainer:extensions-review\n    ports: !override ["127.0.0.1:${filePort}:8790"]\n  file-maintenance:\n    image: retainer:extensions-review\n` : ''}`,
   { mode: 0o600 },
 );
 const base = [
@@ -110,6 +119,14 @@ const base = [
   resolve(root, 'docker/compose.yml'),
   '-f',
   resolve(root, 'docker/compose.extensions.yml'),
+  ...(withFiles
+    ? [
+        '-f',
+        resolve(root, 'docker/compose.files.yml'),
+        '-f',
+        resolve(root, 'docker/compose.extensions-files.yml'),
+      ]
+    : []),
   '-f',
   override,
 ];
@@ -181,7 +198,7 @@ try {
   const input = {
     registrationId: catalog[0].manifest.universalId,
     version: catalog[0].manifest.version,
-    settings: {},
+    settings: withFiles ? { includeTranscript: true } : {},
   };
   const producerKey = randomBytes(32),
     producerSecret = `whsec_${producerKey.toString('base64')}`;
@@ -256,7 +273,12 @@ try {
     for (let attempt = 0; attempt < 600; attempt++) {
       runs = (await client.extensionRuns(installed.id)).runs;
       if (runs.some((run) => run.status === 'failed'))
-        throw new Error('isolated webhook import failed');
+        throw new Error(
+          `isolated webhook import failed: ${runs
+            .filter((run) => run.status === 'failed')
+            .map((run) => `${run.functionId}:${run.code}`)
+            .join(', ')}`,
+        );
       if (runs.filter((run) => run.status === 'succeeded').length === 2) break;
       await delay(100);
     }
@@ -265,6 +287,20 @@ try {
     assert.equal(notes.records.length, 1);
     assert.equal(notes.records[0].event.title, 'Compose webhook note');
     assert.equal(notes.records[0].event.source.current, true);
+    if (withFiles) {
+      const files = Object.values(notes.records[0].fields)
+        .flatMap((value) => (Array.isArray(value) ? value : []))
+        .filter((value) => typeof value === 'string' && /^[a-f0-9-]{36}$/.test(value));
+      assert.equal(files.length, 1);
+      const file = await client.file(files[0]),
+        download = await client.downloadFile(files[0]);
+      assert.equal(file.name, 'fixture-transcript.txt');
+      const bytes = await fetch(download.url, { headers: download.headers });
+      assert.equal(
+        await bytes.text(),
+        'A deterministic fixture transcript uploaded by an isolated source runner.',
+      );
+    }
     assert.deepEqual(notes.records[0].createdBy, { type: 'integration', id: installed.id });
     const receiptCount = (
       await compose(
@@ -349,6 +385,7 @@ try {
       redactedRunInspection: true,
       disable: true,
       uninstall: true,
+      ...(withFiles ? { isolatedTranscriptUpload: true, privateByteProxy: true } : {}),
       ...(withLastContact
         ? {
             derivedLastContact: true,

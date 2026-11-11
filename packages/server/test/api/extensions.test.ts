@@ -285,3 +285,64 @@ describe('inert extension control with real RLS Postgres', () => {
     expect((await sdk.extension(installed.id)).state).toBe('uninstalled');
   });
 });
+
+describe('explicit source sharing and settings choices', () => {
+  it('requires affirmative consent and rejects invalid choices before any installation can commit', async () => {
+    const safe = defineExtension({
+      ...manifest,
+      universalId: randomUUID(),
+      schema: [],
+      views: [],
+      settings: {
+        share: {
+          type: 'boolean',
+          label: 'Share accessible provider notes',
+          required: true,
+          consent: true,
+          default: false,
+        },
+        createPeople: {
+          type: 'string',
+          label: 'Create contacts',
+          required: true,
+          options: ['never', 'contacted_first', 'everyone'],
+          default: 'never',
+        },
+      },
+    });
+    const app = startTestApp(db, {
+      extensionCatalog: new ExtensionCatalog([{ manifest: safe, actorCeiling: 'integration' }]),
+    });
+    const { keys } = await app.setupWorkspace(
+      { name: `Sharing ${randomUUID()}` },
+      { admin: { actor: { type: 'user', id: 'admin' }, scopes: ['admin'] } },
+    );
+    const input = {
+      registrationId: safe.universalId,
+      version: safe.version,
+      settings: { share: false, createPeople: 'never' },
+    };
+    expect(
+      (await app.request('/v1/extensions/preview', { key: keys.admin, body: input })).status,
+    ).toBe(422);
+    expect(
+      (
+        await app.request('/v1/extensions/preview', {
+          key: keys.admin,
+          body: { ...input, settings: { share: true, createPeople: 'invalid' } },
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      (await app.request('/v1/extensions', { key: keys.admin })).body.installations,
+    ).toHaveLength(0);
+    expect(
+      (
+        await app.request('/v1/extensions/preview', {
+          key: keys.admin,
+          body: { ...input, settings: { share: true, createPeople: 'never' } },
+        })
+      ).status,
+    ).toBe(200);
+  });
+});

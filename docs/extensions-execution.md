@@ -5,8 +5,7 @@ platform; it is not a provider integration. Authorized files and durable byte
 erasure are implemented; see [file storage](files.md). Managed source identities,
 immutable revisions, staged upload ownership and source erasure are implemented
 as platform primitives. Commit-ordered change feeds and durable change triggers are also implemented.
-Provider connection adapters, webhooks, standalone OAuth and Granola are still in
-development. Do not enable an ingestion adapter before its
+Verified public webhooks, reviewed reconnect/grant changes and deterministic last-contact are implemented. Provider adapters, standalone OAuth and Granola remain in development. Do not enable an ingestion adapter before its
 source/privacy prerequisites are implemented and tested. Hosted infrastructure
 and deployment remain separate work in `retainer-cloud`.
 
@@ -56,8 +55,8 @@ run token arrives through stdin rather than environment or command arguments.
 Each execution has a fresh internal bridge in isolated gateway mode: it has no
 bridge-host address or route to other Docker networks. Only the API and egress
 proxy join it. DNS results are checked and pinned at the proxy, including new
-connections following redirects. The configured API authority is the sole
-private-network exception; loopback, metadata and link-local remain forbidden.
+connections following redirects. The configured API authority and, when the files overlay is enabled, its exact byte-service authority are the only
+private-network exceptions; loopback, metadata and link-local remain forbidden.
 Only reviewed first-party bundles are supported; this is not a certification for
 executing hostile third-party code.
 
@@ -222,3 +221,25 @@ Uninstall cleanup may read its retained connection but cannot write generated
 secrets. This provides encrypted CAS storage, not a claim that arbitrary provider
 refresh calls are exactly once: each adapter must handle provider-specific token
 rotation, uncertain outcomes and reconnect behavior.
+
+## Isolated transcript uploads with local file storage
+
+When combining execution and private file storage, add the integration overlay
+last, after configuring both services as described above and in [files](files.md):
+
+```sh
+docker compose -f docker/compose.yml -f docker/compose.extensions.yml \
+  -f docker/compose.files.yml -f docker/compose.extensions-files.yml up -d
+```
+
+Only the trusted proxy joins `files-control`; its exact byte origin is added to
+the private-authority allowlist. Runners keep their fresh isolated network and
+receive a short-lived upload ticket through their own API credential. The byte
+service receives no database or provider credential. Other private authorities,
+metadata and loopback remain blocked.
+
+`pnpm test:extensions:files` exercises a signed synthetic callback, isolated
+source job, staged ownership, upload/finalization, immutable source import and
+an authorized download with a real Compose byte volume and Postgres. Build the
+API and generated webhook-fixture image first, as for the webhook verification
+command. This proof uses no real provider account.

@@ -349,6 +349,12 @@ request. Key-mode standalone apps use a separate revocable installation key.
 Authorization-code flows use state, PKCE and exact registered redirects; provider
 OAuth connection management is separate from Retainer access authorization.
 
+Non-secret setting definitions may provide a form default and bounded string
+choices. Approval requests still carry explicit values; defaults never contain
+secrets. A required boolean `consent: true` must be affirmatively true in preview,
+commit and settings writes, and cannot default to true. The form presents its
+sharing description and requires acknowledgement before review.
+
 Encrypt provider tokens/settings with authenticated encryption and associated
 workspace/installation/key-name data. Keys stay outside the database; retain key
 versions for rotation. Refresh under a per-connection lock, persist rotating
@@ -462,6 +468,13 @@ authenticated challenges can answer 200. Missing signing material also returns
 the verified source account to that same address; activation requires all declared
 callbacks and live signing material. Pending callbacks are operational setup
 metadata, never provider payload or secret storage.
+
+A callback may declare `optional: true` for a polling-capable adapter. Activation
+permits an absent optional binding, but a configured pending/active route must
+finish binding and have live signing material. The pinned setup function can
+retire its own route through `/runtime/webhooks/retire` after provider cleanup;
+this only revokes the local address and makes no claim that the provider deleted
+its subscription.
 
 Bindings are idempotent across retries for the same connected account. Explicit
 disconnect/uninstall retires their addresses; reconnect after disconnect or explicit account replacement creates a fresh opaque
@@ -611,7 +624,7 @@ type SourceEventImport = {
     occurredAt: string;
     title: string;
     summary?: string;
-    fields?: Record<string, unknown>; // resolved permanent field keys
+    fields?: Record<string, unknown>; // field universal UUIDs, or permanent field keys
     participants?: Array<{ email: string; name?: string; contacted?: boolean }>;
     about?: string[];
   };
@@ -633,8 +646,20 @@ credential ownership and explicit Retainer workspace-sharing approval remain
 separate checks. Granola's account-verification/sharing adapter remains a delivery
 requirement; a global namespace alone does not satisfy it.
 
+A live managed-source run can read its current local binding with
+`GET /v1/extensions/:id/source`. Normal keys cannot use this runtime metadata
+surface. Fields in `sync_source_event` accept stable field universal UUIDs or
+permanent keys; the server resolves both to permanent keys for canonical content.
+Supplying both aliases for one field is `422 invalid_source_field`. An isolated
+adapter can therefore use public schema identities without learning database keys.
+
 Before enqueueing ingestion, reserve `{sourceAccountId, externalId}` through
-`POST /v1/extensions/:id/source-items`. Jobs carry only the returned local
+`POST /v1/extensions/:id/source-items`. The bounded `/source-items/batch`
+variant accepts at most 30 unique provider identities, returns results in input
+order, and reports `source_erased`/`source_deleted` per identity. Other validation
+or persistence errors roll back the whole batch. It takes one write admission,
+serializes with erasure and uses sorted item locks for competing pages. Reservation
+alone creates no ingestion job or content. Jobs carry only the returned local
 `sourceItemId`; queue admission validates it against the current binding. The
 registered ingestion job may read the provider ID, stage participant emails with
 `/source-items/:item/prepare`, and upload files bound to that item. Staging is
@@ -687,6 +712,9 @@ lookup. Deleted/retracted identities are not silently recreated on future sync.
 The item's ingestion job reports transient unavailability separately from a
 deletion backed by a provider event or definitive lookup. `keep` preserves the
 current evidence; `retract` runs the normal event/derived-claim retraction path.
+Replaying the same current immutable revision after a successful provider lookup
+restores `live` availability without creating new evidence. Replaying a historical
+receipt cannot restore a different current revision's availability.
 Ordinary record deletion also marks the current managed item retracted. Direct
 field/participant editing of managed revisions is refused; the UI shows their
 current or superseded status and preserves explicit historical reads.

@@ -112,7 +112,6 @@ const executables = manifest.functions.map((fn) => ({
   runtimeVersion: 'node24' as const,
   driverTarget: 'fixture',
 }));
-const registry = new ExecutionRegistry(executables);
 const seen: VerificationInvocation[] = [],
   workspaces: string[] = [];
 let verify: VerificationDriver['verify'], tokens: RunTokens, broker: SecretBroker;
@@ -153,6 +152,7 @@ async function setup(
     account?: string;
     rateLimit?: number;
     activate?: boolean;
+    optionalHooks?: boolean;
     beforeVerify?: (context: {
       app: ReturnType<typeof startTestApp>;
       id: string;
@@ -165,19 +165,32 @@ async function setup(
     }) => Promise<void>;
   } = {},
 ) {
+  const setupManifest = options.optionalHooks
+    ? extensionFixture({
+        ...manifest,
+        webhooks: manifest.webhooks?.map((hook) => ({ ...hook, optional: true })),
+      })
+    : manifest;
+  const setupCatalog = new ExtensionCatalog([
+    { manifest: setupManifest, actorCeiling: 'integration', runtimeEnabled: true },
+  ]);
+  const setupRelease = setupCatalog.get(setupManifest.universalId, setupManifest.version);
+  const setupRegistry = new ExecutionRegistry(
+    executables.map((entry) => ({ ...entry, releaseDigest: setupRelease.digest })),
+  );
   const base = startTestApp(db);
   const hooks = new Webhooks({
     sql: base.sql,
-    catalog,
+    catalog: setupCatalog,
     broker,
-    registry,
+    registry: setupRegistry,
     driver,
     publicOrigin: 'http://retainer.test',
     rateLimit: options.rateLimit,
   });
   const app = startTestApp(db, {
-    extensionCatalog: catalog,
-    extensionActivation: new Set([release.digest]),
+    extensionCatalog: setupCatalog,
+    extensionActivation: new Set([setupRelease.digest]),
     extensionSecrets: broker,
     runTokens: tokens,
     webhooks: hooks,
@@ -187,7 +200,11 @@ async function setup(
     { admin: { actor: { type: 'user', id: 'admin' }, scopes: ['admin'] } },
   );
   workspaces.push(workspace.id);
-  const request = { registrationId: manifest.universalId, version: manifest.version, settings: {} },
+  const request = {
+      registrationId: setupManifest.universalId,
+      version: setupManifest.version,
+      settings: {},
+    },
     plan = await app.request('/v1/extensions/preview', { key: keys.admin, body: request });
   const installed = await app.request('/v1/extensions', {
     key: keys.admin,
@@ -196,12 +213,12 @@ async function setup(
   });
   expect(installed.status).toBe(201);
   const id = installed.body.id as string,
-    queue = new ExtensionQueue(app.sql, (id, version) => catalog.get(id, version).manifest);
+    queue = new ExtensionQueue(app.sql, (id, version) => setupCatalog.get(id, version).manifest);
   const [job] =
     await db.owner`select id from extension_jobs where installation_id=${id} and trigger_kind='install'`;
   const run = await queue.claim(workspace.id, job?.id, 'setup');
   if (!run) throw new Error('setup missing');
-  const token = await tokens.issue(app.sql, run, manifest.universalId, ['read', 'write']),
+  const token = await tokens.issue(app.sql, run, setupManifest.universalId, ['read', 'write']),
     account = options.account ?? `account-${randomUUID()}`,
     secret = `candidate-${randomUUID()}`;
   const prepared = await app.request(`/v1/extensions/${id}/runtime/webhooks/prepare`, {
@@ -856,6 +873,31 @@ describe('verified public ingress with real Postgres', () => {
       },
     });
     expect((await h.send('after-setup')).status).toBe(202);
+  });
+  it('permits polling without optional callbacks, but refuses a configured callback left pending', async () => {
+    const h = await setup({ activate: false, optionalHooks: true });
+    expect(
+      (
+        await h.app.request(`/v1/extensions/${h.id}/runtime/webhooks/retire`, {
+          key: h.token,
+          body: { route: 'notes' },
+        })
+      ).body.retired,
+    ).toBe(1);
+    expect((await h.queue.complete(h.run, { status: 'succeeded' })).activated).toBe(true);
+    expect((await h.send('retired-polling-hook')).status).toBe(404);
+    const pending = await setup({ activate: false, optionalHooks: true });
+    expect(
+      (
+        await pending.app.request(`/v1/extensions/${pending.id}/runtime/webhooks/prepare`, {
+          key: pending.token,
+          body: { route: 'global-notes' },
+        })
+      ).status,
+    ).toBe(201);
+    expect((await pending.queue.complete(pending.run, { status: 'succeeded' })).activated).toBe(
+      false,
+    );
   });
   it('refuses activation when the setup verifier leaves a declared webhook unbound', async () => {
     const h = await setup({ activate: false });

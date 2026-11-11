@@ -418,3 +418,38 @@ packages (301). Typecheck/build/lint and release/layer checks pass. The 66
 fresh-build browser tests include reconnect review: account settings and
 generation remain unchanged until human approval, then the reviewed replacement
 commits. No live provider credentials were used.
+
+## Provider-page and transcript prerequisites
+
+Managed source runs can read their current binding and batch-reserve up to 30
+provider identities with ordered, explicit erased/deleted outcomes. Competing
+pages use sorted locks, while privacy fences the whole operation. Source-event
+fields accept stable universal UUIDs as well as permanent keys, reject alias
+collisions, and canonicalize both to the same stored identity. Replaying current
+immutable evidence can recover transient source availability; historical receipts
+cannot claim that a different current revision is available.
+
+Non-secret form defaults, bounded string choices and required affirmative consent
+let a provider expose safe contact-creation defaults and explicit workspace
+sharing. Optional callbacks allow polling without an active subscription; pending
+configured callbacks still prevent false activation. Setup can revoke its own
+local route after provider-side cleanup.
+
+The extensions/files Compose overlay connects only the trusted proxy to the
+private byte service, with exact API and byte-origin exceptions. The isolated
+runner still receives no raw private-network route, storage signing key or DB
+credential. The rebuilt-image signed synthetic callback proof passes
+prepare/upload/finalize, immutable source import and authorized download with a
+real volume, Postgres and fresh isolated runner. It also verifies tamper refusal,
+one durable duplicate receipt, credential redaction and lifecycle revocation.
+
+All 1,401 tests pass (1,097 server tests with two workers, 304 other-package
+tests), plus 66 fresh-build browser tests. Typecheck, build, lint, release and
+layer checks pass. A browser keyboard test now waits for its review card: its
+trace showed the keypress preceding the pending-review response, so readiness
+is awaited without changing assertions. Docker dependency layers now depend on
+manifests rather than source, and the runner installs only its MIT dependency
+graph. Both optimized images build and run the live proof. Host disk exhaustion
+briefly stopped Docker; unused package/old build cache was reclaimed and Docker
+restarted without deleting containers or database volumes. No provider account
+has been used and the default catalog remains empty.

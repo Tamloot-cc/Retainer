@@ -215,7 +215,13 @@ export class Extensions {
       throw new AppError(413, 'quota_exceeded', 'settings exceed 64 KiB');
     for (const [key, value] of Object.entries(input.settings)) {
       const definition = manifest.settings[key];
-      if (!definition || definition.secret || typeof value !== definition.type)
+      if (
+        !definition ||
+        definition.secret ||
+        typeof value !== definition.type ||
+        (definition.options && !definition.options.includes(String(value))) ||
+        (definition.consent && value !== true)
+      )
         throw new AppError(
           422,
           'invalid_settings',
@@ -443,7 +449,7 @@ export class Extensions {
         ...(manifest.source
           ? [
               `Provider content is shared with everyone in this Retainer workspace. Source identity: ${manifest.source.identity}.`,
-              `Create people: ${manifest.createPeople}; source deletion: ${manifest.onSourceDelete}.`,
+              `Create people: ${input.settings.createPeople ?? manifest.createPeople}; source deletion: ${manifest.onSourceDelete}.`,
             ]
           : []),
         ...(this.activation.has(release.digest)
@@ -648,7 +654,13 @@ export class Extensions {
         throw new AppError(413, 'quota_exceeded', 'settings exceed 64 KiB');
       for (const [key, value] of Object.entries(input.settings)) {
         const definition = release.manifest.settings[key];
-        if (!definition || typeof value !== definition.type || definition.secret)
+        if (
+          !definition ||
+          typeof value !== definition.type ||
+          definition.secret ||
+          (definition.options && !definition.options.includes(String(value))) ||
+          (definition.consent && value !== true)
+        )
           throw new AppError(
             422,
             'invalid_settings',

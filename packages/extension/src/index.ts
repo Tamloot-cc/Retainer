@@ -158,6 +158,7 @@ export const manifestSchema = z.strictObject({
           .regex(/^[a-z0-9-]{1,100}$/)
           .optional(),
         challenge: z.boolean().optional(),
+        optional: z.boolean().optional(),
       }),
     )
     .max(20)
@@ -173,6 +174,11 @@ export const manifestSchema = z.strictObject({
       generated: z.boolean().optional(),
       reconnect: z.boolean().default(false),
       required: z.boolean().default(false),
+      /** Form defaults only; approval requests still carry explicit non-secret values. */
+      default: z.union([z.string(), z.boolean(), z.number().finite()]).optional(),
+      options: z.array(z.string().min(1).max(200)).min(1).max(20).optional(),
+      /** Explicit sharing acknowledgement; the server refuses false in a preview or commit. */
+      consent: z.boolean().optional(),
     }),
   ),
   schema: z.array(contributionSchema).max(500),
@@ -271,6 +277,23 @@ export function defineExtension(value: unknown): ExtensionManifest {
   for (const setting of Object.values(manifest.settings))
     if (setting.generated && (!setting.secret || setting.required))
       throw new Error('unsupported_manifest: generated secrets must be optional secret settings');
+  for (const setting of Object.values(manifest.settings)) {
+    if (
+      (setting.default !== undefined &&
+        (setting.secret || typeof setting.default !== setting.type)) ||
+      (setting.options &&
+        (setting.secret ||
+          setting.type !== 'string' ||
+          new Set(setting.options).size !== setting.options.length ||
+          (setting.default !== undefined && !setting.options.includes(String(setting.default))))) ||
+      (setting.consent &&
+        (setting.secret ||
+          setting.type !== 'boolean' ||
+          !setting.required ||
+          setting.default === true))
+    )
+      throw new Error('unsupported_manifest: invalid setting default, choices or consent');
+  }
   if (manifest.lastContact) {
     const policy = manifest.lastContact;
     if (

@@ -131,3 +131,10 @@ revocation, scheduled erasure confirmation and late-upload rejection. Build
 its own project and volumes. Integration tests also cover quota races, cross-
 workspace/installation ownership, revocation, retained history, record merges,
 orphan/attachment races, shared-copy erasure, MCP and workspace cascades.
+
+When isolated extension runners upload files, also use
+`docker/compose.extensions-files.yml`; it gives only the trusted proxy an exact
+private byte-origin exception. See [execution networking](extensions-execution.md#isolated-transcript-uploads-with-local-file-storage).
+`pnpm test:extensions:files` verifies this path from a signed public callback to a
+finalized source-bound transcript and authorized download with real Compose
+services.

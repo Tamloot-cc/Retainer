@@ -612,21 +612,28 @@ export class ExtensionQueue {
       const hooks = this.manifest(installation).webhooks ?? [];
       if (hooks.length) {
         const bindings = await tx<
-          { route: string; secret_name: string }[]
-        >`select b.route,b.secret_name from webhook_bindings b
-          join source_bindings s on s.installation_id=b.installation_id and s.generation=b.generation and s.account_id=b.source_account_id
-          where b.installation_id=${installation.id} and b.generation=${installation.generation} and b.release_digest=${installation.release_digest} and b.state='active'`;
+          { route: string; secret_name: string; state: string; account_matches: boolean }[]
+        >`select b.route,b.secret_name,b.state,s.account_id is not null as account_matches from webhook_bindings b
+          left join source_bindings s on s.installation_id=b.installation_id and s.generation=b.generation and s.account_id=b.source_account_id
+          where b.installation_id=${installation.id} and b.generation=${installation.generation} and b.release_digest=${installation.release_digest} and b.state<>'retired'`;
         const [ready] = await tx<
           { names: string[] }[]
         >`select retainer_extension_secret_names(${installation.id}::uuid) as names`;
         if (
-          hooks.some(
-            (hook) =>
-              !bindings.some(
-                (binding) =>
-                  binding.route === hook.route && binding.secret_name === hook.secretSetting,
-              ) || !ready?.names.includes(hook.secretSetting),
-          )
+          hooks
+            .filter(
+              (hook) => !hook.optional || bindings.some((binding) => binding.route === hook.route),
+            )
+            .some(
+              (hook) =>
+                !bindings.some(
+                  (binding) =>
+                    binding.route === hook.route &&
+                    binding.secret_name === hook.secretSetting &&
+                    binding.state === 'active' &&
+                    binding.account_matches,
+                ) || !ready?.names.includes(hook.secretSetting),
+            )
         ) {
           await tx`update extension_installations set state=${installation.setup_kind === 'upgrade' ? 'disabled' : 'setup_failed'},connection_health='needs_reconnect',last_error='webhook_binding_required' where id=${installation.id}`;
           await tx`update extension_jobs set status='failed',code='webhook_binding_required' where id=${job.id}`;

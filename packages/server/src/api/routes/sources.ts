@@ -5,6 +5,7 @@ import { idParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 import {
   prepareSourceSchema,
+  reserveSourceBatchSchema,
   reserveSourceSchema,
   sourceBindingSchema,
   sourceEventSchema,
@@ -13,6 +14,19 @@ import {
 import type { Sources } from '../../sources/service.js';
 
 export function sourceRoutes(app: Hono<AppEnv>, sources: Sources) {
+  app.get('/extensions/:id/source', requireScope('read'), async (c) =>
+    c.json(await sources.connection(c.get('caller'), idParam(c))),
+  );
+  app.post('/extensions/:id/source-items/batch', requireScope('write'), async (c) =>
+    c.json(
+      await sources.reserveBatch(
+        c.get('caller'),
+        idParam(c),
+        await readBody(c, reserveSourceBatchSchema),
+      ),
+      201,
+    ),
+  );
   app.post('/extensions/:id/source-items/:item/prepare', requireScope('write'), async (c) =>
     c.json(
       await sources.prepare(

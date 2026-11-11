@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Invocation } from '@retainer/extension';
+import { BASE_EVENT_FIELD_IDS } from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
 import { executeWebhookFixture, WEBHOOK_SETUP_ID, WEBHOOK_SYNC_ID } from './webhook-fixture.js';
 
@@ -20,6 +21,62 @@ const invocation = (functionId: string, input: unknown): Invocation => ({
 const reply = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
 describe('reviewed webhook source fixture', () => {
+  it('stages ownership and finalizes bytes before importing through a stable field UUID, without sending the run bearer to storage', async () => {
+    const fileId = randomUUID(),
+      calls: { path: string; method: string; body: any }[] = [];
+    const transport: typeof fetch = async (url, options) => {
+      const address = new URL(String(url)),
+        path = address.pathname,
+        method = options?.method ?? 'GET';
+      if (address.hostname === 'bytes.test') {
+        expect(new Headers(options?.headers).has('authorization')).toBe(false);
+        calls.push({ path, method, body: String(options?.body) });
+        return new Response(null, { status: 201 });
+      }
+      const body = options?.body ? JSON.parse(String(options.body)) : null;
+      calls.push({ path, method, body });
+      if (path.endsWith('/schema'))
+        return reply({
+          objects: [
+            {
+              fields: [{ baseField: 'conversationTranscript', type: 'files' }],
+            },
+          ],
+        });
+      if (path.endsWith(`/extensions/${id}`))
+        return reply({ settings: { includeTranscript: true } });
+      if (path.endsWith('/files/intents'))
+        return reply({
+          id: fileId,
+          upload: {
+            url: 'https://bytes.test/upload',
+            headers: { 'content-type': 'text/plain' },
+            expiresAt: '2099-01-01T00:00:00Z',
+          },
+        });
+      if (path.includes('/source-items/') && !path.endsWith('/prepare'))
+        return reply({ sourceItemId: itemId, externalId: 'compose-note-1', revisionId: null });
+      return reply({ created: true });
+    };
+    expect(
+      await executeWebhookFixture(
+        invocation(WEBHOOK_SYNC_ID, { sourceItemId: itemId }),
+        new AbortController().signal,
+        transport,
+      ),
+    ).toEqual({ status: 'succeeded' });
+    const prepare = calls.findIndex((call) => call.path.endsWith('/prepare')),
+      upload = calls.findIndex((call) => call.path === '/upload'),
+      finalize = calls.findIndex((call) => call.path.endsWith('/finalize')),
+      sync = calls.findIndex((call) => call.path.endsWith('/source-events'));
+    expect(prepare).toBeLessThan(upload);
+    expect(upload).toBeLessThan(finalize);
+    expect(finalize).toBeLessThan(sync);
+    expect(calls[sync]?.body.event.fields).toEqual({
+      [BASE_EVENT_FIELD_IDS.conversationTranscript]: [fileId],
+    });
+  });
+
   it('attests setup and writes generated signing material without disclosing it through ordinary settings or KV', async () => {
     const calls: { path: string; method: string; input: unknown }[] = [],
       secret = `whsec_${Buffer.alloc(32).toString('base64')}`;

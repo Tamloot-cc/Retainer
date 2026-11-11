@@ -13,6 +13,7 @@ import {
   Page,
   Panel,
   Row,
+  SelectMenu,
   Stack,
 } from '../ui/index.js';
 import { describeOperation } from './schema/schema-model.js';
@@ -269,10 +270,24 @@ function SettingFields({
                   }
                   onChange={(e) => onSecret(key, e.target.value)}
                 />
+              ) : definition.options ? (
+                <fieldset disabled={locked}>
+                  <SelectMenu
+                    label={definition.label}
+                    value={typeof values[key] === 'string' ? String(values[key]) : null}
+                    options={definition.options.map((value) => ({
+                      value,
+                      label: stateLabel(value),
+                    }))}
+                    onChange={(value) => onChange(key, value)}
+                    fill
+                  />
+                </fieldset>
               ) : definition.type === 'boolean' ? (
                 <Input
                   type="checkbox"
                   checked={values[key] === true}
+                  required={definition.consent}
                   disabled={locked}
                   onChange={(e) => onChange(key, e.target.checked)}
                 />
@@ -290,6 +305,7 @@ function SettingFields({
                   }
                 />
               )}
+              {definition.description ? <Muted small>{definition.description}</Muted> : null}
               {locked ? (
                 <Muted small>Use Reconnect to change credentials or account settings.</Muted>
               ) : null}
@@ -319,8 +335,8 @@ export function ExtensionSettings({
   const [values, setValues] = useState<Settings>(() => ({
     ...Object.fromEntries(
       Object.entries(release.manifest.settings)
-        .filter(([, def]) => def.type === 'boolean' && !def.secret)
-        .map(([key]) => [key, false]),
+        .filter(([, def]) => !def.secret && (def.default !== undefined || def.type === 'boolean'))
+        .map(([key, def]) => [key, def.default ?? false]),
     ),
     ...installation?.settings,
   }));
@@ -469,8 +485,11 @@ export function ExtensionSettings({
                   </Notice>
                 ) : null}
                 <p>
-                  People creation: {release.manifest.createPeople.replaceAll('_', ' ')}. When source
-                  content is deleted:{' '}
+                  People creation:{' '}
+                  {String(
+                    plan.input.settings.createPeople ?? release.manifest.createPeople,
+                  ).replaceAll('_', ' ')}
+                  . When source content is deleted:{' '}
                   {release.manifest.onSourceDelete === 'keep'
                     ? 'keep imported evidence'
                     : 'retract its evidence and derived claims'}

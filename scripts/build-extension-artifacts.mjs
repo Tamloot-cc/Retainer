@@ -193,6 +193,12 @@ if (development) {
       revisionOrder: 'integer',
     },
     settings: {
+      includeTranscript: {
+        type: 'boolean',
+        label: 'Include a fixture transcript',
+        required: false,
+        default: false,
+      },
       fixtureKey: {
         type: 'string',
         label: 'Disposable fixture producer key',

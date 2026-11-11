@@ -36,6 +36,13 @@ export function webhookIngress(app: Hono<AppEnv>, webhooks?: Webhooks) {
   });
 }
 export function webhookRuntime(app: Hono<AppEnv>, webhooks?: Webhooks) {
+  app.post('/extensions/:id/runtime/webhooks/retire', async (c) => {
+    if (!webhooks)
+      throw new AppError(503, 'webhook_unavailable', 'webhook ingress is not configured');
+    return c.json(
+      await webhooks.retire(c.get('caller'), idParam(c), await readBody(c, prepareWebhookInput)),
+    );
+  });
   app.post('/extensions/:id/runtime/webhooks/prepare', async (c) => {
     if (!webhooks)
       throw new AppError(503, 'webhook_unavailable', 'webhook ingress is not configured');

@@ -247,6 +247,15 @@ export class Webhooks {
       return this.address(bindingId, input.route);
     });
   }
+  /** Provider cleanup owns external deletion; this revokes only this installation's local route. */
+  async retire(caller: Caller, id: string, raw: z.input<typeof prepareWebhookInput>) {
+    const input = prepareWebhookInput.parse(raw);
+    return this.setup(caller, id, input.route, async (tx) => {
+      const retired =
+        await tx`update webhook_bindings set state='retired',updated_at=clock_timestamp() where installation_id=${id} and route=${input.route} and state<>'retired' returning id`;
+      return { retired: retired.length };
+    });
+  }
   async list(caller: Caller, id: string) {
     const run = caller.run;
     if (!run || run.installationId !== id) throw forbidden('live installation credential required');

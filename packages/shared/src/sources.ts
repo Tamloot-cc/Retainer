@@ -1,4 +1,4 @@
-/** Managed imports use stable event type UUIDs and permanent field keys. */
+/** Managed imports use stable event type/field UUIDs; permanent field keys remain accepted aliases. */
 export type SourceEventImport = {
   sourceItemId: string;
   providerRevision?: string;

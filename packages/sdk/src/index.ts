@@ -584,6 +584,29 @@ export class RetainerClient {
       input,
     );
   }
+  sourceConnection(installationId: string) {
+    return this.get<{
+      sourceAccountId: string;
+      provider: string;
+      identity: 'account' | 'global-resource';
+    }>(`/v1/extensions/${encodeURIComponent(installationId)}/source`);
+  }
+  reserveSourceItems(
+    installationId: string,
+    input: { sourceAccountId: string; externalIds: string[] },
+  ) {
+    return this.post<{
+      items: (
+        | {
+            externalId: string;
+            sourceItemId: string;
+            state: string;
+            providerRevision: string | null;
+          }
+        | { externalId: string; code: 'source_erased' | 'source_deleted' }
+      )[];
+    }>(`/v1/extensions/${encodeURIComponent(installationId)}/source-items/batch`, input);
+  }
   sourceItem(installationId: string, itemId: string) {
     return this.get<import('@retainer/shared').SourceItemView>(
       `/v1/extensions/${encodeURIComponent(installationId)}/source-items/${encodeURIComponent(itemId)}`,
@@ -773,6 +796,12 @@ export class RetainerClient {
   prepareExtensionWebhook(id: string, input: { route: string }) {
     return this.post<{ bindingId: string; url: string }>(
       `/v1/extensions/${encodeURIComponent(id)}/runtime/webhooks/prepare`,
+      input,
+    );
+  }
+  retireExtensionWebhook(id: string, input: { route: string }) {
+    return this.post<{ retired: number }>(
+      `/v1/extensions/${encodeURIComponent(id)}/runtime/webhooks/retire`,
       input,
     );
   }

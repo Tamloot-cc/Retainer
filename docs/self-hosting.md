@@ -321,3 +321,8 @@ before enabling its Compose overlay. The default catalog is empty.
 
 Optional [private file storage](files.md) uses a dedicated byte service and volume
 through `docker/compose.files.yml`, with signed transfers and durable erasure.
+
+For isolated functions that upload transcripts, add
+`docker/compose.extensions-files.yml` after the execution and file overlays.
+[Execution and file networking](extensions-execution.md#isolated-transcript-uploads-with-local-file-storage)
+explains the exact private byte-origin exception and its live verification command.

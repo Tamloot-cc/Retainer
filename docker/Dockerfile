@@ -8,8 +8,15 @@ WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs package.json tsconfig.base.json ./
 # Fetches the pnpm in packageManager here, so source changes don't refetch it.
 RUN corepack install
-COPY packages ./packages
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/extension/package.json ./packages/extension/
+COPY packages/sdk/package.json ./packages/sdk/
+COPY packages/mcp/package.json ./packages/mcp/
+COPY packages/runner/package.json ./packages/runner/
+COPY packages/server/package.json ./packages/server/
+COPY packages/web/package.json ./packages/web/
 RUN pnpm install --frozen-lockfile
+COPY packages ./packages
 RUN pnpm --filter @retainer/shared build && pnpm --filter @retainer/extension build && pnpm --filter @retainer/sdk build && pnpm --filter @retainer/web build && pnpm --filter @retainer/server build
 RUN pnpm --filter @retainer/server deploy --legacy --prod /out
 
