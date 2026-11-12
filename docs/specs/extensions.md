@@ -421,9 +421,14 @@ run remains an extension actor, with `triggeredBy` attribution separately stored
 Effective scopes are the intersection of registration ceiling, approved install,
 function needs and credential. The claim computes the function's share (its
 declared `scopes` within the installed grant) and the run token carries at most
-that; a read-only function's token cannot write. The token also binds the
+that, so a read-only function cannot write with its own token. Function scopes
+do not limit enqueueing: a read-only function may checkpoint a child `job` of
+another function in the same release, which then runs with that function's own
+scopes and secrets. Both are reviewed code from one release. The token also binds the
 claimed job's function ID, and admission matches it against the job row, so a
-credential cannot act for another function's job. Runtime grants have `read`/`write` only in v1;
+credential cannot act for another function's job. Rolling out function-bound
+tokens fails closed for about one token lifetime (five minutes): tokens, broker
+code and claims from the previous release are refused, so runs in flight retry. Runtime grants have `read`/`write` only in v1;
 schema changes use lifecycle control. Platform operations (KV, enqueue, files,
 connections) require explicit installation-bound capabilities. All writes still
 use assertions and existing precedence. Never accept Actor, workspace, generation
