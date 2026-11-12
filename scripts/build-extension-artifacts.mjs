@@ -33,6 +33,8 @@ for (const pkg of ['shared', 'extension', 'sdk', 'runner']) {
 }
 files.push(['pnpm-lock.yaml', hash(readFileSync(resolve(root, 'pnpm-lock.yaml')))]);
 const packageDigest = hash(stableJson(files.sort(([a], [b]) => a.localeCompare(b))));
+// Version changes identify releases, but do not change executable content.
+const contentDigest = ({ version: _version, ...content }) => hash(stableJson(content));
 const handlerDigest = hash(readFileSync(resolve(root, 'packages/runner/dist/registry.js')));
 const functionId = '07c46550-e0f9-4f2e-b469-4a90931f1970';
 const installId = 'c6b8b3eb-f68b-48af-b96f-a71352c2b2e6';
@@ -110,6 +112,7 @@ write('metadata.json', {
   version: manifest.version,
   development,
   releaseDigest,
+  contentDigest: contentDigest(manifest),
   handlerDigest,
   packageDigest,
   bundleId: 'fixture',
@@ -156,6 +159,7 @@ if (development) {
     commit,
     development,
     releaseDigest: verifierDigest,
+    contentDigest: contentDigest(verifierManifest),
     packageDigest,
     handlerDigest: verifierHandlerDigest,
     bundleId: 'verifier-fixture',
@@ -265,6 +269,7 @@ if (development) {
     commit,
     development,
     releaseDigest: sourceDigest,
+    contentDigest: contentDigest(sourceManifest),
     packageDigest,
     bundleId: 'webhook-fixture',
     functionIds: [sourceSetupId, sourceSyncId],
@@ -305,6 +310,7 @@ writeLastContact('metadata.json', {
   version: lastContact.version,
   development,
   releaseDigest: lastContactDigest,
+  contentDigest: contentDigest(lastContact),
   packageDigest,
   bundleId: 'last-contact',
   functionIds: lastContact.functions.map((fn) => fn.universalId),
@@ -344,6 +350,7 @@ writeGranola('metadata.json', {
   version: granola.version,
   development,
   releaseDigest: granolaDigest,
+  contentDigest: contentDigest(granola),
   packageDigest,
   bundleId: 'granola',
   functionIds: granola.functions
