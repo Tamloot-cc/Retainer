@@ -87,7 +87,26 @@ const trigger = z.discriminatedUnion('kind', [
     cron: z.string().min(9).max(100),
     timezone: z.literal('UTC'),
   }),
-  z.strictObject({ kind: z.literal('change'), objectId: uuid, fieldIds: z.array(uuid).max(200) }),
+  z.strictObject({
+    kind: z.literal('change'),
+    objectId: uuid,
+    fieldIds: z.array(uuid).max(200),
+    /**
+     * Whether a change to a related record (a link to or from it, or a merge
+     * into it) also fires the trigger. Absent means true, the first contract.
+     */
+    related: z.boolean().optional(),
+    /**
+     * Only these direct operations fire it. With `fieldIds`, `update` still
+     * needs a watched field and `create` always fires. Absent means every
+     * operation, the first contract.
+     */
+    operations: z
+      .array(z.enum(['create', 'update']))
+      .min(1)
+      .max(2)
+      .optional(),
+  }),
 ]);
 export const functionSchema = z.strictObject({
   universalId: uuid,
@@ -113,7 +132,38 @@ export const functionSchema = z.strictObject({
     .min(1)
     .max(2)
     .optional(),
+  /**
+   * The function may write the release's mapped outputs through the fill-only
+   * mapped write. Reviewed with the release, like `secrets` and `scopes`.
+   */
+  mappedWrite: z.literal(true).optional(),
 });
+/** Field types a mapped output can target: scalar values only in v1. */
+export const MAPPABLE_FIELD_TYPES = FIELD_TYPES.filter(
+  (type) => type !== 'relation' && type !== 'files',
+);
+export const outputKeySchema = z.string().regex(/^[a-z][a-z0-9_]{0,39}$/);
+export const mappingSchema = z.strictObject({
+  /** The object every output targets. */
+  objectId: uuid,
+  /** The field the handler reads to look values up; never a destination. */
+  lookup: z.strictObject({ fieldId: uuid, type: z.enum(FIELD_TYPES) }).optional(),
+  outputs: z
+    .array(
+      z.strictObject({
+        key: outputKeySchema,
+        label,
+        /** What the value means, in the provider's own definition; shown in review. */
+        description: z.string().min(1).max(2000),
+        types: z.array(z.enum(MAPPABLE_FIELD_TYPES)).min(1).max(MAPPABLE_FIELD_TYPES.length),
+        /** The field "Create field" adds, with a permanent universal ID. */
+        field: field.optional(),
+      }),
+    )
+    .min(1)
+    .max(32),
+});
+export type ExtensionMapping = z.infer<typeof mappingSchema>;
 export const viewSchema = z.strictObject({
   universalId: uuid,
   objectId: uuid,
@@ -214,6 +264,8 @@ export const manifestSchema = z.strictObject({
   schema: z.array(contributionSchema).max(500),
   views: z.array(viewSchema).max(100),
   functions: z.array(functionSchema).max(100),
+  /** Outputs an admin binds to fields at install; written only through the mapped write. */
+  mapping: mappingSchema.optional(),
 });
 export type ExtensionManifest = z.infer<typeof manifestSchema>;
 export type SchemaContribution = z.infer<typeof contributionSchema>;
@@ -276,6 +328,9 @@ function checkFunction(fn: z.infer<typeof functionSchema>) {
       throw new Error('unsupported_manifest: change handlers accept only a local changePosition');
     if (new Set(fn.trigger.fieldIds).size !== fn.trigger.fieldIds.length)
       throw new Error('unsupported_manifest: duplicate watched field');
+    const operations = fn.trigger.operations ?? [];
+    if (new Set(operations).size !== operations.length)
+      throw new Error('unsupported_manifest: duplicate trigger operation');
   }
   if (fn.trigger.kind === 'schedule') {
     const input = fn.inputSchema;
@@ -292,6 +347,34 @@ function checkFunction(fn: z.infer<typeof functionSchema>) {
       throw new Error('unsupported_manifest: schedule handlers accept only a UTC scheduledAt');
     nextOccurrence(fn.trigger.cron, new Date('2000-01-01T00:00:00Z'));
   }
+}
+/** The output mapping contract and the functions allowed to write it. */
+function checkMapping(manifest: ExtensionManifest): void {
+  const mapping = manifest.mapping;
+  const writers = manifest.functions.filter((fn) => fn.mappedWrite);
+  if (!mapping) {
+    if (writers.length) throw new Error('unsupported_manifest: mapped writes require a mapping');
+    return;
+  }
+  if (manifest.execution !== 'hosted' || !manifest.scopes.includes('write'))
+    throw new Error('unsupported_manifest: mappings require hosted write authority');
+  const keys = mapping.outputs.map((output) => output.key);
+  if (new Set(keys).size !== keys.length)
+    throw new Error('unsupported_manifest: duplicate mapping output');
+  for (const output of mapping.outputs) {
+    if (new Set(output.types).size !== output.types.length)
+      throw new Error('unsupported_manifest: duplicate output field type');
+    if (output.field && !output.types.includes(output.field.type as never))
+      throw new Error('unsupported_manifest: suggested field type must be an output type');
+    if (output.field && output.field.universalId === mapping.lookup?.fieldId)
+      throw new Error('unsupported_manifest: the lookup field cannot be an output');
+  }
+  for (const fn of writers)
+    if (
+      !['job', 'change', 'schedule'].includes(fn.trigger.kind) ||
+      !functionScopes(manifest, fn).includes('write')
+    )
+      throw new Error('unsupported_manifest: mapped writes require a runtime function with write');
 }
 type FunctionDefinition = ExtensionManifest['functions'][number];
 /** The secret settings a function's run may read or write (spec 8). */
@@ -339,6 +422,7 @@ export function defineExtension(value: unknown): ExtensionManifest {
         ? [s.definition.universalId, ...s.definition.fields.map((f) => f.universalId)]
         : [s.definition.universalId],
     ),
+    ...(manifest.mapping?.outputs.flatMap((o) => (o.field ? [o.field.universalId] : [])) ?? []),
   ];
   if (manifest.functions.some((fn) => fn.universalId === SYSTEM_LIFECYCLE_FUNCTION_ID))
     throw new Error('unsupported_manifest: reserved lifecycle function ID');
@@ -500,6 +584,7 @@ export function defineExtension(value: unknown): ExtensionManifest {
     if (new Set(view.fieldIds).size !== view.fieldIds.length)
       throw new Error('unsupported_manifest: duplicate view field');
   }
+  checkMapping(manifest);
   return manifest;
 }
 export function defineFunction(value: unknown) {

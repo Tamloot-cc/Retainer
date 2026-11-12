@@ -27,7 +27,12 @@ beforeAll(async () => {
     verificationKey: pair.publicKey,
   });
 });
-type Watch = { objectId: string; fieldIds: string[] };
+type Watch = {
+  objectId: string;
+  fieldIds: string[];
+  related?: boolean;
+  operations?: ('create' | 'update')[];
+};
 async function setup(count = 1, standalone = 0, watches?: (jobTitle: string) => Watch[]) {
   const initial = startTestApp(db),
     { workspace, keys } = await initial.setupWorkspace(
@@ -294,6 +299,54 @@ describe('transactional change dispatch with real Postgres', () => {
     expect(jobs).toHaveLength(2);
     expect(jobs.every((j) => Object.keys(j.input).join(',') === 'changePosition')).toBe(true);
     expect(await h.health(id)).toEqual({ connectionHealth: 'ok', lastError: null });
+  });
+  it('limits a trigger to its listed operations and skips related-record changes when asked', async () => {
+    const domain = 'bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641';
+    const h = await setup(1, 0, () => [
+      {
+        objectId: BASE_OBJECT_IDS.company,
+        fieldIds: [domain],
+        related: false,
+        operations: ['create', 'update'],
+      },
+      { objectId: BASE_OBJECT_IDS.company, fieldIds: [domain] },
+    ]);
+    const [narrow, legacy] = h.ids as [string, string];
+    const dispatch = async () => [
+      (await h.queue.dispatchChanges(h.workspace.id, narrow)).queued,
+      (await h.queue.dispatchChanges(h.workspace.id, legacy)).queued,
+    ];
+    const created = await h.app.request('/v1/objects/company/records', {
+      key: h.keys.admin,
+      body: { values: { name: 'Acme' } },
+    });
+    expect(created.status).toBe(201);
+    const company = created.body.id as string;
+    // A creation fires both, even with no domain yet.
+    expect(await dispatch()).toEqual([1, 1]);
+    const patch = (values: Record<string, unknown>) =>
+      h.app.request(`/v1/records/${company}`, {
+        key: h.keys.admin,
+        method: 'PATCH',
+        body: { values },
+      });
+    expect((await patch({ name: 'Acme Inc' })).status).toBe(200);
+    expect(await dispatch()).toEqual([0, 0]);
+    expect((await patch({ domain: 'https://acme.com' })).status).toBe(200);
+    expect(await dispatch()).toEqual([1, 1]);
+    // Linking a person reaches the company only through the related-record path.
+    const linked = await h.app.request('/v1/objects/person/records', {
+      key: h.keys.admin,
+      body: { values: { name: 'Ada', company } },
+    });
+    expect(linked.status).toBe(201);
+    expect(await dispatch()).toEqual([0, 1]);
+    const deleted = await h.app.request(`/v1/records/${company}`, {
+      key: h.keys.admin,
+      method: 'DELETE',
+    });
+    expect(deleted.status).toBeLessThan(300);
+    expect(await dispatch()).toEqual([0, 1]);
   });
   it('keeps UUID/key watches through a rename and ignores an unrelated effective field change', async () => {
     const h = await setup(),
