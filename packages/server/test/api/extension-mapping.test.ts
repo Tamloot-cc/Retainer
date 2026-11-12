@@ -97,6 +97,16 @@ const retyped = release(
     o.key === 'employee_count' ? { ...o, types: ['text'], field: undefined } : o,
   ),
 );
+// 1.3.0 looks companies up by the LinkedIn URL, which 1.0.0 maps an output to.
+const relookup = extensionFixture({
+  ...manifest,
+  version: '1.3.0',
+  mapping: {
+    ...(manifest.mapping as NonNullable<typeof manifest.mapping>),
+    lookup: { fieldId: LINKEDIN, type: 'links' },
+    outputs: outputs.map((o) => (o.key === 'linkedin_url' ? { ...o, field: undefined } : o)),
+  },
+});
 // A release whose mapping targets the hidden internal-note type.
 const hiddenTarget = extensionFixture({
   name: 'hidden-target',
@@ -112,6 +122,7 @@ const catalog = new ExtensionCatalog([
   { manifest: hiddenTarget, actorCeiling: 'agent', runtimeEnabled: true },
   { manifest: added, actorCeiling: 'agent', runtimeEnabled: true },
   { manifest: retyped, actorCeiling: 'agent', runtimeEnabled: true },
+  { manifest: relookup, actorCeiling: 'agent', runtimeEnabled: true },
   { manifest: plain, actorCeiling: 'integration' },
 ]);
 let tokens: RunTokens;
@@ -547,6 +558,36 @@ describe('reviewed output mappings', () => {
       code: 'upgrade_conflict',
       details: { output: 'employee_count', field: 'employeeCount' },
     });
+    const lookup = await upgrade('1.3.0');
+    expect(lookup.status).toBe(409);
+    expect(lookup.body.error).toMatchObject({
+      code: 'upgrade_conflict',
+      details: { output: 'linkedin_url' },
+    });
+  });
+
+  it('clears a broken-binding diagnostic when a remap repairs it', async () => {
+    const h = await setup();
+    const id = await h.install(full);
+    expect(
+      (await h.schema([{ op: 'delete_field', object: 'company', field: 'address' }])).status,
+    ).toBe(200);
+    // What a mapped write to the deleted target records (mapped-write.test.ts).
+    await db.owner`update extension_installations
+      set connection_health = 'degraded', last_error = 'schema_binding_conflict' where id = ${id}`;
+    const remap: Choices = { ...full, headquarters: { action: 'skip' } };
+    const extra = { installationId: id, mappingChange: true };
+    const plan = await h.preview(remap, h.keys.admin, extra);
+    expect(plan.status).toBe(200);
+    const committed = await h.commit(
+      `/v1/extensions/${id}/mapping`,
+      remap,
+      plan.body.planDigest,
+      h.keys.admin,
+      extra,
+    );
+    expect(committed.status).toBe(200);
+    expect(await h.detail(id)).toMatchObject({ connectionHealth: 'ok', lastError: null });
   });
 
   it('refuses a mapping that targets an internal memory type', async () => {

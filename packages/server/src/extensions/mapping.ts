@@ -240,6 +240,13 @@ function carry(
       });
       continue;
     }
+    if (binding.fieldUniversalId === mapping.lookup?.fieldId)
+      throw new AppError(
+        409,
+        'upgrade_conflict',
+        `output ${output.key} is mapped to the lookup field; remap it first`,
+        { output: output.key },
+      );
     const { status, field } = bindingStatus(object, output, binding.fieldUniversalId);
     if (status === 'incompatible')
       throw new AppError(

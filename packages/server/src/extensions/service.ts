@@ -912,7 +912,10 @@ export class Extensions {
     await saveMappingContributions(tx, caller.workspaceId, existing.id, schema, plan.mapped);
     const [row] = await tx<Row[]>`update extension_installations
       set mapping = ${tx.json(jsonValue(plan.mapped.stored))}, mapping_revision = mapping_revision + 1,
-        generation = generation + 1, updated_at = now()
+        generation = generation + 1, updated_at = now(),
+        -- A remap repairs a broken binding, so its diagnostic goes with it.
+        connection_health = case when last_error = 'schema_binding_conflict' then 'ok' else connection_health end,
+        last_error = case when last_error = 'schema_binding_conflict' then null else last_error end
       where id = ${existing.id} returning *`;
     if (!row) throw notFound('extension installation');
     await tx`update change_dispatch set generation = ${row.generation}
