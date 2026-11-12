@@ -16,6 +16,7 @@ export async function admitRun(
   const [installation] = await tx<
     {
       cleanup_live: boolean | null;
+      deleting: boolean;
       generation: number;
       state: string;
       release_digest: string;
@@ -23,9 +24,10 @@ export async function admitRun(
       granted_scopes: ('read' | 'write')[];
     }[]
   >`
-    select i.cleanup_deadline>clock_timestamp() as cleanup_live,i.generation,i.state,i.release_digest,i.granted_actor,i.granted_scopes
+    select i.cleanup_deadline>clock_timestamp() as cleanup_live,w.deletion_scheduled_at is not null as deleting,
+      i.generation,i.state,i.release_digest,i.granted_actor,i.granted_scopes
     from extension_installations i join workspaces w on w.id=i.workspace_id
-    where i.id=${run.installationId} and i.registration_id=${run.registrationId} and w.deletion_scheduled_at is null`;
+    where i.id=${run.installationId} and i.registration_id=${run.registrationId}`;
   if (
     !installation ||
     installation.generation !== run.generation ||
@@ -51,6 +53,9 @@ export async function admitRun(
     job.trigger_kind === 'uninstall' &&
     installation.state === 'uninstalling' &&
     installation.cleanup_live === true;
+  // A workspace being deleted runs only its extensions' cleanup (extensions spec 7).
+  if (installation.deleting && !cleanup)
+    throw new AppError(409, 'installation_disabled', 'the workspace is being deleted');
   if (!ordinary && !(purpose !== 'crm' && (setup || cleanup)))
     throw new AppError(409, 'installation_disabled', 'this lifecycle run cannot access CRM data');
   if (run.scopes.some((scope) => !installation.granted_scopes.includes(scope)))

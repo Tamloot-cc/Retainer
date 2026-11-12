@@ -61,6 +61,16 @@ neither disable the installation nor revoke its credentials.
 | R11 | **Head-of-line blocking.** The executor starts the next tick only after the whole batch finishes, so one 300-second run stalls dispatch.                                                                                                                                                                                     | `packages/server/src/index.ts:154-169`                                                                                             | Continuous semaphore-fed loop, as BullMQ workers do.                                                                                                                                                                                                                                                                                                                                           |
 | R12 | `admitRun` does not refuse a workspace scheduled for deletion and has no explicit write-scope check (the SQL copy does).                                                                                                                                                                                                     | `extension-runtime/admission.ts:26-27,57` vs `:91-92,116`; migration 0068                                                          | Match `admitInstallation`.                                                                                                                                                                                                                                                                                                                                                                     |
 
+Status of R7: done (Phase 2 item 2). Deleting a workspace uninstalls its
+extensions in the same transaction: hosted ones become `uninstalling` and the
+executor queues their cleanup (or uninstalls directly without an active
+executable), standalone ones become `uninstalled`; all lose their grant.
+Migration 0090 lets cleanup (and only cleanup) be discovered, reconciled,
+reaped and admitted to secrets while the workspace is being deleted, and the
+hard delete waits until each cleanup finishes or passes its 24-hour deadline
+(spec §7). Completion is recorded on the installations themselves; a missed
+deadline is logged when the workspace is removed.
+
 Suspected, to confirm with a test before fixing: Docker default address pools
 can run out with 32 per-run networks; schedules added by an upgrade fire
 immediately; consent activation revokes the working grant on a 200 response
@@ -99,7 +109,7 @@ migrations and runs one stream at a time.
 ### Phase 2 (sequential, migrations)
 
 1. `grant_generation` and in-place settings (§2). Done.
-2. R7 workspace-deletion cleanup.
+2. R7 workspace-deletion cleanup. Done.
 3. R9 coalescing and throttle.
 4. Label override layer and semver server ranges (§2).
 5. Function-scoped run tokens and secrets, `previousVersion` (§2).

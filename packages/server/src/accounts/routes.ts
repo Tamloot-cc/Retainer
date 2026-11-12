@@ -105,7 +105,15 @@ export function createAccountsApp(deps: AccountsDeps) {
   });
   account.delete('/workspaces/:id', async (c) => {
     const { name } = await readBody(c, named);
-    return c.json(await people.deleteWorkspace(sql, c.get('person'), idParam(c), name));
+    return c.json(
+      await people.deleteWorkspace(
+        sql,
+        c.get('person'),
+        idParam(c),
+        name,
+        deps.extensionCatalog?.runtime,
+      ),
+    );
   });
   account.get('/workspaces/:id/members', async (c) =>
     c.json(await people.listWorkspaceMembers(sql, c.get('person'), idParam(c))),

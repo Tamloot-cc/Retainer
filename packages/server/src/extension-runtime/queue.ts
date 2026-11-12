@@ -10,7 +10,7 @@ import { AppError, notFound } from '../errors.js';
 import { requestHash } from '../idempotency.js';
 import { getSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
-import { RuntimeAvailability, type RuntimeCatalog } from './availability.js';
+import { RuntimeAvailability, type RuntimeCatalog, resolveRelease } from './availability.js';
 import { failInstallation } from './lifecycle.js';
 import { cancelRuns, lockExtension, lockQueue } from './locks.js';
 
@@ -141,6 +141,11 @@ export class ExtensionQueue {
     readonly sql: Sql,
     catalog: RuntimeCatalog,
     private readonly limits = { queued: 10000, kvBytes: 1048576 },
+    /**
+     * Release digests with a deployed executable, when this process knows
+     * them (the executor). Without it every resolvable release counts as runnable.
+     */
+    private readonly activation?: ReadonlySet<string>,
   ) {
     this.availability = new RuntimeAvailability(catalog);
     this.runtimeIdentity = catalog.identity;
@@ -483,7 +488,10 @@ export class ExtensionQueue {
           if (installation.state !== 'uninstalling') return;
           const [expired] =
             await tx`select 1 where ${installation.cleanup_deadline}::timestamptz<=clock_timestamp()`;
-          if (!expired) return;
+          if (!expired) {
+            await this.startCleanup(tx, installation);
+            return;
+          }
           await cancelRuns(tx, installation.id);
           await tx`update extension_installations set state='uninstalled',generation=generation+1,
             last_error='cleanup_deadline_expired',updated_at=now() where id=${installation.id}`;
@@ -517,6 +525,32 @@ export class ExtensionQueue {
       }
     }
     return probes;
+  }
+
+  /**
+   * Queues cleanup for an installation a workspace deletion moved to
+   * `uninstalling` (workspace-deletion.ts), which queues none itself. As in
+   * an admin uninstall, a release that cannot run here (unresolvable, or
+   * hosted without an active executable) is uninstalled directly, recorded
+   * as `cleanup_unavailable`, and a standalone one is finished; neither is
+   * visited again. Under the installation lock (exclusive) and queue lock.
+   */
+  private async startCleanup(tx: Tx, installation: Installation) {
+    const [queued] = await tx`select 1 from extension_jobs where installation_id=${installation.id}
+      and generation=${installation.generation} and trigger_kind='uninstall' limit 1`;
+    if (queued) return;
+    const resolution = resolveRelease(this.availability.catalog, installation);
+    const runnable =
+      resolution.available &&
+      resolution.manifest.execution === 'hosted' &&
+      (!this.activation || this.activation.has(installation.release_digest));
+    if (runnable) {
+      await this.enqueueLifecycle(tx, installation.workspace_id, installation.id, 'uninstall');
+      return;
+    }
+    const standalone = resolution.available && resolution.manifest.execution === 'standalone';
+    await tx`update extension_installations set state='uninstalled',cleanup_deadline=null,
+      last_error=${standalone ? null : 'cleanup_unavailable'},updated_at=now() where id=${installation.id}`;
   }
 
   async claim(workspace: string, id: string, owner: string): Promise<ClaimedJob | null> {

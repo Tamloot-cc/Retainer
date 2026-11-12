@@ -324,6 +324,32 @@ one, through the same additive plan, so a release dropped by a server upgrade
 never strands an uninstalled installation. An uninstalled installation is not
 upgraded; it is reinstalled.
 
+Deleting a workspace uninstalls its extensions in the same transaction that
+schedules the deletion, as Twenty runs uninstall hooks before a workspace is
+removed. Every installation not already uninstalling or uninstalled gets an
+admin uninstall's semantics: runs are cancelled, `generation` and
+`grant_generation` advance, webhook bindings retire and secrets are retired.
+A standalone release becomes `uninstalled`; anything else becomes
+`uninstalling` with the usual 24-hour cleanup deadline. The deleting process
+does not know which executables are deployed, so the executor's maintenance
+pass queues the cleanup job. As in an admin uninstall, a release with no active
+executable, or one the executor cannot resolve, is uninstalled directly with
+`cleanup_unavailable` and not visited again. The deletion takes the workspace's
+schema lock before its row, as schema changes do. While a workspace is being deleted only cleanup runs: the
+due, maintenance and reconciliation functions keep its uninstall jobs and
+nothing else, and admission lets a cleanup run read the provider connection
+and nothing more. The hard delete waits until no installation is still within
+its cleanup deadline, then proceeds whether cleanup succeeded or not. The
+deadline stays 24 hours, not the 7-day grace period: it is shorter, so cleanup
+always finishes or expires before the grace period ends and deletion is never
+delayed in practice. A workspace deleted before this step existed is
+uninstalled by the first removal run instead, which waits for that cleanup (at
+most 24 more hours). A cleanup that missed its deadline is logged when the
+workspace is removed, and stays visible as `cleanup_deadline_expired` or
+`cleanup_unavailable` until then. Restoring a workspace within the grace
+period does not reinstall anything: installations stay uninstalling or
+uninstalled, their old credentials stay revoked, and an admin reinstalls them.
+
 Ordinary (non-secret, non-reconnect) settings update in place, like Twenty's
 application variables. The change cancels current runs and advances `generation`,
 but never disables the installation or advances `grant_generation`. A running
@@ -1064,7 +1090,9 @@ imports acquire existing privacy locks. Ordinary KV is restricted to operational
 cursors/IDs; documented source-linked state must be deleted during forget. Arbitrary
 personal-data caching in KV is unsupported. Account/workspace purge cleans every
 new table and file namespace; remote provider deletion is a separate product
-operation and must never be implied by local erasure.
+operation and must never be implied by local erasure. Workspace deletion runs
+each hosted installation's uninstall cleanup first (section 7), which
+unregisters provider webhooks and subscriptions but deletes no provider data.
 
 For managed sources, erasure expands to every revision of each affected item and
 staged participant ownership before collecting files. It removes provider IDs,
