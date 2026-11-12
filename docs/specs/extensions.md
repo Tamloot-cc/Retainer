@@ -870,8 +870,11 @@ paces requests, bounds response/transcript bytes and returns static diagnostic
 codes. It lists all accessible notes rather than using search. The initial
 created-time backfill uses daily windows with overlap; expired/invalid cursors
 restart a smaller window, down to a visible minimum-window failure. Incremental
-polls use `updated_after` from the last complete scan with overlap and deliberately
-omit `created_after`, so later edits to old imported notes are discoverable.
+polls use `updated_after` from two days before the last complete scan (Twenty's
+fixed catch-up lookback) and deliberately omit `created_after`, so later edits to
+old imported notes are discoverable. The watermark advances when enumeration
+completes even if some item imports failed; the two-day lookback lists those
+notes again, and revision dedupe skips live notes whose `updated_at` is unchanged.
 Cursors and recent cursor hashes remain in erased KV. Empty pages with `hasMore`
 continue; repeated cursors fail visibly. KV erasure starts a new random child
 identity epoch without weakening permanent source suppression.

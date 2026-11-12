@@ -301,14 +301,42 @@ describe('Granola durable enumeration', () => {
     expect(await executeGranola(run, signal(), transport)).toEqual({ status: 'succeeded' });
     const scan = checkpoint.children[0].input;
     expect(scan.mode).toBe('updated');
-    expect(scan.from).toBe('2026-11-01T11:59:00.000Z');
+    // A fixed two-day catch-up behind the watermark re-lists notes whose import failed after it.
+    expect(scan.from).toBe('2026-10-30T12:00:00.000Z');
+    const failedNote = 'not_failedimport01',
+      unchangedItem = randomUUID(),
+      failedItem = randomUUID();
     const pageTransport: typeof fetch = async (url, init) => {
       const u = new URL(String(url));
       if (u.origin === 'https://public-api.granola.ai') {
         expect(u.searchParams.has('created_after')).toBe(false);
         expect(u.searchParams.get('updated_after')).toBe(scan.from);
-        return response({ notes: [], hasMore: false, cursor: null });
+        return response({
+          notes: [
+            { id: noteId, updated_at: note().updated_at },
+            { id: failedNote, updated_at: '2026-10-31T09:00:00Z' },
+          ],
+          hasMore: false,
+          cursor: null,
+        });
       }
+      if (u.pathname.endsWith('/source-items/batch'))
+        return response({
+          items: [
+            {
+              externalId: noteId,
+              sourceItemId: unchangedItem,
+              state: 'live',
+              providerRevision: note().updated_at,
+            },
+            {
+              externalId: failedNote,
+              sourceItemId: failedItem,
+              state: 'reserved',
+              providerRevision: null,
+            },
+          ],
+        });
       if (u.pathname.includes('/runtime/kv/')) return response(null);
       if (u.pathname.endsWith('/source')) return response({ sourceAccountId: randomUUID() });
       if (u.pathname.endsWith('/source-sync'))
@@ -323,6 +351,14 @@ describe('Granola durable enumeration', () => {
       ),
     ).toEqual({ status: 'succeeded' });
     expect(checkpoint.scanComplete.through).toBe(scan.through);
+    // Re-listing an unchanged live note enqueues no import; only the failed one is retried.
+    expect(checkpoint.children).toEqual([
+      {
+        functionId: GRANOLA.sync,
+        input: { sourceItemId: failedItem },
+        dedupeKey: expect.any(String),
+      },
+    ]);
   });
 });
 
