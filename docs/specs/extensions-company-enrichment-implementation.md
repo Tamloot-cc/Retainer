@@ -254,17 +254,19 @@ Manifest essentials:
 - `requestedActor: 'agent'`, `scopes: ['read', 'write']`, catalog `actorCeiling: 'agent'`.
 - `settings`:
   - `apiKey`: a string with `secret`, `required` and `reconnect` set.
-  - `shareDomains`: a boolean with `consent: true`. Its label is "Send company domains to <provider> to look up company details".
+  - `shareDomains`: a boolean with `consent: true`. Its label is "Send company domains to Exa to look up company details". Its description says that Exa keeps queries unless the Exa team has Zero Data Retention, which only Exa Enterprise offers.
 - `schema: []`. All field additions come through the mapping.
 - `mapping.objectId` is the base Company object. `mapping.lookup` is `{ fieldId: bf87f1cd-…, type: 'links' }`.
-- `mapping.outputs` (the PRD's launch contract):
+- `mapping.outputs`. These replace the PRD's draft launch contract with what Exa returns as structured data (§4.3):
 
-| Key              | Types    | Suggested field                                                                                                                                                                                                  |
-| ---------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `employee_count` | `number` | `employeeCount`, "Employee Count". It reuses the sales template's universal ID `0dc97bea-8bbe-4bd8-9713-0c6628049268` (`templates/sales.ts:91`), so a sales workspace resolves **Create** to its existing field. |
-| `linkedin_url`   | `links`  | `linkedinUrl`, "LinkedIn URL". It gets a new universal ID.                                                                                                                                                       |
+| Key              | Types     | Exa source        | Suggested field                                                                                                                                                                                                  |
+| ---------------- | --------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `employee_count` | `number`  | `workforce.total` | `employeeCount`, "Employee Count". It reuses the sales template's universal ID `0dc97bea-8bbe-4bd8-9713-0c6628049268` (`templates/sales.ts:91`), so a sales workspace resolves **Create** to its existing field. |
+| `founded_year`   | `number`  | `foundedYear`     | `foundedYear`, "Founded". New universal ID.                                                                                                                                                                      |
+| `headquarters`   | `address` | `headquarters`    | `headquarters`, "Headquarters". New universal ID.                                                                                                                                                                |
 
-- The description of `employee_count` is the provider's own definition. For example, if the provider counts LinkedIn profiles, the description says so.
+- Each description quotes Exa's own definition. `employee_count` says "Exa's estimate of total employees", because Exa documents `workforce.total` as an estimate.
+- `linkedin_url` is dropped from v1. Exa's company entity has no LinkedIn URL. The only LinkedIn company URLs in Exa's API are inside Websets people work history, and that is not a lookup by domain. Guessing the profile from a search of `linkedin.com/company` pages could attach another company's profile, so it is listed under Later.
 - Functions:
 
 | Function | Trigger                                                                                             | Settings and scopes                                                     | Timeout |
@@ -283,33 +285,69 @@ Add `normalizeDomain(url): string | null` to `@retainer/shared`, so the runner a
 
 The lookup value is the field's `primary.url`. Additional links are ignored.
 
-### 4.3 `setup`
+### 4.3 Exa lookup
+
+Exa documents its API in the OpenAPI spec at `https://exa.ai/docs/exa-spec.yaml` (also `exa-labs/openapi-spec` on GitHub). The bundle uses one endpoint for lookups and one for the credential check. It sends the key as `x-api-key`, and its base is the fixed origin `https://api.exa.ai`.
+
+**Lookup.** `POST /search` with:
+
+```json
+{
+  "query": "<domain>",
+  "type": "auto",
+  "category": "company",
+  "includeDomains": ["<domain>"],
+  "numResults": 1
+}
+```
+
+- Exa's company search (January 2026) returns typed company data in each result's `entities`, as `SearchCompanyEntityOutput`. Its `properties` include `name`, `foundedYear`, `workforce.total`, and `headquarters` (`address`, `city`, `postalCode`, `country`). The adapter validates only the fields it reads, and they are all nullable.
+- **Match rule.** Search is not a keyed lookup, so the adapter accepts a result only when both of these hold. Otherwise the outcome is `no_match`, and nothing is written.
+  - `normalizeDomain(result.url)` equals the looked-up domain.
+  - The result carries an entity with `type: 'company'`.
+- **Value mapping.** Absent or null values are dropped one by one.
+  - `employee_count`: `round(workforce.total)`, from 0 to 10,000,000.
+  - `founded_year`: `foundedYear`, an integer from 1600 to the current year.
+  - `headquarters`: `{ street1: address, city, postcode: postalCode, country }`, keeping only non-empty strings. If nothing remains, the value is dropped.
+- **Cost and limits.** Auto search with up to 10 results costs $7 per 1,000 requests, so one lookup is $0.007. The default limit is 10 QPS per Exa team. A 429 carries `Retry-After` when Exa sends it. A team that is out of credits gets `402`.
+
+**Credential check.** `GET /v0/teams/me`, Exa's free "Get team info" call. Its documented base is the Websets server, `https://api.exa.ai/websets`. If staging shows that this call rejects a valid search-only key, setup falls back to the lookup request for `exa.ai`, which costs one search.
+
+Staging must confirm three things before the catalog entry ships:
+
+- `category: "company"` accepts `includeDomains`. The spec says only date filters are refused, and the agent skill says otherwise for `excludeDomains`.
+- `auto` returns `entities`.
+- The team-info path works.
+
+### 4.4 `setup`
 
 1. Read `apiKey` through the runtime secret endpoint.
-2. Call the provider's credential check.
+2. Call the credential check (§4.3).
    - A 401 or 403 means a bad key: return `failed` with `provider_unauthorized`. `failInstallation` marks it `needs_reconnect`.
+   - A 402 means the Exa team is out of credits: return `failed` with `provider_payment_required`, which marks the installation `degraded`. The admin adds credits in Exa and retries setup.
    - A network error, 429 or 5xx is transient: retry.
    - Success: return `succeeded`, which activates the installation.
 
 Setup reads no records, as lifecycle runs cannot.
 
-### 4.4 `enrich`
+### 4.5 `enrich`
 
-| Step | Action                                                                                                                                                                                                                                                          | Outcome                                                                  |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| 1    | `sdk.change(position)`. Skip any operation other than `create` or `update`.                                                                                                                                                                                     | `succeeded`, `not_applicable`                                            |
-| 2    | Read the installation mapping (§3.6).                                                                                                                                                                                                                           | Any output `missing`/`incompatible`: `failed`, `schema_binding_conflict` |
-| 3    | `sdk.record(recordId)`.                                                                                                                                                                                                                                         | Deleted or not found: `succeeded`, `record_gone`                         |
-| 4    | Normalize `domain.primary.url`.                                                                                                                                                                                                                                 | Empty or unusable: `succeeded`, `no_domain`. **No provider request.**    |
-| 5    | Pre-check whether every bound field is already set. This check is advisory, because the server decides.                                                                                                                                                         | `succeeded`, `nothing_to_fill`                                           |
-| 6    | Call the provider with the domain and key. The timeout is 15 s, the response cap 256 KiB, and the result must parse with the zod schema.                                                                                                                        | See below                                                                |
-| 7    | Adapt values: `employee_count` must be an integer from 0 to 10,000,000; `linkedin_url` becomes `{ primary: { url }, additional: [] }` when its host is `linkedin.com` or `*.linkedin.com` and the path starts with `/company/`. Drop invalid values one by one. | No usable values: `succeeded`, `no_usable_values`                        |
-| 8    | Call the mapped write with `recordId`, `lookup` = the normalized domain, and only the bound outputs.                                                                                                                                                            | `succeeded`, with `applied`, or `skipped` and its reason                 |
+| Step | Action                                                                                                                                           | Outcome                                                                  |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| 1    | `sdk.change(position)`. Skip any operation other than `create` or `update`.                                                                      | `succeeded`, `not_applicable`                                            |
+| 2    | Read the installation mapping (§3.6).                                                                                                            | Any output `missing`/`incompatible`: `failed`, `schema_binding_conflict` |
+| 3    | `sdk.record(recordId)`.                                                                                                                          | Deleted or not found: `succeeded`, `record_gone`                         |
+| 4    | Normalize `domain.primary.url`.                                                                                                                  | Empty or unusable: `succeeded`, `no_domain`. **No provider request.**    |
+| 5    | Pre-check whether every bound field is already set. This check is advisory, because the server decides.                                          | `succeeded`, `nothing_to_fill`                                           |
+| 6    | Run the Exa lookup (§4.3) with the domain and key. The timeout is 15 s, the response cap 256 KiB, and the result must parse with the zod schema. | See below                                                                |
+| 7    | Apply the match rule and value mapping (§4.3). Invalid values are dropped one by one.                                                            | No usable values: `succeeded`, `no_usable_values`                        |
+| 8    | Call the mapped write with `recordId`, `lookup` = the normalized domain, and only the bound outputs.                                             | `succeeded`, with `applied`, or `skipped` and its reason                 |
 
 Provider outcomes:
 
 - No match: `succeeded`, `no_match`.
 - 401 or 403: `failed`, `provider_unauthorized`, which marks the installation `needs_reconnect`.
+- 402: `failed`, `provider_payment_required`, which marks it `degraded`.
 - 429: `retry`, `provider_rate_limited`, passing `Retry-After` through as `retryAfterSeconds`. The cap is 3600 (`protocol.ts:24`).
 - 5xx, a network error or a timeout: `retry`, `provider_unavailable`.
 - A malformed body: `failed`, `provider_invalid_response`.
@@ -325,7 +363,7 @@ Enrichment writes change only mapped fields. Those aren't watched, and the chang
 - Add `enrichment` to `var.extension_bundles` and to the `EXTENSION_BUNDLES` workflow variable. Do not add it to `var.extension_webhook_bundles`, so it gets a job function only (512 MB, 310 s, no VPC).
 - The bundle publishes through the existing release pipeline. Terraform does not change per release.
 - Egress stays open, as for Granola. A manifest-declared egress allowlist is out of scope and is listed under Later.
-- Add the bundle to the hosted catalog only after a staging lookup with real provider credentials succeeds from beginning to end. Until a provider is chosen, the platform and handler are developed and tested against the fixture provider (§6). The fixture never enters a published catalog.
+- Add the bundle to the hosted catalog only after a staging lookup with a real Exa key succeeds from beginning to end and confirms the three points in §4.3. Until then, development and tests use a fake Exa origin (§6), which never enters a published catalog.
 
 ## 6. Tests
 
@@ -339,7 +377,7 @@ All tests that touch the database run against real Postgres with a fresh clone p
 | Trigger                            | Create with a domain queues a job. Create without a domain queues a job that makes zero provider requests. Adding a domain later queues a job. Updating a mapped field queues nothing. Linking a person to the company queues nothing (`related: false`).                                                                                                                                                                                                                                                           |
 | Mapped write races                 | Hold the fake provider while a competing request does each of these: fills a target, clears it explicitly, changes the domain, deletes the record, merges it away. The stale write never changes protected values or another company. Run the write and the competing change in parallel. Replay produces no new assertions.                                                                                                                                                                                        |
 | Failures                           | Partial results, no match, a malformed body, 429 with `Retry-After`, 5xx, invalid key at setup and at run time (`needs_reconnect`), disable during a run, admin retry. No secret, domain or body appears in diagnostics or logs.                                                                                                                                                                                                                                                                                    |
-| Bundle                             | Unit tests for the provider adapter and `normalizeDomain`. A `test-enrichment-bundle.mjs` like Granola's runs the built bundle through the isolated runner against a fake provider origin, injected the same way Granola's tests inject theirs.                                                                                                                                                                                                                                                                     |
+| Bundle                             | Unit tests for the provider adapter and `normalizeDomain`. A `test-enrichment-bundle.mjs` like Granola's runs the built bundle through the isolated runner against a fake Exa origin that serves recorded `SearchCompanyEntityOutput` responses, injected the same way Granola's tests inject theirs. Cases: an exact match, a result on another domain (`no_match`), null `workforce`, a partial headquarters, 402, and 429 with `Retry-After`.                                                                    |
 | Web                                | The Playwright flows in §3.8.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ## 7. Delivery sequence
@@ -348,10 +386,10 @@ All tests that touch the database run against real Postgres with a fresh clone p
 2. **Mapping preview, commit, persistence and edit** (§3.3, §3.6), plus the migration.
 3. **Mapped write** (§3.5) with the race tests.
 4. **Web mapping form, import and review** (§3.8).
-5. **Enrichment bundle against the fixture provider** (§4), plus local acceptance through Compose.
-6. **Provider selection and staging verification** with real credentials, then the hosted catalog entry (§5).
+5. **Enrichment bundle against a fake Exa origin** (§4), plus local acceptance through Compose.
+6. **Staging verification with a real Exa key** (§4.3), then the hosted catalog entry (§5).
 
-Steps 1–4 are platform work and can merge before a provider is chosen.
+Steps 1–4 are platform work and do not depend on Exa.
 
 ## 8. Later
 
@@ -359,10 +397,11 @@ Steps 1–4 are platform work and can merge before a provider is chosen.
 - A per-extension egress allowlist declared in the manifest.
 - A record ID in the run list, so admins can see which company a run touched.
 - `relation` and `files` outputs.
+- A LinkedIn URL output, once a provider offers it keyed by domain.
 - Protecting the base Company `domain` field.
 
-## 9. Open questions
+## 9. Decisions on the former open questions
 
-1. Which provider, which credential check, which response contract and which rate limits. The PRD leaves these open. The spec assumes one `GET` lookup by domain and an authenticated check endpoint.
-2. Should a binding conflict on one output fail the run, as specified here, or apply the healthy outputs and report the broken one? Failing keeps the admin's attention on the conflict; partial application fills more data.
-3. Should an `existing` destination exclude fields that another installation contributed, or that another installation's mapping already binds? The spec allows both, because writes still follow assertion precedence.
+1. **Provider:** Exa (§4.3).
+2. **One broken binding fails the run.** The run fails with `schema_binding_conflict` and the installation shows `degraded`, so the admin notices and remaps. Healthy outputs wait for that remap.
+3. **Shared destinations are allowed.** An `existing` destination may be a field that another installation contributed or also maps. The fill-only check and assertion precedence decide what is written.
