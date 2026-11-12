@@ -59,6 +59,37 @@ export const browserStandaloneManifest = manifestFixture({
   execution: 'standalone',
   scopes: ['read', 'write'],
 });
+/** A hosted release with an output mapping onto the base company object. */
+export const browserMappingManifest = manifestFixture({
+  universalId: 'c3b4d6e2-6a53-4b8c-9f1e-2d7a8b9c0e14',
+  name: 'browser-enrichment',
+  requestedActor: 'agent',
+  scopes: ['read', 'write'],
+  mapping: {
+    objectId: BASE_OBJECT_IDS.company,
+    lookup: { fieldId: 'bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641', type: 'links' },
+    outputs: [
+      {
+        key: 'employee_count',
+        label: 'Employee count',
+        description: 'Employees the provider finds, mostly from public profiles.',
+        types: ['number'],
+        field: {
+          universalId: '7d1a4c55-2b8e-4f0a-9c63-5e8f1a2b3c4d',
+          name: 'employeeCount',
+          label: 'Employee Count',
+          type: 'number',
+        },
+      },
+      {
+        key: 'headquarters',
+        label: 'Headquarters',
+        description: 'Headquarters city and country.',
+        types: ['address'],
+      },
+    ],
+  },
+});
 export const test = base.extend<
   {
     retainer: {
@@ -79,12 +110,14 @@ export const test = base.extend<
     standaloneFixture: boolean;
     fileStorage: boolean;
     sourceFixture: boolean;
+    mappingFixture: boolean;
   }
 >({
   extensionFixture: [false, { option: true, scope: 'worker' }],
   standaloneFixture: [false, { option: true, scope: 'worker' }],
   fileStorage: [false, { option: true, scope: 'worker' }],
   sourceFixture: [false, { option: true, scope: 'worker' }],
+  mappingFixture: [false, { option: true, scope: 'worker' }],
   retainer: async (
     {
       browserName: _browserName,
@@ -92,6 +125,7 @@ export const test = base.extend<
       standaloneFixture,
       fileStorage: withFiles,
       sourceFixture,
+      mappingFixture,
     },
     use,
   ) => {
@@ -187,9 +221,12 @@ export const test = base.extend<
             runTokens,
           }
         : {}),
-      ...(extensionFixture || standaloneFixture
+      ...(extensionFixture || standaloneFixture || mappingFixture
         ? {
             extensionCatalog: new ExtensionCatalog([
+              ...(mappingFixture
+                ? [{ manifest: browserMappingManifest, actorCeiling: 'agent' as const }]
+                : []),
               ...(extensionFixture
                 ? [{ manifest: browserExtensionManifest, actorCeiling: 'integration' as const }]
                 : []),
