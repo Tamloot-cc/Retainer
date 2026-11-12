@@ -631,7 +631,12 @@ in-flight verifications. Second, a durable per-binding budget that counts only
 failed verifications, so a provider's valid deliveries never use it up; it is
 read before verification and written only after a rejection. One source's junk
 stops in memory; failures from many sources can still exhaust the budget for
-the rest of the minute, and the provider retries.
+the rest of the minute, and the provider retries. The in-flight and failure cap
+per source is `floor(limit / 10)`, at least one. The source address is the
+server's view of the connection: behind a reverse proxy (as in a Compose
+deployment) or on Lambda without `CloudFront-Viewer-Address`, every request
+shares the proxy's address, and the limit degrades to one in-memory count per
+callback per process.
 A body not received within ten seconds returns 408; setup not yet active returns
 503 for normal deliveries. Only explicitly registered plain-text challenges can
 answer 200 without an ingestion job. Retain receipt dedupe for seven days; source
