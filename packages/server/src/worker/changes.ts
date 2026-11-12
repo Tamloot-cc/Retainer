@@ -5,6 +5,9 @@ import { failInstallation } from '../extension-runtime/lifecycle.js';
 import { lockExtension, lockQueue } from '../extension-runtime/locks.js';
 import type { ExtensionQueue } from '../extension-runtime/queue.js';
 
+/** Rows deleted per pruning transaction, so a writer waits for one batch at most. */
+export const PRUNE_BATCH = 1000;
+
 /** Durable cursors are in Postgres; the rotation hint merely keeps a full queue from starving peers. */
 export class ChangeMaintenance {
   private stopped = false;
@@ -18,6 +21,45 @@ export class ChangeMaintenance {
     private readonly discovery: Sql,
     private readonly queue?: ExtensionQueue,
   ) {}
+  /**
+   * Deletes expired feed rows in bounded transactions until none are left,
+   * the deadline passes or maintenance stops.
+   */
+  async pruneChanges(workspace: string, deadline = Number.POSITIVE_INFINITY, batch = PRUNE_BATCH) {
+    let removed = 0;
+    for (;;) {
+      if (this.stopped || Date.now() >= deadline) return removed;
+      const { count, done } = await this.pruneBatch(workspace, batch);
+      removed += count;
+      if (done) return removed;
+    }
+  }
+  /**
+   * One pruning transaction: it holds the counter lock only for its own
+   * batch, and advances `retained_after` to what it deleted together with
+   * the deletion, so feed readers and the dispatcher, which read without
+   * the lock, see the marker whenever they could have missed a row.
+   */
+  async pruneBatch(workspace: string, batch = PRUNE_BATCH) {
+    return inWorkspace(this.sql, workspace, async (tx) => {
+      const [counter] = await tx<
+        { position: string; retained_after: string }[]
+      >`select position::text,retained_after::text from change_counters where workspace_id=${workspace} for update`;
+      if (!counter) return { count: 0, done: true };
+      const floor = await retainedFloor(tx, workspace, counter.position, counter.retained_after);
+      if (BigInt(floor) <= BigInt(counter.retained_after)) return { count: 0, done: true };
+      const rows = await tx<{ position: string }[]>`delete from record_changes
+        where workspace_id=${workspace} and position in(select position from record_changes
+          where workspace_id=${workspace} and position<=${floor}::bigint order by position limit ${batch})
+        returning position::text`;
+      const full = rows.length >= batch,
+        reached = full
+          ? rows.reduce((max, row) => (BigInt(row.position) > max ? BigInt(row.position) : max), 0n)
+          : BigInt(floor);
+      await tx`update change_counters set retained_after=${reached.toString()}::bigint where workspace_id=${workspace}`;
+      return { count: rows.length, done: !full };
+    });
+  }
   async tick(options: { budgetMs?: number } = {}) {
     const budget = options.budgetMs ?? 240000;
     if (!Number.isInteger(budget) || budget < 1 || budget > 240000)
@@ -103,22 +145,9 @@ export class ChangeMaintenance {
             where checked_at<clock_timestamp()-interval '30 days' order by checked_at,installation_id limit 1000 for update skip locked)
             delete from extension_runtime_unavailable u using stale s where u.workspace_id=s.workspace_id
               and u.installation_id=s.installation_id and u.runtime_identity=s.runtime_identity returning u.installation_id`;
-          const removed = jobs.length + receipts.length + bindings.length + unavailable.length;
-          const [counter] = await tx<
-            { position: string; retained_after: string }[]
-          >`select position::text,retained_after::text from change_counters where workspace_id=${workspace} for update`;
-          if (!counter) return removed;
-          const floor = await retainedFloor(
-            tx,
-            workspace,
-            counter.position,
-            counter.retained_after,
-          );
-          const rows =
-            await tx`delete from record_changes where workspace_id=${workspace} and position<=${floor}::bigint returning position`;
-          await tx`update change_counters set retained_after=${floor}::bigint where workspace_id=${workspace}`;
-          return rows.length + removed;
+          return jobs.length + receipts.length + bindings.length + unavailable.length;
         });
+        pruned += await this.pruneChanges(workspace, deadline);
       } catch {
         failed++;
       }

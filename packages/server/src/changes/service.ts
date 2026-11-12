@@ -1,5 +1,5 @@
 import type { Caller } from '../caller.js';
-import { changeCursor, changePosition, retainedFloor } from '../db/change-cursor.js';
+import { changeCursor, changePosition, overtaken, retainedFloor } from '../db/change-cursor.js';
 import type { Sql } from '../db/client.js';
 import type { Tx } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
@@ -18,6 +18,35 @@ export type ChangeRow = {
   cause: string[];
   merged_into_id: string | null;
 };
+export type FeedHead = { current: string; after: string };
+
+/**
+ * The committed head and the reader's start, read without locking the
+ * counter, so a long feed read never blocks a writer. Writers allocate
+ * positions under the counter's row lock and commit while holding it, so
+ * every position at or below a committed head is already committed.
+ */
+export async function readHead(tx: Tx, workspace: string, cursor?: string): Promise<FeedHead> {
+  const [counter] = await tx<
+    { position: string; retained_after: string }[]
+  >`select position::text,retained_after::text from change_counters where workspace_id=${workspace}`;
+  const current = counter?.position ?? '0',
+    floor = await retainedFloor(tx, workspace, current, counter?.retained_after ?? '0');
+  const after = cursor !== undefined ? changePosition(workspace, cursor) : floor;
+  if (BigInt(after) < BigInt(floor)) throw cursorExpired();
+  if (BigInt(after) > BigInt(current))
+    throw new AppError(400, 'invalid_cursor', 'change cursor is ahead of this workspace feed');
+  return { current, after };
+}
+
+const cursorExpired = () =>
+  new AppError(
+    410,
+    'cursor_expired',
+    'change cursor expired; capture headCursor from a fresh feed page, rescan current records, then replay after that headCursor',
+    { rescan: true },
+  );
+
 export class Changes {
   constructor(private readonly sql: Sql) {}
   private async present(tx: Tx, schema: CompiledSchema, workspace: string, rows: ChangeRow[]) {
@@ -58,6 +87,23 @@ export class Changes {
         mergedIntoId: r.merged_into_id && visible.has(r.merged_into_id) ? r.merged_into_id : null,
       }));
     return changes;
+  }
+  /** One page after `head.after`, rechecked against retention once read. */
+  async page(tx: Tx, schema: CompiledSchema, workspace: string, head: FeedHead, limit: number) {
+    const { current, after } = head;
+    const raw = await tx<
+      ChangeRow[]
+    >`select position::text,record_id,object_type_id,operation,field_keys,related_record_ids,origin_installation_id,cause,merged_into_id
+    from record_changes where workspace_id=${workspace} and position>${after}::bigint and position<=${current}::bigint order by position limit ${limit + 1}`;
+    if (await overtaken(tx, workspace, after)) throw cursorExpired();
+    const page = raw.slice(0, limit),
+      changes = await this.present(tx, schema, workspace, page);
+    return {
+      changes,
+      nextCursor: changeCursor(workspace, page.at(-1)?.position ?? after),
+      headCursor: changeCursor(workspace, current),
+      hasMore: raw.length > limit,
+    };
   }
   async at(caller: Caller, position: string) {
     if (!/^[1-9][0-9]{0,18}$/.test(position) || BigInt(position) > 9223372036854775807n)
@@ -105,44 +151,8 @@ export class Changes {
       this.sql,
       caller,
       async (tx, schema) => {
-        // Shared through authorization and response assembly, so retention cannot silently overtake a reader.
-        const [counter] = await tx<
-          { position: string; retained_after: string }[]
-        >`select position::text,retained_after::text from change_counters where workspace_id=${caller.workspaceId} for share`;
-        const current = counter?.position ?? '0',
-          floor = await retainedFloor(
-            tx,
-            caller.workspaceId,
-            current,
-            counter?.retained_after ?? '0',
-          );
-        const after =
-          input.after !== undefined ? changePosition(caller.workspaceId, input.after) : floor;
-        if (BigInt(after) < BigInt(floor))
-          throw new AppError(
-            410,
-            'cursor_expired',
-            'change cursor expired; capture headCursor from a fresh feed page, rescan current records, then replay after that headCursor',
-            { rescan: true },
-          );
-        if (BigInt(after) > BigInt(current))
-          throw new AppError(
-            400,
-            'invalid_cursor',
-            'change cursor is ahead of this workspace feed',
-          );
-        const raw = await tx<
-          ChangeRow[]
-        >`select position::text,record_id,object_type_id,operation,field_keys,related_record_ids,origin_installation_id,cause,merged_into_id
-        from record_changes where workspace_id=${caller.workspaceId} and position>${after}::bigint and position<=${current}::bigint order by position limit ${limit + 1}`;
-        const page = raw.slice(0, limit),
-          changes = await this.present(tx, schema, caller.workspaceId, page);
-        return {
-          changes,
-          nextCursor: changeCursor(caller.workspaceId, page.at(-1)?.position ?? after),
-          headCursor: changeCursor(caller.workspaceId, current),
-          hasMore: raw.length > limit,
-        };
+        const head = await readHead(tx, caller.workspaceId, input.after);
+        return this.page(tx, schema, caller.workspaceId, head, limit);
       },
       { privacy: true, schema: true },
     );

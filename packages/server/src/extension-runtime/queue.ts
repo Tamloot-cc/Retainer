@@ -3,7 +3,7 @@ import { nextOccurrence, SYSTEM_LIFECYCLE_FUNCTION_ID } from '@retainer/extensio
 import { sourceScanSchema } from '@retainer/shared';
 import { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
-import { retainedFloor } from '../db/change-cursor.js';
+import { overtaken, retainedFloor } from '../db/change-cursor.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, jsonValue, lockPrivacyShared, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
@@ -305,6 +305,11 @@ export class ExtensionQueue {
         >`
         select position::text,record_id,object_type_id,operation,field_keys,cause,origin_installation_id,related_record_ids,merged_into_id from record_changes
         where position>${checkpoint.position}::bigint order by position limit ${limit}`;
+        if (await overtaken(tx, workspace, checkpoint.position))
+          throw conflict(
+            'cursor_expired',
+            'change dispatch history expired; rescan current records before restarting the trigger',
+          );
         const relatedIds = [
           ...new Set(
             rows.flatMap((row) => [

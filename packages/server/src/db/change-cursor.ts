@@ -23,7 +23,11 @@ export function changePosition(workspace: string, cursor: string) {
   }
 }
 
-/** Counter is already share/update locked. A fresh cursor starts at the retained prefix. */
+/**
+ * The last position older than retention, or `stored` when none is. A fresh
+ * cursor starts here. Readers call it without locking the counter and
+ * recheck `retained_after` after reading; the pruner calls it under the lock.
+ */
 export async function retainedFloor(tx: Tx, workspace: string, current: string, stored: string) {
   const [row] = await tx<
     { floor: string }[]
@@ -33,4 +37,17 @@ export async function retainedFloor(tx: Tx, workspace: string, current: string, 
       and created_at>=clock_timestamp()-interval '30 days'),${current}::bigint+1)`;
   const candidate = row?.floor ?? current;
   return BigInt(candidate) > BigInt(stored) ? candidate : stored;
+}
+
+/**
+ * Whether pruning has deleted rows after `after`. Pruning commits its
+ * deletions and `retained_after` together, so a reader that missed pruned
+ * rows always sees the advanced marker when it checks after reading: it
+ * refuses the page as expired rather than skip rows silently.
+ */
+export async function overtaken(tx: Tx, workspace: string, after: string) {
+  const [counter] = await tx<
+    { retained_after: string }[]
+  >`select retained_after::text from change_counters where workspace_id=${workspace}`;
+  return BigInt(after) < BigInt(counter?.retained_after ?? '0');
 }
