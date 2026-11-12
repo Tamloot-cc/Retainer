@@ -98,18 +98,22 @@ async function refuseContributedDeletes(tx: Tx, current: SchemaState, desired: S
     }
   }
   if (deleted.size === 0) return;
-  const managed = await tx<{ element_id: string }[]>`
-    select c.element_id from extension_contributions c
+  const managed = await tx<
+    { element_id: string; installation_id: string; registration_id: string }[]
+  >`
+    select c.element_id, c.installation_id, i.registration_id from extension_contributions c
     join extension_installations i on i.id = c.installation_id
     where c.kind in ('object', 'field') and i.state <> 'uninstalled'
-      and c.element_id = any(${[...deleted.keys()]}::uuid[])`;
+      and c.element_id = any(${[...deleted.keys()]}::uuid[])
+    order by c.element_id`;
   if (managed.length === 0) return;
   throw new SchemaValidationError(
-    managed.map(({ element_id }) => ({
-      path: deleted.get(element_id) ?? element_id,
+    managed.map((row) => ({
+      path: deleted.get(row.element_id) ?? row.element_id,
       message:
-        'belongs to an installed extension, so it cannot be deleted; ' +
-        'rename or relabel it instead, or uninstall the extension first',
+        `belongs to extension installation ${row.installation_id} ` +
+        `(registration ${row.registration_id}), so it cannot be deleted; ` +
+        'rename or relabel it instead, or uninstall that extension first',
     })),
   );
 }

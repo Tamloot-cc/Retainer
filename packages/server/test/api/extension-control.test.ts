@@ -8,6 +8,7 @@ import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { runSchemaChange } from '../../src/schema-engine/engine.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
@@ -118,7 +119,36 @@ const reV2 = extensionFixture({
   ],
 });
 
-const releases = [managed, managedNext, secretV1, secretV2, reV1, reV2];
+// A secret declared, dropped by the next release, then declared again.
+const tokenV1 = extensionFixture({ settings: { token: secretSetting } });
+const tokenV2 = extensionFixture({ ...tokenV1, version: '2.0.0', settings: {} });
+const tokenV3 = extensionFixture({ ...tokenV1, version: '3.0.0' });
+
+// An extension that adds a field to an object the workspace created.
+const projectId = randomUUID(),
+  budgetId = randomUUID();
+const addsToProject = extensionFixture({
+  schema: [
+    {
+      kind: 'field',
+      objectId: projectId,
+      definition: { universalId: budgetId, name: 'budget', label: 'Budget', type: 'number' },
+    },
+  ],
+});
+
+const releases = [
+  managed,
+  managedNext,
+  secretV1,
+  secretV2,
+  reV1,
+  reV2,
+  tokenV1,
+  tokenV2,
+  tokenV3,
+  addsToProject,
+];
 const catalog = new ExtensionCatalog(
   releases.map((manifest) => ({ manifest, actorCeiling: 'integration', runtimeEnabled: true })),
 );
@@ -239,7 +269,7 @@ describe('contributed schema (R6a)', () => {
     ]) {
       const refused = await deleteSchema(h.keys.admin, [operation]);
       expect(refused.status).toBe(422);
-      expect(refused.body.error.details.issues[0].message).toContain('uninstall the extension');
+      expect(refused.body.error.details.issues[0].message).toContain(`installation ${h.id}`);
     }
     // Renaming stays workspace-local.
     expect(
@@ -266,6 +296,67 @@ describe('contributed schema (R6a)', () => {
       (await deleteSchema(h.keys.admin, [{ op: 'delete_field', object: 'ticket', field: 'stage' }]))
         .status,
     ).toBe(200);
+  });
+  it('serializes deleting a workspace object against an install that adds a field to it', async () => {
+    for (let round = 0; round < 3; round++) {
+      const w = await workspace();
+      // Through the engine directly: the API strips client-chosen universal IDs.
+      const created = await inWorkspace(t.sql, w.workspace, (tx) =>
+        runSchemaChange(tx, {
+          workspaceId: w.workspace,
+          actor: { type: 'user', id: 'admin' },
+          scopes: ['admin'],
+          operations: [
+            {
+              op: 'create_object',
+              object: {
+                universalId: projectId,
+                nameSingular: 'initiative',
+                namePlural: 'initiatives',
+                labelSingular: 'Initiative',
+                labelPlural: 'Initiatives',
+                fields: [{ name: 'name', label: 'Name', type: 'text' }],
+                labelField: 'name',
+              },
+            },
+          ],
+        }),
+      );
+      expect(created.status).toBe('applied');
+      const input = {
+        registrationId: addsToProject.universalId,
+        version: addsToProject.version,
+        settings: {},
+      };
+      const preview = await t.request('/v1/extensions/preview', { key: w.keys.admin, body: input });
+      expect(preview.status).toBe(200);
+      const [install, remove] = await Promise.all([
+        t.request('/v1/extensions', {
+          key: w.keys.admin,
+          body: { ...input, planDigest: preview.body.planDigest },
+          headers: { 'Idempotency-Key': 'install' },
+        }),
+        deleteSchema(w.keys.admin, [{ op: 'delete_object', object: 'initiative' }]),
+      ]);
+      // Exactly one wins; the loser sees the winner's committed schema.
+      expect([install.status, remove.status].sort()).toEqual(
+        install.status === 201 ? [201, 422] : [200, 409],
+      );
+      const [object] =
+        await db.owner`select status from object_types where universal_id=${projectId} and workspace_id=${w.workspace}`;
+      const fields =
+        await db.owner`select status from fields where universal_id=${budgetId} and workspace_id=${w.workspace}`;
+      if (install.status === 201) {
+        expect(remove.body.error.details.issues[0].message).toContain(
+          `installation ${install.body.id}`,
+        );
+        expect(object?.status).toBe('active');
+        expect(fields.map((f) => f.status)).toEqual(['active']);
+      } else {
+        expect(object?.status).toBe('deprecated');
+        expect(fields).toHaveLength(0);
+      }
+    }
   });
   it('rechecks a proposed delete at approval time', async () => {
     const w = await installManaged();
@@ -319,11 +410,17 @@ describe('contributed schema (R6a)', () => {
 });
 
 describe('secrets added by an upgrade (R6b)', () => {
-  async function stage(key: string, name: string, version: string, installationId?: string) {
+  async function stage(
+    key: string,
+    name: string,
+    version: string,
+    installationId?: string,
+    registrationId = secretV1.universalId,
+  ) {
     const staged = await t.request('/v1/extensions/secrets', {
       key,
       body: {
-        registrationId: secretV1.universalId,
+        registrationId,
         version,
         name,
         value: `${name}-value`,
@@ -383,6 +480,49 @@ describe('secrets added by an upgrade (R6b)', () => {
     };
     expect((await broker.read({ ...identity, name: 'signingKey' })).value).toBe('signingKey-value');
     expect((await broker.read({ ...identity, name: 'apiKey' })).value).toBe('apiKey-value');
+  });
+  it('never treats a stored secret as new after a release dropped and re-declared it', async () => {
+    const w = await workspace();
+    const registrationId = tokenV1.universalId,
+      base = { registrationId, settings: {} };
+    const installed = await commit(
+      w.keys.admin,
+      {
+        ...base,
+        version: '1.0.0',
+        secretRefs: {
+          token: await stage(w.keys.admin, 'token', '1.0.0', undefined, registrationId),
+        },
+      },
+      'install',
+    );
+    expect(installed.status).toBe(201);
+    const id = installed.body.id as string;
+    const upgrade = (version: string, receipt: string, secretRefs?: Record<string, string>) =>
+      commit(
+        w.keys.admin,
+        { ...base, installationId: id, version, ...(secretRefs ? { secretRefs } : {}) },
+        receipt,
+        `/v1/extensions/${id}/upgrade`,
+      );
+    expect((await upgrade('2.0.0', 'v2')).status).toBe(200);
+    // v2 dropped the declaration, but the stored credential is still there.
+    const replace = await upgrade('3.0.0', 'v3-replace', {
+      token: await stage(w.keys.admin, 'token', '3.0.0', id, registrationId),
+    });
+    expect(replace.status).toBe(409);
+    expect(replace.body.error.code).toBe('connection_required');
+    const identity = {
+      workspaceId: w.workspace,
+      installationId: id,
+      registrationId,
+      name: 'token',
+    };
+    expect((await broker.read(identity)).value).toBe('token-value');
+    // Without a reference the stored secret satisfies the required setting.
+    const upgraded = await upgrade('3.0.0', 'v3');
+    expect(upgraded.status).toBe(200);
+    expect(upgraded.body).toMatchObject({ version: '3.0.0', secrets: { token: true } });
   });
 });
 

@@ -234,16 +234,6 @@ export class Extensions {
     });
   }
 
-  /** The installed release's setting definitions, or undefined when it can no longer load. */
-  private installedSettings(row: Row) {
-    try {
-      const release = this.catalog.get(row.registration_id, row.version);
-      return release.digest === row.release_digest ? release.manifest.settings : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
   private async plan(tx: Tx, caller: Caller, input: ExtensionInstallInput) {
     const release = this.catalog.get(input.registrationId, input.version);
     const manifest = release.manifest;
@@ -312,15 +302,19 @@ export class Extensions {
         'a pending secret reference expired or was already used',
       );
     const draftId = existing?.id ?? pending[0]?.draft_installation_id;
-    // An upgrade may supply a secret its installed release does not declare: no
-    // credential is being replaced, so it needs no reconnect. Existing secrets do.
+    const [stored] = existing
+      ? await tx<
+          { names: string[] }[]
+        >`select retainer_extension_secret_names(${existing.id}::uuid) as names`
+      : [];
+    // An upgrade may supply a secret the installation does not store: no
+    // credential is being replaced, so it needs no reconnect. A stored one,
+    // even if an intermediate release dropped its declaration, still does.
     const newSecrets = new Set<string>();
-    if (existing && input.installationId && existing.version !== input.version) {
-      const installed = this.installedSettings(existing);
+    if (existing && input.installationId && existing.version !== input.version)
       for (const [name, definition] of Object.entries(manifest.settings))
-        if (definition.secret && !definition.generated && installed && !installed[name]?.secret)
+        if (definition.secret && !definition.generated && !stored?.names.includes(name))
           newSecrets.add(name);
-    }
     for (const [name, id] of Object.entries(refs)) {
       const definition = manifest.settings[name],
         staged = pending.find((p) => p.id === id);
@@ -344,11 +338,6 @@ export class Extensions {
       )
         throw conflict('connection_required', 'credential changes require reconnect');
     }
-    const [stored] = existing
-      ? await tx<
-          { names: string[] }[]
-        >`select retainer_extension_secret_names(${existing.id}::uuid) as names`
-      : [];
     for (const [name, definition] of Object.entries(manifest.settings))
       if (
         definition.secret &&
