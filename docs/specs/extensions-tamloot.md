@@ -129,8 +129,8 @@ retracted. Syncing both in one job, revision first, avoids that.
 - `occurredAt: session_date`; `title`; `summary`: the visible notes as
   Markdown, in position order, AI notes and the user's own notes alike, with
   no length cap.
-- `medium`: `meeting` for conference and in-person sessions, `call` for
-  phone, `message` for WhatsApp. When the source is unknown it is left empty.
+- `medium`: from Tamloot's session `kind`: `meeting` and `in_person` become
+  `meeting`, `call` stays `call`. A `null` kind leaves it empty.
 - `participants`: emails of linked contacts and calendar attendees, without
   the owner's own email. Unmatched participants follow the install's
   create-people policy.
