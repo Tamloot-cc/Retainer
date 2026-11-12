@@ -1191,6 +1191,8 @@ invokes qualified immutable Lambda versions using the default AWS credential cha
 The AWS Lambda SDK loads lazily only for Lambda calls and is absent from the MIT
 runner dependency graph. Job and verifier targets must match their separate,
 non-overlapping configured ARN prefixes, never a manifest/request-selected driver.
+Each process receives only its own role's prefix; ops receives both when it probes
+both job and verifier targets. A driver requires its prefix at construction.
 Hosted jobs run outside the VPC; verifiers have no network egress. The runner's
 Lambda entry point fixes `job` or `verify` mode from function configuration and
 reads code-owned `release.json` when the Compose release environment is absent.

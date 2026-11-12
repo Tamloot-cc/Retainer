@@ -271,9 +271,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (config.RETAINER_EXTENSION_DRIVER === 'lambda') {
     const job = config.RETAINER_EXTENSION_LAMBDA_PREFIX;
     const verifier = config.RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX;
-    if (!job || !verifier)
-      throw new Error('Lambda extension driver requires job and verifier prefixes');
-    if (job.startsWith(verifier) || verifier.startsWith(job))
+    if (job && verifier && (job.startsWith(verifier) || verifier.startsWith(job)))
       throw new Error('Lambda job and verifier prefixes must not overlap');
   }
   // Operator-owned immutable release files avoid large manifests in small environment blocks.

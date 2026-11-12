@@ -113,7 +113,7 @@ export async function extensionServices(
         for (const fn of release.manifest.functions) {
           if (['route', 'serverRoute'].includes(fn.trigger.kind)) {
             if (
-              !verifierConfigured ||
+              (!lambda && !verifierConfigured) ||
               !release.manifest.webhooks?.some((hook) => hook.verifierFunctionId === fn.universalId)
             )
               throw new Error('verifier runtime is unavailable');
@@ -126,13 +126,12 @@ export async function extensionServices(
             release.digest,
             fn.universalId,
           );
-          if (lambda)
-            assertLambdaTarget(
-              executable.driverTarget,
-              (['route', 'serverRoute'].includes(fn.trigger.kind)
-                ? config.RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX
-                : config.RETAINER_EXTENSION_LAMBDA_PREFIX) as string,
-            );
+          const prefix = ['route', 'serverRoute'].includes(fn.trigger.kind)
+            ? config.RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX
+            : config.RETAINER_EXTENSION_LAMBDA_PREFIX;
+          // Each Lambda role only knows its own invocation namespace. Other-role
+          // executables are still required and checked against the pinned catalog.
+          if (lambda && prefix) assertLambdaTarget(executable.driverTarget, prefix);
           if (
             executable.handlerDigest !== fn.handlerDigest ||
             executable.packageDigest !== release.manifest.packageDigest
@@ -167,7 +166,7 @@ export async function extensionServices(
         ? new ChangeMaintenance(options.workerSql, discovery, changeQueue)
         : undefined;
     let webhooks: Webhooks | undefined;
-    if (options.ingressSql && verifierConfigured) {
+    if (options.ingressSql && (lambda || verifierConfigured)) {
       if (
         !broker ||
         (!lambda && !config.RETAINER_VERIFIER_TOKEN) ||
@@ -185,7 +184,7 @@ export async function extensionServices(
         broker,
         registry: new ExecutionRegistry(entries as Executable[]),
         driver: lambda
-          ? new LambdaVerifier(config.RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX as string)
+          ? new LambdaVerifier(config.RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX)
           : new LauncherVerifier(
               config.RETAINER_EXTENSION_VERIFIER_ORIGIN as string,
               config.RETAINER_VERIFIER_TOKEN as string,
@@ -217,7 +216,7 @@ export async function extensionServices(
         registry,
         tokens,
         driver: lambda
-          ? new LambdaDriver(config.RETAINER_EXTENSION_LAMBDA_PREFIX as string)
+          ? new LambdaDriver(config.RETAINER_EXTENSION_LAMBDA_PREFIX)
           : new LauncherDriver(
               config.RETAINER_EXTENSION_LAUNCHER_ORIGIN as string,
               config.RETAINER_LAUNCHER_TOKEN as string,

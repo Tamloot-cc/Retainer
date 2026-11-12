@@ -149,7 +149,7 @@ describe('operator-selected Lambda drivers', () => {
     abort.abort();
     expect(transport.mock.calls.at(-1)?.[2].aborted).toBe(true);
   });
-  it('rejects missing or overlapping role prefixes and invalid concurrency', () => {
+  it('loads per-role prefixes independently and rejects overlap or invalid concurrency', () => {
     const env = {
       DATABASE_URL: 'postgres://localhost/test',
       RETAINER_EXTENSION_DRIVER: 'lambda',
@@ -157,7 +157,21 @@ describe('operator-selected Lambda drivers', () => {
       RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX: verifierPrefix,
     };
     expect(loadConfig(env).RETAINER_EXECUTOR_CONCURRENCY).toBe(8);
-    for (const verifier of ['', prefix, `${prefix}verify-`])
+    for (const job of ['', prefix])
+      for (const verifier of ['', verifierPrefix])
+        expect(() =>
+          loadConfig({
+            ...env,
+            RETAINER_EXTENSION_LAMBDA_PREFIX: job,
+            RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX: verifier,
+          }),
+        ).not.toThrow();
+    for (const Driver of [LambdaDriver, LambdaVerifier]) {
+      for (const missing of [undefined, '', 'invalid-sensitive-configuration']) {
+        expect(() => new Driver(missing)).toThrow(/^invalid extension runtime configuration$/);
+      }
+    }
+    for (const verifier of [prefix, `${prefix}verify-`])
       expect(() =>
         loadConfig({ ...env, RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX: verifier }),
       ).toThrow();

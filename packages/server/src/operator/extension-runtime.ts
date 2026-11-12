@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { Config } from '../config.js';
 import { parseExtensionCatalog } from '../extensions/catalog.js';
 import { type Executable, ExecutionRegistry } from '../worker/extensions.js';
-import { LambdaDriver, type LambdaInvoke } from '../worker/lambda-driver.js';
+import { LambdaDriver, type LambdaInvoke, LambdaVerifier } from '../worker/lambda-driver.js';
 
 /** Targets and expected identities come exclusively from packaged, operator-owned registries. */
 export async function lambdaRuntimeCompatible(config: Config, invoke?: LambdaInvoke) {
@@ -39,11 +39,11 @@ export async function lambdaRuntimeCompatible(config: Config, invoke?: LambdaInv
       expected.mode === 'job'
         ? config.RETAINER_EXTENSION_LAMBDA_PREFIX
         : config.RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX;
-    if (!prefix) return false;
-    const response = await new LambdaDriver(prefix, invoke).health(
-      target,
-      AbortSignal.timeout(10000),
-    );
+    const driver =
+      expected.mode === 'job'
+        ? new LambdaDriver(prefix, invoke)
+        : new LambdaVerifier(prefix, invoke);
+    const response = await driver.health(target, AbortSignal.timeout(10000));
     if (
       !z
         .strictObject({

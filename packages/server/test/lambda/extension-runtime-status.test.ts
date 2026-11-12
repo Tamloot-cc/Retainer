@@ -131,6 +131,27 @@ test('Lambda status checks every distinct packaged target and its release and ro
   expect(aws.send.mock.calls.map(([command]) => command.input.FunctionName).sort()).toEqual(
     [...new Set(entries.map((entry) => entry.driverTarget))].sort(),
   );
+  for (const mode of ['job', 'verify'] as const) {
+    const prefixKey =
+      mode === 'job'
+        ? 'RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX'
+        : 'RETAINER_EXTENSION_LAMBDA_PREFIX';
+    const roleEntries = entries.filter((entry) =>
+      entry.driverTarget.startsWith(mode === 'job' ? prefix : verifierPrefix),
+    );
+    respond();
+    expect(
+      await createOpsHandler({
+        ...config,
+        [prefixKey]: undefined,
+        RETAINER_EXTENSION_EXECUTABLES: JSON.stringify(roleEntries),
+      })(command),
+    ).toEqual(result);
+    expect(await createOpsHandler({ ...config, [prefixKey]: undefined })(command)).toEqual({
+      ...result,
+      compatible: false,
+    });
+  }
   for (const patch of [
     { releaseDigest: 'f'.repeat(64) },
     { mode: 'both' },

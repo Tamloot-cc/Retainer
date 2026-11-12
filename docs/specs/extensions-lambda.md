@@ -73,7 +73,15 @@ Add `worker/lambda-driver.ts` with `LambdaDriver implements ExecutionDriver` and
 Configuration (`config.ts`, `extension-control/configuration.ts`):
 
 - `RETAINER_EXTENSION_DRIVER=launcher|lambda`, default `launcher`.
-- `lambda` requires `RETAINER_EXTENSION_LAMBDA_PREFIX` and does **not** require
+- Both Lambda prefixes are optional at config load. The executor receives only
+  `RETAINER_EXTENSION_LAMBDA_PREFIX`; webhook ingress receives only
+  `RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX`; ops receives both when probing both
+  job and verifier targets. Require the relevant prefix when constructing each
+  driver, and fail with the existing redacted configuration error if it is absent.
+  Catalog readiness still checks the complete pinned executable map without
+  requiring the other role's invocation prefix. Ops health requires a prefix only
+  for each kind of target it actually probes.
+- `lambda` does **not** require
   `RETAINER_EXTENSION_LAUNCHER_ORIGIN`, `RETAINER_LAUNCHER_TOKEN`,
   `RETAINER_EXTENSION_VERIFIER_ORIGIN` or `RETAINER_VERIFIER_TOKEN`. `launcher`
   keeps today's requirements exactly.
@@ -81,9 +89,10 @@ Configuration (`config.ts`, `extension-control/configuration.ts`):
   invoke job functions, the ingress function only verifier functions. The
   configuration takes one prefix per role
   (`RETAINER_EXTENSION_LAMBDA_PREFIX` for jobs,
-  `RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX` for verifiers) and refuses
-  prefixes where one starts with the other, the way it refuses equal launcher
-  and verifier tokens today.
+  `RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX` for verifiers). When both are present,
+  refuse prefixes where either starts with the other, the way it refuses equal
+  launcher and verifier tokens today. A role with just its own prefix does not
+  require or receive the other role's prefix.
 
 ### 3.2 Runner Lambda entry point (runner, MIT)
 

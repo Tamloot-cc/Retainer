@@ -28,10 +28,12 @@ const invokeLambda: LambdaInvoke = async (target, payload, signal) => {
   return (await client)(target, payload, signal);
 };
 
+const prefixPattern = /^arn:aws:lambda:[a-z0-9-]+:\d{12}:function:[A-Za-z0-9_-]{1,64}$/;
+
 /** Only immutable numeric function versions from the role's operator-owned namespace. */
 export function assertLambdaTarget(target: string, prefix: string) {
   if (
-    !/^arn:aws:lambda:[a-z0-9-]+:\d{12}:function:[A-Za-z0-9_-]{1,64}$/.test(prefix) ||
+    !prefixPattern.test(prefix) ||
     !/^arn:aws:lambda:[a-z0-9-]+:\d{12}:function:[A-Za-z0-9_-]{1,64}:[1-9]\d*$/.test(target) ||
     !target.slice(0, target.lastIndexOf(':')).startsWith(prefix)
   )
@@ -39,10 +41,15 @@ export function assertLambdaTarget(target: string, prefix: string) {
 }
 
 export class LambdaDriver implements ExecutionDriver {
+  private readonly prefix: string;
   constructor(
-    private readonly prefix: string,
+    prefix: string | undefined,
     private readonly invokeFunction: LambdaInvoke = invokeLambda,
-  ) {}
+  ) {
+    if (!prefix || !prefixPattern.test(prefix))
+      throw new Error('invalid extension runtime configuration');
+    this.prefix = prefix;
+  }
   protected async request(target: string, input: unknown, signal: AbortSignal, cap: number) {
     assertLambdaTarget(target, this.prefix);
     const result = await this.invokeFunction(target, Buffer.from(JSON.stringify(input)), signal);

@@ -219,7 +219,7 @@ describe('operator runtime configuration and dedicated key-mode control', () => 
       runtimeVersion: 'node24',
       driverTarget: `${fn.trigger.kind === 'route' ? verifierPrefix : prefix}bundle:1`,
     }));
-    const config = loadConfig({
+    const environment = {
       DATABASE_URL: db.url,
       RETAINER_EXTENSION_DRIVER: 'lambda',
       RETAINER_EXTENSION_LAMBDA_PREFIX: prefix,
@@ -233,7 +233,8 @@ describe('operator runtime configuration and dedicated key-mode control', () => 
       }),
       RETAINER_EXTENSION_CATALOG: JSON.stringify(releases),
       RETAINER_EXTENSION_EXECUTABLES: JSON.stringify(entries),
-    });
+    };
+    const config = loadConfig(environment);
     const services = await extensionServices(config, {
       broker: true,
       workerSql: t.sql,
@@ -245,6 +246,44 @@ describe('operator runtime configuration and dedicated key-mode control', () => 
       expect(services.activationReady.has(digest as string)).toBe(true);
     } finally {
       await services.close();
+    }
+    const executorOnly = await extensionServices(
+      loadConfig({
+        ...environment,
+        RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX: undefined,
+        RETAINER_EXTENSION_SECRET_KEYS: undefined,
+      }),
+      { workerSql: t.sql },
+    );
+    try {
+      expect(executorOnly.executor).toBeDefined();
+      expect(executorOnly.webhooks).toBeUndefined();
+      expect(executorOnly.activationReady.has(digest as string)).toBe(true);
+    } finally {
+      await executorOnly.close();
+    }
+    const ingressOnly = await extensionServices(
+      loadConfig({
+        ...environment,
+        RETAINER_EXTENSION_LAMBDA_PREFIX: undefined,
+        RETAINER_EXTENSION_RUN_PRIVATE_KEY: undefined,
+      }),
+      { broker: true, ingressSql: t.sql },
+    );
+    try {
+      expect(ingressOnly.executor).toBeUndefined();
+      expect(ingressOnly.webhooks).toBeDefined();
+      expect(ingressOnly.activationReady.has(digest as string)).toBe(true);
+    } finally {
+      await ingressOnly.close();
+    }
+    for (const [prefix, options] of [
+      ['RETAINER_EXTENSION_LAMBDA_PREFIX', { workerSql: t.sql }],
+      ['RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX', { broker: true, ingressSql: t.sql }],
+    ] as const) {
+      await expect(
+        extensionServices(loadConfig({ ...environment, [prefix]: undefined }), options),
+      ).rejects.toThrow('invalid extension runtime configuration');
     }
     for (const index of [0, entries.length - 1]) {
       const wrong = entries.map((entry, i) =>
