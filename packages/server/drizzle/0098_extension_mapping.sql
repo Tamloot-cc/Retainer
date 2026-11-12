@@ -1,0 +1,2 @@
+ALTER TABLE "extension_installations" ADD COLUMN "mapping" jsonb DEFAULT '{"outputs":{}}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "extension_installations" ADD COLUMN "mapping_revision" integer DEFAULT 0 NOT NULL;

@@ -720,6 +720,19 @@ export class RetainerClient {
       idempotencyKey,
     );
   }
+  /** Commits a reviewed mapping change: preview with `installationId` and `mappingChange: true` first. */
+  changeExtensionMapping(
+    id: string,
+    input: ExtensionInstallInput & { planDigest: string },
+    idempotencyKey: string,
+  ) {
+    return this.post<ExtensionInstallation>(
+      `/v1/extensions/${encodeURIComponent(id)}/mapping`,
+      { ...input, installationId: id, mappingChange: true },
+      undefined,
+      idempotencyKey,
+    );
+  }
   reconnectExtension(
     id: string,
     input: ExtensionInstallInput & { planDigest: string },

@@ -164,6 +164,32 @@ export const mappingSchema = z.strictObject({
     .max(32),
 });
 export type ExtensionMapping = z.infer<typeof mappingSchema>;
+/**
+ * One admin choice per declared output: bind an existing field by its current
+ * API name, create the output's suggested field, or skip it. This is also the
+ * draft an external agent proposes; only a human admin approves it.
+ */
+export const mappingChoiceSchema = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('existing'), field: z.string().min(1).max(100) }),
+  z.strictObject({ action: z.literal('create') }),
+  z.strictObject({ action: z.literal('skip') }),
+]);
+export const mappingChoicesSchema = z.record(outputKeySchema, mappingChoiceSchema);
+export type ExtensionMappingChoice = z.infer<typeof mappingChoiceSchema>;
+export type ExtensionMappingChoices = z.infer<typeof mappingChoicesSchema>;
+/** A resolved output binding, as preview and installation reads present it. */
+export type ExtensionMappingBinding = {
+  output: string;
+  action: 'existing' | 'create' | 'skip';
+  /** The target by its current API name; absent when skipped or the field is gone. */
+  field?: { name: string; label: string; type: string };
+  /** Created by this installation, so the extension owns it while installed. */
+  contribution: boolean;
+  /** `missing` or `incompatible` means the output cannot be written until remapped. */
+  status: 'ok' | 'missing' | 'incompatible';
+};
+/** The approved mapping of an installation. */
+export type ExtensionMappingView = { revision: number; outputs: ExtensionMappingBinding[] };
 export const viewSchema = z.strictObject({
   universalId: uuid,
   objectId: uuid,
@@ -369,6 +395,10 @@ function checkMapping(manifest: ExtensionManifest): void {
     if (output.field && output.field.universalId === mapping.lookup?.fieldId)
       throw new Error('unsupported_manifest: the lookup field cannot be an output');
   }
+  // A mapping edit advances the generation without re-running setup, which
+  // source and webhook bindings (bound per generation) would not survive.
+  if (manifest.source || manifest.webhooks?.length)
+    throw new Error('unsupported_manifest: mappings cannot be combined with managed sources');
   for (const fn of writers)
     if (
       !['job', 'change', 'schedule'].includes(fn.trigger.kind) ||
@@ -608,6 +638,10 @@ export type ExtensionInstallInput = {
   registrationId: string;
   version: string;
   settings: Record<string, string | boolean | number>;
+  /** One choice per output of a release that declares a mapping. */
+  mapping?: ExtensionMappingChoices;
+  /** Review only a new mapping for the installed release: no setup, settings or credential change. */
+  mappingChange?: boolean;
 };
 export type ExtensionPreview = {
   planDigest: string;
@@ -627,6 +661,8 @@ export type ExtensionPreview = {
   }[];
   grants: { actor: 'integration' | 'agent'; scopes: ('read' | 'write')[] };
   previousGrants?: { actor: 'integration' | 'agent'; scopes: ('read' | 'write')[] };
+  /** The resolved output bindings, for a release that declares a mapping. */
+  mapping?: ExtensionMappingBinding[];
   warnings: string[];
 };
 export type ExtensionCredential = {
@@ -671,6 +707,8 @@ export type ExtensionInstallation = {
   grantedActor: 'integration' | 'agent';
   grantedScopes: ('read' | 'write')[];
   createdBy: { type: string; id: string };
+  /** Single-installation reads of a release that declares a mapping. */
+  mapping?: ExtensionMappingView;
 };
 
 export * from './protocol.js';
