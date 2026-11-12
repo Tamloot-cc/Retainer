@@ -65,11 +65,14 @@ beforeAll(async () => {
   expect(response.status, await response.clone().text()).toBe(201);
   clientId = ((await response.json()) as { client_id: string }).client_id;
   manifest.oauthClientId = clientId;
-  // A plain release upgrade, then one that changes the actor (a grant change).
+  // A plain release upgrade, one that changes the actor (a grant change) and
+  // one that stops declaring the pinned OAuth client.
+  const { oauthClientId: _client, ...unpinned } = manifest;
   const upgraded = extensionFixture({ ...manifest, version: '1.1.0' }),
-    widened = extensionFixture({ ...manifest, version: '1.2.0', requestedActor: 'agent' });
+    widened = extensionFixture({ ...manifest, version: '1.2.0', requestedActor: 'agent' }),
+    clientless = extensionFixture({ ...unpinned, version: '1.3.0' });
   catalog = new ExtensionCatalog(
-    [manifest, upgraded, widened].map((m) => ({
+    [manifest, upgraded, widened, clientless].map((m) => ({
       manifest: m,
       actorCeiling: 'integration' as const,
     })),
@@ -616,7 +619,7 @@ describe('standalone workspace OAuth with real consent, PKCE, JWT and RLS', () =
         })
       ).status,
     ).toBe(201);
-    const widened = await commit({ ...upgrade, version: '1.2.0', grantChange: true });
+    const widened = await commit({ ...upgrade, version: '1.2.0' });
     expect(widened.grantGeneration).toBe(2);
     expect((await h.request(refreshed.access_token)).status).toBe(401);
     expect((await h.refresh(refreshed)).status).toBeGreaterThanOrEqual(400);
@@ -627,5 +630,30 @@ describe('standalone workspace OAuth with real consent, PKCE, JWT and RLS', () =
     expect(
       (await json<{ actor: unknown }>(await h.request(fresh.access_token))).actor,
     ).toMatchObject({ type: 'agent', id: h.installation.id });
+  });
+  it('revokes app grants when an upgrade drops the pinned OAuth client', async () => {
+    const h = await setup(),
+      tokens = await h.connect();
+    const input = {
+      installationId: h.installation.id,
+      registrationId: manifest.universalId,
+      version: '1.3.0',
+      settings: {},
+    };
+    const preview = await json<{ planDigest: string }>(
+      await h.v1('/v1/extensions/preview', 'POST', input),
+    );
+    const upgraded = await json<ExtensionInstallation>(
+      await h.v1(`/v1/extensions/${h.installation.id}/upgrade`, 'POST', {
+        ...input,
+        planDigest: preview.planDigest,
+      }),
+    );
+    expect(upgraded).toMatchObject({ state: 'active', version: '1.3.0', grantGeneration: 2 });
+    expect((await h.request(tokens.access_token)).status).toBe(401);
+    expect((await h.refresh(tokens)).status).toBeGreaterThanOrEqual(400);
+    // The release no longer names this client, so it cannot be approved again either.
+    h.installation.generation = upgraded.grantGeneration;
+    expect((await h.approve(await h.begin())).status).toBe(409);
   });
 });

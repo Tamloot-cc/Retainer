@@ -230,6 +230,53 @@ const row = async (id: string) =>
 const deleteSchema = (key: string, operations: unknown[]) =>
   t.request('/v1/schema/changes', { key, body: { operations } });
 
+describe('hosted settings update in place (grant_generation)', () => {
+  const change = (h: { id: string; keys: { admin: string } }, expectedRevision: number) =>
+    t.request(`/v1/extensions/${h.id}/settings`, {
+      key: h.keys.admin,
+      method: 'PATCH',
+      body: { expectedRevision, settings: { enabled: false } },
+    });
+  it('re-runs setup at a new generation like an upgrade instead of disabling', async () => {
+    const h = await installManaged();
+    await queue().complete(await claim(h.workspace, h.id, 'install'), { status: 'succeeded' });
+    const before = await t.request(`/v1/extensions/${h.id}`, { key: h.keys.admin });
+    expect(before.body.state).toBe('active');
+    const changed = await change(h, before.body.settingsRevision);
+    expect(changed.status).toBe(200);
+    expect(changed.body).toMatchObject({
+      state: 'upgrading',
+      connectionHealth: 'needs_reconnect',
+      generation: before.body.generation + 1,
+      grantGeneration: before.body.grantGeneration,
+    });
+    await queue().complete(await claim(h.workspace, h.id, 'install'), { status: 'succeeded' });
+    expect((await row(h.id))?.state).toBe('active');
+  });
+  it('disables a running installation when no reviewed executable is deployed', async () => {
+    const h = await installManaged();
+    await queue().complete(await claim(h.workspace, h.id, 'install'), { status: 'succeeded' });
+    const before = await t.request(`/v1/extensions/${h.id}`, { key: h.keys.admin });
+    const digest = before.body.releaseDigest as string;
+    activation.delete(digest);
+    try {
+      const changed = await change(h, before.body.settingsRevision);
+      expect(changed.status).toBe(200);
+      expect(changed.body).toMatchObject({
+        state: 'disabled',
+        settings: { enabled: false },
+        generation: before.body.generation + 1,
+        grantGeneration: before.body.grantGeneration + 1,
+      });
+      expect(
+        await db.owner`select 1 from extension_jobs where installation_id=${h.id} and status in ('queued','running')`,
+      ).toHaveLength(0);
+    } finally {
+      activation.add(digest);
+    }
+  });
+});
+
 describe('settings while uninstalling (R5)', () => {
   it('refuses a settings change during uninstall and never reverses it under concurrency', async () => {
     const h = await installManaged();

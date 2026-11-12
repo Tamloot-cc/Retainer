@@ -597,7 +597,10 @@ export class Extensions {
             : 'installing'
           : 'disabled';
       // Standalone credentials survive a release change unless what they were
-      // granted changes: the actor, the scopes, the execution model or the account.
+      // granted changes: the actor, the scopes, the execution model, the pinned
+      // OAuth client (a release may drop it; the catalog only forbids switching)
+      // or the account. The installed release is pinned, so this is the only
+      // path by which its client can change.
       const previous = plan.existing
         ? resolveRelease(this.catalog.runtime, plan.existing)
         : undefined;
@@ -608,7 +611,8 @@ export class Extensions {
           plan.existing.granted_actor !== manifest.requestedActor ||
           !sameScopes(plan.existing.granted_scopes, manifest.scopes) ||
           !previous?.available ||
-          previous.manifest.execution !== manifest.execution);
+          previous.manifest.execution !== manifest.execution ||
+          previous.manifest.oauthClientId !== manifest.oauthClientId);
       const [row] = await tx<Row[]>`insert into extension_installations
         (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, settings, created_by, state, setup_kind)
         values (${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId}, ${manifest.universalId}, ${manifest.version}, ${plan.release.digest},
@@ -886,6 +890,7 @@ export class Extensions {
         settings_revision = settings_revision + 1, generation = generation + 1, state = ${state},
         setup_kind = case when ${state} = 'upgrading' then 'upgrade' else setup_kind end,
         last_error = case when ${running} then null else last_error end,
+        connection_health = case when ${running} then 'needs_reconnect' else connection_health end,
         activated_at = case when ${running} then null else activated_at end,
         grant_generation = grant_generation + case when ${state} = 'disabled' and state <> 'disabled' then 1 else 0 end,
         updated_at = now()
@@ -959,12 +964,15 @@ export class Extensions {
           ? 'uninstalling'
           : state;
       await cancelRuns(tx, id);
+      // Repeating a disable keeps the grant: every path that disables a standalone
+      // installation already advanced it, and paths that disable without doing so
+      // (hosted setup failures) have no standalone credentials to revoke.
       const [row] = await tx<
         Row[]
       >`update extension_installations set state = ${nextState},last_error=null,
         cleanup_deadline=case when ${nextState}='uninstalling' then clock_timestamp()+interval '24 hours' else null end,
         generation = generation + case when state = ${nextState} and last_error is null then 0 else 1 end,
-        grant_generation = grant_generation + 1, updated_at = now()
+        grant_generation = grant_generation + case when state = ${nextState} then 0 else 1 end, updated_at = now()
         where id = ${id} returning *`;
       if (!row) throw notFound('extension installation');
       if (state === 'uninstalled') {

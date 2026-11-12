@@ -296,8 +296,9 @@ Installations carry two counters. `generation` fences runs, jobs, leases,
 source and webhook bindings: every install, upgrade, reconnect, settings change,
 enable and disable advances it. `grant_generation` is what standalone keys and
 installation OAuth grants bind to. It advances only on disable, uninstall, a
-grant change (actor or scopes, increase or decrease, or the execution model),
-reconnect and source account replacement or disconnect. A plain upgrade or an
+grant change (actor or scopes, increase or decrease, the execution model, or
+the pinned `oauthClientId`, including a release that drops it), reconnect and
+source account replacement or disconnect. Repeating a disable keeps it. A plain upgrade or an
 ordinary settings change therefore keeps standalone credentials valid, as Twenty
 keeps app tokens across upgrades. Existing credentials were migrated by setting
 `grant_generation` to the installation's `generation`.
@@ -327,7 +328,8 @@ Ordinary (non-secret, non-reconnect) settings update in place, like Twenty's
 application variables. The change cancels current runs and advances `generation`,
 but never disables the installation or advances `grant_generation`. A running
 hosted installation re-runs setup at the new generation, exactly like an upgrade
-(`upgrading`, or `installing` if first setup had not finished), because source
+(`upgrading`, or `installing` if first setup had not finished, with
+`needs_reconnect` health until setup succeeds), because source
 and webhook bindings are per generation; it is disabled only when no reviewed
 executable is deployed. A disabled installation stays disabled. The source scan
 state is cleared, because its cursor and any open enumeration were computed under

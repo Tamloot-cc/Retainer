@@ -594,9 +594,15 @@ describe('standalone credentials bind to the grant, not the release (grant_gener
     const fresh = await h.issue();
     expect(fresh.generation).toBeGreaterThan(credential.generation);
     expect((await h.write(fresh.key)).status).toBe(201);
-    expect(
-      (await app.request(`${h.base}/disable`, { key: h.keys.admin, method: 'POST' })).status,
-    ).toBe(200);
+    const disabled = await app.request(`${h.base}/disable`, {
+      key: h.keys.admin,
+      method: 'POST',
+    });
+    expect(disabled.status).toBe(200);
+    expect(disabled.body.grantGeneration).toBeGreaterThan(fresh.generation);
+    // Repeating a disable is idempotent for the grant.
+    const again = await app.request(`${h.base}/disable`, { key: h.keys.admin, method: 'POST' });
+    expect(again.body.grantGeneration).toBe(disabled.body.grantGeneration);
     expect(
       (await app.request(`${h.base}/enable`, { key: h.keys.admin, method: 'POST' })).status,
     ).toBe(200);
