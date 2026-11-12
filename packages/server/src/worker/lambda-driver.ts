@@ -30,13 +30,16 @@ const invokeLambda: LambdaInvoke = async (target, payload, signal) => {
 
 const prefixPattern = /^arn:aws:lambda:[a-z0-9-]+:\d{12}:function:[A-Za-z0-9_-]{1,64}$/;
 
+/** Every Lambda catalog entry must identify an immutable numeric function version. */
+export function assertLambdaVersionTarget(target: string) {
+  if (!/^arn:aws:lambda:[a-z0-9-]+:\d{12}:function:[A-Za-z0-9_-]{1,64}:[1-9]\d*$/.test(target))
+    throw new Error('Lambda target must be a qualified version ARN');
+}
+
 /** Only immutable numeric function versions from the role's operator-owned namespace. */
 export function assertLambdaTarget(target: string, prefix: string) {
-  if (
-    !prefixPattern.test(prefix) ||
-    !/^arn:aws:lambda:[a-z0-9-]+:\d{12}:function:[A-Za-z0-9_-]{1,64}:[1-9]\d*$/.test(target) ||
-    !target.slice(0, target.lastIndexOf(':')).startsWith(prefix)
-  )
+  assertLambdaVersionTarget(target);
+  if (!prefixPattern.test(prefix) || !target.slice(0, target.lastIndexOf(':')).startsWith(prefix))
     throw new Error('Lambda target must be a qualified version ARN within the configured prefix');
 }
 

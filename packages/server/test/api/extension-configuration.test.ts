@@ -285,6 +285,37 @@ describe('operator runtime configuration and dedicated key-mode control', () => 
         extensionServices(loadConfig({ ...environment, [prefix]: undefined }), options),
       ).rejects.toThrow('invalid extension runtime configuration');
     }
+    for (const [prefixes, options] of [
+      [{ RETAINER_EXTENSION_LAMBDA_PREFIX: undefined }, { broker: true, ingressSql: t.sql }],
+      [{ RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX: undefined }, { workerSql: t.sql }],
+      [
+        {
+          RETAINER_EXTENSION_LAMBDA_PREFIX: undefined,
+          RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX: undefined,
+        },
+        {},
+      ],
+    ] as const) {
+      for (const index of [0, entries.length - 1]) {
+        for (const qualifier of ['', ':live']) {
+          const invalid = entries.map((entry, i) =>
+            i === index
+              ? { ...entry, driverTarget: entry.driverTarget.replace(/:\d+$/, qualifier) }
+              : entry,
+          );
+          await expect(
+            extensionServices(
+              loadConfig({
+                ...environment,
+                ...prefixes,
+                RETAINER_EXTENSION_EXECUTABLES: JSON.stringify(invalid),
+              }),
+              options,
+            ),
+          ).rejects.toThrow('invalid extension runtime configuration');
+        }
+      }
+    }
     for (const index of [0, entries.length - 1]) {
       const wrong = entries.map((entry, i) =>
         i === index

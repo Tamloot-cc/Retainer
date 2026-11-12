@@ -11,7 +11,12 @@ import { Webhooks } from '../webhooks/service.js';
 import { ChangeMaintenance } from '../worker/changes.js';
 import { type Executable, ExecutionRegistry, ExtensionExecutor } from '../worker/extensions.js';
 import { FileMaintenance } from '../worker/files.js';
-import { assertLambdaTarget, LambdaDriver, LambdaVerifier } from '../worker/lambda-driver.js';
+import {
+  assertLambdaTarget,
+  assertLambdaVersionTarget,
+  LambdaDriver,
+  LambdaVerifier,
+} from '../worker/lambda-driver.js';
 import { LauncherDriver } from '../worker/launch-driver.js';
 import { LauncherVerifier } from '../worker/verifier-driver.js';
 
@@ -129,9 +134,12 @@ export async function extensionServices(
           const prefix = ['route', 'serverRoute'].includes(fn.trigger.kind)
             ? config.RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX
             : config.RETAINER_EXTENSION_LAMBDA_PREFIX;
-          // Each Lambda role only knows its own invocation namespace. Other-role
-          // executables are still required and checked against the pinned catalog.
-          if (lambda && prefix) assertLambdaTarget(executable.driverTarget, prefix);
+          // All roles validate immutable ARN shape. Namespace checks additionally
+          // use this process's own prefix, without requiring the other role's prefix.
+          if (lambda) {
+            assertLambdaVersionTarget(executable.driverTarget);
+            if (prefix) assertLambdaTarget(executable.driverTarget, prefix);
+          }
           if (
             executable.handlerDigest !== fn.handlerDigest ||
             executable.packageDigest !== release.manifest.packageDigest
