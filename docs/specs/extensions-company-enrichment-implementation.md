@@ -1,6 +1,7 @@
 # Company enrichment: implementation spec
 
-Status: proposal, 2026-11-12. Not implemented. Implements the product
+Status: in progress, 2026-11-12. §7 step 1 is implemented on
+`feat/company-enrichment`. Implements the product
 requirements in [extensions-company-enrichment.md](extensions-company-enrichment.md)
 (the PRD) on the platform in [extensions.md](extensions.md) and
 [extensions-lambda.md](extensions-lambda.md). Line references are to `main`
@@ -14,17 +15,17 @@ A is generic. Nothing in it names Company, domains or a provider.
 
 ## 1. Decisions
 
-| Question                                              | Decision                                                                                                                                                                                                                                                                                        |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Where does the mapping live?                          | A new manifest capability `mapping`, a new `mapping` column on `extension_installations` and a new reviewed control flow. It does not live in `settings`, which are flat scalars edited without preview (`service.ts:882-972`).                                                                 |
-| How are suggested fields applied?                     | They are declared on outputs, not in `schema`, because every `schema` contribution is always applied. A **Create field** choice adds a `create_field` op to the same plan, and the field becomes a contribution.                                                                                |
-| How is fill-only enforced?                            | On the server, under the record lock, in one new runtime endpoint. The handler's own check only saves a provider call. Ordinary `PATCH`/`upsert` cannot express "only if unset", and an agent write over a user value goes to `pending_review` instead of being skipped (`winner.ts:55-71`).    |
-| How are replays made idempotent?                      | Fill-only makes them idempotent. A replayed write finds its targets populated and skips them, so no idempotency key is needed.                                                                                                                                                                  |
-| How does the extension identify fields?               | By universal ID. Every field has one: `apply.ts:143` generates it when the definition has none, and `fields_universal_uq` makes it unique per workspace. The schema read response starts returning it.                                                                                          |
-| Which change events start a lookup?                   | Direct `create` and `update` changes on Company, watching Domain only. A new trigger flag stops related-record link changes from firing it (§3.4).                                                                                                                                              |
-| What happens to queued work when the mapping changes? | The generation advances, so running attempts are fenced. Queued, never-started change jobs are restamped to the new generation, because they hold only a change position and read the mapping when they run. A company created a second before a remap is still enriched, with the new mapping. |
-| Does a mapping change re-run setup?                   | No. Credentials are unchanged, so the installation stays `active`.                                                                                                                                                                                                                              |
-| What is the hosted bundle called?                     | `enrichment`. Hosted bundle names are limited to 12 characters (`retainer-cloud/infra/aws/extension-runtime.tf:11`). The display name stays **Company Enrichment**.                                                                                                                             |
+| Question                                              | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Where does the mapping live?                          | A new manifest capability `mapping`, a new `mapping` column on `extension_installations` and a new reviewed control flow. It does not live in `settings`, which are flat scalars edited without preview (`service.ts:882-972`).                                                                                                                                                                                                                    |
+| How are suggested fields applied?                     | They are declared on outputs, not in `schema`, because every `schema` contribution is always applied. A **Create field** choice adds a `create_field` op to the same plan, and the field becomes a contribution.                                                                                                                                                                                                                                   |
+| How is fill-only enforced?                            | On the server, under the record lock, in one new runtime endpoint. The handler's own check only saves a provider call. Ordinary `PATCH`/`upsert` cannot express "only if unset", and an agent write over a user value goes to `pending_review` instead of being skipped (`winner.ts:55-71`).                                                                                                                                                       |
+| How are replays made idempotent?                      | Fill-only makes them idempotent. A replayed write finds its targets populated and skips them, so no idempotency key is needed.                                                                                                                                                                                                                                                                                                                     |
+| How does the extension identify fields?               | Clients name fields by API name, as everywhere else in the API. Preview resolves each name to the field's universal ID, and the server stores and resolves only that ID, so later renames keep the binding. Every field has one (`apply.ts:143` generates it; `fields_universal_uq` makes it unique per workspace). Universal IDs stay out of the API, as `ARCHITECTURE.md` (Protection) requires; this replaces the PRD's request to expose them. |
+| Which change events start a lookup?                   | Direct `create` and `update` changes on Company, watching Domain only. A new trigger flag stops related-record link changes from firing it (§3.4).                                                                                                                                                                                                                                                                                                 |
+| What happens to queued work when the mapping changes? | The generation advances, so running attempts are fenced. Queued, never-started change jobs are restamped to the new generation, because they hold only a change position and read the mapping when they run. A company created a second before a remap is still enriched, with the new mapping.                                                                                                                                                    |
+| Does a mapping change re-run setup?                   | No. Credentials are unchanged, so the installation stays `active`.                                                                                                                                                                                                                                                                                                                                                                                 |
+| What is the hosted bundle called?                     | `enrichment`. Hosted bundle names are limited to 12 characters (`retainer-cloud/infra/aws/extension-runtime.tf:11`). The display name stays **Company Enrichment**.                                                                                                                                                                                                                                                                                |
 
 ## 2. Gaps in the current platform
 
@@ -32,11 +33,10 @@ These are the facts the PRD's §4 assumes but `main` does not yet provide.
 
 1. The manifest has no outputs or mapping (`packages/extension/src/index.ts:124-217`). Settings are only `string`, `boolean` or `number`.
 2. `extension_installations` has no mapping column (`db/schema.ts:1441-1486`).
-3. `GET /v1/schema` and `describe_schema` do not return universal IDs (`schema-engine/present.ts:65-102`).
-4. A field-scoped change trigger always fires on `create`, `delete`, `merge` and the other lifecycle operations. It also fires indirectly when a related record's links change (`extension-runtime/queue.ts:577-592`).
-5. No write is "set only if unset". `lockRecord` follows merges to the survivor (`records/write.ts:149`), but the PRD needs a merged-away ID to be skipped.
-6. The base Company `domain` field (`bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641`, `templates/base.ts:140`) is not protected, so it can be renamed or deleted.
-7. No per-extension egress allowlist exists. Lambda job functions have open public egress by design (extensions-lambda.md §4).
+3. A field-scoped change trigger always fires on `create`, `delete`, `merge` and the other lifecycle operations. It also fires indirectly when a related record's links change (`extension-runtime/queue.ts:577-592`).
+4. No write is "set only if unset". `lockRecord` follows merges to the survivor (`records/write.ts:149`), but the PRD needs a merged-away ID to be skipped.
+5. The base Company `domain` field (`bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641`, `templates/base.ts:140`) is not protected, so it can be renamed or deleted.
+6. No per-extension egress allowlist exists. Lambda job functions have open public egress by design (extensions-lambda.md §4).
 
 ## 3. Part A: platform upgrade
 
@@ -70,9 +70,16 @@ Add a per-function flag `mappedWrite: true`. Only functions that declare it may 
 
 Old manifests have no `mapping`, so catalogs built before this change keep their digests. The catalog already returns full manifests (`api/routes/extensions.ts:65-67`), so the output definitions are published with no extra work.
 
-### 3.2 Schema read: universal IDs
+### 3.2 Field references: API names in, universal IDs stored
 
-`presentSchema` adds `universalId` to every object and field. This changes `GET /v1/schema`, MCP `describe_schema` and the SDK type in `@retainer/shared`. The change is additive. Update the `describe_schema` tool description to say that extension mappings reference fields by universal ID.
+The schema read response does not change. `ARCHITECTURE.md` keeps universal IDs internal, and a test in `test/api/schema.test.ts` asserts that `GET /v1/schema` never contains one. Every mapping input (agent drafts, the web form, preview and commit) names an existing field by its current API name on the mapping's object. Preview resolves the name under the schema lock to the field's universal ID, and the plan digest binds that ID. From then on the server uses only the ID.
+
+Consequences:
+
+- A rename after approval keeps the binding, because nothing stored uses the name.
+- A rename between drafting and preview makes the old name fail with `field_not_found`. The admin picks the field again; nothing is written.
+- A rename between preview and commit changes the resolved plan, so commit returns `409 stale_plan`. That needs no extra check, because the digest already binds the schema version.
+- Reads of the mapping (§3.6) return the target's current API name and label, never its ID.
 
 ### 3.3 Preview, commit and persistence
 
@@ -80,7 +87,7 @@ Old manifests have no `mapping`, so catalogs built before this change keep their
 
 ```ts
 mapping?: Record<OutputKey,
-  | { action: 'existing'; fieldId: uuid }   // a field universal ID
+  | { action: 'existing'; field: string }   // the field's current API name
   | { action: 'create' }
   | { action: 'skip' }>
 ```
@@ -114,7 +121,7 @@ A release with `mapping.lookup` also checks the lookup field: it must exist, be 
 ```ts
 mapping?: Array<{
   output: string; action: 'existing' | 'create' | 'skip';
-  field?: { universalId; key; name; label; type };  // resolved target
+  field?: { name; label; type };                     // resolved target, by current API name
   contribution: boolean;                             // created by this installation
 }>
 ```
@@ -171,7 +178,7 @@ Add `POST /v1/extensions/:id/runtime/mapped-writes`. It accepts only run credent
 The handler runs in one transaction. Lock order is schema (shared), then installation (shared), then the record lock, as extensions.md §6 requires.
 
 1. Load the stored mapping. If a key in `values` is not a bound output, return `422 mapping_invalid` (`unknown_output`).
-2. Resolve each output it needs by universal ID. If a target is missing, inactive, or has an incompatible type, return `409 schema_binding_conflict` with `details: [{ output, fieldUniversalId, reason: 'missing' | 'incompatible' }]`, write nothing, and set installation health to `degraded` with that `last_error`.
+2. Resolve each output it needs by its stored universal ID. If a target is missing, inactive, or has an incompatible type, return `409 schema_binding_conflict` with `details: [{ output, field, reason: 'missing' | 'incompatible' }]`, where `field` is the last known API name, write nothing, and set installation health to `degraded` with that `last_error`.
 3. Lock the record **without following merges**. Add `lockRecord(..., { followMerge: false })`. Skip the whole request in these cases:
    - The record is deleted: reason `record_deleted`.
    - The record is merged away: reason `record_merged`.
@@ -200,17 +207,17 @@ The endpoint is idempotent by construction. A replay after a commit finds every 
 `GET /v1/extensions/:id` already lets a run read its own installation (`service.ts:172-198`). Add `mapping` to it:
 
 ```ts
-{ revision, outputs: [{ output, field: { universalId, key, name, type } | null, status: 'ok' | 'missing' | 'incompatible' }] }
+{ revision, outputs: [{ output, field: { name, label, type } | null, status: 'ok' | 'missing' | 'incompatible' }] }
 ```
 
-The handler checks this before calling the provider, so a broken binding fails the run without a wasted lookup. Admin reads return the same shape for the mapping screen.
+The handler checks this before calling the provider, so a broken binding fails the run without a wasted lookup. It reads record values by the returned API names. Admin reads return the same shape for the mapping screen. A `missing` target also carries the label it had when last seen, from the deprecated field row, so the screen can name it.
 
 ### 3.7 Agent drafts
 
 An external agent needs only metadata:
 
 - The output definitions, from `GET /v1/extensions/catalog`.
-- The schema with universal IDs, from `describe_schema`.
+- The schema, from `describe_schema`. The draft names fields by API name.
 - Optionally, a check of its draft with `preview_extension`. Preview is already open to schema-capable agents, and approval is not.
 
 It produces the `mapping` object from §3.3. Add a short `get_guide("extension_mapping")` that gives the format and states that agents propose and admins approve. No provider key or record data is involved.
@@ -324,28 +331,27 @@ Enrichment writes change only mapped fields. Those aren't watched, and the chang
 
 All tests that touch the database run against real Postgres with a fresh clone per file. Concurrency rules have tests that run the competing operations in parallel.
 
-| Area                               | Tests                                                                                                                                                                                                                                                                                                                                                               |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Manifest (`packages/extension`)    | Rejects duplicate outputs, a suggested type outside `types`, `relation`/`files` types, and `mappedWrite` without `mapping`. Old fixture digests stay unchanged.                                                                                                                                                                                                     |
-| Preview/commit (`server/test/api`) | One test for each `mapping_invalid` reason, including a field from another workspace. Stale schema and a changed mapping return `stale_plan`. A failed commit rolls back schema, mapping, contributions and the setup job. **Create** resolves to an existing universal ID. A release without mappings installs unchanged. An agent key can preview but not commit. |
-| Mapping edit                       | Remap advances generation, fences a running attempt, restamps queued change jobs, and the next trigger writes the new target. A rename keeps the binding. Deleting a referenced field produces a field-specific `schema_binding_conflict`.                                                                                                                          |
-| Trigger                            | Create with a domain queues a job. Create without a domain queues a job that makes zero provider requests. Adding a domain later queues a job. Updating a mapped field queues nothing. Linking a person to the company queues nothing (`related: false`).                                                                                                           |
-| Mapped write races                 | Hold the fake provider while a competing request does each of these: fills a target, clears it explicitly, changes the domain, deletes the record, merges it away. The stale write never changes protected values or another company. Run the write and the competing change in parallel. Replay produces no new assertions.                                        |
-| Failures                           | Partial results, no match, a malformed body, 429 with `Retry-After`, 5xx, invalid key at setup and at run time (`needs_reconnect`), disable during a run, admin retry. No secret, domain or body appears in diagnostics or logs.                                                                                                                                    |
-| Bundle                             | Unit tests for the provider adapter and `normalizeDomain`. A `test-enrichment-bundle.mjs` like Granola's runs the built bundle through the isolated runner against a fake provider origin, injected the same way Granola's tests inject theirs.                                                                                                                     |
-| Web                                | The Playwright flows in §3.8.                                                                                                                                                                                                                                                                                                                                       |
+| Area                               | Tests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Manifest (`packages/extension`)    | Rejects duplicate outputs, a suggested type outside `types`, `relation`/`files` types, and `mappedWrite` without `mapping`. Old fixture digests stay unchanged.                                                                                                                                                                                                                                                                                                                                                     |
+| Preview/commit (`server/test/api`) | One test for each `mapping_invalid` reason, including a field from another workspace. Stale schema and a changed mapping return `stale_plan`. A failed commit rolls back schema, mapping, contributions and the setup job. **Create** resolves to an existing field with the suggested universal ID. A draft naming a renamed field fails with `field_not_found`; a rename between preview and commit returns `stale_plan`. A release without mappings installs unchanged. An agent key can preview but not commit. |
+| Mapping edit                       | Remap advances generation, fences a running attempt, restamps queued change jobs, and the next trigger writes the new target. A rename keeps the binding. Deleting a referenced field produces a field-specific `schema_binding_conflict`.                                                                                                                                                                                                                                                                          |
+| Trigger                            | Create with a domain queues a job. Create without a domain queues a job that makes zero provider requests. Adding a domain later queues a job. Updating a mapped field queues nothing. Linking a person to the company queues nothing (`related: false`).                                                                                                                                                                                                                                                           |
+| Mapped write races                 | Hold the fake provider while a competing request does each of these: fills a target, clears it explicitly, changes the domain, deletes the record, merges it away. The stale write never changes protected values or another company. Run the write and the competing change in parallel. Replay produces no new assertions.                                                                                                                                                                                        |
+| Failures                           | Partial results, no match, a malformed body, 429 with `Retry-After`, 5xx, invalid key at setup and at run time (`needs_reconnect`), disable during a run, admin retry. No secret, domain or body appears in diagnostics or logs.                                                                                                                                                                                                                                                                                    |
+| Bundle                             | Unit tests for the provider adapter and `normalizeDomain`. A `test-enrichment-bundle.mjs` like Granola's runs the built bundle through the isolated runner against a fake provider origin, injected the same way Granola's tests inject theirs.                                                                                                                                                                                                                                                                     |
+| Web                                | The Playwright flows in §3.8.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ## 7. Delivery sequence
 
-1. **Schema read IDs** (§3.2). Small and independent.
-2. **Manifest and trigger flags** (§3.1, §3.4) with their digest tests.
-3. **Mapping preview, commit, persistence and edit** (§3.3, §3.6), plus the migration.
-4. **Mapped write** (§3.5) with the race tests.
-5. **Web mapping form, import and review** (§3.8).
-6. **Enrichment bundle against the fixture provider** (§4), plus local acceptance through Compose.
-7. **Provider selection and staging verification** with real credentials, then the hosted catalog entry (§5).
+1. **Manifest and trigger flags** (§3.1, §3.4) with their digest tests. Done in `830dfc3`.
+2. **Mapping preview, commit, persistence and edit** (§3.3, §3.6), plus the migration.
+3. **Mapped write** (§3.5) with the race tests.
+4. **Web mapping form, import and review** (§3.8).
+5. **Enrichment bundle against the fixture provider** (§4), plus local acceptance through Compose.
+6. **Provider selection and staging verification** with real credentials, then the hosted catalog entry (§5).
 
-Steps 1–5 are platform work and can merge before a provider is chosen.
+Steps 1–4 are platform work and can merge before a provider is chosen.
 
 ## 8. Later
 
