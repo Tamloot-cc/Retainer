@@ -50,12 +50,13 @@ export class ExtensionCatalog {
       this.releases.set(key, structuredClone({ ...release, manifest, digest: hash(manifest) }));
     }
     this.runtime = Object.freeze({
-      identity: hash({
-        serverVersion: VERSION,
-        runtimeVersion: 'node24',
-        protocolVersion: 1,
-        releases: [...this.releases.values()].sort((a, b) => a.digest.localeCompare(b.digest)),
-      }),
+      releases: Object.freeze(
+        [...this.releases.values()].map((r) => ({
+          registration_id: r.manifest.universalId,
+          version: r.manifest.version,
+          release_digest: r.digest,
+        })),
+      ),
       resolve: (id: string, version: string) => {
         const release = this.get(id, version);
         if (release.manifest.execution === 'hosted' && release.runtimeEnabled !== true)

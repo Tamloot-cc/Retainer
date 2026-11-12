@@ -577,14 +577,10 @@ export type ExtensionInstallation = {
   settingsRevision: number;
   lastError?: string | null;
   connectionHealth?: 'ok' | 'needs_reconnect' | 'degraded';
-  /** Availability in this server's catalog; independent of the provider connection. */
+  /** Availability in this server's catalog, computed on read; independent of the provider connection. */
   runtimeAvailability?:
     | { state: 'available' }
-    | {
-        state: 'unavailable';
-        code: 'incompatible_runtime' | 'release_unavailable';
-        retryAt?: string;
-      };
+    | { state: 'unavailable'; code: 'incompatible_runtime' | 'release_unavailable' };
   secrets?: Record<string, boolean>;
   settings: Record<string, string | boolean | number>;
   grantedActor: 'integration' | 'agent';

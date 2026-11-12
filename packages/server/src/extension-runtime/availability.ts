@@ -1,8 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { ExtensionManifest } from '@retainer/extension';
-import type { Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
-import { log } from '../log.js';
 import { stableJson } from '../stable-json.js';
 
 export type ReleasePin = {
@@ -13,19 +11,17 @@ export type ReleasePin = {
   generation: number;
   release_digest: string;
 };
-/** Immutable local catalog; identity includes server compatibility and all reviewed releases. */
+type Pin = Pick<ReleasePin, 'registration_id' | 'version' | 'release_digest'>;
+/** Immutable local catalog: every reviewed release it holds, runnable here or not. */
 export type RuntimeCatalog = {
-  readonly identity: string;
+  readonly releases: readonly Pin[];
   readonly resolve: (registration: string, version: string) => ExtensionManifest;
 };
 export type ReleaseResolution =
   | { available: true; manifest: ExtensionManifest }
   | { available: false; code: 'incompatible_runtime' | 'release_unavailable' };
 
-export function resolveRelease(
-  catalog: RuntimeCatalog,
-  pin: Pick<ReleasePin, 'registration_id' | 'version' | 'release_digest'>,
-): ReleaseResolution {
+export function resolveRelease(catalog: RuntimeCatalog, pin: Pin): ReleaseResolution {
   try {
     const manifest = catalog.resolve(pin.registration_id, pin.version);
     if (
@@ -36,7 +32,6 @@ export function resolveRelease(
       return { available: false, code: 'incompatible_runtime' };
     return { available: true, manifest };
   } catch (error) {
-    // Local reviewed metadata only: never persist exception text or provider/customer content.
     return {
       available: false,
       code:
@@ -47,49 +42,48 @@ export function resolveRelease(
   }
 }
 
-/** A failure is evidence about this catalog and pin, never a global installation disable. */
-export class RuntimeAvailability {
-  constructor(readonly catalog: RuntimeCatalog) {
-    if (!/^[a-f0-9]{64}$/.test(catalog.identity))
-      throw new Error('runtime catalog identity must be SHA-256');
+export function requireRelease(catalog: RuntimeCatalog, pin: Pin) {
+  const result = resolveRelease(catalog, pin);
+  if (!result.available)
+    throw new AppError(409, result.code, 'pinned extension release is unavailable in this runtime');
+  return result.manifest;
+}
+
+/**
+ * Whether this process can run the pin: it resolves and, when the process
+ * knows its deployed executables (`activation`), a hosted release has one.
+ * Without `activation` the answer is the catalog's alone.
+ */
+export function releaseAvailability(
+  catalog: RuntimeCatalog,
+  pin: Pin,
+  activation?: ReadonlySet<string>,
+): ReleaseResolution {
+  const result = resolveRelease(catalog, pin);
+  if (
+    result.available &&
+    result.manifest.execution === 'hosted' &&
+    activation &&
+    !activation.has(pin.release_digest)
+  )
+    return { available: false, code: 'incompatible_runtime' };
+  return result;
+}
+
+/**
+ * The (registration, release digest) pairs this process can run now: they
+ * resolve in its catalog (server range, `runtimeEnabled`) and, when it knows
+ * its deployed executables (`activation`), a hosted release has one. Parallel
+ * arrays, passed to the `*_due` discovery functions; work pinned to any other
+ * release stays queued, untouched, for a worker that can run it.
+ */
+export function runnableReleases(catalog: RuntimeCatalog, activation?: ReadonlySet<string>) {
+  const registrations: string[] = [],
+    digests: string[] = [];
+  for (const pin of catalog.releases) {
+    if (!releaseAvailability(catalog, pin, activation).available) continue;
+    registrations.push(pin.registration_id);
+    digests.push(pin.release_digest);
   }
-  require(pin: Pick<ReleasePin, 'registration_id' | 'version' | 'release_digest'>) {
-    const result = resolveRelease(this.catalog, pin);
-    if (!result.available)
-      throw new AppError(
-        409,
-        result.code,
-        'pinned extension release is unavailable in this runtime',
-      );
-    return result.manifest;
-  }
-  /** Caller holds schema, installation and queue locks, with a freshly read generation. */
-  async inspect(
-    tx: Tx,
-    pin: ReleasePin,
-    options: { knownFailureOnly?: boolean } = {},
-  ): Promise<ExtensionManifest | null> {
-    const [marker] = await tx<
-      { waiting: boolean }[]
-    >`select retry_at>clock_timestamp() as waiting from extension_runtime_unavailable where installation_id=${pin.id}
-      and runtime_identity=${this.catalog.identity} and generation=${pin.generation} and release_digest=${pin.release_digest}`;
-    if (marker?.waiting || (options.knownFailureOnly && !marker)) return null;
-    const result = resolveRelease(this.catalog, pin);
-    if (result.available) {
-      await tx`delete from extension_runtime_unavailable where installation_id=${pin.id} and runtime_identity=${this.catalog.identity}`;
-      return result.manifest;
-    }
-    await tx`insert into extension_runtime_unavailable(workspace_id,installation_id,runtime_identity,generation,release_digest,code,retry_at,checked_at)
-      values(${pin.workspace_id},${pin.id},${this.catalog.identity},${pin.generation},${pin.release_digest},${result.code},clock_timestamp()+interval '5 minutes',clock_timestamp())
-      on conflict(workspace_id,installation_id,runtime_identity) do update set generation=excluded.generation,
-        release_digest=excluded.release_digest,code=excluded.code,retry_at=excluded.retry_at,checked_at=excluded.checked_at`;
-    log.warn('Extension runtime unavailable', {
-      installationId: pin.id,
-      generation: pin.generation,
-      releaseDigest: pin.release_digest,
-      runtimeIdentity: this.catalog.identity,
-      code: result.code,
-    });
-    return null;
-  }
+  return { registrations, digests };
 }

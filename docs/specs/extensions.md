@@ -361,7 +361,7 @@ pass queues the cleanup job. As in an admin uninstall, a release with no active
 executable, or one the executor cannot resolve, is uninstalled directly with
 `cleanup_unavailable` and not visited again. The deletion takes the workspace's
 schema lock before its row, as schema changes do. While a workspace is being deleted only cleanup runs: the
-due, maintenance and reconciliation functions keep its uninstall jobs and
+due and maintenance functions keep its uninstall jobs and
 nothing else, and admission lets a cleanup run read the provider connection
 and nothing more. The hard delete waits until no installation is still within
 its cleanup deadline, then proceeds whether cleanup succeeded or not. The
@@ -665,33 +665,37 @@ not a random attempt ID.
 Pinned-release availability is operational state separate from provider connection
 health and installation lifecycle. A single resolver validates registration, version,
 exact manifest digest and the server's reviewed compatibility set. Its nonthrowing
-result is shared by claim, schedule maintenance and change dispatch. Unavailable
-releases create a workspace-RLS-scoped failure marker bound to the installation
-generation, release digest and immutable local catalog identity (including
-server/runtime/protocol compatibility and order-independent release metadata). All three
-discovery functions require that identity and exclude only matching markers until
-reconciliation succeeds. An older or partial catalog cannot quarantine work for a
-different catalog. API inspection reports `runtimeAvailability` separately from
-`connectionHealth`; the web app explains that pending work is saved.
+result is shared by claim, schedule maintenance, change dispatch, webhooks and
+uninstall. Availability is a stateless filter, as in Twenty's in-memory registry: each
+worker passes the `(registration, release digest)` pairs it can run now (catalog,
+server range, `runtimeEnabled`, deployed executables) to the job, maintenance and
+change discovery functions, which return only work pinned to one of them. Nothing is
+persisted, so an older or partial catalog cannot quarantine work for another worker.
+API inspection computes `runtimeAvailability` on read from its own catalog and, where it
+knows them, deployed executables, separately from `connectionHealth`; the web app
+explains that pending work is saved. Change dispatch and webhook ingress apply the same
+executables where their process loads them; elsewhere they judge by the catalog, and
+jobs no executor can run expire with the 24-hour job lifetime.
 
 Hosted resolution requires explicit operator `runtimeEnabled: true`. A false or absent
-flag pauses existing hosted jobs as well as new activation; restoring it changes catalog
-identity and resumes pending work. Standalone metadata does not require hosted
-execution.
+flag pauses existing hosted jobs as well as new activation; restoring it resumes the
+same pending work. Standalone metadata does not require hosted execution.
 
 Unavailable work stays queued without consuming execution attempts or advancing
-schedule/change cursors. A separate reconciliation pass probes at most 25 known failures
-before execution/change discovery; those probes never consume the execution budget.
-Retry resolution at most once per installation/catalog every five minutes under the
-installation and queue locks. A changed/restored catalog is eligible immediately;
-successful reinspection clears its own marker without changing installation generation
-or requiring upgrade. Expired jobs, cleanup deadlines and erasure continue
+schedule/change cursors, and never occupies the discovery window. A worker whose
+catalog can run the release sees it immediately, without changing installation
+generation or requiring upgrade; claim re-checks the pin and leaves an unresolvable job
+queued. Expired jobs, cleanup deadlines and erasure are never filtered and continue
 independently. Uninstall remains available when a release cannot load: revoke locally,
-retire callbacks and secrets, and skip unavailable provider cleanup code. Collect stale
-catalog markers in bounded batches after 30 days, with workspace deletion cascading
-them. Unexpected per-item claim/acknowledgement errors do not end a worker's loop:
-finish processing peers, then report the operational failure. Admin retry recognizes
-reserved built-in lifecycle jobs and validates their strict empty input.
+retire callbacks and secrets, and skip unavailable provider cleanup code. Accepted:
+maintenance that finds an uninstalling installation whose release it cannot run
+uninstalls it directly (`cleanup_unavailable`), which is safe because the deploy lock
+keeps one server version live; and work paused by `runtimeEnabled: false` for more than
+the 24-hour job lifetime expires, an install job failing setup (`setup_failed`, or
+`disabled` for an upgrade; both retryable). Unexpected per-item claim/acknowledgement
+errors do not end a worker's loop: finish processing peers, then report the
+operational failure. Admin retry recognizes reserved built-in lifecycle jobs and
+validates their strict empty input.
 
 One scheduler tick per minute transactionally locks due schedule rows, inserts
 jobs keyed by `(installation, function, scheduled UTC instant)`, then advances

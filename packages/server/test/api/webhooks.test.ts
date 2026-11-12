@@ -301,6 +301,34 @@ async function setup(
 }
 
 describe('verified public ingress with real Postgres', () => {
+  it('refuses callbacks for a release without a deployed executable before verifier execution', async () => {
+    const h = await setup();
+    const undeployed = new Webhooks({
+      sql: h.app.sql,
+      catalog: new ExtensionCatalog([
+        { manifest, actorCeiling: 'integration', runtimeEnabled: true },
+      ]),
+      broker,
+      registry: new ExecutionRegistry(executables),
+      driver,
+      publicOrigin: 'http://retainer.test',
+      activation: new Set(),
+    });
+    await expect(
+      undeployed.receive(
+        { route: 'notes', bindingId: h.bound.body.bindingId },
+        new Request(h.bound.body.url, {
+          method: 'POST',
+          headers: { 'x-fixture-signature': h.secret },
+          body: JSON.stringify({ delivery: 'undeployed', source: 'undeployed-note' }),
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 503, code: 'incompatible_runtime' });
+    expect(seen).toHaveLength(0);
+    expect(
+      await db.owner`select * from webhook_receipts where workspace_id=${h.workspace}`,
+    ).toHaveLength(0);
+  });
   it('refuses disabled-runtime callbacks before verifier execution and accepts provider retries after restoration', async () => {
     const h = await setup();
     const paused = new Webhooks({

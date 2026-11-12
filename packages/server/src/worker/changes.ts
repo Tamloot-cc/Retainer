@@ -75,7 +75,6 @@ export class ChangeMaintenance {
       pruned = 0,
       failed = 0;
     if (this.stopped) return { queued, blocked, pruned, failed };
-    if (this.queue) failed += (await this.queue.reconcile(this.discovery)).failed;
     const due = this.queue ? await this.queue.discoverChanges(this.discovery, this.after) : [];
     for (const item of due) {
       if (this.stopped || Date.now() >= deadline) break;
@@ -145,12 +144,7 @@ export class ChangeMaintenance {
               where b.state='retired' and b.updated_at<clock_timestamp()-interval '30 days'
               and not exists(select 1 from webhook_receipts r where r.binding_id=b.id)
               order by b.updated_at,b.id limit 1000 for update skip locked) returning id`;
-          const unavailable = await tx`with stale as (
-            select workspace_id,installation_id,runtime_identity from extension_runtime_unavailable
-            where checked_at<clock_timestamp()-interval '30 days' order by checked_at,installation_id limit 1000 for update skip locked)
-            delete from extension_runtime_unavailable u using stale s where u.workspace_id=s.workspace_id
-              and u.installation_id=s.installation_id and u.runtime_identity=s.runtime_identity returning u.installation_id`;
-          return jobs.length + receipts.length + bindings.length + unavailable.length;
+          return jobs.length + receipts.length + bindings.length;
         });
         pruned += await this.pruneChanges(workspace, deadline);
       } catch {

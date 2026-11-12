@@ -1169,21 +1169,19 @@ control cursors are erasable installation KV, never durable job input.
 
 ### 4.5 Extension runtime availability
 
-Catalog resolution is a shared foundation concern. `extension_runtime_unavailable`
-stores safe failure codes bound to workspace/installation, generation, release hash and
-catalog identity. Identity includes server/runtime/protocol support and a stable
-ordering of reviewed release metadata. Job, schedule and change discovery exclude the
-matching catalog/pin until a separate bounded reconciliation pass succeeds. Each pass
-probes at most 25 due failures, with a five-minute backoff; probes do not consume
-execution slots. Installation and queue locks serialize probes and protect control
-transitions. Catalog restoration recovers pending work without changing generation;
-another catalog's marker cannot block a capable coordinator. Provider connection health
+Catalog resolution is a shared foundation concern and keeps no state. Each worker
+passes the `(registration, release digest)` pairs it can run now (catalog, server range,
+`runtimeEnabled`, deployed executables) to job, schedule and change discovery, which
+return only work pinned to one of them; other work stays queued for a worker that can
+run it. Claim re-checks the pin. Catalog restoration recovers pending work without
+changing generation, and one worker's catalog never blocks another. The API computes
+`runtimeAvailability` on read from its own catalog. Provider connection health
 remains separate. Hosted runtime resolution requires explicit operator `runtimeEnabled:
 true`; disabling it pauses existing work as well as new activation.
 
 Unavailable execution never advances a cursor or consumes an attempt. Retention, cleanup
-deadlines and erasure still run; stale markers are collected after 30 days. Workers
-drain peers after an unexpected item failure before reporting the failure. First-party
+deadlines and erasure are never filtered and still run. Workers drain peers after an
+unexpected item failure before reporting the failure. First-party
 compatibility is an explicit reviewed version set, with bridge releases required before
 server transitions; deployment preflight continues to refuse unsupported installed pins.
 

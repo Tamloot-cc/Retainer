@@ -98,21 +98,6 @@ export async function extensionServices(
       fileStorage && options.workerSql && discovery
         ? new FileMaintenance(options.workerSql, discovery, fileStorage)
         : undefined;
-    const changeQueue =
-      catalog
-        .list()
-        .some((release) => release.manifest.functions.some((fn) => fn.trigger.kind === 'change')) &&
-      options.workerSql
-        ? new ExtensionQueue(options.workerSql, catalog.runtime, {
-            queued: 10000,
-            kvBytes: 1048576,
-            changesPerMinute: config.RETAINER_TRIGGER_ENQUEUES_PER_MINUTE,
-          })
-        : undefined;
-    const changeMaintenance =
-      options.workerSql && discovery
-        ? new ChangeMaintenance(options.workerSql, discovery, changeQueue)
-        : undefined;
     const activationReady = new Set<string>();
     if (tokens && config.RETAINER_EXTENSION_EXECUTABLES) {
       const entries: unknown = JSON.parse(config.RETAINER_EXTENSION_EXECUTABLES);
@@ -145,6 +130,30 @@ export async function extensionServices(
         activationReady.add(release.digest);
       }
     }
+    // Known only where this process loads the executable registry; elsewhere
+    // availability is the catalog's alone (docs/extensions-execution.md).
+    const activation =
+      tokens && config.RETAINER_EXTENSION_EXECUTABLES ? activationReady : undefined;
+    const changeQueue =
+      catalog
+        .list()
+        .some((release) => release.manifest.functions.some((fn) => fn.trigger.kind === 'change')) &&
+      options.workerSql
+        ? new ExtensionQueue(
+            options.workerSql,
+            catalog.runtime,
+            {
+              queued: 10000,
+              kvBytes: 1048576,
+              changesPerMinute: config.RETAINER_TRIGGER_ENQUEUES_PER_MINUTE,
+            },
+            activation,
+          )
+        : undefined;
+    const changeMaintenance =
+      options.workerSql && discovery
+        ? new ChangeMaintenance(options.workerSql, discovery, changeQueue)
+        : undefined;
     let webhooks: Webhooks | undefined;
     if (options.ingressSql && config.RETAINER_EXTENSION_VERIFIER_ORIGIN) {
       if (
@@ -169,6 +178,7 @@ export async function extensionServices(
         ),
         publicOrigin: config.RETAINER_PUBLIC_ORIGIN,
         rateLimit: config.RETAINER_WEBHOOK_RATE_LIMIT,
+        activation,
       });
     }
     let executor: ExtensionExecutor | undefined;
@@ -209,6 +219,7 @@ export async function extensionServices(
       webhooks,
       executor,
       activationReady,
+      activation,
       fileStorage,
       fileMaintenance,
       changeMaintenance,

@@ -111,11 +111,13 @@ describe('transactional schedule ticks', () => {
       last_error: null,
       connection_health: 'needs_reconnect',
     });
+    const { registrations, digests } = queue.runnable;
     expect(
       (
-        await db.owner`select code,generation,runtime_identity from extension_runtime_unavailable where installation_id=${broken.id}`
-      )[0],
-    ).toMatchObject({ code: 'incompatible_runtime', runtime_identity: catalog.runtime.identity });
+        await discovery<{ installation_id: string }[]>`
+          select installation_id from retainer_extension_maintenance_due(1000,${registrations}::uuid[],${digests}::text[])`
+      ).map((row) => row.installation_id),
+    ).not.toContain(broken.id);
     const [pending] =
       await db.owner`select next_due_at from extension_schedules where installation_id=${broken.id}`;
     expect(pending?.next_due_at).toEqual(past);

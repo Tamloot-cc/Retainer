@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { generateKeyPair } from 'jose';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { inWorkspace } from '../../src/db/tx.js';
-import { type RuntimeCatalog, resolveRelease } from '../../src/extension-runtime/availability.js';
+import { resolveRelease, runnableReleases } from '../../src/extension-runtime/availability.js';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
@@ -107,11 +106,7 @@ function executor(
 const discovery = () => db.connect({ role: 'retainer_executor' });
 
 describe('catalog-scoped runtime availability', () => {
-  it('has an order-independent identity and rejects unsupported versions and forged pin digests without throwing', () => {
-    expect(new ExtensionCatalog([...reviewed].reverse()).runtime.identity).toBe(
-      full.runtime.identity,
-    );
-    expect(partial.runtime.identity).not.toBe(full.runtime.identity);
+  it('resolves pins without throwing and lists only the releases this process can run', () => {
     const pin = {
       registration_id: broken.universalId,
       version: broken.version,
@@ -133,6 +128,28 @@ describe('catalog-scoped runtime availability', () => {
       available: false,
       code: 'release_unavailable',
     });
+    const digest = (m: typeof broken) => full.get(m.universalId, m.version).digest;
+    expect(runnableReleases(full.runtime).digests.sort()).toEqual(
+      [digest(broken), digest(healthy)].sort(),
+    );
+    expect(runnableReleases(partial.runtime)).toEqual({
+      registrations: [healthy.universalId],
+      digests: [digest(healthy)],
+    });
+    expect(runnableReleases(unsupported.runtime).digests).toEqual([]);
+    // Hosted releases also need a deployed executable when the process knows them.
+    expect(runnableReleases(full.runtime, new Set([digest(healthy)])).digests).toEqual([
+      digest(healthy),
+    ]);
+  });
+
+  it('keeps no persisted availability state', async () => {
+    expect(
+      (
+        await db.owner`select to_regclass('public.extension_runtime_unavailable') as marker,
+          to_regprocedure('public.retainer_extension_runtime_due(integer,text)') as probe`
+      )[0],
+    ).toEqual({ marker: null, probe: null });
   });
 
   it('executes a healthy workspace behind an unavailable queued job with one worker and preserves the blocked job', async () => {
@@ -146,21 +163,17 @@ describe('catalog-scoped runtime availability', () => {
       (await db.owner`select status,attempt from extension_jobs where id=${bad.jobId}`)[0],
     ).toEqual({ status: 'queued', attempt: 0 });
     expect(
+      await db.owner`select id from extension_attempts where job_id=${bad.jobId}`,
+    ).toHaveLength(0);
+    expect(
       (await db.owner`select status from extension_jobs where id=${good.jobId}`)[0]?.status,
     ).toBe('succeeded');
-    const [failure] =
-      await db.owner`select generation,release_digest,runtime_identity,code from extension_runtime_unavailable where installation_id=${bad.id}`;
-    expect(failure).toMatchObject({
-      generation: 1,
-      runtime_identity: partial.runtime.identity,
-      code: 'release_unavailable',
-    });
     expect(
       (await new ExtensionQueue(app.sql, partial.runtime).discover(discovery())).some(
         (row) => row.job_id === bad.jobId,
       ),
     ).toBe(false);
-    // The API's newer/full catalog is available; an older worker's marker must not leak into its status.
+    // The API's own (full) catalog can run it; another worker's catalog never leaks into its status.
     expect((await app.request(`/v1/extensions/${bad.id}`, { key: bad.key })).body).toMatchObject({
       state: 'active',
       connectionHealth: 'ok',
@@ -168,7 +181,7 @@ describe('catalog-scoped runtime availability', () => {
     });
   });
 
-  it('honors the operator execution flag for existing installations and resumes pending work when re-enabled', async () => {
+  it('honors the operator execution flag for existing installations and resumes the same job when re-enabled', async () => {
     const h = await setup();
     const disabled = new ExtensionCatalog(
       reviewed.map((row) =>
@@ -184,76 +197,65 @@ describe('catalog-scoped runtime availability', () => {
     const control = startTestApp(db, { extensionCatalog: disabled, runTokens: tokens });
     expect(
       (await control.request(`/v1/extensions/${h.id}`, { key: h.key })).body.runtimeAvailability,
-    ).toMatchObject({ state: 'unavailable', code: 'incompatible_runtime' });
+    ).toEqual({ state: 'unavailable', code: 'incompatible_runtime' });
     expect(await executor(full, invoke).tick()).toMatchObject({ executed: 1 });
     expect(invoke).toHaveBeenCalledOnce();
+    expect(
+      (await db.owner`select status,attempt from extension_jobs where id=${h.jobId}`)[0],
+    ).toEqual({ status: 'succeeded', attempt: 1 });
     expect(
       (await db.owner`select generation from extension_installations where id=${h.id}`)[0]
         ?.generation,
     ).toBe(1);
   });
 
-  it('keeps repeated unavailable probes out of a small execution budget and reconciles independently', async () => {
+  it('keeps unavailable work out of a small discovery window', async () => {
     const blocked = [];
     for (let i = 0; i < 6; i++) blocked.push(await setup());
     const good = await setup(healthy),
       queue = new ExtensionQueue(app.sql, partial.runtime);
-    for (const h of blocked) await queue.claim(h.workspace, h.jobId, 'classify');
     await db.owner`update extension_jobs set available_at=clock_timestamp()-interval '1 hour' where installation_id=any(${blocked.map((h) => h.id)}::uuid[])`;
-    // All blocked releases are due for another probe ahead of the healthy work.
-    await db.owner`update extension_runtime_unavailable set retry_at=clock_timestamp()-interval '1 second'`;
     expect((await queue.discover(discovery(), 4)).map((row) => row.job_id)).toEqual([good.jobId]);
     expect(await executor(partial).tick(4)).toMatchObject({ executed: 1 });
     expect(
       (await db.owner`select status from extension_jobs where id=${good.jobId}`)[0]?.status,
     ).toBe('succeeded');
-    expect(
-      await db.owner`select * from extension_runtime_unavailable where retry_at<=clock_timestamp()`,
-    ).toHaveLength(0);
   });
 
-  it('exposes catalog-local availability separately from provider health and enforces workspace isolation', async () => {
-    const h = await setup(),
-      other = await setup(healthy);
-    await new ExtensionQueue(app.sql, partial.runtime).claim(h.workspace, h.jobId, 'old');
+  it('reports availability from the reading process catalog, separately from provider health', async () => {
+    const h = await setup();
     const oldApp = startTestApp(db, { extensionCatalog: partial, runTokens: tokens });
     const info = await oldApp.request(`/v1/extensions/${h.id}`, { key: h.key });
-    expect(info.body).toMatchObject({
-      connectionHealth: 'ok',
-      runtimeAvailability: {
-        state: 'unavailable',
-        code: 'release_unavailable',
-        retryAt: expect.any(String),
-      },
+    expect(info.body).toMatchObject({ connectionHealth: 'ok' });
+    expect(info.body.runtimeAvailability).toEqual({
+      state: 'unavailable',
+      code: 'release_unavailable',
     });
     const listed = await oldApp.request('/v1/extensions', { key: h.key });
     expect(listed.body.installations[0].runtimeAvailability).toEqual(info.body.runtimeAvailability);
-    expect(
-      await inWorkspace(
-        app.sql,
-        other.workspace,
-        (tx) => tx`select * from extension_runtime_unavailable`,
-      ),
-    ).toHaveLength(0);
-    await expect(discovery()`select * from extension_runtime_unavailable`).rejects.toMatchObject({
-      code: '42501',
+    // Where the API knows the deployed executables, a hosted release without one is unavailable too.
+    const undeployed = startTestApp(db, {
+      extensionCatalog: full,
+      runTokens: tokens,
+      extensionActivation: new Set(),
     });
-    await expect(
-      inWorkspace(
-        app.sql,
-        other.workspace,
-        (
-          tx,
-        ) => tx`insert into extension_runtime_unavailable(workspace_id,installation_id,runtime_identity,generation,release_digest,code,retry_at)
-      values(${other.workspace},${h.id},${partial.runtime.identity},1,${'a'.repeat(64)},'release_unavailable',clock_timestamp())`,
-      ),
-    ).rejects.toMatchObject({ code: '23503' });
+    expect(
+      (await undeployed.request(`/v1/extensions/${h.id}`, { key: h.key })).body.runtimeAvailability,
+    ).toEqual({ state: 'unavailable', code: 'incompatible_runtime' });
   });
 
-  it('recovers immediately on catalog restoration without upgrading or changing generation and isolates competing catalogs', async () => {
+  it('leaves a job an older catalog cannot resolve queued at claim, and a newer catalog runs it at once without an upgrade', async () => {
     const h = await setup();
     const older = new ExtensionQueue(app.sql, partial.runtime);
+    // Defense in depth: claim re-checks even a job it was handed directly.
     expect(await older.claim(h.workspace, h.jobId, 'old')).toBeNull();
+    expect(
+      (
+        await db.owner`select status,attempt,lease_owner from extension_jobs where id=${h.jobId}`
+      )[0],
+    ).toEqual({ status: 'queued', attempt: 0, lease_owner: null });
+    expect(await older.discover(discovery())).toHaveLength(0);
+    expect((await h.queue.discover(discovery())).map((row) => row.job_id)).toEqual([h.jobId]);
     const results = await Promise.all([executor(partial).tick(), executor(full).tick()]);
     expect(results.reduce((sum, row) => sum + row.executed, 0)).toBe(1);
     expect(
@@ -262,87 +264,39 @@ describe('catalog-scoped runtime availability', () => {
     expect((await db.owner`select status from extension_jobs where id=${h.jobId}`)[0]?.status).toBe(
       'succeeded',
     );
-    expect(
-      (
-        await db.owner`select runtime_identity from extension_runtime_unavailable where installation_id=${h.id}`
-      )[0]?.runtime_identity,
-    ).toBe(partial.runtime.identity);
   });
 
-  it('bounds probes for the same catalog and resumes exactly once after its retry deadline', async () => {
+  it('leaves a hosted job without a deployed executable queued', async () => {
     const h = await setup();
-    let restored = false,
-      probes = 0;
-    const snapshot: RuntimeCatalog = {
-      identity: 'd'.repeat(64),
-      resolve: (id, version) => {
-        probes++;
-        if (!restored) throw new Error('must not persist this sensitive exception');
-        return full.runtime.resolve(id, version);
-      },
-    };
-    const queue = new ExtensionQueue(app.sql, snapshot);
-    expect(await queue.claim(h.workspace, h.jobId, 'first')).toBeNull();
-    restored = true;
-    expect(await queue.claim(h.workspace, h.jobId, 'too-soon')).toBeNull();
-    expect(probes).toBe(1);
-    await db.owner`update extension_runtime_unavailable set retry_at=clock_timestamp()-interval '1 second' where installation_id=${h.id}`;
-    const runs = await Promise.all([
-      queue.claim(h.workspace, h.jobId, 'one'),
-      queue.claim(h.workspace, h.jobId, 'two'),
-    ]);
-    expect(runs.filter(Boolean)).toHaveLength(1);
-    expect(probes).toBe(2);
-    expect(
-      await db.owner`select * from extension_runtime_unavailable where installation_id=${h.id}`,
-    ).toHaveLength(0);
-    const run = runs.find(Boolean);
-    if (!run) throw new Error('missing recovered run');
-    await queue.complete(run, { status: 'succeeded' });
-  });
-
-  it('clears a restored same-catalog failure through the bounded reconciliation path before job discovery', async () => {
-    const h = await setup();
-    let restored = false,
-      probes = 0;
-    const snapshot: RuntimeCatalog = {
-      identity: 'e'.repeat(64),
-      resolve: (id, version) => {
-        probes++;
-        if (!restored) throw new Error('unavailable');
-        return full.runtime.resolve(id, version);
-      },
-    };
-    const queue = new ExtensionQueue(app.sql, snapshot);
-    expect(await queue.claim(h.workspace, h.jobId, 'initial')).toBeNull();
-    restored = true;
-    await db.owner`update extension_runtime_unavailable set retry_at=clock_timestamp()-interval '1 second' where installation_id=${h.id}`;
+    const healthyDigest = full.get(healthy.universalId, healthy.version).digest;
+    const queue = new ExtensionQueue(app.sql, full.runtime, undefined, new Set([healthyDigest]));
     expect(await queue.discover(discovery())).toHaveLength(0);
-    expect(await Promise.all([queue.reconcile(discovery()), queue.reconcile(discovery())])).toEqual(
-      [{ failed: 0 }, { failed: 0 }],
-    );
-    expect(probes).toBe(2);
-    expect((await queue.discover(discovery())).map((row) => row.job_id)).toEqual([h.jobId]);
+    expect(await queue.claim(h.workspace, h.jobId, 'no-executable')).toBeNull();
+    expect(
+      (await db.owner`select status,attempt from extension_jobs where id=${h.jobId}`)[0],
+    ).toEqual({ status: 'queued', attempt: 0 });
   });
 
-  it('does not apply a previous generation or digest failure to a changed installation pin', async () => {
+  it('filters change dispatch and schedule maintenance by the runnable releases', async () => {
     const h = await setup();
-    await db.owner`insert into extension_runtime_unavailable(workspace_id,installation_id,runtime_identity,generation,release_digest,code,retry_at)
-      values(${h.workspace},${h.id},${full.runtime.identity},1,${'f'.repeat(64)},'incompatible_runtime',clock_timestamp()+interval '1 day')`;
-    const run = await h.queue.claim(h.workspace, h.jobId, 'changed-digest');
-    expect(run).toBeTruthy();
-    if (!run) throw new Error('stale failure blocked current pin');
-    await h.queue.complete(run, { status: 'succeeded' });
-    const next = await h.queue.enqueue(h.workspace, h.id, {
-      functionId,
-      input: {},
-      dedupeKey: 'next',
-    });
-    await db.owner`update extension_installations set generation=2 where id=${h.id}`;
-    await db.owner`update extension_jobs set generation=2 where id=${next.id}`;
-    await db.owner`insert into extension_runtime_unavailable(workspace_id,installation_id,runtime_identity,generation,release_digest,code,retry_at)
-      values(${h.workspace},${h.id},${full.runtime.identity},1,${full.get(broken.universalId, broken.version).digest},'release_unavailable',clock_timestamp()+interval '1 day')`;
-    expect(await h.queue.claim(h.workspace, next.id, 'changed-generation')).toBeTruthy();
+    await db.owner`insert into change_counters(workspace_id,position) values(${h.workspace},5)
+      on conflict(workspace_id) do update set position=5`;
+    await db.owner`insert into change_dispatch(workspace_id,installation_id,generation,position) values(${h.workspace},${h.id},1,0)`;
+    await db.owner`update extension_schedules set next_due_at=clock_timestamp()-interval '1 minute' where installation_id=${h.id}`;
+    const older = new ExtensionQueue(app.sql, partial.runtime);
+    const maintenance = (queue: ExtensionQueue) => {
+      const { registrations, digests } = queue.runnable;
+      return discovery()<{ installation_id: string }[]>`
+        select installation_id from retainer_extension_maintenance_due(1000,${registrations}::uuid[],${digests}::text[])`;
+    };
+    expect((await older.discoverChanges(discovery(), null)).map((r) => r.installation_id)).toEqual(
+      [],
+    );
+    expect((await maintenance(older)).map((r) => r.installation_id)).toEqual([]);
+    expect(
+      (await h.queue.discoverChanges(discovery(), null)).map((r) => r.installation_id),
+    ).toEqual([h.id]);
+    expect((await maintenance(h.queue)).map((r) => r.installation_id)).toEqual([h.id]);
   });
 
   it('continues after an unexpected per-item claim failure and reports it after processing peers', async () => {
@@ -421,6 +375,15 @@ describe('catalog-scoped runtime availability', () => {
       await db.owner`select id from extension_jobs where installation_id=${h.id} and trigger_kind='uninstall'`;
     const older = new ExtensionQueue(app.sql, partial.runtime);
     expect(await older.claim(h.workspace, cleanup?.id, 'cleanup')).toBeNull();
+    // Before the deadline the queued cleanup waits for a worker that can run it.
+    expect(await older.discover(discovery())).toHaveLength(0);
+    await older.maintain(discovery());
+    expect(
+      (await db.owner`select state from extension_installations where id=${h.id}`)[0]?.state,
+    ).toBe('uninstalling');
+    expect(
+      (await db.owner`select status,attempt from extension_jobs where id=${cleanup?.id}`)[0],
+    ).toEqual({ status: 'queued', attempt: 0 });
     await db.owner`update extension_installations set cleanup_deadline=clock_timestamp()-interval '1 second' where id=${h.id}`;
     await older.maintain(discovery());
     expect(
@@ -428,18 +391,28 @@ describe('catalog-scoped runtime availability', () => {
     ).toEqual({ state: 'uninstalled', last_error: 'cleanup_deadline_expired' });
   });
 
-  it('keeps job expiry and stale diagnostic collection running without catalog availability', async () => {
+  it('uninstalls directly when a release becomes unavailable before its cleanup is queued', async () => {
+    const h = await setup();
+    // As a workspace deletion leaves it: uninstalling, deadline ahead, no cleanup job yet.
+    await db.owner`update extension_installations set state='uninstalling',generation=generation+1,
+      cleanup_deadline=clock_timestamp()+interval '1 hour' where id=${h.id}`;
+    await new ExtensionQueue(app.sql, partial.runtime).maintain(discovery());
+    expect(
+      (await db.owner`select state,last_error from extension_installations where id=${h.id}`)[0],
+    ).toEqual({ state: 'uninstalled', last_error: 'cleanup_unavailable' });
+    expect(
+      await db.owner`select id from extension_jobs where installation_id=${h.id} and trigger_kind='uninstall'`,
+    ).toHaveLength(0);
+  });
+
+  it('keeps job expiry running without catalog availability', async () => {
     const h = await setup(),
       older = new ExtensionQueue(app.sql, partial.runtime);
     await older.claim(h.workspace, h.jobId, 'old');
     await db.owner`update extension_jobs set expires_at=clock_timestamp()-interval '1 second' where id=${h.jobId}`;
-    await db.owner`update extension_runtime_unavailable set checked_at=clock_timestamp()-interval '31 days' where installation_id=${h.id}`;
     expect((await new ChangeMaintenance(app.sql, discovery()).tick()).failed).toBe(0);
     expect((await db.owner`select status,code from extension_jobs where id=${h.jobId}`)[0]).toEqual(
       { status: 'failed', code: 'job_expired' },
     );
-    expect(
-      await db.owner`select * from extension_runtime_unavailable where installation_id=${h.id}`,
-    ).toHaveLength(0);
   });
 });

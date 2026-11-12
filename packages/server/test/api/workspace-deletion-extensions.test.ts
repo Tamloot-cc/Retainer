@@ -5,6 +5,7 @@ import { createApiKey } from '../../src/auth/keys.js';
 import { CONTROL_ROLE } from '../../src/config.js';
 import type { Sql } from '../../src/db/client.js';
 import { lockSchemaExclusive, type Tx } from '../../src/db/tx.js';
+import { runnableReleases } from '../../src/extension-runtime/availability.js';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
@@ -158,10 +159,11 @@ const remove = (s: Setup) =>
     body: { name: s.name },
   });
 
+const runnable = () => runnableReleases(catalog.runtime);
 const due = async () =>
   (
     await executor()<{ job_id: string }[]>`
-      select job_id from retainer_extension_jobs_due(1000,${catalog.runtime.identity})`
+      select job_id from retainer_extension_jobs_due(1000,${runnable().registrations}::uuid[],${runnable().digests}::text[])`
   ).map((r) => r.job_id);
 
 const backdate = (workspace: string, days: number) =>
@@ -355,7 +357,7 @@ describe('cleanup that cannot run', () => {
   const maintenanceDue = async () =>
     (
       await executor()<{ installation_id: string }[]>`
-        select installation_id from retainer_extension_maintenance_due(1000,${catalog.runtime.identity})`
+        select installation_id from retainer_extension_maintenance_due(1000,${runnable().registrations}::uuid[],${runnable().digests}::text[])`
     ).map((r) => r.installation_id);
 
   it.each([
