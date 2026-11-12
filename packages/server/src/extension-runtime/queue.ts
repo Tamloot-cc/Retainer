@@ -412,6 +412,7 @@ export class ExtensionQueue {
             'cursor_expired',
             'change dispatch history expired; rescan current records before restarting the trigger',
           );
+        // Order by the column, not the `position::text` alias, which sorts as text.
         const rows = await tx<DispatchedChange[]>`
         select position::text,record_id,object_type_id,operation,field_keys,cause,origin_installation_id,related_record_ids,merged_into_id from record_changes
         where position>${checkpoint.position}::bigint order by record_changes.position limit ${limit}`;

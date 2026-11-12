@@ -98,6 +98,7 @@ export class Changes {
    */
   async page(tx: Tx, schema: CompiledSchema, workspace: string, head: FeedHead, limit: number) {
     const { current, after } = head;
+    // Order by the column, not the `position::text` alias, which sorts as text.
     const raw = await tx<
       ChangeRow[]
     >`select position::text,record_id,object_type_id,operation,field_keys,related_record_ids,origin_installation_id,cause,merged_into_id
