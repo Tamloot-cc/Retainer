@@ -1,3 +1,5 @@
+import { satisfiesServerRange } from '../packages/extension/dist/index.js';
+
 /** Release policy shared by artifact generation and its real-Git tests. */
 export function extensionRelease(git, development) {
   const commit = git('rev-parse', 'HEAD');
@@ -18,12 +20,14 @@ export function extensionRelease(git, development) {
   return { commit, development, version: development ? '1.0.0' : `1.0.${ordinal}` };
 }
 
-// Review this exact set before a server-version transition. A bridge release must
-// be tested on both versions, installed while the old server is still running,
-// then retained across the server upgrade. Never infer support from semver alone.
-const REVIEWED_SERVER_VERSIONS = Object.freeze(['0.1.0']);
-export function extensionServerVersions(currentVersion) {
-  if (!REVIEWED_SERVER_VERSIONS.includes(currentVersion))
+// The reviewed server range first-party releases declare. Widen it only after
+// testing the releases on the new server line; a patch inside it needs no new
+// release. Moving to a new line (0.2.0) is the bridge: a release whose range
+// covers both lines, installed while the old server still runs, retained across
+// the upgrade. The packaged server must be inside the range.
+export const REVIEWED_SERVER_RANGE = '>=0.1.0 <0.2.0';
+export function extensionServerRange(currentVersion, range = REVIEWED_SERVER_RANGE) {
+  if (!satisfiesServerRange(currentVersion, range))
     throw new Error('first-party extension compatibility must be reviewed for this server version');
-  return [...REVIEWED_SERVER_VERSIONS];
+  return range;
 }

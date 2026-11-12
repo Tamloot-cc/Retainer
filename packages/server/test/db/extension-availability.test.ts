@@ -123,7 +123,7 @@ describe('catalog-scoped runtime availability', () => {
       code: 'incompatible_runtime',
     });
     const unsupported = new ExtensionCatalog([
-      { manifest: { ...broken, serverVersions: ['999.0.0'] }, actorCeiling: 'integration' },
+      { manifest: { ...broken, serverRange: '>=999.0.0 <1000.0.0' }, actorCeiling: 'integration' },
     ]);
     expect(resolveRelease(unsupported.runtime, pin)).toEqual({
       available: false,
@@ -372,7 +372,10 @@ describe('catalog-scoped runtime availability', () => {
         kind === 'missing'
           ? partial
           : new ExtensionCatalog([
-              { manifest: { ...broken, serverVersions: ['999.0.0'] }, actorCeiling: 'integration' },
+              {
+                manifest: { ...broken, serverRange: '>=999.0.0 <1000.0.0' },
+                actorCeiling: 'integration',
+              },
             ]);
       const control = startTestApp(db, {
         extensionCatalog: catalog,

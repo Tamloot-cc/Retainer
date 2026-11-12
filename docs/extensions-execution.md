@@ -159,14 +159,22 @@ are retired, and unavailable cleanup code is skipped. Expired jobs, uninstall cl
 deadlines and erasure keep running. Catalog markers older than 30 days are collected;
 workspace purge deletes them too.
 
-First-party compatibility is reviewed in `scripts/extension-release.mjs` as an exact
-server-version set. Artifact generation refuses an unreviewed package version. Before a
-server version transition, test and publish a bridge extension release with both
-versions in that set, upgrade every referenced installation while the old server runs,
-then deploy the new server. Disabled installations and live cleanup also count as
-references. Retaining old bytes does not establish compatibility, and an incompatible
-adapter requires an explicit migration/removal plan. Hosted preflight keeps refusing a
-server rollout with unsupported pins.
+First-party compatibility is reviewed in `scripts/extension-release.mjs` as a bounded
+server semver range (`REVIEWED_SERVER_RANGE`, now `>=0.1.0 <0.2.0`), like Twenty's
+`engines.twenty`. Artifact generation refuses a package version outside it, and the
+manifest contract refuses a range without an upper bound in every alternative, so a
+release never claims servers nobody reviewed. A server patch inside the range needs
+no new extension release: installed releases keep their digests and stay available.
+Only a move to a new server line needs a bridge: widen the range to cover both lines
+(for example `>=0.1.0 <0.3.0`) after testing on both, publish and upgrade every
+referenced installation while the old server runs, then deploy the new server.
+Disabled installations and live cleanup also count as references. Releases built
+with the earlier exact `serverVersions` list stay valid as an exact set, so their
+digests do not change; they still need a bridge release for any version outside
+their list. Prerelease server builds (for example `0.2.0-rc.1`) match no release
+range or list, so their extension catalog is empty by design. Retaining old bytes does not establish compatibility, and an
+incompatible adapter requires an explicit migration/removal plan. Hosted preflight
+keeps refusing a server rollout with unsupported pins.
 
 ## Change feeds and retention recovery
 

@@ -44,6 +44,22 @@ Status of row 1: done (Phase 2 item 1). Migrations 0088–0089 add
 SQL lookups bind to it. Ordinary settings update in place: they fence runs but
 neither disable the installation nor revoke its credentials.
 
+Status of row 2: done (Phase 2). Releases declare a reviewed, bounded semver
+`serverRange` (`packages/extension/src/semver.ts`; first-party
+`>=0.1.0 <0.2.0` in `scripts/extension-release.mjs`), so a server patch inside
+it needs no new release. Catalogs built with the exact `serverVersions` list
+still load as an exact set with unchanged digests. Bridge releases are needed
+only to move to a new server line.
+
+Status of row 3: done (Phase 2). Contributions' stored definitions are the
+publisher base. Object labels and description and field label and description
+are workspace-overridable: a workspace edit wins with a preview warning and
+only the base moves; an unedited value takes the publisher's change. Views are
+updated when unedited, kept (`keep_workspace`, with a warning) when edited
+and not recreated (`deleted_workspace`) when deleted;
+the decision is in the plan digest and rechecked under the view's row lock.
+Structural changes stay `409 upgrade_conflict`.
+
 ## 3. Risks and fixes
 
 | #   | Risk                                                                                                                                                                                                                                                                                                                         | Evidence                                                                                                                           | Fix (Twenty mechanism where one exists)                                                                                                                                                                                                                                                                                                                                                        |

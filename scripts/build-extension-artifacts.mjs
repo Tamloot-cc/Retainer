@@ -9,7 +9,7 @@ import { defineExtension } from '../packages/extension/dist/index.js';
 import { granolaManifest } from '../packages/runner/dist/granola-contract.js';
 import { lastContactManifest } from '../packages/runner/dist/last-contact.js';
 import { stableJson } from '../packages/server/dist/stable-json.js';
-import { extensionRelease, extensionServerVersions } from './extension-release.mjs';
+import { extensionRelease, extensionServerRange } from './extension-release.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -43,7 +43,7 @@ const manifest = defineExtension({
   version,
   description: 'Deterministic first-party adapter for execution verification.',
   packageDigest,
-  serverVersions: extensionServerVersions(
+  serverRange: extensionServerRange(
     JSON.parse(readFileSync(resolve(root, 'packages/server/package.json'))).version,
   ),
   runtimeVersion: 'node24',
@@ -289,7 +289,7 @@ const lastContact = lastContactManifest({
   version,
   packageDigest,
   handlerDigest: hash(readFileSync(resolve(root, 'packages/runner/dist/last-contact.js'))),
-  serverVersions: manifest.serverVersions,
+  serverRange: manifest.serverRange,
 });
 const lastContactDigest = hash(stableJson(lastContact)),
   lastContactOut = resolve(root, 'artifacts/extensions/last-contact');
@@ -328,7 +328,7 @@ const granola = granolaManifest({
   packageDigest,
   handlerDigest: hash(readFileSync(resolve(root, 'packages/runner/dist/granola.js'))),
   verifierDigest: hash(readFileSync(resolve(root, 'packages/runner/dist/webhooks.js'))),
-  serverVersions: manifest.serverVersions,
+  serverRange: manifest.serverRange,
 });
 const granolaDigest = hash(stableJson(granola)),
   granolaOut = resolve(root, 'artifacts/extensions/granola');

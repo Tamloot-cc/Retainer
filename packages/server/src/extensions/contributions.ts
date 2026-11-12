@@ -57,13 +57,32 @@ export function retiredContributions(
   return retired;
 }
 
-/** Additive releases preserve local names, labels, deprecation and omitted elements. */
+/**
+ * Presentation properties a workspace may override, like Twenty's overridable
+ * label, description and icon (`WORKSPACE_LOCAL_STATE_PROPERTIES` plus the
+ * `isOverridable` entity properties). They change how an element reads, never
+ * what it stores, so a workspace edit and a publisher edit never conflict.
+ * Names, types, settings (options) and constraints are structural.
+ */
+export const OVERRIDABLE = {
+  object: ['labelSingular', 'labelPlural', 'description'],
+  field: ['label', 'description'],
+} as const;
+
+/**
+ * Additive releases preserve local names, deprecation and omitted elements.
+ * Each owned contribution's stored definition is the publisher base it was
+ * last applied from. A presentation property the workspace changed (live
+ * differs from the base) keeps the workspace value and only the base moves to
+ * the new release; an unchanged one takes the publisher's new value.
+ */
 export function contributionOperations(
   current: SchemaState,
   manifest: ExtensionManifest,
   owned: ContributionRow[],
-): SchemaOperation[] {
+): { operations: SchemaOperation[]; notices: string[] } {
   const operations: SchemaOperation[] = [];
+  const notices: string[] = [];
   const retired = retiredContributions(current, manifest, owned);
   const owner = (kind: string, id: string) =>
     owned.find((c) => c.kind === kind && c.universal_id === id);
@@ -75,17 +94,23 @@ export function contributionOperations(
     live: ObjectState | FieldState,
     objectId: string,
   ) => {
-    const keys =
-      kind === 'object'
-        ? ['labelSingular', 'labelPlural', 'description']
-        : ['label', 'description'];
     const changes: Record<string, unknown> = {};
-    for (const key of keys) {
+    for (const key of OVERRIDABLE[kind]) {
       const previous = before[key] ?? null,
         next = desired[key] ?? null;
       if (previous === next) continue;
       const actual = (live as unknown as Record<string, unknown>)[key] ?? null;
-      if (actual !== previous && actual !== next) conflict(id, [key]);
+      if (actual === next) continue;
+      if (actual !== previous) {
+        // The workspace overrode it: its value wins; the base still moves on.
+        const what = key === 'description' ? 'description' : 'label';
+        const name =
+          kind === 'object' ? (live as ObjectState).nameSingular : (live as FieldState).name;
+        notices.push(
+          `${kind === 'object' ? 'Object' : 'Field'} ${name} keeps the ${what} set in this workspace; this release changes the publisher's ${what} to "${String(next ?? '')}".`,
+        );
+        continue;
+      }
       changes[key] = next;
     }
     if (Object.keys(changes).length && live.status === 'active') {
@@ -170,5 +195,5 @@ export function contributionOperations(
     );
     for (const f of definition.fields) field(definition.universalId, f);
   }
-  return operations;
+  return { operations, notices };
 }

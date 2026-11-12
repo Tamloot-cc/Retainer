@@ -58,6 +58,25 @@ describe('release-owned catalog', () => {
     expect(catalog.list()).toEqual([]);
     expect(() => catalog.get(incompatible.universalId, incompatible.version)).toThrow('support');
   });
+  it('resolves a reviewed server range across server patches and keeps exact-list digests', () => {
+    const { serverVersions: _, ...base } = manifest();
+    const ranged = { ...base, serverRange: '>=0.1.0 <0.2.0' };
+    const outside = { ...base, version: '2.0.0', serverRange: '>=0.2.0 <0.3.0' };
+    const catalog = new ExtensionCatalog([
+      { manifest: ranged, actorCeiling: 'integration' },
+      { manifest: outside, actorCeiling: 'integration' },
+    ]);
+    expect(catalog.list().map((r) => r.manifest.version)).toEqual(['1.0.0']);
+    expect(catalog.get(ranged.universalId, '1.0.0').manifest.serverRange).toBe('>=0.1.0 <0.2.0');
+    expect(() => catalog.get(outside.universalId, '2.0.0')).toThrow('support');
+    // An already-built exact-list release keeps the digest it was installed with.
+    const exact = manifest();
+    const [listed] = new ExtensionCatalog([
+      { manifest: exact, actorCeiling: 'integration' },
+    ]).list();
+    expect(listed?.digest).toBe(hash(exact));
+    expect(listed?.manifest).not.toHaveProperty('serverRange');
+  });
   it('hashes canonical JSON without key-order differences', () => {
     expect(hash({ a: 1, b: { d: 2, c: 3 } })).toBe(hash({ b: { c: 3, d: 2 }, a: 1 }));
   });

@@ -99,7 +99,7 @@ export function granolaManifest(build: {
   packageDigest: string;
   handlerDigest: string;
   verifierDigest: string;
-  serverVersions: string[];
+  serverRange: string;
 }): ExtensionManifest {
   const empty = { type: 'object', additionalProperties: false };
   const fn = (
@@ -124,7 +124,7 @@ export function granolaManifest(build: {
     description:
       'Import shared summaries and transcript files from an explicitly shared Granola API credential. Private notes and photos are excluded.',
     packageDigest: build.packageDigest,
-    serverVersions: build.serverVersions,
+    serverRange: build.serverRange,
     runtimeVersion: 'node24',
     protocolVersion: 1,
     execution: 'hosted',

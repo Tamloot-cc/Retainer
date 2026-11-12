@@ -84,11 +84,31 @@ const renamed = extensionFixture({
   version: '4.0.0',
   schema: [{ kind: 'field', objectId, definition: { ...status, label: 'Publisher status' } }],
 });
+const reviewed = extensionFixture({
+  ...base,
+  version: '5.0.0',
+  views: [
+    {
+      universalId: viewId,
+      objectId,
+      name: 'Publisher items',
+      kind: 'table',
+      fieldIds: [fieldId, titleId],
+    },
+  ],
+});
+const moved = extensionFixture({
+  ...base,
+  version: '6.0.0',
+  views: [
+    { universalId: viewId, objectId: randomUUID(), name: 'Moved', kind: 'table', fieldIds: [] },
+  ],
+});
 let t: TestApp;
 beforeAll(() => {
   t = startTestApp(db, {
     extensionCatalog: new ExtensionCatalog(
-      [base, next, bad, grant, renamed].map((manifest) => ({
+      [base, next, bad, grant, renamed, reviewed, moved].map((manifest) => ({
         manifest,
         actorCeiling: 'integration',
       })),
@@ -137,7 +157,7 @@ describe('additive extension upgrades', () => {
     );
     expect((await sdk.view(view.elementId)).name).toBe('Our view');
   });
-  it('rejects structural changes, grant escalation and conflicting publisher labels before applying anything', async () => {
+  it('rejects structural and grant changes before applying anything', async () => {
     const { sdk, installed, input } = await setup();
     await expect(
       sdk.previewExtension({ ...input, installationId: installed.id, version: '2.0.0' }),
@@ -145,13 +165,119 @@ describe('additive extension upgrades', () => {
     await expect(
       sdk.previewExtension({ ...input, installationId: installed.id, version: '3.0.0' }),
     ).rejects.toMatchObject({ code: 'grant_required' });
+    // A view cannot move to another object: that needs a new view identity.
+    await expect(
+      sdk.previewExtension({ ...input, installationId: installed.id, version: '6.0.0' }),
+    ).rejects.toMatchObject({ code: 'upgrade_conflict' });
+    expect((await sdk.extension(installed.id)).version).toBe('1.0.0');
+  });
+  it('keeps a workspace label over a publisher label change and updates only the base', async () => {
+    const { sdk, installed, input } = await setup();
     await sdk.proposeSchemaChange([
       { op: 'update_field', object: 'fixtureItem', field: 'status', label: 'Our status' },
     ]);
+    const upgrade = { ...input, installationId: installed.id, version: '4.0.0' };
+    const plan = await sdk.previewExtension(upgrade);
+    expect(plan.operations).toEqual([]);
+    expect(plan.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('keeps the label set in this workspace')]),
+    );
+    await sdk.upgradeExtension(installed.id, { ...upgrade, planDigest: plan.planDigest }, 'keep');
+    const object = (await sdk.schema()).objects.find((o) => o.nameSingular === 'fixtureItem');
+    expect(object?.fields.find((f) => f.name === 'status')?.label).toBe('Our status');
+    const [base] = await db.owner<{ definition: { label: string } }[]>`
+      select definition from extension_contributions
+      where installation_id = ${installed.id} and universal_id = ${fieldId}`;
+    expect(base?.definition.label).toBe('Publisher status');
+    expect((await sdk.extension(installed.id)).version).toBe('4.0.0');
+  });
+  it('applies a publisher view change to an unedited view', async () => {
+    const { sdk, installed, input } = await setup();
+    const view = (await sdk.extension(installed.id)).contributions.find((c) => c.kind === 'view');
+    if (!view) throw new Error('missing view');
+    const upgrade = { ...input, installationId: installed.id, version: '5.0.0' };
+    const plan = await sdk.previewExtension(upgrade);
+    expect(plan.views).toEqual([
+      { universalId: viewId, name: 'Publisher items', action: 'update' },
+    ]);
+    await sdk.upgradeExtension(installed.id, { ...upgrade, planDigest: plan.planDigest }, 'view');
+    const saved = await sdk.view(view.elementId);
+    expect(saved.name).toBe('Publisher items');
+    expect(saved.columns?.order).toEqual(['status', 'name']);
+  });
+  it('keeps a workspace-edited view and reports it without blocking the upgrade', async () => {
+    const { sdk, installed, input } = await setup();
+    const view = (await sdk.extension(installed.id)).contributions.find((c) => c.kind === 'view');
+    if (!view) throw new Error('missing view');
+    await sdk.updateView(view.elementId, { name: 'Our view' });
+    const upgrade = { ...input, installationId: installed.id, version: '5.0.0' };
+    const plan = await sdk.previewExtension(upgrade);
+    expect(plan.views).toEqual([
+      { universalId: viewId, name: 'Publisher items', action: 'keep_workspace' },
+    ]);
+    expect(plan.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('keeps the version edited in this workspace'),
+      ]),
+    );
+    await sdk.upgradeExtension(installed.id, { ...upgrade, planDigest: plan.planDigest }, 'keep');
+    const saved = await sdk.view(view.elementId);
+    expect(saved.name).toBe('Our view');
+    expect(saved.columns?.order).toEqual(['name', 'status']);
+    expect((await sdk.extension(installed.id)).version).toBe('5.0.0');
+  });
+  it('does not recreate or rebase a view the workspace deleted', async () => {
+    const { sdk, installed, input } = await setup();
+    const view = (await sdk.extension(installed.id)).contributions.find((c) => c.kind === 'view');
+    if (!view) throw new Error('missing view');
+    await sdk.deleteView(view.elementId);
+    const upgrade = { ...input, installationId: installed.id, version: '5.0.0' };
+    const plan = await sdk.previewExtension(upgrade);
+    expect(plan.views).toEqual([
+      { universalId: viewId, name: 'Publisher items', action: 'deleted_workspace' },
+    ]);
+    expect(plan.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('deleted in this workspace; it is not recreated'),
+      ]),
+    );
+    await sdk.upgradeExtension(installed.id, { ...upgrade, planDigest: plan.planDigest }, 'gone');
+    const [row] = await db.owner<{ definition: { name: string } }[]>`
+      select definition from extension_contributions
+      where installation_id = ${installed.id} and universal_id = ${viewId}`;
+    expect(row?.definition.name).toBe('Fixture items');
+    const [count] = await db.owner<{ n: number }[]>`
+      select count(*)::int as n from views
+      where workspace_id = (select workspace_id from extension_installations where id = ${installed.id})
+        and name = 'Publisher items'`;
+    expect(count?.n).toBe(0);
+  });
+  it('refuses a stale view decision: an edit after preview invalidates the plan', async () => {
+    const { sdk, installed, input } = await setup();
+    const view = (await sdk.extension(installed.id)).contributions.find((c) => c.kind === 'view');
+    if (!view) throw new Error('missing view');
+    const upgrade = { ...input, installationId: installed.id, version: '5.0.0' };
+    const plan = await sdk.previewExtension(upgrade);
+    await sdk.updateView(view.elementId, { name: 'Late edit' });
     await expect(
-      sdk.previewExtension({ ...input, installationId: installed.id, version: '4.0.0' }),
-    ).rejects.toMatchObject({ code: 'upgrade_conflict', details: { properties: ['label'] } });
-    expect((await sdk.extension(installed.id)).version).toBe('1.0.0');
+      sdk.upgradeExtension(installed.id, { ...upgrade, planDigest: plan.planDigest }, 'late'),
+    ).rejects.toMatchObject({ code: 'stale_plan' });
+    expect((await sdk.view(view.elementId)).name).toBe('Late edit');
+  });
+  it('never overwrites a view edit that races the upgrade', async () => {
+    const { sdk, installed, input } = await setup();
+    const view = (await sdk.extension(installed.id)).contributions.find((c) => c.kind === 'view');
+    if (!view) throw new Error('missing view');
+    const upgrade = { ...input, installationId: installed.id, version: '5.0.0' };
+    const plan = await sdk.previewExtension(upgrade);
+    const [upgraded] = await Promise.allSettled([
+      sdk.upgradeExtension(installed.id, { ...upgrade, planDigest: plan.planDigest }, 'race'),
+      sdk.updateView(view.elementId, { name: 'Racing edit' }),
+    ]);
+    if (upgraded.status === 'rejected')
+      expect(upgraded.reason).toMatchObject({ code: 'stale_plan' });
+    // Whichever committed first, the workspace's edit is the view's final name.
+    expect((await sdk.view(view.elementId)).name).toBe('Racing edit');
   });
   it('requires a distinct human approval plan for scope and actor increases and atomically replaces the grant', async () => {
     expect(() => new ExtensionCatalog([{ manifest: grant, actorCeiling: 'agent' }])).toThrow(
