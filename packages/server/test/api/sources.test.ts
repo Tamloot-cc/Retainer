@@ -10,6 +10,7 @@ import { type ClaimedJob, ExtensionQueue } from '../../src/extension-runtime/que
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { createFileServer, LocalFileStorage } from '../../src/file-storage/local.js';
+import { requestHash } from '../../src/idempotency.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
@@ -773,7 +774,7 @@ describe('managed source evidence with real RLS Postgres', () => {
       (await h.sync(nextToken, otherItem, '1', null, h.event('Surviving source'))).status,
     ).toBe(200);
   });
-  it('fences only the erased source installation and leaves unrelated installations running', async () => {
+  it('fences the erased source installation, requeues other live runs and keeps unrelated queued work and KV', async () => {
     const workId = randomUUID(),
       other = extensionFixture({
         scopes: ['read', 'write'],
@@ -831,34 +832,81 @@ describe('managed source evidence with real RLS Postgres', () => {
     });
     const running = await h.queue.claim(h.workspace.id, work.id, 'unrelated-worker');
     if (!running) throw new Error('unrelated run missing');
-    await h.queue.checkpoint(running, {
-      children: [],
-      kv: { key: 'cursor', expectedRevision: null, value: { page: 3 } },
-    });
-    const snapshot = async () => ({
-      installation:
-        await db.owner`select generation,state from extension_installations where id=${b}`,
-      jobs: await db.owner`select id,status,fence::text,generation,input,lease_owner from extension_jobs where installation_id=${b} order by id`,
-      attempts:
-        await db.owner`select id,status,code,finished_at from extension_attempts where job_id=${work.id} order by id`,
-      kv: await db.owner`select key,value,revision from extension_kv where installation_id=${b}`,
-    });
-    const before = await snapshot();
-    const [generationA] =
-      await db.owner`select generation from extension_installations where id=${h.id}`;
     const [person] =
       await db.owner`select record_id from record_identifiers where workspace_id=${h.workspace.id} and value='forgotten@fixture.test'`;
+    const personId = person?.record_id as string;
+    for (const [key, value] of [
+      ['cursor', { page: 3 }],
+      ['last-attendee', { lastAttendee: 'Forgotten@Fixture.test' }],
+      ['last-record', { recordId: personId }],
+    ] as const)
+      await h.queue.checkpoint(running, {
+        children: [],
+        kv: { key, expectedRevision: null, value },
+      });
+    const queuedWork = await h.queue.enqueue(h.workspace.id, b, {
+      functionId: workId,
+      input: { page: 4 },
+      dedupeKey: randomUUID(),
+    });
+    const job = async (id: string) =>
+      (
+        await db.owner`select status,fence::text,generation,input,lease_owner,updated_at from extension_jobs where id=${id}`
+      )[0];
+    const [installationB] =
+      await db.owner`select generation,state from extension_installations where id=${b}`;
+    const runningBefore = await job(work.id),
+      queuedBefore = await job(queuedWork.id);
+    const unrelatedKey = await tokens.issue(h.app.sql, running, other.universalId, running.scopes);
+    const [generationA] =
+      await db.owner`select generation from extension_installations where id=${h.id}`;
     expect(
       (
-        await h.app.request(`/v1/records/${person?.record_id}/forget`, {
+        await h.app.request(`/v1/records/${personId}/forget`, {
           key: h.keys.admin,
           method: 'POST',
         })
       ).status,
     ).toBe(200);
-    expect(await snapshot()).toEqual(before);
-    expect(before.kv).toHaveLength(1);
-    expect(before.jobs.find((j) => j.id === work.id)?.status).toBe('running');
+    // The unrelated installation keeps its generation, its queued work and its operational KV ...
+    expect(
+      (await db.owner`select generation,state from extension_installations where id=${b}`)[0],
+    ).toEqual(installationB);
+    expect(await job(queuedWork.id)).toEqual(queuedBefore);
+    expect(
+      await db.owner`select key,value from extension_kv where installation_id=${b} order by key`,
+    ).toEqual([{ key: 'cursor', value: { page: 3 } }]);
+    // ... but its live run, which could have read the erased person, is cancelled and requeued with a new fence.
+    const requeued = await job(work.id);
+    expect(requeued).toMatchObject({
+      status: 'queued',
+      generation: runningBefore?.generation,
+      input: { page: 3 },
+      lease_owner: null,
+    });
+    expect(BigInt(requeued?.fence)).toBe(BigInt(runningBefore?.fence) + 1n);
+    expect(
+      await db.owner`select status,code from extension_attempts where job_id=${work.id} order by attempt`,
+    ).toEqual([{ status: 'cancelled', code: 'privacy_erased' }]);
+    expect(
+      (
+        await h.app.request('/v1/objects/person/records', {
+          key: unrelatedKey,
+          body: { values: { name: 'Stale run' } },
+        })
+      ).status,
+    ).toBe(409);
+    const resumed = await h.queue.claim(h.workspace.id, work.id, 'after-erasure');
+    if (!resumed) throw new Error('unrelated durable work lost');
+    expect(
+      (
+        await h.app.request('/v1/objects/person/records', {
+          key: await tokens.issue(h.app.sql, resumed, other.universalId, resumed.scopes),
+          body: { values: { name: 'Fresh run' } },
+        })
+      ).status,
+    ).toBe(201);
+    // The source installation is fenced by generation and loses all KV.
     const [afterA] =
       await db.owner`select generation from extension_installations where id=${h.id}`;
     expect(afterA?.generation).toBe((generationA?.generation ?? 0) + 1);
@@ -868,15 +916,6 @@ describe('managed source evidence with real RLS Postgres', () => {
     const [cancelled] =
       await db.owner`select input,status from extension_jobs where id=${s.run.jobId}`;
     expect(cancelled).toEqual({ input: {}, status: 'cancelled' });
-    const unrelatedKey = await tokens.issue(h.app.sql, running, other.universalId, running.scopes);
-    expect(
-      (
-        await h.app.request('/v1/objects/person/records', {
-          key: unrelatedKey,
-          body: { values: { name: 'Still running' } },
-        })
-      ).status,
-    ).toBe(201);
   });
   it('drops an erased participant and still imports the meeting without storing or recreating them', async () => {
     const h = await setup('everyone'),
@@ -918,8 +957,31 @@ describe('managed source evidence with real RLS Postgres', () => {
       { email: 'gone@fixture.test' },
       { email: 'kept@fixture.test' },
     ]);
-    const imported = await h.sync(s.key, s.itemId, '1', null, listed);
+    // A client digest over the event as it sent it, erased handle included, is checked in memory only.
+    const submitted = requestHash({
+      type: listed.type,
+      occurredAt: '2026-11-10T10:00:00.000Z',
+      title: 'Later',
+      summary: '',
+      fields: {},
+      participants: listed.participants.map((p) => ({ ...p, contacted: false })),
+      about: [],
+    });
+    const importWith = (contentDigest: string) =>
+      h.app.request(`${h.base}/source-events`, {
+        key: s.key,
+        body: {
+          sourceItemId: s.itemId,
+          providerRevision: '1',
+          expectedRevisionId: null,
+          contentDigest,
+          event: listed,
+        },
+      });
+    expect((await importWith('f'.repeat(64))).status).toBe(422);
+    const imported = await importWith(submitted);
     expect(imported.status).toBe(200);
+    expect(imported.body.contentDigest).not.toBe(submitted);
     expect(
       await db.owner`select 1 from record_identifiers where workspace_id=${h.workspace.id} and value='gone@fixture.test'`,
     ).toHaveLength(0);
@@ -940,6 +1002,10 @@ describe('managed source evidence with real RLS Postgres', () => {
     const [revision] =
       await db.owner`select content_digest from source_revisions where item_id=${s.itemId}`;
     expect(revision?.content_digest).toBe(clean.body.contentDigest);
+    expect(
+      await db.owner`select 1 from source_receipts where content_digest=${submitted} or response::text like ${`%${submitted}%`}
+        union all select 1 from source_revisions where content_digest=${submitted}`,
+    ).toHaveLength(0);
     expect(
       JSON.stringify(
         await db.owner`select response from source_receipts where item_id=${s.itemId}`,
