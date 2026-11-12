@@ -1038,38 +1038,19 @@ describe('managed source evidence with real RLS Postgres', () => {
       else process.env.RETAINER_SUPPRESSION_PREVIOUS_KEYS = oldPrevious;
     }
   });
-  it('uses the same item authority and revision semantics over MCP', async () => {
+  it('refuses run tokens at /mcp: runs use only the REST runtime and API', async () => {
     const h = await setup(),
-      s = await h.item(),
-      client = await h.app.mcpClient(s.key);
-    try {
-      expect(
-        (await client.call('get_source_item', { installationId: h.id, sourceItemId: s.itemId }))
-          .body.externalId,
-      ).toBeTruthy();
-      const imported = await client.call('sync_source_event', {
-        installationId: h.id,
-        sourceItemId: s.itemId,
-        providerRevision: '1',
-        expectedRevisionId: null,
-        event: h.event('MCP evidence'),
-      });
-      expect(imported.isError).toBe(false);
-      expect(imported.body.created).toBe(true);
-      expect(
-        (
-          await client.call('sync_source_event', {
-            installationId: h.id,
-            sourceItemId: randomUUID(),
-            providerRevision: '1',
-            expectedRevisionId: null,
-            event: h.event(),
-          })
-        ).isError,
-      ).toBe(true);
-    } finally {
-      await client.close();
-    }
+      s = await h.item();
+    // The same token works over REST.
+    expect((await h.app.request(`${h.base}/source-items/${s.itemId}`, { key: s.key })).status).toBe(
+      200,
+    );
+    const res = await h.app.request('/mcp', {
+      key: s.key,
+      body: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+    });
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
   it('applies the reviewed retract policy only after definitive provider deletion', async () => {
     const h = await setup('never', true, 'retract'),

@@ -165,7 +165,6 @@ export function createApp(deps: AppDeps) {
     extensionActivation: deps.extensionActivation,
     fileStorage: deps.fileStorage,
     fileQuota: deps.fileQuota,
-    runTokens: deps.runTokens,
   });
 
   if (deps.webDir) {

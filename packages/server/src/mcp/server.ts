@@ -1,12 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
-import { AppError } from '../errors.js';
 import { ExtensionCatalog } from '../extensions/catalog.js';
 import { Extensions } from '../extensions/service.js';
 import type { FileStorage } from '../file-storage/contract.js';
 import { Files } from '../files/service.js';
-import { Sources } from '../sources/service.js';
 import { VERSION } from '../version.js';
 import { SERVER_ICON } from './icon.js';
 import { INSTRUCTIONS } from './instructions.js';
@@ -15,7 +13,6 @@ import { registerExtensionTools } from './tools/extensions.js';
 import { registerFileTools } from './tools/files.js';
 import { registerReadTools } from './tools/read.js';
 import { registerSetupTools } from './tools/setup.js';
-import { registerSourceTools } from './tools/sources.js';
 import { registerWriteTools } from './tools/write.js';
 
 /**
@@ -55,16 +52,6 @@ export function createMcpServer(
     caller,
   );
   registerFileTools(server, new Files(sql, options.fileStorage, options.fileQuota), caller);
-  registerSourceTools(
-    server,
-    new Sources(sql, (id, version, digest) => {
-      const release = catalog.get(id, version);
-      if (release.digest !== digest)
-        throw new AppError(409, 'incompatible_runtime', 'source release changed');
-      return release.manifest;
-    }),
-    caller,
-  );
   registerSetupTools(server, sql, caller);
   registerReadTools(server, sql, caller);
   registerChangeTools(server, sql, caller);
