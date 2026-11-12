@@ -275,17 +275,22 @@ deprecated. Do not silently adopt unrelated fields with matching names.
 Contributed objects and fields belong to the installation while it is not
 `uninstalled`: the schema engine refuses `delete_object` and `delete_field`
 (directly, by cascade, or when a person approves an earlier proposal) with
-`422 schema_invalid` naming the element, and points to renaming/relabelling or
-uninstalling first. As in Twenty, only presentation is workspace-local. A
+`422 schema_invalid` naming the element and the blocking installation and
+registration, and points to renaming/relabelling or uninstalling first. This
+also blocks deleting a workspace's own object while an extension has added a
+field or relation to it, because the cascade would delete the contribution.
+The check runs under the exclusive schema lock, so it serializes with an
+install or upgrade that contributes the same element. As in Twenty, only presentation is workspace-local. A
 contribution deleted before this rule is treated as absent: plans don't
 recreate it, skip new fields of a deleted object, skip new views over it with a
 warning, and accept triggers on it (they never fire), so upgrade and enable
 still work. Managed source event types must still be active.
 
-An upgrade may supply pending secret references for secret settings its
-installed release does not declare, so a release that adds a required secret
-can be applied. Replacing a secret the installed release already declares still
-needs reconnect.
+An upgrade may supply pending secret references for secret settings the
+installation does not store, so a release that adds a required secret can be
+applied. Replacing a stored secret still needs reconnect, including one that
+an intermediate release stopped declaring: upgrades never delete stored
+secrets.
 
 Upgrade disables new triggers, increments generation, fences old runs, and waits
 for admitted database writes to finish before applying the new release. Validate
@@ -744,8 +749,9 @@ truncated update. Direct self-writes remain quiet under cause-chain dispatch.
 
 ## 10. Source ingestion, edits and deletion
 
-Do not change `logEvent` into an upsert. Add `sync_source_event` (REST
-`POST /v1/extensions/:installation/source-events`) for managed imports. Require
+Do not change `logEvent` into an upsert. Add a managed import endpoint,
+`POST /v1/extensions/:installation/source-events`; it is REST only, since runs
+can't use MCP. Require
 write scope plus installation match. Input contains stable source account/item
 ID, optional normalized content digest assertion, provider revision/order marker when available,
 expected current revision, event body, and ready file references. Return
@@ -794,7 +800,7 @@ case, and survives key rotation/reinstallation.
 
 A live managed-source run can read its current local binding with
 `GET /v1/extensions/:id/source`. Normal keys cannot use this runtime metadata
-surface. Fields in `sync_source_event` accept stable field universal UUIDs or
+surface. Fields in a `source-events` import accept stable field universal UUIDs or
 permanent keys; the server resolves both to permanent keys for canonical content.
 Supplying both aliases for one field is `422 invalid_source_field`. An isolated
 adapter can therefore use public schema identities without learning database keys.
