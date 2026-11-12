@@ -330,6 +330,12 @@ export class ExtensionExecutor {
               continue;
             }
             if (!job) continue;
+            // A DB lock can outlast the claim window. Hand this unstarted claim
+            // back instead of launching a fresh handler inside the drain budget.
+            if (this.draining) {
+              await this.release(job);
+              break;
+            }
             claimed++;
             const workspace = job.workspaceId;
             perWorkspace.set(workspace, (perWorkspace.get(workspace) ?? 0) + 1);

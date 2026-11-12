@@ -409,6 +409,48 @@ describe('trusted executor protocol with an explicitly in-process test driver', 
       await loop;
     }
   });
+  it('releases a claim acquired after drain began without invoking the provider', async () => {
+    const h = await setup();
+    const blocker = db.connect({ max: 1, keepConnections: true });
+    const queueKey = `${h.workspace}:${h.id}`;
+    await blocker`select pg_advisory_lock(21062::int4, hashtext(${queueKey}))`;
+    const invoked: string[] = [];
+    const executor = h.executor({
+      invoke: async (_target, invocation) => {
+        invoked.push(invocation.runId);
+        return { status: 'succeeded' };
+      },
+    });
+    // Isolate claims from maintenance so the real queue lock blocks claim() itself.
+    const loop = executor.run({ idleMs: 10, maintenanceMs: Number.POSITIVE_INFINITY });
+    try {
+      await expect
+        .poll(async () =>
+          Number(
+            (
+              await db.owner`
+        select count(*)::int as count from pg_locks where locktype='advisory'
+          and classid=21062 and not granted
+          and database=(select oid from pg_database where datname=current_database())`
+            )[0]?.count,
+          ),
+        )
+        .toBe(1);
+      executor.drain();
+    } finally {
+      await blocker`select pg_advisory_unlock(21062::int4, hashtext(${queueKey}))`;
+      executor.drain();
+      await loop;
+    }
+    expect(invoked).not.toContain(h.jobId);
+    expect(
+      (
+        await db.owner`select status,code,cycle_attempt,lease_owner from extension_jobs where id=${h.jobId}`
+      )[0],
+    ).toEqual({ status: 'queued', code: 'executor_stopped', cycle_attempt: 0, lease_owner: null });
+    expect(await h.queue.claim(h.workspace, h.jobId, 'successor')).not.toBeNull();
+    await db.owner`update extension_jobs set status='cancelled',lease_until=null where id=${h.jobId}`;
+  });
   it('elects exactly one leader when coordinator invocations race on real sessions', async () => {
     const h = await setup();
     const started = deferred<void>();
