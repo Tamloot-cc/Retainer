@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { defineExtension, defineFunction } from './index.js';
+import {
+  defineExtension,
+  defineFunction,
+  functionScopes,
+  functionSecrets,
+  lifecycleInputSchema,
+} from './index.js';
 
 export const fixture = () => ({
   manifestVersion: 1,
@@ -322,5 +328,63 @@ describe('strict extension contracts', () => {
         ),
       }),
     ).toThrow('webhook contract');
+  });
+  it('declares per-function secrets and scopes inside the release ceiling, defaulting to it when absent', () => {
+    const fn = (extra: object) => ({
+      universalId: randomUUID(),
+      name: 'sync',
+      description: 'Sync',
+      handlerDigest: 'b'.repeat(64),
+      trigger: { kind: 'job' },
+      inputSchema: { type: 'object', additionalProperties: false },
+      ...extra,
+    });
+    const settings = {
+      apiKey: { type: 'string', label: 'API key', secret: true, required: true },
+      signing: { type: 'string', label: 'Signing', secret: true, generated: true },
+      enabled: { type: 'boolean', label: 'Enabled', required: true },
+    };
+    const manifest = defineExtension({
+      ...fixture(),
+      settings,
+      functions: [fn({ secrets: ['apiKey'], scopes: ['read'] }), { ...fn({}), name: 'old' }],
+    });
+    const [narrow, legacy] = manifest.functions;
+    if (!narrow || !legacy) throw new Error('missing functions');
+    expect(functionSecrets(manifest, narrow)).toEqual(['apiKey']);
+    expect(functionScopes(manifest, narrow)).toEqual(['read']);
+    // An absent declaration keeps the first contract's behaviour (and digest).
+    expect('secrets' in legacy).toBe(false);
+    expect(functionSecrets(manifest, legacy)).toEqual(['apiKey', 'signing']);
+    expect(functionScopes(manifest, legacy)).toEqual(['read', 'write']);
+    for (const invalid of [
+      { secrets: ['enabled'] },
+      { secrets: ['missing'] },
+      { secrets: ['apiKey', 'apiKey'] },
+    ])
+      expect(() => defineExtension({ ...fixture(), settings, functions: [fn(invalid)] })).toThrow(
+        'function secrets',
+      );
+    for (const invalid of [{ scopes: ['read', 'read'] }, { scopes: [] }])
+      expect(() => defineExtension({ ...fixture(), settings, functions: [fn(invalid)] })).toThrow();
+    expect(() =>
+      defineExtension({
+        ...fixture(),
+        scopes: ['read'],
+        settings,
+        functions: [fn({ scopes: ['read', 'write'] })],
+      }),
+    ).toThrow('function scopes');
+  });
+  it('gives install hooks the previously installed version, null on a first install', () => {
+    expect(lifecycleInputSchema.parse({ previousVersion: null })).toEqual({
+      previousVersion: null,
+    });
+    expect(lifecycleInputSchema.parse({ previousVersion: '1.2.3' })).toEqual({
+      previousVersion: '1.2.3',
+    });
+    expect(lifecycleInputSchema.parse({})).toEqual({});
+    expect(lifecycleInputSchema.safeParse({ previousVersion: 'x' }).success).toBe(false);
+    expect(lifecycleInputSchema.safeParse({ other: 1 }).success).toBe(false);
   });
 });

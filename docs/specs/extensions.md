@@ -172,7 +172,9 @@ Illustrative manifest (UUIDs below must be allocated permanently before shipping
         "required": ["sourceItemId"],
         "additionalProperties": false
       },
-      "timeoutSeconds": 120
+      "timeoutSeconds": 120,
+      "secrets": ["apiKey"],
+      "scopes": ["read", "write"]
     }
   ]
 }
@@ -187,6 +189,12 @@ Registration is an operator/release action, not a workspace API. Reject unknown 
 references, unsupported settings/schema types and mutable same-version digests.
 Reject executable settings defaults and remote code references. Maximum manifest
 size is 1 MiB; settings JSON 64 KiB excluding separately stored secrets.
+
+A function may declare `secrets`, the secret settings it reads or writes, and
+`scopes`, the runtime scopes it needs, a subset of the release's `scopes`.
+Its run receives only those (§8). Absent fields keep the first contract's
+behaviour (every secret setting; the release's scopes), so catalogs built
+before them load with unchanged digests; first-party releases declare both.
 
 Each function has one trigger: `install`, `uninstall`, `route`, `serverRoute`,
 `schedule`, `change`, or `job`. Only `job` handlers are directly enqueueable by
@@ -411,7 +419,11 @@ may permit `integration`; neither receives human approval powers. A user-trigger
 run remains an extension actor, with `triggeredBy` attribution separately stored.
 
 Effective scopes are the intersection of registration ceiling, approved install,
-function needs and credential. Runtime grants have `read`/`write` only in v1;
+function needs and credential. The claim computes the function's share (its
+declared `scopes` within the installed grant) and the run token carries at most
+that; a read-only function's token cannot write. The token also binds the
+claimed job's function ID, and admission matches it against the job row, so a
+credential cannot act for another function's job. Runtime grants have `read`/`write` only in v1;
 schema changes use lifecycle control. Platform operations (KV, enqueue, files,
 connections) require explicit installation-bound capabilities. All writes still
 use assertions and existing precedence. Never accept Actor, workspace, generation
@@ -508,7 +520,9 @@ workspace/installation/key-name data. Keys stay outside the database; retain key
 versions for rotation. Refresh under a per-connection lock, persist rotating
 refresh tokens atomically, and mark `needs_reconnect` on terminal errors. Do not
 log secrets or return them to admin reads. Give a run only its own requested
-secret; redact provider response bodies from error logs. KV is not a secret store. A secret setting may declare `generated: true` only
+secret: the claim copies the function's declared `secrets` onto the job row,
+and both the runtime secret endpoint (404 for an undeclared name) and the
+broker's own SQL admission refuse any other. Redact provider response bodies from error logs. KV is not a secret store. A secret setting may declare `generated: true` only
 when it is optional and secret. Such provider-generated signing/refresh material
 is omitted from human settings forms and cannot be staged by an admin. Live
 runs can write it with revision CAS through `PUT /v1/extensions/:id/runtime/secrets/:name`; runs cannot overwrite human-provided
@@ -522,7 +536,11 @@ and reliance on the API connection remaining alive.
 ### 9.1 Executor protocol and isolation
 
 Protocol v1 invocation: `{protocolVersion, runId, attempt, installationId,
-releaseDigest, functionId, input, apiOrigin, runToken, deadline}`. The driver
+releaseDigest, functionId, input, apiOrigin, runToken, deadline}`. Lifecycle
+input is server-defined, not the function's `inputSchema`: `install` receives
+`{previousVersion}`, the release version installed before this setup (an
+upgrade, re-enable or settings re-setup), or null on a first install or a
+reinstall after uninstall; `uninstall` receives `{}`. The driver
 receives the executable mapping from the trusted registry, not this JSON.
 Result is `{status: 'succeeded'|'retry'|'failed', code?, retryAfterSeconds?}` with a
 bounded diagnostics string. API-origin and protocol compatibility are validated

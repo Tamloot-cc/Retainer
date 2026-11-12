@@ -757,8 +757,18 @@ export class Extensions {
         await tx`update extension_installations set connection_health='ok',activated_at=clock_timestamp() where id=${row.id}`;
         row.connection_health = 'ok';
       }
+      // Setup learns which release it replaces; a first install or a reinstall after
+      // uninstall starts fresh (null).
+      const previousVersion =
+        plan.existing && plan.existing.state !== 'uninstalled' ? plan.existing.version : null;
       if (ready && !standalone)
-        await this.queue().enqueueLifecycle(tx, caller.workspaceId, row.id, 'install');
+        await this.queue().enqueueLifecycle(
+          tx,
+          caller.workspaceId,
+          row.id,
+          'install',
+          previousVersion,
+        );
       const response = present(row);
       await tx`insert into extension_receipts (workspace_id, key, request_hash, installation_id, generation, response)
         values (${caller.workspaceId}, ${key}, ${requestHash}, ${row.id}, ${row.generation}, ${tx.json(jsonValue(response))})`;
@@ -952,7 +962,8 @@ export class Extensions {
         updated_at = now()
         where id = ${id} returning *`;
       if (!updated) throw notFound('extension installation');
-      if (ready) await this.queue().enqueueLifecycle(tx, caller.workspaceId, id, 'install');
+      if (ready)
+        await this.queue().enqueueLifecycle(tx, caller.workspaceId, id, 'install', current.version);
       return present(updated);
     });
   }
@@ -994,7 +1005,8 @@ export class Extensions {
       >`update extension_installations set state=${standalone ? 'active' : 'installing'},setup_kind='install',generation=generation+1,
         connection_health=${standalone ? 'ok' : 'needs_reconnect'},last_error=null,activated_at=case when ${standalone} then clock_timestamp() else null end,updated_at=now() where id=${id} returning *`;
       if (!row) throw notFound('extension installation');
-      if (!standalone) await this.queue().enqueueLifecycle(tx, caller.workspaceId, id, 'install');
+      if (!standalone)
+        await this.queue().enqueueLifecycle(tx, caller.workspaceId, id, 'install', current.version);
       return present(row);
     });
   }

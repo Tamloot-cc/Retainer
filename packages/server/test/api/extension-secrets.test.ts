@@ -401,7 +401,7 @@ describe('broker-only secret storage and opaque approval references', () => {
       });
     const read = inWorkspace(brokerSql, workspace, async (tx) => {
       const [admission] =
-        await tx`select retainer_admit_secret_run(${manifest.universalId}::uuid,${id}::uuid,${run.generation},${run.jobId}::uuid,${run.owner},${run.fence}::bigint,${run.releaseDigest},false) as admitted`;
+        await tx`select retainer_admit_secret_run(${manifest.universalId}::uuid,${id}::uuid,${run.generation},${run.jobId}::uuid,${run.owner},${run.fence}::bigint,${run.releaseDigest},${run.functionId}::uuid,'apiKey',false) as admitted`;
       expect(admission?.admitted).toBe(true);
       entered();
       await paused;
@@ -431,7 +431,7 @@ describe('broker-only secret storage and opaque approval references', () => {
       ),
     ).rejects.toMatchObject({ code: 'installation_disabled' });
     await expect(
-      t.sql`select retainer_admit_secret_run(${manifest.universalId}::uuid,${id}::uuid,${run.generation},${run.jobId}::uuid,${run.owner},${run.fence}::bigint,${run.releaseDigest},false)`,
+      t.sql`select retainer_admit_secret_run(${manifest.universalId}::uuid,${id}::uuid,${run.generation},${run.jobId}::uuid,${run.owner},${run.fence}::bigint,${run.releaseDigest},${run.functionId}::uuid,'apiKey',false)`,
     ).rejects.toMatchObject({ code: '42501' });
   });
   it('requires fresh human credentials on reinstall and replaces retired generated material under the new grant', async () => {

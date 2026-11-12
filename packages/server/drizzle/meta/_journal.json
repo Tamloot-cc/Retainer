@@ -652,6 +652,20 @@
       "when": 1794457080546,
       "tag": "0092_change_cause_depth",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1794458418598,
+      "tag": "0093_job_run_secrets",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1794458424613,
+      "tag": "0094_function_secret_admission",
+      "breakpoints": true
     }
   ]
 }

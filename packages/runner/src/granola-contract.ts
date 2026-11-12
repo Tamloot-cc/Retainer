@@ -115,6 +115,19 @@ export function granolaManifest(build: {
     timeoutSeconds: universalId === GRANOLA.verifier ? 5 : universalId === GRANOLA.sync ? 300 : 120,
     trigger,
     inputSchema,
+    // Every run reads the API key; only setup registers webhooks and stores their
+    // signing secret. The verifier gets its signing secret through webhook
+    // admission, never a run credential. Cleanup only removes provider hooks.
+    secrets:
+      universalId === GRANOLA.verifier
+        ? []
+        : universalId === GRANOLA.setup
+          ? ['apiKey', 'signing']
+          : ['apiKey'],
+    scopes:
+      universalId === GRANOLA.verifier || universalId === GRANOLA.cleanup
+        ? ['read']
+        : ['read', 'write'],
   });
   return defineExtension({
     manifestVersion: 1,

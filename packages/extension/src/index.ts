@@ -97,6 +97,22 @@ export const functionSchema = z.strictObject({
   trigger,
   inputSchema,
   timeoutSeconds: z.number().int().min(1).max(300).default(120),
+  /**
+   * The secret settings this function reads or writes. Its run receives only
+   * these. Absent (the first contract) means every secret setting, so
+   * already-built catalogs and their digests stay valid.
+   */
+  secrets: z.array(name).max(100).optional(),
+  /**
+   * The runtime scopes this function needs, a subset of the release's scopes.
+   * Its run token carries the intersection with the installed grant. Absent
+   * means the release's scopes.
+   */
+  scopes: z
+    .array(z.enum(['read', 'write']))
+    .min(1)
+    .max(2)
+    .optional(),
 });
 export const viewSchema = z.strictObject({
   universalId: uuid,
@@ -277,6 +293,26 @@ function checkFunction(fn: z.infer<typeof functionSchema>) {
     nextOccurrence(fn.trigger.cron, new Date('2000-01-01T00:00:00Z'));
   }
 }
+type FunctionDefinition = ExtensionManifest['functions'][number];
+/** The secret settings a function's run may read or write (spec 8). */
+export function functionSecrets(
+  manifest: Pick<ExtensionManifest, 'settings'>,
+  fn: Pick<FunctionDefinition, 'secrets'>,
+): string[] {
+  return (
+    fn.secrets ??
+    Object.entries(manifest.settings)
+      .filter(([, definition]) => definition.secret)
+      .map(([key]) => key)
+  );
+}
+/** The scopes a function needs; its run token gets their intersection with the grant (spec 8). */
+export function functionScopes(
+  manifest: Pick<ExtensionManifest, 'scopes'>,
+  fn: Pick<FunctionDefinition, 'scopes'>,
+): ('read' | 'write')[] {
+  return fn.scopes ?? manifest.scopes;
+}
 /** Whether a release supports this server: inside its range, or in its exact list. */
 export function supportsServer(
   manifest: Pick<ExtensionManifest, 'serverRange' | 'serverVersions'>,
@@ -398,7 +434,21 @@ export function defineExtension(value: unknown): ExtensionManifest {
   for (const definition of Object.values(manifest.settings))
     if (definition.secret && definition.type !== 'string')
       throw new Error('unsupported_manifest: secrets must be strings');
-  for (const fn of manifest.functions) checkFunction(fn);
+  for (const fn of manifest.functions) {
+    checkFunction(fn);
+    if (
+      fn.secrets &&
+      (new Set(fn.secrets).size !== fn.secrets.length ||
+        fn.secrets.some((key) => !manifest.settings[key]?.secret))
+    )
+      throw new Error('unsupported_manifest: function secrets must name distinct secret settings');
+    if (
+      fn.scopes &&
+      (new Set(fn.scopes).size !== fn.scopes.length ||
+        fn.scopes.some((scope) => !manifest.scopes.includes(scope)))
+    )
+      throw new Error('unsupported_manifest: function scopes must be distinct release scopes');
+  }
   if (manifest.source) {
     const source = manifest.source;
     if (

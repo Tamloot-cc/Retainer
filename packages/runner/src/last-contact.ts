@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { defineExtension, type ExecutionResult, type Invocation } from '@retainer/extension';
+import {
+  defineExtension,
+  type ExecutionResult,
+  type Invocation,
+  lifecycleInputSchema,
+} from '@retainer/extension';
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
 import { BASE_EVENT_TYPE_IDS, BASE_OBJECT_IDS } from '@retainer/shared';
 import { z } from 'zod';
@@ -48,6 +53,13 @@ export function lastContactManifest(build: {
     timeoutSeconds: 120,
     trigger,
     inputSchema,
+    secrets: [],
+    // Setup and the recovery schedule only queue a scan (KV and checkpoint);
+    // the scan and change handlers write derived claims.
+    scopes:
+      universalId === LAST_CONTACT.setup || universalId === LAST_CONTACT.schedule
+        ? ['read']
+        : ['read', 'write'],
   });
   return defineExtension({
     manifestVersion: 1,
@@ -192,7 +204,7 @@ async function lastContact(
     const input =
       invocation.functionId === LAST_CONTACT.schedule
         ? z.strictObject({ scheduledAt: z.iso.datetime() })
-        : z.strictObject({});
+        : lifecycleInputSchema;
     if (!input.safeParse(invocation.input).success)
       return { status: 'failed', code: 'invalid_input' };
     await kick(invocation.functionId === LAST_CONTACT.setup);

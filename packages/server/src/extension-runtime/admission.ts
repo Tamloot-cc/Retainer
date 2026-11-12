@@ -41,7 +41,7 @@ export async function admitRun(
   // Hold a shared row lock through commit so lease takeover cannot overtake an admitted write.
   const [job] =
     await tx`select trigger_kind from extension_jobs where id=${run.jobId} and installation_id=${run.installationId}
-    and generation=${run.generation} and release_digest=${run.releaseDigest} and status='running'
+    and function_id=${run.functionId} and generation=${run.generation} and release_digest=${run.releaseDigest} and status='running'
     and lease_owner=${run.owner} and fence=${run.fence}::bigint
     and lease_until>clock_timestamp() and run_until>clock_timestamp() for share`;
   if (!job) throw new AppError(409, 'lease_expired', 'run lease expired or was replaced');

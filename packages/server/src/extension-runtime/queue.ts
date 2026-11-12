@@ -1,5 +1,11 @@
 import type { InputSchema } from '@retainer/extension';
-import { nextOccurrence, SYSTEM_LIFECYCLE_FUNCTION_ID } from '@retainer/extension';
+import {
+  functionScopes,
+  functionSecrets,
+  lifecycleInputSchema,
+  nextOccurrence,
+  SYSTEM_LIFECYCLE_FUNCTION_ID,
+} from '@retainer/extension';
 import { sourceScanSchema } from '@retainer/shared';
 import { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
@@ -152,6 +158,19 @@ export function validateInput(schema: InputSchema, value: unknown, depth = 0): v
   }
 }
 
+/**
+ * Lifecycle input is server-defined, not the function's `inputSchema`: setup gets
+ * `{previousVersion}` (jobs queued before it existed carry `{}`); cleanup gets `{}`.
+ */
+export function validateLifecycleInput(kind: 'install' | 'uninstall', value: unknown): void {
+  const valid =
+    kind === 'install'
+      ? lifecycleInputSchema.safeParse(value).success
+      : z.strictObject({}).safeParse(value).success;
+  if (!valid)
+    throw new AppError(422, 'invalid_input', 'lifecycle input does not match its server contract');
+}
+
 /** Durable queue. No method executes provider code or accepts a workspace-supplied executable. */
 export class ExtensionQueue {
   private readonly availability: RuntimeAvailability;
@@ -213,7 +232,8 @@ export class ExtensionQueue {
       input.functionId === SYSTEM_LIFECYCLE_FUNCTION_ID && ['install', 'uninstall'].includes(kind);
     if (!system && fn?.trigger.kind !== kind)
       throw new AppError(422, 'invalid_input', 'only registered job functions can be enqueued');
-    if (fn) validateInput(fn.inputSchema, input.input);
+    if (kind === 'install' || kind === 'uninstall') validateLifecycleInput(kind, input.input);
+    else if (fn) validateInput(fn.inputSchema, input.input);
     let sourceItemId: string | null = null;
     if (manifest.source?.syncFunctionIds.includes(input.functionId)) {
       sourceItemId = z.uuid().parse((input.input as { sourceItemId?: unknown }).sourceItemId);
@@ -376,8 +396,17 @@ export class ExtensionQueue {
       throw new AppError(403, 'forbidden', 'webhook target must be a pinned source sync function');
     return { id: await this.insert(tx, installation, input, []) };
   }
-  /** Trusted control transaction only. Runtime payloads never select lifecycle kinds. */
-  async enqueueLifecycle(tx: Tx, workspace: string, id: string, kind: 'install' | 'uninstall') {
+  /**
+   * Trusted control transaction only. Runtime payloads never select lifecycle kinds.
+   * Setup receives the release version installed before it (null on a first install).
+   */
+  async enqueueLifecycle(
+    tx: Tx,
+    workspace: string,
+    id: string,
+    kind: 'install' | 'uninstall',
+    previousVersion: string | null = null,
+  ) {
     const installation = await this.installation(tx, workspace, id);
     const functions = this.manifest(installation).functions.filter(
       (fn) => fn.trigger.kind === kind,
@@ -389,7 +418,11 @@ export class ExtensionQueue {
       await this.insert(
         tx,
         installation,
-        { functionId, input: {}, dedupeKey: `lifecycle:${kind}:${functionId}` },
+        {
+          functionId,
+          input: kind === 'install' ? { previousVersion } : {},
+          dedupeKey: `lifecycle:${kind}:${functionId}`,
+        },
         [],
         kind,
       );
@@ -737,6 +770,18 @@ export class ExtensionQueue {
         return null;
       }
       const timeout = fn?.timeoutSeconds ?? 30;
+      // Spec 8: the run gets the intersection of the grant and the function's needs,
+      // and only the secrets its function declares.
+      const scopes = fn
+        ? functionScopes(manifest, fn).filter((s) => installation.granted_scopes.includes(s))
+        : installation.granted_scopes;
+      const secrets = fn ? functionSecrets(manifest, fn) : [];
+      if (!scopes.length) {
+        await tx`update extension_jobs set status='failed',code='forbidden',lease_owner=null,lease_until=null,run_until=null where id=${id}`;
+        await tx`update extension_attempts set status='failed',code='forbidden',finished_at=now() where job_id=${id} and finished_at is null`;
+        await this.finishLifecycle(tx, installation, job, 'failed', 'forbidden');
+        return null;
+      }
       const [other] =
         await tx`select id from extension_jobs where installation_id=${installation.id} and status='running' and id<>${id}`;
       if (other) return null;
@@ -750,7 +795,7 @@ export class ExtensionQueue {
       // coordinator can still record a timeout as an ordinary retry instead of being fenced.
       const [claimed] = await tx<
         (Job & { handler_deadline: Date })[]
-      >`update extension_jobs set status='running',lease_owner=${owner},
+      >`update extension_jobs set status='running',lease_owner=${owner},run_secrets=${secrets}::text[],
         fence=fence+1,lease_until=clock_timestamp()+least(60,${timeout + RUN_GRACE_SECONDS})*interval '1 second',run_until=clock_timestamp()+${timeout + RUN_GRACE_SECONDS}*interval '1 second',attempt=attempt+1,cycle_attempt=cycle_attempt+1,updated_at=now()
         where id=${id} returning *,run_until-${RUN_GRACE_SECONDS}*interval '1 second' as handler_deadline`;
       if (!claimed) throw new Error('claim returned no row');
@@ -765,7 +810,7 @@ export class ExtensionQueue {
         triggerKind: claimed.trigger_kind,
         system,
         registrationId: installation.registration_id,
-        scopes: installation.granted_scopes,
+        scopes,
         generation: claimed.generation,
         releaseDigest: claimed.release_digest,
         functionId: claimed.function_id,
@@ -1118,12 +1163,11 @@ export class ExtensionQueue {
       const system =
         job.function_id === SYSTEM_LIFECYCLE_FUNCTION_ID &&
         ['install', 'uninstall'].includes(job.trigger_kind);
-      if (system) validateInput({ type: 'object', additionalProperties: false }, job.input);
-      else {
-        if (!fn || fn.trigger.kind !== job.trigger_kind)
-          throw conflict('incompatible_runtime', 'job function is unavailable');
-        validateInput(fn.inputSchema, job.input);
-      }
+      if (!system && (!fn || fn.trigger.kind !== job.trigger_kind))
+        throw conflict('incompatible_runtime', 'job function is unavailable');
+      if (job.trigger_kind === 'install' || job.trigger_kind === 'uninstall')
+        validateLifecycleInput(job.trigger_kind, job.input);
+      else if (fn) validateInput(fn.inputSchema, job.input);
       if (setupRetry)
         await tx`update extension_installations set state=${installation.setup_kind === 'upgrade' ? 'upgrading' : 'installing'},last_error=null where id=${installationId}`;
       await tx`update extension_jobs set status='queued',code=null,cycle_attempt=0,fence=fence+1,

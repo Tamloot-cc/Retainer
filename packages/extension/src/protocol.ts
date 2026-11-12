@@ -23,6 +23,21 @@ export const executionResultSchema = z.strictObject({
     .optional(),
   retryAfterSeconds: z.number().int().min(0).max(3600).optional(),
 });
+/**
+ * The server-defined input of an `install` lifecycle function: the release
+ * version installed before this setup (an upgrade, re-enable or settings
+ * re-setup), or null on a first install. Lifecycle input is not the
+ * function's `inputSchema`; `uninstall` input is `{}`. Jobs queued before
+ * this field existed carry `{}`.
+ */
+export const lifecycleInputSchema = z.strictObject({
+  previousVersion: z
+    .string()
+    .regex(/^\d+\.\d+\.\d+$/)
+    .nullable()
+    .optional(),
+});
+export type LifecycleInput = z.infer<typeof lifecycleInputSchema>;
 export type Invocation = z.infer<typeof invocationSchema>;
 export type ExecutionResult = z.infer<typeof executionResultSchema>;
 /** Invoke with a bounded serialized envelope; callers never supply executable locations. */
