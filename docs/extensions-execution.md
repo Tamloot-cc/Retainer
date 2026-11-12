@@ -131,8 +131,10 @@ Jobs retry with bounded backoff only when the handler asks (it throws `RetryLate
 from `@retainer/extension` or returns `retry`), when it times out
 (`execution_timeout`, recorded within a 15-second lease grace), or when the
 platform fails to run it. Any other handler exception is a terminal
-`handler_failed`. Stopping the executor returns running jobs to the queue without
-consuming an attempt. The executor refills each of its slots as soon as a run
+`handler_failed`, including raw network errors the handler did not turn into
+`RetryLater`. Stopping the executor returns running jobs to the queue; the first
+three such releases of a job consume no attempt. Hosted coordinator timeouts must
+cover the longest handler timeout plus the 15-second grace. The executor refills each of its slots as soon as a run
 finishes, so a long run never holds back other installations. Terminal failures
 are retained for inspection. A successful retry clears degraded connection health only when
 no unresolved failures remain in the current generation. Schedule maintenance
@@ -205,9 +207,9 @@ raw bytes, selected headers and one candidate secret, and has neither a CRM toke
 nor a target workspace selector. Its fresh container uses `NetworkMode=none`,
 no proxy environment and the ordinary non-root/read-only/resource limits. A
 five-second host deadline terminates unresponsive code. Verifiers have their own
-launcher slots (8, beside 32 for runs) and reuse a passing engine health check
-for 30 seconds, so busy runs do not make webhook ingress fail. Results are bounded to
-16 KiB and cannot name another workspace. The Standard Webhooks fixture checks
+launcher slots: one launcher runs up to 32 runs and 8 verifiers at once.
+Launches reuse a passing engine health check for 30 seconds, so busy runs do not
+make webhook ingress fail. Results are bounded to 16 KiB and cannot name another workspace. The Standard Webhooks fixture checks
 HMAC-SHA256 over message ID, attempt timestamp and exact bytes, a five-minute
 clock tolerance and a rotation signature list, following the
 [published signature contract](https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md).

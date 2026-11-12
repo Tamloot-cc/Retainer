@@ -440,8 +440,11 @@ Inputs/outputs are at most 64 KiB.
 Retry is opt-in, as with Twenty's `RetryableLogicFunctionError`. A handler
 retries by returning `retry` or throwing `RetryLater` from `@retainer/extension`
 (matched by error name, with an optional code and bounded retry-after hint).
-Any other handler exception is a terminal `handler_failed`. Platform failures
-(launcher unavailable, network to the launcher, deadline abort) always retry.
+Any other handler exception is a terminal `handler_failed`, including raw network
+errors the handler does not convert to `RetryLater`. Platform failures (launcher
+unavailable, network to the launcher, deadline abort) always retry. A hosted
+coordinator's own Lambda timeout must cover the longest handler timeout plus the
+15-second grace, or a late acknowledgement is fenced.
 
 Hosted: trusted Lambda coordinators claim jobs and sign scoped run capabilities;
 a separate Lambda handles secret brokering and raw webhook admission. Each has
@@ -461,8 +464,9 @@ capabilities, run non-root, use a read-only root FS plus bounded tmpfs, enforce
 CPU/memory/PID/time limits, and destroy the container after every run. Job
 containers have only an internal network to the trusted egress proxy; signature
 verifiers have no network at all, a five-second hard timeout and their own
-launcher slot pool (8 by default, beside 32 for runs), so busy runs cannot
-block webhook ingress; launches reuse a passing health check for 30 seconds. Deny
+launcher slot pool: one launcher runs up to 32 runs and 8 verifiers at once, so
+busy runs cannot block webhook ingress. Launches reuse a passing health check for
+30 seconds. Deny
 host/private/link-local destinations except the configured public API endpoint,
 including metadata endpoints. Validate DNS and redirect destinations at the
 proxy. The hosted host requires an operator-reviewed hardened AMI with Docker
@@ -517,8 +521,11 @@ base, one-hour cap), maximum ten attempts or 24 hours. Handlers opt in by throwi
 provider and Retainer API network errors, 429s, 5xx and conflicts. Respect bounded
 `RetryLater`/provider retry-after hints. Invalid inputs, revoked grants, schema
 conflicts and any other handler exception are terminal. A timeout counts as an
-attempt; a graceful coordinator shutdown returns its runs to the queue without
-consuming one. Failed jobs remain visible and can be replayed by an
+attempt; a graceful coordinator shutdown returns its runs to the queue, and the
+first three such releases of a job do not consume one. A lost lease is recorded
+as `lease_lost`. The bundled adapters retry Retainer API 429s, 5xx, non-JSON
+replies, lost connections and only the transient 409s (`revision_conflict`,
+`scan_conflict`, `source_revision_conflict`, `lease_expired`). Failed jobs remain visible and can be replayed by an
 admin after fixing the cause. Expiration closes unfinished attempts and uses the
 same lifecycle failure transition as execution: an expired install becomes
 `setup_failed`, and an expired upgrade becomes `disabled`, so an admin can retry.
