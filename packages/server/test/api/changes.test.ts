@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { RetainerClient } from '@retainer/sdk';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { requireObject, withWrite } from '../../src/records/service.js';
+import { Changes, readHead } from '../../src/changes/service.js';
+import { requireObject, withRead, withWrite } from '../../src/records/service.js';
 import { prepareValues } from '../../src/records/values.js';
 import { insertRecord, writeFields } from '../../src/records/write.js';
+import { ChangeMaintenance } from '../../src/worker/changes.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 
@@ -33,6 +35,21 @@ async function setup() {
     });
   return { workspace, keys, list, create };
 }
+/** A promise the test resolves to let a paused transaction continue. */
+function gate() {
+  let entered = () => {},
+    release = () => {};
+  const started = new Promise<void>((r) => {
+      entered = r;
+    }),
+    paused = new Promise<void>((r) => {
+      release = r;
+    });
+  return { started, paused, entered, release };
+}
+const blockedAfter = (ms: number) =>
+  new Promise<'blocked'>((resolve) => setTimeout(() => resolve('blocked'), ms));
+
 describe('commit-ordered minimal record changes with real Postgres', () => {
   it('publishes a slower transaction after a faster commit without letting a consumer skip it', async () => {
     const h = await setup(),
@@ -400,5 +417,195 @@ describe('commit-ordered minimal record changes with real Postgres', () => {
     expect(
       await db.owner`select position from record_changes where record_id=${privateId}`,
     ).toHaveLength(0);
+  });
+  it('lets a record write commit while a feed read holds its transaction open', async () => {
+    const h = await setup(),
+      before = await h.create('Before read'),
+      changes = new Changes(t.sql),
+      g = gate();
+    const reader = {
+      workspaceId: h.workspace.id,
+      actor: { type: 'user', id: 'reader' } as const,
+      scopes: ['read'] as const,
+    };
+    const read = withRead(
+      t.sql,
+      reader,
+      async (tx, schema) => {
+        const page = await changes.page(
+          tx,
+          schema,
+          h.workspace.id,
+          await readHead(tx, h.workspace.id),
+          100,
+        );
+        g.entered();
+        await g.paused;
+        return page;
+      },
+      { privacy: true, schema: true },
+    );
+    await g.started;
+    let write: ReturnType<typeof h.create> | undefined;
+    try {
+      write = h.create('During read');
+      const result = await Promise.race([write, blockedAfter(5000)]);
+      expect(result).not.toBe('blocked');
+      if (result === 'blocked') return;
+      expect(result.status).toBe(201);
+    } finally {
+      g.release();
+      await write;
+    }
+    const page = await read;
+    expect(page.changes.map((c) => c.recordId)).toEqual([before.body.id]);
+    const next = await h.list(page.nextCursor);
+    expect(next.body.changes).toHaveLength(1);
+    expect(next.body.changes[0].recordId).not.toBe(before.body.id);
+  });
+  it('refuses a page with 410 when pruning overtakes a reader mid-read, never returning a gap', async () => {
+    const h = await setup(),
+      start = (await h.list()).body.nextCursor;
+    for (const name of ['Old one', 'Old two', 'Old three']) await h.create(name);
+    const current = await h.create('Current'),
+      changes = new Changes(t.sql),
+      g = gate();
+    const reader = {
+      workspaceId: h.workspace.id,
+      actor: { type: 'user', id: 'reader' } as const,
+      scopes: ['read'] as const,
+    };
+    const read = withRead(
+      t.sql,
+      reader,
+      async (tx, schema) => {
+        const head = await readHead(tx, h.workspace.id, start);
+        g.entered();
+        await g.paused;
+        return changes.page(tx, schema, h.workspace.id, head, 100);
+      },
+      { privacy: true, schema: true },
+    );
+    await g.started;
+    try {
+      await db.owner`update record_changes set created_at=clock_timestamp()-interval '31 days'
+        where workspace_id=${h.workspace.id} and record_id<>${current.body.id}`;
+      const prune = new ChangeMaintenance(t.sql, t.sql).pruneChanges(h.workspace.id, Infinity, 2);
+      expect(await Promise.race([prune, blockedAfter(5000)])).toBe(3);
+    } finally {
+      g.release();
+    }
+    await expect(read).rejects.toMatchObject({ status: 410, code: 'cursor_expired' });
+    expect((await h.list(start)).status).toBe(410);
+    expect((await h.list()).body.changes.map((c: { recordId: string }) => c.recordId)).toEqual([
+      current.body.id,
+    ]);
+  });
+  it('prunes expired history in bounded batches, advancing the retained marker with each one', async () => {
+    const h = await setup();
+    for (let i = 0; i < 5; i++) await h.create(`Expired ${i}`);
+    const current = await h.create('Kept');
+    await db.owner`update record_changes set created_at=clock_timestamp()-interval '31 days'
+      where workspace_id=${h.workspace.id} and record_id<>${current.body.id}`;
+    const [last] = await db.owner`select max(position)::text as position from record_changes
+      where workspace_id=${h.workspace.id} and record_id<>${current.body.id}`;
+    const positions = (
+      await db.owner`select position::text from record_changes
+        where workspace_id=${h.workspace.id} and record_id<>${current.body.id} order by position`
+    ).map((r) => r.position as string);
+    const a = new ChangeMaintenance(t.sql, t.sql),
+      b = new ChangeMaintenance(t.sql, t.sql);
+    expect(await a.pruneBatch(h.workspace.id, 2)).toEqual({ count: 2, done: false });
+    const [first] =
+      await db.owner`select retained_after::text from change_counters where workspace_id=${h.workspace.id}`;
+    expect(first?.retained_after).toBe(positions[1]);
+    // A writer commits between batches rather than waiting for the whole prune.
+    expect((await h.create('Between batches')).status).toBe(201);
+    const counts = await Promise.all([
+      a.pruneChanges(h.workspace.id, Number.POSITIVE_INFINITY, 2),
+      b.pruneChanges(h.workspace.id, Number.POSITIVE_INFINITY, 2),
+    ]);
+    expect(counts[0] + counts[1]).toBe(3);
+    const [counter] =
+      await db.owner`select retained_after::text from change_counters where workspace_id=${h.workspace.id}`;
+    expect(counter?.retained_after).toBe(last?.position);
+    expect(
+      (
+        await db.owner`select record_id from record_changes where workspace_id=${h.workspace.id} order by position`
+      ).map((r) => r.record_id),
+    ).toHaveLength(2);
+    expect((await h.list()).body.changes[0].recordId).toBe(current.body.id);
+    expect(await a.pruneChanges(h.workspace.id)).toBe(0);
+  });
+  it('writes every change of one transaction in one statement at consecutive positions', async () => {
+    const h = await setup(),
+      start = (await h.list()).body.nextCursor;
+    const ids = await withWrite(
+      t.sql,
+      { workspaceId: h.workspace.id, actor: { type: 'user', id: 'admin' }, scopes: ['admin'] },
+      async (tx, context) => {
+        const object = requireObject(context.schema, 'person'),
+          created: string[] = [];
+        for (const name of ['Batch one', 'Batch two', 'Batch three']) {
+          const record = await insertRecord(tx, context, object);
+          await writeFields(tx, context, object, record, prepareValues(object, { name }, 'create'));
+          created.push(record.id);
+        }
+        return created;
+      },
+    );
+    const rows =
+      await db.owner`select position::text,record_id,operation,field_keys,cause from record_changes
+      where workspace_id=${h.workspace.id} and record_id=any(${ids}::uuid[]) order by position`;
+    expect(rows.map((r) => r.record_id)).toEqual([...ids].sort());
+    const positions = rows.map((r) => BigInt(r.position));
+    expect(positions.every((p, i) => i === 0 || p === (positions[i - 1] ?? 0n) + 1n)).toBe(true);
+    expect(
+      rows.every(
+        (r) => r.operation === 'create' && Array.isArray(r.field_keys) && Array.isArray(r.cause),
+      ),
+    ).toBe(true);
+    expect((await h.list(start)).body.changes).toHaveLength(3);
+  });
+  it('lets an erasure that edits old changes finish while a prune batch races it, without deadlock', async () => {
+    const h = await setup(),
+      old = await h.create('Old erased');
+    await h.create('Old kept');
+    const current = await h.create('Current');
+    await db.owner`update record_changes set created_at=clock_timestamp()-interval '31 days'
+      where workspace_id=${h.workspace.id} and record_id<>${current.body.id}`;
+    const g = gate(),
+      // Forget's lock order: privacy exclusive, edit record_changes, then the counter at publication.
+      erasure = withWrite(
+        t.sql,
+        { workspaceId: h.workspace.id, actor: { type: 'user', id: 'admin' }, scopes: ['admin'] },
+        async (tx) => {
+          await tx`delete from record_changes where record_id=${old.body.id}`;
+          g.entered();
+          await g.paused;
+          await tx`update change_counters set position=position where workspace_id=${h.workspace.id}`;
+        },
+        { privacy: 'exclusive' },
+      );
+    await g.started;
+    const prune = new ChangeMaintenance(t.sql, t.sql).pruneChanges(h.workspace.id);
+    try {
+      // Wait until the prune is blocked behind the erasure.
+      for (let i = 0; i < 100; i++) {
+        const [waiting] = await db.owner`select count(*)::int as n from pg_stat_activity
+          where datname=current_database() and wait_event_type='Lock'`;
+        if ((waiting?.n ?? 0) > 0) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    } finally {
+      g.release();
+    }
+    await expect(erasure).resolves.toBeUndefined();
+    expect(await prune).toBe(1);
+    expect(
+      (
+        await db.owner`select record_id from record_changes where workspace_id=${h.workspace.id}`
+      ).map((r) => r.record_id),
+    ).toEqual([current.body.id]);
   });
 });

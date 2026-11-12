@@ -675,8 +675,20 @@ job. Reusing an authenticated delivery identity with a different body returns
 identities; the server reserves the local source item and enqueues its ID in that
 same transaction. Erased/deleted sources are refused rather than acknowledged as
 new work. Persistence unavailable means 503, never a false acknowledgement. Reject bad
-signatures with 401, oversized bodies with 413 (256 KiB default), and rate-limit
-before invoking the verifier (100 requests/minute per binding by default).
+signatures with 401 and oversized bodies with 413 (256 KiB default). Rate-limit
+with 429 before invoking the verifier, in two layers (100/minute per binding by
+default). First, before any database access, an in-memory limit per source
+address and callback: that limit of requests, and a tenth of it in failed or
+in-flight verifications. Second, a durable per-binding budget that counts only
+failed verifications, so a provider's valid deliveries never use it up; it is
+read before verification and written only after a rejection. One source's junk
+stops in memory; failures from many sources can still exhaust the budget for
+the rest of the minute, and the provider retries. The in-flight and failure cap
+per source is `floor(limit / 10)`, at least one. The source address is the
+server's view of the connection: behind a reverse proxy (as in a Compose
+deployment) or on Lambda without `CloudFront-Viewer-Address`, every request
+shares the proxy's address, and the limit degrades to one in-memory count per
+callback per process.
 A body not received within ten seconds returns 408; setup not yet active returns
 503 for normal deliveries. Only explicitly registered plain-text challenges can
 answer 200 without an ingestion job. Retain receipt dedupe for seven days; source
@@ -698,7 +710,13 @@ Use a per-workspace feed counter locked at the end of the write transaction;
 allocate positions and commit while holding it. This serializes publication
 briefly and prevents a slow lower sequence from committing after a consumer has
 passed it. A bare global sequence is not a commit-order cursor. No code acquires
-new record locks after the feed lock. One change plus its trigger jobs is durably
+new record locks after the feed lock, and a transaction inserts all its change
+rows in one statement. Feed readers and the dispatcher read the counter without
+locking it, so they never block writers; every position at or below a committed
+head is committed. After reading, they recheck `retained_after` and answer
+`410 cursor_expired` if pruning overtook their cursor, never a gap. Pruning
+deletes at most 1000 rows per transaction under the counter lock and advances
+`retained_after` with each batch. One change plus its trigger jobs is durably
 linked through dispatcher checkpoints; never rely on in-process notifications.
 
 `GET /v1/changes?after=<opaqueCursor>&limit=100` and `list_changes` return IDs,

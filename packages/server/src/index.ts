@@ -115,6 +115,7 @@ if (role === 'api' || role === 'all' || role === 'control' || role === 'extensio
             : config.RETAINER_PUBLIC_ORIGIN,
           accountsSecret: config.RETAINER_AUTH_SECRET,
           rateLimit: { limit: rateLimitPerMinute(config) },
+          clientIp: (c) => getConnInfo(c).remote.address,
         });
   const fetch = (request: Request, env: Record<string, unknown>) => {
     if (accounts) {

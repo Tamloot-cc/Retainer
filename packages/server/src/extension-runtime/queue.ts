@@ -3,7 +3,7 @@ import { nextOccurrence, SYSTEM_LIFECYCLE_FUNCTION_ID } from '@retainer/extensio
 import { sourceScanSchema } from '@retainer/shared';
 import { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
-import { retainedFloor } from '../db/change-cursor.js';
+import { overtaken, retainedFloor } from '../db/change-cursor.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, jsonValue, lockPrivacyShared, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
@@ -310,6 +310,11 @@ export class ExtensionQueue {
         >`
         select position::text,record_id,object_type_id,operation,field_keys,cause,origin_installation_id,related_record_ids,merged_into_id from record_changes
         where position>${checkpoint.position}::bigint order by position limit ${limit}`;
+        if (await overtaken(tx, workspace, checkpoint.position))
+          throw conflict(
+            'cursor_expired',
+            'change dispatch history expired; rescan current records before restarting the trigger',
+          );
         const relatedIds = [
           ...new Set(
             rows.flatMap((row) => [
@@ -376,8 +381,19 @@ export class ExtensionQueue {
               row.cause,
               'change',
             );
-            await tx`update extension_jobs j set change_snapshot=(to_jsonb(c)-'workspace_id'-'created_at')||jsonb_build_object('position',c.position::text)
-            from record_changes c where j.id=${changeJobId} and j.change_snapshot is null and c.workspace_id=${workspace} and c.position=${row.position}::bigint`;
+            const [snapshot] = await tx<{ present: boolean }[]>`with copied as (
+                update extension_jobs j set change_snapshot=(to_jsonb(c)-'workspace_id'-'created_at')||jsonb_build_object('position',c.position::text)
+                from record_changes c where j.id=${changeJobId} and j.change_snapshot is null and c.workspace_id=${workspace} and c.position=${row.position}::bigint
+                returning j.id)
+              select exists(select 1 from copied) or exists(select 1 from extension_jobs where id=${changeJobId} and change_snapshot is not null) as present`;
+            // Pruning can commit after the retention check above. A job
+            // without its change could never read it, so roll back the whole
+            // dispatch rather than advance the cursor past it.
+            if (!snapshot?.present)
+              throw conflict(
+                'cursor_expired',
+                'change dispatch history expired; rescan current records before restarting the trigger',
+              );
             queued++;
           }
         const last = rows.at(-1);

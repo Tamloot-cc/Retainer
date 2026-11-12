@@ -25,7 +25,7 @@ export function createExtensionControlApp(deps: AppDeps) {
       return c.json({ status: 'unavailable', protocolVersion: 1 }, 503);
     }
   });
-  webhookIngress(app, deps.webhooks);
+  webhookIngress(app, deps.webhooks, deps.clientIp);
   const v1 = new Hono<AppEnv>();
   v1.use(
     '*',

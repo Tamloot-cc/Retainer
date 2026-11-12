@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { OAUTH_SCOPES } from '@retainer/shared';
-import { Hono } from 'hono';
+import { type Context, Hono } from 'hono';
 import { authenticate } from '../auth/middleware.js';
 import { installationOAuthSettings, oauthSettings } from '../auth/oauth-token.js';
 import { meRoute, sessionRoutes } from '../auth/session.js';
@@ -54,6 +54,8 @@ export type AppDeps = {
   accountsSecret?: string;
   /** The per-workspace rate limit on /v1 and /mcp (accounts spec 4.8); none if unset. */
   rateLimit?: RateLimit;
+  /** The caller's address, for the webhook ingress limiter; never read from a client header. */
+  clientIp?: (c: Context<AppEnv>) => string | undefined;
 };
 
 export function createApp(deps: AppDeps) {
@@ -75,7 +77,7 @@ export function createApp(deps: AppDeps) {
     }
   });
 
-  webhookIngress(app, deps.webhooks);
+  webhookIngress(app, deps.webhooks, deps.clientIp);
   if (!deps.accountsSecret) sessionRoutes(app, deps.sql, publicOrigin);
   const v1 = new Hono<AppEnv>();
   const limit = rateLimit(deps.sql, deps.rateLimit ?? { limit: 0 });
