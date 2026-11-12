@@ -171,7 +171,8 @@ referenced installation while the old server runs, then deploy the new server.
 Disabled installations and live cleanup also count as references. Releases built
 with the earlier exact `serverVersions` list stay valid as an exact set, so their
 digests do not change; they still need a bridge release for any version outside
-their list. Retaining old bytes does not establish compatibility, and an
+their list. Prerelease server builds (for example `0.2.0-rc.1`) match no release
+range or list, so their extension catalog is empty by design. Retaining old bytes does not establish compatibility, and an
 incompatible adapter requires an explicit migration/removal plan. Hosted preflight
 keeps refusing a server rollout with unsupported pins.
 

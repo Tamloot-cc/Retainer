@@ -58,14 +58,18 @@ export function parseServerRange(range: string): Comparator[][] {
       invalid('needs an upper bound in every alternative');
     if (!set.some((c) => c.op === '>' || c.op === '>=' || c.op === '='))
       invalid('needs a lower bound in every alternative');
-    // A set no release version satisfies is a mistake, not a range.
+    // A set no release version satisfies is a mistake, not a range. Versions
+    // are integers, so a strict lower bound `>v` is the inclusive `>=` the next
+    // patch; the set is empty when that lowest version is above the tightest
+    // upper bound, or equal to a strict one.
     const lowest = set
       .filter((c) => c.op !== '<' && c.op !== '<=')
-      .map((c) => c.version)
+      .map(
+        (c): Version => (c.op === '>' ? [c.version[0], c.version[1], c.version[2] + 1] : c.version),
+      )
       .sort(compare)
       .at(-1) as Version;
-    if (!set.every((c) => holds(lowest, c) || (c.op === '>' && compare(lowest, c.version) === 0)))
-      invalid('is empty');
+    if (!set.every((c) => holds(lowest, c))) invalid('is empty');
     return set;
   });
 }

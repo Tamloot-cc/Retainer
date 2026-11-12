@@ -411,6 +411,15 @@ export class Extensions {
         );
       const retained = owned.find((c) => c.kind === 'view' && c.universal_id === view.universalId);
       if (retained) {
+        // A view the workspace deleted stays deleted. Its contribution row (and
+        // old base) is kept so the identity stays managed and is not recreated;
+        // no base is stored for a view that no longer exists.
+        const [present] = await tx`select 1 from views where id = ${retained.element_id}`;
+        if (!present) {
+          viewActions.set(view.universalId, 'deleted_workspace');
+          viewNotices.push(`View ${view.name} was deleted in this workspace; it is not recreated.`);
+          continue;
+        }
         // The stored definition is the publisher base this view was last applied from.
         if (hash(retained.definition) === hash(view)) {
           viewActions.set(view.universalId, 'retain');
@@ -716,7 +725,7 @@ export class Extensions {
         if (retained && !plan.existing)
           throw conflict('schema_binding_conflict', 'view identity already managed');
         if (retained) {
-          if (action === 'retain') continue;
+          if (action === 'retain' || action === 'deleted_workspace') continue;
           if (
             action === 'update' &&
             !(await replaceManagedView(tx, caller, retained.element_id, retained.definition, view))

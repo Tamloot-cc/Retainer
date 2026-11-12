@@ -55,7 +55,8 @@ Status of row 3: done (Phase 2). Contributions' stored definitions are the
 publisher base. Object labels and description and field label and description
 are workspace-overridable: a workspace edit wins with a preview warning and
 only the base moves; an unedited value takes the publisher's change. Views are
-updated when unedited and kept (`keep_workspace`, with a warning) when edited;
+updated when unedited, kept (`keep_workspace`, with a warning) when edited
+and not recreated (`deleted_workspace`) when deleted;
 the decision is in the plan digest and rechecked under the view's row lock.
 Structural changes stay `409 upgrade_conflict`.
 

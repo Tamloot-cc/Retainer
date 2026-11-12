@@ -482,12 +482,13 @@ export type ExtensionPreview = {
   operations: unknown[];
   /**
    * `update` applies the publisher's change to an unedited view;
-   * `keep_workspace` keeps a view the workspace edited (a warning says so).
+   * `keep_workspace` keeps a view the workspace edited and `deleted_workspace`
+   * leaves one it deleted absent (a warning says so for both).
    */
   views: {
     universalId: string;
     name: string;
-    action: 'create' | 'retain' | 'update' | 'keep_workspace';
+    action: 'create' | 'retain' | 'update' | 'keep_workspace' | 'deleted_workspace';
   }[];
   grants: { actor: 'integration' | 'agent'; scopes: ('read' | 'write')[] };
   previousGrants?: { actor: 'integration' | 'agent'; scopes: ('read' | 'write')[] };

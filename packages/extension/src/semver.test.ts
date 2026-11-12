@@ -11,6 +11,10 @@ describe('reviewed server ranges', () => {
     expect(satisfiesServerRange('0.2.0', range)).toBe(false);
     expect(satisfiesServerRange('0.0.9', range)).toBe(false);
     expect(satisfiesServerRange('0.10.0', '>=0.9.0 <=0.10.0')).toBe(true);
+    // Narrowest non-empty sets stay valid.
+    expect(satisfiesServerRange('1.0.1', '>1.0.0 <1.0.2')).toBe(true);
+    expect(satisfiesServerRange('1.0.1', '>1.0.0 <=1.0.1')).toBe(true);
+    expect(satisfiesServerRange('1.0.0', '>=1.0.0 <=1.0.0')).toBe(true);
     expect(satisfiesServerRange('1.0.0', '>0.9.0 <1.0.0')).toBe(false);
     expect(satisfiesServerRange('0.3.1', '>=0.1.0 <0.2.0 || 0.3.1')).toBe(true);
     expect(satisfiesServerRange('0.3.2', '>=0.1.0 <0.2.0 || =0.3.1')).toBe(false);
@@ -28,6 +32,11 @@ describe('reviewed server ranges', () => {
       '0.1.x',
       '>=0.1.0 <0.2.0 ||',
       '>=0.2.0 <0.1.0',
+      '>1.0.0 <=1.0.0',
+      '>1.0.0 <1.0.1',
+      '>=1.0.0 <1.0.0',
+      '=1.0.0 <1.0.0',
+      '>=0.1.0 <0.2.0 || >1.0.0 <1.0.1',
       '>=0.1.0-rc.1 <0.2.0',
       '>= 0.1.0 <0.2.0',
       '',

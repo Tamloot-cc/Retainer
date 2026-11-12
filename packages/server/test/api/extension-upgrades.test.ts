@@ -226,6 +226,32 @@ describe('additive extension upgrades', () => {
     expect(saved.columns?.order).toEqual(['name', 'status']);
     expect((await sdk.extension(installed.id)).version).toBe('5.0.0');
   });
+  it('does not recreate or rebase a view the workspace deleted', async () => {
+    const { sdk, installed, input } = await setup();
+    const view = (await sdk.extension(installed.id)).contributions.find((c) => c.kind === 'view');
+    if (!view) throw new Error('missing view');
+    await sdk.deleteView(view.elementId);
+    const upgrade = { ...input, installationId: installed.id, version: '5.0.0' };
+    const plan = await sdk.previewExtension(upgrade);
+    expect(plan.views).toEqual([
+      { universalId: viewId, name: 'Publisher items', action: 'deleted_workspace' },
+    ]);
+    expect(plan.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('deleted in this workspace; it is not recreated'),
+      ]),
+    );
+    await sdk.upgradeExtension(installed.id, { ...upgrade, planDigest: plan.planDigest }, 'gone');
+    const [row] = await db.owner<{ definition: { name: string } }[]>`
+      select definition from extension_contributions
+      where installation_id = ${installed.id} and universal_id = ${viewId}`;
+    expect(row?.definition.name).toBe('Fixture items');
+    const [count] = await db.owner<{ n: number }[]>`
+      select count(*)::int as n from views
+      where workspace_id = (select workspace_id from extension_installations where id = ${installed.id})
+        and name = 'Publisher items'`;
+    expect(count?.n).toBe(0);
+  });
   it('refuses a stale view decision: an edit after preview invalidates the plan', async () => {
     const { sdk, installed, input } = await setup();
     const view = (await sdk.extension(installed.id)).contributions.find((c) => c.kind === 'view');

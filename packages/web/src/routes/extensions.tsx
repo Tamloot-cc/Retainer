@@ -32,6 +32,7 @@ const VIEW_ACTIONS = {
   retain: 'Keep',
   update: 'Update',
   keep_workspace: 'Keep your edited',
+  deleted_workspace: 'Do not recreate deleted',
 } as const;
 const stateLabel = (state: string) =>
   state.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());

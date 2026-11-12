@@ -280,8 +280,10 @@ base, the publisher's new value applies; if the workspace changed it, the
 workspace value wins, the preview carries a non-blocking warning, and only the
 base moves to the new release. A contributed view is presentation as a whole
 (name, columns and their order, widths, filter, sort, grouping, visibility): an
-unedited view takes the publisher's change (`update`), an edited or deleted one
-is kept (`keep_workspace`, with a warning). The plan digest includes each
+unedited view takes the publisher's change (`update`), an edited one
+is kept (`keep_workspace`, with a warning), and a deleted one is not recreated
+(`deleted_workspace`, with a warning; its old base and identity stay, so no base
+is stored for a view that no longer exists). The plan digest includes each
 view's decision, and the replacement rechecks the view under its row lock, so a
 view edited after the preview fails the commit with `stale_plan`. Names, types,
 settings (options), nullability, uniqueness, filterability and searchability are
