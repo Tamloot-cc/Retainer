@@ -272,6 +272,21 @@ the existing schema engine. User-edited labels/views are preserved; conflicting
 publisher changes are reported, not overwritten. A deprecated element stays
 deprecated. Do not silently adopt unrelated fields with matching names.
 
+Contributed objects and fields belong to the installation while it is not
+`uninstalled`: the schema engine refuses `delete_object` and `delete_field`
+(directly, by cascade, or when a person approves an earlier proposal) with
+`422 schema_invalid` naming the element, and points to renaming/relabelling or
+uninstalling first. As in Twenty, only presentation is workspace-local. A
+contribution deleted before this rule is treated as absent: plans don't
+recreate it, skip new fields of a deleted object, skip new views over it with a
+warning, and accept triggers on it (they never fire), so upgrade and enable
+still work. Managed source event types must still be active.
+
+An upgrade may supply pending secret references for secret settings its
+installed release does not declare, so a release that adds a required secret
+can be applied. Replacing a secret the installed release already declares still
+needs reconnect.
+
 Upgrade disables new triggers, increments generation, fences old runs, and waits
 for admitted database writes to finish before applying the new release. Validate
 all changes before atomically switching the installed release. Jobs waiting for
@@ -287,7 +302,13 @@ schema and views. Cleanup failure must not restore data access. A cleanup token
 can use only the old provider connection and lifecycle acknowledgement, never CRM
 writes. Explicit data/schema deletion is a separate normal Retainer operation.
 Reinstall reuses surviving schema bindings and suppression namespace; it cannot
-resurrect forgotten sources or silently reset user customizations.
+resurrect forgotten sources or silently reset user customizations. It may target
+any compatible catalog release of the same registration, not only the retained
+one, through the same additive plan, so a release dropped by a server upgrade
+never strands an uninstalled installation. An uninstalled installation is not
+upgraded; it is reinstalled. Settings changes are refused with
+`409 installation_disabled` while `uninstalling` or `uninstalled`, so they can't
+cancel cleanup or reverse an uninstall.
 
 Credential/account changes use a separate reconnect preview and commit with
 `reconnect: true`, the current installation ID/release, non-secret settings and
@@ -334,7 +355,9 @@ metadata, not an impersonated user; a workspace grant survives their departure
 until an admin disconnects it. User-owned provider credentials cannot be presented
 as organization-owned without explicit sharing consent.
 
-Installation access is rechecked inside each transaction. Take the installation
+Installation access is rechecked inside each transaction. Run, installation-key,
+OAuth and broker admission apply the same rules: the workspace is not scheduled
+for deletion, and a CRM write needs `write` in the credential's scopes. Take the installation
 lock shared for admitted runtime writes and exclusively for revocation. After
 disable returns, no old run can commit a new write; in-flight writes either
 committed before revocation or were refused. Check generation/fence before
@@ -1003,8 +1026,10 @@ capability is required. Lifecycle requests use durable receipts tied to request
 hash/install generation, not only the generic 24-hour idempotency cache.
 
 MCP v1 exposes `list_extensions`, `get_extension`, `preview_extension`,
-`list_extension_runs`, `list_changes`, and `sync_source_event` for appropriately
-bound credentials. Human approvals occur through settings/admin interfaces;
+`list_extension_runs` and `list_changes`. Run tokens are not MCP credentials:
+`/mcp` refuses them with 401, and runs use only the REST runtime and API
+endpoints, including `POST /v1/extensions/:id/source-events` for managed
+imports, so a run can't reach tools beyond its function's needs. Human approvals occur through settings/admin interfaces;
 agents cannot approve via an MCP tool. SDK methods mirror REST. App-provided tools
 and model-facing instructions remain deferred.
 
