@@ -788,7 +788,9 @@ registered ingestion job may read the provider ID, stage participant emails with
 `/source-items/:item/prepare`, and upload files bound to that item. Staging is
 required for each job attempt before issuing an upload URL, so erasure can find
 pending transcripts even before the first event revision exists. Staged emails
-are suppression-checked and erased with the source. A source job cannot import
+are suppression-checked and erased with the source. As in core event links, an
+erased participant is dropped from staging and import (not stored, linked or
+created, and left out of the content digest) while the rest of the event imports. A source job cannot import
 another item's evidence or attach another item's uploads.
 
 The server returns its canonical content digest, including normalized fields and
