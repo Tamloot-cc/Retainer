@@ -34,3 +34,34 @@ export function decodeInvocation(text: string): Invocation {
     throw new Error('invalid invocation envelope');
   }
 }
+
+export const RETRY_LATER_ERROR_NAME = 'RetryLater';
+/**
+ * Throw from a handler to ask for another attempt after a transient failure (network, 429,
+ * 5xx). Any other exception fails the run for good; returning `{status: 'retry'}` also retries.
+ * Matched by name, so copies of this package bundled separately still count.
+ */
+export class RetryLater extends Error {
+  readonly code: string | undefined;
+  readonly retryAfterSeconds: number | undefined;
+  constructor(options: { code?: string; retryAfterSeconds?: number; message?: string } = {}) {
+    super(options.message ?? options.code ?? 'retry later');
+    this.name = RETRY_LATER_ERROR_NAME;
+    this.code = options.code;
+    this.retryAfterSeconds = options.retryAfterSeconds;
+  }
+}
+export const isRetryLater = (error: unknown): error is RetryLater =>
+  error instanceof Error && error.name === RETRY_LATER_ERROR_NAME;
+/** The protocol result for a RetryLater; an invalid code or hint is replaced, never forwarded. */
+export function retryLaterResult(error: RetryLater): ExecutionResult {
+  const code = executionResultSchema.shape.code.safeParse(error.code);
+  const after = error.retryAfterSeconds;
+  return {
+    status: 'retry',
+    code: code.success && code.data ? code.data : 'retry_later',
+    ...(typeof after === 'number' && Number.isFinite(after)
+      ? { retryAfterSeconds: Math.min(3600, Math.max(0, Math.ceil(after))) }
+      : {}),
+  };
+}
