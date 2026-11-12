@@ -483,7 +483,10 @@ export class ExtensionQueue {
           if (installation.state !== 'uninstalling') return;
           const [expired] =
             await tx`select 1 where ${installation.cleanup_deadline}::timestamptz<=clock_timestamp()`;
-          if (!expired) return;
+          if (!expired) {
+            await this.startCleanup(tx, installation);
+            return;
+          }
           await cancelRuns(tx, installation.id);
           await tx`update extension_installations set state='uninstalled',generation=generation+1,
             last_error='cleanup_deadline_expired',updated_at=now() where id=${installation.id}`;
@@ -517,6 +520,27 @@ export class ExtensionQueue {
       }
     }
     return probes;
+  }
+
+  /**
+   * Queues cleanup for an installation a workspace deletion moved to
+   * `uninstalling` without it, because that process had no catalog that
+   * resolves the release (workspace-deletion.ts). A standalone release has
+   * nothing to clean up and is finished. Under the installation lock
+   * (exclusive) and queue lock.
+   */
+  private async startCleanup(tx: Tx, installation: Installation) {
+    const [queued] = await tx`select 1 from extension_jobs where installation_id=${installation.id}
+      and generation=${installation.generation} and trigger_kind='uninstall' limit 1`;
+    if (queued) return;
+    const manifest = await this.availability.inspect(tx, installation);
+    if (!manifest) return;
+    if (manifest.execution === 'standalone') {
+      await tx`update extension_installations set state='uninstalled',cleanup_deadline=null,updated_at=now()
+        where id=${installation.id}`;
+      return;
+    }
+    await this.enqueueLifecycle(tx, installation.workspace_id, installation.id, 'uninstall');
   }
 
   async claim(workspace: string, id: string, owner: string): Promise<ClaimedJob | null> {

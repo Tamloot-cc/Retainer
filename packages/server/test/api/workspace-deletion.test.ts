@@ -221,7 +221,7 @@ describe('removing deleted workspaces for good', () => {
     await backdate(recent.workspace.id, 6);
 
     const report = await purgeDeletedWorkspaces(control());
-    expect(report).toEqual({ purged: 1, failed: 0 });
+    expect(report).toEqual({ purged: 1, failed: 0, waiting: 0 });
     expect(await exists(old.workspace.id)).toBe(false);
     expect(
       await db.owner`select 1 from records where workspace_id = ${old.workspace.id}`,

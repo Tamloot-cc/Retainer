@@ -351,6 +351,7 @@ describe('SECURITY DEFINER functions', () => {
     retainer_token_access: RUNTIME_ROLE,
     retainer_token_keys: RUNTIME_ROLE,
     retainer_workspaces_due: RUNTIME_ROLE,
+    retainer_workspace_extension_cleanup_pending: 'retainer_control',
   };
 
   it('exist only on the reviewed list, each fixing its search_path and execution role', async () => {
