@@ -223,13 +223,22 @@ export class ChangeCollector {
     if (!counter) throw new Error('feed counter unavailable');
     const end = BigInt(counter.position),
       start = end - BigInt(changes.length) + 1n;
-    // No CRM reads, row locks or callbacks after acquiring the counter.
-    for (let i = 0; i < changes.length; i++) {
-      const change = changes[i];
-      if (!change) continue;
-      await tx`insert into record_changes(workspace_id,position,record_id,object_type_id,operation,field_keys,related_record_ids,origin_installation_id,cause,merged_into_id)
-        values(${this.workspace},${(start + BigInt(i)).toString()}::bigint,${change.record_id},${change.object_type_id},${change.operation},
-        ${tx.json(change.field_keys)},${tx.json(change.related_record_ids)},${change.origin_installation_id},${tx.json(jsonValue(change.cause))},${change.merged_into_id})`;
-    }
+    // No CRM reads, row locks or callbacks after acquiring the counter, and
+    // one statement for every row, so the counter lock is held briefly.
+    const rows = changes.map((change, i) => ({
+      position: (start + BigInt(i)).toString(),
+      record_id: change.record_id,
+      object_type_id: change.object_type_id,
+      operation: change.operation,
+      field_keys: change.field_keys,
+      related_record_ids: change.related_record_ids,
+      origin_installation_id: change.origin_installation_id,
+      cause: jsonValue(change.cause),
+      merged_into_id: change.merged_into_id,
+    }));
+    await tx`insert into record_changes(workspace_id,position,record_id,object_type_id,operation,field_keys,related_record_ids,origin_installation_id,cause,merged_into_id)
+      select ${this.workspace}::uuid,r.position,r.record_id,r.object_type_id,r.operation,r.field_keys,r.related_record_ids,r.origin_installation_id,r.cause,r.merged_into_id
+      from jsonb_to_recordset(${tx.json(rows)}::jsonb) as r(position bigint,record_id uuid,object_type_id uuid,operation text,
+        field_keys jsonb,related_record_ids jsonb,origin_installation_id uuid,cause jsonb,merged_into_id uuid)`;
   }
 }
