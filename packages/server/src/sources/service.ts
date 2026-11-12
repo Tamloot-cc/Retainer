@@ -410,10 +410,10 @@ export class Sources {
           );
         const handles = input.participants.map((value) => ({ kind: 'email' as const, value }));
         const suppressed = await suppressedOf(tx, caller.workspaceId, handles);
-        if (handles.some((h) => isSuppressed(suppressed, h)))
-          throw conflict('suppressed', 'a staged participant was erased');
+        // An erased participant is dropped, as core addLinks does; the meeting itself still imports.
+        const kept = handles.filter((h) => !isSuppressed(suppressed, h)).map((h) => h.value);
         await tx`delete from source_participants where item_id=${itemId}`;
-        for (const email of new Set(input.participants))
+        for (const email of new Set(kept))
           await tx`insert into source_participants(workspace_id,item_id,email) values(${caller.workspaceId},${itemId},${email})`;
         await tx`update source_items set prepared_job_id=${run.jobId},prepared_fence=${run.fence}::bigint where id=${itemId}`;
         return { prepared: true };
@@ -513,23 +513,33 @@ export class Sources {
           normalized === null ? null : ids.map((id) => rows.find((r) => r.id === id)?.metadata);
       } else canonicalFields[field.key] = normalized;
     }
-    const participants = [
-      ...new Map(input.event.participants.map((p) => [p.email, p])).values(),
-    ].sort((a, b) => a.email.localeCompare(b.email));
-    const handles = participants.map((p) => ({ kind: 'email' as const, value: p.email }));
-    const suppressed = await suppressedOf(tx, context.workspaceId, handles);
-    if (handles.some((h) => isSuppressed(suppressed, h)))
-      throw conflict('suppressed', 'a source participant was erased and cannot be stored again');
-    const canonical = {
+    const listed = [...new Map(input.event.participants.map((p) => [p.email, p])).values()].sort(
+      (a, b) => a.email.localeCompare(b.email),
+    );
+    const suppressed = await suppressedOf(
+      tx,
+      context.workspaceId,
+      listed.map((p) => ({ kind: 'email' as const, value: p.email })),
+    );
+    // Erased participants are dropped before the digest, so no stored digest or row carries them.
+    const participants = listed.filter(
+      (p) => !isSuppressed(suppressed, { kind: 'email', value: p.email }),
+    );
+    const canonicalOf = (people: typeof listed) => ({
       type: input.event.type,
       occurredAt: new Date(input.event.occurredAt).toISOString(),
       title: input.event.title,
       summary: input.event.summary ?? '',
       fields: canonicalFields,
-      participants,
+      participants: people,
       about: [...new Set(input.event.about)].sort(),
-    };
-    return { object, fields, participants, canonical, digest: requestHash(canonical) };
+    });
+    const canonical = canonicalOf(participants),
+      digest = requestHash(canonical);
+    // A client digest over the event as it sent it (erased handle included) is checked in memory only.
+    const submittedDigest =
+      participants.length === listed.length ? digest : requestHash(canonicalOf(listed));
+    return { object, fields, participants, canonical, digest, submittedDigest };
   }
   private async createParticipants(
     tx: Tx,
@@ -598,7 +608,11 @@ export class Sources {
             'retracted source identities cannot be silently recreated',
           );
         const normalized = await this.normalize(tx, context, policy, input);
-        if (input.contentDigest && input.contentDigest !== normalized.digest)
+        if (
+          input.contentDigest &&
+          input.contentDigest !== normalized.digest &&
+          input.contentDigest !== normalized.submittedDigest
+        )
           throw new AppError(
             422,
             'invalid_content_digest',

@@ -878,6 +878,74 @@ describe('managed source evidence with real RLS Postgres', () => {
       ).status,
     ).toBe(201);
   });
+  it('drops an erased participant and still imports the meeting without storing or recreating them', async () => {
+    const h = await setup('everyone'),
+      first = await h.item();
+    expect(
+      (
+        await h.sync(
+          first.key,
+          first.itemId,
+          '1',
+          null,
+          h.event('Earlier', [{ email: 'gone@fixture.test' }]),
+        )
+      ).status,
+    ).toBe(200);
+    const [person] =
+      await db.owner`select record_id from record_identifiers where workspace_id=${h.workspace.id} and value='gone@fixture.test'`;
+    expect(
+      (
+        await h.app.request(`/v1/records/${person?.record_id}/forget`, {
+          key: h.keys.admin,
+          method: 'POST',
+        })
+      ).status,
+    ).toBe(200);
+    const s = await h.item();
+    expect(
+      (
+        await h.app.request(`${h.base}/source-items/${s.itemId}/prepare`, {
+          key: s.key,
+          body: { participants: ['gone@fixture.test', 'kept@fixture.test'] },
+        })
+      ).status,
+    ).toBe(200);
+    expect(await db.owner`select email from source_participants where item_id=${s.itemId}`).toEqual(
+      [{ email: 'kept@fixture.test' }],
+    );
+    const listed = h.event('Later', [
+      { email: 'gone@fixture.test' },
+      { email: 'kept@fixture.test' },
+    ]);
+    const imported = await h.sync(s.key, s.itemId, '1', null, listed);
+    expect(imported.status).toBe(200);
+    expect(
+      await db.owner`select 1 from record_identifiers where workspace_id=${h.workspace.id} and value='gone@fixture.test'`,
+    ).toHaveLength(0);
+    const links =
+      await db.owner`select l.handle,i.value from event_links l left join record_identifiers i on i.record_id=l.record_id and i.kind='email'
+        where l.event_id=${imported.body.eventId} and l.link='participant'`;
+    expect(links).toEqual([{ handle: 'kept@fixture.test', value: 'kept@fixture.test' }]);
+    await h.queue.complete(s.run, { status: 'succeeded' });
+    const plain = await h.item(),
+      clean = await h.sync(
+        plain.key,
+        plain.itemId,
+        '1',
+        null,
+        h.event('Later', [{ email: 'kept@fixture.test' }]),
+      );
+    expect(imported.body.contentDigest).toBe(clean.body.contentDigest);
+    const [revision] =
+      await db.owner`select content_digest from source_revisions where item_id=${s.itemId}`;
+    expect(revision?.content_digest).toBe(clean.body.contentDigest);
+    expect(
+      JSON.stringify(
+        await db.owner`select response from source_receipts where item_id=${s.itemId}`,
+      ),
+    ).not.toContain('gone@');
+  });
   it('attaches only finalized source-owned bytes and erases staged uploads before a first revision exists', async () => {
     const h = await setup(),
       s = await h.item('not-yet-imported');
