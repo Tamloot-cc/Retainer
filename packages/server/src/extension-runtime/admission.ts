@@ -87,23 +87,24 @@ export async function admitInstallation(
   const [installation] = await tx<
     {
       state: string;
-      generation: number;
+      grant_generation: number;
       granted_actor: 'agent' | 'integration';
       granted_scopes: ('read' | 'write')[];
     }[]
-  >`select i.state,i.generation,i.granted_actor,i.granted_scopes from extension_installations i join workspaces w on w.id=i.workspace_id
+  >`select i.state,i.grant_generation,i.granted_actor,i.granted_scopes from extension_installations i join workspaces w on w.id=i.workspace_id
     where i.id=${binding.installationId} and i.registration_id=${binding.registrationId} and w.deletion_scheduled_at is null`;
-  if (installation?.state !== 'active' || installation.generation !== binding.generation)
+  // Bound to the grant, not the release: upgrades and settings changes keep the credential.
+  if (installation?.state !== 'active' || installation.grant_generation !== binding.grantGeneration)
     throw new AppError(
       409,
       'installation_disabled',
-      'installation is disabled or its generation changed',
+      'installation is disabled or its grant changed',
     );
   const [credential] = await tx<
     { scopes: ('read' | 'write')[]; client_id: string | null; subject_id: string | null }[]
   >`
     select scopes,client_id,subject_id from extension_credentials where id=${binding.credentialId}
-    and installation_id=${binding.installationId} and kind=${binding.kind} and generation=${binding.generation}
+    and installation_id=${binding.installationId} and kind=${binding.kind} and generation=${binding.grantGeneration}
     and revoked_at is null and not pending for share`;
   if (
     !credential ||

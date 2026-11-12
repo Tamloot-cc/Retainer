@@ -1452,7 +1452,12 @@ export const extensionInstallations = pgTable(
     setupKind: text('setup_kind').notNull().default('install'),
     activatedAt: timestamptz('activated_at'),
     cleanupDeadline: timestamptz('cleanup_deadline'),
+    // Fences runs, jobs and leases: every release, settings or state change bumps it.
     generation: integer('generation').notNull().default(1),
+    // What standalone keys and OAuth grants bind to. Bumped only on disable,
+    // uninstall, a grant or execution change, and reconnect, so a plain upgrade
+    // or settings change keeps them valid.
+    grantGeneration: integer('grant_generation').notNull().default(1),
     grantedActor: text('granted_actor').notNull(),
     grantedScopes: jsonb('granted_scopes').notNull(),
     settings: jsonb('settings').notNull().default({}),
@@ -1470,6 +1475,7 @@ export const extensionInstallations = pgTable(
     ),
     check('extension_installations_actor', sql`${t.grantedActor} in ('agent', 'integration')`),
     check('extension_installations_generation', sql`${t.generation} > 0`),
+    check('extension_installations_grant_generation', sql`${t.grantGeneration} > 0`),
     pgPolicy('extension_installations_workspace', {
       for: 'all',
       to: 'retainer_app',
@@ -1526,6 +1532,7 @@ export const extensionCredentials = pgTable(
     id: id(),
     workspaceId: workspaceId(),
     installationId: uuid('installation_id').notNull(),
+    // The installation's grant_generation when issued; valid only while they match.
     generation: integer('generation').notNull(),
     kind: text('kind').notNull(),
     keyHash: text('key_hash'),

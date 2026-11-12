@@ -55,6 +55,8 @@ function scope(caller: Caller, required: 'read' | 'schema:write') {
     throw forbidden(`extension operation requires ${required}`);
 }
 const conflict = (code: string, message: string) => new AppError(409, code, message);
+const sameScopes = (a: readonly string[], b: readonly string[]) =>
+  a.length === b.length && a.every((scope) => b.includes(scope));
 
 type Row = {
   id: string;
@@ -63,6 +65,7 @@ type Row = {
   release_digest: string;
   state: ExtensionInstallation['state'];
   generation: number;
+  grant_generation: number;
   settings_revision: number;
   settings: ExtensionInstallation['settings'];
   granted_actor: ExtensionInstallation['grantedActor'];
@@ -95,6 +98,7 @@ function present(r: Row, runtime?: RuntimeCatalog): ExtensionInstallation {
     connectionHealth: r.connection_health,
     lastError: r.last_error,
     generation: r.generation,
+    grantGeneration: r.grant_generation,
     settingsRevision: r.settings_revision,
     secrets: Object.fromEntries((r.secret_names ?? []).map((name) => [name, true])),
     settings: r.settings,
@@ -592,6 +596,19 @@ export class Extensions {
             ? 'upgrading'
             : 'installing'
           : 'disabled';
+      // Standalone credentials survive a release change unless what they were
+      // granted changes: the actor, the scopes, the execution model or the account.
+      const previous = plan.existing
+        ? resolveRelease(this.catalog.runtime, plan.existing)
+        : undefined;
+      const regrant =
+        !!plan.existing &&
+        (input.reconnect === true ||
+          input.replaceSourceAccount === true ||
+          plan.existing.granted_actor !== manifest.requestedActor ||
+          !sameScopes(plan.existing.granted_scopes, manifest.scopes) ||
+          !previous?.available ||
+          previous.manifest.execution !== manifest.execution);
       const [row] = await tx<Row[]>`insert into extension_installations
         (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, settings, created_by, state, setup_kind)
         values (${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId}, ${manifest.universalId}, ${manifest.version}, ${plan.release.digest},
@@ -600,6 +617,7 @@ export class Extensions {
           last_error=null,connection_health='needs_reconnect',activated_at=null,cleanup_deadline=null,
           version = excluded.version, release_digest = excluded.release_digest,granted_scopes=excluded.granted_scopes,granted_actor=excluded.granted_actor,
           generation = extension_installations.generation + 1, settings = excluded.settings,
+          grant_generation = extension_installations.grant_generation + ${regrant ? 1 : 0},
           settings_revision = extension_installations.settings_revision + 1, updated_at = now()
         returning *`;
       if (!row) throw new Error('installation insert returned no row');
@@ -724,7 +742,7 @@ export class Extensions {
         );
       const [count] = await tx<
         { count: number }[]
-      >`select count(*)::int as count from extension_credentials where installation_id=${id} and kind='key' and generation=${current.generation} and revoked_at is null`;
+      >`select count(*)::int as count from extension_credentials where installation_id=${id} and kind='key' and generation=${current.grant_generation} and revoked_at is null`;
       if ((count?.count ?? 0) >= 20)
         throw new AppError(
           429,
@@ -734,14 +752,14 @@ export class Extensions {
       const key = mintInstallationKey();
       const [credential] =
         await tx`insert into extension_credentials(workspace_id,installation_id,generation,kind,key_hash,prefix,scopes,created_by)
-        values(${caller.workspaceId},${id},${current.generation},'key',${hashInstallationKey(key)},${key.slice(0, 12)},${tx.json(input.scopes)},${tx.json(caller.actor)}) returning id,prefix,created_at`;
+        values(${caller.workspaceId},${id},${current.grant_generation},'key',${hashInstallationKey(key)},${key.slice(0, 12)},${tx.json(input.scopes)},${tx.json(caller.actor)}) returning id,prefix,created_at`;
       if (!credential) throw new Error('installation credential insert returned no row');
       return {
         id: credential.id,
         key,
         prefix: credential.prefix,
         scopes: input.scopes,
-        generation: current.generation,
+        generation: current.grant_generation,
         createdAt: credential.created_at.toISOString(),
       };
     });
@@ -767,7 +785,7 @@ export class Extensions {
           active:
             !r.revoked_at &&
             !r.pending &&
-            r.generation === installation.generation &&
+            r.generation === installation.grant_generation &&
             installation.state === 'active',
         })),
       };
@@ -842,14 +860,38 @@ export class Extensions {
             { key },
           );
       }
+      // Ordinary settings update in place: runs started under the old values are
+      // fenced (new generation), but the installation stays enabled and its
+      // standalone credentials keep their grant.
       await cancelRuns(tx, id);
+      // The scan cursor and any open enumeration were computed under the old
+      // settings (a backfill window, a filter). Resuming from them could skip
+      // items the new settings bring into scope, so the next scan starts over.
       await tx`delete from source_sync_state where installation_id=${id}`;
+      const standalone = release.manifest.execution === 'standalone';
+      // Hosted setup binds the source account and webhooks to a generation, so a
+      // running installation re-runs setup at the new one, exactly like an upgrade.
+      const running = !standalone && ['active', 'installing', 'upgrading'].includes(current.state);
+      const ready = running && this.activation.has(current.release_digest);
+      const state: Row['state'] = !running
+        ? current.state
+        : !ready
+          ? 'disabled'
+          : current.state === 'installing'
+            ? 'installing'
+            : 'upgrading';
       const [updated] = await tx<
         Row[]
       >`update extension_installations set settings = ${tx.json(input.settings)},
-        settings_revision = settings_revision + 1, generation = generation + 1, state = 'disabled', updated_at = now()
+        settings_revision = settings_revision + 1, generation = generation + 1, state = ${state},
+        setup_kind = case when ${state} = 'upgrading' then 'upgrade' else setup_kind end,
+        last_error = case when ${running} then null else last_error end,
+        activated_at = case when ${running} then null else activated_at end,
+        grant_generation = grant_generation + case when ${state} = 'disabled' and state <> 'disabled' then 1 else 0 end,
+        updated_at = now()
         where id = ${id} returning *`;
       if (!updated) throw notFound('extension installation');
+      if (ready) await this.queue().enqueueLifecycle(tx, caller.workspaceId, id, 'install');
       return present(updated);
     });
   }
@@ -921,7 +963,8 @@ export class Extensions {
         Row[]
       >`update extension_installations set state = ${nextState},last_error=null,
         cleanup_deadline=case when ${nextState}='uninstalling' then clock_timestamp()+interval '24 hours' else null end,
-        generation = generation + case when state = ${nextState} and last_error is null then 0 else 1 end, updated_at = now()
+        generation = generation + case when state = ${nextState} and last_error is null then 0 else 1 end,
+        grant_generation = grant_generation + 1, updated_at = now()
         where id = ${id} returning *`;
       if (!row) throw notFound('extension installation');
       if (state === 'uninstalled') {

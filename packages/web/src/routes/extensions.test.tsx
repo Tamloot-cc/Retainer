@@ -159,6 +159,7 @@ describe('generated extension settings and human approval', () => {
       releaseDigest: release.digest,
       state: 'active',
       generation: 1,
+      grantGeneration: 1,
       settingsRevision: 1,
       settings: { enabled: true },
       secrets: { apiKey: true },

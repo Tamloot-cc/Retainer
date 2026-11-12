@@ -61,7 +61,7 @@ export class Files {
     const requestKey = requestHash({
       actor: caller.actor,
       installation: caller.run?.installationId ?? caller.installation?.installationId ?? null,
-      generation: caller.run?.generation ?? caller.installation?.generation ?? null,
+      generation: caller.run?.generation ?? caller.installation?.grantGeneration ?? null,
       key,
     });
     const digest = requestHash({ metadata, sourceItemId: sourceItemId ?? null });

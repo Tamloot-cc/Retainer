@@ -11,7 +11,7 @@ type Installation = {
   registration_id: string;
   version: string;
   release_digest: string;
-  generation: number;
+  grant_generation: number;
   state: string;
   granted_actor: 'integration' | 'agent';
   granted_scopes: ('read' | 'write')[];
@@ -107,7 +107,8 @@ export async function installationOptions(
         version: row.version,
         actor: row.granted_actor,
         scopes: row.granted_scopes,
-        generation: row.generation,
+        // Consent reviews the grant; a later release or settings change keeps it.
+        generation: row.grant_generation,
       });
     }
     return { installations };
@@ -140,7 +141,11 @@ export async function consentInstallation(input: {
     const [row] = await tx<
       Installation[]
     >`select * from extension_installations where id=${installationId}`;
-    if (!row || row.generation !== expectedGeneration || !reviewed(row, grant.clientId, catalog))
+    if (
+      !row ||
+      row.grant_generation !== expectedGeneration ||
+      !reviewed(row, grant.clientId, catalog)
+    )
       throw new AppError(409, 'stale_plan', 'installation changed; review the connection again');
     if (grant.scopes.some((scope) => !row.granted_scopes.includes(scope)))
       throw forbidden('requested scopes exceed the approved installation');
@@ -163,7 +168,7 @@ export async function consentInstallation(input: {
       );
     const [credential] = await tx<{ id: string }[]>`insert into extension_credentials
       (workspace_id,installation_id,generation,kind,client_id,subject_id,scopes,created_by,pending)
-      values(${workspaceId},${installationId},${row.generation},'oauth',${grant.clientId},${person.id},
+      values(${workspaceId},${installationId},${row.grant_generation},'oauth',${grant.clientId},${person.id},
         ${tx.json(grant.scopes)},${tx.json({ type: 'user', id: person.id })},true) returning id`;
     if (!credential) throw new Error('OAuth credential insert returned no row');
     await tx`insert into oauth_grant_references(id,workspace_id,kind,credential_id)

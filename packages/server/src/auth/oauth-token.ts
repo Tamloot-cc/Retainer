@@ -190,7 +190,7 @@ async function installationCaller(
       join extension_installations i on i.id=c.installation_id and i.workspace_id=c.workspace_id
       join oauth_grant_references r on r.credential_id=c.id and r.workspace_id=c.workspace_id and r.kind='installation'
       where c.id=${grant} and c.installation_id=${installation} and c.kind='oauth' and c.client_id=${client}
-      and c.subject_id=${subject} and c.generation=${generation} and c.revoked_at is null and not c.pending and i.state='active' and i.generation=c.generation`;
+      and c.subject_id=${subject} and c.generation=${generation} and c.revoked_at is null and not c.pending and i.state='active' and i.grant_generation=c.generation`;
     if (!row) throw refused('this installation connection was removed; connect again');
     const tokenScopes = typeof claims.scope === 'string' ? claims.scope.split(/\s+/) : [];
     const scopes = [
@@ -206,7 +206,7 @@ async function installationCaller(
     const binding = {
       installationId: installation,
       registrationId: row.registration_id,
-      generation,
+      grantGeneration: generation,
       credentialId: grant,
       kind: 'oauth' as const,
       scopes,

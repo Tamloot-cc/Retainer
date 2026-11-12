@@ -150,7 +150,7 @@ export class Sources {
       await tx`delete from source_bindings where installation_id=${id}`;
       await tx`delete from source_sync_state where installation_id=${id}`;
       await tx`update webhook_bindings set state='retired',updated_at=clock_timestamp() where installation_id=${id} and state<>'retired'`;
-      await tx`update extension_installations set state='disabled',generation=generation+1,connection_health='needs_reconnect',last_error=null where id=${id}`;
+      await tx`update extension_installations set state='disabled',generation=generation+1,grant_generation=grant_generation+1,connection_health='needs_reconnect',last_error=null where id=${id}`;
       return { disconnected: true };
     });
   }

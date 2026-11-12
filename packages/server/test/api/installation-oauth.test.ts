@@ -33,7 +33,13 @@ const db = useTestDatabase(),
   redirectUri = 'https://workspace-app.example/callback';
 let app: AccountsTestApp, clientId: string, catalog: ExtensionCatalog;
 let directory: string, fileServer: ReturnType<typeof createFileServer>;
-const manifest = extensionFixture({ execution: 'standalone', scopes: ['read', 'write'] });
+const manifest = extensionFixture({
+  execution: 'standalone',
+  scopes: ['read', 'write'],
+  settings: {
+    label: { type: 'string', label: 'Label', required: false, secret: false, reconnect: false },
+  },
+});
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'retainer-standalone-oauth-'));
   const key = randomBytes(32);
@@ -59,7 +65,15 @@ beforeAll(async () => {
   expect(response.status, await response.clone().text()).toBe(201);
   clientId = ((await response.json()) as { client_id: string }).client_id;
   manifest.oauthClientId = clientId;
-  catalog = new ExtensionCatalog([{ manifest, actorCeiling: 'integration' }]);
+  // A plain release upgrade, then one that changes the actor (a grant change).
+  const upgraded = extensionFixture({ ...manifest, version: '1.1.0' }),
+    widened = extensionFixture({ ...manifest, version: '1.2.0', requestedActor: 'agent' });
+  catalog = new ExtensionCatalog(
+    [manifest, upgraded, widened].map((m) => ({
+      manifest: m,
+      actorCeiling: 'integration' as const,
+    })),
+  );
   app = startAccountsApp(db, { extensionCatalog: catalog, fileStorage });
 });
 afterAll(async () => {
@@ -409,7 +423,8 @@ describe('standalone workspace OAuth with real consent, PKCE, JWT and RLS', () =
     const current = await json<ExtensionInstallation>(
       await h.v1(`/v1/extensions/${h.installation.id}`),
     );
-    h.installation.generation = current.generation;
+    // Consent reviews the current grant, which disable replaced.
+    h.installation.generation = current.grantGeneration;
     const fresh = await h.connect('read offline_access');
     expect((await h.request(fresh.access_token)).status).toBe(200);
     expect(
@@ -560,5 +575,57 @@ describe('standalone workspace OAuth with real consent, PKCE, JWT and RLS', () =
     expect(
       await db.owner`select id from extension_credentials where installation_id=${h.installation.id} and pending`,
     ).toHaveLength(0);
+  });
+  it('keeps an app grant across a plain upgrade and a settings change, and revokes it on a grant change', async () => {
+    const h = await setup(),
+      tokens = await h.connect();
+    const commit = async (input: Record<string, unknown>) => {
+      const preview = await json<{ planDigest: string }>(
+        await h.v1('/v1/extensions/preview', 'POST', input),
+      );
+      return json<ExtensionInstallation>(
+        await h.v1(`/v1/extensions/${h.installation.id}/upgrade`, 'POST', {
+          ...input,
+          planDigest: preview.planDigest,
+        }),
+      );
+    };
+    const upgrade = {
+      installationId: h.installation.id,
+      registrationId: manifest.universalId,
+      settings: {},
+    };
+    const upgraded = await commit({ ...upgrade, version: '1.1.0' });
+    expect(upgraded).toMatchObject({ state: 'active', version: '1.1.0', grantGeneration: 1 });
+    expect(upgraded.generation).toBeGreaterThan(h.installation.generation);
+    expect((await h.request(tokens.access_token)).status).toBe(200);
+    const refreshed = await json<Tokens>(await h.refresh(tokens));
+    expect((await h.request(refreshed.access_token)).status).toBe(200);
+    const changed = await json<ExtensionInstallation>(
+      await h.v1(`/v1/extensions/${h.installation.id}/settings`, 'PATCH', {
+        expectedRevision: upgraded.settingsRevision,
+        settings: { label: 'Renamed' },
+      }),
+    );
+    expect(changed).toMatchObject({ state: 'active', grantGeneration: 1 });
+    expect(changed.generation).toBeGreaterThan(upgraded.generation);
+    expect(
+      (
+        await h.request(refreshed.access_token, '/v1/objects/company/records', 'POST', {
+          values: { name: 'After settings' },
+        })
+      ).status,
+    ).toBe(201);
+    const widened = await commit({ ...upgrade, version: '1.2.0', grantChange: true });
+    expect(widened.grantGeneration).toBe(2);
+    expect((await h.request(refreshed.access_token)).status).toBe(401);
+    expect((await h.refresh(refreshed)).status).toBeGreaterThanOrEqual(400);
+    // A new connection reviews the new grant.
+    h.installation.generation = widened.grantGeneration;
+    const fresh = await h.connect();
+    expect(decodeJwt(fresh.access_token)).toMatchObject({ grant_generation: 2 });
+    expect(
+      (await json<{ actor: unknown }>(await h.request(fresh.access_token))).actor,
+    ).toMatchObject({ type: 'agent', id: h.installation.id });
   });
 });

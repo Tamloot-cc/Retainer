@@ -14,11 +14,23 @@ import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
+const configured = extensionFixture({
+  execution: 'standalone',
+  scopes: ['read', 'write'],
+  settings: {
+    label: { type: 'string', label: 'Label', required: false, secret: false, reconnect: false },
+    account: { type: 'string', label: 'Account', required: false, secret: false, reconnect: true },
+  },
+});
 const manifests = [
   extensionFixture({ execution: 'standalone', scopes: ['read', 'write'] }),
   extensionFixture({ execution: 'standalone', scopes: ['read', 'write'] }),
   extensionFixture({ scopes: ['read', 'write'] }),
   extensionFixture({ execution: 'standalone', requestedActor: 'agent', scopes: ['read', 'write'] }),
+  configured,
+  // A plain release upgrade, then one that narrows the grant.
+  extensionFixture({ ...configured, version: '1.1.0' }),
+  extensionFixture({ ...configured, version: '1.2.0', scopes: ['read'] }),
 ];
 const catalog = new ExtensionCatalog(
   manifests.map((manifest) => ({ manifest, actorCeiling: 'integration' as const })),
@@ -488,5 +500,106 @@ describe('standalone installation keys with real RLS Postgres', () => {
     for (const result of outcomes)
       if (result.status === 'rejected')
         expect(result.reason).toMatchObject({ code: 'quota_exceeded' });
+  });
+});
+
+describe('standalone credentials bind to the grant, not the release (grant_generation)', () => {
+  async function configuredApp() {
+    const h = await setup(),
+      installed = await h.install(4),
+      base = `/v1/extensions/${installed.id}`;
+    const issue = async () => {
+      const current = await app.request(base, { key: h.keys.admin });
+      const response = await app.request(`${base}/keys`, {
+        key: h.keys.admin,
+        body: { expectedGeneration: current.body.generation, scopes: ['read', 'write'] },
+      });
+      expect(response.status).toBe(201);
+      return response.body as { id: string; key: string; generation: number };
+    };
+    const commit = async (path: string, input: Record<string, unknown>) => {
+      const preview = await app.request('/v1/extensions/preview', {
+        key: h.keys.admin,
+        body: input,
+      });
+      expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+      return app.request(path, {
+        key: h.keys.admin,
+        body: { ...input, planDigest: preview.body.planDigest },
+        headers: { 'Idempotency-Key': randomUUID() },
+      });
+    };
+    const upgrade = (version: string) =>
+      commit(`${base}/upgrade`, {
+        installationId: installed.id,
+        registrationId: configured.universalId,
+        version,
+        settings: {},
+      });
+    const write = (key: string) =>
+      app.request('/v1/objects/company/records', {
+        key,
+        body: { values: { name: `App write ${randomUUID()}` } },
+      });
+    return { ...h, installed, base, issue, commit, upgrade, write };
+  }
+  it('keeps a key working across a release upgrade without a grant change', async () => {
+    const h = await configuredApp(),
+      credential = await h.issue();
+    const upgraded = await h.upgrade('1.1.0');
+    expect(upgraded.status, JSON.stringify(upgraded.body)).toBe(200);
+    expect(upgraded.body).toMatchObject({ state: 'active', version: '1.1.0' });
+    expect(upgraded.body.generation).toBeGreaterThan(h.installed.generation);
+    expect(upgraded.body.grantGeneration).toBe(h.installed.grantGeneration);
+    expect((await h.write(credential.key)).status).toBe(201);
+    const listing = await app.request(`${h.base}/credentials`, { key: h.keys.admin });
+    expect(listing.body.credentials[0]).toMatchObject({ id: credential.id, active: true });
+  });
+  it('revokes keys when an upgrade narrows the grant', async () => {
+    const h = await configuredApp(),
+      credential = await h.issue();
+    const narrowed = await h.upgrade('1.2.0');
+    expect(narrowed.status, JSON.stringify(narrowed.body)).toBe(200);
+    expect(narrowed.body.grantGeneration).toBeGreaterThan(h.installed.grantGeneration);
+    expect((await app.request('/v1/me', { key: credential.key })).status).toBe(401);
+  });
+  it('updates ordinary settings in place: fences runs, keeps the installation active and its keys valid', async () => {
+    const h = await configuredApp(),
+      credential = await h.issue();
+    const changed = await app.request(`${h.base}/settings`, {
+      key: h.keys.admin,
+      method: 'PATCH',
+      body: { expectedRevision: h.installed.settingsRevision, settings: { label: 'Renamed' } },
+    });
+    expect(changed.status, JSON.stringify(changed.body)).toBe(200);
+    expect(changed.body).toMatchObject({ state: 'active', settings: { label: 'Renamed' } });
+    expect(changed.body.generation).toBeGreaterThan(h.installed.generation);
+    expect(changed.body.grantGeneration).toBe(h.installed.grantGeneration);
+    expect((await h.write(credential.key)).status).toBe(201);
+    // A fresh key issued after the change binds to the same grant.
+    expect((await h.issue()).generation).toBe(credential.generation);
+  });
+  it('revokes keys on reconnect and keeps them dead through disable and enable', async () => {
+    const h = await configuredApp(),
+      credential = await h.issue();
+    const reconnected = await h.commit(`${h.base}/reconnect`, {
+      installationId: h.installed.id,
+      registrationId: configured.universalId,
+      version: configured.version,
+      reconnect: true,
+      settings: { account: 'other@example.com' },
+    });
+    expect(reconnected.status, JSON.stringify(reconnected.body)).toBe(200);
+    expect((await app.request('/v1/me', { key: credential.key })).status).toBe(401);
+    const fresh = await h.issue();
+    expect(fresh.generation).toBeGreaterThan(credential.generation);
+    expect((await h.write(fresh.key)).status).toBe(201);
+    expect(
+      (await app.request(`${h.base}/disable`, { key: h.keys.admin, method: 'POST' })).status,
+    ).toBe(200);
+    expect(
+      (await app.request(`${h.base}/enable`, { key: h.keys.admin, method: 'POST' })).status,
+    ).toBe(200);
+    expect((await app.request('/v1/me', { key: fresh.key })).status).toBe(401);
   });
 });
