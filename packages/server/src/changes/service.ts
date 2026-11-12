@@ -9,7 +9,8 @@ import type { ChangeOperation } from './collect.js';
 
 export type ChangeRow = {
   position: string;
-  record_id: string;
+  /** Null only for a schema-level change. */
+  record_id: string | null;
   object_type_id: string;
   operation: ChangeOperation;
   field_keys: string[];
@@ -53,7 +54,7 @@ export class Changes {
     const named = [
       ...new Set(
         rows.flatMap((r) => [
-          r.record_id,
+          ...(r.record_id ? [r.record_id] : []),
           ...r.related_record_ids,
           ...(r.merged_into_id ? [r.merged_into_id] : []),
         ]),
@@ -65,15 +66,19 @@ export class Changes {
         >`select id,object_type_id from records where id=any(${named}::uuid[]) and private_to_user is null and deleted_at is null and merged_into_id is null and object_type_id=any(${schema.visibleObjectIds}::uuid[])`
       : [];
     const visible = new Set(records.map((r) => r.id));
+    // Tombstones and schema changes outlive their record or object type.
+    const outlives = (r: ChangeRow) =>
+      ['delete', 'merge', 'retract', 'forget', 'schema'].includes(r.operation);
     const changes = rows
       .filter(
         (r) =>
           (schema.visibleObjectIds.includes(r.object_type_id) ||
-            (['delete', 'merge', 'retract', 'forget'].includes(r.operation) &&
+            (outlives(r) &&
               schema.objectsById.has(r.object_type_id) &&
               !schema.objectsById.get(r.object_type_id)?.hidden)) &&
-          (visible.has(r.record_id) ||
-            ['delete', 'merge', 'retract', 'forget'].includes(r.operation)),
+          (r.record_id === null
+            ? r.operation === 'schema'
+            : visible.has(r.record_id) || outlives(r)),
       )
       .map((r) => ({
         cursor: changeCursor(workspace, r.position),

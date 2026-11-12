@@ -11,6 +11,7 @@ import {
 import { applyOperations, coreFieldUniversalId, deriveUuid } from './apply.js';
 import { classifyOp, diffSchemas, isDestructive } from './diff.js';
 import type { FieldDefinitionInput, SchemaOperation } from './operations.js';
+import { schemaChangeKeys } from './persist.js';
 import { validateSchema } from './validate.js';
 
 const EMPTY: SchemaState = { objects: [] };
@@ -215,6 +216,50 @@ describe('apply', () => {
       'deprecate_field',
       'deprecate_object',
     ]);
+  });
+});
+
+describe('schema-level change keys', () => {
+  /** Gives every object a database ID, as a loaded schema has. */
+  const persisted = (state: SchemaState): SchemaState => ({
+    objects: state.objects.map((o) => ({ ...o, id: `db-${o.nameSingular}` })),
+  });
+  const keyOf = (state: SchemaState, object: string, name: string) =>
+    field(state, object, name)?.key as string;
+
+  it('names a deprecated field and its relation inverse once per object type', () => {
+    const current = persisted(base);
+    const desired = applyValid(current, [{ op: 'delete_field', object: 'task', field: 'company' }]);
+    expect(schemaChangeKeys(current, diffSchemas(current, desired))).toEqual(
+      new Map([
+        ['db-company', [keyOf(current, 'company', 'tasks')]],
+        ['db-task', [keyOf(current, 'task', 'company')]],
+      ]),
+    );
+  });
+
+  it('names every active field of a deleted object and relations pointing at it', () => {
+    const current = persisted(applyValid(base, TEMPLATES.sales.operations));
+    const desired = applyValid(current, [{ op: 'delete_object', object: 'deal' }]);
+    const keys = schemaChangeKeys(current, diffSchemas(current, desired));
+    const deal = current.objects.find((o) => o.nameSingular === 'deal');
+    expect(keys.get('db-deal')).toEqual(
+      deal?.fields
+        .filter((f) => f.status === 'active')
+        .map((f) => f.key)
+        .sort(),
+    );
+    expect(keys.get('db-company')).toEqual([keyOf(current, 'company', 'deals')]);
+    expect(keys.get('db-person')).toEqual([keyOf(current, 'person', 'deals')]);
+    expect([...keys.keys()].sort()).toEqual(['db-company', 'db-deal', 'db-person']);
+  });
+
+  it('records nothing for operations that hide no values', () => {
+    const current = persisted(base);
+    const desired = applyValid(current, [
+      { op: 'rename_field', object: 'person', field: 'jobTitle', name: 'positionTitle' },
+    ]);
+    expect(schemaChangeKeys(current, diffSchemas(current, desired)).size).toBe(0);
   });
 });
 

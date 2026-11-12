@@ -2244,7 +2244,8 @@ export const recordChanges = pgTable(
   {
     workspaceId: workspaceId(),
     position: bigint('position', { mode: 'number' }).notNull(),
-    recordId: uuid('record_id').notNull(),
+    /** Null only for a schema-level change, which names an object type and field keys. */
+    recordId: uuid('record_id'),
     objectTypeId: uuid('object_type_id').notNull(),
     operation: text('operation').notNull(),
     fieldKeys: jsonb('field_keys').$type<string[]>().notNull(),
@@ -2262,8 +2263,9 @@ export const recordChanges = pgTable(
     index('record_changes_retention_idx').on(t.createdAt),
     check(
       'record_changes_operation',
-      sql`${t.operation} in ('create','update','links','delete','merge','retract','supersede','review','forget')`,
+      sql`${t.operation} in ('create','update','links','delete','merge','retract','supersede','review','forget','schema')`,
     ),
+    check('record_changes_schema_record', sql`(${t.operation}='schema')=(${t.recordId} is null)`),
     pgPolicy('record_changes_workspace', {
       for: 'all',
       to: 'retainer_app',

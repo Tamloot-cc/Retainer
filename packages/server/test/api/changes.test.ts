@@ -324,16 +324,186 @@ describe('commit-ordered minimal record changes with real Postgres', () => {
     ).toBe(200);
     const result = await h.list(start);
     expect(result.status).toBe(200);
+    const [types] = await db.owner<{ person: string; feed: string }[]>`
+      select (select id from object_types where workspace_id=${h.workspace.id} and name_singular='person') as person,
+        (select id from object_types where workspace_id=${h.workspace.id} and name_singular='feedEvent') as feed`;
+    // A removed field is one schema-level change, not one change per record.
     expect(result.body.changes).toContainEqual(
       expect.objectContaining({
-        recordId: person.body.id,
-        operation: 'update',
+        recordId: null,
+        objectTypeId: types?.person,
+        operation: 'schema',
         changedKeys: [field?.key],
+        relatedRecordIds: [],
+        mergedIntoId: null,
       }),
+    );
+    expect(result.body.changes).not.toContainEqual(
+      expect.objectContaining({ recordId: person.body.id }),
+    );
+    // A deleted event type is also one schema change; its events are still
+    // deleted through the event lifecycle, each with its own tombstone.
+    expect(result.body.changes).toContainEqual(
+      expect.objectContaining({ recordId: null, objectTypeId: types?.feed, operation: 'schema' }),
     );
     expect(result.body.changes).toContainEqual(
       expect.objectContaining({ recordId: event.body.id, operation: 'delete' }),
     );
+  });
+  it('deletes an event type with one schema change plus a delete change per event', async () => {
+    const h = await setup();
+    const schema = (operations: unknown[]) =>
+      t.request('/v1/schema/changes', { key: h.keys.admin, body: { operations } });
+    expect(
+      (
+        await schema([
+          {
+            op: 'create_object',
+            object: {
+              nameSingular: 'retiredEvent',
+              namePlural: 'retiredEvents',
+              labelSingular: 'Retired event',
+              labelPlural: 'Retired events',
+              class: 'event',
+              fields: [],
+            },
+          },
+        ])
+      ).status,
+    ).toBe(200);
+    const events: string[] = [];
+    for (const title of ['First retired', 'Second retired']) {
+      const event = await t.request('/v1/events', {
+        key: h.keys.admin,
+        body: {
+          type: 'retiredEvent',
+          channel: 'fixture',
+          occurredAt: '2026-11-10T10:00:00Z',
+          title,
+        },
+      });
+      expect(event.status).toBe(201);
+      events.push(event.body.id);
+    }
+    const start = (await h.list()).body.nextCursor;
+    expect((await schema([{ op: 'delete_object', object: 'retiredEvent' }])).status).toBe(200);
+    const [type] = await db.owner<{ id: string }[]>`select id from object_types
+      where workspace_id=${h.workspace.id} and name_singular='retiredEvent'`;
+    if (!type) throw new Error('event type missing');
+    const keys = await db.owner<{ key: string }[]>`select key from fields
+      where object_type_id=${type.id} order by key`;
+    const { changes } = (await h.list(start)).body;
+    const ofType = changes.filter((c: { objectTypeId: string }) => c.objectTypeId === type.id);
+    expect(ofType.filter((c: { operation: string }) => c.operation === 'schema')).toEqual([
+      expect.objectContaining({
+        recordId: null,
+        operation: 'schema',
+        changedKeys: keys.map((k) => k.key),
+      }),
+    ]);
+    expect(
+      ofType
+        .filter((c: { operation: string }) => c.operation !== 'schema')
+        .map((c: { recordId: string; operation: string }) => [c.recordId, c.operation])
+        .sort(),
+    ).toEqual([...events].sort().map((id) => [id, 'delete']));
+  });
+  it('deprecates a field of 2,000 records with one schema change and no record locks', async () => {
+    const h = await setup();
+    expect(
+      (
+        await t.request('/v1/schema/changes', {
+          key: h.keys.admin,
+          body: {
+            operations: [
+              {
+                op: 'create_field',
+                object: 'person',
+                field: {
+                  name: 'legacyCode',
+                  label: 'Legacy code',
+                  type: 'text',
+                  isSearchable: false,
+                },
+              },
+            ],
+          },
+        })
+      ).status,
+    ).toBe(200);
+    const [meta] = await db.owner<{ type: string; key: string }[]>`
+      select o.id as type,f.key from fields f join object_types o on o.id=f.object_type_id
+      where f.workspace_id=${h.workspace.id} and f.name='legacyCode'`;
+    if (!meta) throw new Error('field missing');
+    await db.owner`insert into records (workspace_id,object_type_id,data,created_by,updated_by)
+      select ${h.workspace.id},${meta.type},jsonb_build_object(${meta.key}::text,'code-'||g),
+        '{"type":"user","id":"admin"}'::jsonb,'{"type":"user","id":"admin"}'::jsonb
+      from generate_series(1,2000) g`;
+    const held = await h.create('Held row');
+    const start = (await h.list()).body.nextCursor;
+    // Hold a row lock on one record of the type for the whole deprecation.
+    const g = gate();
+    const holder = db.owner.begin(async (tx) => {
+      await tx`select id from records where id=${held.body.id} for update`;
+      g.entered();
+      await g.paused;
+    });
+    await g.started;
+    const began = Date.now();
+    let response: Awaited<ReturnType<typeof t.request>> | 'blocked';
+    try {
+      response = await Promise.race([
+        t.request('/v1/schema/changes', {
+          key: h.keys.admin,
+          body: { operations: [{ op: 'delete_field', object: 'person', field: 'legacyCode' }] },
+        }),
+        blockedAfter(10000),
+      ]);
+    } finally {
+      g.release();
+      await holder;
+    }
+    expect(response).not.toBe('blocked');
+    expect(response === 'blocked' ? 0 : response.status).toBe(200);
+    expect(Date.now() - began).toBeLessThan(5000);
+    const rows = await db.owner`select record_id,object_type_id,operation,field_keys
+      from record_changes where workspace_id=${h.workspace.id} and position>(
+        select max(position) from record_changes where workspace_id=${h.workspace.id} and record_id=${held.body.id})`;
+    expect(rows).toEqual([
+      { record_id: null, object_type_id: meta.type, operation: 'schema', field_keys: [meta.key] },
+    ]);
+    const page = await h.list(start);
+    expect(page.body.changes).toEqual([
+      expect.objectContaining({
+        recordId: null,
+        objectTypeId: meta.type,
+        operation: 'schema',
+        changedKeys: [meta.key],
+        relatedRecordIds: [],
+        originInstallationId: null,
+        cause: [],
+        mergedIntoId: null,
+      }),
+    ]);
+    // The SDK and MCP read the same shape.
+    const sdk = new RetainerClient({
+      baseUrl: 'http://retainer.test',
+      apiKey: h.keys.reader,
+      fetch: t.inProcessFetch,
+    });
+    expect((await sdk.changes({ after: start })).changes).toEqual(page.body.changes);
+    const mcp = await t.mcpClient(h.keys.reader);
+    try {
+      expect((await mcp.call('list_changes', { after: start })).body.changes).toEqual(
+        page.body.changes,
+      );
+    } finally {
+      await mcp.close();
+    }
+    // Deprecation hides the value from reads.
+    const read = await t.request(`/v1/records/${held.body.id}`, { key: h.keys.reader });
+    expect(read.status).toBe(200);
+    expect(JSON.stringify(read.body)).not.toContain('legacyCode');
   });
   it('publishes a type move as an old-type tombstone and a new-type creation', async () => {
     const h = await setup();

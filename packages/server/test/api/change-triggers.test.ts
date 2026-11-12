@@ -26,7 +26,8 @@ beforeAll(async () => {
     verificationKey: pair.publicKey,
   });
 });
-async function setup(count = 1, standalone = 0) {
+type Watch = { objectId: string; fieldIds: string[] };
+async function setup(count = 1, standalone = 0, watches?: (jobTitle: string) => Watch[]) {
   const initial = startTestApp(db),
     { workspace, keys } = await initial.setupWorkspace(
       { name: `Triggers ${randomUUID()}` },
@@ -40,7 +41,8 @@ async function setup(count = 1, standalone = 0) {
   >`select universal_id,key from fields where workspace_id=${workspace.id} and name='jobTitle'`;
   workspaceIds.push(workspace.id);
   if (!field) throw new Error('watch field missing');
-  const manifests = Array.from({ length: count }, () =>
+  const triggers = watches?.(field.universal_id);
+  const manifests = Array.from({ length: triggers?.length ?? count }, (_, i) =>
     extensionFixture({
       scopes: ['read', 'write'],
       functions: [
@@ -52,8 +54,10 @@ async function setup(count = 1, standalone = 0) {
           timeoutSeconds: 120,
           trigger: {
             kind: 'change',
-            objectId: BASE_OBJECT_IDS.person,
-            fieldIds: [field.universal_id],
+            ...(triggers?.[i] ?? {
+              objectId: BASE_OBJECT_IDS.person,
+              fieldIds: [field.universal_id],
+            }),
           },
           inputSchema: {
             type: 'object',
@@ -205,6 +209,63 @@ async function setup(count = 1, standalone = 0) {
   };
 }
 describe('transactional change dispatch with real Postgres', () => {
+  it('queues one job per watching installation for a schema-level deprecation', async () => {
+    const h = await setup(0, 0, (jobTitle) => [
+      { objectId: BASE_OBJECT_IDS.person, fieldIds: [] },
+      { objectId: BASE_OBJECT_IDS.person, fieldIds: [jobTitle] },
+      { objectId: BASE_OBJECT_IDS.company, fieldIds: [] },
+    ]);
+    const [whole, other, company] = h.ids;
+    if (!whole || !other || !company) throw new Error('installations missing');
+    const schema = (operations: unknown[]) =>
+      h.app.request('/v1/schema/changes', { key: h.keys.admin, body: { operations } });
+    expect(
+      (
+        await schema([
+          {
+            op: 'create_field',
+            object: 'person',
+            field: { name: 'legacyCode', label: 'Legacy code', type: 'text' },
+          },
+        ])
+      ).status,
+    ).toBe(200);
+    for (let i = 0; i < 5; i++) await h.person(`Schema person ${i}`);
+    for (const id of h.ids) await h.queue.dispatchChanges(h.workspace.id, id);
+    const before = await Promise.all(h.ids.map((id) => h.changeJobs(id)));
+    expect(
+      (await schema([{ op: 'delete_field', object: 'person', field: 'legacyCode' }])).status,
+    ).toBe(200);
+    const [change] = await db.owner<
+      { position: string }[]
+    >`select position::text from record_changes
+      where workspace_id=${h.workspace.id} and operation='schema' order by position desc limit 1`;
+    if (!change) throw new Error('schema change missing');
+    expect(await h.queue.dispatchChanges(h.workspace.id, whole)).toEqual({ queued: 1, blocked: 0 });
+    expect(await h.queue.dispatchChanges(h.workspace.id, other)).toEqual({ queued: 0, blocked: 0 });
+    expect(await h.queue.dispatchChanges(h.workspace.id, company)).toEqual({
+      queued: 0,
+      blocked: 0,
+    });
+    const jobs = (await h.changeJobs(whole)).slice(before[0]?.length ?? 0);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.input).toEqual({ changePosition: change.position });
+    expect(jobs[0]?.change_snapshot).toMatchObject({ record_id: null, operation: 'schema' });
+    expect((await h.changeJobs(other)).length).toBe(before[1]?.length);
+    expect((await h.changeJobs(company)).length).toBe(before[2]?.length);
+    // The run reads its change through get_change with the public shape.
+    const job = jobs[0];
+    if (!job) throw new Error('job missing');
+    const run = await h.queue.claim(h.workspace.id, job.id, 'change-worker');
+    if (!run) throw new Error('claim missing');
+    const manifest = h.manifests[0];
+    if (!manifest) throw new Error('manifest missing');
+    const key = await tokens.issue(h.app.sql, run, manifest.universalId, run.scopes);
+    const read = await h.app.request(`/v1/changes/${change.position}`, { key });
+    expect(read.status).toBe(200);
+    expect(read.body).toMatchObject({ recordId: null, operation: 'schema', relatedRecordIds: [] });
+    expect(read.body.changedKeys).toHaveLength(1);
+  });
   it('deduplicates competing dispatchers and keeps the jobs it accepted before the quota', async () => {
     const h = await setup(),
       id = h.ids[0];

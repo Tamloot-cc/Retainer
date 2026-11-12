@@ -13,7 +13,9 @@ export type ChangeOperation =
   | 'retract'
   | 'supersede'
   | 'review'
-  | 'forget';
+  | 'forget'
+  /** Schema-level: no record; the object type and the field keys it affected. */
+  | 'schema';
 type Snapshot = {
   id: string;
   object_type_id: string;
@@ -52,6 +54,8 @@ export class ChangeCollector {
   private readonly entries = new Map<string, Entry>();
   private published = false;
   private readonly erasedIds = new Set<string>();
+  /** Schema-level changes by object type ID: the field keys each affected. */
+  private readonly schemaChanges = new Map<string, Set<string>>();
   constructor(
     private readonly workspace: string,
     private readonly schema: CompiledSchema,
@@ -138,6 +142,17 @@ export class ChangeCollector {
     if (this.published) throw new Error('cannot create records after feed publication');
     if (!this.entries.has(id)) this.entries.set(id, { before: null, reviewKeys: new Set() });
   }
+  /**
+   * One schema-level change per affected object type, in place of one change
+   * per record: a deprecation hides values without touching records, so
+   * handlers rescan the type's current data (extensions spec §9.4).
+   */
+  schemaChanged(objectTypeId: string, fieldKeys: readonly string[]) {
+    if (this.published) throw new Error('cannot record schema changes after feed publication');
+    const keys = this.schemaChanges.get(objectTypeId) ?? new Set<string>();
+    for (const key of fieldKeys) keys.add(key);
+    this.schemaChanges.set(objectTypeId, keys);
+  }
   erase(ids: readonly string[]) {
     for (const id of ids) this.erasedIds.add(id);
   }
@@ -149,7 +164,17 @@ export class ChangeCollector {
   private async publish(tx: Tx) {
     if (this.published) throw new Error('feed already published');
     this.published = true;
-    const changes = [];
+    const changes: {
+      workspace_id: string;
+      record_id: string | null;
+      object_type_id: string;
+      operation: ChangeOperation;
+      field_keys: string[];
+      related_record_ids: string[];
+      origin_installation_id: string | null;
+      cause: string[];
+      merged_into_id: string | null;
+    }[] = [];
     for (const [id, entry] of [...this.entries].sort(([a], [b]) => a.localeCompare(b))) {
       const current = await this.snapshot(tx, id),
         prior = entry.before,
@@ -219,6 +244,22 @@ export class ChangeCollector {
         origin_installation_id: this.origin,
         cause: this.cause,
         merged_into_id: current?.merged_into_id ?? null,
+      });
+    }
+    for (const [objectTypeId, keys] of [...this.schemaChanges].sort(([a], [b]) =>
+      a.localeCompare(b),
+    )) {
+      if (this.schema.objectsById.get(objectTypeId)?.hidden) continue;
+      changes.push({
+        workspace_id: this.workspace,
+        record_id: null,
+        object_type_id: objectTypeId,
+        operation: 'schema',
+        field_keys: [...keys].sort(),
+        related_record_ids: [],
+        origin_installation_id: this.origin,
+        cause: this.cause,
+        merged_into_id: null,
       });
     }
     if (!changes.length) return;

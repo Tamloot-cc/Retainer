@@ -181,6 +181,36 @@ describe('last-contact adapter', () => {
     expect(calls.at(-1).children[0].input).toEqual({});
     expect(calls.at(-1).kv.value.after).toBeNull();
   });
+  it('answers a schema-level change with a paged rescan instead of a record batch', async () => {
+    const calls: { path: string; body: any }[] = [];
+    const transport: typeof fetch = async (url, init) => {
+      const path = new URL(String(url)).pathname,
+        body = init?.body ? JSON.parse(String(init.body)) : null;
+      if (path.endsWith('/changes/9'))
+        return response({
+          recordId: null,
+          operation: 'schema',
+          changedKeys: ['lastContactAt'],
+          relatedRecordIds: [],
+          mergedIntoId: null,
+        });
+      if (path.includes('/runtime/kv/')) return response(null);
+      calls.push({ path, body });
+      return response({});
+    };
+    expect(
+      await executeLastContact(
+        invocation(LAST_CONTACT.person, { changePosition: '9' }),
+        signal(),
+        transport,
+      ),
+    ).toEqual({ status: 'succeeded' });
+    expect(calls.some((c) => c.path.endsWith('/runtime/last-contact'))).toBe(false);
+    expect(calls.at(-1)?.body.children[0]).toMatchObject({
+      functionId: LAST_CONTACT.scan,
+      input: {},
+    });
+  });
   it('refuses supplied values or record cursors in durable job input before making any API call', async () => {
     let calls = 0;
     const transport: typeof fetch = async () => {

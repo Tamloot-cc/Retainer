@@ -216,6 +216,11 @@ async function lastContact(
       .safeParse(invocation.input);
     if (!input.success) return { status: 'failed', code: 'invalid_input' };
     const change = await sdk.change(input.data.changePosition);
+    // A schema-level change names no record: rescan current data.
+    if (change.recordId === null) {
+      await kick();
+      return { status: 'succeeded' };
+    }
     const ids = [
       ...new Set([
         change.recordId,

@@ -176,6 +176,12 @@ range or list, so their extension catalog is empty by design. Retaining old byte
 incompatible adapter requires an explicit migration/removal plan. Hosted preflight
 keeps refusing a server rollout with unsupported pins.
 
+Migration `0095_record_change_schema_operation` (schema-level changes) adds
+two CHECK constraints to `record_changes` and validates them over existing
+rows while holding `ACCESS EXCLUSIVE` on the table, so feed reads and every
+record write wait for it. Retention bounds the table to 30 days of changes,
+so this is an accepted one-time cost; deploy it outside peak write hours.
+
 ## Change feeds and retention recovery
 
 `GET /v1/changes` (`list_changes`, SDK `changes`) returns minimal IDs, permanent
@@ -185,6 +191,10 @@ For a full current-record rescan, first capture `headCursor` from a fresh page,
 scan current records, then replay changes after that saved cursor. Writes during
 the scan may be seen twice; recompute from current state. A cursor older than
 30 days returns `410 cursor_expired` rather than silently skipping history.
+Deleting a field or object type, or changing an object's label field, appends
+one `schema` change per affected object type instead of one per record:
+`recordId` is null and `changedKeys` lists the hidden field keys. A handler
+that receives one rescans that type's current records.
 
 The dispatcher atomically queues a matching job and advances its own durable
 checkpoint. A job receives only `changePosition`; `get_change`/SDK `change`
