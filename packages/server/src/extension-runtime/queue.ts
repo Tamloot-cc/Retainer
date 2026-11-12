@@ -37,6 +37,8 @@ export type ClaimedJob = Lease & {
 };
 /** Time after a handler's deadline in which the coordinator may still acknowledge its run. */
 export const RUN_GRACE_SECONDS = 15;
+/** Shutdown releases per job that do not consume an attempt. */
+const FREE_RELEASES = 3;
 type Installation = {
   id: string;
   workspace_id: string;
@@ -736,13 +738,21 @@ export class ExtensionQueue {
       true,
     );
   }
-  /** Hands a run back after a graceful executor shutdown without consuming one of its attempts. */
+  /**
+   * Hands a run back after a graceful executor shutdown. The first few releases of a job do not
+   * consume an attempt; after that it counts, so repeated restarts cannot run a job forever.
+   */
   async release(lease: Lease) {
     return this.withLease(
       lease,
       async (tx, _installation, job) => {
+        const [released] = await tx<
+          { count: number }[]
+        >`select count(*)::int as count from extension_attempts
+          where job_id=${job.id} and status='cancelled' and code='executor_stopped'`;
+        const refund = (released?.count ?? 0) < FREE_RELEASES ? 1 : 0;
         await tx`update extension_jobs set status='queued',code='executor_stopped',lease_owner=null,lease_until=null,run_until=null,
-          cycle_attempt=greatest(cycle_attempt-1,0),available_at=now(),updated_at=now() where id=${job.id}`;
+          cycle_attempt=greatest(cycle_attempt-${refund},0),available_at=now(),updated_at=now() where id=${job.id}`;
         await tx`update extension_attempts set status='cancelled',code='executor_stopped',finished_at=now() where job_id=${job.id} and attempt=${job.attempt}`;
       },
       true,

@@ -54,6 +54,10 @@ export class ExecutionRegistry {
   }
 }
 
+/** Matches retainer_extension_slot_available's per-workspace limit. */
+const WORKSPACE_RUN_CAP = 4,
+  DISCOVERY_WINDOW = 100;
+
 /** Trusted coordinator only. It holds no DB transaction while an execution is running. */
 export class ExtensionExecutor {
   readonly queue: ExtensionQueue;
@@ -180,7 +184,12 @@ export class ExtensionExecutor {
           ? { status: 'failed', code: 'incompatible_runtime' }
           : {
               status: 'retry',
-              code: reason === undefined ? 'execution_unavailable' : 'execution_timeout',
+              code:
+                reason === 'lease'
+                  ? 'lease_lost'
+                  : reason === undefined
+                    ? 'execution_unavailable'
+                    : 'execution_timeout',
             };
     } finally {
       if (heartbeat) clearInterval(heartbeat);
@@ -242,7 +251,9 @@ export class ExtensionExecutor {
       maintenanceMs = options.maintenanceMs ?? 1000,
       report = options.onError ?? (() => {}),
       concurrency = this.options.concurrency ?? 4,
-      running = new Set<Promise<void>>();
+      running = new Set<Promise<void>>(),
+      // Our own runs per workspace, to skip candidates the workspace cap would refuse anyway.
+      perWorkspace = new Map<string, number>();
     let maintaining: Promise<void> | undefined,
       maintainedAt = 0;
     const maintain = () => {
@@ -278,10 +289,13 @@ export class ExtensionExecutor {
       const free = concurrency - running.size;
       if (free > 0) {
         try {
-          // One candidate per idle installation; extra candidates cover peers' claims.
-          const due = await this.queue.discover(this.options.discoverySql, Math.min(100, free * 4));
+          // Discovery is one candidate per idle installation but ignores the per-workspace cap,
+          // which only claim enforces. A wide window keeps a capped workspace's older jobs from
+          // hiding every other workspace's work.
+          const due = await this.queue.discover(this.options.discoverySql, DISCOVERY_WINDOW);
           for (const item of due) {
             if (this.stopped || running.size >= concurrency) break;
+            if ((perWorkspace.get(item.workspace_id) ?? 0) >= WORKSPACE_RUN_CAP) continue;
             let job: ClaimedJob | null;
             try {
               job = await this.queue.claim(item.workspace_id, item.job_id, this.options.owner);
@@ -291,11 +305,16 @@ export class ExtensionExecutor {
             }
             if (!job) continue;
             claimed++;
+            const workspace = job.workspaceId;
+            perWorkspace.set(workspace, (perWorkspace.get(workspace) ?? 0) + 1);
             const execution: Promise<void> = this.execute(job)
               .then(() => {})
               .catch(report)
               .finally(() => {
                 running.delete(execution);
+                const left = (perWorkspace.get(workspace) ?? 1) - 1;
+                if (left > 0) perWorkspace.set(workspace, left);
+                else perWorkspace.delete(workspace);
                 this.wake();
               });
             running.add(execution);
@@ -330,6 +349,7 @@ export class ExtensionExecutor {
           const job = await this.queue.claim(item.workspace_id, item.job_id, this.options.owner);
           if (!job) continue;
           const status = await this.execute(job);
+          if (status === 'released') continue;
           executed++;
           if (status === 'fenced') fenced++;
         } catch (error) {
