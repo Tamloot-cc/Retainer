@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { EXECUTOR_LEADER, runExecutorLeader } from '../../src/lambda/executor.js';
 import { extensionReleaseStatus } from '../../src/operator/extension-releases.js';
 import {
   type ExecutionDriver,
@@ -13,6 +14,14 @@ import {
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 const db = useTestDatabase(),
   functionId = randomUUID(),
@@ -364,5 +373,129 @@ describe('trusted executor protocol with an explicitly in-process test driver', 
     // Earlier tests may leave due jobs elsewhere; none of the capped workspace's ran.
     for (const job of [a, ...peerJobs]) expect(ran).not.toContain(job.jobId);
     await db.owner`update extension_jobs set status='cancelled',lease_until=null where workspace_id=${a.workspace}`;
+  });
+  it('drains without aborting or releasing a claimed run and stops further claims', async () => {
+    const h = await setup();
+    const started = deferred<void>();
+    const finish = deferred<{ status: 'succeeded' }>();
+    const drained = deferred<void>();
+    let signal: AbortSignal | undefined;
+    const executor = h.executor({
+      invoke: (_target, invocation, abort) => {
+        if (invocation.runId !== h.jobId) return Promise.resolve({ status: 'succeeded' });
+        signal = abort;
+        started.resolve();
+        return finish.promise;
+      },
+    });
+    const loop = executor.run({ idleMs: 10, onClaimingStopped: async () => drained.resolve() });
+    try {
+      await started.promise;
+      executor.drain();
+      await drained.promise;
+      expect(signal?.aborted).toBe(false);
+      expect(
+        (await db.owner`select status from extension_jobs where id=${h.jobId}`)[0]?.status,
+      ).toBe('running');
+      finish.resolve({ status: 'succeeded' });
+      await loop;
+      expect(
+        (await db.owner`select status,code from extension_jobs where id=${h.jobId}`)[0],
+      ).toEqual({ status: 'succeeded', code: null });
+      expect(await executor.tick()).toEqual({ executed: 0, fenced: 0 });
+    } finally {
+      finish.resolve({ status: 'succeeded' });
+      executor.drain();
+      await loop;
+    }
+  });
+  it('elects exactly one leader when coordinator invocations race on real sessions', async () => {
+    const h = await setup();
+    const started = deferred<void>();
+    const finish = deferred<{ status: 'succeeded' }>();
+    let calls = 0;
+    const driver: ExecutionDriver = {
+      invoke: (_target, invocation) => {
+        if (invocation.runId !== h.jobId) return Promise.resolve({ status: 'succeeded' });
+        calls++;
+        started.resolve();
+        return finish.promise;
+      },
+    };
+    const executors = [h.executor(driver), h.executor(driver)];
+    const passes = executors.map((executor) =>
+      runExecutorLeader(db.connect({ max: 1, keepConnections: true }), executor, 10000, {
+        idleTimeoutMs: 50,
+        idleMs: 10,
+      }),
+    );
+    try {
+      await started.promise;
+      expect(await Promise.race(passes)).toEqual({ skipped: true });
+      expect(calls).toBe(1);
+      finish.resolve({ status: 'succeeded' });
+      const results = await Promise.all(passes);
+      expect(results.filter((result) => result.skipped)).toHaveLength(1);
+      expect(
+        (await db.owner`select status from extension_jobs where id=${h.jobId}`)[0]?.status,
+      ).toBe('succeeded');
+    } finally {
+      finish.resolve({ status: 'succeeded' });
+      for (const executor of executors) executor.drain();
+      await Promise.all(passes);
+    }
+  });
+  it('hands off the leader at the claim deadline while its older run still acknowledges normally', async () => {
+    const h = await setup();
+    const started = deferred<void>();
+    const finish = deferred<{ status: 'succeeded' }>();
+    const executor = h.executor({
+      invoke: (_target, invocation) => {
+        if (invocation.runId !== h.jobId) return Promise.resolve({ status: 'succeeded' });
+        started.resolve();
+        return finish.promise;
+      },
+    });
+    const pass = runExecutorLeader(db.connect({ max: 1, keepConnections: true }), executor, 150, {
+      idleTimeoutMs: 10000,
+      idleMs: 10,
+    });
+    try {
+      await started.promise;
+      await expect
+        .poll(async () =>
+          Number(
+            (
+              await db.owner`
+        select count(*)::int as count from pg_locks where locktype='advisory' and objid=${EXECUTOR_LEADER}
+          and database=(select oid from pg_database where datname=current_database())`
+            )[0]?.count,
+          ),
+        )
+        .toBe(0);
+      expect(
+        (await db.owner`select status from extension_jobs where id=${h.jobId}`)[0]?.status,
+      ).toBe('running');
+      const other = await setup();
+      const next = other.executor({ invoke: async () => ({ status: 'succeeded' }) });
+      expect(
+        await runExecutorLeader(db.connect({ max: 1, keepConnections: true }), next, 10000, {
+          idleTimeoutMs: 50,
+          idleMs: 10,
+        }),
+      ).toEqual({ skipped: false });
+      expect(
+        (await db.owner`select status from extension_jobs where id=${other.jobId}`)[0]?.status,
+      ).toBe('succeeded');
+      finish.resolve({ status: 'succeeded' });
+      await pass;
+      expect(
+        (await db.owner`select status from extension_jobs where id=${h.jobId}`)[0]?.status,
+      ).toBe('succeeded');
+    } finally {
+      finish.resolve({ status: 'succeeded' });
+      executor.drain();
+      await pass;
+    }
   });
 });
