@@ -43,6 +43,7 @@ async function setup(
   policy: 'never' | 'contacted_first' | 'everyone' = 'never',
   verify = true,
   onSourceDelete: 'keep' | 'retract' = 'keep',
+  extra?: ExtensionManifest,
 ) {
   const verifyId = randomUUID(),
     syncId = randomUUID(),
@@ -106,6 +107,9 @@ async function setup(
   });
   const catalog = new ExtensionCatalog([
     { manifest, actorCeiling: 'integration', runtimeEnabled: true },
+    ...(extra
+      ? [{ manifest: extra, actorCeiling: 'integration' as const, runtimeEnabled: true }]
+      : []),
   ]);
   const app = startTestApp(db, {
     extensionCatalog: catalog,
@@ -768,6 +772,111 @@ describe('managed source evidence with real RLS Postgres', () => {
     expect(
       (await h.sync(nextToken, otherItem, '1', null, h.event('Surviving source'))).status,
     ).toBe(200);
+  });
+  it('fences only the erased source installation and leaves unrelated installations running', async () => {
+    const workId = randomUUID(),
+      other = extensionFixture({
+        scopes: ['read', 'write'],
+        functions: [
+          {
+            universalId: workId,
+            name: 'work',
+            description: 'Unrelated durable work',
+            handlerDigest: 'c'.repeat(64),
+            timeoutSeconds: 120,
+            trigger: { kind: 'job' },
+            inputSchema: {
+              type: 'object',
+              properties: { page: { type: 'integer' } },
+              additionalProperties: false,
+            },
+          },
+        ] as ExtensionManifest['functions'],
+      });
+    const h = await setup('everyone', true, 'keep', other),
+      s = await h.item();
+    expect(
+      (
+        await h.sync(
+          s.key,
+          s.itemId,
+          '1',
+          null,
+          h.event('Erased meeting', [{ email: 'forgotten@fixture.test' }]),
+        )
+      ).status,
+    ).toBe(200);
+    await h.queue.checkpoint(s.run, {
+      children: [],
+      kv: { key: 'cursor', expectedRevision: null, value: { page: 1 } },
+    });
+    const input = { registrationId: other.universalId, version: other.version, settings: {} };
+    const plan = await h.app.request('/v1/extensions/preview', { key: h.keys.admin, body: input });
+    const installed = await h.app.request('/v1/extensions', {
+      key: h.keys.admin,
+      body: { ...input, planDigest: plan.body.planDigest },
+      headers: { 'Idempotency-Key': randomUUID() },
+    });
+    expect(installed.status).toBe(201);
+    const b = installed.body.id as string;
+    const [lifecycle] =
+      await db.owner`select id from extension_jobs where installation_id=${b} and trigger_kind='install'`;
+    const setupB = await h.queue.claim(h.workspace.id, lifecycle?.id, 'setup');
+    if (!setupB) throw new Error('setup missing');
+    await h.queue.complete(setupB, { status: 'succeeded' });
+    const work = await h.queue.enqueue(h.workspace.id, b, {
+      functionId: workId,
+      input: { page: 3 },
+      dedupeKey: randomUUID(),
+    });
+    const running = await h.queue.claim(h.workspace.id, work.id, 'unrelated-worker');
+    if (!running) throw new Error('unrelated run missing');
+    await h.queue.checkpoint(running, {
+      children: [],
+      kv: { key: 'cursor', expectedRevision: null, value: { page: 3 } },
+    });
+    const snapshot = async () => ({
+      installation:
+        await db.owner`select generation,state from extension_installations where id=${b}`,
+      jobs: await db.owner`select id,status,fence::text,generation,input,lease_owner from extension_jobs where installation_id=${b} order by id`,
+      attempts:
+        await db.owner`select id,status,code,finished_at from extension_attempts where job_id=${work.id} order by id`,
+      kv: await db.owner`select key,value,revision from extension_kv where installation_id=${b}`,
+    });
+    const before = await snapshot();
+    const [generationA] =
+      await db.owner`select generation from extension_installations where id=${h.id}`;
+    const [person] =
+      await db.owner`select record_id from record_identifiers where workspace_id=${h.workspace.id} and value='forgotten@fixture.test'`;
+    expect(
+      (
+        await h.app.request(`/v1/records/${person?.record_id}/forget`, {
+          key: h.keys.admin,
+          method: 'POST',
+        })
+      ).status,
+    ).toBe(200);
+    expect(await snapshot()).toEqual(before);
+    expect(before.kv).toHaveLength(1);
+    expect(before.jobs.find((j) => j.id === work.id)?.status).toBe('running');
+    const [afterA] =
+      await db.owner`select generation from extension_installations where id=${h.id}`;
+    expect(afterA?.generation).toBe((generationA?.generation ?? 0) + 1);
+    expect(await db.owner`select key from extension_kv where installation_id=${h.id}`).toHaveLength(
+      0,
+    );
+    const [cancelled] =
+      await db.owner`select input,status from extension_jobs where id=${s.run.jobId}`;
+    expect(cancelled).toEqual({ input: {}, status: 'cancelled' });
+    const unrelatedKey = await tokens.issue(h.app.sql, running, other.universalId, running.scopes);
+    expect(
+      (
+        await h.app.request('/v1/objects/person/records', {
+          key: unrelatedKey,
+          body: { values: { name: 'Still running' } },
+        })
+      ).status,
+    ).toBe(201);
   });
   it('attaches only finalized source-owned bytes and erases staged uploads before a first revision exists', async () => {
     const h = await setup(),

@@ -666,8 +666,8 @@ connection health; a multi-installation repeat/depth breach records
 self-triggering. Coalesce duplicate `(installation,function,changePosition)` jobs.
 Accepted trigger jobs retain only the authorized minimal change metadata, so
 public-feed pruning cannot strand accepted work. Erasure scrubs those copies and
-fences every live run; all installation KV is cleared because operational values
-may indirectly derive from erased records. Preserve unrelated durable jobs and
+fences the live runs of each installation it touches (§11); KV entries that name
+an erased record or item are deleted wherever they are. Preserve unrelated durable jobs and
 keep immutable backfill bounds in job input. A dispatcher that has fallen behind
 retention stops with degraded `cursor_expired`; it never advances past the gap.
 Disable and re-enable only through the reviewed adapter catch-up path: activation captures a fresh dispatch head, and the adapter queues its current-record backfill while later changes remain durable.
@@ -971,7 +971,14 @@ ordering markers, content digests, receipts and staged emails; keeps only an
 opaque erased item and keyed identity tombstone; clears the affected installation's
 KV; and advances its generation to fence fetched in-memory content. Erased-source
 jobs are cancelled and redacted. Unrelated durable jobs are retained/requeued under
-the new generation. Backfill jobs must retain their non-sensitive requested date
+the new generation. Erasure touches only these installations: those bound to an
+affected source account or item, those with queued or running jobs whose input
+names an erased record, item or change, and those whose own claims or facts the
+erasure removes. Each has its running jobs requeued with a new fence; only the
+source-bound ones advance their generation and lose all KV. Every other
+installation keeps its running jobs, fences and KV, except KV entries that name
+an erased identity. Jobs whose input names an erased identity are redacted and
+cancelled in every installation and generation. Backfill jobs must retain their non-sensitive requested date
 bounds independently of resettable KV cursors, so privacy recovery cannot silently
 shrink a requested scan. A setup interrupted by erasure requires setup retry.
 
