@@ -223,6 +223,92 @@ export class ExtensionExecutor {
   stop() {
     this.stopped = true;
     for (const abort of this.active.values()) abort();
+    this.wake();
+  }
+  // A run that finishes while the loop is not sleeping must still cut the next sleep short.
+  private woken = false;
+  private wake = () => {
+    this.woken = true;
+  };
+  /**
+   * Long-running coordinator loop. Each free slot is refilled as soon as a run finishes, so a
+   * long run never holds back other installations' work; maintenance runs on its own cadence
+   * beside claims instead of before each batch. Resolves after stop() once runs settle.
+   */
+  async run(
+    options: { idleMs?: number; maintenanceMs?: number; onError?: (error: unknown) => void } = {},
+  ) {
+    const idleMs = options.idleMs ?? 1000,
+      maintenanceMs = options.maintenanceMs ?? 1000,
+      report = options.onError ?? (() => {}),
+      concurrency = this.options.concurrency ?? 4,
+      running = new Set<Promise<void>>();
+    let maintaining: Promise<void> | undefined,
+      maintainedAt = 0;
+    const maintain = () => {
+      if (maintaining || Date.now() - maintainedAt < maintenanceMs) return;
+      maintainedAt = Date.now();
+      maintaining = this.queue
+        .maintain(this.options.discoverySql)
+        .then((result) => {
+          if (result.failed) report(new Error('extension runtime reconciliation failed'));
+        })
+        .catch(report)
+        .finally(() => {
+          maintaining = undefined;
+        });
+    };
+    const sleep = async (ms: number) => {
+      if (!this.woken)
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, ms);
+          this.wake = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+        });
+      this.woken = false;
+      this.wake = () => {
+        this.woken = true;
+      };
+    };
+    while (!this.stopped) {
+      maintain();
+      let claimed = 0;
+      const free = concurrency - running.size;
+      if (free > 0) {
+        try {
+          // One candidate per idle installation; extra candidates cover peers' claims.
+          const due = await this.queue.discover(this.options.discoverySql, Math.min(100, free * 4));
+          for (const item of due) {
+            if (this.stopped || running.size >= concurrency) break;
+            let job: ClaimedJob | null;
+            try {
+              job = await this.queue.claim(item.workspace_id, item.job_id, this.options.owner);
+            } catch (error) {
+              report(error);
+              continue;
+            }
+            if (!job) continue;
+            claimed++;
+            const execution: Promise<void> = this.execute(job)
+              .then(() => {})
+              .catch(report)
+              .finally(() => {
+                running.delete(execution);
+                this.wake();
+              });
+            running.add(execution);
+          }
+        } catch (error) {
+          report(error);
+        }
+      }
+      // Rescan at once while slots stay free and work keeps coming; otherwise wait for a
+      // finished run or the idle interval.
+      if (!this.stopped && (claimed === 0 || running.size >= concurrency)) await sleep(idleMs);
+    }
+    await Promise.allSettled([...running, maintaining]);
   }
   async tick(limit = 1000) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000)

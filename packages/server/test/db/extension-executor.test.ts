@@ -238,4 +238,38 @@ describe('trusted executor protocol with an explicitly in-process test driver', 
       await db.owner`select status,code from extension_attempts where job_id=${h.jobId}`;
     expect(attempt).toEqual({ status: 'cancelled', code: 'executor_stopped' });
   });
+  it('keeps claiming other installations while a long run holds a slot', async () => {
+    const long = await setup();
+    let release = () => {};
+    let runner: { executor: ExtensionExecutor; loop: Promise<void> } | undefined;
+    const started = new Promise<void>((resolve) => {
+      const executor = long.executor({
+        invoke: (_target, invocation) => {
+          if (invocation.runId === long.jobId) {
+            resolve();
+            return new Promise((done) => {
+              release = () => done({ status: 'succeeded' });
+            });
+          }
+          return Promise.resolve({ status: 'succeeded' });
+        },
+      });
+      runner = { executor, loop: executor.run({ idleMs: 50, maintenanceMs: 50 }) };
+    });
+    await started;
+    // Queued only after the long run started, so a batch-at-a-time pass would not see it.
+    const other = await setup();
+    const status = async (id: string) =>
+      (await db.owner`select status from extension_jobs where id=${id}`)[0]?.status;
+    for (let i = 0; i < 200 && (await status(other.jobId)) !== 'succeeded'; i++)
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await status(other.jobId)).toBe('succeeded');
+    expect(await status(long.jobId)).toBe('running');
+    release();
+    for (let i = 0; i < 200 && (await status(long.jobId)) !== 'succeeded'; i++)
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await status(long.jobId)).toBe('succeeded');
+    runner?.executor.stop();
+    await runner?.loop;
+  });
 });

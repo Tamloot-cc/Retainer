@@ -151,25 +151,14 @@ if (
     intervalMinutes: config.RETAINER_CONSOLIDATE_INTERVAL_MINUTES,
   });
   stops.push(worker.stop);
-  if (extensions.executor) {
-    let running = Promise.resolve(),
-      busy = false;
-    const tick = () => {
-      if (busy) return;
-      busy = true;
-      running = (extensions.executor as NonNullable<typeof extensions.executor>)
-        .tick()
-        .then(() => {})
-        .catch(() => log.error('Extension executor tick failed.'))
-        .finally(() => {
-          busy = false;
-        });
-    };
-    const timer = setInterval(tick, 1000);
-    tick();
+  const executor = extensions.executor;
+  if (executor) {
+    // Continuous loop: a finished run frees its slot at once, so one long run never stalls dispatch.
+    const running = executor.run({
+      onError: () => log.error('Extension executor pass failed.'),
+    });
     stops.push(async () => {
-      clearInterval(timer);
-      extensions.executor?.stop();
+      executor.stop();
       await running;
     });
   }
