@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { BASE_OBJECT_IDS } from '@retainer/shared';
+import { BASE_OBJECT_IDS, INTERNAL_NOTE_TYPE_ID } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
@@ -97,8 +97,19 @@ const retyped = release(
     o.key === 'employee_count' ? { ...o, types: ['text'], field: undefined } : o,
   ),
 );
+// A release whose mapping targets the hidden internal-note type.
+const hiddenTarget = extensionFixture({
+  name: 'hidden-target',
+  requestedActor: 'agent',
+  scopes: ['read', 'write'],
+  mapping: {
+    objectId: INTERNAL_NOTE_TYPE_ID,
+    outputs: [{ key: 'summary', label: 'Summary', description: 'A summary', types: ['text'] }],
+  },
+});
 const catalog = new ExtensionCatalog([
   { manifest, actorCeiling: 'agent', runtimeEnabled: true },
+  { manifest: hiddenTarget, actorCeiling: 'agent', runtimeEnabled: true },
   { manifest: added, actorCeiling: 'agent', runtimeEnabled: true },
   { manifest: retyped, actorCeiling: 'agent', runtimeEnabled: true },
   { manifest: plain, actorCeiling: 'integration' },
@@ -536,6 +547,21 @@ describe('reviewed output mappings', () => {
       code: 'upgrade_conflict',
       details: { output: 'employee_count', field: 'employeeCount' },
     });
+  });
+
+  it('refuses a mapping that targets an internal memory type', async () => {
+    const h = await setup();
+    const res = await h.app.request('/v1/extensions/preview', {
+      key: h.keys.admin,
+      body: {
+        registrationId: hiddenTarget.universalId,
+        version: '1.0.0',
+        settings: {},
+        mapping: { summary: { action: 'skip' } },
+      },
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('schema_binding_conflict');
   });
 
   it('refuses a mapping for a release without one', async () => {

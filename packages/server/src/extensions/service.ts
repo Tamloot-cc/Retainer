@@ -473,6 +473,7 @@ export class Extensions {
       ...manifest.functions.flatMap((f) =>
         f.trigger.kind === 'change' ? [f.trigger.objectId] : [],
       ),
+      ...(manifest.mapping ? [manifest.mapping.objectId] : []),
     ];
     const relationTargets = manifest.schema.flatMap((c) =>
       (c.kind === 'object' ? c.definition.fields : [c.definition]).flatMap((f) =>

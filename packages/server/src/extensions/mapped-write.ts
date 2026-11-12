@@ -81,6 +81,13 @@ export async function mappedWrite(
           outputs: unknown.map((output) => ({ output, reason: 'unknown_output' })),
         });
       const object = context.schema.objectsByUniversalId.get(mapping.objectId);
+      // Installation refuses a hidden target; this guards the write path too.
+      if (object?.hidden)
+        throw new AppError(
+          409,
+          'schema_binding_conflict',
+          'extensions cannot write internal memory types',
+        );
       const targets = new Map<string, FieldState>();
       const conflicts: { output: string; field: string | null; reason: string }[] = [];
       for (const key of Object.keys(input.values)) {
