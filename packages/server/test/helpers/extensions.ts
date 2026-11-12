@@ -9,7 +9,7 @@ export function extensionFixture(overrides: Partial<ExtensionManifest> = {}) {
     version: '1.0.0',
     description: 'Deterministic fixture',
     packageDigest: 'a'.repeat(64),
-    serverVersions: ['0.1.0'],
+    serverRange: '>=0.1.0 <0.2.0',
     runtimeVersion: 'node24',
     protocolVersion: 1,
     execution: 'hosted',

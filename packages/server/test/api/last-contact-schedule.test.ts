@@ -18,7 +18,7 @@ it('coalesces due Last Contact recovery and executes its real scheduled payload 
   const manifest = lastContactManifest({
     packageDigest: 'a'.repeat(64),
     handlerDigest: 'b'.repeat(64),
-    serverVersions: ['0.1.0'],
+    serverRange: '>=0.1.0 <0.2.0',
   });
   const catalog = new ExtensionCatalog([
     { manifest, actorCeiling: 'integration', runtimeEnabled: true },

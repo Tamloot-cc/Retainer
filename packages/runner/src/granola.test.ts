@@ -62,7 +62,7 @@ describe('reviewed Granola contract and bounded provider transport', () => {
       packageDigest: 'a'.repeat(64),
       handlerDigest: 'b'.repeat(64),
       verifierDigest: 'c'.repeat(64),
-      serverVersions: ['0.1.0'],
+      serverRange: '>=0.1.0 <0.2.0',
     });
     expect(manifest.source?.scanFunctionIds).toEqual([GRANOLA.scan, GRANOLA.schedule]);
     expect(manifest.settings.shareAccessibleNotes).toMatchObject({

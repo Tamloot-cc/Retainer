@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { defineExtension, type ExtensionManifest } from '@retainer/extension';
+import { defineExtension, type ExtensionManifest, supportsServer } from '@retainer/extension';
 import { z } from 'zod';
 import { AppError } from '../errors.js';
 import type { RuntimeCatalog } from '../extension-runtime/availability.js';
@@ -70,13 +70,13 @@ export class ExtensionCatalog {
   }
   list() {
     return [...this.releases.values()]
-      .filter((r) => r.manifest.serverVersions.includes(VERSION))
+      .filter((r) => supportsServer(r.manifest, VERSION))
       .map((r) => structuredClone(r));
   }
   get(id: string, version: string) {
     const release = this.releases.get(`${id}:${version}`);
     if (!release) throw new AppError(404, 'not_found', 'extension release not found');
-    if (!release.manifest.serverVersions.includes(VERSION))
+    if (!supportsServer(release.manifest, VERSION))
       throw new AppError(
         409,
         'incompatible_runtime',

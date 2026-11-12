@@ -1,8 +1,10 @@
 import { nextOccurrence } from './cron.js';
 import { SYSTEM_LIFECYCLE_FUNCTION_ID } from './protocol.js';
+import { parseServerRange, satisfiesServerRange } from './semver.js';
 import { verifierHeaderAllowed } from './webhook.js';
 
 export { nextOccurrence } from './cron.js';
+export { parseServerRange, satisfiesServerRange } from './semver.js';
 
 import { FIELD_TYPES } from '@retainer/shared';
 import { z } from 'zod';
@@ -110,8 +112,17 @@ export const manifestSchema = z.strictObject({
   version,
   description: z.string().min(1).max(2000),
   packageDigest: digest,
-  // Exact compatible versions in the first contract; range evaluation belongs to the release builder.
-  serverVersions: z.array(version).min(1).max(100),
+  /**
+   * The reviewed servers this release supports, as a bounded semver range
+   * (`semver.ts`), e.g. `>=0.1.0 <0.2.0`. A server patch inside the range needs
+   * no new release.
+   */
+  serverRange: z.string().max(200).optional(),
+  /**
+   * The first contract's exact list. Still accepted, as an exact set, so
+   * already-built catalogs and their digests stay valid. Give one or the other.
+   */
+  serverVersions: z.array(version).min(1).max(100).optional(),
   runtimeVersion: z.literal('node24'),
   execution: z.enum(['hosted', 'standalone']),
   /** Reviewed first-party OAuth client identity, pinned into the release digest. */
@@ -266,11 +277,23 @@ function checkFunction(fn: z.infer<typeof functionSchema>) {
     nextOccurrence(fn.trigger.cron, new Date('2000-01-01T00:00:00Z'));
   }
 }
+/** Whether a release supports this server: inside its range, or in its exact list. */
+export function supportsServer(
+  manifest: Pick<ExtensionManifest, 'serverRange' | 'serverVersions'>,
+  serverVersion: string,
+): boolean {
+  if (manifest.serverRange !== undefined)
+    return satisfiesServerRange(serverVersion, manifest.serverRange);
+  return manifest.serverVersions?.includes(serverVersion) ?? false;
+}
 export function defineExtension(value: unknown): ExtensionManifest {
   bounded(value);
   if (new TextEncoder().encode(JSON.stringify(value)).length > 1048576)
     throw new Error('unsupported_manifest: maximum size is 1 MiB');
   const manifest = manifestSchema.parse(value);
+  if ((manifest.serverRange === undefined) === (manifest.serverVersions === undefined))
+    throw new Error('unsupported_manifest: give exactly one of serverRange or serverVersions');
+  if (manifest.serverRange !== undefined) parseServerRange(manifest.serverRange);
   const ids = [
     manifest.universalId,
     ...manifest.functions.map((f) => f.universalId),

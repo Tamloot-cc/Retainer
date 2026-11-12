@@ -28,7 +28,7 @@ export function lastContactManifest(build: {
   version?: string;
   packageDigest: string;
   handlerDigest: string;
-  serverVersions: string[];
+  serverRange: string;
 }) {
   const fields = [
     { objectId: BASE_OBJECT_IDS.person, fieldId: LAST_CONTACT.personField },
@@ -57,7 +57,7 @@ export function lastContactManifest(build: {
     description:
       'Derive last contact from current conversation history, including one-hop event rollups. Human overrides keep normal precedence.',
     packageDigest: build.packageDigest,
-    serverVersions: build.serverVersions,
+    serverRange: build.serverRange,
     runtimeVersion: 'node24',
     execution: 'hosted',
     protocolVersion: 1,

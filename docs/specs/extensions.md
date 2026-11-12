@@ -1263,13 +1263,18 @@ Operator status proves it checked every applied migration timestamp and hash
 against the packaged journal. Unknown newer migrations or changed historical SQL
 produce `incompatible_migrations`; migration refuses before DDL or definition
 upgrades. Deploy requires the explicit `historyChecked` capability and a packaged
-maintenance responder, so an older artifact lacking the check cannot bypass it. Candidate release inventory includes only manifests whose exact
-`serverVersions` support the packaged server version; retaining incompatible
-bytes cannot make a referenced installation safe to dispatch. First-party builds
-use the checked-in reviewed server-version set in `scripts/extension-release.mjs`,
-not an automatic wildcard or the current package version alone. A server version
-outside that set refuses artifact generation. For a version transition, first
-review/test a bridge extension release supporting both old and new servers,
+maintenance responder, so an older artifact lacking the check cannot bypass it. Candidate release inventory includes only manifests that support the packaged
+server version: inside the release's `serverRange`, or, for releases built
+before ranges, in its exact `serverVersions` list (kept as an exact set so those
+digests stay valid; a manifest gives exactly one). Retaining incompatible bytes
+cannot make a referenced installation safe to dispatch. A range is a bounded
+semver subset (release versions, `>=`, `>`, `<=`, `<`, `=`, alternatives with
+`||`, an upper bound in every alternative), like Twenty's `engines.twenty`.
+First-party builds use the checked-in reviewed range in
+`scripts/extension-release.mjs`, not an automatic wildcard or the current
+package version alone; a server version outside it refuses artifact generation.
+A server patch inside the range needs no new release. For a move to a new server
+line, first review/test a bridge extension release whose range covers both,
 publish/install it while the old server is running, and verify all referenced
 installations (including disabled and live cleanup) support the new server before
 rolling it out. A genuinely incompatible adapter needs an explicit migration or

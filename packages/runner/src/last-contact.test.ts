@@ -21,7 +21,7 @@ const signal = () => new AbortController().signal;
 const build = {
   packageDigest: 'a'.repeat(64),
   handlerDigest: 'b'.repeat(64),
-  serverVersions: ['0.1.0'],
+  serverRange: '>=0.1.0 <0.2.0',
 };
 describe('last-contact adapter', () => {
   it('pins only contributed nullable date fields and runtime functions', () => {
