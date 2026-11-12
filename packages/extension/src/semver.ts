@@ -38,6 +38,15 @@ const invalid = (why: string): never => {
   throw new Error(`unsupported_manifest: serverRange ${why}`);
 };
 
+const MAX_COMPONENT = 999_999_999;
+/** The next version VERSION accepts, carrying at the nine-digit ceiling; null past the last one. */
+function successor([major, minor, patch]: Version): Version | null {
+  if (patch < MAX_COMPONENT) return [major, minor, patch + 1];
+  if (minor < MAX_COMPONENT) return [major, minor + 1, 0];
+  if (major < MAX_COMPONENT) return [major + 1, 0, 0];
+  return null;
+}
+
 /** Parses and checks a range; throws `unsupported_manifest` when it is not one a release may declare. */
 export function parseServerRange(range: string): Comparator[][] {
   if (!range || range.length > MAX_LENGTH) invalid('must be 1 to 200 characters');
@@ -62,13 +71,11 @@ export function parseServerRange(range: string): Comparator[][] {
     // are integers, so a strict lower bound `>v` is the inclusive `>=` the next
     // patch; the set is empty when that lowest version is above the tightest
     // upper bound, or equal to a strict one.
-    const lowest = set
+    const floors = set
       .filter((c) => c.op !== '<' && c.op !== '<=')
-      .map(
-        (c): Version => (c.op === '>' ? [c.version[0], c.version[1], c.version[2] + 1] : c.version),
-      )
-      .sort(compare)
-      .at(-1) as Version;
+      .map((c) => (c.op === '>' ? successor(c.version) : c.version));
+    if (floors.includes(null)) invalid('is empty');
+    const lowest = (floors as Version[]).sort(compare).at(-1) as Version;
     if (!set.every((c) => holds(lowest, c))) invalid('is empty');
     return set;
   });

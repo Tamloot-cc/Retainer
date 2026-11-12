@@ -276,6 +276,27 @@ describe('Granola durable enumeration', () => {
     ]);
     expect(JSON.stringify(checkpoints[1].children)).not.toContain(noteId);
   });
+  it('retries only conflicts a later attempt can resolve', async () => {
+    const run = invocation(GRANOLA.scan, {
+      scanId: randomUUID(),
+      from: '2026-11-10T00:00:00.000Z',
+      through: '2026-11-10T12:00:00.000Z',
+      mode: 'created',
+    });
+    const conflicted =
+      (code: string): typeof fetch =>
+      async () =>
+        response({ error: { code, message: 'conflict' } }, 409);
+    expect(await executeGranola(run, signal(), conflicted('source_retracted'))).toEqual({
+      status: 'failed',
+      code: 'source_api_rejected',
+    });
+    expect(await executeGranola(run, signal(), conflicted('revision_conflict'))).toEqual({
+      status: 'retry',
+      code: 'source_checkpoint_conflict',
+      retryAfterSeconds: 30,
+    });
+  });
   it('polls edits of old notes without a created-after filter and keeps a fixed upper watermark', async () => {
     const run = invocation(GRANOLA.schedule),
       last = '2026-11-01T12:00:00Z';

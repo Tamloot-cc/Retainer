@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { ExtensionManifest } from '@retainer/extension';
 import { BASE_OBJECT_IDS } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -946,5 +947,121 @@ describe('change trigger coalescing and throttling (R9)', () => {
     >`select cause,cause_depth from record_changes where record_id=${person} order by record_changes.position desc limit 1`;
     expect(change?.cause).toEqual([...long, app.id]);
     expect(change?.cause_depth).toBe(1);
+  });
+});
+
+describe('change triggers on retired contributions', () => {
+  it('skips a trigger on a deleted contributed object after reinstall and still dispatches the rest', async () => {
+    const objectId = randomUUID(),
+      onTicket = randomUUID(),
+      onPerson = randomUUID();
+    const fn = (universalId: string, objectId: string): ExtensionManifest['functions'][number] => ({
+      universalId,
+      name: `react${universalId.slice(0, 4)}`,
+      description: 'React to changes',
+      handlerDigest: 'b'.repeat(64),
+      timeoutSeconds: 120,
+      trigger: { kind: 'change', objectId, fieldIds: [] },
+      inputSchema: {
+        type: 'object',
+        properties: { changePosition: { type: 'string', maxLength: 19 } },
+        required: ['changePosition'],
+        additionalProperties: false,
+      },
+    });
+    const manifest = extensionFixture({
+      scopes: ['read', 'write'],
+      schema: [
+        {
+          kind: 'object',
+          definition: {
+            universalId: objectId,
+            nameSingular: 'ticket',
+            namePlural: 'tickets',
+            labelSingular: 'Ticket',
+            labelPlural: 'Tickets',
+            labelField: 'name',
+            fields: [{ universalId: randomUUID(), name: 'name', label: 'Name', type: 'text' }],
+          },
+        },
+      ],
+      functions: [fn(onTicket, objectId), fn(onPerson, BASE_OBJECT_IDS.person)],
+    });
+    const catalog = new ExtensionCatalog([
+      { manifest, actorCeiling: 'integration', runtimeEnabled: true },
+    ]);
+    const app = startTestApp(db, {
+      extensionCatalog: catalog,
+      extensionActivation: new Set(catalog.list().map((r) => r.digest)),
+      runTokens: tokens,
+    });
+    const { workspace, keys } = await app.setupWorkspace(
+      { name: `Retired ${randomUUID()}` },
+      { admin: { actor: { type: 'user', id: 'admin' }, scopes: ['admin'] } },
+    );
+    workspaceIds.push(workspace.id);
+    const queue = new ExtensionQueue(app.sql, catalog.runtime);
+    const input = { registrationId: manifest.universalId, version: manifest.version, settings: {} };
+    const install = async () => {
+      const plan = await app.request('/v1/extensions/preview', { key: keys.admin, body: input });
+      expect(plan.status).toBe(200);
+      const installed = await app.request('/v1/extensions', {
+        key: keys.admin,
+        body: { ...input, planDigest: plan.body.planDigest },
+        headers: { 'Idempotency-Key': randomUUID() },
+      });
+      expect(installed.status).toBe(201);
+      return installed.body as { id: string; state: string };
+    };
+    const runLifecycle = async (id: string, kind: 'install' | 'uninstall') => {
+      const [job] =
+        await db.owner`select id from extension_jobs where installation_id=${id} and trigger_kind=${kind} and status='queued'`;
+      const run = await queue.claim(
+        workspace.id,
+        job?.id,
+        kind === 'install' ? 'setup' : 'cleanup',
+      );
+      if (!run) throw new Error(`${kind} job missing`);
+      await queue.complete(run, { status: 'succeeded' });
+    };
+    const runSetup = (id: string) => runLifecycle(id, 'install');
+    const { id } = await install();
+    await runSetup(id);
+    expect(
+      (await app.request(`/v1/extensions/${id}/uninstall`, { key: keys.admin, method: 'POST' }))
+        .status,
+    ).toBe(200);
+    await runLifecycle(id, 'uninstall');
+    const deleted = await app.request('/v1/schema/changes', {
+      key: keys.admin,
+      body: { operations: [{ op: 'delete_object', object: 'ticket' }] },
+    });
+    expect(deleted.status, JSON.stringify(deleted.body)).toBe(200);
+    if (deleted.body.status === 'proposed')
+      expect(
+        (
+          await app.request(`/v1/schema/changes/${deleted.body.change.id}/approve`, {
+            key: keys.admin,
+            method: 'POST',
+          })
+        ).body.status,
+      ).toBe('applied');
+    const reinstalled = await install();
+    if (reinstalled.state === 'disabled')
+      expect(
+        (await app.request(`/v1/extensions/${id}/enable`, { key: keys.admin, method: 'POST' }))
+          .status,
+      ).toBe(200);
+    await runSetup(id);
+    const person = await app.request('/v1/objects/person/records', {
+      key: keys.admin,
+      body: { values: { name: 'Dana' } },
+    });
+    expect(person.status).toBe(201);
+    expect(await queue.dispatchChanges(workspace.id, id)).toMatchObject({ queued: 1 });
+    const jobs = await db.owner<
+      { function_id: string }[]
+    >`select function_id from extension_jobs where installation_id=${id} and trigger_kind='change'`;
+    expect(jobs.map((j) => j.function_id)).toEqual([onPerson]);
   });
 });

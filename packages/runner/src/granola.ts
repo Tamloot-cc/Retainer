@@ -467,7 +467,9 @@ export async function executeGranola(
       };
     if (error instanceof RetainerApiError) {
       if (['source_erased', 'source_deleted'].includes(error.code)) return { status: 'succeeded' };
-      if (error.status === 409 || error.status === 429 || error.status >= 500)
+      // Only conflicts a later attempt can resolve are retried; a permanent
+      // one such as source_retracted fails now instead of spending retries.
+      if (isRetryLater(transient(error)))
         return { status: 'retry', code: 'source_checkpoint_conflict', retryAfterSeconds: 30 };
       return { status: 'failed', code: 'source_api_rejected' };
     }

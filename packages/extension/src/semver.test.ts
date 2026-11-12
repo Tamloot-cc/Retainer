@@ -16,6 +16,8 @@ describe('reviewed server ranges', () => {
     expect(satisfiesServerRange('1.0.1', '>1.0.0 <=1.0.1')).toBe(true);
     expect(satisfiesServerRange('1.0.0', '>=1.0.0 <=1.0.0')).toBe(true);
     expect(satisfiesServerRange('1.0.0', '>0.9.0 <1.0.0')).toBe(false);
+    // A strict bound at the component ceiling carries to the next minor.
+    expect(satisfiesServerRange('1.3.0', '>1.2.999999999 <=1.3.0')).toBe(true);
     expect(satisfiesServerRange('0.3.1', '>=0.1.0 <0.2.0 || 0.3.1')).toBe(true);
     expect(satisfiesServerRange('0.3.2', '>=0.1.0 <0.2.0 || =0.3.1')).toBe(false);
     // Only release versions match; a prerelease or malformed server never does.
@@ -34,6 +36,9 @@ describe('reviewed server ranges', () => {
       '>=0.2.0 <0.1.0',
       '>1.0.0 <=1.0.0',
       '>1.0.0 <1.0.1',
+      // No version VERSION accepts lies above the nine-digit ceiling.
+      '>1.2.999999999 <1.3.0',
+      '>999999999.999999999.999999999 <=999999999.999999999.999999999',
       '>=1.0.0 <1.0.0',
       '=1.0.0 <1.0.0',
       '>=0.1.0 <0.2.0 || >1.0.0 <1.0.1',

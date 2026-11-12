@@ -15,6 +15,7 @@ import { inWorkspace, jsonValue, lockPrivacyShared, lockSchemaShared, type Tx } 
 import { AppError, notFound } from '../errors.js';
 import { requestHash } from '../idempotency.js';
 import { getSchema } from '../schema/compiled.js';
+import { loadSchemaState } from '../schema/load.js';
 import { stableJson } from '../stable-json.js';
 import {
   type RuntimeCatalog,
@@ -24,6 +25,7 @@ import {
 } from './availability.js';
 import { failInstallation } from './lifecycle.js';
 import { cancelRuns, lockExtension, lockQueue } from './locks.js';
+import { type ContributionRow, retiredContributions } from './retired.js';
 
 export type Lease = {
   workspaceId: string;
@@ -469,7 +471,35 @@ export class ExtensionQueue {
         const manifest = this.runnableRelease(installation);
         if (!manifest) return { queued: 0, blocked: 0 };
         const schema = await getSchema(tx, workspace);
-        const handlers = manifest.functions.filter((fn) => fn.trigger.kind === 'change');
+        const bound = (fn: (typeof manifest.functions)[number]) => {
+          if (fn.trigger.kind !== 'change') return false;
+          const object = schema.objectsByUniversalId.get(fn.trigger.objectId);
+          return (
+            object?.state.status === 'active' &&
+            !object.hidden &&
+            fn.trigger.fieldIds.every((fid) =>
+              object.activeFields.some((field) => field.universalId === fid),
+            )
+          );
+        };
+        let handlers = manifest.functions.filter((fn) => fn.trigger.kind === 'change');
+        // A trigger on a contribution the workspace deleted never fires, as
+        // the install plan promised; other unresolved bindings still fail.
+        if (handlers.some((fn) => !bound(fn))) {
+          const retired = retiredContributions(
+            await loadSchemaState(tx, workspace),
+            manifest,
+            await tx<
+              ContributionRow[]
+            >`select kind,universal_id,element_id,definition from extension_contributions where installation_id=${id}`,
+          );
+          handlers = handlers.filter(
+            (fn) =>
+              bound(fn) ||
+              fn.trigger.kind !== 'change' ||
+              ![fn.trigger.objectId, ...fn.trigger.fieldIds].some((rid) => retired.has(rid)),
+          );
+        }
         if (!handlers.length) return { queued: 0, blocked: 0 };
         const [checkpoint] = await tx<
           { position: string; generation: number }[]
