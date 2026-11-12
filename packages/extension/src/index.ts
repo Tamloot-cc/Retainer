@@ -457,7 +457,15 @@ export type ExtensionPreview = {
   generation: number;
   releaseDigest: string;
   operations: unknown[];
-  views: { universalId: string; name: string; action: 'create' | 'retain' }[];
+  /**
+   * `update` applies the publisher's change to an unedited view;
+   * `keep_workspace` keeps a view the workspace edited (a warning says so).
+   */
+  views: {
+    universalId: string;
+    name: string;
+    action: 'create' | 'retain' | 'update' | 'keep_workspace';
+  }[];
   grants: { actor: 'integration' | 'agent'; scopes: ('read' | 'write')[] };
   previousGrants?: { actor: 'integration' | 'agent'; scopes: ('read' | 'write')[] };
   warnings: string[];

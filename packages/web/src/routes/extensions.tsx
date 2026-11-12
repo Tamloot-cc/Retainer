@@ -27,6 +27,12 @@ type Settings = Installation['settings'];
 type Preview = Awaited<ReturnType<typeof api.previewExtension>>;
 type Plan = { preview: Preview; input: Parameters<typeof api.previewExtension>[0]; key: string };
 const queryKey = ['extensions'];
+const VIEW_ACTIONS = {
+  create: 'Create',
+  retain: 'Keep',
+  update: 'Update',
+  keep_workspace: 'Keep your edited',
+} as const;
 const stateLabel = (state: string) =>
   state.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
 
@@ -544,7 +550,7 @@ export function ExtensionSettings({
                 )}
                 {plan.preview.views.map((view) => (
                   <p key={view.universalId}>
-                    {view.action === 'create' ? 'Create' : 'Retain'} saved view: {view.name}
+                    {VIEW_ACTIONS[view.action]} saved view: {view.name}
                   </p>
                 ))}
                 {plan.preview.warnings.map((warning) => (

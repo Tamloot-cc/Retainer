@@ -268,9 +268,24 @@ States: `installing`, `active`, `setup_failed`, `disabled`, `upgrading`,
 V1 upgrade is additive schema plus new code/settings/views. Omission does not
 delete. Existing structural changes, removals and incompatible mappings return
 `409 upgrade_conflict`; make a new field and perform an explicit migration through
-the existing schema engine. User-edited labels/views are preserved; conflicting
-publisher changes are reported, not overwritten. A deprecated element stays
-deprecated. Do not silently adopt unrelated fields with matching names.
+the existing schema engine. A view cannot move to another object; that needs a
+new view identity. A deprecated element stays deprecated.
+
+Presentation is an override layer, as in Twenty
+(`WORKSPACE_LOCAL_STATE_PROPERTIES` and its overridable properties). Each
+contribution stores the publisher definition it was last applied from (its
+base). For an object's `labelSingular`, `labelPlural` and `description` and a
+field's `label` and `description`: if the workspace's value still equals the
+base, the publisher's new value applies; if the workspace changed it, the
+workspace value wins, the preview carries a non-blocking warning, and only the
+base moves to the new release. A contributed view is presentation as a whole
+(name, columns and their order, widths, filter, sort, grouping, visibility): an
+unedited view takes the publisher's change (`update`), an edited or deleted one
+is kept (`keep_workspace`, with a warning). The plan digest includes each
+view's decision, and the replacement rechecks the view under its row lock, so a
+view edited after the preview fails the commit with `stale_plan`. Names, types,
+settings (options), nullability, uniqueness, filterability and searchability are
+structural and stay `409 upgrade_conflict`. Do not silently adopt unrelated fields with matching names.
 
 Contributed objects and fields belong to the installation while it is not
 `uninstalled`: the schema engine refuses `delete_object` and `delete_field`

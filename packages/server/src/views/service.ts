@@ -609,6 +609,76 @@ export async function createViewInTransaction(
 }
 
 /**
+ * A view an extension contributes: a workspace table of these fields, named by
+ * universal ID. Installation control stores it as the view's publisher base.
+ */
+export type ManagedView = { name: string; fieldIds: readonly string[] };
+
+/** The stored row a managed view describes, or null when a field no longer exists. */
+function managedRow(object: CompiledObject, view: ManagedView, activeOnly: boolean) {
+  const keys = view.fieldIds.map(
+    (id) =>
+      object.state.fields.find(
+        (f) => f.universalId === id && (!activeOnly || f.status === 'active'),
+      )?.key,
+  );
+  if (keys.some((k) => !k)) return null;
+  const config: StoredViewConfig = { columns: { order: keys as string[] } };
+  return { name: view.name, kind: 'table' as const, visibility: 'workspace' as const, config };
+}
+
+/**
+ * Whether the workspace changed a managed view since installation control
+ * last stored it from `base`: its name, kind, visibility or any of its config
+ * (columns, order, widths, filter, sort, grouping). A deleted view counts as
+ * changed. With `lock`, the row stays locked until commit.
+ */
+export async function managedViewEdited(
+  tx: Tx,
+  workspaceId: string,
+  id: string,
+  base: ManagedView,
+  lock = false,
+): Promise<boolean> {
+  const [row] = await tx<ViewRow[]>`select * from views where id = ${id}
+    ${lock ? tx`for update` : tx``}`;
+  const object = row && (await getSchema(tx, workspaceId)).objectsById.get(row.object_type_id);
+  const expected = object && managedRow(object, base, false);
+  if (!row || !expected) return true;
+  const [same] = await tx<{ same: boolean }[]>`
+    select ${tx.json(jsonValue(row.config))}::jsonb = ${tx.json(jsonValue(expected.config))}::jsonb as same`;
+  return !(
+    same?.same &&
+    row.name === expected.name &&
+    row.kind === expected.kind &&
+    row.visibility === expected.visibility
+  );
+}
+
+/**
+ * Replaces a managed view with the publisher's next definition, but only while
+ * the workspace has not edited it since `base` (checked under the row lock).
+ * Returns false, changing nothing, when it has.
+ */
+export async function replaceManagedView(
+  tx: Tx,
+  caller: Caller,
+  id: string,
+  base: ManagedView,
+  next: ManagedView,
+): Promise<boolean> {
+  if (await managedViewEdited(tx, caller.workspaceId, id, base, true)) return false;
+  const [row] = await tx<ViewRow[]>`select * from views where id = ${id}`;
+  const object =
+    row && (await getSchema(tx, caller.workspaceId)).objectsById.get(row.object_type_id);
+  const desired = object && managedRow(object, next, true);
+  if (!row || !desired) throw invalidView('managed view fields are not active');
+  await tx`update views set name = ${desired.name}, config = ${tx.json(jsonValue(desired.config))},
+    updated_by = ${tx.json(caller.actor)}, updated_at = now() where id = ${id}`;
+  return true;
+}
+
+/**
  * Changes only the keys the input gives. The row is locked first, so two
  * updates of different keys at once both land (rule 1.4).
  */

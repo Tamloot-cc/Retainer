@@ -24,7 +24,12 @@ import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { pendingSecrets, type SecretBroker } from '../extension-runtime/secrets.js';
 import { loadSchemaState } from '../schema/load.js';
 import { planSchemaChange, runSchemaChange } from '../schema-engine/engine.js';
-import { createViewInTransaction } from '../views/service.js';
+import {
+  createViewInTransaction,
+  type ManagedView,
+  managedViewEdited,
+  replaceManagedView,
+} from '../views/service.js';
 import { ExtensionCatalog, hash } from './catalog.js';
 import {
   type ContributionRow,
@@ -384,13 +389,15 @@ export class Extensions {
     );
     if ([...targets, ...relationTargets].some((id) => HIDDEN_TYPE_IDS.has(id)))
       throw conflict('schema_binding_conflict', 'extensions cannot target internal memory types');
-    const operations = contributionOperations(current, manifest, owned);
+    const { operations, notices } = contributionOperations(current, manifest, owned);
     const planned = planSchemaChange(current, operations, 'workspace');
     const retired = retiredContributions(current, manifest, owned);
     const skippedViews = manifest.views.filter(
       (v) =>
         !owns('view', v.universalId) && [v.objectId, ...v.fieldIds].some((id) => retired.has(id)),
     );
+    const viewActions = new Map<string, ExtensionPreview['views'][number]['action']>();
+    const viewNotices: string[] = [];
     for (const view of manifest.views) {
       if (skippedViews.includes(view)) continue;
       const [manager] = await tx<
@@ -402,17 +409,41 @@ export class Extensions {
           'schema_binding_conflict',
           `view ${view.universalId} belongs to another installation`,
         );
-      if (owns('view', view.universalId)) {
-        const retained = owned.find(
-          (c) => c.kind === 'view' && c.universal_id === view.universalId,
-        );
-        if (retained && hash(retained.definition) !== hash(view))
+      const retained = owned.find((c) => c.kind === 'view' && c.universal_id === view.universalId);
+      if (retained) {
+        // The stored definition is the publisher base this view was last applied from.
+        if (hash(retained.definition) === hash(view)) {
+          viewActions.set(view.universalId, 'retain');
+          continue;
+        }
+        if (retained.definition.objectId !== view.objectId)
           throw conflict(
             'upgrade_conflict',
-            `view ${view.universalId} changed; use a new view identity`,
+            `view ${view.universalId} moved to another object; use a new view identity`,
           );
-        continue;
-      }
+        if (
+          await managedViewEdited(
+            tx,
+            caller.workspaceId,
+            retained.element_id,
+            retained.definition as ManagedView,
+          )
+        ) {
+          viewActions.set(view.universalId, 'keep_workspace');
+          viewNotices.push(
+            `View ${view.name} keeps the version edited in this workspace; this release's changes to it are not applied.`,
+          );
+          continue;
+        }
+        if (view.fieldIds.some((id) => retired.has(id))) {
+          viewActions.set(view.universalId, 'retain');
+          viewNotices.push(
+            `View ${view.name} keeps its current columns: this release adds fields that were deleted.`,
+          );
+          continue;
+        }
+        viewActions.set(view.universalId, 'update');
+      } else viewActions.set(view.universalId, 'create');
       const object = planned.desired.objects.find(
         (o) => o.universalId === view.objectId && o.status === 'active',
       );
@@ -471,6 +502,8 @@ export class Extensions {
         reconnect: input.reconnect === true,
         replaceSourceAccount: input.replaceSourceAccount === true,
         grantChange: input.grantChange === true,
+        // Whether a contributed view was edited decides how it is applied.
+        views: [...viewActions],
         currentGrants: existing
           ? { actor: existing.granted_actor, scopes: existing.granted_scopes }
           : null,
@@ -484,7 +517,7 @@ export class Extensions {
         .map((view) => ({
           universalId: view.universalId,
           name: view.name,
-          action: owns('view', view.universalId) ? 'retain' : 'create',
+          action: viewActions.get(view.universalId) ?? 'retain',
         })),
       grants: { actor: manifest.requestedActor, scopes: manifest.scopes },
       ...(existing && input.grantChange
@@ -494,6 +527,8 @@ export class Extensions {
         ...skippedViews.map(
           (view) => `View ${view.name} is skipped: its object or fields were deleted.`,
         ),
+        ...notices,
+        ...viewNotices,
         ...(input.reconnect
           ? [
               input.replaceSourceAccount
@@ -673,12 +708,24 @@ export class Extensions {
         }
       }
       for (const view of manifest.views) {
-        if (!plan.preview.views.some((v) => v.universalId === view.universalId)) continue;
-        const [retained] =
-          await tx`select id from extension_contributions where kind = 'view' and universal_id = ${view.universalId}`;
+        const action = plan.preview.views.find((v) => v.universalId === view.universalId)?.action;
+        if (!action) continue;
+        const [retained] = await tx<
+          { element_id: string; definition: ManagedView }[]
+        >`select element_id, definition from extension_contributions where kind = 'view' and universal_id = ${view.universalId}`;
         if (retained && !plan.existing)
           throw conflict('schema_binding_conflict', 'view identity already managed');
-        if (retained) continue;
+        if (retained) {
+          if (action === 'retain') continue;
+          if (
+            action === 'update' &&
+            !(await replaceManagedView(tx, caller, retained.element_id, retained.definition, view))
+          )
+            throw conflict('stale_plan', 'a contributed view changed; preview again');
+          // Kept or replaced, the publisher base moves to this release.
+          await save('view', view.universalId, retained.element_id, view);
+          continue;
+        }
         const object = schema.objects.find((o) => o.universalId === view.objectId);
         if (!object) throw conflict('schema_binding_conflict', 'view object missing');
         const created = await createViewInTransaction(tx, caller, object.nameSingular, {
