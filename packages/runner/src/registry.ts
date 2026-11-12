@@ -1,6 +1,8 @@
 import { type ExecutionResult, type Invocation, lifecycleInputSchema } from '@retainer/extension';
 import { RetainerClient } from '@retainer/sdk';
 import { z } from 'zod';
+import { executeEnrichment } from './enrichment.js';
+import { ENRICHMENT_FUNCTION_IDS } from './enrichment-contract.js';
 import { executeGranola } from './granola.js';
 import { GRANOLA_FUNCTION_IDS } from './granola-contract.js';
 import { executeLastContact, LAST_CONTACT_FUNCTION_IDS } from './last-contact.js';
@@ -21,6 +23,8 @@ export async function execute(
 ): Promise<ExecutionResult> {
   if (GRANOLA_FUNCTION_IDS.includes(invocation.functionId))
     return executeGranola(invocation, signal, transport);
+  if (ENRICHMENT_FUNCTION_IDS.includes(invocation.functionId))
+    return executeEnrichment(invocation, signal, transport);
   if (LAST_CONTACT_FUNCTION_IDS.includes(invocation.functionId))
     return executeLastContact(invocation, signal, transport);
   if ([WEBHOOK_SETUP_ID, WEBHOOK_SYNC_ID].includes(invocation.functionId))

@@ -16,6 +16,12 @@ const alias = {
     new URL('../runner/src/granola-contract.ts', import.meta.url),
   ),
   '@retainer/runner/granola': fileURLToPath(new URL('../runner/src/granola.ts', import.meta.url)),
+  '@retainer/runner/enrichment-contract': fileURLToPath(
+    new URL('../runner/src/enrichment-contract.ts', import.meta.url),
+  ),
+  '@retainer/runner/enrichment': fileURLToPath(
+    new URL('../runner/src/enrichment.ts', import.meta.url),
+  ),
   '@retainer/extension': fileURLToPath(new URL('../extension/src/index.ts', import.meta.url)),
   '@retainer/shared': fileURLToPath(new URL('../shared/src/index.ts', import.meta.url)),
   '@retainer/sdk': fileURLToPath(new URL('../sdk/src/index.ts', import.meta.url)),

@@ -189,7 +189,12 @@ export type ExtensionMappingBinding = {
   status: 'ok' | 'missing' | 'incompatible';
 };
 /** The approved mapping of an installation. */
-export type ExtensionMappingView = { revision: number; outputs: ExtensionMappingBinding[] };
+export type ExtensionMappingView = {
+  revision: number;
+  outputs: ExtensionMappingBinding[];
+  /** The field runs read to look values up, by its current API name. */
+  lookup?: { name: string; status: 'ok' | 'missing' };
+};
 export const viewSchema = z.strictObject({
   universalId: uuid,
   objectId: uuid,

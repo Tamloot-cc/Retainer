@@ -109,8 +109,22 @@ export function presentMapping(
   const mapping = manifest.mapping;
   if (!mapping) return undefined;
   const object = schema.objects.find((o) => o.universalId === mapping.objectId);
+  const lookup = mapping.lookup
+    ? object?.fields.find((f) => f.universalId === mapping.lookup?.fieldId)
+    : undefined;
   return {
     revision,
+    ...(lookup
+      ? {
+          lookup: {
+            name: lookup.name,
+            status:
+              lookup.status === 'active' && lookup.type === mapping.lookup?.type
+                ? ('ok' as const)
+                : ('missing' as const),
+          },
+        }
+      : {}),
     outputs: mapping.outputs.map((output) => {
       const binding = stored.outputs[output.key];
       if (!binding)

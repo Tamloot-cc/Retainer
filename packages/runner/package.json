@@ -20,6 +20,8 @@
   "exports": {
     "./last-contact": "./dist/last-contact.js",
     "./granola": "./dist/granola.js",
-    "./granola-contract": "./dist/granola-contract.js"
+    "./granola-contract": "./dist/granola-contract.js",
+    "./enrichment": "./dist/enrichment.js",
+    "./enrichment-contract": "./dist/enrichment-contract.js"
   }
 }

@@ -351,6 +351,29 @@ payloads pass; raw-body tampering, mismatched signed event IDs and another
 release digest are refused. The test uses only disposable synthetic signing
 material and never reaches a provider account.
 
+## Company enrichment bundle
+
+The artifact builder also emits `artifacts/extensions/enrichment/`. Build the
+Node 24 runner image with that directory's digest and `BUNDLE_ID=enrichment`,
+and select its catalog and executables as for Granola. It has no webhook
+verifier. Runs need outbound HTTPS to `api.exa.ai` only.
+
+An admin supplies an Exa API key, approves sending company domains to Exa, and
+maps each output (employee count, LinkedIn URL, headquarters) to an existing
+company field, a suggested new field, or nothing. An agent can propose that
+mapping with `preview_extension`; only an admin approves it. When a company is
+created or its domain changes, the extension looks the domain up in Exa company
+search and fills only mapped fields that have no value and were not cleared.
+Values people or other agents set are never replaced, and existing companies are
+not backfilled. **Edit mapping** on the installation reviews a new mapping; it
+applies to later changes only. Each lookup is one Exa search (about $0.008).
+
+The adapter's Exa transport, matching and lifecycle have deterministic fixtures,
+and the API integration tests use real RLS Postgres and the secret broker. They
+do not call a real Exa account: staging acceptance with a real key remains
+launch evidence (see `docs/specs/extensions-company-enrichment-implementation.md`
+§4.3).
+
 ## Standalone app keys in key mode
 
 A reviewed standalone installation becomes active immediately after the admin
