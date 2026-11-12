@@ -50,6 +50,27 @@ export function requireRelease(catalog: RuntimeCatalog, pin: Pin) {
 }
 
 /**
+ * Whether this process can run the pin: it resolves and, when the process
+ * knows its deployed executables (`activation`), a hosted release has one.
+ * Without `activation` the answer is the catalog's alone.
+ */
+export function releaseAvailability(
+  catalog: RuntimeCatalog,
+  pin: Pin,
+  activation?: ReadonlySet<string>,
+): ReleaseResolution {
+  const result = resolveRelease(catalog, pin);
+  if (
+    result.available &&
+    result.manifest.execution === 'hosted' &&
+    activation &&
+    !activation.has(pin.release_digest)
+  )
+    return { available: false, code: 'incompatible_runtime' };
+  return result;
+}
+
+/**
  * The (registration, release digest) pairs this process can run now: they
  * resolve in its catalog (server range, `runtimeEnabled`) and, when it knows
  * its deployed executables (`activation`), a hosted release has one. Parallel
@@ -60,10 +81,7 @@ export function runnableReleases(catalog: RuntimeCatalog, activation?: ReadonlyS
   const registrations: string[] = [],
     digests: string[] = [];
   for (const pin of catalog.releases) {
-    const result = resolveRelease(catalog, pin);
-    if (!result.available) continue;
-    if (result.manifest.execution === 'hosted' && activation && !activation.has(pin.release_digest))
-      continue;
+    if (!releaseAvailability(catalog, pin, activation).available) continue;
     registrations.push(pin.registration_id);
     digests.push(pin.release_digest);
   }

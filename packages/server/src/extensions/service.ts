@@ -17,7 +17,11 @@ import {
 } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { admitCaller } from '../extension-runtime/admission.js';
-import { type RuntimeCatalog, resolveRelease } from '../extension-runtime/availability.js';
+import {
+  type RuntimeCatalog,
+  releaseAvailability,
+  resolveRelease,
+} from '../extension-runtime/availability.js';
 import { hashInstallationKey, mintInstallationKey } from '../extension-runtime/credentials.js';
 import { cancelRuns, lockExtension as lockInstallation } from '../extension-runtime/locks.js';
 import { ExtensionQueue } from '../extension-runtime/queue.js';
@@ -80,8 +84,13 @@ type Row = {
   last_error: string | null;
   created_by: ExtensionInstallation['createdBy'];
 };
-function present(r: Row, runtime?: RuntimeCatalog): ExtensionInstallation {
-  const resolution = runtime ? resolveRelease(runtime, r) : undefined;
+/** `activation` is undefined when this process does not know the deployed executables. */
+function present(
+  r: Row,
+  runtime?: RuntimeCatalog,
+  activation?: ReadonlySet<string>,
+): ExtensionInstallation {
+  const resolution = runtime ? releaseAvailability(runtime, r, activation) : undefined;
   return {
     ...(resolution
       ? {
@@ -113,8 +122,12 @@ export class Extensions {
     private readonly sql: Sql,
     readonly catalog = new ExtensionCatalog(),
     readonly secrets?: SecretBroker,
-    private readonly activation: ReadonlySet<string> = new Set(),
-  ) {}
+    /** Release digests with a deployed executable; undefined when this process does not know. */
+    private readonly deployed?: ReadonlySet<string>,
+  ) {
+    this.activation = deployed ?? new Set();
+  }
+  private readonly activation: ReadonlySet<string>;
   private queue() {
     return new ExtensionQueue(this.sql, this.catalog.runtime);
   }
@@ -152,7 +165,7 @@ export class Extensions {
         installations: (
           await tx<Row[]>`select i.*,retainer_extension_secret_names(i.id) as secret_names
             from extension_installations i ${caller.run || caller.installation ? tx`where i.id = ${caller.run?.installationId ?? caller.installation?.installationId ?? null}` : tx``} order by i.created_at, i.id`
-        ).map((row) => present(row, this.catalog.runtime)),
+        ).map((row) => present(row, this.catalog.runtime, this.deployed)),
       };
     });
   }
@@ -177,7 +190,7 @@ export class Extensions {
         { names: string[] }[]
       >`select retainer_extension_secret_names(${id}::uuid) as names`;
       return {
-        ...present(row, this.catalog.runtime),
+        ...present(row, this.catalog.runtime, this.deployed),
         secrets: Object.fromEntries((presence?.names ?? []).map((name) => [name, true])),
         contributions,
       };

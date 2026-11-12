@@ -671,8 +671,11 @@ worker passes the `(registration, release digest)` pairs it can run now (catalog
 server range, `runtimeEnabled`, deployed executables) to the job, maintenance and
 change discovery functions, which return only work pinned to one of them. Nothing is
 persisted, so an older or partial catalog cannot quarantine work for another worker.
-API inspection computes `runtimeAvailability` on read from its own catalog, separately
-from `connectionHealth`; the web app explains that pending work is saved.
+API inspection computes `runtimeAvailability` on read from its own catalog and, where it
+knows them, deployed executables, separately from `connectionHealth`; the web app
+explains that pending work is saved. Change dispatch and webhook ingress apply the same
+executables where their process loads them; elsewhere they judge by the catalog, and
+jobs no executor can run expire with the 24-hour job lifetime.
 
 Hosted resolution requires explicit operator `runtimeEnabled: true`. A false or absent
 flag pauses existing hosted jobs as well as new activation; restoring it resumes the
@@ -684,10 +687,15 @@ catalog can run the release sees it immediately, without changing installation
 generation or requiring upgrade; claim re-checks the pin and leaves an unresolvable job
 queued. Expired jobs, cleanup deadlines and erasure are never filtered and continue
 independently. Uninstall remains available when a release cannot load: revoke locally,
-retire callbacks and secrets, and skip unavailable provider cleanup code. Unexpected
-per-item claim/acknowledgement errors do not end a worker's loop: finish processing
-peers, then report the operational failure. Admin retry recognizes
-reserved built-in lifecycle jobs and validates their strict empty input.
+retire callbacks and secrets, and skip unavailable provider cleanup code. Accepted:
+maintenance that finds an uninstalling installation whose release it cannot run
+uninstalls it directly (`cleanup_unavailable`), which is safe because the deploy lock
+keeps one server version live; and work paused by `runtimeEnabled: false` for more than
+the 24-hour job lifetime expires, an install job failing setup (`setup_failed`, or
+`disabled` for an upgrade; both retryable). Unexpected per-item claim/acknowledgement
+errors do not end a worker's loop: finish processing peers, then report the
+operational failure. Admin retry recognizes reserved built-in lifecycle jobs and
+validates their strict empty input.
 
 One scheduler tick per minute transactionally locks due schedule rows, inserts
 jobs keyed by `(installation, function, scheduled UTC instant)`, then advances

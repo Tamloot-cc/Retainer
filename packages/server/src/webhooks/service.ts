@@ -12,7 +12,7 @@ import type { Sql } from '../db/client.js';
 import { inWorkspace, lockForWrite, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { admitRun } from '../extension-runtime/admission.js';
-import { resolveRelease } from '../extension-runtime/availability.js';
+import { releaseAvailability } from '../extension-runtime/availability.js';
 import { lockExtension, lockQueue } from '../extension-runtime/locks.js';
 import { ExtensionQueue } from '../extension-runtime/queue.js';
 import type { SecretBroker } from '../extension-runtime/secrets.js';
@@ -106,6 +106,8 @@ export class Webhooks {
       driver: VerificationDriver;
       publicOrigin: string;
       rateLimit?: number;
+      /** Release digests with a deployed executable; undefined when this process does not know. */
+      activation?: ReadonlySet<string>;
     },
   ) {
     const origin = new URL(options.publicOrigin);
@@ -122,10 +124,19 @@ export class Webhooks {
     if (!Number.isInteger(limit) || limit < 1 || limit > 10000)
       throw new Error('invalid webhook rate limit');
     this.limiter = new IngressLimiter(limit);
-    this.queue = new ExtensionQueue(options.sql, options.catalog.runtime);
+    this.queue = new ExtensionQueue(
+      options.sql,
+      options.catalog.runtime,
+      undefined,
+      options.activation,
+    );
   }
   private contract(candidate: Candidate, route: string) {
-    const resolution = resolveRelease(this.options.catalog.runtime, candidate);
+    const resolution = releaseAvailability(
+      this.options.catalog.runtime,
+      candidate,
+      this.options.activation,
+    );
     if (!resolution.available)
       throw new AppError(503, 'incompatible_runtime', 'webhook release is unavailable');
     const manifest = resolution.manifest;

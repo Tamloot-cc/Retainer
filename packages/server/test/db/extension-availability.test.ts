@@ -233,6 +233,15 @@ describe('catalog-scoped runtime availability', () => {
     });
     const listed = await oldApp.request('/v1/extensions', { key: h.key });
     expect(listed.body.installations[0].runtimeAvailability).toEqual(info.body.runtimeAvailability);
+    // Where the API knows the deployed executables, a hosted release without one is unavailable too.
+    const undeployed = startTestApp(db, {
+      extensionCatalog: full,
+      runTokens: tokens,
+      extensionActivation: new Set(),
+    });
+    expect(
+      (await undeployed.request(`/v1/extensions/${h.id}`, { key: h.key })).body.runtimeAvailability,
+    ).toEqual({ state: 'unavailable', code: 'incompatible_runtime' });
   });
 
   it('leaves a job an older catalog cannot resolve queued at claim, and a newer catalog runs it at once without an upgrade', async () => {
@@ -366,11 +375,34 @@ describe('catalog-scoped runtime availability', () => {
       await db.owner`select id from extension_jobs where installation_id=${h.id} and trigger_kind='uninstall'`;
     const older = new ExtensionQueue(app.sql, partial.runtime);
     expect(await older.claim(h.workspace, cleanup?.id, 'cleanup')).toBeNull();
+    // Before the deadline the queued cleanup waits for a worker that can run it.
+    expect(await older.discover(discovery())).toHaveLength(0);
+    await older.maintain(discovery());
+    expect(
+      (await db.owner`select state from extension_installations where id=${h.id}`)[0]?.state,
+    ).toBe('uninstalling');
+    expect(
+      (await db.owner`select status,attempt from extension_jobs where id=${cleanup?.id}`)[0],
+    ).toEqual({ status: 'queued', attempt: 0 });
     await db.owner`update extension_installations set cleanup_deadline=clock_timestamp()-interval '1 second' where id=${h.id}`;
     await older.maintain(discovery());
     expect(
       (await db.owner`select state,last_error from extension_installations where id=${h.id}`)[0],
     ).toEqual({ state: 'uninstalled', last_error: 'cleanup_deadline_expired' });
+  });
+
+  it('uninstalls directly when a release becomes unavailable before its cleanup is queued', async () => {
+    const h = await setup();
+    // As a workspace deletion leaves it: uninstalling, deadline ahead, no cleanup job yet.
+    await db.owner`update extension_installations set state='uninstalling',generation=generation+1,
+      cleanup_deadline=clock_timestamp()+interval '1 hour' where id=${h.id}`;
+    await new ExtensionQueue(app.sql, partial.runtime).maintain(discovery());
+    expect(
+      (await db.owner`select state,last_error from extension_installations where id=${h.id}`)[0],
+    ).toEqual({ state: 'uninstalled', last_error: 'cleanup_unavailable' });
+    expect(
+      await db.owner`select id from extension_jobs where installation_id=${h.id} and trigger_kind='uninstall'`,
+    ).toHaveLength(0);
   });
 
   it('keeps job expiry running without catalog availability', async () => {

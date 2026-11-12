@@ -146,8 +146,9 @@ accumulate none. An expired worker cannot acknowledge or write after replacement
 A missing or incompatible pinned release pauses its pending work in that runtime. It
 does not change provider connection health, discard jobs, consume attempts or advance
 change/schedule cursors. `GET /v1/extensions` and installation inspection report
-`runtimeAvailability`, computed on read from the answering process's catalog; the
-failure code is a safe operator diagnostic. The web app explains when the server cannot
+`runtimeAvailability`, computed on read from the answering process's catalog and its
+deployed executables (a hosted release without one is `incompatible_runtime`, matching
+`runtimeReady`); the failure code is a safe operator diagnostic. The web app explains when the server cannot
 run an extension.
 
 Nothing about availability is stored. Each worker passes the `(registration, release
@@ -162,6 +163,21 @@ the job queued if it cannot resolve it. An admin can still uninstall when the re
 cannot load: local access is revoked, callbacks/secrets are retired, and unavailable
 cleanup code is skipped. Expired jobs, uninstall cleanup deadlines and erasure are never
 filtered and keep running.
+
+Where a process knows its deployed executables (it loads
+`RETAINER_EXTENSION_EXECUTABLES` with run keys), its change dispatcher and webhook
+ingress use them too: a hosted release without one gets no change jobs (the cursor
+waits) and its callbacks get 503 before the verifier runs. A process without that
+registry judges by its catalog alone and can still enqueue such jobs; they wait for an
+executor and expire with the job lifetime (24 hours) if none appears.
+
+Accepted trade-offs. When maintenance queues cleanup for an uninstalling installation
+whose release this worker cannot run, it uninstalls directly (`cleanup_unavailable`)
+rather than waiting for another worker. That is safe because the deploy lock keeps one
+server version live, so no newer worker is expected to run it. Work paused by
+`runtimeEnabled: false` for longer than the job lifetime expires like any job: an
+install job then fails setup (`setup_failed`, or `disabled` for an upgrade), which the
+admin can retry.
 
 First-party compatibility is reviewed in `scripts/extension-release.mjs` as a bounded
 server semver range (`REVIEWED_SERVER_RANGE`, now `>=0.1.0 <0.2.0`), like Twenty's
