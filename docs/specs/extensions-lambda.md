@@ -1,6 +1,6 @@
 # Hosted extensions on AWS Lambda
 
-Status: proposal, 2026-11-12. Not implemented. Amends
+Status: product implementation, 2026-11-12. Hosted acceptance pending. Amends
 [extensions.md](extensions.md) §9.1 and §13. The matching infrastructure change
 is specified in the private `retainer-cloud` repo at
 `docs/extensions-lambda.md` (it reworks retainer-cloud PR #11, not yet merged).
@@ -201,13 +201,13 @@ launcher form stays for Compose.
 
 ## 4. Security model on Lambda
 
-| Property | Compose launcher | Hosted Lambda |
-| --- | --- | --- |
-| Fresh process per run | Yes | No: one invocation at a time per environment, reused. Mitigated by §3.2. |
-| Database reachable | No | No: job functions run outside the VPC; verifiers in isolated subnets with no egress. |
-| Instance or host credentials | None | The function's own role credentials are in its environment. That role may write its own logs and nothing else. |
-| Egress | Proxy, DNS/redirect validation, private ranges denied | Job functions: open internet, no VPC or metadata endpoint to reach. Verifiers: no network. |
-| Resource limits | CPU/memory/PIDs/tmpfs per container | Memory, timeout and reserved concurrency per function. |
+| Property                     | Compose launcher                                      | Hosted Lambda                                                                                                  |
+| ---------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Fresh process per run        | Yes                                                   | No: one invocation at a time per environment, reused. Mitigated by §3.2.                                       |
+| Database reachable           | No                                                    | No: job functions run outside the VPC; verifiers in isolated subnets with no egress.                           |
+| Instance or host credentials | None                                                  | The function's own role credentials are in its environment. That role may write its own logs and nothing else. |
+| Egress                       | Proxy, DNS/redirect validation, private ranges denied | Job functions: open internet, no VPC or metadata endpoint to reach. Verifiers: no network.                     |
+| Resource limits              | CPU/memory/PIDs/tmpfs per container                   | Memory, timeout and reserved concurrency per function.                                                         |
 
 **Accepted relaxation: hosted egress.** The spec requires the egress boundary to
 deny private and link-local destinations and validate DNS and redirects. Outside
