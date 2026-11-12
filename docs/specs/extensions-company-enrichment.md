@@ -16,10 +16,10 @@ For example, the provider returns `employee_count: 52` and `linkedin_url` for `a
 - Fill only unset fields. An unset field has no effective value or explicit clear. A value such as `0` counts as populated. If the domain changes later, fill any remaining unset fields using the new domain. Refreshing already populated values is deferred.
 - Defer bulk backfill, periodic scans, provider webhooks, and a manual **Enrich now** action. The standard run list and failed-run retry cover operational recovery in v1.
 
-| Provider output | Meaning | Compatible Company field | New-field option |
-| --- | --- | --- | --- |
-| `employee_count` | Provider-reported employee count, with the provider’s definition shown in review | Number | Employee Count |
-| `linkedin_url` | Company LinkedIn profile URL | Links | LinkedIn URL |
+| Provider output  | Meaning                                                                          | Compatible Company field | New-field option |
+| ---------------- | -------------------------------------------------------------------------------- | ------------------------ | ---------------- |
+| `employee_count` | Provider-reported employee count, with the provider’s definition shown in review | Number                   | Employee Count   |
+| `linkedin_url`   | Company LinkedIn profile URL                                                     | Links                    | LinkedIn URL     |
 
 The reviewed bundle defines the source keys, their meanings, how to parse them, and the suggested field definitions. For example, a provider’s count of LinkedIn profiles must be described as such in review. The admin chooses which outputs to use. The adapter converts valid values to Retainer’s field formats. A missing or invalid individual value is omitted while other valid values can still be used.
 
@@ -56,13 +56,13 @@ The platform already supplies reviewed manifests, install previews, human approv
 
 Retainer owns the manifest contract, approval UI, guarded write, adapter, tests, and immutable bundle. Self-hosting uses the existing Compose launcher. For hosted rollout, `retainer-cloud` provisions and publishes the job bundle through the existing Lambda pipeline. This bundle uses the job configuration only. Verify real provider credentials and an end-to-end staging lookup before enabling the catalog entry for customers.
 
-| Acceptance | Evidence |
-| --- | --- |
-| Admin controls the mapping | With a fresh web build, import an agent draft, edit it, preview field additions and grants, approve, and confirm the saved bindings match the review. Complete the same flow manually. An agent cannot approve. |
-| Install is atomic | With real Postgres, reject stale schema and changed mapping previews, wrong types, duplicate destinations, and targets present only in another workspace. Verify that a failed commit rolls back schema, mapping, and setup. Exercise installation of a bundle without mappings. |
-| Trigger uses the current domain | A new Company with a domain enriches. A blank domain makes zero provider requests. Adding a domain later enriches. Updating mapped output fields makes zero additional lookups. |
-| Fill-only behavior survives races | Delay a fake provider response while a competing request fills or explicitly clears a target, changes the domain, or deletes or merges the record. Confirm the stale response cannot modify protected values or the wrong company. Replaying a completed write yields no duplicate assertions. |
-| Mapping survives ordinary customization | Renaming a target preserves the binding. Removing it produces a field-specific conflict. A reviewed remap fences old runs and uses the new target on a subsequent trigger. |
-| Failures are operable | Exercise partial provider results, no-match, malformed responses, 429, invalid credentials, disable, and retry. Verify safe diagnostics and that setup and jobs operate through the isolated runner. |
+| Acceptance                              | Evidence                                                                                                                                                                                                                                                                                       |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Admin controls the mapping              | With a fresh web build, import an agent draft, edit it, preview field additions and grants, approve, and confirm the saved bindings match the review. Complete the same flow manually. An agent cannot approve.                                                                                |
+| Install is atomic                       | With real Postgres, reject stale schema and changed mapping previews, wrong types, duplicate destinations, and targets present only in another workspace. Verify that a failed commit rolls back schema, mapping, and setup. Exercise installation of a bundle without mappings.               |
+| Trigger uses the current domain         | A new Company with a domain enriches. A blank domain makes zero provider requests. Adding a domain later enriches. Updating mapped output fields makes zero additional lookups.                                                                                                                |
+| Fill-only behavior survives races       | Delay a fake provider response while a competing request fills or explicitly clears a target, changes the domain, or deletes or merges the record. Confirm the stale response cannot modify protected values or the wrong company. Replaying a completed write yields no duplicate assertions. |
+| Mapping survives ordinary customization | Renaming a target preserves the binding. Removing it produces a field-specific conflict. A reviewed remap fences old runs and uses the new target on a subsequent trigger.                                                                                                                     |
+| Failures are operable                   | Exercise partial provider results, no-match, malformed responses, 429, invalid credentials, disable, and retry. Verify safe diagnostics and that setup and jobs operate through the isolated runner.                                                                                           |
 
 The provider selection, authentication check, response contract, and rate limits are the remaining integration decisions. A fixture with the two launch outputs is sufficient to develop and verify the platform flow before selecting a provider.
