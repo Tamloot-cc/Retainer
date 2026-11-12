@@ -19,7 +19,10 @@ import {
 import { GranolaError, GranolaProvider } from './granola-provider.js';
 
 const DAY = 86400000,
-  OVERLAP = 60000;
+  OVERLAP = 60000,
+  // Like Twenty's Granola catch-up: every incremental scan re-lists at least two days, so a note whose
+  // import failed after its scan completed is listed again; unchanged live notes enqueue nothing.
+  CATCH_UP_WINDOW = 2 * DAY;
 const settingsSchema = z.object({
   shareAccessibleNotes: z.literal(true),
   backfillDays: z.number().int().min(1).max(3650),
@@ -211,7 +214,7 @@ async function startScan(sdk: RetainerClient, id: string, backfillDays: number, 
         through,
         from: new Date(
           status.lastSuccessfulScanAt
-            ? Date.parse(status.lastSuccessfulScanAt) - OVERLAP
+            ? Date.parse(status.lastSuccessfulScanAt) - CATCH_UP_WINDOW
             : Date.parse(through) - backfillDays * DAY,
         ).toISOString(),
       };

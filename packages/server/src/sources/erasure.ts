@@ -39,6 +39,7 @@ export async function prepareSourceErasure(
     [...new Set([...recordIds, ...allEvents])],
     ids,
     accounts,
+    handles,
   );
   if (!items.length) return { eventIds: allEvents, fileIds: [] as string[], count: 0 };
   await tombstoneEventIdentity(

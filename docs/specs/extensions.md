@@ -694,8 +694,8 @@ connection health; a multi-installation repeat/depth breach records
 self-triggering. Coalesce duplicate `(installation,function,changePosition)` jobs.
 Accepted trigger jobs retain only the authorized minimal change metadata, so
 public-feed pruning cannot strand accepted work. Erasure scrubs those copies and
-fences every live run; all installation KV is cleared because operational values
-may indirectly derive from erased records. Preserve unrelated durable jobs and
+requeues every live run with a new fence (§11); KV entries that name an erased
+record, item or handle are deleted wherever they are. Preserve unrelated durable jobs and
 keep immutable backfill bounds in job input. A dispatcher that has fallen behind
 retention stops with degraded `cursor_expired`; it never advances past the gap.
 Disable and re-enable only through the reviewed adapter catch-up path: activation captures a fresh dispatch head, and the adapter queues its current-record backfill while later changes remain durable.
@@ -817,7 +817,9 @@ registered ingestion job may read the provider ID, stage participant emails with
 `/source-items/:item/prepare`, and upload files bound to that item. Staging is
 required for each job attempt before issuing an upload URL, so erasure can find
 pending transcripts even before the first event revision exists. Staged emails
-are suppression-checked and erased with the source. A source job cannot import
+are suppression-checked and erased with the source. As in core event links, an
+erased participant is dropped from staging and import (not stored, linked or
+created, and left out of the content digest) while the rest of the event imports. A source job cannot import
 another item's evidence or attach another item's uploads.
 
 The server returns its canonical content digest, including normalized fields and
@@ -899,8 +901,11 @@ paces requests, bounds response/transcript bytes and returns static diagnostic
 codes. It lists all accessible notes rather than using search. The initial
 created-time backfill uses daily windows with overlap; expired/invalid cursors
 restart a smaller window, down to a visible minimum-window failure. Incremental
-polls use `updated_after` from the last complete scan with overlap and deliberately
-omit `created_after`, so later edits to old imported notes are discoverable.
+polls use `updated_after` from two days before the last complete scan (Twenty's
+fixed catch-up lookback) and deliberately omit `created_after`, so later edits to
+old imported notes are discoverable. The watermark advances when enumeration
+completes even if some item imports failed; the two-day lookback lists those
+notes again, and revision dedupe skips live notes whose `updated_at` is unchanged.
 Cursors and recent cursor hashes remain in erased KV. Empty pages with `hasMore`
 continue; repeated cursors fail visibly. KV erasure starts a new random child
 identity epoch without weakening permanent source suppression.
@@ -1000,7 +1005,14 @@ ordering markers, content digests, receipts and staged emails; keeps only an
 opaque erased item and keyed identity tombstone; clears the affected installation's
 KV; and advances its generation to fence fetched in-memory content. Erased-source
 jobs are cancelled and redacted. Unrelated durable jobs are retained/requeued under
-the new generation. Backfill jobs must retain their non-sensitive requested date
+the new generation. Only installations bound to an affected source account or
+item advance their generation and lose all KV. Every running job in the
+workspace, in any installation, has its open attempt cancelled and is requeued
+with a new fence, because a run that only read the erased record could otherwise
+write its content back after erasure commits. Other installations keep their
+generation, queued jobs and KV, except that KV entries and job inputs naming an
+erased record, item, change or handle (email or phone) are deleted or redacted
+and cancelled, in every installation and generation. Backfill jobs must retain their non-sensitive requested date
 bounds independently of resettable KV cursors, so privacy recovery cannot silently
 shrink a requested scan. A setup interrupted by erasure requires setup retry.
 
