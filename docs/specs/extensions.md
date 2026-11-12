@@ -592,7 +592,16 @@ long-running coordinator refills each slot as soon as a run finishes and runs
 maintenance beside claims, so one long run never stalls dispatch.
 Default budget is 60 writes/minute per installation, within the workspace limit;
 return `429` with retry guidance rather than dropping work. Queued-job quota is
-10,000/installation; enqueue and checkpoint fail together at capacity.
+10,000/installation. Change dispatch commits each change with all its jobs or
+none: at the quota it keeps the changes it already accepted, leaves the cursor
+before the first one it could not, records degraded `quota_exceeded` and resumes
+on a later pass once jobs drain. Each installation dispatches in its own
+transaction, so one full queue never rolls back or stalls another's. A backstop
+throttle, after Twenty's per-app enqueue throttler, caps new change-trigger jobs
+at 500 per installation per minute (`RETAINER_TRIGGER_ENQUEUES_PER_MINUTE`).
+Twenty drops the excess; here it waits behind the cursor the same way and records
+degraded `trigger_throttled`, so nothing is lost. Both clear on the next full
+dispatch.
 
 Retry transient network/429/5xx errors with jittered exponential delay (30 seconds
 base, one-hour cap), maximum ten attempts or 24 hours. Handlers opt in by throwing
@@ -784,7 +793,39 @@ writes and child jobs. Skip any installation already in the chain; cap depth at
 8 and count blocked matches. Direct self-writes are expected and do not degrade
 connection health; a multi-installation repeat/depth breach records
 `trigger_cycle_blocked`. This stops A → B → A as well as direct
-self-triggering. Coalesce duplicate `(installation,function,changePosition)` jobs.
+self-triggering. Jobs dedupe per `(installation,function,changePosition)`, and
+change jobs coalesce per record: a later `update` or `review` change does not add
+a job when the newest live (queued or running) job for the same installation,
+function and record is a queued, never-started `update` or `review` of the same
+object type. Only the newest job qualifies: folding into an older one would run
+the change before a later lifecycle job (update, delete, undelete, update must
+not end on the delete). The job moves to the latest position
+and snapshot, keeps the union of changed keys and related records (so a record
+relinked away from is still recomputed) and the union of cause chains (so every
+installation behind any absorbed change stays excluded, and A → B → A remains
+blocked). The depth cap counts server-derived hops (`cause_depth`), not the length
+of the exclusion chain, and a coalesced job takes the deeper of the two, so a
+union never manufactures a false `trigger_cycle_blocked`. A running or retrying
+job absorbs nothing; the change queues a new job.
+Lifecycle changes (create, delete, merge, retract, supersede, links, and both
+halves of a type move) always keep their own job, because their metadata
+(tombstone, `mergedIntoId`, old type) is not a superset of a later update's.
+
+Agents and API keys carry no server cause, so loops through them are bounded by
+the throttle in §9.2, not stopped. A standalone app has no server job either: its
+key or OAuth grant starts the chain at itself, so on its own a standalone →
+hosted → standalone loop is never blocked. A standalone app answering a feed
+change sends that change's cursor as `Retainer-Caused-By`; its writes then
+inherit the change's recorded chain plus itself, and a hosted function already in
+it is not triggered again. Only standalone installation credentials with read
+scope may send the header (others get `400` or `403`), and a cursor no longer in
+the feed returns `410 cursor_expired`. The inherited chain only excludes
+installations: it adds no depth (the write counts as the app's first hop), so a
+long referenced chain cannot make the depth cap block the app's write. Trade-off:
+by naming a change, an app can hide its own write from every installation already
+in that change's chain. That is accepted, because the header can only suppress
+triggers, never cause one or reach data the app cannot read, and loops that slip
+past it are bounded by the throttle.
 Accepted trigger jobs retain only the authorized minimal change metadata, so
 public-feed pruning cannot strand accepted work. Erasure scrubs those copies and
 requeues every live run with a new fence (§11); KV entries that name an erased

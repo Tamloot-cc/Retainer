@@ -138,6 +138,8 @@ const configSchema = z
     ),
     RETAINER_VERIFIER_TOKEN: z.preprocess(emptyToUndefined, z.string().min(32).optional()),
     RETAINER_WEBHOOK_RATE_LIMIT: z.coerce.number().int().min(1).max(10000).default(100),
+    /** New change-trigger jobs per installation per minute; the excess waits (extensions §9.4). */
+    RETAINER_TRIGGER_ENQUEUES_PER_MINUTE: z.coerce.number().int().min(1).max(100000).default(500),
     /**
      * `control` serves only /account: sign-in and account management. `all`
      * serves everything, including /account in accounts mode.

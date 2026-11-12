@@ -71,6 +71,20 @@ hard delete waits until each cleanup finishes or passes its 24-hour deadline
 (spec §7). Completion is recorded on the installations themselves; a missed
 deadline is logged when the workspace is removed.
 
+Status of R9: done (Phase 2 item 3). Change jobs coalesce per installation,
+function and record into the record's newest live job only, when it is queued,
+unstarted and an update/review, keeping the latest position and snapshot and the
+union of keys, related records and cause chains; lifecycle changes keep their own
+job. The depth cap counts server-derived hops (`cause_depth`), so merged chains
+and chains inherited through `Retainer-Caused-By` never cause a false block. Dispatch commits per change, so the queued-job quota
+and a new 500-per-minute enqueue throttle (`trigger_throttled`) defer the rest
+behind the cursor instead of rolling back the batch. Standalone apps can name the
+change they answer with `Retainer-Caused-By` to inherit its chain, which blocks a
+standalone → hosted → standalone loop; without it the throttle bounds the loop
+(spec §9.2, §9.4). Fixed on the way: the dispatcher and the feed sorted
+`position::text` as text, so a batch crossing a digit boundary (9 → 10) ran out
+of order and could move the cursor backwards or skip rows.
+
 Suspected, to confirm with a test before fixing: Docker default address pools
 can run out with 32 per-run networks; schedules added by an upgrade fire
 immediately; consent activation revokes the working grant on a 200 response

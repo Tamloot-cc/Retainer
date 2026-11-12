@@ -1,5 +1,6 @@
 import type { Caller } from '../caller.js';
 import { jsonValue, publishAtCommit, type Tx } from '../db/tx.js';
+import { AppError } from '../errors.js';
 import type { CompiledSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
 
@@ -56,23 +57,41 @@ export class ChangeCollector {
     private readonly schema: CompiledSchema,
     private readonly origin: string | null,
     private readonly cause: string[],
+    /** Server-derived trigger hops behind these writes (extensions spec §9.4). */
+    private readonly depth = cause.length,
   ) {}
   static async forCaller(tx: Tx, caller: Caller, schema: CompiledSchema) {
     const existing = ChangeCollector.transactions.get(tx);
     if (existing) return existing;
     const [job] = caller.run
       ? await tx<
-          { cause: string[] }[]
-        >`select cause from extension_jobs where id=${caller.run.jobId}`
+          { cause: string[]; cause_depth: number | null }[]
+        >`select cause,cause_depth from extension_jobs where id=${caller.run.jobId}`
       : [];
-    const chain = job?.cause ?? [];
     const origin = caller.run?.installationId ?? caller.installation?.installationId ?? null;
-    const collector = new ChangeCollector(
-      caller.workspaceId,
-      schema,
-      origin,
-      origin && !chain.includes(origin) ? [...chain, origin] : chain,
-    );
+    let chain = job?.cause ?? [],
+      depth = job ? (job.cause_depth ?? job.cause.length) : 0;
+    const causedBy = caller.installation?.causedBy;
+    if (!caller.run && causedBy) {
+      // A standalone app has no server-side job; it names the change it
+      // answers and inherits that change's chain, which only excludes
+      // installations. The inherited hops are not server-derived, so they
+      // add no depth: this write is the app's own first hop.
+      const [change] = await tx<
+        { cause: string[] }[]
+      >`select cause from record_changes where workspace_id=${caller.workspaceId} and position=${causedBy}::bigint`;
+      if (!change)
+        throw new AppError(
+          410,
+          'cursor_expired',
+          'the change named by Retainer-Caused-By is not in the feed; it expired or never existed',
+        );
+      chain = change.cause;
+      depth = 0;
+    }
+    if (origin && !chain.includes(origin)) chain = [...chain, origin];
+    if (origin) depth = causedBy && !caller.run ? 1 : depth + (job?.cause.includes(origin) ? 0 : 1);
+    const collector = new ChangeCollector(caller.workspaceId, schema, origin, chain, depth);
     return ChangeCollector.attach(tx, collector);
   }
   static forSchema(tx: Tx, workspace: string, schema: CompiledSchema) {
@@ -234,11 +253,12 @@ export class ChangeCollector {
       related_record_ids: change.related_record_ids,
       origin_installation_id: change.origin_installation_id,
       cause: jsonValue(change.cause),
+      cause_depth: this.depth,
       merged_into_id: change.merged_into_id,
     }));
-    await tx`insert into record_changes(workspace_id,position,record_id,object_type_id,operation,field_keys,related_record_ids,origin_installation_id,cause,merged_into_id)
-      select ${this.workspace}::uuid,r.position,r.record_id,r.object_type_id,r.operation,r.field_keys,r.related_record_ids,r.origin_installation_id,r.cause,r.merged_into_id
+    await tx`insert into record_changes(workspace_id,position,record_id,object_type_id,operation,field_keys,related_record_ids,origin_installation_id,cause,cause_depth,merged_into_id)
+      select ${this.workspace}::uuid,r.position,r.record_id,r.object_type_id,r.operation,r.field_keys,r.related_record_ids,r.origin_installation_id,r.cause,r.cause_depth,r.merged_into_id
       from jsonb_to_recordset(${tx.json(rows)}::jsonb) as r(position bigint,record_id uuid,object_type_id uuid,operation text,
-        field_keys jsonb,related_record_ids jsonb,origin_installation_id uuid,cause jsonb,merged_into_id uuid)`;
+        field_keys jsonb,related_record_ids jsonb,origin_installation_id uuid,cause jsonb,cause_depth int,merged_into_id uuid)`;
   }
 }
