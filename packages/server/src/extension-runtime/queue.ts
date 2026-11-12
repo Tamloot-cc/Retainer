@@ -32,8 +32,11 @@ export type ClaimedJob = Lease & {
   functionId: string;
   input: unknown;
   attempt: number;
+  /** The handler's own budget. The lease runs RUN_GRACE_SECONDS longer, to record the outcome. */
   deadline: Date;
 };
+/** Time after a handler's deadline in which the coordinator may still acknowledge its run. */
+export const RUN_GRACE_SECONDS = 15;
 type Installation = {
   id: string;
   workspace_id: string;
@@ -548,11 +551,13 @@ export class ExtensionQueue {
       if (!slot?.available) return null;
       // An old attempt remains visible even when its worker disappeared.
       await tx`update extension_attempts set status='expired',code='lease_expired',finished_at=now() where job_id=${id} and finished_at is null`;
+      // The handler gets exactly its timeout; the lease keeps a short grace after it so the
+      // coordinator can still record a timeout as an ordinary retry instead of being fenced.
       const [claimed] = await tx<
-        Job[]
+        (Job & { handler_deadline: Date })[]
       >`update extension_jobs set status='running',lease_owner=${owner},
-        fence=fence+1,lease_until=clock_timestamp()+least(60,${timeout})*interval '1 second',run_until=clock_timestamp()+${timeout}*interval '1 second',attempt=attempt+1,cycle_attempt=cycle_attempt+1,updated_at=now()
-        where id=${id} returning *`;
+        fence=fence+1,lease_until=clock_timestamp()+least(60,${timeout + RUN_GRACE_SECONDS})*interval '1 second',run_until=clock_timestamp()+${timeout + RUN_GRACE_SECONDS}*interval '1 second',attempt=attempt+1,cycle_attempt=cycle_attempt+1,updated_at=now()
+        where id=${id} returning *,run_until-${RUN_GRACE_SECONDS}*interval '1 second' as handler_deadline`;
       if (!claimed) throw new Error('claim returned no row');
       await tx`insert into extension_attempts(workspace_id,job_id,attempt,fence,status)
         values(${workspace},${id},${claimed.attempt},${claimed.fence},'running')`;
@@ -571,7 +576,7 @@ export class ExtensionQueue {
         functionId: claimed.function_id,
         input: claimed.input,
         attempt: claimed.attempt,
-        deadline: claimed.run_until as Date,
+        deadline: claimed.handler_deadline,
       };
     });
   }
@@ -727,6 +732,18 @@ export class ExtensionQueue {
         await tx`update extension_attempts set status=${result.status},code=${code},finished_at=now() where job_id=${job.id} and attempt=${job.attempt}`;
         const activated = await this.finishLifecycle(tx, installation, job, status, code);
         return { status, activated };
+      },
+      true,
+    );
+  }
+  /** Hands a run back after a graceful executor shutdown without consuming one of its attempts. */
+  async release(lease: Lease) {
+    return this.withLease(
+      lease,
+      async (tx, _installation, job) => {
+        await tx`update extension_jobs set status='queued',code='executor_stopped',lease_owner=null,lease_until=null,run_until=null,
+          cycle_attempt=greatest(cycle_attempt-1,0),available_at=now(),updated_at=now() where id=${job.id}`;
+        await tx`update extension_attempts set status='cancelled',code='executor_stopped',finished_at=now() where job_id=${job.id} and attempt=${job.attempt}`;
       },
       true,
     );

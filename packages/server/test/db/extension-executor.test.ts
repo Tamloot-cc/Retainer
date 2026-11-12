@@ -15,7 +15,8 @@ import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
 
 const db = useTestDatabase(),
-  functionId = randomUUID();
+  functionId = randomUUID(),
+  slowId = randomUUID();
 const manifest = extensionFixture({
   scopes: ['read', 'write'],
   functions: [
@@ -25,6 +26,15 @@ const manifest = extensionFixture({
       description: 'Deterministic fixture',
       handlerDigest: 'b'.repeat(64),
       timeoutSeconds: 120,
+      trigger: { kind: 'job' },
+      inputSchema: { type: 'object', additionalProperties: false },
+    },
+    {
+      universalId: slowId,
+      name: 'slow',
+      description: 'Exceeds its one-second budget',
+      handlerDigest: 'b'.repeat(64),
+      timeoutSeconds: 1,
       trigger: { kind: 'job' },
       inputSchema: { type: 'object', additionalProperties: false },
     },
@@ -43,6 +53,12 @@ const executable = {
   runtimeVersion: 'node24' as const,
   driverTarget: 'fixture:immutable-bundle',
 };
+const executables = [executable, { ...executable, functionId: slowId }];
+/** Never settles until the executor aborts it. */
+const hang = (_target: unknown, _invocation: unknown, signal: AbortSignal) =>
+  new Promise<never>((_resolve, reject) =>
+    signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }),
+  );
 let t: TestApp, tokens: RunTokens;
 beforeAll(async () => {
   const keys = await generateKeyPair('EdDSA');
@@ -54,7 +70,7 @@ beforeAll(async () => {
   });
   t = startTestApp(db, { extensionCatalog: catalog, runTokens: tokens });
 });
-async function setup() {
+async function setup(fn = functionId) {
   const { workspace, keys } = await t.setupWorkspace(
     { name: `Executor ${randomUUID()}` },
     { admin: { actor: { type: 'user', id: 'admin' }, scopes: ['admin'] } },
@@ -71,11 +87,11 @@ async function setup() {
   await db.owner`update extension_installations set state='active' where id=${id}`;
   const queue = new ExtensionQueue(t.sql, catalog.runtime);
   const { id: jobId } = await queue.enqueue(workspace.id, id, {
-    functionId,
+    functionId: fn,
     input: {},
     dedupeKey: 'fixture',
   });
-  const executor = (driver: ExecutionDriver, registry = new ExecutionRegistry([executable])) =>
+  const executor = (driver: ExecutionDriver, registry = new ExecutionRegistry(executables)) =>
     new ExtensionExecutor({
       sql: t.sql,
       discoverySql: db.connect({ role: 'retainer_executor' }),
@@ -170,5 +186,56 @@ describe('trusted executor protocol with an explicitly in-process test driver', 
     expect(calls).toBe(0);
     const [failed] = await db.owner`select status,code from extension_jobs where id=${next.jobId}`;
     expect(failed).toEqual({ status: 'failed', code: 'incompatible_runtime' });
+  });
+  it('records a run that exceeds its timeout as execution_timeout and backs off', async () => {
+    const h = await setup(slowId);
+    const result = await h.executor({ invoke: hang }).tick();
+    expect(result).toEqual({ executed: 1, fenced: 0 });
+    const [job] = await db.owner`select status,code,cycle_attempt,
+      available_at>clock_timestamp()+interval '10 seconds' as backed_off from extension_jobs where id=${h.jobId}`;
+    expect(job).toEqual({
+      status: 'queued',
+      code: 'execution_timeout',
+      cycle_attempt: 1,
+      backed_off: true,
+    });
+    const [attempt] =
+      await db.owner`select status,code from extension_attempts where job_id=${h.jobId}`;
+    expect(attempt).toEqual({ status: 'retry', code: 'execution_timeout' });
+    // Not reclaimable until the backoff elapses, so it does not hold the installation's slot.
+    expect(await h.queue.claim(h.workspace, h.jobId, 'other')).toBeNull();
+  });
+  it('gives the handler only its own timeout and the run credential no grace', async () => {
+    const h = await setup(slowId);
+    const lease = await h.queue.claim(h.workspace, h.jobId, 'coordinator');
+    if (!lease) throw new Error('missing lease');
+    const [row] = await db.owner`select extract(epoch from run_until)*1000 as run_until
+      from extension_jobs where id=${h.jobId}`;
+    const runUntil = Number(row?.run_until);
+    // Handler budget is the one-second timeout; the lease keeps a grace to record the outcome.
+    expect(runUntil - lease.deadline.getTime()).toBeGreaterThanOrEqual(10000);
+    await db.owner`update extension_jobs set status='cancelled',lease_until=null where id=${h.jobId}`;
+  });
+  it('returns a job to the queue without consuming an attempt when the executor stops', async () => {
+    const h = await setup();
+    const executor = h.executor({
+      invoke: (target, invocation, signal) => {
+        setTimeout(() => executor.stop(), 50);
+        return hang(target, invocation, signal);
+      },
+    });
+    await executor.tick();
+    const [job] = await db.owner`select status,code,cycle_attempt,attempt,
+      available_at<=clock_timestamp() as available from extension_jobs where id=${h.jobId}`;
+    expect(job).toEqual({
+      status: 'queued',
+      code: 'executor_stopped',
+      cycle_attempt: 0,
+      attempt: 1,
+      available: true,
+    });
+    const [attempt] =
+      await db.owner`select status,code from extension_attempts where job_id=${h.jobId}`;
+    expect(attempt).toEqual({ status: 'cancelled', code: 'executor_stopped' });
   });
 });

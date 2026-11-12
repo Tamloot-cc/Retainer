@@ -57,7 +57,7 @@ export class ExecutionRegistry {
 /** Trusted coordinator only. It holds no DB transaction while an execution is running. */
 export class ExtensionExecutor {
   readonly queue: ExtensionQueue;
-  private readonly active = new Set<AbortController>();
+  private readonly active = new Map<AbortController, () => void>();
   private stopped = false;
   constructor(
     private readonly options: {
@@ -91,8 +91,14 @@ export class ExtensionExecutor {
   async execute(job: ClaimedJob) {
     if (job.system) return this.acknowledge(job, { status: 'succeeded' });
     const controller = new AbortController();
-    this.active.add(controller);
-    if (this.stopped) controller.abort();
+    // Why the run was cut short decides whether it costs an attempt.
+    let reason: 'timeout' | 'stopped' | 'lease' | undefined;
+    const abort = (why: 'timeout' | 'stopped' | 'lease') => {
+      reason ??= why;
+      controller.abort();
+    };
+    this.active.set(controller, () => abort('stopped'));
+    if (this.stopped) abort('stopped');
     let heartbeat: ReturnType<typeof setInterval> | undefined,
       timeout: ReturnType<typeof setTimeout> | undefined;
     let result: ExecutionResult;
@@ -137,8 +143,9 @@ export class ExtensionExecutor {
           deadline: job.deadline.toISOString(),
         }),
       );
+      // The handler budget ends at job.deadline; the lease's grace lets the timeout be recorded.
       timeout = setTimeout(
-        () => controller.abort(),
+        () => abort('timeout'),
         Math.max(0, job.deadline.getTime() - Date.now()),
       );
       let renewing = false;
@@ -147,7 +154,7 @@ export class ExtensionExecutor {
         renewing = true;
         void this.queue
           .renew(job)
-          .catch(() => controller.abort())
+          .catch(() => abort('lease'))
           .finally(() => {
             renewing = false;
           });
@@ -166,12 +173,14 @@ export class ExtensionExecutor {
         ]),
       );
     } catch (error) {
+      // Handler exceptions are classified by the runner; anything reaching here is the
+      // platform's own failure (launcher, network, deadline) and is retried.
       result =
         error instanceof AppError && error.code === 'incompatible_runtime'
           ? { status: 'failed', code: 'incompatible_runtime' }
           : {
               status: 'retry',
-              code: controller.signal.aborted ? 'execution_timeout' : 'execution_unavailable',
+              code: reason === undefined ? 'execution_unavailable' : 'execution_timeout',
             };
     } finally {
       if (heartbeat) clearInterval(heartbeat);
@@ -179,7 +188,22 @@ export class ExtensionExecutor {
       controller.abort();
       this.active.delete(controller);
     }
+    if (reason === 'stopped') return this.release(job);
     return this.acknowledge(job, result);
+  }
+  /** A graceful shutdown hands the run back without consuming an attempt. */
+  private async release(job: ClaimedJob) {
+    try {
+      await this.queue.release(job);
+      return 'released' as const;
+    } catch (error) {
+      if (
+        error instanceof AppError &&
+        ['lease_expired', 'installation_disabled'].includes(error.code)
+      )
+        return 'fenced';
+      throw error;
+    }
   }
   private async acknowledge(job: ClaimedJob, result: ExecutionResult) {
     try {
@@ -198,7 +222,7 @@ export class ExtensionExecutor {
   }
   stop() {
     this.stopped = true;
-    for (const controller of this.active) controller.abort();
+    for (const abort of this.active.values()) abort();
   }
   async tick(limit = 1000) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
