@@ -26,11 +26,14 @@ beforeAll(async () => {
     verificationKey: pair.publicKey,
   });
 });
-async function setup(count = 1) {
+async function setup(count = 1, standalone = 0) {
   const initial = startTestApp(db),
     { workspace, keys } = await initial.setupWorkspace(
       { name: `Triggers ${randomUUID()}` },
-      { admin: { actor: { type: 'user', id: 'admin' }, scopes: ['admin'] } },
+      {
+        admin: { actor: { type: 'user', id: 'admin' }, scopes: ['admin'] },
+        sync: { actor: { type: 'integration', id: 'sync' }, scopes: ['read', 'write'] },
+      },
     );
   const [field] = await db.owner<
     { universal_id: string; key: string }[]
@@ -62,13 +65,17 @@ async function setup(count = 1) {
       ],
     }),
   );
-  const catalog = new ExtensionCatalog(
-    manifests.map((manifest) => ({
+  const apps = Array.from({ length: standalone }, () =>
+    extensionFixture({ execution: 'standalone', scopes: ['read', 'write'] }),
+  );
+  const catalog = new ExtensionCatalog([
+    ...manifests.map((manifest) => ({
       manifest,
       actorCeiling: 'integration' as const,
       runtimeEnabled: true,
     })),
-  );
+    ...apps.map((manifest) => ({ manifest, actorCeiling: 'integration' as const })),
+  ]);
   const app = startTestApp(db, {
     extensionCatalog: catalog,
     extensionActivation: new Set(catalog.list().map((r) => r.digest)),
@@ -92,6 +99,23 @@ async function setup(count = 1) {
     const run = await queue.claim(workspace.id, setup?.id, 'setup');
     if (!run) throw new Error('setup missing');
     await queue.complete(run, { status: 'succeeded' });
+  }
+  const standaloneKeys: { id: string; key: string }[] = [];
+  for (const manifest of apps) {
+    const input = { registrationId: manifest.universalId, version: manifest.version, settings: {} };
+    const plan = await app.request('/v1/extensions/preview', { key: keys.admin, body: input });
+    const installed = await app.request('/v1/extensions', {
+      key: keys.admin,
+      body: { ...input, planDigest: plan.body.planDigest },
+      headers: { 'Idempotency-Key': randomUUID() },
+    });
+    expect(installed.status).toBe(201);
+    const issued = await app.request(`/v1/extensions/${installed.body.id}/keys`, {
+      key: keys.admin,
+      body: { expectedGeneration: installed.body.generation, scopes: ['read', 'write'] },
+    });
+    expect(issued.status).toBe(201);
+    standaloneKeys.push({ id: installed.body.id, key: issued.body.key });
   }
   async function person(name: string) {
     const result = await app.request('/v1/objects/person/records', {
@@ -121,37 +145,93 @@ async function setup(count = 1) {
       pending,
     };
   }
-  return { app, workspace, keys, manifests, ids, field, queue, resolve, person, job, claim };
+  async function edit(key: string, record: string, jobTitle: string, headers = {}) {
+    const result = await app.request(`/v1/records/${record}`, {
+      key,
+      method: 'PATCH',
+      body: { values: { jobTitle } },
+      headers,
+    });
+    expect(result.status).toBe(200);
+  }
+  async function changeJobs(installation: string) {
+    return db.owner<
+      {
+        id: string;
+        status: string;
+        input: { changePosition: string };
+        cause: string[];
+        dedupe_key: string;
+        change_snapshot: { position: string; record_id: string; operation: string } | null;
+      }[]
+    >`select id,status,input,cause,dedupe_key,change_snapshot from extension_jobs
+      where installation_id=${installation} and trigger_kind='change' order by created_at,id`;
+  }
+  async function latest(record: string) {
+    const [row] = await db.owner<
+      { position: string; cause: string[] }[]
+    >`select position::text,cause from record_changes where record_id=${record} order by record_changes.position desc limit 1`;
+    if (!row) throw new Error('change missing');
+    return row;
+  }
+  async function cursor(installation: string) {
+    const [row] = await db.owner<
+      { position: string }[]
+    >`select position::text from change_dispatch where installation_id=${installation}`;
+    return row?.position;
+  }
+  async function health(installation: string) {
+    const info = await app.request(`/v1/extensions/${installation}`, { key: keys.admin });
+    return { connectionHealth: info.body.connectionHealth, lastError: info.body.lastError };
+  }
+  return {
+    app,
+    workspace,
+    keys,
+    manifests,
+    ids,
+    field,
+    queue,
+    resolve,
+    person,
+    job,
+    claim,
+    edit,
+    changeJobs,
+    latest,
+    cursor,
+    health,
+    standaloneKeys,
+  };
 }
 describe('transactional change dispatch with real Postgres', () => {
-  it('deduplicates competing dispatchers and keeps matching jobs and checkpoint atomic at capacity', async () => {
+  it('deduplicates competing dispatchers and keeps the jobs it accepted before the quota', async () => {
     const h = await setup(),
       id = h.ids[0];
     if (!id) throw new Error('installation missing');
-    await h.person('One');
+    const one = await h.person('One');
     await h.person('Two');
     const limited = new ExtensionQueue(h.app.sql, h.resolve, { queued: 1, kvBytes: 1048576 });
-    await expect(limited.dispatchChanges(h.workspace.id, id)).rejects.toMatchObject({
-      code: 'quota_exceeded',
+    expect(await limited.dispatchChanges(h.workspace.id, id)).toEqual({
+      queued: 1,
+      blocked: 0,
+      deferred: 'quota_exceeded',
     });
-    expect(
-      (await h.app.request(`/v1/extensions/${id}`, { key: h.keys.admin })).body.connectionHealth,
-    ).toBe('degraded');
-    expect(
-      await db.owner`select id from extension_jobs where installation_id=${id} and trigger_kind='change'`,
-    ).toHaveLength(0);
-    const [cursor] =
-      await db.owner`select position::text from change_dispatch where installation_id=${id}`;
-    expect(cursor?.position).toBe('0');
+    expect(await h.health(id)).toEqual({
+      connectionHealth: 'degraded',
+      lastError: 'quota_exceeded',
+    });
+    expect(await h.changeJobs(id)).toHaveLength(1);
+    expect(await h.cursor(id)).toBe((await h.latest(one)).position);
     const results = await Promise.all([
       h.queue.dispatchChanges(h.workspace.id, id),
       h.queue.dispatchChanges(h.workspace.id, id),
     ]);
-    expect(results.reduce((n, r) => n + r.queued, 0)).toBe(2);
-    const jobs =
-      await db.owner`select input from extension_jobs where installation_id=${id} and trigger_kind='change'`;
+    expect(results.reduce((n, r) => n + r.queued, 0)).toBe(1);
+    const jobs = await h.changeJobs(id);
     expect(jobs).toHaveLength(2);
     expect(jobs.every((j) => Object.keys(j.input).join(',') === 'changePosition')).toBe(true);
+    expect(await h.health(id)).toEqual({ connectionHealth: 'ok', lastError: null });
   });
   it('keeps UUID/key watches through a rename and ignores an unrelated effective field change', async () => {
     const h = await setup(),
@@ -439,5 +519,225 @@ describe('transactional change dispatch with real Postgres', () => {
     expect(
       await db.owner`select id from extension_jobs where installation_id=${id} and trigger_kind='change'`,
     ).toHaveLength(0);
+  });
+});
+describe('change trigger coalescing and throttling (R9)', () => {
+  it('coalesces 50 edits to one record into one queued job carrying the latest change', async () => {
+    const h = await setup(),
+      id = h.ids[0];
+    if (!id) throw new Error('installation missing');
+    const person = await h.person('Busy person');
+    await h.queue.dispatchChanges(h.workspace.id, id);
+    for (let i = 0; i < 25; i++) await h.edit(h.keys.admin, person, `Title ${i}`);
+    expect(await h.queue.dispatchChanges(h.workspace.id, id)).toEqual({
+      queued: 1,
+      blocked: 0,
+      coalesced: 24,
+    });
+    expect(await h.cursor(id)).toBe((await h.latest(person)).position);
+    for (let i = 25; i < 50; i++) await h.edit(h.keys.admin, person, `Title ${i}`);
+    expect(await h.queue.dispatchChanges(h.workspace.id, id)).toEqual({
+      queued: 0,
+      blocked: 0,
+      coalesced: 25,
+    });
+    const jobs = await h.changeJobs(id),
+      last = await h.latest(person);
+    // The creation keeps its own job; the 50 updates share one.
+    expect(jobs).toHaveLength(2);
+    const update = jobs[1];
+    expect(update?.input).toEqual({ changePosition: last.position });
+    expect(update?.dedupe_key).toBe(
+      `change:${last.position}:${h.manifests[0]?.functions[0]?.universalId}`,
+    );
+    expect(update?.change_snapshot).toMatchObject({
+      position: last.position,
+      record_id: person,
+      operation: 'update',
+    });
+    expect(await h.cursor(id)).toBe(last.position);
+    // The feed pages in numeric order, not text order (1, 10, 11, …, 2).
+    const page = await h.app.request('/v1/changes?limit=12', { key: h.keys.admin });
+    const positions = page.body.changes.map(
+      (change: { cursor: string }) =>
+        JSON.parse(Buffer.from(change.cursor, 'base64url').toString()).p as string,
+    );
+    expect(positions).toEqual(Array.from({ length: 12 }, (_, i) => String(i + 1)));
+    // The handler reads the coalesced change through its run credential.
+    const run = await h.claim(id, person);
+    expect(run.run.jobId).toBe(update?.id);
+    const read = await h.app.request(`/v1/changes/${last.position}`, { key: run.key });
+    expect(read.status).toBe(200);
+    expect(read.body).toMatchObject({ recordId: person, operation: 'update' });
+  });
+  it('queues a second job when the record changes while its job is running', async () => {
+    const h = await setup(),
+      id = h.ids[0];
+    if (!id) throw new Error('installation missing');
+    const person = await h.person('Running person');
+    await h.queue.dispatchChanges(h.workspace.id, id);
+    const creation = await h.claim(id, person);
+    await h.queue.complete(creation.run, { status: 'succeeded' });
+    await h.edit(h.keys.admin, person, 'First');
+    await h.queue.dispatchChanges(h.workspace.id, id);
+    const running = await h.claim(id, person);
+    const read = await h.app.request(`/v1/changes/${running.pending.input.changePosition}`, {
+      key: running.key,
+    });
+    expect(read.status).toBe(200);
+    await h.edit(h.keys.admin, person, 'Second');
+    expect(await h.queue.dispatchChanges(h.workspace.id, id)).toEqual({ queued: 1, blocked: 0 });
+    const jobs = await h.changeJobs(id);
+    expect(jobs.map((j) => j.status)).toEqual(['succeeded', 'running', 'queued']);
+    expect(jobs[1]?.input).toEqual(running.pending.input);
+    expect(jobs[2]?.input).toEqual({ changePosition: (await h.latest(person)).position });
+  });
+  it('never loses a change when a claim races the coalescing dispatch', async () => {
+    const h = await setup(),
+      id = h.ids[0];
+    if (!id) throw new Error('installation missing');
+    const person = await h.person('Raced person');
+    await h.queue.dispatchChanges(h.workspace.id, id);
+    const creation = await h.claim(id, person);
+    await h.queue.complete(creation.run, { status: 'succeeded' });
+    for (let round = 0; round < 5; round++) {
+      await h.edit(h.keys.admin, person, `Round ${round}`);
+      await h.queue.dispatchChanges(h.workspace.id, id);
+      const pending = await h.job(id, person);
+      await h.edit(h.keys.admin, person, `Round ${round} again`);
+      const [claimed] = await Promise.all([
+        h.queue.claim(h.workspace.id, pending.id, 'racer'),
+        h.queue.dispatchChanges(h.workspace.id, id),
+      ]);
+      if (!claimed) throw new Error('claim lost');
+      const last = (await h.latest(person)).position,
+        claimedPosition = (claimed.input as { changePosition: string }).changePosition;
+      const queued = (await h.changeJobs(id)).filter((j) => j.status === 'queued');
+      if (claimedPosition === last) expect(queued).toHaveLength(0);
+      else expect(queued.map((j) => j.input.changePosition)).toEqual([last]);
+      await h.queue.complete(claimed, { status: 'succeeded' });
+      for (const job of queued) {
+        const run = await h.queue.claim(h.workspace.id, job.id, 'drain');
+        if (run) await h.queue.complete(run, { status: 'succeeded' });
+      }
+    }
+  });
+  it('keeps an absorbed cause so A to B to A stays blocked', async () => {
+    const h = await setup(2),
+      [a, b] = h.ids;
+    if (!a || !b) throw new Error('installations missing');
+    const person = await h.person('Coalesced cause');
+    await h.queue.dispatchChanges(h.workspace.id, a);
+    await h.queue.dispatchChanges(h.workspace.id, b);
+    // An integration's edit, so the extensions' later claims are not held for review.
+    await h.edit(h.keys.sync, person, 'Sync edit');
+    await h.queue.dispatchChanges(h.workspace.id, a);
+    await h.queue.dispatchChanges(h.workspace.id, b);
+    const first = await h.claim(a, person);
+    await h.edit(first.key, person, 'From A');
+    await h.queue.complete(first.run, { status: 'succeeded' });
+    expect((await h.queue.dispatchChanges(h.workspace.id, b)).coalesced).toBe(1);
+    const second = await h.claim(b, person);
+    expect(second.pending.cause).toEqual([a]);
+    await h.edit(second.key, person, 'From B');
+    await h.queue.complete(second.run, { status: 'succeeded' });
+    expect((await h.latest(person)).cause).toEqual([a, b]);
+    // A's own write and B's reaction to it are both blocked for A.
+    expect(await h.queue.dispatchChanges(h.workspace.id, a)).toEqual({ queued: 0, blocked: 2 });
+    expect((await h.health(a)).lastError).toBe('trigger_cycle_blocked');
+  });
+  it('defers one installation at its quota without blocking another or losing changes', async () => {
+    const h = await setup(2),
+      [a, b] = h.ids;
+    if (!a || !b) throw new Error('installations missing');
+    const people = [];
+    for (let i = 0; i < 3; i++) people.push(await h.person(`Quota ${i}`));
+    const limited = new ExtensionQueue(h.app.sql, h.resolve, { queued: 2, kvBytes: 1048576 });
+    const discovery = db.connect({ role: 'retainer_executor' }),
+      maintenance = new ChangeMaintenance(h.app.sql, discovery, limited);
+    const tick = await maintenance.tick();
+    expect(tick.failed).toBe(0);
+    expect((await h.changeJobs(a)).length + (await h.changeJobs(b)).length).toBe(4);
+    for (const id of [a, b]) {
+      expect(await h.cursor(id)).toBe((await h.latest(people[1] ?? '')).position);
+      expect((await h.health(id)).lastError).toBe('quota_exceeded');
+    }
+    // Draining a's queue lets its cursor resume; b stays deferred on its own.
+    for (const job of await h.changeJobs(a)) {
+      const run = await h.queue.claim(h.workspace.id, job.id, 'drain');
+      if (run) await h.queue.complete(run, { status: 'succeeded' });
+    }
+    expect(await limited.dispatchChanges(h.workspace.id, a)).toEqual({ queued: 1, blocked: 0 });
+    expect(await h.cursor(a)).toBe((await h.latest(people[2] ?? '')).position);
+    expect(await h.health(a)).toEqual({ connectionHealth: 'ok', lastError: null });
+    expect((await h.health(b)).lastError).toBe('quota_exceeded');
+    expect(await h.queue.dispatchChanges(h.workspace.id, b)).toEqual({ queued: 1, blocked: 0 });
+  });
+  it('defers enqueues past the per-minute throttle and records trigger_throttled', async () => {
+    const h = await setup(),
+      id = h.ids[0];
+    if (!id) throw new Error('installation missing');
+    const one = await h.person('Throttle one'),
+      two = await h.person('Throttle two');
+    const throttled = new ExtensionQueue(h.app.sql, h.resolve, {
+      queued: 10000,
+      kvBytes: 1048576,
+      changesPerMinute: 1,
+    });
+    expect(await throttled.dispatchChanges(h.workspace.id, id)).toEqual({
+      queued: 1,
+      blocked: 0,
+      deferred: 'trigger_throttled',
+    });
+    expect(await h.cursor(id)).toBe((await h.latest(one)).position);
+    expect(await h.health(id)).toEqual({
+      connectionHealth: 'degraded',
+      lastError: 'trigger_throttled',
+    });
+    expect((await throttled.dispatchChanges(h.workspace.id, id)).deferred).toBe(
+      'trigger_throttled',
+    );
+    await db.owner`update extension_jobs set created_at=clock_timestamp()-interval '2 minutes' where installation_id=${id}`;
+    expect(await throttled.dispatchChanges(h.workspace.id, id)).toEqual({ queued: 1, blocked: 0 });
+    expect(await h.cursor(id)).toBe((await h.latest(two)).position);
+    expect(await h.health(id)).toEqual({ connectionHealth: 'ok', lastError: null });
+  });
+  it('lets a standalone app carry the cause of the change it reacts to', async () => {
+    const h = await setup(1, 1),
+      hosted = h.ids[0],
+      app = h.standaloneKeys[0];
+    if (!hosted || !app) throw new Error('installations missing');
+    const person = await h.person('Standalone loop');
+    await h.queue.dispatchChanges(h.workspace.id, hosted);
+    const creation = await h.claim(hosted, person);
+    await h.queue.complete(creation.run, { status: 'succeeded' });
+    // The standalone app writes; the hosted function reacts.
+    await h.edit(app.key, person, 'From app');
+    expect((await h.latest(person)).cause).toEqual([app.id]);
+    expect((await h.queue.dispatchChanges(h.workspace.id, hosted)).queued).toBe(1);
+    const reaction = await h.claim(hosted, person);
+    await h.edit(reaction.key, person, 'From hosted');
+    await h.queue.complete(reaction.run, { status: 'succeeded' });
+    const hostedChange = await h.latest(person);
+    expect(hostedChange.cause).toEqual([app.id, hosted]);
+    // The app reads that change from the feed and answers it, naming it as the cause.
+    const feed = await h.app.request('/v1/changes', { key: app.key });
+    const item = feed.body.changes.at(-1);
+    expect(item.cause).toEqual([app.id, hosted]);
+    await h.edit(app.key, person, 'App again', { 'Retainer-Caused-By': item.cursor });
+    expect((await h.latest(person)).cause).toEqual([app.id, hosted]);
+    // Blocked: the hosted function's own write, and the app's answer to it.
+    expect(await h.queue.dispatchChanges(h.workspace.id, hosted)).toEqual({
+      queued: 0,
+      blocked: 2,
+    });
+    // Only installation credentials may declare a cause.
+    const spoof = await h.app.request(`/v1/records/${person}`, {
+      key: h.keys.admin,
+      method: 'PATCH',
+      body: { values: { jobTitle: 'Spoof' } },
+      headers: { 'Retainer-Caused-By': item.cursor },
+    });
+    expect(spoof.status).toBe(400);
   });
 });

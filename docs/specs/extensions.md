@@ -592,7 +592,16 @@ long-running coordinator refills each slot as soon as a run finishes and runs
 maintenance beside claims, so one long run never stalls dispatch.
 Default budget is 60 writes/minute per installation, within the workspace limit;
 return `429` with retry guidance rather than dropping work. Queued-job quota is
-10,000/installation; enqueue and checkpoint fail together at capacity.
+10,000/installation. Change dispatch commits each change with all its jobs or
+none: at the quota it keeps the changes it already accepted, leaves the cursor
+before the first one it could not, records degraded `quota_exceeded` and resumes
+on a later pass once jobs drain. Each installation dispatches in its own
+transaction, so one full queue never rolls back or stalls another's. A backstop
+throttle, after Twenty's per-app enqueue throttler, caps new change-trigger jobs
+at 500 per installation per minute (`RETAINER_TRIGGER_ENQUEUES_PER_MINUTE`).
+Twenty drops the excess; here it waits behind the cursor the same way and records
+degraded `trigger_throttled`, so nothing is lost. Both clear on the next full
+dispatch.
 
 Retry transient network/429/5xx errors with jittered exponential delay (30 seconds
 base, one-hour cap), maximum ten attempts or 24 hours. Handlers opt in by throwing
@@ -784,7 +793,27 @@ writes and child jobs. Skip any installation already in the chain; cap depth at
 8 and count blocked matches. Direct self-writes are expected and do not degrade
 connection health; a multi-installation repeat/depth breach records
 `trigger_cycle_blocked`. This stops A → B → A as well as direct
-self-triggering. Coalesce duplicate `(installation,function,changePosition)` jobs.
+self-triggering. Jobs dedupe per `(installation,function,changePosition)`, and
+change jobs coalesce per record: while a job for the same installation, function
+and record is still queued and has never started, a later `update` or `review`
+change to that record does not add a job. The job moves to the latest position
+and snapshot, keeps the union of changed keys and related records (so a record
+relinked away from is still recomputed) and the union of cause chains (so every
+installation behind any absorbed change stays excluded, and A → B → A remains
+blocked). A running or retrying job absorbs nothing; the change queues a new job.
+Lifecycle changes (create, delete, merge, retract, supersede, links, and both
+halves of a type move) always keep their own job, because their metadata
+(tombstone, `mergedIntoId`, old type) is not a superset of a later update's.
+
+Agents and API keys carry no server cause, so loops through them are bounded by
+the throttle in §9.2, not stopped. A standalone app has no server job either: its
+key or OAuth grant starts the chain at itself, so on its own a standalone →
+hosted → standalone loop is never blocked. A standalone app answering a feed
+change sends that change's cursor as `Retainer-Caused-By`; its writes then
+inherit the change's recorded chain plus itself, and a hosted function already in
+it is not triggered again. Only standalone installation credentials may send the
+header (others get `400`), it can only add installations to a chain, and a cursor
+no longer in the feed returns `410 cursor_expired`.
 Accepted trigger jobs retain only the authorized minimal change metadata, so
 public-feed pruning cannot strand accepted work. Erasure scrubs those copies and
 requeues every live run with a new fence (§11); KV entries that name an erased

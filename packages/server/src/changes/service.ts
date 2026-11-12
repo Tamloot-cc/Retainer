@@ -101,7 +101,7 @@ export class Changes {
     const raw = await tx<
       ChangeRow[]
     >`select position::text,record_id,object_type_id,operation,field_keys,related_record_ids,origin_installation_id,cause,merged_into_id
-    from record_changes where workspace_id=${workspace} and position>${after}::bigint and position<=${current}::bigint order by position limit ${limit + 1}`;
+    from record_changes where workspace_id=${workspace} and position>${after}::bigint and position<=${current}::bigint order by record_changes.position limit ${limit + 1}`;
     if (await overtaken(tx, workspace, after)) throw cursorExpired();
     const page = raw.slice(0, limit),
       changes = await this.present(tx, schema, workspace, page);

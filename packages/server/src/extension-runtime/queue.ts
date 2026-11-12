@@ -74,6 +74,23 @@ type Job = {
   expires_at: Date;
   cause: string[];
 };
+/** A feed row as the dispatcher reads it. */
+type DispatchedChange = {
+  position: string;
+  record_id: string;
+  object_type_id: string;
+  operation: string;
+  field_keys: string[];
+  cause: string[];
+  origin_installation_id: string | null;
+  related_record_ids: string[];
+  merged_into_id: string | null;
+};
+/** Field-level operations; lifecycle changes (create, delete, merge…) always keep their own job. */
+const COALESCED_OPERATIONS = ['update', 'review'];
+/** Default cap on new change-trigger jobs per installation per minute (R9). */
+export const CHANGE_ENQUEUES_PER_MINUTE = 500;
+export type QueueLimits = { queued: number; kvBytes: number; changesPerMinute?: number };
 const unavailable = () =>
   new AppError(409, 'installation_disabled', 'installation is disabled or its generation changed');
 const runnable = (i: Installation, kind: string) =>
@@ -140,7 +157,7 @@ export class ExtensionQueue {
   constructor(
     readonly sql: Sql,
     catalog: RuntimeCatalog,
-    private readonly limits = { queued: 10000, kvBytes: 1048576 },
+    private readonly limits: QueueLimits = { queued: 10000, kvBytes: 1048576 },
     /**
      * Release digests with a deployed executable, when this process knows
      * them (the executor). Without it every resolvable release counts as runnable.
@@ -227,6 +244,101 @@ export class ExtensionQueue {
     if (!job) throw new Error('job insert returned no row');
     return job.id;
   }
+  /**
+   * Accepts one change for one handler. While a job for the same function and
+   * record is still queued and has never started, the change is folded into
+   * it: the job moves to the latest position and snapshot, keeps the union of
+   * changed keys and related records (so a relinked record is still
+   * recomputed) and the union of cause chains (so every installation behind
+   * any absorbed change stays excluded and A → B → A remains blocked).
+   * Handlers read current data, so the superseded positions need no job of
+   * their own (§9.4). Only update/review changes coalesce, and only into
+   * update/review jobs of the same object type. Otherwise a new job is
+   * queued, unless the installation already queued its per-minute share.
+   */
+  private async acceptChange(
+    tx: Tx,
+    installation: Installation,
+    functionId: string,
+    row: DispatchedChange,
+  ): Promise<'queued' | 'coalesced'> {
+    const workspace = installation.workspace_id,
+      dedupeKey = `change:${row.position}:${functionId}`;
+    if (COALESCED_OPERATIONS.includes(row.operation)) {
+      const [target] = await tx<
+        { id: string; cause: string[] }[]
+      >`select id,cause from extension_jobs
+        where installation_id=${installation.id} and function_id=${functionId}
+          and (change_snapshot->>'record_id')=${row.record_id} and status='queued' and trigger_kind='change'
+          and generation=${installation.generation} and release_digest=${installation.release_digest} and attempt=0
+          and change_snapshot->>'object_type_id'=${row.object_type_id}
+          and change_snapshot->>'operation'=any(${COALESCED_OPERATIONS}::text[])
+        order by created_at,id limit 1 for update`;
+      if (target) {
+        const cause = [...new Set([...target.cause, ...row.cause])],
+          input = { changePosition: row.position };
+        const [moved] = await tx<
+          { id: string }[]
+        >`update extension_jobs j set input=${tx.json(input)},
+            input_hash=${requestHash({ functionId, input, cause })},dedupe_key=${dedupeKey},cause=${tx.json(cause)},
+            change_snapshot=(to_jsonb(c)-'workspace_id'-'created_at')||jsonb_build_object(
+              'position',c.position::text,'cause',${tx.json(cause)}::jsonb,
+              'field_keys',(select coalesce(jsonb_agg(distinct k order by k),'[]'::jsonb) from (
+                select jsonb_array_elements_text(j.change_snapshot->'field_keys') as k
+                union select jsonb_array_elements_text(c.field_keys)) keys),
+              'related_record_ids',(select coalesce(jsonb_agg(distinct r order by r),'[]'::jsonb) from (
+                select jsonb_array_elements_text(j.change_snapshot->'related_record_ids') as r
+                union select jsonb_array_elements_text(c.related_record_ids)) related)),
+            expires_at=greatest(j.expires_at,clock_timestamp()+interval '24 hours'),updated_at=clock_timestamp()
+          from record_changes c where j.id=${target.id} and c.workspace_id=${workspace} and c.position=${row.position}::bigint
+          returning j.id`;
+        // Pruning can commit after the retention check; never point a job at a missing change.
+        if (!moved)
+          throw conflict(
+            'cursor_expired',
+            'change dispatch history expired; rescan current records before restarting the trigger',
+          );
+        return 'coalesced';
+      }
+    }
+    const [existing] =
+      await tx`select 1 from extension_jobs where installation_id=${installation.id} and generation=${installation.generation} and dedupe_key=${dedupeKey}`;
+    if (!existing) {
+      const perMinute = this.limits.changesPerMinute ?? CHANGE_ENQUEUES_PER_MINUTE;
+      const [recent] = await tx<
+        { count: number }[]
+      >`select count(*)::int as count from extension_jobs
+        where workspace_id=${workspace} and installation_id=${installation.id} and created_at>clock_timestamp()-interval '1 minute'
+          and trigger_kind='change'`;
+      // Twenty drops trigger jobs past its per-app cap; here the change waits
+      // behind the dispatch cursor instead, so nothing is lost (R9).
+      if ((recent?.count ?? 0) >= perMinute)
+        throw new AppError(429, 'trigger_throttled', 'change trigger enqueue rate exceeded', {
+          retryAfterSeconds: 60,
+        });
+    }
+    const changeJobId = await this.insert(
+      tx,
+      installation,
+      { functionId, input: { changePosition: row.position }, dedupeKey },
+      row.cause,
+      'change',
+    );
+    const [snapshot] = await tx<{ present: boolean }[]>`with copied as (
+        update extension_jobs j set change_snapshot=(to_jsonb(c)-'workspace_id'-'created_at')||jsonb_build_object('position',c.position::text)
+        from record_changes c where j.id=${changeJobId} and j.change_snapshot is null and c.workspace_id=${workspace} and c.position=${row.position}::bigint
+        returning j.id)
+      select exists(select 1 from copied) or exists(select 1 from extension_jobs where id=${changeJobId} and change_snapshot is not null) as present`;
+    // Pruning can commit after the retention check above. A job
+    // without its change could never read it, so roll back the whole
+    // dispatch rather than advance the cursor past it.
+    if (!snapshot?.present)
+      throw conflict(
+        'cursor_expired',
+        'change dispatch history expired; rescan current records before restarting the trigger',
+      );
+    return 'queued';
+  }
   /** Trusted verified ingress only; receipt and source reservation share the caller's transaction. */
   async enqueueWebhook(tx: Tx, workspace: string, id: string, generation: number, input: Enqueue) {
     const installation = await this.installation(tx, workspace, id);
@@ -300,21 +412,9 @@ export class ExtensionQueue {
             'cursor_expired',
             'change dispatch history expired; rescan current records before restarting the trigger',
           );
-        const rows = await tx<
-          {
-            position: string;
-            record_id: string;
-            object_type_id: string;
-            operation: string;
-            field_keys: string[];
-            cause: string[];
-            origin_installation_id: string | null;
-            related_record_ids: string[];
-            merged_into_id: string | null;
-          }[]
-        >`
+        const rows = await tx<DispatchedChange[]>`
         select position::text,record_id,object_type_id,operation,field_keys,cause,origin_installation_id,related_record_ids,merged_into_id from record_changes
-        where position>${checkpoint.position}::bigint order by position limit ${limit}`;
+        where position>${checkpoint.position}::bigint order by record_changes.position limit ${limit}`;
         if (await overtaken(tx, workspace, checkpoint.position))
           throw conflict(
             'cursor_expired',
@@ -335,82 +435,93 @@ export class ExtensionQueue {
         const relatedTypes = new Map(related.map((record) => [record.id, record.object_type_id]));
         let queued = 0,
           blocked = 0,
-          cycles = 0;
-        for (const row of rows)
-          for (const fn of handlers) {
-            if (fn.trigger.kind !== 'change') continue;
-            const object = schema.objectsByUniversalId.get(fn.trigger.objectId);
-            if (object?.state.status !== 'active' || object.hidden)
-              throw conflict(
-                'schema_binding_conflict',
-                'change trigger object binding is unavailable',
-              );
-            const keys = fn.trigger.fieldIds.map(
-              (id) => object.activeFields.find((field) => field.universalId === id)?.key,
-            );
-            if (keys.some((key) => key === undefined))
-              throw conflict(
-                'schema_binding_conflict',
-                'change trigger field binding is unavailable',
-              );
-            const direct =
-              row.object_type_id === object.id &&
-              (!fn.trigger.fieldIds.length ||
-                !['update', 'review'].includes(row.operation) ||
-                keys.some((key) => row.field_keys.includes(key as string)));
-            const relationChanged = row.field_keys.some((key) =>
-              schema.objectsById
-                .get(row.object_type_id)
-                ?.activeFields.some((field) => field.key === key && field.type === 'relation'),
-            );
-            const linksAffected = !['update', 'review'].includes(row.operation) || relationChanged;
-            const indirect =
-              linksAffected &&
-              [...row.related_record_ids, ...(row.merged_into_id ? [row.merged_into_id] : [])].some(
-                (id) => relatedTypes.get(id) === object.id,
-              );
-            if (!direct && !indirect) continue;
-            if (row.cause.includes(id) || row.cause.length >= 8) {
-              blocked++;
-              if (row.origin_installation_id !== id) cycles++;
-              continue;
+          coalesced = 0,
+          cycles = 0,
+          dispatched: string | undefined,
+          deferred: 'quota_exceeded' | 'trigger_throttled' | undefined;
+        for (const row of rows) {
+          // Each change commits with all its jobs or none. At the queued-job
+          // quota or the enqueue throttle the batch stops before that change
+          // and keeps what it accepted, so the cursor resumes there later.
+          const counts = { queued: 0, blocked: 0, coalesced: 0, cycles: 0 };
+          try {
+            await tx.savepoint(async (sp) => {
+              for (const fn of handlers) {
+                if (fn.trigger.kind !== 'change') continue;
+                const object = schema.objectsByUniversalId.get(fn.trigger.objectId);
+                if (object?.state.status !== 'active' || object.hidden)
+                  throw conflict(
+                    'schema_binding_conflict',
+                    'change trigger object binding is unavailable',
+                  );
+                const keys = fn.trigger.fieldIds.map(
+                  (id) => object.activeFields.find((field) => field.universalId === id)?.key,
+                );
+                if (keys.some((key) => key === undefined))
+                  throw conflict(
+                    'schema_binding_conflict',
+                    'change trigger field binding is unavailable',
+                  );
+                const direct =
+                  row.object_type_id === object.id &&
+                  (!fn.trigger.fieldIds.length ||
+                    !['update', 'review'].includes(row.operation) ||
+                    keys.some((key) => row.field_keys.includes(key as string)));
+                const relationChanged = row.field_keys.some((key) =>
+                  schema.objectsById
+                    .get(row.object_type_id)
+                    ?.activeFields.some((field) => field.key === key && field.type === 'relation'),
+                );
+                const linksAffected =
+                  !['update', 'review'].includes(row.operation) || relationChanged;
+                const indirect =
+                  linksAffected &&
+                  [
+                    ...row.related_record_ids,
+                    ...(row.merged_into_id ? [row.merged_into_id] : []),
+                  ].some((id) => relatedTypes.get(id) === object.id);
+                if (!direct && !indirect) continue;
+                if (row.cause.includes(id) || row.cause.length >= 8) {
+                  counts.blocked++;
+                  if (row.origin_installation_id !== id) counts.cycles++;
+                  continue;
+                }
+                const accepted = await this.acceptChange(sp, installation, fn.universalId, row);
+                counts[accepted]++;
+              }
+            });
+          } catch (error) {
+            if (
+              error instanceof AppError &&
+              (error.code === 'quota_exceeded' || error.code === 'trigger_throttled')
+            ) {
+              deferred = error.code;
+              break;
             }
-            const changeJobId = await this.insert(
-              tx,
-              installation,
-              {
-                functionId: fn.universalId,
-                input: { changePosition: row.position },
-                dedupeKey: `change:${row.position}:${fn.universalId}`,
-              },
-              row.cause,
-              'change',
-            );
-            const [snapshot] = await tx<{ present: boolean }[]>`with copied as (
-                update extension_jobs j set change_snapshot=(to_jsonb(c)-'workspace_id'-'created_at')||jsonb_build_object('position',c.position::text)
-                from record_changes c where j.id=${changeJobId} and j.change_snapshot is null and c.workspace_id=${workspace} and c.position=${row.position}::bigint
-                returning j.id)
-              select exists(select 1 from copied) or exists(select 1 from extension_jobs where id=${changeJobId} and change_snapshot is not null) as present`;
-            // Pruning can commit after the retention check above. A job
-            // without its change could never read it, so roll back the whole
-            // dispatch rather than advance the cursor past it.
-            if (!snapshot?.present)
-              throw conflict(
-                'cursor_expired',
-                'change dispatch history expired; rescan current records before restarting the trigger',
-              );
-            queued++;
+            throw error;
           }
-        const last = rows.at(-1);
-        if (last)
-          await tx`update change_dispatch set position=${last.position}::bigint,blocked_cycles=blocked_cycles+${blocked} where installation_id=${id}`;
+          queued += counts.queued;
+          blocked += counts.blocked;
+          coalesced += counts.coalesced;
+          cycles += counts.cycles;
+          dispatched = row.position;
+        }
+        if (dispatched)
+          await tx`update change_dispatch set position=${dispatched}::bigint,blocked_cycles=blocked_cycles+${blocked} where installation_id=${id}`;
         if (cycles)
           await tx`update extension_installations set last_error='trigger_cycle_blocked',connection_health='degraded' where id=${id}`;
-        if (!cycles)
+        if (deferred)
+          await tx`update extension_installations set last_error=${deferred},connection_health='degraded' where id=${id}`;
+        else if (!cycles)
           await tx`update extension_installations set connection_health='ok',last_error=null where id=${id}
-        and last_error in ('quota_exceeded','cursor_expired','schema_binding_conflict','dispatch_unavailable')
+        and last_error in ('quota_exceeded','trigger_throttled','cursor_expired','schema_binding_conflict','dispatch_unavailable')
         and not exists(select 1 from extension_jobs where installation_id=${id} and generation=${installation.generation} and status='failed')`;
-        return { queued, blocked };
+        return {
+          queued,
+          blocked,
+          ...(coalesced ? { coalesced } : {}),
+          ...(deferred ? { deferred } : {}),
+        };
       });
     } catch (error) {
       const failedGeneration = admittedGeneration;

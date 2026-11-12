@@ -12,7 +12,11 @@ export async function createChangeMaintenanceHandler(config: Config) {
   const discovery = config.RETAINER_EXECUTOR_DATABASE_URL
     ? createSql(config.RETAINER_EXECUTOR_DATABASE_URL, { max: 1 })
     : createSql(ownerDatabaseUrl(config), { role: EXECUTOR_ROLE, max: 1 });
-  const queue = new ExtensionQueue(sql, services.catalog.runtime);
+  const queue = new ExtensionQueue(sql, services.catalog.runtime, {
+    queued: 10000,
+    kvBytes: 1048576,
+    changesPerMinute: config.RETAINER_TRIGGER_ENQUEUES_PER_MINUTE,
+  });
   const worker = new ChangeMaintenance(sql, discovery, queue),
     deployLock = createRuntimeSql(config, { max: 1, keepConnections: true });
   return async () => {

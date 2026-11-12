@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
 import type { Caller } from '../caller.js';
+import { changePosition } from '../db/change-cursor.js';
 import type { Sql } from '../db/client.js';
 import type { ApiKeyScope } from '../db/schema.js';
 import { AppError } from '../errors.js';
@@ -18,6 +19,8 @@ import { looksLikeJwt, lookupOAuthToken, type OAuthSettings } from './oauth-toke
 import { lookupKey, requireWebHeader, SESSION_COOKIE } from './session.js';
 
 const BEARER = /^Bearer\s+(\S+)$/i;
+/** A standalone app names the change cursor it is reacting to (extensions spec §9.4). */
+export const CAUSED_BY_HEADER = 'Retainer-Caused-By';
 
 export type AuthOptions = {
   runTokens?: RunTokens | undefined;
@@ -107,6 +110,24 @@ export function authenticate(sql: Sql, options: AuthOptions = {}): MiddlewareHan
                 workspace: requestedWorkspace(c),
               })
             : await lookupKey(sql, keyCookie ?? '');
+      }
+      const causedBy = c.req.header(CAUSED_BY_HEADER);
+      if (causedBy !== undefined) {
+        // Declaring a cause only adds installations to the chain, which can
+        // only suppress triggers; it is limited to standalone app credentials.
+        if (!caller.installation)
+          throw new AppError(
+            400,
+            'invalid_request',
+            `${CAUSED_BY_HEADER} is accepted only from standalone installation credentials`,
+          );
+        caller = {
+          ...caller,
+          installation: {
+            ...caller.installation,
+            causedBy: changePosition(caller.workspaceId, causedBy),
+          },
+        };
       }
       c.set('caller', caller);
     } catch (error) {

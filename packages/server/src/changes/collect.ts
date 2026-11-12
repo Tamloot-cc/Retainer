@@ -1,5 +1,6 @@
 import type { Caller } from '../caller.js';
 import { jsonValue, publishAtCommit, type Tx } from '../db/tx.js';
+import { AppError } from '../errors.js';
 import type { CompiledSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
 
@@ -65,7 +66,22 @@ export class ChangeCollector {
           { cause: string[] }[]
         >`select cause from extension_jobs where id=${caller.run.jobId}`
       : [];
-    const chain = job?.cause ?? [];
+    let chain = job?.cause ?? [];
+    const causedBy = caller.installation?.causedBy;
+    if (!caller.run && causedBy) {
+      // A standalone app has no server-side job; it names the change it
+      // answers, and inherits that change's recorded chain.
+      const [change] = await tx<
+        { cause: string[] }[]
+      >`select cause from record_changes where workspace_id=${caller.workspaceId} and position=${causedBy}::bigint`;
+      if (!change)
+        throw new AppError(
+          410,
+          'cursor_expired',
+          'the change named by Retainer-Caused-By is not in the feed; it expired or never existed',
+        );
+      chain = change.cause;
+    }
     const origin = caller.run?.installationId ?? caller.installation?.installationId ?? null;
     const collector = new ChangeCollector(
       caller.workspaceId,

@@ -638,6 +638,13 @@
       "when": 1794455654368,
       "tag": "0090_workspace_deletion_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1794456522396,
+      "tag": "0091_change_job_coalescing",
+      "breakpoints": true
     }
   ]
 }

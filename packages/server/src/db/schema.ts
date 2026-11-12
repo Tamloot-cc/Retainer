@@ -1711,6 +1711,10 @@ export const extensionJobs = pgTable(
       .on(t.expiresAt, t.workspaceId)
       .where(sql`${t.status} in ('queued','running')`),
     index('extension_jobs_install_idx').on(t.workspaceId, t.installationId, t.createdAt),
+    /** Finds the queued change job a later change to the same record coalesces into (R9). */
+    index('extension_jobs_coalesce_idx')
+      .on(t.installationId, t.functionId, sql`(${t.changeSnapshot}->>'record_id')`)
+      .where(sql`${t.status} = 'queued' and ${t.triggerKind} = 'change'`),
     index('extension_jobs_source_idx').on(t.workspaceId, t.sourceItemId),
     foreignKey({
       name: 'extension_jobs_source_fk',
