@@ -329,11 +329,13 @@ schedules the deletion, as Twenty runs uninstall hooks before a workspace is
 removed. Every installation not already uninstalling or uninstalled gets an
 admin uninstall's semantics: runs are cancelled, `generation` and
 `grant_generation` advance, webhook bindings retire and secrets are retired.
-A hosted release becomes `uninstalling` with the usual 24-hour cleanup deadline
-and its cleanup job queued; a standalone release becomes `uninstalled`. If the
-deleting process cannot resolve the release, the installation still becomes
-`uninstalling` and a worker's maintenance pass queues the cleanup (or finishes
-a standalone one). While a workspace is being deleted only cleanup runs: the
+A standalone release becomes `uninstalled`; anything else becomes
+`uninstalling` with the usual 24-hour cleanup deadline. The deleting process
+does not know which executables are deployed, so the executor's maintenance
+pass queues the cleanup job. As in an admin uninstall, a release with no active
+executable, or one the executor cannot resolve, is uninstalled directly with
+`cleanup_unavailable` and not visited again. The deletion takes the workspace's
+schema lock before its row, as schema changes do. While a workspace is being deleted only cleanup runs: the
 due, maintenance and reconciliation functions keep its uninstall jobs and
 nothing else, and admission lets a cleanup run read the provider connection
 and nothing more. The hard delete waits until no installation is still within
@@ -343,10 +345,10 @@ always finishes or expires before the grace period ends and deletion is never
 delayed in practice. A workspace deleted before this step existed is
 uninstalled by the first removal run instead, which waits for that cleanup (at
 most 24 more hours). A cleanup that missed its deadline is logged when the
-workspace is removed, and stays visible as `cleanup_deadline_expired` until
-then. Restoring a workspace within the grace period does not reinstall
-anything: installations stay uninstalling or uninstalled, their old
-credentials stay revoked, and an admin reinstalls them.
+workspace is removed, and stays visible as `cleanup_deadline_expired` or
+`cleanup_unavailable` until then. Restoring a workspace within the grace
+period does not reinstall anything: installations stay uninstalling or
+uninstalled, their old credentials stay revoked, and an admin reinstalls them.
 
 Ordinary (non-secret, non-reconnect) settings update in place, like Twenty's
 application variables. The change cancels current runs and advances `generation`,

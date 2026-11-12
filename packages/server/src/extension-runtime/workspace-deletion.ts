@@ -1,8 +1,6 @@
-import type { Sql } from '../db/client.js';
 import { lockSchemaShared, type Tx } from '../db/tx.js';
 import { type RuntimeCatalog, resolveRelease } from './availability.js';
 import { cancelRuns, lockExtension } from './locks.js';
-import { ExtensionQueue } from './queue.js';
 
 type Pin = {
   id: string;
@@ -19,13 +17,12 @@ type Pin = {
  * installation OAuth grants stop working, and stay stopped if the deletion is
  * undone), webhook bindings retire and secrets are retired for collection.
  *
- * A hosted release gets `uninstalling` with the usual 24-hour cleanup deadline
- * and its cleanup job queued, so it can unregister provider webhooks and
- * subscriptions. A standalone release has nothing to clean up and becomes
- * `uninstalled`. Without a catalog, or when this process cannot resolve the
- * release, the installation still becomes `uninstalling`: a worker's
- * maintenance pass queues its cleanup (or finishes a standalone one), and the
- * deadline bounds it either way.
+ * A standalone release has nothing to clean up and becomes `uninstalled`.
+ * Anything else becomes `uninstalling` with the usual 24-hour cleanup deadline.
+ * The process deleting a workspace does not know which executables are
+ * deployed, so it queues no cleanup: the executor's maintenance pass does
+ * (ExtensionQueue.startCleanup), or uninstalls directly when the release has
+ * no active executable, as an admin uninstall would.
  *
  * `tx` is scoped to the workspace as the runtime role. Returns how many
  * installations it moved. Installations already uninstalling or uninstalled
@@ -34,7 +31,7 @@ type Pin = {
 export async function uninstallForWorkspaceDeletion(
   tx: Tx,
   workspace: string,
-  options: { sql: Sql; catalog?: RuntimeCatalog | undefined },
+  catalog?: RuntimeCatalog,
 ): Promise<number> {
   await lockSchemaShared(tx, workspace);
   const candidates = await tx<{ id: string; registration_id: string }[]>`
@@ -49,9 +46,11 @@ export async function uninstallForWorkspaceDeletion(
       select id,registration_id,version,release_digest,state from extension_installations
       where id=${candidate.id}`;
     if (!current || ['uninstalling', 'uninstalled'].includes(current.state)) continue;
-    const resolution = options.catalog ? resolveRelease(options.catalog, current) : undefined;
-    const execution = resolution?.available ? resolution.manifest.execution : undefined;
-    const next = execution === 'standalone' ? 'uninstalled' : 'uninstalling';
+    const resolution = catalog ? resolveRelease(catalog, current) : undefined;
+    const next =
+      resolution?.available && resolution.manifest.execution === 'standalone'
+        ? 'uninstalled'
+        : 'uninstalling';
     await cancelRuns(tx, current.id);
     await tx`update extension_installations set state=${next},last_error=null,
       cleanup_deadline=case when ${next}='uninstalling' then clock_timestamp()+interval '24 hours' else null end,
@@ -59,13 +58,6 @@ export async function uninstallForWorkspaceDeletion(
       where id=${current.id}`;
     await tx`update webhook_bindings set state='retired',updated_at=clock_timestamp() where installation_id=${current.id} and state<>'retired'`;
     await tx`select retainer_retire_extension_secrets(${current.id}::uuid)`;
-    if (execution === 'hosted' && options.catalog)
-      await new ExtensionQueue(options.sql, options.catalog).enqueueLifecycle(
-        tx,
-        workspace,
-        current.id,
-        'uninstall',
-      );
     moved++;
   }
   return moved;

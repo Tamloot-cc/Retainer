@@ -62,8 +62,9 @@ neither disable the installation nor revoke its credentials.
 | R12 | `admitRun` does not refuse a workspace scheduled for deletion and has no explicit write-scope check (the SQL copy does).                                                                                                                                                                                                     | `extension-runtime/admission.ts:26-27,57` vs `:91-92,116`; migration 0068                                                          | Match `admitInstallation`.                                                                                                                                                                                                                                                                                                                                                                     |
 
 Status of R7: done (Phase 2 item 2). Deleting a workspace uninstalls its
-extensions in the same transaction: hosted ones become `uninstalling` with
-their cleanup job queued, standalone ones `uninstalled`; both lose their grant.
+extensions in the same transaction: hosted ones become `uninstalling` and the
+executor queues their cleanup (or uninstalls directly without an active
+executable), standalone ones become `uninstalled`; all lose their grant.
 Migration 0090 lets cleanup (and only cleanup) be discovered, reconciled,
 reaped and admitted to secrets while the workspace is being deleted, and the
 hard delete waits until each cleanup finishes or passes its 24-hour deadline

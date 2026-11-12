@@ -1,5 +1,5 @@
 import { RUNTIME_ROLE, type Sql } from '../db/client.js';
-import { inWorkspaceTransaction, type Tx } from '../db/tx.js';
+import { inWorkspaceTransaction, lockSchemaShared, type Tx } from '../db/tx.js';
 import { getWorkspace, type Workspace } from '../db/workspaces.js';
 import { AppError } from '../errors.js';
 import type { RuntimeCatalog } from '../extension-runtime/availability.js';
@@ -52,11 +52,11 @@ export async function restoreWorkspace(sql: Sql, idOrSlug: string): Promise<Work
 export async function uninstallExtensions(
   tx: Tx,
   workspaceId: string,
-  options: { sql: Sql; catalog?: RuntimeCatalog | undefined },
+  catalog?: RuntimeCatalog,
 ): Promise<number> {
   await tx.unsafe(`set local role ${RUNTIME_ROLE}`);
   return inWorkspaceTransaction(tx, workspaceId, (scoped) =>
-    uninstallForWorkspaceDeletion(scoped, workspaceId, options),
+    uninstallForWorkspaceDeletion(scoped, workspaceId, catalog),
   );
 }
 
@@ -75,6 +75,8 @@ type Cleanup = { pending: boolean; unfinished: number };
  */
 async function extensionCleanup(sql: Sql, id: string): Promise<Cleanup> {
   return (await sql.begin(async (tx) => {
+    // The schema lock before the row, as a schema change takes them.
+    await lockSchemaShared(tx, id);
     // Serializes with a restore, which updates the row.
     const [due] = await tx`
       select 1 from workspaces
@@ -84,12 +86,13 @@ async function extensionCleanup(sql: Sql, id: string): Promise<Cleanup> {
     if (!due) return { pending: false, unfinished: 0 };
     await tx.unsafe(`set local role ${RUNTIME_ROLE}`);
     return inWorkspaceTransaction(tx, id, async (scoped) => {
-      const started = await uninstallForWorkspaceDeletion(scoped, id, { sql });
+      const started = await uninstallForWorkspaceDeletion(scoped, id);
       const [row] = await scoped<{ pending: number; unfinished: number }[]>`
         select
           count(*) filter (where state = 'uninstalling' and cleanup_deadline > clock_timestamp())::int as pending,
           count(*) filter (where (state = 'uninstalling' and cleanup_deadline <= clock_timestamp())
-            or (state = 'uninstalled' and last_error = 'cleanup_deadline_expired'))::int as unfinished
+            or (state = 'uninstalled'
+              and last_error in ('cleanup_deadline_expired', 'cleanup_unavailable')))::int as unfinished
         from extension_installations where workspace_id = ${id}`;
       return { pending: started > 0 || (row?.pending ?? 0) > 0, unfinished: row?.unfinished ?? 0 };
     });
@@ -121,12 +124,15 @@ export async function purgeDeletedWorkspaces(sql: Sql): Promise<PurgeReport> {
         log.warn(
           `Deleted workspace ${id}: ${cleanup.unfinished} extension cleanup(s) did not finish by their deadline; provider webhooks may remain registered. Removing it anyway.`,
         );
-      const deleted = await sql`
-        delete from workspaces
-        where id = ${id}
-          and deletion_scheduled_at <= now() - make_interval(days => ${DELETION_GRACE_DAYS})
-          and not retainer_workspace_extension_cleanup_pending(${id}::uuid)
-        returning 1`;
+      const deleted = await sql.begin(async (tx) => {
+        await lockSchemaShared(tx, id);
+        return tx`
+          delete from workspaces
+          where id = ${id}
+            and deletion_scheduled_at <= now() - make_interval(days => ${DELETION_GRACE_DAYS})
+            and not retainer_workspace_extension_cleanup_pending(${id}::uuid)
+          returning 1`;
+      });
       report.purged += deleted.length;
     } catch (error) {
       report.failed += 1;

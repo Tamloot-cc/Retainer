@@ -74,6 +74,8 @@ export class ExtensionExecutor {
       apiOrigin: string;
       owner: string;
       concurrency?: number;
+      /** Release digests with a deployed executable (extensionServices' activationReady). */
+      activation?: ReadonlySet<string>;
     },
   ) {
     const origin = new URL(options.apiOrigin);
@@ -90,7 +92,12 @@ export class ExtensionExecutor {
     const concurrency = options.concurrency ?? 4;
     if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 32)
       throw new Error('executor concurrency must be 1–32');
-    this.queue = new ExtensionQueue(options.sql, options.catalog.runtime);
+    this.queue = new ExtensionQueue(
+      options.sql,
+      options.catalog.runtime,
+      undefined,
+      options.activation,
+    );
   }
   async execute(job: ClaimedJob) {
     if (job.system) return this.acknowledge(job, { status: 'succeeded' });

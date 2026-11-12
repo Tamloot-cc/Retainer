@@ -195,6 +195,7 @@ export async function extensionServices(
         ),
         apiOrigin,
         owner: `executor-${crypto.randomUUID()}`,
+        activation: activationReady,
       });
     }
     return {

@@ -14,7 +14,7 @@ import type { Sql } from '../db/client.js';
 import { RUNTIME_ROLE } from '../db/client.js';
 import { isUuid } from '../db/ids.js';
 import type { InvitedWorkspace } from '../db/schema.js';
-import { inWorkspaceTransaction, type Tx } from '../db/tx.js';
+import { inWorkspaceTransaction, lockSchemaShared, type Tx } from '../db/tx.js';
 import { getWorkspace, type Workspace } from '../db/workspaces.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import type { RuntimeCatalog } from '../extension-runtime/availability.js';
@@ -262,6 +262,9 @@ export async function deleteWorkspace(
 ): Promise<{ id: string; deletionScheduledAt: string; purgeAfter: string }> {
   return (await sql.begin(async (tx) => {
     const organizationId = await lockWorkspaceOrganization(tx, workspaceId);
+    // Before the workspace row: a schema change holds this lock and then
+    // updates the row, so taking them the other way round deadlocks.
+    await lockSchemaShared(tx, workspaceId);
     // Someone who cannot see the workspace learns nothing about it.
     const { workspace } = await workspaceAccess(tx, person, workspaceId);
     if (!organizationId || organizationId !== workspace.organizationId) throw notFound('workspace');
@@ -280,7 +283,7 @@ export async function deleteWorkspace(
       returning deletion_scheduled_at`;
     if (!row) throw notFound('workspace');
     // Last, because it leaves the transaction in the runtime role.
-    await uninstallExtensions(tx, workspaceId, { sql, catalog: extensionCatalog });
+    await uninstallExtensions(tx, workspaceId, extensionCatalog);
     return {
       id: workspaceId,
       deletionScheduledAt: row.deletion_scheduled_at.toISOString(),

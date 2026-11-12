@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { createApiKey } from '../../src/auth/keys.js';
 import { CONTROL_ROLE } from '../../src/config.js';
 import type { Sql } from '../../src/db/client.js';
+import { lockSchemaExclusive, type Tx } from '../../src/db/tx.js';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
@@ -177,7 +178,7 @@ async function secretAdmission(
 }
 
 describe('deleting a workspace with extensions', () => {
-  it('moves hosted installations to uninstalling with cleanup queued, and revokes standalone ones', async () => {
+  it('moves hosted installations to uninstalling, queues their cleanup, and revokes standalone ones', async () => {
     const s = await setup();
     const active = await install(s);
     const disabled = await install(s, second);
@@ -202,6 +203,13 @@ describe('deleting a workspace with extensions', () => {
       expect(after).toMatchObject({ state: 'uninstalling', last_error: null });
       expect(after?.deadline_hours).toBeGreaterThan(23.9);
       expect(after?.deadline_hours).toBeLessThanOrEqual(24);
+      // The deleting process does not know which executables are deployed.
+      expect((await jobs(id)).filter((j) => j.status === 'queued')).toEqual([]);
+    }
+    // The executor's maintenance pass queues the cleanup.
+    await queue().maintain(executor());
+    for (const id of [active, disabled]) {
+      const after = await state(id);
       const queued = (await jobs(id)).filter((j) => j.status === 'queued');
       expect(queued).toEqual([
         { trigger_kind: 'uninstall', status: 'queued', generation: after?.generation },
@@ -235,6 +243,7 @@ describe('deleting a workspace with extensions', () => {
         t.request(`/v1/extensions/${id}/uninstall`, { key: s.key, method: 'POST' }),
       ]);
       expect(deleted.status).toBe(200);
+      await queue().maintain(executor());
       const after = await state(id);
       expect(after?.state).toBe('uninstalling');
       expect(
@@ -283,6 +292,7 @@ describe('removing a deleted workspace with extensions for good', () => {
     const s = await setup();
     const id = await install(s);
     expect((await remove(s)).status).toBe(200);
+    await queue().maintain(executor());
     await backdate(s.workspace, 8);
     expect(await purgeDeletedWorkspaces(control())).toEqual({ purged: 0, failed: 0, waiting: 1 });
     expect(await exists(s.workspace)).toBe(true);
@@ -296,6 +306,7 @@ describe('removing a deleted workspace with extensions for good', () => {
     const s = await setup();
     const id = await install(s);
     expect((await remove(s)).status).toBe(200);
+    await queue().maintain(executor());
     await backdate(s.workspace, 8);
     const run = await claim(s.workspace, id, 'uninstall');
     await queue().complete(run, { status: 'retry', code: 'provider_unavailable' });
@@ -329,6 +340,88 @@ describe('removing a deleted workspace with extensions for good', () => {
 
     await queue().complete(await claim(s.workspace, id, 'uninstall'), { status: 'succeeded' });
     expect(await purgeDeletedWorkspaces(control())).toEqual({ purged: 1, failed: 0, waiting: 0 });
+    expect(await exists(s.workspace)).toBe(false);
+  });
+});
+
+describe('cleanup that cannot run', () => {
+  const maintenanceDue = async () =>
+    (
+      await executor()<{ installation_id: string }[]>`
+        select installation_id from retainer_extension_maintenance_due(1000,${catalog.runtime.identity})`
+    ).map((r) => r.installation_id);
+
+  it.each([
+    [
+      'has no active executable',
+      () => new ExtensionQueue(t.sql, catalog.runtime, undefined, new Set()),
+    ],
+    [
+      'cannot be resolved',
+      () =>
+        new ExtensionQueue(
+          t.sql,
+          new ExtensionCatalog([{ manifest: standalone, actorCeiling: 'integration' }]).runtime,
+        ),
+    ],
+  ])('uninstalls directly when the release %s, and is not visited again', async (_, worker) => {
+    const s = await setup();
+    const id = await install(s);
+    expect((await remove(s)).status).toBe(200);
+    expect(await maintenanceDue()).toContain(id);
+    await worker().maintain(executor());
+    expect(await state(id)).toMatchObject({
+      state: 'uninstalled',
+      last_error: 'cleanup_unavailable',
+      deadline_hours: null,
+    });
+    expect((await jobs(id)).filter((j) => j.status === 'queued')).toEqual([]);
+    expect(await maintenanceDue()).not.toContain(id);
+    await backdate(s.workspace, 8);
+    await purgeDeletedWorkspaces(control());
+    expect(await exists(s.workspace)).toBe(false);
+  });
+});
+
+describe('deleting a workspace while its schema changes', () => {
+  // A schema change takes the workspace's schema lock exclusively and then
+  // bumps workspaces.schema_version (schema-engine, templates, upgrade).
+  // Deleting and removing must take that lock before touching the row.
+  async function schemaChange(workspace: string, started: () => void) {
+    await db.owner.begin(async (tx) => {
+      await lockSchemaExclusive(tx as unknown as Tx, workspace);
+      started();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await tx`update workspaces set schema_version=schema_version+1 where id=${workspace}`;
+    });
+  }
+
+  it('deletes without a deadlock', async () => {
+    const s = await setup();
+    await install(s);
+    let started!: () => void;
+    const locked = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const change = schemaChange(s.workspace, started);
+    await locked;
+    const [deleted] = await Promise.all([remove(s), change]);
+    expect(deleted.status).toBe(200);
+  });
+
+  it('removes for good without a deadlock', async () => {
+    const s = await setup();
+    await install(s, standalone);
+    expect((await remove(s)).status).toBe(200);
+    await backdate(s.workspace, 8);
+    let started!: () => void;
+    const locked = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const change = schemaChange(s.workspace, started);
+    await locked;
+    const [report] = await Promise.all([purgeDeletedWorkspaces(control()), change]);
+    expect(report.failed).toBe(0);
     expect(await exists(s.workspace)).toBe(false);
   });
 });
