@@ -31,8 +31,11 @@ const retainer = new RetainerClient({
 ```
 
 Store refresh tokens securely in the standalone service, serialize refresh and
-persist rotated tokens. Refresh keeps the original installation generation; a
-disable/re-enable, settings or grant change needs a new human connection. The
+persist rotated tokens. Tokens and installation keys bind to the installation's
+grant, not its release. A release upgrade that keeps the same actor and scopes,
+and an ordinary settings change, keep them working. Disable, uninstall, a change
+of actor or scopes (up or down) and a reconnect revoke them; the app then needs a
+new human connection or key. The
 SDK does not refresh OAuth tokens itself. Recreate its client with the current
 access token after refresh. In key mode, an admin creates an installation key
 in Extensions, chooses the approved scope subset and copies its shown-once value

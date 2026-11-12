@@ -65,7 +65,8 @@ export type RunBinding = {
 export type InstallationBinding = {
   installationId: string;
   registrationId: string;
-  generation: number;
+  /** The installation grant this credential was issued for; release upgrades keep it. */
+  grantGeneration: number;
   credentialId: string;
   kind: 'key' | 'oauth';
   scopes: ('read' | 'write')[];

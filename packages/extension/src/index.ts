@@ -467,6 +467,7 @@ export type ExtensionCredential = {
   kind: 'key' | 'oauth';
   prefix: string | null;
   clientId: string | null;
+  /** The installation grant generation this credential was issued for. */
   generation: number;
   scopes: ('read' | 'write')[];
   createdAt: string;
@@ -487,7 +488,10 @@ export type ExtensionInstallation = {
     | 'upgrading'
     | 'uninstalling'
     | 'uninstalled';
+  /** Fences runs: changes on every release, settings or state change. */
   generation: number;
+  /** What standalone keys and app grants bind to: changes only on disable, uninstall, grant change or reconnect. */
+  grantGeneration: number;
   settingsRevision: number;
   lastError?: string | null;
   connectionHealth?: 'ok' | 'needs_reconnect' | 'degraded';

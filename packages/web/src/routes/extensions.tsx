@@ -501,8 +501,8 @@ export function ExtensionSettings({
           </fieldset>
           {updating ? (
             <Muted>
-              Saving settings disables this connection and stops its pending runs. Enable it again
-              when ready.
+              Saving settings stops pending runs and starts again with the new values. The
+              connection stays on and its app keys keep working.
             </Muted>
           ) : null}
           {plan ? (

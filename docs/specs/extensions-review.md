@@ -39,6 +39,11 @@ from comparing the design as a whole.
 | Run tokens also authenticate `/mcp`; they carry the installation's scopes and can read any of its secrets. Spec §8 promises only the function's own requested secrets. | `packages/server/src/mcp/route.ts:46`; `extension-runtime/tokens.ts:11-23`; `api/routes/extension-runtime.ts:56-58` | One app token injected per run (looser).                                                                                                                                        | Remove run tokens from `/mcp`. Bind function ID in the token and limit secrets to the function's declared list.                               |
 | Upgrades re-run install hooks without the previous version.                                                                                                            | `service.ts:558,651`                                                                                                | Post-install hook receives `previousVersion` (`application-install.service.ts`).                                                                                                | Pass `previousVersion` to lifecycle input.                                                                                                    |
 
+Status of row 1: done (Phase 2 item 1). Migrations 0088–0089 add
+`grant_generation`, backfilled from `generation`; keys, OAuth grants and their
+SQL lookups bind to it. Ordinary settings update in place: they fence runs but
+neither disable the installation nor revoke its credentials.
+
 ## 3. Risks and fixes
 
 | #   | Risk                                                                                                                                                                                                                                                                                                                         | Evidence                                                                                                                           | Fix (Twenty mechanism where one exists)                                                                                                                                                                                                                                                                                                                                                        |
@@ -93,7 +98,7 @@ migrations and runs one stream at a time.
 
 ### Phase 2 (sequential, migrations)
 
-1. `grant_generation` and in-place settings (§2).
+1. `grant_generation` and in-place settings (§2). Done.
 2. R7 workspace-deletion cleanup.
 3. R9 coalescing and throttle.
 4. Label override layer and semver server ranges (§2).

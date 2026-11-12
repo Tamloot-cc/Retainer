@@ -29,7 +29,7 @@ export async function lookupInstallationKey(sql: Sql, value: string): Promise<Ca
     installation: {
       installationId: key.installation_id,
       registrationId: key.registration_id,
-      generation: key.generation,
+      grantGeneration: key.generation,
       credentialId: key.credential_id,
       kind: 'key',
       scopes: key.scopes,

@@ -617,6 +617,20 @@
       "when": 1794436802153,
       "tag": "0087_extension_runtime_probe_index",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1794454638916,
+      "tag": "0088_installation_grant_generation",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1794454642576,
+      "tag": "0089_grant_generation_bindings",
+      "breakpoints": true
     }
   ]
 }

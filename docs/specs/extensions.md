@@ -212,7 +212,7 @@ role with no ordinary read grants. Generate migrations from Drizzle.
 | Registrations/releases | Global reviewed identity, actor ceiling, immutable manifest/digests, allowed executables, protocol/runtime range; no workspace-editable publisher metadata.                                                         |
 | Installations          | Workspace, registration, installed release, desired release, state, generation, granted scopes/actor, settings, mapping, installer actor/user, source-account namespace, last error; unique workspace/registration. |
 | Contributions          | Installation, element kind, universal ID, actual object/field/view ID and last applied definition; unique managing installation per element. References to shared elements are bindings, not ownership.             |
-| Grants                 | Installation/generation, scopes, credential hash or OAuth consent/client reference, expiry and revocation. No plaintext bearer tokens.                                                                              |
+| Grants                 | Installation/grant generation, scopes, credential hash or OAuth consent/client reference, expiry and revocation. No plaintext bearer tokens.                                                                        |
 | Secrets/connections    | Encrypted value, key version, installation, provider, refresh revision and status. Separate from KV and settings responses.                                                                                         |
 | KV                     | Installation/key, bounded JSON value, revision for compare-and-set. 64 KiB/value, 1 MiB/installation default. No transcripts, credentials or arbitrary record copies.                                               |
 | Jobs/attempts          | Workspace, installation/generation, release/function ID, input, dedupe key, causation, status, lease owner/fence/deadline, attempt, available time, outcome. Unique installation/generation/dedupe key.             |
@@ -292,6 +292,17 @@ applied. Replacing a stored secret still needs reconnect, including one that
 an intermediate release stopped declaring: upgrades never delete stored
 secrets.
 
+Installations carry two counters. `generation` fences runs, jobs, leases,
+source and webhook bindings: every install, upgrade, reconnect, settings change,
+enable and disable advances it. `grant_generation` is what standalone keys and
+installation OAuth grants bind to. It advances only on disable, uninstall, a
+grant change (actor or scopes, increase or decrease, the execution model, or
+the pinned `oauthClientId`, including a release that drops it), reconnect and
+source account replacement or disconnect. Repeating a disable keeps it. A plain upgrade or an
+ordinary settings change therefore keeps standalone credentials valid, as Twenty
+keeps app tokens across upgrades. Existing credentials were migrated by setting
+`grant_generation` to the installation's `generation`.
+
 Upgrade disables new triggers, increments generation, fences old runs, and waits
 for admitted database writes to finish before applying the new release. Validate
 all changes before atomically switching the installed release. Jobs waiting for
@@ -311,7 +322,19 @@ resurrect forgotten sources or silently reset user customizations. It may target
 any compatible catalog release of the same registration, not only the retained
 one, through the same additive plan, so a release dropped by a server upgrade
 never strands an uninstalled installation. An uninstalled installation is not
-upgraded; it is reinstalled. Settings changes are refused with
+upgraded; it is reinstalled.
+
+Ordinary (non-secret, non-reconnect) settings update in place, like Twenty's
+application variables. The change cancels current runs and advances `generation`,
+but never disables the installation or advances `grant_generation`. A running
+hosted installation re-runs setup at the new generation, exactly like an upgrade
+(`upgrading`, or `installing` if first setup had not finished, with
+`needs_reconnect` health until setup succeeds), because source
+and webhook bindings are per generation; it is disabled only when no reviewed
+executable is deployed. A disabled installation stays disabled. The source scan
+state is cleared, because its cursor and any open enumeration were computed under
+the old values (for example a backfill window): resuming from them could skip
+items the new settings bring into scope. Settings changes are refused with
 `409 installation_disabled` while `uninstalling` or `uninstalled`, so they can't
 cancel cleanup or reverse an uninstall.
 
@@ -375,7 +398,7 @@ Standalone apps get an explicit workspace installation OAuth grant with REST
 resource audience and registration-bound actor. Do not widen existing MCP tokens
 or their scopes implicitly. Existing person-bound MCP OAuth remains agent-ranked
 and retains its existing membership semantics. Accounts-mode consent must bind
-installation, client, workspace and grant generation; recheck revocation on every
+installation, client, workspace and `grant_generation`; recheck revocation on every
 request. Key-mode standalone apps use a separate revocable installation key.
 Authorization-code flows use state, PKCE and exact registered redirects; provider
 OAuth connection management is separate from Retainer access authorization.
@@ -384,7 +407,7 @@ Accounts-mode manifests pin `oauthClientId` into the reviewed release digest;
 the same registration cannot switch to a different client across releases.
 Clients explicitly register the `/v1` resource; ordinary registrations keep
 their MCP resource default. Consent lists only active matching installations
-in workspaces the person administers. The approval names a current generation
+in workspaces the person administers. The approval names a current grant generation
 and explicit read/write scope subset, with optional `offline_access`.
 Never combine the REST and MCP audiences in one grant.
 
@@ -398,7 +421,7 @@ claim metadata. Workspace/credential deletion cascades library grants.
 
 Consent stages a committed, unusable pending credential because the library
 has a separate database connection. After the library validates signed consent,
-recheck admin access, release/client binding and generation, then replace the
+recheck admin access, release/client binding and grant generation, then replace the
 old grant and activate the new one under the exclusive installation lock.
 Invalid consent leaves the working grant intact. Crashes leave only unusable
 pending references; at most 20 handshakes may be pending, with abandoned ones
@@ -406,7 +429,7 @@ collected on later attempts after an hour. The access token names workspace,
 installation, immutable grant generation, credential, client and subject. REST
 checks the exact single audience and current credential/installation/client
 inside each transaction; it derives the approved actor and never assigns a
-personal-memory principal. Refresh cannot adopt a later generation. Membership
+personal-memory principal. Refresh cannot adopt a later grant generation. Membership
 removal does not revoke the workspace grant. Hard deletion of the approving
 user may remove library refresh tokens and require fresh admin consent.
 Admins inspect and revoke OAuth credentials in Extensions; revocation deletes
@@ -422,8 +445,10 @@ These keys are accepted only by REST in key mode, with their actor resolved from
 the installation. The installer is audit metadata and personal memory stays
 unavailable. Reads/writes, views, files and schema/installation metadata recheck
 the grant inside their transaction. Individual revoke and disable drain admitted
-writes; the old credential is refused before idempotency replay. Re-enable uses
-a fresh generation and needs a new key. The per-installation write budget is
+writes; the old credential is refused before idempotency replay. Re-enable keeps
+the grant generation that disable advanced, so old keys stay revoked and the app
+needs a new key. Issuance takes the current `generation` as its stale-view
+precondition and binds the key to `grant_generation`. The per-installation write budget is
 shared across keys. Uploaded files belong to the installation and the change feed
 records its causation identity. Hosted execution capabilities (KV, job checkpoint,
 secret broker and managed-source attestation) remain lease-bound; standalone

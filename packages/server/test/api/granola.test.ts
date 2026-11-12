@@ -409,7 +409,7 @@ describe('Granola provider fixture through real API, RLS Postgres and file byte 
       )[0]?.count,
     ).toBe(1);
     const [installation] =
-      await db.owner`select settings,settings_revision from extension_installations where id=${h.id}`;
+      await db.owner`select settings,settings_revision,generation,grant_generation from extension_installations where id=${h.id}`;
     const changed = await h.app.request(`/v1/extensions/${h.id}/settings`, {
       key: h.keys.admin,
       method: 'PATCH',
@@ -419,9 +419,17 @@ describe('Granola provider fixture through real API, RLS Postgres and file byte 
       },
     });
     expect(changed.status).toBe(200);
+    // Settings update in place: the connection stays on and re-runs setup at the
+    // new generation, like an upgrade, instead of being disabled.
+    expect(changed.body).toMatchObject({
+      state: 'upgrading',
+      generation: (installation?.generation ?? 0) + 1,
+      grantGeneration: installation?.grant_generation,
+    });
     expect(
       (
-        await db.owner`select count(*)::int as count from extension_jobs where installation_id=${h.id} and status in ('queued','running')`
+        await db.owner`select count(*)::int as count from extension_jobs where installation_id=${h.id}
+          and status in ('queued','running') and trigger_kind<>'install'`
       )[0]?.count,
     ).toBe(0);
     expect(
