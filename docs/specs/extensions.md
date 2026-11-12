@@ -567,16 +567,21 @@ coordinator's own Lambda timeout must cover the longest handler timeout plus the
 
 Hosted: trusted Lambda coordinators claim jobs and sign scoped run capabilities;
 a separate Lambda handles secret brokering and raw webhook admission. Each has
-its own IAM role and database login. First-party code runs in fresh immutable
-Docker containers on a dedicated execution host, outside the database security
-group, using the same sandbox protocol as Compose. The host has no database,
-provider-secret, deployment or run-signing credentials. Its instance role can
-read only its own small launch configuration, the selected immutable release
-metadata and images. Require IMDSv2 with hop limit one, disable IPv6 metadata,
-and deny container access to the host, metadata and routed private networks.
-File bytes use signed transfer URLs rather than bucket-wide runner permissions.
+its own IAM role and database login. Reviewed first-party bundles run as qualified,
+immutable Node 24 Lambda function versions, distributed as zips. Job functions run
+outside the database VPC with public internet egress; verifier functions run in
+isolated subnets with no network egress and a five-second timeout. Their distinct
+function-name prefixes and caller IAM policies separate job and verifier authority.
+Functions can write their own logs only, with no database, provider-secret,
+deployment, signing or bucket-wide permissions. File bytes use signed transfer URLs.
 
-Compose and hosted execution use a trusted launcher and a fresh runner container
+Hosted job egress is an accepted v1 relaxation: public destinations are unrestricted,
+while the database VPC and metadata endpoints are unreachable. Revisit this before
+supporting third-party hosted code. A Lambda environment is reused sequentially;
+invocation-local clients, tokens and abort state must never leak across installations.
+See [extensions-lambda.md](extensions-lambda.md) for drivers, health and warm-reuse tests.
+
+Compose execution uses a trusted launcher and a fresh runner container
 per invocation. Only the launcher controls container creation; extension
 containers never mount the Docker socket, host paths or DB network. Drop
 capabilities, run non-root, use a read-only root FS plus bounded tmpfs, enforce
@@ -588,30 +593,28 @@ busy runs cannot block webhook ingress. Launches reuse a passing health check fo
 30 seconds. Deny
 host/private/link-local destinations except the configured public API endpoint,
 including metadata endpoints. Validate DNS and redirect destinations at the
-proxy. The hosted host requires an operator-reviewed hardened AMI with Docker
-isolated-gateway support; an unsupported host fails closed. This replaces the
-initial proposed per-bundle Lambda execution because containers provide the
-implemented per-invocation process, filesystem and no-network verifier boundary.
+proxy.
 
 The launcher accepts registered bundle IDs only. Its host-level Docker socket
 privilege is documented; a separate service and socket boundary are required.
 Catalog and executable snapshots are packaged immutable files with expected
-SHA-256 hashes, retaining every referenced installed/cleanup release. Deployment
-checks source, schema-history compatibility, image/config identity and release
-inventory before changing traffic, repeats inventory after draining all writers,
-and holds maintenance on migration or post-drain failure. After draining Lambda
-writers, the owner must prove zero live execution leases before DDL: a job
-claimed immediately before a coordinator timeout must not regain write access
-when the API restarts. Environment and host
-updates happen only after that drain. No automatic down-migrations or blind
-release/image pruning are allowed. Publication may retire an older hosted version
-from active catalog/executable/launcher configuration only after owner inventory
-proves it unreferenced. Preserve every installed/disabled/live-cleanup reference,
-the newest hosted version per registration, and standalone OAuth history. Merge
-the channel with the last completed and prospective running deployment snapshots
-before this selection, so a failed rollout or raced approval cannot lose a pinned
-release. Repeat reference checks after drain and refuse raced approvals. Keep
-immutable metadata and images; configuration retirement grants no deletion rights.
+SHA-256 hashes, retaining every referenced installed/cleanup release. Hosted
+publication can add immutable versions and update the catalog without stopping
+writers. Before traffic starts, deployment checks source, schema-history and
+release inventory, and invokes each pinned version's health to verify release
+identity and role. Migrations still stop all writers and wait for zero live
+execution leases before DDL; a late coordinator claim must not regain write
+access when the API restarts. Repeat reference checks after drain and refuse
+raced approvals. No automatic down-migrations or blind release pruning are allowed.
+
+Publication may retire an older hosted version from active catalog/executable
+configuration only after owner inventory proves it unreferenced. Preserve every
+installed/disabled/live-cleanup reference, the newest hosted version per registration,
+and standalone OAuth history. Merge the channel with the last completed and
+prospective running deployment snapshots before selection, so a failed rollout
+or raced approval cannot lose a pinned release. Keep immutable metadata and zips;
+configuration retirement grants no deletion rights. Compose retains its launcher
+health and container-image identity checks.
 
 Only reviewed first-party code is supported. This is not a third-party hostile
 code sandbox certification. Logs, tmp files, warm process globals and environment
@@ -1289,26 +1292,31 @@ own source code for product Lambda handlers or first-party integrations. Keep
 SDK/web/runner packages MIT and server modules AGPL under current boundaries;
 do not copy Twenty source or make legal promises about arbitrary extension code.
 
-Cloud changes must add separate coordinator, broker and host roles and packaging;
+Cloud changes must add separate coordinator, broker, job and verifier roles and packaging;
 do not reuse the current shared function role for extension code. Add explicit
 webhook routing and file-signing support without giving the isolated API internet
 access. Broker/runtime control endpoints must also work in key mode and must not
 be accidentally disabled by the existing accounts-only control function flag.
 Use a dedicated runtime control entry point rather than conflating it with login.
 
-Build manifests and artifacts from the same clean main commit; publish pinned
-images and retained configuration before advertising compatible catalog releases.
-Bind the host snapshot, Lambda catalog hashes and archive source/checksum during
-preflight, then prepare/drain before changing environments or replacing the host. No cloud API creates
-arbitrary functions from workspace input. Extend existing migration-status,
-maintenance routing, stop/start lists and deploy locks to ingress, dispatchers,
-file workers and executions. During a stopped migration, webhook ingress returns
-503 before acknowledgement; paused jobs recover afterward. Revoke/drain old run
-leases before incompatible migrations, and refuse dispatch across incompatible
-protocol versions. Include runner compatibility in Compose health checks and
-cloud preflight. Breaking migrations remain allowed with explicit stopped rollout;
-failed preflight leaves the old service intact and failed migration leaves workers
-stopped. A code rollback must check schema/protocol compatibility first.
+Build manifests and artifacts from the same clean main commit. Hosted publication
+reuses retained releases with equal content digests; otherwise it publishes pinned
+Lambda versions before advertising compatible catalog releases. Content digests
+exclude manifest version but include executable code, schemas, permissions and
+server range. Code/catalog changes with no pending migration use a rolling update;
+a release change alone does not require stopped rollout. No cloud API creates
+arbitrary functions from workspace input.
+
+Extend existing migration-status, maintenance routing, stop/start lists and deploy
+locks to ingress, dispatchers, file workers and executions. A migration still
+prepares maintenance, drains every writer and waits for zero live execution leases
+before DDL or environment changes. During a stopped migration, webhook ingress
+returns 503 before acknowledgement; paused jobs recover afterward. Refuse dispatch
+across incompatible protocol versions. Include runner compatibility in Compose
+health checks and cloud preflight. Breaking migrations remain allowed with an
+explicit stopped rollout; failed preflight leaves the old service intact and a
+failed migration leaves workers stopped. A code rollback must check schema/protocol
+compatibility first. Infrastructure and hosted acceptance remain in retainer-cloud.
 
 Operator status proves it checked every applied migration timestamp and hash
 against the packaged journal. Unknown newer migrations or changed historical SQL

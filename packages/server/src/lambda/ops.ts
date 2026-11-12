@@ -6,6 +6,7 @@ import { migrationHistoryCompatible, migrationsPending, runMigrations } from '..
 import { setLogLevel } from '../log.js';
 import { runCli } from '../operator/commands.js';
 import { extensionReleaseStatus } from '../operator/extension-releases.js';
+import { lambdaRuntimeCompatible } from '../operator/extension-runtime.js';
 import { rebuildSearchText } from '../records/rebuild-search.js';
 import {
   type UpgradeReport,
@@ -41,8 +42,11 @@ const opsEvent = z.discriminatedUnion('command', [
   z.object({ command: z.literal('migration-status') }),
   z.object({
     command: z.literal('extension-runtime-status'),
-    configurationDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    bundles: z.number().int().min(1).max(10000),
+    configurationDigest: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+    bundles: z.number().int().min(1).max(10000).optional(),
   }),
   z.object({
     command: z.literal('extension-release-status'),
@@ -95,6 +99,19 @@ export function createOpsHandler(config: Config) {
     // `max: 1`, because the deploy lock and the search rebuild are session
     // locks; the workspace upgrade runs on the same connection.
     if (parsed.data.command === 'extension-runtime-status') {
+      if (config.RETAINER_EXTENSION_DRIVER === 'lambda') {
+        try {
+          return {
+            command: 'extension-runtime-status',
+            protocol: 1,
+            compatible: await lambdaRuntimeCompatible(config),
+          };
+        } catch {
+          return { command: 'extension-runtime-status', protocol: 1, compatible: false };
+        }
+      }
+      if (!parsed.data.configurationDigest || !parsed.data.bundles)
+        throw new Error('launcher status requires configurationDigest and bundles');
       // Only the operator-configured private origin is reachable; payloads cannot choose a URL.
       const origin = config.RETAINER_EXTENSION_LAUNCHER_ORIGIN;
       if (!origin) throw new Error('extension launcher is not configured');

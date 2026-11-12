@@ -20,6 +20,7 @@
     "test:web": "playwright test"
   },
   "dependencies": {
+    "@aws-sdk/client-lambda": "^3.1166.0",
     "@aws-sdk/client-s3": "^3.1165.0",
     "@aws-sdk/s3-request-presigner": "^3.1165.0",
     "@better-auth/cimd": "1.7.18",
@@ -41,10 +42,10 @@
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.4.0",
     "@playwright/test": "^1.65.0",
+    "@retainer/runner": "workspace:*",
     "@retainer/sdk": "workspace:*",
     "drizzle-kit": "^0.31.11",
-    "tsx": "^4.23.15",
-    "@retainer/runner": "workspace:*"
+    "tsx": "^4.23.15"
   },
   "bin": {
     "retainer": "./dist/cli.js"

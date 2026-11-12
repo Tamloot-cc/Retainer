@@ -3,22 +3,25 @@
 Current status: product controls, isolated execution/lifecycle, files/erasure,
 managed sources/revisions, commit-ordered feeds, durable triggers, webhook
 verification/admission, Last Contact, Granola, reviewed reconnect/grant changes,
-typed progress, and standalone key/OAuth are implemented locally. The private
-repository now also implements immutable publication, isolated hosted resources,
-prepared deployment/recovery, key/configuration preflight and alarms. The default
-catalog remains empty. No PR, push, merge, AWS deployment or live Granola account
-has been used. Hosted/AMI and real-provider acceptance remain outstanding.
+typed progress, and standalone key/OAuth are implemented locally. Hosted execution
+now supports operator-selected Lambda versions; Compose keeps its existing
+launcher/container boundary. The matching infrastructure change belongs to the
+private cloud repository. The default catalog remains empty. This Lambda change
+is committed locally, without a push, PR, merge or AWS deployment. Hosted and
+real-provider acceptance remain outstanding.
 
-Latest product regression: 1,462 automated tests (1,134 server, 327 other-package
-and one real-Git release test), plus 68 fresh-build browser tests. Workspace
-build/type/lint/layer/release checks pass. Fresh Node 24 images pass actual Docker
-isolation, no-network signature verification, Granola bundle, public lifecycle,
-webhook/source transcript-file import and Last Contact/one-hop rollup proofs.
-These are local synthetic-provider proofs, not hosted or real-provider evidence.
+Latest Lambda regression: 1,639 automated tests (1,246 server tests) pass against
+real Postgres. Workspace build/type/lint/layer checks pass; lint retains existing
+unrelated warnings. Fresh Node 24 images pass Docker isolation, no-network signature
+verification, Granola bundle, public lifecycle, webhook/source transcript-file
+import and Last Contact/one-hop rollup proofs. A Node 24 smoke check invokes the
+packaged Lambda handler with `release.json` fallback and no AWS SDK installed in
+the runner. These are local synthetic-provider proofs; the earlier checkpoint's
+68 browser tests were not rerun for this server/runner change.
 
 The sections below are chronological checkpoints. Earlier statements about work
 remaining describe that checkpoint, not the current implementation. The current
-acceptance gaps are hosted staging, hardened-AMI network proof and authorized
+acceptance gaps are hosted Lambda staging/network/IAM proof and authorized
 live Granola validation.
 The contract in extensions.md remains the acceptance specification. Implement in
 these dependency-ordered slices; never advertise a trigger before its safety
@@ -737,3 +740,44 @@ make an installed version usable during rollback or a server-version change.
 The publisher also verifies a real Ed25519 private/public key match before
 applying hosted configuration. Operator bootstrap and live acceptance procedures
 are documented in the private cloud repository.
+
+## Hosted Lambda execution (2026-11-12)
+
+Implements [extensions-lambda.md](extensions-lambda.md) §3.1–§3.6 in the open
+repository. This supersedes the dedicated EC2 Docker execution host, hardened-AMI
+requirements and mandatory stopped catalog rollouts in earlier checkpoints.
+Compose retains its launcher, containers, proxy and credential requirements.
+
+Lambda drivers lazily load the AWS SDK, validate qualified numeric version ARNs
+against separate job/verifier prefixes, preserve protocol caps and treat platform
+errors as retryable. The runner now has shared handling, an unchanged stdin/stdout
+entry and `dist/lambda.handler`; mode comes from configuration, release identity
+falls back to code-owned `release.json`, and health returns identity without work.
+The coordinator elects a leader, refills bounded slots, releases leadership before
+waiting for draining runs, and retains the deploy pass lock through acknowledgement.
+Operator runtime status probes each distinct packaged target's release and mode.
+Artifact metadata includes content digests excluding manifest version.
+
+Warm-reuse audit: `granola.ts`, `granola-provider.ts`, `last-contact.ts`,
+`webhooks.ts`, `registry.ts`, `outcome.ts` and the SDK allocate clients, tokens,
+Maps, provider cursors and abort state inside a call/client instance. Module-level
+values are reviewed contracts, schemas, IDs or pure functions. These paths have
+no logging, environment writes or temporary-file writes. Sequential handler tests
+use different installations/tokens against a recording HTTP server, prove fresh
+KV reads/checkpoints and credentials, unchanged environment, no logs and an empty
+invocation temp directory. Host `/tmp` contains unrelated process files and is
+not deleted. Lambda's actual `/tmp` and CloudWatch isolation remain hosted proof.
+
+Local acceptance adds driver/mode/release/health checks, real-Postgres leader races
+and hand-off/late acknowledgement, and real-Git artifact builds across unrelated
+commits and a rebuilt runner source change. Hosted ZIP publication, IAM, networking,
+Lambda cold starts and live AWS acceptance belong to the matching cloud change.
+
+Final local Lambda acceptance: the full workspace test command passes with an
+isolated Postgres 18 test service configured for 500 connections (the default 100
+was exhausted by the suite's parallel pools). Build, typecheck and lint pass.
+The separate Docker verifier proof's cleanup assertion failed once under parallel
+Docker load and passed on its isolated rerun. No Compose code or proof was changed.
+The existing lifecycle, isolation, verifier, Granola, webhook/file and Last Contact
+proofs pass. Actual hosted networking/IAM, verifier cold-start timing and CloudWatch
+credential isolation remain cloud staging acceptance, not claims of this local run.

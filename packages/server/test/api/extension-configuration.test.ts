@@ -1,4 +1,5 @@
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
+import { granolaManifest } from '@retainer/runner/granola-contract';
 import { RetainerClient } from '@retainer/sdk';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.js';
@@ -193,5 +194,140 @@ describe('operator runtime configuration and dedicated key-mode control', () => 
         workerSql: t.sql,
       }),
     ).rejects.toThrow('configuration');
+  });
+  it('selects Lambda executor and verifier without launcher origins or bearer tokens and rejects cross-role catalog targets', async () => {
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+    const prefix = 'arn:aws:lambda:eu-central-1:123456789012:function:retainer-ext-';
+    const verifierPrefix = prefix.replace('-ext-', '-extv-');
+    const hosted = granolaManifest({
+      version: '1.0.0',
+      packageDigest: 'a'.repeat(64),
+      handlerDigest: 'b'.repeat(64),
+      verifierDigest: 'b'.repeat(64),
+      serverRange: '>=0.1.0 <0.2.0',
+    });
+    const releases = [
+      { manifest: hosted, actorCeiling: 'integration' as const, runtimeEnabled: true },
+    ];
+    const digest = new ExtensionCatalog(releases).list()[0]?.digest;
+    const entries = hosted.functions.map((fn) => ({
+      registrationId: hosted.universalId,
+      releaseDigest: digest,
+      functionId: fn.universalId,
+      handlerDigest: fn.handlerDigest,
+      packageDigest: hosted.packageDigest,
+      runtimeVersion: 'node24',
+      driverTarget: `${fn.trigger.kind === 'route' ? verifierPrefix : prefix}bundle:1`,
+    }));
+    const environment = {
+      DATABASE_URL: db.url,
+      RETAINER_EXTENSION_DRIVER: 'lambda',
+      RETAINER_EXTENSION_LAMBDA_PREFIX: prefix,
+      RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX: verifierPrefix,
+      RETAINER_PUBLIC_ORIGIN: 'https://retainer.test',
+      RETAINER_EXTENSION_RUN_PUBLIC_KEY: JSON.stringify(publicKey.export({ format: 'jwk' })),
+      RETAINER_EXTENSION_RUN_PRIVATE_KEY: JSON.stringify(privateKey.export({ format: 'jwk' })),
+      RETAINER_EXTENSION_SECRET_KEYS: JSON.stringify({
+        currentVersion: 'test',
+        keys: { test: randomBytes(32).toString('base64') },
+      }),
+      RETAINER_EXTENSION_CATALOG: JSON.stringify(releases),
+      RETAINER_EXTENSION_EXECUTABLES: JSON.stringify(entries),
+    };
+    const config = loadConfig(environment);
+    const services = await extensionServices(config, {
+      broker: true,
+      workerSql: t.sql,
+      ingressSql: t.sql,
+    });
+    try {
+      expect(services.executor).toBeDefined();
+      expect(services.webhooks).toBeDefined();
+      expect(services.activationReady.has(digest as string)).toBe(true);
+    } finally {
+      await services.close();
+    }
+    const executorOnly = await extensionServices(
+      loadConfig({
+        ...environment,
+        RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX: undefined,
+        RETAINER_EXTENSION_SECRET_KEYS: undefined,
+      }),
+      { workerSql: t.sql },
+    );
+    try {
+      expect(executorOnly.executor).toBeDefined();
+      expect(executorOnly.webhooks).toBeUndefined();
+      expect(executorOnly.activationReady.has(digest as string)).toBe(true);
+    } finally {
+      await executorOnly.close();
+    }
+    const ingressOnly = await extensionServices(
+      loadConfig({
+        ...environment,
+        RETAINER_EXTENSION_LAMBDA_PREFIX: undefined,
+        RETAINER_EXTENSION_RUN_PRIVATE_KEY: undefined,
+      }),
+      { broker: true, ingressSql: t.sql },
+    );
+    try {
+      expect(ingressOnly.executor).toBeUndefined();
+      expect(ingressOnly.webhooks).toBeDefined();
+      expect(ingressOnly.activationReady.has(digest as string)).toBe(true);
+    } finally {
+      await ingressOnly.close();
+    }
+    for (const [prefix, options] of [
+      ['RETAINER_EXTENSION_LAMBDA_PREFIX', { workerSql: t.sql }],
+      ['RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX', { broker: true, ingressSql: t.sql }],
+    ] as const) {
+      await expect(
+        extensionServices(loadConfig({ ...environment, [prefix]: undefined }), options),
+      ).rejects.toThrow('invalid extension runtime configuration');
+    }
+    for (const [prefixes, options] of [
+      [{ RETAINER_EXTENSION_LAMBDA_PREFIX: undefined }, { broker: true, ingressSql: t.sql }],
+      [{ RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX: undefined }, { workerSql: t.sql }],
+      [
+        {
+          RETAINER_EXTENSION_LAMBDA_PREFIX: undefined,
+          RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX: undefined,
+        },
+        {},
+      ],
+    ] as const) {
+      for (const index of [0, entries.length - 1]) {
+        for (const qualifier of ['', ':live']) {
+          const invalid = entries.map((entry, i) =>
+            i === index
+              ? { ...entry, driverTarget: entry.driverTarget.replace(/:\d+$/, qualifier) }
+              : entry,
+          );
+          await expect(
+            extensionServices(
+              loadConfig({
+                ...environment,
+                ...prefixes,
+                RETAINER_EXTENSION_EXECUTABLES: JSON.stringify(invalid),
+              }),
+              options,
+            ),
+          ).rejects.toThrow('invalid extension runtime configuration');
+        }
+      }
+    }
+    for (const index of [0, entries.length - 1]) {
+      const wrong = entries.map((entry, i) =>
+        i === index
+          ? {
+              ...entry,
+              driverTarget: `${entry.driverTarget.startsWith(verifierPrefix) ? prefix : verifierPrefix}bundle:1`,
+            }
+          : entry,
+      );
+      await expect(
+        extensionServices({ ...config, RETAINER_EXTENSION_EXECUTABLES: JSON.stringify(wrong) }),
+      ).rejects.toThrow('configuration');
+    }
   });
 });

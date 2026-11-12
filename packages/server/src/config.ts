@@ -94,6 +94,22 @@ const configSchema = z
     RETAINER_CONTROL_DATABASE_URL: loginUrl(CONTROL_ROLE),
     RETAINER_SECRET_BROKER_DATABASE_URL: loginUrl(SECRET_BROKER_ROLE),
     RETAINER_EXECUTOR_DATABASE_URL: loginUrl(EXECUTOR_ROLE),
+    RETAINER_EXECUTOR_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(8),
+    RETAINER_EXTENSION_DRIVER: z.enum(['launcher', 'lambda']).default('launcher'),
+    RETAINER_EXTENSION_LAMBDA_PREFIX: z.preprocess(
+      emptyToUndefined,
+      z
+        .string()
+        .regex(/^arn:aws:lambda:[a-z0-9-]+:\d{12}:function:[A-Za-z0-9_-]{1,64}$/)
+        .optional(),
+    ),
+    RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX: z.preprocess(
+      emptyToUndefined,
+      z
+        .string()
+        .regex(/^arn:aws:lambda:[a-z0-9-]+:\d{12}:function:[A-Za-z0-9_-]{1,64}$/)
+        .optional(),
+    ),
     RETAINER_EXTENSION_CATALOG: z.preprocess(emptyToUndefined, z.string().max(2097152).optional()),
     RETAINER_EXTENSION_EXECUTABLES: z.preprocess(
       emptyToUndefined,
@@ -252,6 +268,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error(`Invalid configuration:\n${problems}`);
   }
   const config = parsed.data;
+  if (config.RETAINER_EXTENSION_DRIVER === 'lambda') {
+    const job = config.RETAINER_EXTENSION_LAMBDA_PREFIX;
+    const verifier = config.RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX;
+    if (job && verifier && (job.startsWith(verifier) || verifier.startsWith(job)))
+      throw new Error('Lambda job and verifier prefixes must not overlap');
+  }
   // Operator-owned immutable release files avoid large manifests in small environment blocks.
   // Never accept these paths from an installation request or evaluate package code here.
   for (const [value, path] of [

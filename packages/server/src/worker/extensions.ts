@@ -22,7 +22,7 @@ const executableSchema = z.strictObject({
 });
 export type Executable = z.infer<typeof executableSchema>;
 export type ExecutionDriver = {
-  /** Must launch a fresh isolated execution; target is from the release registry, never invocation JSON. */
+  /** Must invoke an isolated execution; target is from the release registry, never invocation JSON. */
   invoke: (
     executable: Executable,
     invocation: Invocation,
@@ -63,6 +63,7 @@ export class ExtensionExecutor {
   readonly queue: ExtensionQueue;
   private readonly active = new Map<AbortController, () => void>();
   private stopped = false;
+  private draining = false;
   constructor(
     private readonly options: {
       sql: Sql;
@@ -236,6 +237,11 @@ export class ExtensionExecutor {
       throw error;
     }
   }
+  /** Planned hand-off: finish and acknowledge every claim already in flight. */
+  drain() {
+    this.draining = true;
+    this.wake();
+  }
   stop() {
     this.stopped = true;
     for (const abort of this.active.values()) abort();
@@ -252,7 +258,14 @@ export class ExtensionExecutor {
    * beside claims instead of before each batch. Resolves after stop() once runs settle.
    */
   async run(
-    options: { idleMs?: number; maintenanceMs?: number; onError?: (error: unknown) => void } = {},
+    options: {
+      idleMs?: number;
+      maintenanceMs?: number;
+      onError?: (error: unknown) => void;
+      idleTimeoutMs?: number;
+      /** Runs after the last claim settles, before waiting for executions to acknowledge. */
+      onClaimingStopped?: () => Promise<void>;
+    } = {},
   ) {
     const idleMs = options.idleMs ?? 1000,
       maintenanceMs = options.maintenanceMs ?? 1000,
@@ -262,7 +275,8 @@ export class ExtensionExecutor {
       // Our own runs per workspace, to skip candidates the workspace cap would refuse anyway.
       perWorkspace = new Map<string, number>();
     let maintaining: Promise<void> | undefined,
-      maintainedAt = 0;
+      maintainedAt = 0,
+      idleSince: number | undefined;
     const maintain = () => {
       if (maintaining || Date.now() - maintainedAt < maintenanceMs) return;
       maintainedAt = Date.now();
@@ -287,7 +301,7 @@ export class ExtensionExecutor {
         this.woken = true;
       };
     };
-    while (!this.stopped) {
+    while (!this.stopped && !this.draining) {
       maintain();
       let claimed = 0;
       const free = concurrency - running.size;
@@ -297,8 +311,16 @@ export class ExtensionExecutor {
           // which only claim enforces. A wide window keeps a capped workspace's older jobs from
           // hiding every other workspace's work.
           const due = await this.queue.discover(this.options.discoverySql, DISCOVERY_WINDOW);
+          if (due.length) idleSince = undefined;
+          else idleSince ??= Date.now();
+          if (
+            options.idleTimeoutMs !== undefined &&
+            idleSince !== undefined &&
+            Date.now() - idleSince >= options.idleTimeoutMs
+          )
+            this.drain();
           for (const item of due) {
-            if (this.stopped || running.size >= concurrency) break;
+            if (this.stopped || this.draining || running.size >= concurrency) break;
             if ((perWorkspace.get(item.workspace_id) ?? 0) >= WORKSPACE_RUN_CAP) continue;
             let job: ClaimedJob | null;
             try {
@@ -308,6 +330,12 @@ export class ExtensionExecutor {
               continue;
             }
             if (!job) continue;
+            // A DB lock can outlast the claim window. Hand this unstarted claim
+            // back instead of launching a fresh handler inside the drain budget.
+            if (this.draining) {
+              await this.release(job);
+              break;
+            }
             claimed++;
             const workspace = job.workspaceId;
             perWorkspace.set(workspace, (perWorkspace.get(workspace) ?? 0) + 1);
@@ -329,14 +357,19 @@ export class ExtensionExecutor {
       }
       // Rescan at once while slots stay free and work keeps coming; otherwise wait for a
       // finished run or the idle interval.
-      if (!this.stopped && (claimed === 0 || running.size >= concurrency)) await sleep(idleMs);
+      if (!this.stopped && !this.draining && (claimed === 0 || running.size >= concurrency))
+        await sleep(idleMs);
     }
-    await Promise.allSettled([...running, maintaining]);
+    try {
+      await options.onClaimingStopped?.();
+    } finally {
+      await Promise.allSettled([...running, maintaining]);
+    }
   }
   async tick(limit = 1000) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
       throw new Error('executor pass limit must be 1–1000');
-    if (this.stopped) return { executed: 0, fenced: 0 };
+    if (this.stopped || this.draining) return { executed: 0, fenced: 0 };
     await this.queue.maintain(this.options.discoverySql);
     const due = await this.queue.discover(this.options.discoverySql, limit);
     let next = 0,
@@ -346,7 +379,7 @@ export class ExtensionExecutor {
     let hasFailure = false;
     const worker = async () => {
       for (;;) {
-        if (this.stopped) return;
+        if (this.stopped || this.draining) return;
         const item = due[next++];
         if (!item) return;
         try {

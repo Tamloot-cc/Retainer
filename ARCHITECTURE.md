@@ -1185,6 +1185,24 @@ unexpected item failure before reporting the failure. First-party
 compatibility is an explicit reviewed version set, with bridge releases required before
 server transitions; deployment preflight continues to refuse unsupported installed pins.
 
+Execution uses one operator-selected driver: `RETAINER_EXTENSION_DRIVER=launcher`
+(the default) keeps Compose's fresh runner containers and egress proxy; `lambda`
+invokes qualified immutable Lambda versions using the default AWS credential chain.
+The AWS Lambda SDK loads lazily only for Lambda calls and is absent from the MIT
+runner dependency graph. Job and verifier targets must match their separate,
+non-overlapping configured ARN prefixes, never a manifest/request-selected driver.
+Each process receives only its own role's prefix; ops receives both when it probes
+both job and verifier targets. A driver requires its prefix at construction.
+Hosted jobs run outside the VPC; verifiers have no network egress. The runner's
+Lambda entry point fixes `job` or `verify` mode from function configuration and
+reads code-owned `release.json` when the Compose release environment is absent.
+
+The Lambda coordinator holds a session leader lock while claiming, refills up to
+`RETAINER_EXECUTOR_CONCURRENCY` slots (8 by default, at most 32), and drains after
+15 idle seconds or before its claim window expires. Drain stops claims, releases
+the leader for the next invocation, then acknowledges existing runs while holding
+the deploy pass lock shared. Shutdown `stop()` still aborts and releases runs.
+
 ### 4.6 Standalone installation credentials
 
 `extension_credentials` binds hash-stored key-mode keys (and installation OAuth
