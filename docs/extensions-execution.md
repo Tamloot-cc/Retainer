@@ -319,9 +319,10 @@ A reviewed standalone installation becomes active immediately after the admin
 approves its schema and read/write grant. Open **App credentials**, select access
 and create a key. Copy it before closing; only a hash and prefix are stored.
 Use it as a bearer credential for the REST API. Credential lists contain safe
-metadata, and revocation waits for admitted writes to finish. Disable/re-enable,
-settings changes and upgrades invalidate older generations; issue a new key after
-re-enabling. The same app actor owns its uploads across keys. Standalone keys
+metadata, and revocation waits for admitted writes to finish. Keys bind to the
+installation's grant: upgrades that keep the same actor and scopes, and ordinary
+settings changes, keep them working. Disable, uninstall, an actor or scope change
+and reconnect revoke them; issue a new key afterward. The same app actor owns its uploads across keys. Standalone keys
 access ordinary CRM operations, authorized files, the change feed and their own
 installation metadata. Hosted execution state and provider-secret capabilities
 remain lease-bound. Accounts-mode standalone apps connect through the separate
