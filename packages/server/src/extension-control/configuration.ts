@@ -11,6 +11,7 @@ import { Webhooks } from '../webhooks/service.js';
 import { ChangeMaintenance } from '../worker/changes.js';
 import { type Executable, ExecutionRegistry, ExtensionExecutor } from '../worker/extensions.js';
 import { FileMaintenance } from '../worker/files.js';
+import { assertLambdaTarget, LambdaDriver, LambdaVerifier } from '../worker/lambda-driver.js';
 import { LauncherDriver } from '../worker/launch-driver.js';
 import { LauncherVerifier } from '../worker/verifier-driver.js';
 
@@ -22,6 +23,10 @@ export async function extensionServices(
   const owned: Sql[] = [];
   const close = () => Promise.all(owned.map((pool) => pool.end({ timeout: 5 }))).then(() => {});
   try {
+    const lambda = config.RETAINER_EXTENSION_DRIVER === 'lambda';
+    const verifierConfigured = lambda
+      ? config.RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX
+      : config.RETAINER_EXTENSION_VERIFIER_ORIGIN;
     const catalog = parseExtensionCatalog(config.RETAINER_EXTENSION_CATALOG);
     const jwk = z.strictObject({
       kty: z.literal('OKP'),
@@ -108,7 +113,7 @@ export async function extensionServices(
         for (const fn of release.manifest.functions) {
           if (['route', 'serverRoute'].includes(fn.trigger.kind)) {
             if (
-              !config.RETAINER_EXTENSION_VERIFIER_ORIGIN ||
+              !verifierConfigured ||
               !release.manifest.webhooks?.some((hook) => hook.verifierFunctionId === fn.universalId)
             )
               throw new Error('verifier runtime is unavailable');
@@ -121,6 +126,13 @@ export async function extensionServices(
             release.digest,
             fn.universalId,
           );
+          if (lambda)
+            assertLambdaTarget(
+              executable.driverTarget,
+              (['route', 'serverRoute'].includes(fn.trigger.kind)
+                ? config.RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX
+                : config.RETAINER_EXTENSION_LAMBDA_PREFIX) as string,
+            );
           if (
             executable.handlerDigest !== fn.handlerDigest ||
             executable.packageDigest !== release.manifest.packageDigest
@@ -155,15 +167,15 @@ export async function extensionServices(
         ? new ChangeMaintenance(options.workerSql, discovery, changeQueue)
         : undefined;
     let webhooks: Webhooks | undefined;
-    if (options.ingressSql && config.RETAINER_EXTENSION_VERIFIER_ORIGIN) {
+    if (options.ingressSql && verifierConfigured) {
       if (
         !broker ||
-        !config.RETAINER_VERIFIER_TOKEN ||
+        (!lambda && !config.RETAINER_VERIFIER_TOKEN) ||
         !config.RETAINER_PUBLIC_ORIGIN ||
         !config.RETAINER_EXTENSION_EXECUTABLES
       )
         throw new Error('webhook ingress configuration is incomplete');
-      if (config.RETAINER_VERIFIER_TOKEN === config.RETAINER_LAUNCHER_TOKEN)
+      if (!lambda && config.RETAINER_VERIFIER_TOKEN === config.RETAINER_LAUNCHER_TOKEN)
         throw new Error('verifier and executor credentials must differ');
       const entries: unknown = JSON.parse(config.RETAINER_EXTENSION_EXECUTABLES);
       if (!Array.isArray(entries)) throw new Error('invalid verifier registry');
@@ -172,10 +184,12 @@ export async function extensionServices(
         catalog,
         broker,
         registry: new ExecutionRegistry(entries as Executable[]),
-        driver: new LauncherVerifier(
-          config.RETAINER_EXTENSION_VERIFIER_ORIGIN,
-          config.RETAINER_VERIFIER_TOKEN,
-        ),
+        driver: lambda
+          ? new LambdaVerifier(config.RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX as string)
+          : new LauncherVerifier(
+              config.RETAINER_EXTENSION_VERIFIER_ORIGIN as string,
+              config.RETAINER_VERIFIER_TOKEN as string,
+            ),
         publicOrigin: config.RETAINER_PUBLIC_ORIGIN,
         rateLimit: config.RETAINER_WEBHOOK_RATE_LIMIT,
         activation,
@@ -186,8 +200,7 @@ export async function extensionServices(
       if (
         !tokens ||
         !config.RETAINER_EXTENSION_RUN_PRIVATE_KEY ||
-        !config.RETAINER_EXTENSION_LAUNCHER_ORIGIN ||
-        !config.RETAINER_LAUNCHER_TOKEN
+        (!lambda && (!config.RETAINER_EXTENSION_LAUNCHER_ORIGIN || !config.RETAINER_LAUNCHER_TOKEN))
       )
         throw new Error('executor configuration is incomplete');
       const entries: unknown = JSON.parse(config.RETAINER_EXTENSION_EXECUTABLES);
@@ -203,10 +216,13 @@ export async function extensionServices(
         catalog,
         registry,
         tokens,
-        driver: new LauncherDriver(
-          config.RETAINER_EXTENSION_LAUNCHER_ORIGIN,
-          config.RETAINER_LAUNCHER_TOKEN,
-        ),
+        driver: lambda
+          ? new LambdaDriver(config.RETAINER_EXTENSION_LAMBDA_PREFIX as string)
+          : new LauncherDriver(
+              config.RETAINER_EXTENSION_LAUNCHER_ORIGIN as string,
+              config.RETAINER_LAUNCHER_TOKEN as string,
+            ),
+        ...(lambda ? { concurrency: config.RETAINER_EXECUTOR_CONCURRENCY } : {}),
         apiOrigin,
         owner: `executor-${crypto.randomUUID()}`,
         activation: activationReady,
