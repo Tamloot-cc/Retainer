@@ -806,6 +806,21 @@ move emits an old-type tombstone and new-type creation in the same transaction,
 so handlers watching either type can recompute.
 Personal memory is excluded from the workspace feed in v1.
 
+A schema change that hides or relabels values (deleting, that is deprecating,
+a field or an object type, or changing an object's label field) appends one
+`schema` change per affected object type, not one change per record:
+`recordId` is null, `objectTypeId` names the type and `changedKeys` the field
+keys whose values it hid (every active field of a deleted type, both sides of
+a deleted relation, and relations elsewhere that pointed at a deleted type).
+The schema change takes no record locks and no record snapshots, so deleting a
+field of a 50,000-record type holds the exclusive schema lock only for the
+schema rows themselves (plus one search-text rewrite statement when the field
+was searchable). A change trigger on that type queues one job for it; a trigger
+scoped to fields queues it only when one of its fields is named. Its handler
+rescans the type's current records (last-contact queues its paged scan).
+Deleting an event type still deletes each event through the event lifecycle,
+so those events also get their own `delete` changes.
+
 Use a per-workspace feed counter locked at the end of the write transaction;
 allocate positions and commit while holding it. This serializes publication
 briefly and prevents a slow lower sequence from committing after a consumer has
@@ -820,7 +835,9 @@ deletes at most 1000 rows per transaction under the counter lock and advances
 linked through dispatcher checkpoints; never rely on in-process notifications.
 
 `GET /v1/changes?after=<opaqueCursor>&limit=100` and `list_changes` return IDs,
-operation, changed keys, origin, next cursor and `headCursor`. Read scope required; authorize
+operation (`create`, `update`, `links`, `delete`, `merge`, `retract`,
+`supersede`, `review`, `forget` or `schema`), changed keys, origin, next cursor
+and `headCursor`. Read scope required; authorize
 referenced records at read time. Tombstones contain only authorized minimal IDs.
 Retention is 30 days; expired cursors return `410 cursor_expired` with a rescan
 instruction, never silent truncation. Capture `headCursor` from a fresh page
@@ -847,8 +864,8 @@ blocked). The depth cap counts server-derived hops (`cause_depth`), not the leng
 of the exclusion chain, and a coalesced job takes the deeper of the two, so a
 union never manufactures a false `trigger_cycle_blocked`. A running or retrying
 job absorbs nothing; the change queues a new job.
-Lifecycle changes (create, delete, merge, retract, supersede, links, and both
-halves of a type move) always keep their own job, because their metadata
+Lifecycle and schema changes (create, delete, merge, retract, supersede, links,
+schema, and both halves of a type move) always keep their own job, because their metadata
 (tombstone, `mergedIntoId`, old type) is not a superset of a later update's.
 
 Agents and API keys carry no server cause, so loops through them are bounded by

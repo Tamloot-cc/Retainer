@@ -84,7 +84,8 @@ type Job = {
 /** A feed row as the dispatcher reads it. */
 type DispatchedChange = {
   position: string;
-  record_id: string;
+  /** Null only for a schema-level change (no record; coalesces with nothing). */
+  record_id: string | null;
   object_type_id: string;
   operation: string;
   field_keys: string[];
@@ -525,10 +526,12 @@ export class ExtensionQueue {
                     'schema_binding_conflict',
                     'change trigger field binding is unavailable',
                   );
+                // A field-scoped trigger reacts to updates, reviews and
+                // schema changes only when one of its fields is named.
                 const direct =
                   row.object_type_id === object.id &&
                   (!fn.trigger.fieldIds.length ||
-                    !['update', 'review'].includes(row.operation) ||
+                    !['update', 'review', 'schema'].includes(row.operation) ||
                     keys.some((key) => row.field_keys.includes(key as string)));
                 const relationChanged = row.field_keys.some((key) =>
                   schema.objectsById

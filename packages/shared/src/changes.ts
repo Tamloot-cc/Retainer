@@ -7,10 +7,18 @@ export type ChangeOperation =
   | 'retract'
   | 'supersede'
   | 'review'
-  | 'forget';
+  | 'forget'
+  /**
+   * Schema-level: a field or object type was deleted (deprecated) or an
+   * object's label field changed. `recordId` is null, `objectTypeId` names
+   * the affected type and `changedKeys` the affected field keys. No per-record
+   * changes follow, so a handler rescans the type's current records.
+   */
+  | 'schema';
 export type RecordChange = {
   cursor: string;
-  recordId: string;
+  /** Null only for a `schema` change. */
+  recordId: string | null;
   objectTypeId: string;
   operation: ChangeOperation;
   changedKeys: string[];

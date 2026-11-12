@@ -6,7 +6,14 @@ import { rewriteSearchText } from '../records/rebuild-search.js';
 import { deleteEventsOfType } from '../records/service.js';
 import { compileSchema } from '../schema/compiled.js';
 import { loadSchemaState } from '../schema/load.js';
-import type { DiffOp, FieldState, ObjectState, SchemaIssue, SchemaState } from '../schema/types.js';
+import {
+  type DiffOp,
+  type FieldState,
+  type ObjectState,
+  relationTargetIds,
+  type SchemaIssue,
+  type SchemaState,
+} from '../schema/types.js';
 import { repairViews } from '../views/service.js';
 
 /** A change that validates but conflicts with existing records. */
@@ -159,22 +166,11 @@ export async function persistSchema(
   actor: Actor,
 ): Promise<number> {
   const changes = ChangeCollector.forSchema(tx, workspaceId, compileSchema(current, 0));
-  const affectedObjects = ops
-    .flatMap((op) =>
-      'objectId' in op &&
-      (op.kind === 'deprecate_object' ||
-        op.kind === 'deprecate_field' ||
-        (op.kind === 'update_object' && op.property === 'labelFieldId'))
-        ? [current.objects.find((object) => object.universalId === op.objectId)?.id]
-        : [],
-    )
-    .filter((id): id is string => id !== undefined);
-  if (affectedObjects.length) {
-    const records = await tx<
-      { id: string }[]
-    >`select id from records where workspace_id=${workspaceId} and object_type_id=any(${affectedObjects}::uuid[]) order by id for update`;
-    for (const record of records) await changes.capture(tx, record.id);
-  }
+  // One schema-level change per affected object type, never one per record:
+  // no record lock or snapshot is taken here, so a large object stays
+  // writable as soon as the schema lock is released.
+  for (const [objectTypeId, keys] of schemaChangeKeys(current, ops))
+    changes.schemaChanged(objectTypeId, keys);
   const createdBy = tx.json(actor);
   const currentObjects = new Map(current.objects.map((o) => [o.universalId, o]));
   const objectIds = new Map<string, string>();
@@ -302,7 +298,7 @@ export async function persistSchema(
     if (
       (op.kind === 'update_object' && op.property === 'labelFieldId') ||
       (op.kind === 'update_field' && op.property === 'isSearchable') ||
-      op.kind === 'deprecate_field' ||
+      (op.kind === 'deprecate_field' && feedsSearchText(current, op.objectId, op.fieldId)) ||
       op.kind === 'update_option'
     ) {
       refreshObjects.add(op.objectId);
@@ -330,6 +326,62 @@ export async function persistSchema(
     );
   }
   return version;
+}
+
+/**
+ * Field keys whose values a schema operation hides or relabels, by object
+ * type ID: a deprecated field; every active field of a deprecated object;
+ * relations elsewhere that point at a deprecated object (their targets drop
+ * out of reads); and an object whose label field changed (no keys).
+ */
+export function schemaChangeKeys(current: SchemaState, ops: DiffOp[]): Map<string, string[]> {
+  const affected = new Map<string, Set<string>>();
+  const add = (object: ObjectState | undefined, keys: string[], always = false) => {
+    if (!object?.id || object.status !== 'active' || (!keys.length && !always)) return;
+    const set = affected.get(object.id) ?? new Set<string>();
+    for (const key of keys) set.add(key);
+    affected.set(object.id, set);
+  };
+  const byId = new Map(current.objects.map((o) => [o.universalId, o]));
+  const deprecatedObjects = new Set<string>();
+  for (const op of ops) {
+    if (op.kind === 'deprecate_object') {
+      const object = byId.get(op.objectId);
+      deprecatedObjects.add(op.objectId);
+      add(
+        object,
+        (object?.fields ?? []).filter((f) => f.status === 'active').map((f) => f.key),
+        true,
+      );
+    } else if (op.kind === 'deprecate_field') {
+      const object = byId.get(op.objectId);
+      const field = object?.fields.find((f) => f.universalId === op.fieldId);
+      if (field?.status === 'active') add(object, [field.key]);
+    } else if (op.kind === 'update_object' && op.property === 'labelFieldId') {
+      add(byId.get(op.objectId), [], true);
+    }
+  }
+  if (deprecatedObjects.size)
+    for (const object of current.objects)
+      add(
+        object,
+        object.fields
+          .filter(
+            (f) =>
+              f.status === 'active' &&
+              f.type === 'relation' &&
+              relationTargetIds(f.settings).some((id) => deprecatedObjects.has(id)),
+          )
+          .map((f) => f.key),
+      );
+  return new Map([...affected].map(([id, keys]) => [id, [...keys].sort()]));
+}
+
+/** Whether a field's values reach a record's label or search text. */
+function feedsSearchText(state: SchemaState, objectId: string, fieldId: string): boolean {
+  const object = state.objects.find((o) => o.universalId === objectId);
+  const field = object?.fields.find((f) => f.universalId === fieldId);
+  return !field || field.isSearchable || object?.labelFieldId === fieldId;
 }
 
 function findField(state: SchemaState, objectId: string, fieldId: string) {

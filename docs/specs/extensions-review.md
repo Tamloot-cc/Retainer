@@ -152,5 +152,6 @@ migrations and runs one stream at a time.
 3. R9 coalescing and throttle.
 4. Label override layer and semver server ranges (§2).
 5. Function-scoped run tokens and secrets, `previousVersion` (§2). Done.
-6. Schema-level change for deprecation (R2).
+6. Schema-level change for deprecation (R2). Done: one `schema` change per
+   affected object type, no per-record fan-out or record locks.
 7. Availability simplification (§4).

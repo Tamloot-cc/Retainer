@@ -20,7 +20,7 @@ export function registerChangeTools(server: McpServer, sql: Sql, caller: Caller)
     'list_changes',
     {
       description:
-        'Read commit-ordered workspace record changes as minimal IDs and permanent field keys. Persist nextCursor even on an empty page. Personal memory is excluded. For a current-record rescan, capture headCursor before scanning, then replay after that cursor. Expired cursors return 410. This is not delivery acknowledgement or exactly-once extraction.',
+        'Read commit-ordered workspace record changes as minimal IDs and permanent field keys. Persist nextCursor even on an empty page. A schema change (operation schema, recordId null) names an object type and the field keys a field or type deletion hid; rescan that type. Personal memory is excluded. For a current-record rescan, capture headCursor before scanning, then replay after that cursor. Expired cursors return 410. This is not delivery acknowledgement or exactly-once extraction.',
       inputSchema: z.strictObject({
         after: z.string().min(1).max(500).optional(),
         limit: z.number().int().min(1).max(1000).optional(),

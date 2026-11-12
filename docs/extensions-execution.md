@@ -185,6 +185,10 @@ For a full current-record rescan, first capture `headCursor` from a fresh page,
 scan current records, then replay changes after that saved cursor. Writes during
 the scan may be seen twice; recompute from current state. A cursor older than
 30 days returns `410 cursor_expired` rather than silently skipping history.
+Deleting a field or object type, or changing an object's label field, appends
+one `schema` change per affected object type instead of one per record:
+`recordId` is null and `changedKeys` lists the hidden field keys. A handler
+that receives one rescans that type's current records.
 
 The dispatcher atomically queues a matching job and advances its own durable
 checkpoint. A job receives only `changePosition`; `get_change`/SDK `change`
