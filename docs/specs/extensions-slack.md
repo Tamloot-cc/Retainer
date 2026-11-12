@@ -47,22 +47,22 @@ A Retainer-owned, OAuth-installed Slack app is §6.
 
 **Settings.**
 
-| Setting | Type | Notes |
-| --- | --- | --- |
-| `botToken` | string, secret, required, reconnect | The `xoxb-` token from **OAuth & Permissions**. |
-| `signingSecret` | string, secret, reconnect | From **Basic Information**. Required for the webhook; without it the extension only polls. |
-| `shareInvitedChannels` | boolean, consent, required | "Everyone in this Retainer workspace can read the threads in every Slack channel the bot is invited to." |
-| `createPeople` | string, options | Platform default `never`. |
-| `backfillDays` | number, default 30 | Days of history to import on install, at most 90 (§5). |
+| Setting                | Type                                | Notes                                                                                                    |
+| ---------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `botToken`             | string, secret, required, reconnect | The `xoxb-` token from **OAuth & Permissions**.                                                          |
+| `signingSecret`        | string, secret, reconnect           | From **Basic Information**. Required for the webhook; without it the extension only polls.               |
+| `shareInvitedChannels` | boolean, consent, required          | "Everyone in this Retainer workspace can read the threads in every Slack channel the bot is invited to." |
+| `createPeople`         | string, options                     | Platform default `never`.                                                                                |
+| `backfillDays`         | number, default 30                  | Days of history to import on install, at most 90 (§5).                                                   |
 
 **Slack app manifest.** Shipped as `artifacts/extensions/slack/slack-app-manifest.json`.
 Bot scopes, all read-only:
 
-| Scope | Used for |
-| --- | --- |
-| `channels:read`, `groups:read` | List the channels the bot is a member of. |
-| `channels:history`, `groups:history` | Read messages and threads in those channels. |
-| `users:read`, `users:read.email` | Resolve authors to names and emails for participant matching. |
+| Scope                                | Used for                                                      |
+| ------------------------------------ | ------------------------------------------------------------- |
+| `channels:read`, `groups:read`       | List the channels the bot is a member of.                     |
+| `channels:history`, `groups:history` | Read messages and threads in those channels.                  |
+| `users:read`, `users:read.email`     | Resolve authors to names and emails for participant matching. |
 
 Bot events: `message.channels`, `message.groups`. No `im:*` or `mpim:*`
 scopes, so direct messages are never visible. The manifest leaves
@@ -110,14 +110,14 @@ for chatty channels.
 
 **Functions.**
 
-| Function | Trigger | Does |
-| --- | --- | --- |
-| `setup` | install | `auth.test`, scope check, bind the team, prepare the `events` callback, start the backfill scan. |
-| `cleanup` | uninstall | Retire the callback. Nothing to clean up at Slack. |
-| `verify-event` | route `events`, 5 s | Check the signature and answer challenges (below). |
-| `scan` | job | Backfill: page `users.conversations` (bot's channels), then `conversations.history` from `now − backfillDays`; reserve items in batches of 30 and enqueue `sync-thread` for each. |
-| `catch-up` | schedule `*/15 * * * *` | Re-read the last 7 days of `conversations.history` per channel. Enqueue `sync-thread` for every parent whose `latest_reply` or `edited.ts` differs from the copy in KV. |
-| `sync-thread` | job | `conversations.replies` for the thread, render, stage participants, upload the transcript if needed, import. |
+| Function       | Trigger                 | Does                                                                                                                                                                              |
+| -------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setup`        | install                 | `auth.test`, scope check, bind the team, prepare the `events` callback, start the backfill scan.                                                                                  |
+| `cleanup`      | uninstall               | Retire the callback. Nothing to clean up at Slack.                                                                                                                                |
+| `verify-event` | route `events`, 5 s     | Check the signature and answer challenges (below).                                                                                                                                |
+| `scan`         | job                     | Backfill: page `users.conversations` (bot's channels), then `conversations.history` from `now − backfillDays`; reserve items in batches of 30 and enqueue `sync-thread` for each. |
+| `catch-up`     | schedule `*/15 * * * *` | Re-read the last 7 days of `conversations.history` per channel. Enqueue `sync-thread` for every parent whose `latest_reply` or `edited.ts` differs from the copy in KV.           |
+| `sync-thread`  | job                     | `conversations.replies` for the thread, render, stage participants, upload the transcript if needed, import.                                                                      |
 
 User lookups go into installation KV with a 24-hour expiry, so a busy channel
 costs one `users.info` call per author a day.

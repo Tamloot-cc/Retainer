@@ -20,7 +20,7 @@ The reasons:
 - The Tamloot API changes are generic, so the same work serves other
   connectors.
 
-The standalone model still fits Tamloot *reading* Retainer later, for example
+The standalone model still fits Tamloot _reading_ Retainer later, for example
 meeting prep that pulls CRM context. That is out of scope here.
 
 V1 polls. Tamloot webhooks and Retainer's `route` ingress come later (§5).
