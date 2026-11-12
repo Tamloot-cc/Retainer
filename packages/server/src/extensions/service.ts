@@ -26,7 +26,11 @@ import { loadSchemaState } from '../schema/load.js';
 import { planSchemaChange, runSchemaChange } from '../schema-engine/engine.js';
 import { createViewInTransaction } from '../views/service.js';
 import { ExtensionCatalog, hash } from './catalog.js';
-import { type ContributionRow, contributionOperations } from './contributions.js';
+import {
+  type ContributionRow,
+  contributionOperations,
+  retiredContributions,
+} from './contributions.js';
 
 export const installInputSchema = z.strictObject({
   installationId: z.uuid().optional(),
@@ -230,6 +234,16 @@ export class Extensions {
     });
   }
 
+  /** The installed release's setting definitions, or undefined when it can no longer load. */
+  private installedSettings(row: Row) {
+    try {
+      const release = this.catalog.get(row.registration_id, row.version);
+      return release.digest === row.release_digest ? release.manifest.settings : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   private async plan(tx: Tx, caller: Caller, input: ExtensionInstallInput) {
     const release = this.catalog.get(input.registrationId, input.version);
     const manifest = release.manifest;
@@ -279,11 +293,9 @@ export class Extensions {
       throw conflict('upgrade_conflict', 'reinstall before upgrading');
     if (!input.installationId && existing && existing.state !== 'uninstalled')
       throw conflict('upgrade_conflict', 'installation exists; use a validated upgrade');
-    if (!input.installationId && existing && existing.release_digest !== release.digest)
-      throw conflict(
-        'upgrade_conflict',
-        'reinstall requires the retained release; apply a validated upgrade afterward',
-      );
+    // Reinstall may target any compatible catalog release: the additive plan below
+    // reuses the retained schema bindings, and the suppression namespace is keyed
+    // by registration, so an installed release that is gone never strands it.
     if (
       existing &&
       !input.reconnect &&
@@ -300,6 +312,15 @@ export class Extensions {
         'a pending secret reference expired or was already used',
       );
     const draftId = existing?.id ?? pending[0]?.draft_installation_id;
+    // An upgrade may supply a secret its installed release does not declare: no
+    // credential is being replaced, so it needs no reconnect. Existing secrets do.
+    const newSecrets = new Set<string>();
+    if (existing && input.installationId && existing.version !== input.version) {
+      const installed = this.installedSettings(existing);
+      for (const [name, definition] of Object.entries(manifest.settings))
+        if (definition.secret && !definition.generated && installed && !installed[name]?.secret)
+          newSecrets.add(name);
+    }
     for (const [name, id] of Object.entries(refs)) {
       const definition = manifest.settings[name],
         staged = pending.find((p) => p.id === id);
@@ -315,7 +336,12 @@ export class Extensions {
           'connection_required',
           'pending secret is not bound to this installation and setting',
         );
-      if (existing && existing.state !== 'uninstalled' && !input.reconnect)
+      if (
+        existing &&
+        existing.state !== 'uninstalled' &&
+        !input.reconnect &&
+        !(input.installationId && newSecrets.has(name))
+      )
         throw conflict('connection_required', 'credential changes require reconnect');
     }
     const [stored] = existing
@@ -367,7 +393,13 @@ export class Extensions {
       throw conflict('schema_binding_conflict', 'extensions cannot target internal memory types');
     const operations = contributionOperations(current, manifest, owned);
     const planned = planSchemaChange(current, operations, 'workspace');
+    const retired = retiredContributions(current, manifest, owned);
+    const skippedViews = manifest.views.filter(
+      (v) =>
+        !owns('view', v.universalId) && [v.objectId, ...v.fieldIds].some((id) => retired.has(id)),
+    );
     for (const view of manifest.views) {
+      if (skippedViews.includes(view)) continue;
       const [manager] = await tx<
         { installation_id: string }[]
       >`select installation_id from extension_contributions
@@ -407,8 +439,11 @@ export class Extensions {
       const trigger = fn.trigger;
       const object = planned.desired.objects.find((o) => o.universalId === trigger.objectId);
       if (
-        !object ||
-        trigger.fieldIds.some((id) => !object.fields.some((f) => f.universalId === id))
+        !retired.has(trigger.objectId) &&
+        (!object ||
+          trigger.fieldIds.some(
+            (id) => !retired.has(id) && !object.fields.some((f) => f.universalId === id),
+          ))
       )
         throw conflict(
           'schema_binding_conflict',
@@ -451,16 +486,21 @@ export class Extensions {
       generation,
       releaseDigest: release.digest,
       operations: planned.ops,
-      views: manifest.views.map((view) => ({
-        universalId: view.universalId,
-        name: view.name,
-        action: owns('view', view.universalId) ? 'retain' : 'create',
-      })),
+      views: manifest.views
+        .filter((view) => !skippedViews.includes(view))
+        .map((view) => ({
+          universalId: view.universalId,
+          name: view.name,
+          action: owns('view', view.universalId) ? 'retain' : 'create',
+        })),
       grants: { actor: manifest.requestedActor, scopes: manifest.scopes },
       ...(existing && input.grantChange
         ? { previousGrants: { actor: existing.granted_actor, scopes: existing.granted_scopes } }
         : {}),
       warnings: [
+        ...skippedViews.map(
+          (view) => `View ${view.name} is skipped: its object or fields were deleted.`,
+        ),
         ...(input.reconnect
           ? [
               input.replaceSourceAccount
@@ -481,7 +521,7 @@ export class Extensions {
             ]),
       ],
     };
-    return { preview, release, operations, existing, draftId };
+    return { preview, release, operations, existing, draftId, retired };
   }
 
   async preview(caller: Caller, input: ExtensionInstallInput) {
@@ -607,6 +647,7 @@ export class Extensions {
             : schema.objects
                 .flatMap((o) => o.fields)
                 .find((f) => f.universalId === c.definition.universalId);
+        if (!element?.id && plan.retired.has(c.definition.universalId)) continue;
         if (!element?.id)
           throw conflict('schema_binding_conflict', 'contribution missing after apply');
         await save(c.kind, c.definition.universalId, element.id, c.definition);
@@ -614,12 +655,14 @@ export class Extensions {
           const object = schema.objects.find((o) => o.id === element.id);
           for (const f of c.definition.fields) {
             const field = object?.fields.find((v) => v.universalId === f.universalId);
+            if (!field?.id && plan.retired.has(f.universalId)) continue;
             if (!field?.id) throw conflict('schema_binding_conflict', 'contributed field missing');
             await save('field', f.universalId, field.id, f);
           }
         }
       }
       for (const view of manifest.views) {
+        if (!plan.preview.views.some((v) => v.universalId === view.universalId)) continue;
         const [retained] =
           await tx`select id from extension_contributions where kind = 'view' and universal_id = ${view.universalId}`;
         if (retained && !plan.existing)
@@ -769,6 +812,10 @@ export class Extensions {
       await lockInstallation(tx, caller.workspaceId, candidate.registration_id);
       const [current] = await tx<Row[]>`select * from extension_installations where id = ${id}`;
       if (!current) throw notFound('extension installation');
+      // Uninstalling has already retired secrets and webhooks; a settings change
+      // must not cancel its cleanup or turn it back into a disabled installation.
+      if (current.state === 'uninstalling')
+        throw conflict('installation_disabled', 'uninstall is in progress; reinstall afterward');
       if (current.state === 'uninstalled')
         throw conflict('installation_disabled', 'reinstall before changing settings');
       if (current.settings_revision !== input.expectedRevision)
