@@ -17,6 +17,46 @@ function conflict(id: string, properties: string[], code = 'upgrade_conflict'): 
   });
 }
 
+/**
+ * Universal IDs of this installation's contributions that were deleted before
+ * the schema engine refused it: a deprecated or missing object or field it
+ * owns, and any new field of such an object. Plans treat them as absent: they
+ * are not recreated, views over them are skipped and triggers on them never
+ * fire, so a deletion can't block upgrade or enable forever.
+ */
+export function retiredContributions(
+  current: SchemaState,
+  manifest: ExtensionManifest,
+  owned: ContributionRow[],
+): Set<string> {
+  const retired = new Set<string>();
+  const elements = new Map<string, ObjectState | FieldState>();
+  for (const o of current.objects) {
+    if (o.id) elements.set(o.id, o);
+    for (const f of o.fields) if (f.id) elements.set(f.id, f);
+  }
+  for (const c of owned) {
+    if (c.kind !== 'object' && c.kind !== 'field') continue;
+    const live = elements.get(c.element_id);
+    if (live?.status !== 'active') retired.add(c.universal_id);
+  }
+  const fieldsOf = (objectId: string, ids: string[]) => {
+    if (!retired.has(objectId)) return;
+    const object = current.objects.find((o) => o.universalId === objectId);
+    for (const id of ids)
+      if (!object?.fields.some((f) => f.universalId === id && f.status === 'active'))
+        retired.add(id);
+  };
+  for (const c of manifest.schema)
+    if (c.kind === 'field') fieldsOf(c.objectId, [c.definition.universalId]);
+    else
+      fieldsOf(
+        c.definition.universalId,
+        c.definition.fields.map((f) => f.universalId),
+      );
+  return retired;
+}
+
 /** Additive releases preserve local names, labels, deprecation and omitted elements. */
 export function contributionOperations(
   current: SchemaState,
@@ -24,6 +64,7 @@ export function contributionOperations(
   owned: ContributionRow[],
 ): SchemaOperation[] {
   const operations: SchemaOperation[] = [];
+  const retired = retiredContributions(current, manifest, owned);
   const owner = (kind: string, id: string) =>
     owned.find((c) => c.kind === kind && c.universal_id === id);
   const presentation = (
@@ -68,7 +109,8 @@ export function contributionOperations(
     if (anyLive && (!live || !prior || prior.element_id !== live.id))
       conflict(definition.universalId, ['ownership', 'objectId'], 'schema_binding_conflict');
     if (!live) {
-      if (prior) conflict(definition.universalId, ['removed'], 'schema_binding_conflict');
+      // Deleted before deletion was refused, or new on a deleted object: stays absent.
+      if (retired.has(definition.universalId)) return;
       if (object?.status === 'deprecated') conflict(objectId, ['status']);
       operations.push({ op: 'create_field', object: objectId, field: definition });
       return;
@@ -99,7 +141,7 @@ export function contributionOperations(
     const live = current.objects.find((o) => o.universalId === definition.universalId);
     const prior = owner('object', definition.universalId);
     if (!live) {
-      if (prior) conflict(definition.universalId, ['removed'], 'schema_binding_conflict');
+      if (prior) continue;
       // Do not silently adopt a field already used by another object.
       for (const f of definition.fields)
         if (

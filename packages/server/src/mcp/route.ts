@@ -4,7 +4,6 @@ import { authenticate } from '../auth/middleware.js';
 import type { OAuthSettings } from '../auth/oauth-token.js';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
-import type { RunTokens } from '../extension-runtime/tokens.js';
 import type { ExtensionCatalog } from '../extensions/catalog.js';
 import type { FileStorage } from '../file-storage/contract.js';
 import type { AppEnv } from '../http/response.js';
@@ -25,7 +24,6 @@ export function mcpRoute(
     extensionActivation?: ReadonlySet<string> | undefined;
     fileStorage?: FileStorage | undefined;
     fileQuota?: number | undefined;
-    runTokens?: RunTokens | undefined;
     publicOrigin?: string | undefined;
     /** Accepts MCP OAuth access tokens too (accounts spec 4.7). */
     oauth?: OAuthSettings | undefined;
@@ -43,7 +41,9 @@ export function mcpRoute(
     { onerror: (error) => log.error(error) },
   );
 
-  app.use('/mcp', authenticate(sql, { publicOrigin, oauth, runTokens: options.runTokens }));
+  // Extension runs use only the REST runtime and API endpoints: a run token is
+  // never an MCP credential, so it cannot reach tools beyond its function's needs.
+  app.use('/mcp', authenticate(sql, { publicOrigin, oauth }));
   app.use('/mcp', options.rateLimit);
   app.all('/mcp', (c) => {
     const caller = c.get('caller');

@@ -223,8 +223,14 @@ describe('additive extension upgrades', () => {
     const object = (await sdk.schema()).objects.find((o) => o.nameSingular === 'fixtureItem');
     expect(object?.fields.find((f) => f.name === 'status')?.label).toBe('Publisher status');
     expect(object?.fields.find((f) => f.name === 'name')).toBeDefined();
-    await sdk.proposeSchemaChange([{ op: 'delete_field', object: 'fixtureItem', field: 'status' }]);
-    // Same release preview keeps a deprecated field; it never reactivates it.
+    // An installed extension's field can't be deleted through the schema engine.
+    await expect(
+      sdk.proposeSchemaChange([{ op: 'delete_field', object: 'fixtureItem', field: 'status' }]),
+    ).rejects.toMatchObject({ code: 'schema_invalid' });
+    // A field deleted before that rule (simulated here) stays deprecated; a
+    // same-release preview never reactivates it.
+    await db.owner`update fields set status='deprecated' where universal_id=${fieldId}
+      and workspace_id=(select workspace_id from extension_installations where id=${installed.id})`;
     const again = await sdk.previewExtension(upgrade);
     await sdk.upgradeExtension(
       installed.id,

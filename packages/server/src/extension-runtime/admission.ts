@@ -23,8 +23,9 @@ export async function admitRun(
       granted_scopes: ('read' | 'write')[];
     }[]
   >`
-    select cleanup_deadline>clock_timestamp() as cleanup_live,generation,state,release_digest,granted_actor,granted_scopes from extension_installations
-    where id=${run.installationId} and registration_id=${run.registrationId}`;
+    select i.cleanup_deadline>clock_timestamp() as cleanup_live,i.generation,i.state,i.release_digest,i.granted_actor,i.granted_scopes
+    from extension_installations i join workspaces w on w.id=i.workspace_id
+    where i.id=${run.installationId} and i.registration_id=${run.registrationId} and w.deletion_scheduled_at is null`;
   if (
     !installation ||
     installation.generation !== run.generation ||
@@ -54,6 +55,8 @@ export async function admitRun(
     throw new AppError(409, 'installation_disabled', 'this lifecycle run cannot access CRM data');
   if (run.scopes.some((scope) => !installation.granted_scopes.includes(scope)))
     throw new AppError(403, 'forbidden', 'run scopes exceed the current installation grant');
+  if (write && !run.scopes.includes('write'))
+    throw new AppError(403, 'forbidden', 'run credential requires write scope');
   if (write) {
     const [budget] =
       await tx`insert into extension_write_budgets(workspace_id,installation_id,window_start,count)
