@@ -770,6 +770,25 @@ export class RetainerClient {
       input,
     );
   }
+  /**
+   * The fill-only mapped write of a run whose function declares `mappedWrite`:
+   * fills only mapped fields that have no value and were not cleared.
+   */
+  extensionMappedWrite(
+    installationId: string,
+    input: {
+      recordId: string;
+      lookup?: string;
+      values: Record<string, unknown>;
+      observedAt?: string;
+    },
+  ) {
+    return this.post<{
+      outcome: 'applied' | 'skipped';
+      reason?: 'record_deleted' | 'record_merged' | 'lookup_changed' | 'nothing_to_fill';
+      fields: Record<string, 'applied' | 'populated' | 'cleared' | 'pending_review'>;
+    }>(`/v1/extensions/${encodeURIComponent(installationId)}/runtime/mapped-writes`, input);
+  }
   extensionCheckpoint(
     id: string,
     input: {
