@@ -88,7 +88,14 @@ export class Changes {
       }));
     return changes;
   }
-  /** One page after `head.after`, rechecked against retention once read. */
+  /**
+   * One page after `head.after`, rechecked against retention once read.
+   * The recheck relies on READ COMMITTED (`inWorkspace`'s default): each
+   * statement takes a fresh snapshot, so the recheck sees any prune whose
+   * deletions the page read saw. Under a single snapshot (REPEATABLE READ)
+   * the head and page would instead agree with each other, which is safe
+   * too; only mixing snapshots between the page and the recheck is not.
+   */
   async page(tx: Tx, schema: CompiledSchema, workspace: string, head: FeedHead, limit: number) {
     const { current, after } = head;
     const raw = await tx<

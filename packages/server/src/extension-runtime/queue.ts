@@ -376,8 +376,19 @@ export class ExtensionQueue {
               row.cause,
               'change',
             );
-            await tx`update extension_jobs j set change_snapshot=(to_jsonb(c)-'workspace_id'-'created_at')||jsonb_build_object('position',c.position::text)
-            from record_changes c where j.id=${changeJobId} and j.change_snapshot is null and c.workspace_id=${workspace} and c.position=${row.position}::bigint`;
+            const [snapshot] = await tx<{ present: boolean }[]>`with copied as (
+                update extension_jobs j set change_snapshot=(to_jsonb(c)-'workspace_id'-'created_at')||jsonb_build_object('position',c.position::text)
+                from record_changes c where j.id=${changeJobId} and j.change_snapshot is null and c.workspace_id=${workspace} and c.position=${row.position}::bigint
+                returning j.id)
+              select exists(select 1 from copied) or exists(select 1 from extension_jobs where id=${changeJobId} and change_snapshot is not null) as present`;
+            // Pruning can commit after the retention check above. A job
+            // without its change could never read it, so roll back the whole
+            // dispatch rather than advance the cursor past it.
+            if (!snapshot?.present)
+              throw conflict(
+                'cursor_expired',
+                'change dispatch history expired; rescan current records before restarting the trigger',
+              );
             queued++;
           }
         const last = rows.at(-1);

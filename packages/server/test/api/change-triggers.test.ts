@@ -393,4 +393,51 @@ describe('transactional change dispatch with real Postgres', () => {
     ).toBe(200);
     expect(await h.queue.claim(h.workspace.id, pending.id, 'after-expiry-retry')).toBeTruthy();
   });
+  it('refuses a dispatch whose change is pruned after its retention check, without advancing the cursor', async () => {
+    const h = await setup(),
+      id = h.ids[0];
+    if (!id) throw new Error('installation missing');
+    await h.person('Pruned mid-dispatch');
+    const [before] =
+      await db.owner`select position::text from change_dispatch where installation_id=${id}`;
+    let entered = () => {},
+      release = () => {};
+    const started = new Promise<void>((r) => {
+        entered = r;
+      }),
+      paused = new Promise<void>((r) => {
+        release = r;
+      });
+    // Holds new job rows back, so the dispatcher pauses after its retention check.
+    const blocker = db.owner.begin(async (tx) => {
+      await tx`lock table extension_jobs in exclusive mode`;
+      entered();
+      await paused;
+    });
+    await started;
+    const dispatch = h.queue.dispatchChanges(h.workspace.id, id);
+    dispatch.catch(() => {});
+    try {
+      for (let i = 0; i < 100; i++) {
+        const [waiting] = await db.owner`select count(*)::int as n from pg_stat_activity
+          where datname=current_database() and wait_event_type='Lock'`;
+        if ((waiting?.n ?? 0) > 0) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      await db.owner`update record_changes set created_at=clock_timestamp()-interval '31 days' where workspace_id=${h.workspace.id}`;
+      expect(
+        await new ChangeMaintenance(h.app.sql, h.app.sql).pruneChanges(h.workspace.id),
+      ).toBeGreaterThan(0);
+    } finally {
+      release();
+      await blocker;
+    }
+    await expect(dispatch).rejects.toMatchObject({ code: 'cursor_expired' });
+    const [after] =
+      await db.owner`select position::text from change_dispatch where installation_id=${id}`;
+    expect(after?.position).toBe(before?.position);
+    expect(
+      await db.owner`select id from extension_jobs where installation_id=${id} and trigger_kind='change'`,
+    ).toHaveLength(0);
+  });
 });

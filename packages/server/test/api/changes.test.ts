@@ -567,4 +567,45 @@ describe('commit-ordered minimal record changes with real Postgres', () => {
     ).toBe(true);
     expect((await h.list(start)).body.changes).toHaveLength(3);
   });
+  it('lets an erasure that edits old changes finish while a prune batch races it, without deadlock', async () => {
+    const h = await setup(),
+      old = await h.create('Old erased');
+    await h.create('Old kept');
+    const current = await h.create('Current');
+    await db.owner`update record_changes set created_at=clock_timestamp()-interval '31 days'
+      where workspace_id=${h.workspace.id} and record_id<>${current.body.id}`;
+    const g = gate(),
+      // Forget's lock order: privacy exclusive, edit record_changes, then the counter at publication.
+      erasure = withWrite(
+        t.sql,
+        { workspaceId: h.workspace.id, actor: { type: 'user', id: 'admin' }, scopes: ['admin'] },
+        async (tx) => {
+          await tx`delete from record_changes where record_id=${old.body.id}`;
+          g.entered();
+          await g.paused;
+          await tx`update change_counters set position=position where workspace_id=${h.workspace.id}`;
+        },
+        { privacy: 'exclusive' },
+      );
+    await g.started;
+    const prune = new ChangeMaintenance(t.sql, t.sql).pruneChanges(h.workspace.id);
+    try {
+      // Wait until the prune is blocked behind the erasure.
+      for (let i = 0; i < 100; i++) {
+        const [waiting] = await db.owner`select count(*)::int as n from pg_stat_activity
+          where datname=current_database() and wait_event_type='Lock'`;
+        if ((waiting?.n ?? 0) > 0) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    } finally {
+      g.release();
+    }
+    await expect(erasure).resolves.toBeUndefined();
+    expect(await prune).toBe(1);
+    expect(
+      (
+        await db.owner`select record_id from record_changes where workspace_id=${h.workspace.id}`
+      ).map((r) => r.record_id),
+    ).toEqual([current.body.id]);
+  });
 });

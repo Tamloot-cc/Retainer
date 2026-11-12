@@ -35,13 +35,18 @@ export class ChangeMaintenance {
     }
   }
   /**
-   * One pruning transaction: it holds the counter lock only for its own
+   * One pruning transaction: it holds the privacy lock shared, then the
+   * counter lock only for its own
    * batch, and advances `retained_after` to what it deleted together with
    * the deletion, so feed readers and the dispatcher, which read without
    * the lock, see the marker whenever they could have missed a row.
    */
   async pruneBatch(workspace: string, batch = PRUNE_BATCH) {
     return inWorkspace(this.sql, workspace, async (tx) => {
+      // The global lock order: privacy before the counter. Forget holds
+      // privacy exclusively, edits record_changes, then takes the counter
+      // at publication; taking the counter first here would deadlock it.
+      await lockPrivacyShared(tx, workspace);
       const [counter] = await tx<
         { position: string; retained_after: string }[]
       >`select position::text,retained_after::text from change_counters where workspace_id=${workspace} for update`;
