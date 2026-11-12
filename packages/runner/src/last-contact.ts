@@ -3,6 +3,7 @@ import { defineExtension, type ExecutionResult, type Invocation } from '@retaine
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
 import { BASE_EVENT_TYPE_IDS, BASE_OBJECT_IDS } from '@retainer/shared';
 import { z } from 'zod';
+import { apiFetch, retryTransient } from './outcome.js';
 
 export const LAST_CONTACT = {
   registration: 'c1e8ba8a-69bb-4b2e-8db3-6ddc6c7b1606',
@@ -135,15 +136,23 @@ const cursor = z.strictObject({
 });
 
 /** Deterministic CRM projection; KV contains scan control only, never values, bodies or credentials. */
-export async function executeLastContact(
+export function executeLastContact(
   invocation: Invocation,
   signal: AbortSignal,
   transport: typeof fetch = fetch,
 ): Promise<ExecutionResult> {
+  // Only API outages, rate limits, conflicts and lost connections retry; anything else fails.
+  return retryTransient(() => lastContact(invocation, signal, transport));
+}
+async function lastContact(
+  invocation: Invocation,
+  signal: AbortSignal,
+  transport: typeof fetch,
+): Promise<ExecutionResult> {
   const sdk = new RetainerClient({
     baseUrl: invocation.apiOrigin,
     apiKey: invocation.runToken,
-    fetch: (url, init) => transport(url, { ...init, signal }),
+    fetch: apiFetch(transport, signal),
   });
   const read = async () => {
     const row = await sdk.extensionKv(invocation.installationId, 'last-contact-scan');

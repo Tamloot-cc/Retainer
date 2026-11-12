@@ -4,6 +4,7 @@ import {
   type ExecutionResult,
   type VerificationResult,
 } from '@retainer/extension';
+import { settle } from './outcome.js';
 import { execute } from './registry.js';
 import { verifyWebhook } from './webhooks.js';
 
@@ -31,14 +32,17 @@ async function main(): Promise<ExecutionResult | VerificationResult> {
   const controller = new AbortController(),
     timer = setTimeout(() => controller.abort(), duration);
   try {
-    return 'kind' in invocation
-      ? await verifyWebhook(invocation)
-      : await execute(invocation, controller.signal);
-  } catch {
-    return {
-      status: 'retry',
-      code: controller.signal.aborted ? 'execution_timeout' : 'handler_failed',
-    };
+    if (!('kind' in invocation))
+      return await settle(() => execute(invocation, controller.signal), controller.signal);
+    try {
+      return await verifyWebhook(invocation);
+    } catch {
+      // Not a verification result: the launcher reports the verifier as failed.
+      return {
+        status: 'retry',
+        code: controller.signal.aborted ? 'execution_timeout' : 'handler_failed',
+      };
+    }
   } finally {
     clearTimeout(timer);
   }

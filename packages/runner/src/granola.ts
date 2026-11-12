@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { ExecutionResult, Invocation } from '@retainer/extension';
+import { type ExecutionResult, type Invocation, isRetryLater } from '@retainer/extension';
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
 import {
   BASE_EVENT_FIELD_IDS,
@@ -17,6 +17,7 @@ import {
   type granolaNote,
 } from './granola-contract.js';
 import { GranolaError, GranolaProvider } from './granola-provider.js';
+import { apiFetch, transient } from './outcome.js';
 
 const DAY = 86400000,
   OVERLAP = 60000,
@@ -420,7 +421,7 @@ export async function executeGranola(
   const sdk = new RetainerClient({
     baseUrl: invocation.apiOrigin,
     apiKey: invocation.runToken,
-    fetch: (url, init) => transport(url, { ...init, signal }),
+    fetch: apiFetch(transport, signal),
   });
   const id = invocation.installationId;
   try {
@@ -470,6 +471,8 @@ export async function executeGranola(
         return { status: 'retry', code: 'source_checkpoint_conflict', retryAfterSeconds: 30 };
       return { status: 'failed', code: 'source_api_rejected' };
     }
+    const retryable = transient(error);
+    if (isRetryLater(retryable)) throw retryable;
     return { status: 'failed', code: 'provider_invalid_response' };
   }
 }

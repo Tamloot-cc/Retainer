@@ -145,7 +145,11 @@ export class DockerSandbox {
   private readonly engine: DockerEngine;
   private readonly bundles = new Map<string, Bundle>();
   private readonly active = new Set<string>();
-  private slots = 0;
+  /** Verifiers have their own pool, so busy runs cannot starve webhook ingress. */
+  private readonly slots = { run: 0, verify: 0 };
+  private readonly capacity: { run: number; verify: number };
+  private readonly healthTtlMs: number;
+  private healthy: { at: number; check: Promise<unknown> } | undefined;
   private stopped = false;
   constructor(
     private readonly options: {
@@ -156,8 +160,17 @@ export class DockerSandbox {
       proxyOrigin: string;
       apiOrigin: string;
       bundles: readonly z.input<typeof bundleSchema>[];
+      /** Concurrent launches per kind; defaults to 32 runs and 8 verifiers. */
+      capacity?: { run?: number; verify?: number };
+      /** How long a passing health check is reused before launching; defaults to 30 seconds. */
+      healthTtlMs?: number;
     },
   ) {
+    this.capacity = { run: options.capacity?.run ?? 32, verify: options.capacity?.verify ?? 8 };
+    for (const value of Object.values(this.capacity))
+      if (!Number.isInteger(value) || value < 1 || value > 256)
+        throw new Error('launcher capacity must be 1–256');
+    this.healthTtlMs = options.healthTtlMs ?? 30000;
     if (
       !/^[a-zA-Z0-9_.-]{1,100}$/.test(options.networkPrefix) ||
       ['host', 'bridge', 'none'].includes(options.networkPrefix)
@@ -222,6 +235,19 @@ export class DockerSandbox {
       bundles: this.bundles.size,
     };
   }
+  /** Shares one recent passing health check across launches; a failure is never reused. */
+  private async ready() {
+    const cached = this.healthy;
+    if (cached && Date.now() - cached.at < this.healthTtlMs) return cached.check;
+    const entry = { at: Date.now(), check: this.health() };
+    this.healthy = entry;
+    try {
+      return await entry.check;
+    } catch (error) {
+      if (this.healthy === entry) this.healthy = undefined;
+      throw error;
+    }
+  }
   private async checkImage(bundle: Bundle) {
     const image = await this.engine.json<{
       Config: { Labels?: Record<string, string>; Env?: string[] };
@@ -281,12 +307,14 @@ export class DockerSandbox {
     const remaining = deadline - Date.now();
     if (signal.aborted || remaining <= 0 || remaining > (verifying ? 5000 : 300000))
       throw new Error('invalid execution deadline');
-    if (this.stopped || this.slots >= 32) throw new Error('launcher capacity unavailable');
-    this.slots++;
+    const pool = verifying ? 'verify' : 'run';
+    if (this.stopped || this.slots[pool] >= this.capacity[pool])
+      throw new Error('launcher capacity unavailable');
+    this.slots[pool]++;
     try {
-      await this.health();
+      await this.ready();
     } catch (error) {
-      this.slots--;
+      this.slots[pool]--;
       throw error;
     }
     const nonce = randomUUID(),
@@ -417,7 +445,7 @@ export class DockerSandbox {
       await this.engine.call('DELETE', `/containers/${container}?force=1`).catch(() => {});
       if (network) await this.removeNetwork(network);
       this.active.delete(name);
-      this.slots--;
+      this.slots[pool]--;
     }
   }
   private async removeNetwork(network: string) {

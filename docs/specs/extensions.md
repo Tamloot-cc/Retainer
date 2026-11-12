@@ -460,7 +460,19 @@ Result is `{status: 'succeeded'|'retry'|'failed', code?, retryAfterSeconds?}` wi
 bounded diagnostics string. API-origin and protocol compatibility are validated
 before launching. No arbitrary serialized exceptions, environment dump or secret
 return values. Timeout is 120 seconds by default, hard maximum 300; longer work
-must paginate. Inputs/outputs are at most 64 KiB.
+must paginate. The handler and its run credential get exactly the function's
+timeout; the lease lasts 15 seconds longer so the coordinator can record a
+timeout as `execution_timeout` with normal backoff instead of being fenced.
+Inputs/outputs are at most 64 KiB.
+
+Retry is opt-in, as with Twenty's `RetryableLogicFunctionError`. A handler
+retries by returning `retry` or throwing `RetryLater` from `@retainer/extension`
+(matched by error name, with an optional code and bounded retry-after hint).
+Any other handler exception is a terminal `handler_failed`, including raw network
+errors the handler does not convert to `RetryLater`. Platform failures (launcher
+unavailable, network to the launcher, deadline abort) always retry. A hosted
+coordinator's own Lambda timeout must cover the longest handler timeout plus the
+15-second grace, or a late acknowledgement is fenced.
 
 Hosted: trusted Lambda coordinators claim jobs and sign scoped run capabilities;
 a separate Lambda handles secret brokering and raw webhook admission. Each has
@@ -479,7 +491,10 @@ containers never mount the Docker socket, host paths or DB network. Drop
 capabilities, run non-root, use a read-only root FS plus bounded tmpfs, enforce
 CPU/memory/PID/time limits, and destroy the container after every run. Job
 containers have only an internal network to the trusted egress proxy; signature
-verifiers have no network at all and a five-second hard timeout. Deny
+verifiers have no network at all, a five-second hard timeout and their own
+launcher slot pool: one launcher runs up to 32 runs and 8 verifiers at once, so
+busy runs cannot block webhook ingress. Launches reuse a passing health check for
+30 seconds. Deny
 host/private/link-local destinations except the configured public API endpoint,
 including metadata endpoints. Validate DNS and redirect destinations at the
 proxy. The hosted host requires an operator-reviewed hardened AMI with Docker
@@ -521,15 +536,24 @@ at least once. External side effects still need provider idempotency because
 lease fencing cannot undo a request already sent to a provider.
 
 Default concurrency is one active run per installation; workspace and instance
-caps plus fair scheduling prevent a backfill starving other installations.
+caps plus fair scheduling prevent a backfill starving other installations. A
+long-running coordinator refills each slot as soon as a run finishes and runs
+maintenance beside claims, so one long run never stalls dispatch.
 Default budget is 60 writes/minute per installation, within the workspace limit;
 return `429` with retry guidance rather than dropping work. Queued-job quota is
 10,000/installation; enqueue and checkpoint fail together at capacity.
 
 Retry transient network/429/5xx errors with jittered exponential delay (30 seconds
-base, one-hour cap), maximum ten attempts or 24 hours. Respect bounded
-`RetryLater`/provider retry-after hints. Invalid inputs, revoked grants and schema
-conflicts are terminal. Failed jobs remain visible and can be replayed by an
+base, one-hour cap), maximum ten attempts or 24 hours. Handlers opt in by throwing
+`RetryLater` or returning `retry` (section 9.1); the bundled adapters do so for
+provider and Retainer API network errors, 429s, 5xx and conflicts. Respect bounded
+`RetryLater`/provider retry-after hints. Invalid inputs, revoked grants, schema
+conflicts and any other handler exception are terminal. A timeout counts as an
+attempt; a graceful coordinator shutdown returns its runs to the queue, and the
+first three such releases of a job do not consume one. A lost lease is recorded
+as `lease_lost`. The bundled adapters retry Retainer API 429s, 5xx, non-JSON
+replies, lost connections and only the transient 409s (`revision_conflict`,
+`scan_conflict`, `source_revision_conflict`, `lease_expired`). Failed jobs remain visible and can be replayed by an
 admin after fixing the cause. Expiration closes unfinished attempts and uses the
 same lifecycle failure transition as execution: an expired install becomes
 `setup_failed`, and an expired upgrade becomes `disabled`, so an admin can retry.

@@ -3,20 +3,28 @@ import type { ExecutionResult, Invocation } from '@retainer/extension';
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
 import { BASE_EVENT_FIELD_IDS, BASE_EVENT_TYPE_IDS } from '@retainer/shared';
 import { z } from 'zod';
+import { apiFetch, retryTransient } from './outcome.js';
 
 export const WEBHOOK_SETUP_ID = 'f98346c4-78bb-4e53-8428-75362e54e1bb';
 export const WEBHOOK_SYNC_ID = 'ed65308e-33ec-4c33-a64c-2c9675c40be2';
 
 /** Development-only source fixture: no real provider, account verification or model invocation is implied. */
-export async function executeWebhookFixture(
+export function executeWebhookFixture(
   invocation: Invocation,
   signal: AbortSignal,
   transport: typeof fetch = fetch,
 ): Promise<ExecutionResult> {
+  return retryTransient(() => webhookFixture(invocation, signal, transport));
+}
+async function webhookFixture(
+  invocation: Invocation,
+  signal: AbortSignal,
+  transport: typeof fetch,
+): Promise<ExecutionResult> {
   const sdk = new RetainerClient({
     baseUrl: invocation.apiOrigin,
     apiKey: invocation.runToken,
-    fetch: (url, init) => transport(url, { ...init, signal }),
+    fetch: apiFetch(transport, signal),
   });
   if (invocation.functionId === WEBHOOK_SETUP_ID) {
     if (!z.strictObject({}).safeParse(invocation.input).success)

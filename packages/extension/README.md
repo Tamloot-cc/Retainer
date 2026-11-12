@@ -19,6 +19,22 @@ created through the existing view service and retained across uninstall/reinstal
 The default catalog is empty; operators explicitly bundle reviewed releases and
 configure their execution prerequisites before activation.
 
+## Retries
+
+Retry is opt-in. A hosted handler retries only when it returns
+`{status: 'retry'}` or throws `RetryLater`:
+
+```ts
+import { RetryLater } from '@retainer/extension';
+
+if (response.status === 429 || response.status >= 500)
+  throw new RetryLater({ code: 'provider_unavailable', retryAfterSeconds: 60 });
+```
+
+Any other exception fails the run for good, including raw network errors from
+your own `fetch` calls: catch them and throw `RetryLater` if they are transient.
+Runs that hit the function's timeout retry as `execution_timeout`, with backoff.
+
 Standalone manifests use `execution: 'standalone'` and may pin the registered
 `oauthClientId` used for accounts-mode REST consent. Client identity is part of
 the release digest and cannot change across releases of one registration.

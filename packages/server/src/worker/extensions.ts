@@ -54,10 +54,14 @@ export class ExecutionRegistry {
   }
 }
 
+/** Matches retainer_extension_slot_available's per-workspace limit. */
+const WORKSPACE_RUN_CAP = 4,
+  DISCOVERY_WINDOW = 100;
+
 /** Trusted coordinator only. It holds no DB transaction while an execution is running. */
 export class ExtensionExecutor {
   readonly queue: ExtensionQueue;
-  private readonly active = new Set<AbortController>();
+  private readonly active = new Map<AbortController, () => void>();
   private stopped = false;
   constructor(
     private readonly options: {
@@ -91,8 +95,14 @@ export class ExtensionExecutor {
   async execute(job: ClaimedJob) {
     if (job.system) return this.acknowledge(job, { status: 'succeeded' });
     const controller = new AbortController();
-    this.active.add(controller);
-    if (this.stopped) controller.abort();
+    // Why the run was cut short decides whether it costs an attempt.
+    let reason: 'timeout' | 'stopped' | 'lease' | undefined;
+    const abort = (why: 'timeout' | 'stopped' | 'lease') => {
+      reason ??= why;
+      controller.abort();
+    };
+    this.active.set(controller, () => abort('stopped'));
+    if (this.stopped) abort('stopped');
     let heartbeat: ReturnType<typeof setInterval> | undefined,
       timeout: ReturnType<typeof setTimeout> | undefined;
     let result: ExecutionResult;
@@ -137,8 +147,9 @@ export class ExtensionExecutor {
           deadline: job.deadline.toISOString(),
         }),
       );
+      // The handler budget ends at job.deadline; the lease's grace lets the timeout be recorded.
       timeout = setTimeout(
-        () => controller.abort(),
+        () => abort('timeout'),
         Math.max(0, job.deadline.getTime() - Date.now()),
       );
       let renewing = false;
@@ -147,7 +158,7 @@ export class ExtensionExecutor {
         renewing = true;
         void this.queue
           .renew(job)
-          .catch(() => controller.abort())
+          .catch(() => abort('lease'))
           .finally(() => {
             renewing = false;
           });
@@ -166,12 +177,19 @@ export class ExtensionExecutor {
         ]),
       );
     } catch (error) {
+      // Handler exceptions are classified by the runner; anything reaching here is the
+      // platform's own failure (launcher, network, deadline) and is retried.
       result =
         error instanceof AppError && error.code === 'incompatible_runtime'
           ? { status: 'failed', code: 'incompatible_runtime' }
           : {
               status: 'retry',
-              code: controller.signal.aborted ? 'execution_timeout' : 'execution_unavailable',
+              code:
+                reason === 'lease'
+                  ? 'lease_lost'
+                  : reason === undefined
+                    ? 'execution_unavailable'
+                    : 'execution_timeout',
             };
     } finally {
       if (heartbeat) clearInterval(heartbeat);
@@ -179,7 +197,22 @@ export class ExtensionExecutor {
       controller.abort();
       this.active.delete(controller);
     }
+    if (reason === 'stopped') return this.release(job);
     return this.acknowledge(job, result);
+  }
+  /** A graceful shutdown hands the run back without consuming an attempt. */
+  private async release(job: ClaimedJob) {
+    try {
+      await this.queue.release(job);
+      return 'released' as const;
+    } catch (error) {
+      if (
+        error instanceof AppError &&
+        ['lease_expired', 'installation_disabled'].includes(error.code)
+      )
+        return 'fenced';
+      throw error;
+    }
   }
   private async acknowledge(job: ClaimedJob, result: ExecutionResult) {
     try {
@@ -198,7 +231,103 @@ export class ExtensionExecutor {
   }
   stop() {
     this.stopped = true;
-    for (const controller of this.active) controller.abort();
+    for (const abort of this.active.values()) abort();
+    this.wake();
+  }
+  // A run that finishes while the loop is not sleeping must still cut the next sleep short.
+  private woken = false;
+  private wake = () => {
+    this.woken = true;
+  };
+  /**
+   * Long-running coordinator loop. Each free slot is refilled as soon as a run finishes, so a
+   * long run never holds back other installations' work; maintenance runs on its own cadence
+   * beside claims instead of before each batch. Resolves after stop() once runs settle.
+   */
+  async run(
+    options: { idleMs?: number; maintenanceMs?: number; onError?: (error: unknown) => void } = {},
+  ) {
+    const idleMs = options.idleMs ?? 1000,
+      maintenanceMs = options.maintenanceMs ?? 1000,
+      report = options.onError ?? (() => {}),
+      concurrency = this.options.concurrency ?? 4,
+      running = new Set<Promise<void>>(),
+      // Our own runs per workspace, to skip candidates the workspace cap would refuse anyway.
+      perWorkspace = new Map<string, number>();
+    let maintaining: Promise<void> | undefined,
+      maintainedAt = 0;
+    const maintain = () => {
+      if (maintaining || Date.now() - maintainedAt < maintenanceMs) return;
+      maintainedAt = Date.now();
+      maintaining = this.queue
+        .maintain(this.options.discoverySql)
+        .then((result) => {
+          if (result.failed) report(new Error('extension runtime reconciliation failed'));
+        })
+        .catch(report)
+        .finally(() => {
+          maintaining = undefined;
+        });
+    };
+    const sleep = async (ms: number) => {
+      if (!this.woken)
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, ms);
+          this.wake = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+        });
+      this.woken = false;
+      this.wake = () => {
+        this.woken = true;
+      };
+    };
+    while (!this.stopped) {
+      maintain();
+      let claimed = 0;
+      const free = concurrency - running.size;
+      if (free > 0) {
+        try {
+          // Discovery is one candidate per idle installation but ignores the per-workspace cap,
+          // which only claim enforces. A wide window keeps a capped workspace's older jobs from
+          // hiding every other workspace's work.
+          const due = await this.queue.discover(this.options.discoverySql, DISCOVERY_WINDOW);
+          for (const item of due) {
+            if (this.stopped || running.size >= concurrency) break;
+            if ((perWorkspace.get(item.workspace_id) ?? 0) >= WORKSPACE_RUN_CAP) continue;
+            let job: ClaimedJob | null;
+            try {
+              job = await this.queue.claim(item.workspace_id, item.job_id, this.options.owner);
+            } catch (error) {
+              report(error);
+              continue;
+            }
+            if (!job) continue;
+            claimed++;
+            const workspace = job.workspaceId;
+            perWorkspace.set(workspace, (perWorkspace.get(workspace) ?? 0) + 1);
+            const execution: Promise<void> = this.execute(job)
+              .then(() => {})
+              .catch(report)
+              .finally(() => {
+                running.delete(execution);
+                const left = (perWorkspace.get(workspace) ?? 1) - 1;
+                if (left > 0) perWorkspace.set(workspace, left);
+                else perWorkspace.delete(workspace);
+                this.wake();
+              });
+            running.add(execution);
+          }
+        } catch (error) {
+          report(error);
+        }
+      }
+      // Rescan at once while slots stay free and work keeps coming; otherwise wait for a
+      // finished run or the idle interval.
+      if (!this.stopped && (claimed === 0 || running.size >= concurrency)) await sleep(idleMs);
+    }
+    await Promise.allSettled([...running, maintaining]);
   }
   async tick(limit = 1000) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
@@ -220,6 +349,7 @@ export class ExtensionExecutor {
           const job = await this.queue.claim(item.workspace_id, item.job_id, this.options.owner);
           if (!job) continue;
           const status = await this.execute(job);
+          if (status === 'released') continue;
           executed++;
           if (status === 'fenced') fenced++;
         } catch (error) {
