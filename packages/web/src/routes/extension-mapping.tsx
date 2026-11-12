@@ -6,7 +6,7 @@ import {
   type ExtensionMappingView,
   mappingChoicesSchema,
 } from '@retainer/extension';
-import { BASE_OBJECT_IDS, type FieldView, type ObjectView } from '@retainer/shared';
+import { BASE_FIELD_IDS, BASE_OBJECT_IDS, type FieldView, type ObjectView } from '@retainer/shared';
 import { useState } from 'react';
 import {
   Badge,
@@ -40,10 +40,24 @@ export function mappingObject(objects: ObjectView[], mapping: Mapping) {
   return base ? objects.find((o) => o.baseObject === base) : undefined;
 }
 
-/** Fields an output can be written to: active, writable and of a compatible type. */
-export function compatibleFields(object: ObjectView, output: Output): FieldView[] {
+/**
+ * Fields an output can be written to: active, writable, of a compatible type
+ * and not the field the extension looks records up by (found by `baseField`).
+ */
+export function compatibleFields(
+  object: ObjectView,
+  output: Output,
+  lookup?: Mapping['lookup'],
+): FieldView[] {
   return object.fields.filter(
-    (f) => !f.readOnly && (output.types as readonly string[]).includes(f.type),
+    (f) =>
+      !f.readOnly &&
+      (output.types as readonly string[]).includes(f.type) &&
+      !(
+        f.baseField &&
+        lookup &&
+        BASE_FIELD_IDS[f.baseField as keyof typeof BASE_FIELD_IDS] === lookup.fieldId
+      ),
   );
 }
 
@@ -128,7 +142,7 @@ export function importDraft(
     if (choice.action === 'existing') {
       const field = object.fields.find((f) => f.name === choice.field);
       if (!field) issues[key] = `The draft names “${choice.field}”, which does not exist here.`;
-      else if (!compatibleFields(object, output).includes(field))
+      else if (!compatibleFields(object, output, mapping.lookup).includes(field))
         issues[key] = `The draft names “${field.label}”, which cannot hold this value.`;
     }
     if (choice.action === 'create' && !output.field)
@@ -187,7 +201,7 @@ export function MappingFields({
       {mapping.outputs.map((output) => {
         const choice = choices[output.key];
         const options = [
-          ...compatibleFields(object, output).map((f) => ({
+          ...compatibleFields(object, output, mapping.lookup).map((f) => ({
             value: `existing:${f.name}`,
             label: f.label,
           })),

@@ -31,6 +31,8 @@ export const BASE_OBJECT_IDS = {
 export const BASE_FIELD_IDS = {
   taskStatus: '107158ae-ba0f-482e-afe1-5e45bd6ccfd6',
   taskDueDate: '368276ea-604d-4dcd-b6ad-796431a84a06',
+  /** The company website; extensions look companies up by it (not protected). */
+  companyDomain: 'bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641',
 } as const;
 
 export type BaseObjectName = keyof typeof BASE_OBJECT_IDS;

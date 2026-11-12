@@ -5,7 +5,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, WorkspaceContext } from '../api/client.js';
-import { importDraft } from './extension-mapping.js';
+import { compatibleFields, importDraft } from './extension-mapping.js';
 import { ExtensionSettings, ExtensionsPage } from './extensions.js';
 
 type Release = Awaited<ReturnType<typeof api.extensionCatalog>>['releases'][number];
@@ -39,7 +39,8 @@ const company: ObjectView = {
   baseObject: 'company',
   fields: [
     field('name', 'Name', 'text'),
-    field('domain', 'Domain', 'links'),
+    { ...field('domain', 'Domain', 'links'), baseField: 'companyDomain' },
+    field('profile', 'Profile', 'links'),
     field('teamSize', 'Team Size', 'number'),
     field('address', 'Address', 'address'),
   ],
@@ -160,6 +161,23 @@ async function choose(output: string, option: string) {
   await userEvent.click(screen.getByRole('option', { name: option }));
 }
 afterEach(() => vi.restoreAllMocks());
+
+describe('compatible fields', () => {
+  it('never offers the field the extension looks companies up by', () => {
+    const mapping = release.manifest.mapping;
+    if (!mapping) throw new Error('fixture needs a mapping');
+    const links = {
+      key: 'linkedin_url',
+      label: 'LinkedIn URL',
+      description: 'The company LinkedIn page.',
+      types: ['links' as const],
+    };
+    expect(compatibleFields(company, links, mapping.lookup).map((f) => f.name)).toEqual([
+      'profile',
+    ]);
+    expect(compatibleFields(company, links).map((f) => f.name)).toEqual(['domain', 'profile']);
+  });
+});
 
 describe('importDraft', () => {
   it('fills declared outputs and reports what the form cannot show', () => {
