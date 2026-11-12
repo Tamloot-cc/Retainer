@@ -9,6 +9,7 @@ import { admitRun } from '../../extension-runtime/admission.js';
 import { ExtensionQueue, type Lease } from '../../extension-runtime/queue.js';
 import type { SecretBroker } from '../../extension-runtime/secrets.js';
 import type { ExtensionCatalog } from '../../extensions/catalog.js';
+import { mappedWrite, mappedWriteSchema } from '../../extensions/mapped-write.js';
 import { idParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 
@@ -97,6 +98,9 @@ export function runtimeRoutes(
       await broker.writeRuntime(identity, caller.run, input.expectedRevision, input.value),
     );
   });
+  app.post('/extensions/:id/runtime/mapped-writes', async (c) =>
+    c.json(await mappedWrite(sql, catalog, c.get('caller'), await readBody(c, mappedWriteSchema))),
+  );
   app.get('/extensions/:id/runtime/kv/:key', async (c) =>
     c.json(await queue.getKv(lease(c.get('caller')), c.req.param('key'))),
   );

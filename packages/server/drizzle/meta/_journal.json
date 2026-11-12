@@ -687,6 +687,13 @@
       "when": 1794459968256,
       "tag": "0097_drop_extension_runtime_markers",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1794518107578,
+      "tag": "0098_extension_mapping",
+      "breakpoints": true
     }
   ]
 }

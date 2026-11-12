@@ -26,6 +26,7 @@
     "@radix-ui/react-popover": "^1.3.1",
     "@radix-ui/react-slot": "^1.5.0",
     "@radix-ui/react-tooltip": "^1.4.1",
+    "@retainer/extension": "workspace:*",
     "@retainer/sdk": "workspace:*",
     "@retainer/shared": "workspace:*",
     "@tanstack/react-query": "^5.106.1",

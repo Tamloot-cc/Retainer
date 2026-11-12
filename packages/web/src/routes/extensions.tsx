@@ -1,3 +1,5 @@
+import type { ExtensionMappingChoices, ExtensionMappingView } from '@retainer/extension';
+import { RetainerApiError } from '@retainer/sdk';
 import type { SchemaOperation } from '@retainer/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -18,6 +20,15 @@ import {
   SelectMenu,
   Stack,
 } from '../ui/index.js';
+import {
+  choicesFromView,
+  defaultChoices,
+  MappingBindings,
+  MappingFields,
+  type MappingIssues,
+  mappingObject,
+  serverIssues,
+} from './extension-mapping.js';
 import { describeOperation } from './schema/schema-model.js';
 import { QueryError } from './state.js';
 
@@ -59,6 +70,7 @@ export function ExtensionsPage() {
     release: Release;
     installation?: Installation;
     reconnect?: boolean;
+    mappingView?: ExtensionMappingView;
   } | null>(null);
   const [runs, setRuns] = useState<Installation | null>(null);
   const [credentials, setCredentials] = useState<Installation | null>(null);
@@ -153,6 +165,18 @@ export function ExtensionsPage() {
                 {release?.manifest.source ? (
                   <SourceSyncStatus installationId={installation.id} />
                 ) : null}
+                {release?.manifest.mapping && installation.state !== 'uninstalled' ? (
+                  <MappingSummary
+                    release={release}
+                    installation={installation}
+                    {...(admin
+                      ? {
+                          onEdit: (mappingView: ExtensionMappingView) =>
+                            setSelection({ release, installation, mappingView }),
+                        }
+                      : {})}
+                  />
+                ) : null}
                 <Row>
                   <Button onClick={() => setRuns(installation)}>View runs</Button>
                   {admin && release?.manifest.execution === 'standalone' ? (
@@ -246,7 +270,7 @@ export function ExtensionsPage() {
       </Stack>
       {selection ? (
         <ExtensionSettings
-          key={`${selection.release.digest}:${selection.installation?.id ?? 'new'}:${selection.reconnect ? 'reconnect' : 'settings'}`}
+          key={`${selection.release.digest}:${selection.installation?.id ?? 'new'}:${selection.reconnect ? 'reconnect' : selection.mappingView ? 'mapping' : 'settings'}`}
           {...selection}
           onClose={() => setSelection(null)}
           onSaved={() => {
@@ -363,18 +387,30 @@ export function ExtensionSettings({
   release,
   installation,
   reconnect = false,
+  mappingView,
   onClose,
   onSaved,
 }: {
   release: Release;
   installation?: Installation;
   reconnect?: boolean;
+  /** Edit this approved mapping, and nothing else. */
+  mappingView?: ExtensionMappingView;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { schema } = useWorkspace();
   const retained = installation?.state !== 'uninstalled' ? installation : undefined;
-  const upgrade = !!retained && retained.version !== release.manifest.version;
+  const editMapping = !!retained && !!mappingView;
+  const upgrade = !!retained && !editMapping && retained.version !== release.manifest.version;
+  const mapping = release.manifest.mapping;
+  const mapped = mapping ? mappingObject(schema.objects, mapping) : undefined;
+  // A first install reviews the mapping; an upgrade carries the approved one over.
+  const showMapping = !!mapping && !reconnect && (editMapping || !retained);
+  const [choices, setChoices] = useState<ExtensionMappingChoices>(() =>
+    mapping ? (mappingView ? choicesFromView(mapping, mappingView) : defaultChoices(mapping)) : {},
+  );
+  const [issues, setIssues] = useState<MappingIssues>({});
   const [values, setValues] = useState<Settings>(() => ({
     ...Object.fromEntries(
       Object.entries(release.manifest.settings)
@@ -419,13 +455,29 @@ export function ExtensionSettings({
         ...(grantIncrease ? { grantChange: true } : {}),
         settings: values,
         ...(Object.keys(refs).length ? { secretRefs: refs } : {}),
+        ...(showMapping ? { mapping: choices } : {}),
+        ...(editMapping ? { mappingChange: true } : {}),
       };
-      const preview = await api.previewExtension(input);
-      setPlan({ input, preview, key: crypto.randomUUID() });
+      try {
+        const preview = await api.previewExtension(input);
+        setPlan({ input, preview, key: crypto.randomUUID() });
+      } catch (error) {
+        if (error instanceof RetainerApiError && error.code === 'mapping_invalid')
+          setIssues(serverIssues(error.details));
+        throw error;
+      }
     },
   });
   const save = useMutation({
     mutationFn: async () => {
+      if (editMapping && retained) {
+        if (!plan) throw new Error('Review the mapping before approval.');
+        return api.changeExtensionMapping(
+          retained.id,
+          { ...plan.input, planDigest: plan.preview.planDigest },
+          plan.key,
+        );
+      }
       if (retained && !upgrade && !reconnect)
         return api.updateExtensionSettings(retained.id, {
           expectedRevision: retained.settingsRevision,
@@ -450,14 +502,14 @@ export function ExtensionSettings({
   });
   const busy = review.isPending || save.isPending;
   const error = save.error ?? review.error;
-  const updating = !!retained && !upgrade && !reconnect;
+  const updating = !!retained && !upgrade && !reconnect && !editMapping;
   return (
     <Dialog
       open
       onOpenChange={(open) => {
         if (!open && !busy) onClose();
       }}
-      title={`${release.manifest.name} ${reconnect ? 'reconnect' : updating ? 'settings' : upgrade ? 'upgrade' : 'setup'}`}
+      title={`${release.manifest.name} ${reconnect ? 'reconnect' : editMapping ? 'mapping' : updating ? 'settings' : upgrade ? 'upgrade' : 'setup'}`}
     >
       <form
         onSubmit={(e) => {
@@ -470,27 +522,59 @@ export function ExtensionSettings({
           <p>{release.manifest.description}</p>
           {error ? <Notice>{error.message}</Notice> : null}
           <fieldset disabled={busy || !!plan} className="flex flex-col gap-3">
-            <SettingFields
-              release={release}
-              values={values}
-              secrets={secrets}
-              {...(retained ? { existing: retained } : {})}
-              references={references}
-              allowConnectionEdit={reconnect}
-              onChange={(key, value) => {
-                setValues((v) => ({ ...v, [key]: value }));
-                setPlan(null);
-              }}
-              onSecret={(key, value) => {
-                setSecrets((v) => ({ ...v, [key]: value }));
-                setReferences((v) => {
-                  const next = { ...v };
-                  delete next[key];
-                  return next;
-                });
-                setPlan(null);
-              }}
-            />
+            {editMapping ? null : (
+              <SettingFields
+                release={release}
+                values={values}
+                secrets={secrets}
+                {...(retained ? { existing: retained } : {})}
+                references={references}
+                allowConnectionEdit={reconnect}
+                onChange={(key, value) => {
+                  setValues((v) => ({ ...v, [key]: value }));
+                  setPlan(null);
+                }}
+                onSecret={(key, value) => {
+                  setSecrets((v) => ({ ...v, [key]: value }));
+                  setReferences((v) => {
+                    const next = { ...v };
+                    delete next[key];
+                    return next;
+                  });
+                  setPlan(null);
+                }}
+              />
+            )}
+            {showMapping && mapping ? (
+              mapped ? (
+                <MappingFields
+                  mapping={mapping}
+                  object={mapped}
+                  choices={choices}
+                  issues={issues}
+                  onChange={(key, choice) => {
+                    setChoices((c) => ({ ...c, [key]: choice }));
+                    setIssues(({ [key]: _, ...rest }) => rest);
+                    setPlan(null);
+                  }}
+                  onImport={(next, found) => {
+                    setChoices(next);
+                    setIssues(found);
+                    setPlan(null);
+                  }}
+                />
+              ) : (
+                <Notice>
+                  This extension maps values to an object the web app cannot map yet. Use the API to
+                  review its mapping.
+                </Notice>
+              )
+            ) : null}
+            {editMapping && mapped ? (
+              <Muted>
+                Changing the mapping does not fill in existing {mapped.labelPlural.toLowerCase()}.
+              </Muted>
+            ) : null}
             {reconnect && release.manifest.source ? (
               <Label>
                 <Input
@@ -549,6 +633,9 @@ export function ExtensionSettings({
                 ) : (
                   <Muted>No schema changes.</Muted>
                 )}
+                {plan.preview.mapping && mapping ? (
+                  <MappingBindings mapping={mapping} bindings={plan.preview.mapping} />
+                ) : null}
                 {plan.preview.views.map((view) => (
                   <p key={view.universalId}>
                     {VIEW_ACTIONS[view.action]} saved view: {view.name}
@@ -563,11 +650,13 @@ export function ExtensionSettings({
                       ? 'Approving…'
                       : reconnect
                         ? 'Approve reconnect'
-                        : grantIncrease
-                          ? 'Approve access and upgrade'
-                          : upgrade
-                            ? 'Approve upgrade'
-                            : 'Approve installation'}
+                        : editMapping
+                          ? 'Approve mapping'
+                          : grantIncrease
+                            ? 'Approve access and upgrade'
+                            : upgrade
+                              ? 'Approve upgrade'
+                              : 'Approve installation'}
                   </Button>
                   <Button disabled={busy} onClick={() => setPlan(null)}>
                     Edit settings
@@ -583,12 +672,52 @@ export function ExtensionSettings({
                   ? 'Save settings'
                   : reconnect
                     ? 'Review reconnect'
-                    : 'Review installation'}
+                    : editMapping
+                      ? 'Review mapping'
+                      : 'Review installation'}
             </Button>
           )}
         </Stack>
       </form>
     </Dialog>
+  );
+}
+
+/** The approved mapping of an installation, with what needs a remap. */
+function MappingSummary({
+  release,
+  installation,
+  onEdit,
+}: {
+  release: Release;
+  installation: Installation;
+  onEdit?: (view: ExtensionMappingView) => void;
+}) {
+  const detail = useQuery({
+    queryKey: [...queryKey, 'detail', installation.id, installation.generation],
+    queryFn: ({ signal }) => api.extension(installation.id, signal),
+  });
+  const mapping = release.manifest.mapping;
+  if (!mapping) return null;
+  if (detail.error) return <QueryError error={detail.error} retry={() => void detail.refetch()} />;
+  const view = detail.data?.mapping;
+  if (!view) return <Muted>Loading field mapping…</Muted>;
+  const broken = view.outputs.some((o) => o.status !== 'ok');
+  return (
+    <section aria-label="Approved field mapping" className="flex flex-col gap-2">
+      <MappingBindings mapping={mapping} bindings={view.outputs} />
+      {broken ? (
+        <Notice>
+          A mapped field was deleted or changed. Its value is not written until you remap or skip
+          it.
+        </Notice>
+      ) : null}
+      {onEdit ? (
+        <Row>
+          <Button onClick={() => onEdit(view)}>Edit mapping</Button>
+        </Row>
+      ) : null}
+    </section>
   );
 }
 

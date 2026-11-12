@@ -376,6 +376,134 @@ describe('strict extension contracts', () => {
       }),
     ).toThrow('function scopes');
   });
+  describe('output mappings', () => {
+    const company = '1f24f94d-6bc5-4955-b6ab-ac946e2b140a';
+    const domain = 'bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641';
+    const suggested = '6d1f3f0e-2b8c-4d39-9a51-0f7e1b2c3d4e';
+    const changeInput = {
+      type: 'object',
+      properties: { changePosition: { type: 'string', maxLength: 19 } },
+      required: ['changePosition'],
+      additionalProperties: false,
+    };
+    const writer = (over: Record<string, unknown> = {}) => ({
+      universalId: '0f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a',
+      name: 'enrich',
+      description: 'Enrich',
+      handlerDigest: 'c'.repeat(64),
+      trigger: {
+        kind: 'change',
+        objectId: company,
+        fieldIds: [domain],
+        related: false,
+        operations: ['create', 'update'],
+      },
+      inputSchema: changeInput,
+      mappedWrite: true,
+      ...over,
+    });
+    const output = (over: Record<string, unknown> = {}) => ({
+      key: 'employee_count',
+      label: 'Employee count',
+      description: 'Employees the provider reports',
+      types: ['number'],
+      field: { universalId: suggested, name: 'employeeCount', label: 'Employees', type: 'number' },
+      ...over,
+    });
+    const manifest = (mapping: Record<string, unknown>, functions = [writer()]) => ({
+      ...fixture(),
+      requestedActor: 'agent',
+      mapping: { objectId: company, lookup: { fieldId: domain, type: 'links' }, ...mapping },
+      functions,
+    });
+
+    it('accepts declared outputs, a lookup field and a mapped-write change handler', () => {
+      const parsed = defineExtension(manifest({ outputs: [output()] }));
+      expect(parsed.mapping?.outputs[0]?.key).toBe('employee_count');
+      expect(parsed.functions[0]).toMatchObject({
+        mappedWrite: true,
+        trigger: { related: false, operations: ['create', 'update'] },
+      });
+    });
+
+    it('keeps manifests without mappings or trigger flags byte-identical', () => {
+      const parsed = defineExtension(fixture());
+      expect('mapping' in parsed).toBe(false);
+      expect(JSON.stringify(parsed)).toBe(JSON.stringify(defineExtension(parsed)));
+    });
+
+    it('refuses ambiguous or unsafe outputs', () => {
+      for (const [mapping, message] of [
+        [{ outputs: [output(), output({ field: undefined })] }, 'duplicate mapping output'],
+        [{ outputs: [output({ types: ['number', 'number'] })] }, 'duplicate output field type'],
+        [{ outputs: [output({ types: ['text'] })] }, 'suggested field type'],
+        [
+          {
+            outputs: [
+              output({
+                field: { universalId: domain, name: 'domain', label: 'Domain', type: 'number' },
+              }),
+            ],
+          },
+          'lookup field',
+        ],
+        [
+          {
+            outputs: [
+              output(),
+              output({
+                key: 'other',
+                field: { universalId: suggested, name: 'other', label: 'Other', type: 'number' },
+              }),
+            ],
+          },
+          'duplicate universal ID',
+        ],
+      ] as const)
+        expect(() => defineExtension(manifest(mapping))).toThrow(message);
+      for (const types of [['relation'], ['files'], []])
+        expect(() =>
+          defineExtension(manifest({ outputs: [output({ types, field: undefined })] })),
+        ).toThrow();
+      expect(() => defineExtension(manifest({ outputs: [output({ key: 'Bad-Key' })] }))).toThrow();
+    });
+
+    it('lets only hosted runtime functions with write call the mapped write', () => {
+      expect(() => defineExtension({ ...fixture(), functions: [writer()] })).toThrow(
+        'mapped writes require a mapping',
+      );
+      expect(() =>
+        defineExtension(manifest({ outputs: [output()] }, [writer({ scopes: ['read'] })])),
+      ).toThrow('runtime function with write');
+      expect(() =>
+        defineExtension(
+          manifest({ outputs: [output()] }, [
+            writer({
+              trigger: { kind: 'install' },
+              inputSchema: { type: 'object', additionalProperties: false },
+            }),
+          ]),
+        ),
+      ).toThrow('runtime function with write');
+      expect(() =>
+        defineExtension({ ...manifest({ outputs: [output()] }), scopes: ['read'], functions: [] }),
+      ).toThrow('hosted write authority');
+      expect(() =>
+        defineExtension(
+          manifest({ outputs: [output()] }, [
+            writer({
+              trigger: {
+                kind: 'change',
+                objectId: company,
+                fieldIds: [],
+                operations: ['create', 'create'],
+              },
+            }),
+          ]),
+        ),
+      ).toThrow('duplicate trigger operation');
+    });
+  });
   it('gives install hooks the previously installed version, null on a first install', () => {
     expect(lifecycleInputSchema.parse({ previousVersion: null })).toEqual({
       previousVersion: null,

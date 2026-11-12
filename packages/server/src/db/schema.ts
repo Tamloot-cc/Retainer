@@ -1462,6 +1462,12 @@ export const extensionInstallations = pgTable(
     grantedScopes: jsonb('granted_scopes').notNull(),
     settings: jsonb('settings').notNull().default({}),
     settingsRevision: integer('settings_revision').notNull().default(1),
+    /**
+     * The approved output mapping (extensions/mapping.ts): each bound output's
+     * target by universal ID. Changed only through a reviewed plan.
+     */
+    mapping: jsonb('mapping').notNull().default({ outputs: {} }),
+    mappingRevision: integer('mapping_revision').notNull().default(0),
     createdBy: jsonb('created_by').$type<Actor>().notNull(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

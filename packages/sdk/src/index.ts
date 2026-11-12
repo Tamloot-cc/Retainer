@@ -720,6 +720,19 @@ export class RetainerClient {
       idempotencyKey,
     );
   }
+  /** Commits a reviewed mapping change: preview with `installationId` and `mappingChange: true` first. */
+  changeExtensionMapping(
+    id: string,
+    input: ExtensionInstallInput & { planDigest: string },
+    idempotencyKey: string,
+  ) {
+    return this.post<ExtensionInstallation>(
+      `/v1/extensions/${encodeURIComponent(id)}/mapping`,
+      { ...input, installationId: id, mappingChange: true },
+      undefined,
+      idempotencyKey,
+    );
+  }
   reconnectExtension(
     id: string,
     input: ExtensionInstallInput & { planDigest: string },
@@ -756,6 +769,25 @@ export class RetainerClient {
       '/v1/extensions/secrets',
       input,
     );
+  }
+  /**
+   * The fill-only mapped write of a run whose function declares `mappedWrite`:
+   * fills only mapped fields that have no value and were not cleared.
+   */
+  extensionMappedWrite(
+    installationId: string,
+    input: {
+      recordId: string;
+      lookup?: string;
+      values: Record<string, unknown>;
+      observedAt?: string;
+    },
+  ) {
+    return this.post<{
+      outcome: 'applied' | 'skipped';
+      reason?: 'record_deleted' | 'record_merged' | 'lookup_changed' | 'nothing_to_fill';
+      fields: Record<string, 'applied' | 'populated' | 'cleared' | 'pending_review'>;
+    }>(`/v1/extensions/${encodeURIComponent(installationId)}/runtime/mapped-writes`, input);
   }
   extensionCheckpoint(
     id: string,

@@ -575,12 +575,18 @@ export class ExtensionQueue {
                     'change trigger field binding is unavailable',
                   );
                 // A field-scoped trigger reacts to updates, reviews and
-                // schema changes only when one of its fields is named.
+                // schema changes only when one of its fields is named. A
+                // trigger listing its operations fires only on those, and on
+                // an update only when a watched field changed.
+                const watched =
+                  !fn.trigger.fieldIds.length ||
+                  keys.some((key) => row.field_keys.includes(key as string));
+                const operations = fn.trigger.operations as readonly string[] | undefined;
                 const direct =
                   row.object_type_id === object.id &&
-                  (!fn.trigger.fieldIds.length ||
-                    !['update', 'review', 'schema'].includes(row.operation) ||
-                    keys.some((key) => row.field_keys.includes(key as string)));
+                  (operations
+                    ? operations.includes(row.operation) && (row.operation === 'create' || watched)
+                    : !['update', 'review', 'schema'].includes(row.operation) || watched);
                 const relationChanged = row.field_keys.some((key) =>
                   schema.objectsById
                     .get(row.object_type_id)
@@ -589,6 +595,7 @@ export class ExtensionQueue {
                 const linksAffected =
                   !['update', 'review'].includes(row.operation) || relationChanged;
                 const indirect =
+                  fn.trigger.related !== false &&
                   linksAffected &&
                   [
                     ...row.related_record_ids,

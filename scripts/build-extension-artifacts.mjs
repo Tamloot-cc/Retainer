@@ -6,6 +6,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineExtension } from '../packages/extension/dist/index.js';
+import { enrichmentManifest } from '../packages/runner/dist/enrichment-contract.js';
 import { granolaManifest } from '../packages/runner/dist/granola-contract.js';
 import { lastContactManifest } from '../packages/runner/dist/last-contact.js';
 import { stableJson } from '../packages/server/dist/stable-json.js';
@@ -370,5 +371,45 @@ writeGranola(
     packageDigest,
     runtimeVersion: 'node24',
     driverTarget: 'granola',
+  })),
+);
+
+// Company enrichment through Exa. Its hosted bundle id is `enrichment`: hosted
+// bundle names are limited to 12 characters.
+const enrichment = enrichmentManifest({
+  version,
+  packageDigest,
+  handlerDigest: hash(readFileSync(resolve(root, 'packages/runner/dist/enrichment.js'))),
+  serverRange: manifest.serverRange,
+});
+const enrichmentDigest = hash(stableJson(enrichment)),
+  enrichmentOut = resolve(root, 'artifacts/extensions/enrichment');
+mkdirSync(enrichmentOut, { recursive: true });
+const writeEnrichment = (name, value) =>
+  writeFileSync(resolve(enrichmentOut, name), `${JSON.stringify(value, null, 2)}\n`);
+writeEnrichment('manifest.json', enrichment);
+writeEnrichment('catalog.json', [
+  { manifest: enrichment, actorCeiling: 'agent', runtimeEnabled: true },
+]);
+writeEnrichment('metadata.json', {
+  commit,
+  version: enrichment.version,
+  development,
+  releaseDigest: enrichmentDigest,
+  contentDigest: contentDigest(enrichment),
+  packageDigest,
+  bundleId: 'enrichment',
+  functionIds: enrichment.functions.map((fn) => fn.universalId),
+});
+writeEnrichment(
+  'executables.json',
+  enrichment.functions.map((fn) => ({
+    registrationId: enrichment.universalId,
+    releaseDigest: enrichmentDigest,
+    functionId: fn.universalId,
+    handlerDigest: fn.handlerDigest,
+    packageDigest,
+    runtimeVersion: 'node24',
+    driverTarget: 'enrichment',
   })),
 );

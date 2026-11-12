@@ -1,7 +1,7 @@
 # Company enrichment: implementation spec
 
-Status: in progress, 2026-11-12. §7 step 1 is implemented on
-`feat/company-enrichment`. Implements the product
+Status: in progress, 2026-11-12. §7 steps 1–5 are implemented on
+`feat/company-enrichment`; step 6 (staging with a real Exa key) is open. Implements the product
 requirements in [extensions-company-enrichment.md](extensions-company-enrichment.md)
 (the PRD) on the platform in [extensions.md](extensions.md) and
 [extensions-lambda.md](extensions-lambda.md). Line references are to `main`
@@ -144,7 +144,7 @@ A release without `mapping` must not send `mapping` in its input; doing so retur
 2. Applies any new `create_field` ops and contributions.
 3. Writes `mapping` and increments `mapping_revision`.
 4. Advances `generation` but not `grant_generation`, and cancels running attempts.
-5. Restamps the installation's queued change jobs to the new generation.
+5. Moves the change dispatcher to the new generation and restamps the installation's queued and running jobs to it, with a new fence, so no change is dropped.
 6. Writes a receipt.
 
 The state stays `active`, and setup does not re-run. The commit is refused with `409 installation_disabled` while the installation is `uninstalling` or `uninstalled`.
@@ -207,7 +207,7 @@ The endpoint is idempotent by construction. A replay after a commit finds every 
 `GET /v1/extensions/:id` already lets a run read its own installation (`service.ts:172-198`). Add `mapping` to it:
 
 ```ts
-{ revision, outputs: [{ output, field: { name, label, type } | null, status: 'ok' | 'missing' | 'incompatible' }] }
+{ revision, outputs: [{ output, action, field: { name, label, type } | null, status: 'ok' | 'missing' | 'incompatible' }], lookup?: { name, status } }
 ```
 
 The handler checks this before calling the provider, so a broken binding fails the run without a wasted lookup. It reads record values by the returned API names. Admin reads return the same shape for the mapping screen. A `missing` target also carries the label it had when last seen, from the deprecated field row, so the screen can name it.
@@ -220,14 +220,14 @@ An external agent needs only metadata:
 - The schema, from `describe_schema`. The draft names fields by API name.
 - Optionally, a check of its draft with `preview_extension`. Preview is already open to schema-capable agents, and approval is not.
 
-It produces the `mapping` object from §3.3. Add a short `get_guide("extension_mapping")` that gives the format and states that agents propose and admins approve. No provider key or record data is involved.
+It produces the `mapping` object from §3.3. The `preview_extension` tool description gives the format and states that agents propose and admins approve; a separate guide was not added, because guides are checked against the tool vocabulary. No provider key or record data is involved.
 
 ### 3.8 Web
 
 The mapping step is part of `ExtensionSettings` (`packages/web/src/routes/extensions.tsx:362-593`). It renders when the selected release declares `mapping`.
 
 - **One row per output.** Each row shows the label, the provider's definition and a destination picker with three choices:
-  - Existing compatible fields on the object, by label. The lookup field is never offered.
+  - Existing compatible fields on the object, by label. The lookup field is never offered: the form leaves out any field whose `baseField` is the lookup (`companyDomain` for the base company website).
   - **Create "<suggested label>"**, when the output has a suggested field.
   - **Skip**.
 - **Import draft.** A dialog takes the pasted JSON, validates it against the input schema in the browser and fills the rows. Every row stays editable. Unknown outputs, or fields that don't exist, are shown inline rather than dropped.
@@ -379,7 +379,7 @@ All tests that touch the database run against real Postgres with a fresh clone p
 
 | Area                               | Tests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Manifest (`packages/extension`)    | Rejects duplicate outputs, a suggested type outside `types`, `relation`/`files` types, and `mappedWrite` without `mapping`. Old fixture digests stay unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Manifest (`packages/extension`)    | Rejects duplicate outputs, a suggested type outside `types`, `relation`/`files` types, `mappedWrite` without `mapping`, the lookup field as an output, and a mapping on a release without hosted execution and write scope or with a `source` or webhooks. Old fixture digests stay unchanged.                                                                                                                                                                                                                                                                                                                                                                                            |
 | Preview/commit (`server/test/api`) | One test for each `mapping_invalid` reason, including a field from another workspace. Stale schema and a changed mapping return `stale_plan`. A failed commit rolls back schema, mapping, contributions and the setup job. **Create** resolves to an existing field with the suggested universal ID. A draft naming a renamed field fails with `field_not_found`; a rename between preview and commit returns `stale_plan`. A release without mappings installs unchanged. An agent key can preview but not commit.                                                                                                                                                                       |
 | Mapping edit                       | Remap advances generation, fences a running attempt, restamps queued change jobs, and the next trigger writes the new target. A rename keeps the binding. Deleting a referenced field produces a field-specific `schema_binding_conflict`.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Trigger                            | Create with a domain queues a job. Create without a domain queues a job that makes zero provider requests. Adding a domain later queues a job. Updating a mapped field queues nothing. Linking a person to the company queues nothing (`related: false`).                                                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -390,11 +390,11 @@ All tests that touch the database run against real Postgres with a fresh clone p
 
 ## 7. Delivery sequence
 
-1. **Manifest and trigger flags** (§3.1, §3.4) with their digest tests. Done in `830dfc3`.
-2. **Mapping preview, commit, persistence and edit** (§3.3, §3.6), plus the migration.
-3. **Mapped write** (§3.5) with the race tests.
-4. **Web mapping form, import and review** (§3.8).
-5. **Enrichment bundle against a fake Exa origin** (§4), plus local acceptance through Compose.
+1. **Manifest and trigger flags** (§3.1, §3.4) with their digest tests. Done in `8e87ab2`.
+2. **Mapping preview, commit, persistence and edit** (§3.3, §3.6), plus the migration. Done in `1606b13`.
+3. **Mapped write** (§3.5) with the race tests. Done in `40203d3`.
+4. **Web mapping form, import and review** (§3.8). Done in `f2c1ac2` and `0989aab`.
+5. **Enrichment bundle against a fake Exa origin** (§4), plus local acceptance through Compose. Done in `caab946`.
 6. **Staging verification with a real Exa key** (§4.3), then the hosted catalog entry (§5).
 
 Steps 1–4 are platform work and do not depend on Exa.

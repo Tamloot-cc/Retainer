@@ -74,6 +74,10 @@ export class ExtensionCatalog {
       .filter((r) => supportsServer(r.manifest, VERSION))
       .map((r) => structuredClone(r));
   }
+  /** The release if this catalog still holds it, for reads that must survive its removal. */
+  find(id: string, version: string) {
+    return this.releases.get(`${id}:${version}`);
+  }
   get(id: string, version: string) {
     const release = this.releases.get(`${id}:${version}`);
     if (!release) throw new AppError(404, 'not_found', 'extension release not found');
