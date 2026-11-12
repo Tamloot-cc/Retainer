@@ -6,7 +6,7 @@
 
 When a company has a website domain, fill in useful company details from a structured data provider. Each workspace chooses where those details go. A workspace admin can use an external AI agent to suggest the mapping, then edit and approve it before the extension runs. The same approved mapping applies to each lookup.
 
-For example, the provider returns `employee_count: 52` and a headquarters address for `acme.com`. An admin maps the count to the workspace’s existing **Team Size** field and approves adding a **Headquarters** field. When someone creates Acme with `acme.com` as its domain, the extension fills those fields if they have no value. If Team Size already says `40`, the extension skips it.
+For example, the provider returns `employee_count: 52` and `linkedin_url` for `acme.com`. An admin maps the count to the workspace’s existing **Team Size** field and approves adding a **LinkedIn URL** field. When someone creates Acme with `acme.com` as its domain, the extension fills those fields if they have no value. If Team Size already says `40`, the extension skips it.
 
 ## 2. V1 scope
 
@@ -16,13 +16,13 @@ For example, the provider returns `employee_count: 52` and a headquarters addres
 - Fill only unset fields. An unset field has no effective value or explicit clear. A value such as `0` counts as populated. If the domain changes later, fill any remaining unset fields using the new domain. Refreshing already populated values is deferred.
 - Defer bulk backfill, periodic scans, provider webhooks, and a manual **Enrich now** action. The standard run list and failed-run retry cover operational recovery in v1.
 
-| Provider output  | Meaning                                         | Compatible Company field | New-field option |
-| ---------------- | ----------------------------------------------- | ------------------------ | ---------------- |
-| `employee_count` | Exa's estimate of total employees               | Number                   | Employee Count   |
-| `founded_year`   | Year the company was founded                    | Number                   | Founded          |
-| `headquarters`   | Headquarters street, city, postcode and country | Address                  | Headquarters     |
+| Provider output  | Meaning                                                                                    | Compatible Company field | New-field option |
+| ---------------- | ------------------------------------------------------------------------------------------ | ------------------------ | ---------------- |
+| `employee_count` | Employees Exa finds for the company, mostly from public profiles; often below its own band | Number                   | Employee Count   |
+| `linkedin_url`   | Company LinkedIn profile URL, from Exa's company profile                                   | Links                    | LinkedIn URL     |
+| `headquarters`   | Headquarters city, postcode and country                                                    | Address                  | Headquarters     |
 
-The provider is Exa company search. Exa has no LinkedIn URL keyed by domain, so `linkedin_url` is deferred.
+The provider is Exa company search. A founded year is deferred, because Exa's sample data was unreliable.
 
 The reviewed bundle defines the source keys, their meanings, how to parse them, and the suggested field definitions. For example, a provider’s count of LinkedIn profiles must be described as such in review. The admin chooses which outputs to use. The adapter converts valid values to Retainer’s field formats. A missing or invalid individual value is omitted while other valid values can still be used.
 
