@@ -350,6 +350,64 @@ describe('commit-ordered minimal record changes with real Postgres', () => {
       expect.objectContaining({ recordId: event.body.id, operation: 'delete' }),
     );
   });
+  it('deletes an event type with one schema change plus a delete change per event', async () => {
+    const h = await setup();
+    const schema = (operations: unknown[]) =>
+      t.request('/v1/schema/changes', { key: h.keys.admin, body: { operations } });
+    expect(
+      (
+        await schema([
+          {
+            op: 'create_object',
+            object: {
+              nameSingular: 'retiredEvent',
+              namePlural: 'retiredEvents',
+              labelSingular: 'Retired event',
+              labelPlural: 'Retired events',
+              class: 'event',
+              fields: [],
+            },
+          },
+        ])
+      ).status,
+    ).toBe(200);
+    const events: string[] = [];
+    for (const title of ['First retired', 'Second retired']) {
+      const event = await t.request('/v1/events', {
+        key: h.keys.admin,
+        body: {
+          type: 'retiredEvent',
+          channel: 'fixture',
+          occurredAt: '2026-11-10T10:00:00Z',
+          title,
+        },
+      });
+      expect(event.status).toBe(201);
+      events.push(event.body.id);
+    }
+    const start = (await h.list()).body.nextCursor;
+    expect((await schema([{ op: 'delete_object', object: 'retiredEvent' }])).status).toBe(200);
+    const [type] = await db.owner<{ id: string }[]>`select id from object_types
+      where workspace_id=${h.workspace.id} and name_singular='retiredEvent'`;
+    if (!type) throw new Error('event type missing');
+    const keys = await db.owner<{ key: string }[]>`select key from fields
+      where object_type_id=${type.id} order by key`;
+    const { changes } = (await h.list(start)).body;
+    const ofType = changes.filter((c: { objectTypeId: string }) => c.objectTypeId === type.id);
+    expect(ofType.filter((c: { operation: string }) => c.operation === 'schema')).toEqual([
+      expect.objectContaining({
+        recordId: null,
+        operation: 'schema',
+        changedKeys: keys.map((k) => k.key),
+      }),
+    ]);
+    expect(
+      ofType
+        .filter((c: { operation: string }) => c.operation !== 'schema')
+        .map((c: { recordId: string; operation: string }) => [c.recordId, c.operation])
+        .sort(),
+    ).toEqual([...events].sort().map((id) => [id, 'delete']));
+  });
   it('deprecates a field of 2,000 records with one schema change and no record locks', async () => {
     const h = await setup();
     expect(

@@ -176,6 +176,12 @@ range or list, so their extension catalog is empty by design. Retaining old byte
 incompatible adapter requires an explicit migration/removal plan. Hosted preflight
 keeps refusing a server rollout with unsupported pins.
 
+Migration `0095_record_change_schema_operation` (schema-level changes) adds
+two CHECK constraints to `record_changes` and validates them over existing
+rows while holding `ACCESS EXCLUSIVE` on the table, so feed reads and every
+record write wait for it. Retention bounds the table to 30 days of changes,
+so this is an accepted one-time cost; deploy it outside peak write hours.
+
 ## Change feeds and retention recovery
 
 `GET /v1/changes` (`list_changes`, SDK `changes`) returns minimal IDs, permanent
