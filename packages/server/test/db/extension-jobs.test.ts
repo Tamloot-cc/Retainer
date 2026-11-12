@@ -218,7 +218,7 @@ describe('durable extension jobs and checkpoints', () => {
     expect(await queue.discover(discovery)).toContainEqual({ workspace_id: workspace, job_id: id });
     await expect(discovery`select * from extension_jobs`).rejects.toMatchObject({ code: '42501' });
     await expect(
-      t.sql`select * from retainer_extension_jobs_due(100,${catalog.runtime.identity})`,
+      t.sql`select * from retainer_extension_jobs_due(100,${[]}::uuid[],${[]}::text[])`,
     ).rejects.toMatchObject({
       code: '42501',
     });

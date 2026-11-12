@@ -1485,46 +1485,6 @@ export const extensionInstallations = pgTable(
   ],
 ).enableRLS();
 
-// Local catalog failures are scoped to a generation and runtime identity, not provider health.
-export const extensionRuntimeUnavailable = pgTable(
-  'extension_runtime_unavailable',
-  {
-    workspaceId: workspaceId(),
-    installationId: uuid('installation_id').notNull(),
-    runtimeIdentity: text('runtime_identity').notNull(),
-    generation: integer('generation').notNull(),
-    releaseDigest: text('release_digest').notNull(),
-    code: text('code').notNull(),
-    retryAt: timestamptz('retry_at').notNull(),
-    checkedAt: timestamptz('checked_at').notNull().defaultNow(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.workspaceId, t.installationId, t.runtimeIdentity] }),
-    foreignKey({
-      columns: [t.workspaceId, t.installationId],
-      foreignColumns: [extensionInstallations.workspaceId, extensionInstallations.id],
-    }).onDelete('cascade'),
-    index('extension_runtime_unavailable_checked_idx').on(t.checkedAt),
-    index('extension_runtime_unavailable_probe_idx').on(
-      t.runtimeIdentity,
-      t.retryAt,
-      t.installationId,
-    ),
-    check('extension_runtime_unavailable_identity', sql`${t.runtimeIdentity} ~ '^[a-f0-9]{64}$'`),
-    check('extension_runtime_unavailable_generation', sql`${t.generation} > 0`),
-    check(
-      'extension_runtime_unavailable_code',
-      sql`${t.code} in ('incompatible_runtime', 'release_unavailable')`,
-    ),
-    pgPolicy('extension_runtime_unavailable_workspace', {
-      for: 'all',
-      to: 'retainer_app',
-      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
-      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
-    }),
-  ],
-).enableRLS();
-
 // Standalone credentials bind a reviewed workspace grant, never the installer's ongoing membership.
 export const extensionCredentials = pgTable(
   'extension_credentials',

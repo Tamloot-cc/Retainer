@@ -268,9 +268,6 @@ export class ExtensionExecutor {
       maintainedAt = Date.now();
       maintaining = this.queue
         .maintain(this.options.discoverySql)
-        .then((result) => {
-          if (result.failed) report(new Error('extension runtime reconciliation failed'));
-        })
         .catch(report)
         .finally(() => {
           maintaining = undefined;
@@ -340,7 +337,7 @@ export class ExtensionExecutor {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
       throw new Error('executor pass limit must be 1–1000');
     if (this.stopped) return { executed: 0, fenced: 0 };
-    const maintenance = await this.queue.maintain(this.options.discoverySql);
+    await this.queue.maintain(this.options.discoverySql);
     const due = await this.queue.discover(this.options.discoverySql, limit);
     let next = 0,
       executed = 0,
@@ -372,7 +369,6 @@ export class ExtensionExecutor {
     const failure = outcomes.find((result) => result.status === 'rejected');
     if (failure?.status === 'rejected') throw failure.reason;
     if (hasFailure) throw firstFailure;
-    if (maintenance.failed) throw new Error('extension runtime reconciliation failed');
     return { executed, fenced };
   }
 }

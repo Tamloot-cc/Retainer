@@ -16,7 +16,12 @@ import { AppError, notFound } from '../errors.js';
 import { requestHash } from '../idempotency.js';
 import { getSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
-import { RuntimeAvailability, type RuntimeCatalog, resolveRelease } from './availability.js';
+import {
+  type RuntimeCatalog,
+  requireRelease,
+  resolveRelease,
+  runnableReleases,
+} from './availability.js';
 import { failInstallation } from './lifecycle.js';
 import { cancelRuns, lockExtension, lockQueue } from './locks.js';
 
@@ -174,11 +179,12 @@ export function validateLifecycleInput(kind: 'install' | 'uninstall', value: unk
 
 /** Durable queue. No method executes provider code or accepts a workspace-supplied executable. */
 export class ExtensionQueue {
-  private readonly availability: RuntimeAvailability;
-  readonly runtimeIdentity: string;
+  /** What this process can run; discovery returns only work pinned to one of these. */
+  readonly runnable: { registrations: string[]; digests: string[] };
+  private readonly runnableKeys: ReadonlySet<string>;
   constructor(
     readonly sql: Sql,
-    catalog: RuntimeCatalog,
+    private readonly catalog: RuntimeCatalog,
     private readonly limits: QueueLimits = { queued: 10000, kvBytes: 1048576 },
     /**
      * Release digests with a deployed executable, when this process knows
@@ -186,8 +192,10 @@ export class ExtensionQueue {
      */
     private readonly activation?: ReadonlySet<string>,
   ) {
-    this.availability = new RuntimeAvailability(catalog);
-    this.runtimeIdentity = catalog.identity;
+    this.runnable = runnableReleases(catalog, activation);
+    this.runnableKeys = new Set(
+      this.runnable.digests.map((digest, i) => `${this.runnable.registrations[i]}:${digest}`),
+    );
   }
 
   private async installation(
@@ -209,7 +217,17 @@ export class ExtensionQueue {
     return current;
   }
   private manifest(installation: Installation) {
-    return this.availability.require(installation);
+    return requireRelease(this.catalog, installation);
+  }
+  /**
+   * Defense in depth behind discovery's filter: null when this process cannot
+   * run the pinned release, so the caller leaves the work as it is.
+   */
+  private runnableRelease(installation: Installation) {
+    if (!this.runnableKeys.has(`${installation.registration_id}:${installation.release_digest}`))
+      return null;
+    const resolution = resolveRelease(this.catalog, installation);
+    return resolution.available ? resolution.manifest : null;
   }
   private async insert(
     tx: Tx,
@@ -448,7 +466,7 @@ export class ExtensionQueue {
         const installation = await this.installation(tx, workspace, id);
         admittedGeneration = installation.generation;
         if (installation.state !== 'active') return { queued: 0, blocked: 0 };
-        const manifest = await this.availability.inspect(tx, installation);
+        const manifest = this.runnableRelease(installation);
         if (!manifest) return { queued: 0, blocked: 0 };
         const schema = await getSchema(tx, workspace);
         const handlers = manifest.functions.filter((fn) => fn.trigger.kind === 'change');
@@ -619,39 +637,24 @@ export class ExtensionQueue {
   async discover(discoverySql: Sql, limit = 100) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
       throw new Error('invalid discovery limit');
-    return discoverySql<
-      { workspace_id: string; job_id: string }[]
-    >`select * from retainer_extension_jobs_due(${limit},${this.runtimeIdentity})`;
+    const { registrations, digests } = this.runnable;
+    return discoverySql<{ workspace_id: string; job_id: string }[]>`
+      select * from retainer_extension_jobs_due(${limit},${registrations}::uuid[],${digests}::text[])`;
   }
   async discoverChanges(discoverySql: Sql, after: string | null) {
+    const { registrations, digests } = this.runnable;
     return discoverySql<{ workspace_id: string; installation_id: string }[]>`
-      select * from retainer_extension_changes_due(${after}::uuid,1000,${this.runtimeIdentity})`;
+      select * from retainer_extension_changes_due(${after}::uuid,1000,${registrations}::uuid[],${digests}::text[])`;
   }
-  /** Rechecks known failures separately; probes never consume the job-discovery budget. */
-  async reconcile(discoverySql: Sql) {
-    const due = await discoverySql<{ workspace_id: string; installation_id: string }[]>`
-      select * from retainer_extension_runtime_due(25,${this.runtimeIdentity})`;
-    let failed = 0;
-    for (const item of due) {
-      try {
-        await inWorkspace(this.sql, item.workspace_id, async (tx) => {
-          await lockSchemaShared(tx, item.workspace_id);
-          const installation = await this.installation(tx, item.workspace_id, item.installation_id);
-          if (!['active', 'installing', 'upgrading', 'uninstalling'].includes(installation.state))
-            return;
-          await this.availability.inspect(tx, installation, { knownFailureOnly: true });
-        });
-      } catch {
-        // Leave the marker due; inspect is retried without ending this pass.
-        failed++;
-      }
-    }
-    return { failed };
-  }
+  /**
+   * Schedules for runnable releases, plus uninstall cleanup for any release:
+   * an expired cleanup deadline always ends in `uninstalled`, and cleanup a
+   * release cannot run here is skipped (startCleanup).
+   */
   async maintain(discoverySql: Sql) {
-    const probes = await this.reconcile(discoverySql);
+    const { registrations, digests } = this.runnable;
     const due = await discoverySql<{ workspace_id: string; installation_id: string }[]>`
-      select * from retainer_extension_maintenance_due(1000,${this.runtimeIdentity})`;
+      select * from retainer_extension_maintenance_due(1000,${registrations}::uuid[],${digests}::text[])`;
     for (const item of due) {
       let generation: number | undefined;
       try {
@@ -703,7 +706,6 @@ export class ExtensionQueue {
         }
       }
     }
-    return probes;
   }
 
   /**
@@ -718,7 +720,7 @@ export class ExtensionQueue {
     const [queued] = await tx`select 1 from extension_jobs where installation_id=${installation.id}
       and generation=${installation.generation} and trigger_kind='uninstall' limit 1`;
     if (queued) return;
-    const resolution = resolveRelease(this.availability.catalog, installation);
+    const resolution = resolveRelease(this.catalog, installation);
     const runnable =
       resolution.available &&
       resolution.manifest.execution === 'hosted' &&
@@ -760,7 +762,7 @@ export class ExtensionQueue {
         await this.finishLifecycle(tx, installation, job, 'failed', 'retry_exhausted');
         return null;
       }
-      const manifest = await this.availability.inspect(tx, installation);
+      const manifest = this.runnableRelease(installation);
       if (!manifest) return null;
       const fn = manifest.functions.find((f) => f.universalId === job.function_id);
       const system =
@@ -1076,7 +1078,7 @@ export class ExtensionQueue {
       await lockSchemaShared(tx, workspace);
       const installation = await this.installation(tx, workspace, installationId);
       if (installation.state !== 'active') return { scheduled: 0 };
-      const manifest = await this.availability.inspect(tx, installation);
+      const manifest = this.runnableRelease(installation);
       if (!manifest) return { scheduled: 0 };
       const [clock] = await tx<{ now: Date }[]>`select clock_timestamp() as now`;
       if (!clock) throw new Error('database clock unavailable');

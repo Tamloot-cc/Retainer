@@ -78,7 +78,6 @@ type Row = {
   secret_names?: string[];
   connection_health: 'ok' | 'needs_reconnect' | 'degraded';
   last_error: string | null;
-  runtime_retry_at?: Date | null;
   created_by: ExtensionInstallation['createdBy'];
 };
 function present(r: Row, runtime?: RuntimeCatalog): ExtensionInstallation {
@@ -88,11 +87,7 @@ function present(r: Row, runtime?: RuntimeCatalog): ExtensionInstallation {
       ? {
           runtimeAvailability: resolution.available
             ? { state: 'available' as const }
-            : {
-                state: 'unavailable' as const,
-                code: resolution.code,
-                ...(r.runtime_retry_at ? { retryAt: r.runtime_retry_at.toISOString() } : {}),
-              },
+            : { state: 'unavailable' as const, code: resolution.code },
         }
       : {}),
     id: r.id,
@@ -155,9 +150,7 @@ export class Extensions {
       }
       return {
         installations: (
-          await tx<Row[]>`select i.*,retainer_extension_secret_names(i.id) as secret_names,
-            (select u.retry_at from extension_runtime_unavailable u where u.installation_id=i.id
-              and u.runtime_identity=${this.catalog.runtime.identity} and u.generation=i.generation and u.release_digest=i.release_digest) as runtime_retry_at
+          await tx<Row[]>`select i.*,retainer_extension_secret_names(i.id) as secret_names
             from extension_installations i ${caller.run || caller.installation ? tx`where i.id = ${caller.run?.installationId ?? caller.installation?.installationId ?? null}` : tx``} order by i.created_at, i.id`
         ).map((row) => present(row, this.catalog.runtime)),
       };
@@ -175,10 +168,7 @@ export class Extensions {
         await lockSchemaShared(tx, caller.workspaceId);
         await admitCaller(tx, caller, false, 'runtime');
       }
-      const [row] = await tx<Row[]>`select i.*,
-        (select u.retry_at from extension_runtime_unavailable u where u.installation_id=i.id
-          and u.runtime_identity=${this.catalog.runtime.identity} and u.generation=i.generation and u.release_digest=i.release_digest) as runtime_retry_at
-        from extension_installations i where i.id = ${id}`;
+      const [row] = await tx<Row[]>`select i.* from extension_installations i where i.id = ${id}`;
       if (!row) throw notFound('extension installation');
       const contributions =
         await tx`select kind, universal_id as "universalId", element_id as "elementId"

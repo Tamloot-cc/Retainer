@@ -90,7 +90,7 @@ Status of R7: done (Phase 2 item 2). Deleting a workspace uninstalls its
 extensions in the same transaction: hosted ones become `uninstalling` and the
 executor queues their cleanup (or uninstalls directly without an active
 executable), standalone ones become `uninstalled`; all lose their grant.
-Migration 0090 lets cleanup (and only cleanup) be discovered, reconciled,
+Migration 0090 lets cleanup (and only cleanup) be discovered, queued,
 reaped and admitted to secrets while the workspace is being deleted, and the
 hard delete waits until each cleanup finishes or passes its 24-hour deadline
 (spec §7). Completion is recorded on the installations themselves; a missed
@@ -154,4 +154,6 @@ migrations and runs one stream at a time.
 5. Function-scoped run tokens and secrets, `previousVersion` (§2). Done.
 6. Schema-level change for deprecation (R2). Done: one `schema` change per
    affected object type, no per-record fan-out or record locks.
-7. Availability simplification (§4).
+7. Availability simplification (§4). Done: workers pass their runnable
+   `(registration, digest)` pairs to the `*_due` functions (migration 0096);
+   the marker table, probe function and catalog identity are gone (0097).

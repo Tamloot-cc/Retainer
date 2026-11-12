@@ -146,18 +146,22 @@ accumulate none. An expired worker cannot acknowledge or write after replacement
 A missing or incompatible pinned release pauses its pending work in that runtime. It
 does not change provider connection health, discard jobs, consume attempts or advance
 change/schedule cursors. `GET /v1/extensions` and installation inspection report
-`runtimeAvailability`; failure codes and the next probe time are safe operator
-diagnostics. The web app explains when the server cannot run an extension.
+`runtimeAvailability`, computed on read from the answering process's catalog; the
+failure code is a safe operator diagnostic. The web app explains when the server cannot
+run an extension.
 
-Discovery skips matching installation generation, release and catalog failures until
-reconciliation succeeds. A separate pass rechecks at most 25 due failures, with a
-five-minute backoff, without consuming execution slots. A restored/changed catalog
-rechecks immediately. Successful resolution resumes the same pending work without an
-upgrade or generation change. Other catalogs' workers remain independent. An admin can
-still uninstall when the release cannot load: local access is revoked, callbacks/secrets
-are retired, and unavailable cleanup code is skipped. Expired jobs, uninstall cleanup
-deadlines and erasure keep running. Catalog markers older than 30 days are collected;
-workspace purge deletes them too.
+Nothing about availability is stored. Each worker passes the `(registration, release
+digest)` pairs it can run now (they resolve in its catalog, fit the server range, are
+`runtimeEnabled`, and have a deployed executable when it knows them) to the job,
+maintenance and change discovery functions, which return only work pinned to one of
+them. Like Twenty skipping a stopped app, unavailable work simply is not seen: it stays
+queued at the same attempt, never fills a small discovery window, and a worker with a
+newer catalog runs it at once. Restoring a release needs nothing beyond a worker that
+can run it; there is no upgrade or generation change. Claim re-checks the pin and leaves
+the job queued if it cannot resolve it. An admin can still uninstall when the release
+cannot load: local access is revoked, callbacks/secrets are retired, and unavailable
+cleanup code is skipped. Expired jobs, uninstall cleanup deadlines and erasure are never
+filtered and keep running.
 
 First-party compatibility is reviewed in `scripts/extension-release.mjs` as a bounded
 server semver range (`REVIEWED_SERVER_RANGE`, now `>=0.1.0 <0.2.0`), like Twenty's
