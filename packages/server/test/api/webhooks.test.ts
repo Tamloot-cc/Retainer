@@ -9,6 +9,7 @@ import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { IngressLimiter } from '../../src/webhooks/limiter.js';
 import { Webhooks } from '../../src/webhooks/service.js';
 import { ChangeMaintenance } from '../../src/worker/changes.js';
 import { ExecutionRegistry } from '../../src/worker/extensions.js';
@@ -194,6 +195,8 @@ async function setup(
     extensionSecrets: broker,
     runTokens: tokens,
     webhooks: hooks,
+    // The test stands in for the edge's view of the caller.
+    clientIp: (c) => c.req.header('x-test-client-ip'),
   });
   const { workspace, keys } = await app.setupWorkspace(
     { name: `Webhook ${randomUUID()}` },
@@ -359,15 +362,58 @@ describe('verified public ingress with real Postgres', () => {
     expect(JSON.stringify(receipts)).not.toContain(h.secret);
     expect((await h.send('same', 'different-source')).status).toBe(409);
   });
-  it('rejects signatures and oversize bodies, and rate-limits before invoking the verifier', async () => {
+  it('rejects signatures and oversize bodies, and rate-limits one source before invoking the verifier', async () => {
     const h = await setup({ rateLimit: 2 });
-    expect((await h.send('bad', undefined, { signature: 'wrong' })).status).toBe(401);
     expect((await h.send('large', undefined, { raw: 'x'.repeat(262145) })).status).toBe(413);
+    expect((await h.send('bad', undefined, { signature: 'wrong' })).status).toBe(401);
+    // Two requests and one failure from this source: both of its limits are spent.
     expect((await h.send('limited')).status).toBe(429);
     expect(seen).toHaveLength(1);
     expect(
       await db.owner`select * from webhook_receipts where workspace_id=${h.workspace}`,
     ).toHaveLength(0);
+  });
+  it('counts only failed verifications against the durable budget, so junk from one source cannot block valid deliveries', async () => {
+    const h = await setup({ rateLimit: 10 }),
+      from = (ip: string) => ({ headers: { 'x-test-client-ip': ip } }),
+      failures = async () =>
+        (
+          await db.owner`select count from webhook_request_counts where workspace_id=${h.workspace}`
+        )[0]?.count ?? 0;
+    // Valid deliveries beyond the budget are all accepted and never counted.
+    for (let i = 0; i < 12; i++)
+      expect((await h.send(`valid-${i}`, undefined, from(`192.0.2.${i}`))).status).toBe(202);
+    expect(await failures()).toBe(0);
+    // One source may fail once (a tenth of 10); its junk then stops in memory.
+    const junk = await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        h.send(`junk-${i}`, undefined, { signature: 'wrong', ...from('198.51.100.1') }),
+      ),
+    );
+    expect(junk.filter((r) => r.status === 401)).toHaveLength(1);
+    expect(junk.filter((r) => r.status === 429)).toHaveLength(4);
+    expect(await failures()).toBe(1);
+    // The provider's next delivery still verifies and is accepted.
+    const before = seen.length;
+    expect((await h.send('after-junk', undefined, from('192.0.2.1'))).status).toBe(202);
+    expect(seen.length).toBe(before + 1);
+    expect(await failures()).toBe(1);
+  });
+  it('refuses before verification once failures from many sources reach the durable budget', async () => {
+    const h = await setup({ rateLimit: 2 }),
+      from = (ip: string) => ({ headers: { 'x-test-client-ip': ip } });
+    for (const ip of ['198.51.100.1', '198.51.100.2'])
+      expect(
+        (await h.send(`junk-${ip}`, undefined, { signature: 'wrong', ...from(ip) })).status,
+      ).toBe(401);
+    const before = seen.length;
+    expect(
+      (await h.send('junk-3', undefined, { signature: 'wrong', ...from('198.51.100.3') })).status,
+    ).toBe(429);
+    expect(seen.length).toBe(before);
+    const [counted] =
+      await db.owner`select count from webhook_request_counts where workspace_id=${h.workspace}`;
+    expect(counted?.count).toBe(2);
   });
   it('permits only explicit challenges before activation and never acknowledges work before setup completes', async () => {
     const h = await setup({ activate: false });
@@ -968,5 +1014,27 @@ describe('verified public ingress with real Postgres', () => {
     expect(
       (await h.send('recovered', undefined, { signature: 'replacement-signing-material' })).status,
     ).toBe(202);
+  });
+});
+describe('in-memory ingress limiter', () => {
+  it('limits requests and failures per source per window, releases successes and stays bounded', () => {
+    const limiter = new IngressLimiter(3, 60000, 2);
+    expect(limiter.failureLimit).toBe(1);
+    expect(limiter.admit('a', 0)).toBe(true);
+    expect(limiter.admit('a', 1)).toBe(false); // its one failure slot is in flight
+    limiter.settle('a', false, 2);
+    expect(limiter.admit('a', 3)).toBe(true);
+    limiter.settle('a', true, 4);
+    expect(limiter.admit('a', 5)).toBe(false); // failed once this window
+    expect(limiter.admit('a', 60000)).toBe(true); // a new window
+    limiter.settle('a', false, 60001);
+    expect(limiter.admit('a', 60002)).toBe(true);
+    limiter.settle('a', false, 60003);
+    expect(limiter.admit('a', 60004)).toBe(true);
+    limiter.settle('a', false, 60005);
+    expect(limiter.admit('a', 60006)).toBe(false); // fourth request over a limit of 3
+    expect(limiter.admit('b', 60007)).toBe(true);
+    expect(limiter.admit('c', 60008)).toBe(true); // evicts the oldest source
+    expect(limiter.admit('a', 60009)).toBe(true);
   });
 });

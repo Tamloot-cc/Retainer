@@ -20,6 +20,7 @@ import type { ExtensionCatalog } from '../extensions/catalog.js';
 import { reserveSourceItem, type SourceIdentityBinding } from '../sources/reserve.js';
 import type { ExecutionRegistry } from '../worker/extensions.js';
 import type { VerificationDriver } from '../worker/verifier-driver.js';
+import { IngressLimiter } from './limiter.js';
 
 const hash = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
 const name = z.string().regex(/^[a-z][a-zA-Z0-9-]{0,99}$/);
@@ -42,7 +43,13 @@ type Candidate = {
   binding_state: string;
 };
 type Hook = NonNullable<ExtensionManifest['webhooks']>[number];
-export type HookTarget = { route: string; bindingId?: string; registrationId?: string };
+export type HookTarget = {
+  route: string;
+  bindingId?: string;
+  registrationId?: string;
+  /** The caller's address as the edge saw it; only keys the in-memory limiter. */
+  clientIp?: string | undefined;
+};
 
 async function rawBytes(request: Request) {
   if (request.signal.aborted)
@@ -81,9 +88,15 @@ async function rawBytes(request: Request) {
   }
 }
 
+const rateLimited = () =>
+  new AppError(429, 'rate_limited', 'webhook verification rate limit exceeded', {
+    retryAfterSeconds: 60,
+  });
+
 /** Public ingress has no caller credential. All authority comes from one pinned candidate and verification. */
 export class Webhooks {
   private readonly queue: ExtensionQueue;
+  private readonly limiter: IngressLimiter;
   constructor(
     private readonly options: {
       sql: Sql;
@@ -108,6 +121,7 @@ export class Webhooks {
     const limit = options.rateLimit ?? 100;
     if (!Number.isInteger(limit) || limit < 1 || limit > 10000)
       throw new Error('invalid webhook rate limit');
+    this.limiter = new IngressLimiter(limit);
     this.queue = new ExtensionQueue(options.sql, options.catalog.runtime);
   }
   private contract(candidate: Candidate, route: string) {
@@ -281,13 +295,16 @@ export class Webhooks {
       };
     });
   }
-  private async locate(target: HookTarget, headers: Headers) {
+  private validate(target: HookTarget) {
     if (
       !name.safeParse(target.route).success ||
       (target.bindingId === undefined) === (target.registrationId === undefined) ||
       !z.uuid().safeParse(target.bindingId ?? target.registrationId).success
     )
       throw notFound('webhook binding');
+  }
+  private async locate(target: HookTarget, headers: Headers) {
+    this.validate(target);
     let hint: string | null = null;
     if (target.registrationId) {
       const hook = this.options.catalog
@@ -309,18 +326,26 @@ export class Webhooks {
     if (rows.length !== 1 || !rows[0]) throw notFound('webhook binding');
     return rows[0];
   }
-  private async rate(candidate: Candidate) {
+  /**
+   * The durable per-callback budget counts failed verifications only, so a
+   * provider's valid deliveries never use it up. It is read before the
+   * verifier runs and written only after a rejection.
+   */
+  private async failureBudget(candidate: Candidate) {
     const limit = this.options.rateLimit ?? 100;
+    const [row] = await inWorkspace(
+      this.options.sql,
+      candidate.workspace_id,
+      (tx) => tx<{ count: number }[]>`select count from webhook_request_counts
+        where binding_id=${candidate.binding_id} and window_start>=date_trunc('minute',clock_timestamp())`,
+    );
+    if (row && row.count >= limit) throw rateLimited();
+  }
+  private async recordFailure(candidate: Candidate) {
     await inWorkspace(this.options.sql, candidate.workspace_id, async (tx) => {
-      const [row] = await tx<
-        { count: number }[]
-      >`insert into webhook_request_counts as c(workspace_id,binding_id,window_start,count)
+      await tx`insert into webhook_request_counts as c(workspace_id,binding_id,window_start,count)
         values(${candidate.workspace_id},${candidate.binding_id},date_trunc('minute',clock_timestamp()),1)
-        on conflict(workspace_id,binding_id) do update set window_start=greatest(c.window_start,excluded.window_start),count=case when c.window_start>=excluded.window_start then least(c.count+1,2147483647) else 1 end returning count`;
-      if (!row || row.count > limit)
-        throw new AppError(429, 'rate_limited', 'webhook verification rate limit exceeded', {
-          retryAfterSeconds: 60,
-        });
+        on conflict(workspace_id,binding_id) do update set window_start=greatest(c.window_start,excluded.window_start),count=case when c.window_start>=excluded.window_start then least(c.count+1,2147483647) else 1 end`;
     });
   }
   private async accept(
@@ -377,10 +402,17 @@ export class Webhooks {
     target: HookTarget,
     request: Request,
   ): Promise<{ kind: 'accepted' } | { kind: 'challenge'; body: string }> {
+    // One source per callback; unknown addresses share one source.
+    const source = `${target.clientIp ?? ''}|${target.bindingId ?? target.registrationId}|${target.route}`;
+    let admitted = false,
+      failed = false;
     try {
+      this.validate(target);
+      if (!this.limiter.admit(source)) throw rateLimited();
+      admitted = true;
       const candidate = await this.locate(target, request.headers),
         { hook, executable } = this.contract(candidate, target.route);
-      await this.rate(candidate);
+      await this.failureBudget(candidate);
       const headers: Record<string, string> = {};
       for (const key of hook.headers) {
         const value = request.headers.get(key);
@@ -436,8 +468,12 @@ export class Webhooks {
         signal.removeEventListener('abort', stop);
         controller.abort();
       }
-      if (result.status === 'rejected')
+      if (result.status === 'rejected') {
+        failed = true;
+        // The rejection stands even if the count cannot be stored.
+        await this.recordFailure(candidate).catch(() => {});
         throw new AppError(401, 'invalid_signature', 'webhook signature is invalid');
+      }
       if (result.status === 'challenge') {
         if (!hook.challenge)
           throw new AppError(503, 'invalid_verifier_result', 'webhook challenge is not registered');
@@ -454,6 +490,8 @@ export class Webhooks {
       if (error instanceof AppError) throw error;
       // Never log raw provider bodies, verification material or database diagnostics at ingress.
       throw new AppError(503, 'webhook_unavailable', 'webhook acceptance is unavailable');
+    } finally {
+      if (admitted) this.limiter.settle(source, failed);
     }
   }
 }

@@ -5,7 +5,7 @@ import { type Config, loadConfig, rateLimitPerMinute } from '../config.js';
 import { createApiSql, type Sql } from '../db/client.js';
 import { extensionServices } from '../extension-control/configuration.js';
 import { setLogLevel } from '../log.js';
-import { requireEdge } from './edge.js';
+import { clientIpOf, requireEdge } from './edge.js';
 
 /**
  * The API as an AWS Lambda function behind API Gateway: the
@@ -34,6 +34,7 @@ export function createApiHandler(
     // Checks people's session cookies; never loads Better Auth (4.4).
     accountsSecret: config.RETAINER_AUTH_SECRET,
     rateLimit: { limit: rateLimitPerMinute(config) },
+    clientIp: (c) => clientIpOf((c.env as { event?: unknown }).event, config.RETAINER_EDGE_SECRET),
   });
   return requireEdge(config.RETAINER_EDGE_SECRET, handle(app));
 }

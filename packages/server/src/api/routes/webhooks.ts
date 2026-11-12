@@ -1,4 +1,4 @@
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
 import { AppError } from '../../errors.js';
 import { idParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
@@ -10,7 +10,18 @@ import {
 } from '../../webhooks/service.js';
 
 /** Mounted outside authentication; only candidate verification can authorize a delivery. */
-export function webhookIngress(app: Hono<AppEnv>, webhooks?: Webhooks) {
+export function webhookIngress(
+  app: Hono<AppEnv>,
+  webhooks?: Webhooks,
+  clientIp?: (c: Context) => string | undefined,
+) {
+  const ip = (c: Context) => {
+    try {
+      return clientIp?.(c);
+    } catch {
+      return undefined;
+    }
+  };
   const receive = async (target: HookTarget, request: Request) => {
     if (!webhooks)
       throw new AppError(503, 'webhook_unavailable', 'webhook ingress is not configured');
@@ -18,7 +29,7 @@ export function webhookIngress(app: Hono<AppEnv>, webhooks?: Webhooks) {
   };
   app.post('/extensions/hooks/installations/:binding/:route', async (c) => {
     const result = await receive(
-      { bindingId: c.req.param('binding'), route: c.req.param('route') },
+      { bindingId: c.req.param('binding'), route: c.req.param('route'), clientIp: ip(c) },
       c.req.raw,
     );
     c.header('Cache-Control', 'no-store');
@@ -27,7 +38,11 @@ export function webhookIngress(app: Hono<AppEnv>, webhooks?: Webhooks) {
   });
   app.post('/extensions/hooks/:registration/:route', async (c) => {
     const result = await receive(
-      { registrationId: c.req.param('registration'), route: c.req.param('route') },
+      {
+        registrationId: c.req.param('registration'),
+        route: c.req.param('route'),
+        clientIp: ip(c),
+      },
       c.req.raw,
     );
     c.header('Cache-Control', 'no-store');
