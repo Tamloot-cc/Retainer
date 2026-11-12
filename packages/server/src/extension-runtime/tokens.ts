@@ -16,6 +16,7 @@ const binding = z.strictObject({
   owner: z.string().min(1).max(200),
   fence: z.string().regex(/^[1-9][0-9]{0,18}$/),
   releaseDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  functionId: z.uuid(),
   scopes: z
     .array(z.enum(['read', 'write']))
     .min(1)
@@ -39,6 +40,9 @@ export class RunTokens {
     if (job.system) throw new Error('system lifecycle jobs have no run credentials');
     const key = this.options.signingKey;
     if (!key) throw new Error('run signing key is unavailable');
+    // The claim already narrowed job.scopes to the function's needs within the grant.
+    if (!scopes.length || scopes.some((scope) => !job.scopes.includes(scope)))
+      throw new AppError(403, 'forbidden', "run scopes exceed the function's effective scopes");
     const run: RunBinding = {
       installationId: job.installationId,
       registrationId,
@@ -47,6 +51,7 @@ export class RunTokens {
       owner: job.owner,
       fence: job.fence,
       releaseDigest: job.releaseDigest,
+      functionId: job.functionId,
       scopes,
     };
     await inWorkspace(sql, job.workspaceId, async (tx) => {

@@ -51,6 +51,15 @@ it needs no new release. Catalogs built with the exact `serverVersions` list
 still load as an exact set with unchanged digests. Bridge releases are needed
 only to move to a new server line.
 
+Status of rows 5–6: done (Phase 2 item 5). Run tokens bind the function ID,
+checked against the job on every admission. Functions declare `secrets` and
+`scopes` (absent keeps the old behaviour and digests); the claim narrows the
+run's scopes to the function's within the grant and records its secrets on the
+job, which the runtime endpoint and the broker's SQL admission (migration 0094)
+both enforce. Bundled Granola and last-contact declare theirs. Install jobs
+carry `previousVersion` (null on a first install). Run tokens are not accepted
+by `/mcp` (Phase 1).
+
 Status of row 3: done (Phase 2). Contributions' stored definitions are the
 publisher base. Object labels and description and field label and description
 are workspace-overridable: a workspace edit wins with a preview warning and
@@ -142,6 +151,6 @@ migrations and runs one stream at a time.
 2. R7 workspace-deletion cleanup. Done.
 3. R9 coalescing and throttle.
 4. Label override layer and semver server ranges (§2).
-5. Function-scoped run tokens and secrets, `previousVersion` (§2).
+5. Function-scoped run tokens and secrets, `previousVersion` (§2). Done.
 6. Schema-level change for deprecation (R2).
 7. Availability simplification (§4).

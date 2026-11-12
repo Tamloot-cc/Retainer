@@ -1,4 +1,4 @@
-import type { ExecutionResult, Invocation } from '@retainer/extension';
+import { type ExecutionResult, type Invocation, lifecycleInputSchema } from '@retainer/extension';
 import { RetainerClient } from '@retainer/sdk';
 import { z } from 'zod';
 import { executeGranola } from './granola.js';
@@ -40,7 +40,7 @@ async function executeFixture(
     fetch: apiFetch(transport, signal),
   });
   if (invocation.functionId === FIXTURE_INSTALL_ID) {
-    if (!z.strictObject({}).safeParse(invocation.input).success)
+    if (!lifecycleInputSchema.safeParse(invocation.input).success)
       return { status: 'failed', code: 'invalid_input' };
     const previous = await sdk.extensionKv(invocation.installationId, 'setup');
     if (previous) return { status: 'succeeded' };

@@ -59,6 +59,8 @@ export type RunBinding = {
   owner: string;
   fence: string;
   releaseDigest: string;
+  /** The claimed job's function; a run credential acts only for its own job's function. */
+  functionId: string;
   scopes: ('read' | 'write')[];
 };
 

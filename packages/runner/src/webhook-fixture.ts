@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { ExecutionResult, Invocation } from '@retainer/extension';
+import { type ExecutionResult, type Invocation, lifecycleInputSchema } from '@retainer/extension';
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
 import { BASE_EVENT_FIELD_IDS, BASE_EVENT_TYPE_IDS } from '@retainer/shared';
 import { z } from 'zod';
@@ -27,7 +27,7 @@ async function webhookFixture(
     fetch: apiFetch(transport, signal),
   });
   if (invocation.functionId === WEBHOOK_SETUP_ID) {
-    if (!z.strictObject({}).safeParse(invocation.input).success)
+    if (!lifecycleInputSchema.safeParse(invocation.input).success)
       return { status: 'failed', code: 'invalid_input' };
     const key = await sdk.extensionSecret(invocation.installationId, 'fixtureKey');
     if (!/^whsec_[A-Za-z0-9+/]{43}=$/.test(key.value))

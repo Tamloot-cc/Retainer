@@ -1,3 +1,4 @@
+import { functionSecrets } from '@retainer/extension';
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import type { Caller } from '../../caller.js';
@@ -53,8 +54,15 @@ export function runtimeRoutes(
       >`select version from extension_installations where id=${run.installationId}`;
       if (!installation) throw notFound('extension installation');
       const release = catalog.get(run.registrationId, installation.version),
-        definition = release.manifest.settings[name];
-      if (release.digest !== run.releaseDigest || !definition?.secret)
+        definition = release.manifest.settings[name],
+        fn = release.manifest.functions.find((f) => f.universalId === run.functionId);
+      // A run reaches only the secrets its own function declares (spec 8).
+      if (
+        release.digest !== run.releaseDigest ||
+        !definition?.secret ||
+        !fn ||
+        !functionSecrets(release.manifest, fn).includes(name)
+      )
         throw notFound('connection secret');
       if (writing && !definition.generated)
         throw new AppError(403, 'forbidden', 'runs can write only declared generated secrets');

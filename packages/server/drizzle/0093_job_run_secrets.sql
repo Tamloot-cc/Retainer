@@ -1,0 +1,1 @@
+ALTER TABLE "extension_jobs" ADD COLUMN "run_secrets" text[];

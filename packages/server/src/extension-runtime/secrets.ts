@@ -138,9 +138,10 @@ export class SecretBroker {
       run.registrationId !== identity.registrationId
     )
       throw new AppError(403, 'forbidden', 'secret belongs to another installation');
+    // The job row names the secrets its function declared; others are refused here too.
     const [admission] = await tx<{ admitted: boolean }[]>`select retainer_admit_secret_run(
       ${run.registrationId}::uuid,${run.installationId}::uuid,${run.generation},${run.jobId}::uuid,
-      ${run.owner},${run.fence}::bigint,${run.releaseDigest},${writing}) as admitted`;
+      ${run.owner},${run.fence}::bigint,${run.releaseDigest},${run.functionId}::uuid,${identity.name},${writing}) as admitted`;
     if (!admission?.admitted)
       throw new AppError(409, 'installation_disabled', 'secret run is no longer admitted');
   }

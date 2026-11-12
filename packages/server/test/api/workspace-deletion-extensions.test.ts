@@ -33,8 +33,14 @@ const fn = (universalId: string, name: string, kind: 'install' | 'uninstall' | '
   trigger: { kind },
   inputSchema: { type: 'object' as const, additionalProperties: false as const },
 });
+// Optional, so installs need no staged value; functions declare no list, so
+// their runs keep the first contract's access to every secret setting.
+const settings = {
+  apiKey: { type: 'string', label: 'API key', secret: true, required: false, reconnect: false },
+} as const;
 const hosted = extensionFixture({
   scopes: ['read', 'write'],
+  settings,
   functions: [
     fn(setupId, 'setup', 'install'),
     fn(cleanupId, 'cleanup', 'uninstall'),
@@ -43,6 +49,7 @@ const hosted = extensionFixture({
 });
 const second = extensionFixture({
   scopes: ['read'],
+  settings,
   functions: [fn(randomUUID(), 'cleanup', 'uninstall')],
 });
 const standalone = extensionFixture({ execution: 'standalone', scopes: ['read', 'write'] });
@@ -172,7 +179,7 @@ async function secretAdmission(
     await tx`select set_config('app.workspace_id',${run.workspaceId},true)`;
     const [row] = await tx<{ admitted: boolean }[]>`select retainer_admit_secret_run(
       ${run.registrationId}::uuid,${run.installationId}::uuid,${run.generation},${run.jobId}::uuid,
-      ${run.owner},${run.fence}::bigint,${run.releaseDigest},${writing}) as admitted`;
+      ${run.owner},${run.fence}::bigint,${run.releaseDigest},${run.functionId}::uuid,'apiKey',${writing}) as admitted`;
     return row?.admitted;
   })) as boolean;
 }

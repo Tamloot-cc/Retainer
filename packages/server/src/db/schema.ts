@@ -1685,6 +1685,11 @@ export const extensionJobs = pgTable(
      * installations but adds no depth (extensions spec §9.4).
      */
     causeDepth: integer('cause_depth'),
+    /**
+     * The secret settings the claimed function declares, copied from the pinned
+     * release at claim. Broker admission releases only these (extensions spec §8).
+     */
+    runSecrets: text('run_secrets').array(),
     status: text('status').notNull().default('queued'),
     leaseOwner: text('lease_owner'),
     fence: bigint('fence', { mode: 'number' }).notNull().default(0),
