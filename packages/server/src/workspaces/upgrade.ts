@@ -1,6 +1,6 @@
 import type { Sql } from '../db/client.js';
 import type { AppliedTemplate } from '../db/schema.js';
-import { inWorkspace, lockSchemaExclusive } from '../db/tx.js';
+import { inWorkspace, lockPrivacyShared, lockSchemaExclusive } from '../db/tx.js';
 import { log } from '../log.js';
 import { seedWorkspaceProfile } from '../memory/profiles.js';
 import { loadSchemaState } from '../schema/load.js';
@@ -49,6 +49,7 @@ async function countAboutEventLinks(sql: Sql, workspaceId: string) {
  */
 async function upgradeWorkspace(sql: Sql, workspaceId: string): Promise<WorkspaceUpgrade> {
   return inWorkspace(sql, workspaceId, async (tx) => {
+    await lockPrivacyShared(tx, workspaceId);
     await lockSchemaExclusive(tx, workspaceId);
     const [row] = await tx<WorkspaceRow[]>`
       select templates, definitions_digest from workspaces where id = ${workspaceId}`;

@@ -14,12 +14,13 @@ import type { Sql } from '../db/client.js';
 import { RUNTIME_ROLE } from '../db/client.js';
 import { isUuid } from '../db/ids.js';
 import type { InvitedWorkspace } from '../db/schema.js';
-import { setScope, type Tx } from '../db/tx.js';
+import { inWorkspaceTransaction, lockSchemaShared, type Tx } from '../db/tx.js';
 import { getWorkspace, type Workspace } from '../db/workspaces.js';
 import { AppError, forbidden, notFound } from '../errors.js';
+import type { RuntimeCatalog } from '../extension-runtime/availability.js';
 import { SYSTEM_ACTOR } from '../schema-engine/engine.js';
 import { applyTemplate, seedBaseObjects } from '../templates/apply.js';
-import { DELETION_GRACE_DAYS, purgeAfter } from '../workspaces/deletion.js';
+import { DELETION_GRACE_DAYS, purgeAfter, uninstallExtensions } from '../workspaces/deletion.js';
 import { endLostMemberships, organizationMemberships } from '../workspaces/leaving.js';
 import {
   assertKeepsAnOwner,
@@ -194,17 +195,18 @@ export async function createWorkspaceFor(
     if (!workspaceId) throw new Error('could not find a free workspace slug');
 
     await tx.unsafe(`set local role ${RUNTIME_ROLE}`);
-    await setScope(tx, workspaceId);
-    await seedBaseObjects(tx, workspaceId);
-    if (input.template) {
-      await applyTemplate(tx, {
-        workspaceId,
-        actor: SYSTEM_ACTOR,
-        scopes: ['schema:write'],
-        name: input.template,
-      });
-    }
-    return workspaceId;
+    return inWorkspaceTransaction(tx, workspaceId, async (scoped) => {
+      await seedBaseObjects(scoped, workspaceId);
+      if (input.template) {
+        await applyTemplate(scoped, {
+          workspaceId,
+          actor: SYSTEM_ACTOR,
+          scopes: ['schema:write'],
+          name: input.template,
+        });
+      }
+      return workspaceId;
+    });
   });
   return getWorkspace(sql, id);
 }
@@ -247,16 +249,22 @@ export async function renameWorkspace(
  * confirmed by typing its name. It is gone at once for every lookup and
  * removed for good after the grace period. The organization's lock comes
  * first, then the role check, then the write, so a demotion or a move
- * running at the same time lands before the check.
+ * running at the same time lands before the check. Its extensions are
+ * uninstalled in the same transaction (extensions spec 7): hosted ones queue
+ * their provider cleanup, which runs during the grace period.
  */
 export async function deleteWorkspace(
   sql: Sql,
   person: Person,
   workspaceId: string,
   confirmName: string,
+  extensionCatalog?: RuntimeCatalog,
 ): Promise<{ id: string; deletionScheduledAt: string; purgeAfter: string }> {
   return (await sql.begin(async (tx) => {
     const organizationId = await lockWorkspaceOrganization(tx, workspaceId);
+    // Before the workspace row: a schema change holds this lock and then
+    // updates the row, so taking them the other way round deadlocks.
+    await lockSchemaShared(tx, workspaceId);
     // Someone who cannot see the workspace learns nothing about it.
     const { workspace } = await workspaceAccess(tx, person, workspaceId);
     if (!organizationId || organizationId !== workspace.organizationId) throw notFound('workspace');
@@ -274,6 +282,8 @@ export async function deleteWorkspace(
       where id = ${workspaceId} and deletion_scheduled_at is null
       returning deletion_scheduled_at`;
     if (!row) throw notFound('workspace');
+    // Last, because it leaves the transaction in the runtime role.
+    await uninstallExtensions(tx, workspaceId, extensionCatalog);
     return {
       id: workspaceId,
       deletionScheduledAt: row.deletion_scheduled_at.toISOString(),

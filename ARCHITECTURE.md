@@ -19,7 +19,8 @@ It combines two ideas:
 
 Retainer never calls a language model. Agents decide what to remember;
 Retainer validates it, resolves conflicts, keeps its history and makes it
-searchable. Full conversations stay with the agent.
+searchable. Conversations can stay with the agent or be retained as authorized
+file attachments; transcript bytes never enter record JSON or search indexes.
 
 ---
 
@@ -86,17 +87,18 @@ API and MCP schemas are cached per `(workspace, schema_version)`.
 
 #### Field types
 
-| Type                                                     | Stored as                                                        |
-| -------------------------------------------------------- | ---------------------------------------------------------------- |
-| `text`, `number`, `boolean`, `date`, `date_time`, `json` | Plain JSON values                                                |
-| `select`, `multi_select`                                 | Option value(s); options live in `fields.settings`               |
-| `money`                                                  | `{ amountMicros, currency }`                                     |
-| `emails`                                                 | `{ primary, additional[] }`                                      |
-| `phones`                                                 | `{ primary: { number, countryCode }, additional[] }`             |
-| `links`                                                  | `{ primary: { url, label }, additional[] }`                      |
-| `full_name`                                              | `{ first, last }`                                                |
-| `address`                                                | `{ street1, street2, city, state, postcode, country, lat, lng }` |
-| `relation`                                               | Not in `records.data`; see `record_links`                        |
+| Type                                                     | Stored as                                                           |
+| -------------------------------------------------------- | ------------------------------------------------------------------- |
+| `text`, `number`, `boolean`, `date`, `date_time`, `json` | Plain JSON values                                                   |
+| `select`, `multi_select`                                 | Option value(s); options live in `fields.settings`                  |
+| `money`                                                  | `{ amountMicros, currency }`                                        |
+| `emails`                                                 | `{ primary, additional[] }`                                         |
+| `phones`                                                 | `{ primary: { number, countryCode }, additional[] }`                |
+| `links`                                                  | `{ primary: { url, label }, additional[] }`                         |
+| `full_name`                                              | `{ first, last }`                                                   |
+| `address`                                                | `{ street1, street2, city, state, postcode, country, lat, lng }`    |
+| `relation`                                               | Not in `records.data`; see `record_links`                           |
+| `files`                                                  | Immutable opaque file ID list; bytes in authorized external storage |
 
 Composite shapes are defined once in `@retainer/shared`, so every object that
 has emails stores them the same way.
@@ -1154,6 +1156,71 @@ deterministic and testable.
 
 ---
 
+### 4.4 Deterministic extension projections
+
+The release-pinned last-contact capability replaces only the installation's own
+contributed nullable date-time assertions. Its server operation takes schema
+exclusivity while selecting current conversation history and writing citations,
+so relation/event changes cannot interleave. It uses normal assertion precedence
+and source time. `assertion_dependencies` adds normalized support-record edges
+for rolled-up evidence; privacy erasure removes supported claims before support
+FK cascades, even when the cited event survives. Scans are bounded and their
+control cursors are erasable installation KV, never durable job input.
+
+### 4.5 Extension runtime availability
+
+Catalog resolution is a shared foundation concern and keeps no state. Each worker
+passes the `(registration, release digest)` pairs it can run now (catalog, server range,
+`runtimeEnabled`, deployed executables) to job, schedule and change discovery, which
+return only work pinned to one of them; other work stays queued for a worker that can
+run it. Claim re-checks the pin. Catalog restoration recovers pending work without
+changing generation, and one worker's catalog never blocks another. The API computes
+`runtimeAvailability` on read from its own catalog. Provider connection health
+remains separate. Hosted runtime resolution requires explicit operator `runtimeEnabled:
+true`; disabling it pauses existing work as well as new activation.
+
+Unavailable execution never advances a cursor or consumes an attempt. Retention, cleanup
+deadlines and erasure are never filtered and still run. Workers drain peers after an
+unexpected item failure before reporting the failure. First-party
+compatibility is an explicit reviewed version set, with bridge releases required before
+server transitions; deployment preflight continues to refuse unsupported installed pins.
+
+### 4.6 Standalone installation credentials
+
+`extension_credentials` binds hash-stored key-mode keys (and installation OAuth
+grant records) to a workspace, installation, approved scope subset and generation.
+The external app actor is the installation, with no personal-memory principal.
+Standalone keys use the REST resource; ordinary MCP OAuth consent stays separate.
+Admission takes the shared installation lock inside each data/metadata transaction
+and precedes idempotency or file authorization. Revoke and control transitions
+take that lock exclusively, draining admitted writes. Re-enable cannot revive an
+old credential. Uploaded-file ownership and change causation use the installation
+identity. Hosted execution capabilities continue to require their leased binding.
+Authentication exposes only minimal current key metadata through the reviewed
+`retainer_lookup_extension_key` function. The client-liveness helper locks only a
+registered OAuth client row and returns a boolean. Both privileged functions fix
+`search_path` and are executable only by the runtime role.
+
+In accounts mode a standalone manifest pins its reviewed `oauthClientId`.
+The consent controller checks workspace-admin access and the active installation
+generation, then lets Better Auth validate its signed query. A committed pending
+credential/reference lets the library's separate pool record consent; the grant
+remains unusable until a second admin/generation check activates it and revokes
+the previous connection under the exclusive installation lock. Pending attempts
+are bounded and abandoned ones are collected on later attempts.
+
+`oauth_grant_references` preserves existing person references (`id = workspace_id`)
+and gives installation grants a credential UUID. Workspace creation bootstraps
+the person reference; the app role sees only workspace-scoped installation refs.
+The control-only `retainer_oauth_reference` returns minimal signing metadata.
+REST tokens name the installation, credential and immutable generation, and
+require the exact `/v1` audience. The API checks client/subject and current
+credential admission under RLS; it never assigns the approving person's memory
+identity. Refresh cannot cross a generation change. Membership removal leaves
+the workspace grant intact; hard user deletion can remove library refresh tokens.
+An admin disconnects it in Extensions, deleting its library reference and tokens.
+Person-bound MCP authorization and membership rules remain separate (7.3).
+
 ## 5. Read paths
 
 | Operation                          | What it returns                                                                                                                                    |
@@ -1348,7 +1415,8 @@ not built yet; docs/rest-api.md lists every route.
 Hosted on the API server at `/mcp` (Streamable HTTP). `@retainer/mcp` is a
 small stdio bridge for local clients that only speak stdio. In accounts mode,
 clients that cannot use an API key, such as Claude's web app, connect over
-OAuth (7.3); OAuth tokens are accepted on `/mcp` only.
+OAuth (7.3); person OAuth tokens target `/mcp`, while separately approved
+installation OAuth tokens target `/v1` (4.5).
 
 Tools are generic, not one per object. Custom objects would otherwise grow
 the tool list without limit and break clients' tool caching.
@@ -1704,15 +1772,26 @@ rules stored in tables and enforced by a restrictive RLS policy
 code would only add clearer errors and pre-checks; it is never the
 enforcement. Until then, new code keeps that path open:
 
-1. Every read and write runs as `retainer_app` under RLS. The only
-   `SECURITY DEFINER` functions are the API-key lookup,
+1. Ordinary reads and writes run as `retainer_app` under RLS. Every
+   `SECURITY DEFINER` function is explicitly reviewed in the exact allowlist in
+   `test/db/security.test.ts`, fixes its search path, and grants execution only
+   to its intended role. Account/privacy capabilities include the API-key lookup,
    `retainer_session_access` (7.3), which returns a person's role in one
    workspace, `retainer_token_keys` and `retainer_token_access` (7.3), which
    return the public signing keys and a connected app's person, role and
    workspace, `retainer_workspaces_due` (4.2), which returns workspace IDs
    only, and `retainer_erase_private_derivatives`, which `forget` calls to
-   delete private copies of what it erases and which returns nothing; no read
-   takes a shortcut around RLS, including search and context.
+   delete private copies of what it erases and which returns nothing. Extension
+   capabilities adopt/retire encrypted secrets, expose bounded secret metadata,
+   discover due identifiers, arbitrate execution slots and queue file deletion.
+   Webhook routing resolves only one candidate from an opaque binding or a
+   declared account hint; a broker-only admission checks that candidate before
+   returning its connection-secret identity, never the secret or CRM rows.
+   `retainer_admit_secret_run` is broker-only: it holds installation and live
+   lease locks through the broker transaction, without returning CRM rows or
+   secret values. API metadata validation releases its locks before awaiting a
+   second broker connection; broker admission rechecks generation/fence itself.
+   Ordinary record reads, search and context take no shortcut around RLS.
 2. Per-request database context is set in one place (`inWorkspace`).
 3. A response mentions another record (conflict errors, merge candidates,
    relation labels, review items, context) only through one shared
@@ -1817,11 +1896,11 @@ public signing keys through `retainer_token_keys`, verifies the token, then call
 scopes are the token's scopes intersected with that role's and the consent's, so a
 downgrade, removal or revoked consent applies at the next request. The actor is always an `agent`, with an
 ID made from the client and the person, so the human-only rules still apply.
-Removing a person from a workspace or organization deletes their consents there,
+Removing a person from a workspace or organization deletes their person-bound MCP consents there,
 and a consent is the connection people see and disconnect in Settings.
 
 **Personal memory.** A caller has a person when its credential names one: a
-session, an OAuth token (the person who connected the app), or an API key
+session, a person-bound MCP OAuth token (the person who connected the app), or an API key
 created with "This agent works for me" (`api_keys.acts_for_user`, which
 stops reaching the person once they lose access). When a person loses
 access to a workspace, by removal from it or the organization or a role
@@ -1857,14 +1936,14 @@ a pool of its own.
 Each server module in `packages/server/src` belongs to a layer and imports only
 from its own layer and the ones below it:
 
-| Layer      | Modules                                                                                      | Holds                                                                             |
-| ---------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Entry      | `index`, `cli`, `lambda`                                                                     | Starting the server, the CLI and the Lambda functions                             |
-| Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`                               | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
-| Admin      | `schema-engine`, `templates`, `workspaces`                                                   | Changing a schema and creating workspaces                                         |
-| Features   | `views`, `comments`, `retrieval`, `reads`                                                    | Built on records and memory                                                       |
-| Core       | `records`, `memory`, `privacy`                                                               | The write rules                                                                   |
-| Foundation | `db`, `schema`, `caller`, `idempotency`, `stable-json`, `config`, `errors`, `log`, `version` | The database and reading a schema                                                 |
+| Layer      | Modules                                                                                                                           | Holds                                                                             |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Entry      | `index`, `cli`, `lambda`, `egress-proxy`, `extension-launcher`, `file-server`                                                     | Starting the server, the CLI and the Lambda functions                             |
+| Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`, `egress`, `launcher`, `extension-control`, `webhooks`             | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
+| Admin      | `schema-engine`, `templates`, `workspaces`, `extensions`                                                                          | Changing a schema and creating workspaces                                         |
+| Features   | `views`, `comments`, `retrieval`, `reads`                                                                                         | Built on records and memory                                                       |
+| Core       | `records`, `memory`, `privacy`, `files`, `sources`, `changes`                                                                     | The write rules                                                                   |
+| Foundation | `db`, `schema`, `caller`, `idempotency`, `stable-json`, `config`, `errors`, `log`, `version`, `extension-runtime`, `file-storage` | The database and reading a schema                                                 |
 
 The schema engine sits above the records because a schema change rewrites
 records and views, while records only need to read a schema: `schema` holds the

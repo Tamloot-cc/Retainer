@@ -140,6 +140,7 @@ export function textOf(field: FieldState, value: unknown): string {
       return (value as string[])
         .map((v) => field.settings.options?.find((o) => o.value === v)?.label ?? v)
         .join(' ');
+    case 'files':
     case 'money':
     case 'json':
     case 'relation':

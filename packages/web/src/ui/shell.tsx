@@ -25,6 +25,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Puzzle,
   Search,
   Settings,
   Shapes,
@@ -322,6 +323,13 @@ function Sidebar({
         </NavGroup>
         <div className="flex-1" />
         <NavLink
+          to="/extensions"
+          icon={Puzzle}
+          label="Extensions"
+          collapsed={collapsed}
+          onNavigate={onNavigate}
+        />
+        <NavLink
           to="/schema"
           icon={Shapes}
           label="Schema"
@@ -435,7 +443,7 @@ function NavLink({
   onNavigate,
   children,
 }: {
-  to: '/' | '/o/$object' | '/schema' | '/activity';
+  to: '/' | '/o/$object' | '/schema' | '/activity' | '/extensions';
   params?: { object: string };
   icon: LucideIcon;
   label: string;

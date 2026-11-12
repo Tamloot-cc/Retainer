@@ -149,6 +149,7 @@ test('supports keyboard review and system dark mode on a narrow screen', async (
   ).record;
   await r.request(`/records/${record.id}`, { values: { jobTitle: 'CEO' } }, r.keys.agent, 'PATCH');
   await signIn(page, r.url, r.keys.user);
+  await expect(page.getByLabel('Select Keyboard person jobTitle')).toBeVisible();
   await page.locator('body').click({ position: { x: 1000, y: 30 } });
   await page.keyboard.press('x');
   await expect(page.getByLabel('Select Keyboard person jobTitle')).toBeChecked();

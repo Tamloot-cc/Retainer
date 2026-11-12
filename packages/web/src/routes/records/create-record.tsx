@@ -35,8 +35,10 @@ export function CreateRecordDialog({
     [errors, setErrors] = useState<Record<string, string>>({}),
     [error, setError] = useState(''),
     [conflict, setConflict] = useState(''),
-    [busy, setBusy] = useState(false),
+    [saving, setBusy] = useState(false),
+    [uploads, setUploads] = useState<Record<string, boolean>>({}),
     [key] = useState(() => crypto.randomUUID());
+  const busy = saving || Object.values(uploads).some(Boolean);
   async function create() {
     if (busy) return;
     const { values, errors } = prepareCreateValues(list, draft);
@@ -98,6 +100,7 @@ export function CreateRecordDialog({
             >
               <Input
                 field={f}
+                onBusyChange={(busy) => setUploads((previous) => ({ ...previous, [f.name]: busy }))}
                 value={draft[f.name] ?? null}
                 onChange={(value) => setDraft((d) => ({ ...d, [f.name]: value }))}
               />

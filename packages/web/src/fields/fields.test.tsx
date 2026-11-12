@@ -136,6 +136,7 @@ describe('field registry and numeric precision', () => {
       address: { city: 'Tel Aviv' },
       relation: '10000000-0000-4000-8000-000000000001',
       json: { a: 1 },
+      files: [],
     };
     for (const type of FIELD_TYPES) {
       const field = {

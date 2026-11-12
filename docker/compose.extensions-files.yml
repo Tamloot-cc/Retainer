@@ -1,0 +1,7 @@
+# Add after compose.yml, compose.extensions.yml and compose.files.yml when isolated functions upload files.
+# The trusted proxy can reach only the exact API/byte origins on private networks; runners keep no raw route.
+services:
+  extension-egress:
+    environment:
+      RETAINER_EXECUTION_API_ORIGINS: http://retainer:8787,http://file-bytes:8790
+    networks: [extension-egress, files-control]

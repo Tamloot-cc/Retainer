@@ -1,0 +1,2 @@
+ALTER TABLE "extension_installations" ADD COLUMN "grant_generation" integer DEFAULT 1 NOT NULL;--> statement-breakpoint
+ALTER TABLE "extension_installations" ADD CONSTRAINT "extension_installations_grant_generation" CHECK ("extension_installations"."grant_generation" > 0);

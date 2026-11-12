@@ -8,8 +8,8 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "typecheck": "pnpm --filter @retainer/shared build && pnpm --filter @retainer/sdk build && pnpm -r typecheck",
-    "test": "pnpm -r test",
+    "typecheck": "pnpm --filter @retainer/shared build && pnpm --filter @retainer/extension build && pnpm --filter @retainer/sdk build && pnpm -r typecheck",
+    "test": "pnpm -r test && node --test scripts/test-extension-release.mjs",
     "lint": "biome check . && node scripts/check-layers.mjs",
     "format": "biome format --write .",
     "dev": "pnpm --filter @retainer/server dev",
@@ -20,7 +20,16 @@
     "retainer": "pnpm --silent --filter @retainer/server cli",
     "dev:web": "pnpm --filter @retainer/web dev",
     "test:web": "pnpm --filter @retainer/server test:web",
-    "release:check": "node scripts/check-release.mjs"
+    "release:check": "node scripts/check-release.mjs",
+    "test:extensions:sandbox": "node scripts/test-extension-sandbox.mjs",
+    "build:extensions": "pnpm build && node scripts/build-extension-artifacts.mjs",
+    "test:extensions:compose": "node scripts/test-extension-compose.mjs",
+    "test:files:compose": "node scripts/test-files-compose.mjs",
+    "test:extensions:verifier": "node scripts/test-extension-verifier.mjs",
+    "test:extensions:webhooks": "node scripts/test-extension-compose.mjs --webhook",
+    "test:extensions:last-contact": "node scripts/test-extension-compose.mjs --last-contact",
+    "test:extensions:files": "node scripts/test-extension-compose.mjs --webhook --files",
+    "test:extensions:granola-bundle": "node scripts/test-granola-bundle.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.6",

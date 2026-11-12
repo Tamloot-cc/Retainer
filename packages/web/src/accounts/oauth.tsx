@@ -49,6 +49,13 @@ const hostOf = (url: string | null): string | null => {
 
 /** /app/oauth/consent: which workspace the app may use, and allow or cancel. */
 export function OAuthConsent({ account }: { account: Account }) {
+  const resources = new URLSearchParams(window.location.search).getAll('resource');
+  if (resources.length === 1 && resources[0] === `${window.location.origin}/v1`)
+    return <InstallationConsent account={account} />;
+  return <PersonConsent account={account} />;
+}
+
+function PersonConsent({ account }: { account: Account }) {
   const query = new URLSearchParams(window.location.search);
   const clientId = query.get('client_id') ?? '';
   const asked = query.get('scope')?.split(' ') ?? [...OAUTH_SCOPES];
@@ -179,6 +186,166 @@ export function OAuthConsent({ account }: { account: Account }) {
           </div>
         </Stack>
       )}
+    </AccountFrame>
+  );
+}
+
+/** Workspace grants use the reviewed installation's identity, independently of the installer. */
+function InstallationConsent({ account }: { account: Account }) {
+  const query = new URLSearchParams(window.location.search),
+    clientId = query.get('client_id') ?? '';
+  const asked =
+    query
+      .get('scope')
+      ?.split(' ')
+      .filter((s) => s !== 'offline_access') ?? [];
+  const reachable = allWorkspaces(account).filter(({ workspace }) => workspace.role === 'admin');
+  const [workspace, setWorkspace] = useState(
+    reachable.length === 1 ? (reachable[0]?.workspace.id ?? '') : '',
+  );
+  const [picked, setPicked] = useState(''),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState('');
+  const client = useQuery({
+    queryKey: ['oauth-client', clientId],
+    queryFn: () => accountApi.oauthClient(clientId),
+    retry: false,
+  });
+  const options = useQuery({
+    queryKey: ['oauth-installations', clientId, workspace],
+    queryFn: () => accountApi.oauthInstallations(clientId, workspace),
+    enabled: !!workspace,
+    retry: false,
+  });
+  const installations = options.data?.installations ?? [];
+  const choice =
+    installations.find((i) => i.id === picked) ??
+    (installations.length === 1 ? installations[0] : undefined);
+  const name = client.data?.name ?? 'This app',
+    returnsTo = hostOf(query.get('redirect_uri'));
+  const canAllow =
+    choice &&
+    asked.length > 0 &&
+    asked.every((s) => choice.scopes.some((allowed) => allowed === s));
+  async function answer(accept: boolean) {
+    setBusy(true);
+    setError('');
+    try {
+      const { url } = await accountApi.oauthConsent({
+        oauthQuery: window.location.search.slice(1),
+        accept,
+        ...(accept && choice
+          ? {
+              workspaceId: workspace,
+              installationId: choice.id,
+              expectedGeneration: choice.generation,
+            }
+          : {}),
+      });
+      window.location.assign(url);
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  }
+  return (
+    <AccountFrame
+      title={`Connect ${name} to this workspace`}
+      account={account}
+      description="Approve access for an installed workspace app."
+    >
+      <Stack>
+        {!reachable.length ? (
+          <Notice>Only a workspace admin can connect this app.</Notice>
+        ) : (
+          <label className="text-sm">
+            Workspace
+            <select
+              value={workspace}
+              onChange={(e) => {
+                setWorkspace(e.target.value);
+                setPicked('');
+              }}
+              className="mt-1 block w-full rounded-md border border-border bg-background p-2"
+            >
+              <option value="">Choose a workspace</option>
+              {reachable.map(({ workspace: w, organization }) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                  {account.organizations.length > 1 ? ` · ${organization.name}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {options.isLoading ? <Notice>Loading approved installations…</Notice> : null}
+        {workspace && options.data && !installations.length ? (
+          <Notice>
+            This app needs an approved installation in this workspace. Install it from Extensions,
+            then connect again.
+          </Notice>
+        ) : null}
+        {installations.length > 1 ? (
+          <label className="text-sm">
+            Installation
+            <select
+              value={choice?.id ?? ''}
+              onChange={(e) => setPicked(e.target.value)}
+              className="mt-1 block w-full rounded-md border border-border bg-background p-2"
+            >
+              <option value="">Choose an installation</option>
+              {installations.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.name} · {i.version}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {choice ? (
+          <div className="text-sm">
+            <p className="font-medium">
+              {choice.name} will act as an {choice.actor} and may:
+            </p>
+            <ul className="mt-1 list-disc pl-5">
+              {asked.map((s) => (
+                <li key={s}>
+                  {s === 'read'
+                    ? 'Read workspace records'
+                    : s === 'write'
+                      ? 'Write workspace records'
+                      : s}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        <Muted small>
+          This access belongs to the workspace and continues if you leave. It cannot read your
+          personal memory. A workspace admin can disconnect it in Extensions.
+        </Muted>
+        {returnsTo ? (
+          <Muted small>
+            Allowing sends you back to <strong>{returnsTo}</strong>. Only allow it if that is the
+            app you meant to connect.
+          </Muted>
+        ) : null}
+        {client.error || options.error || error ? (
+          <Notice error>{error || ((client.error ?? options.error) as Error).message}</Notice>
+        ) : null}
+        <div className="flex gap-2">
+          <Button
+            variant="primary"
+            disabled={!canAllow || !client.data || busy}
+            onClick={() => void answer(true)}
+          >
+            Allow
+          </Button>
+          <Button disabled={busy} onClick={() => void answer(false)}>
+            Cancel
+          </Button>
+        </div>
+      </Stack>
     </AccountFrame>
   );
 }

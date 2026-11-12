@@ -1,0 +1,1 @@
+CREATE INDEX "oauth_access_tokens_reference_idx" ON "oauth_access_tokens" USING btree ("reference_id");

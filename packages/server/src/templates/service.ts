@@ -1,6 +1,7 @@
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
-import { inWorkspace } from '../db/tx.js';
+import { inWorkspace, lockSchemaShared } from '../db/tx.js';
+import { admitCaller } from '../extension-runtime/admission.js';
 import { type ApplyTemplateResult, applyTemplate } from './apply.js';
 import { listTemplates, type TemplateView } from './catalog.js';
 
@@ -10,12 +11,13 @@ export async function templatesFor(
   caller: Caller,
 ): Promise<{ templates: TemplateView[] }> {
   const { workspaceId } = caller;
-  const [workspace] = await inWorkspace(
-    sql,
-    workspaceId,
-    (tx) => tx<{ templates: { name: string }[] }[]>`
-      select templates from workspaces where id = ${workspaceId}`,
-  );
+  const [workspace] = await inWorkspace(sql, workspaceId, async (tx) => {
+    await lockSchemaShared(tx, workspaceId);
+    await admitCaller(tx, caller, false, 'runtime');
+    return tx<
+      { templates: { name: string }[] }[]
+    >`select templates from workspaces where id = ${workspaceId}`;
+  });
   return { templates: listTemplates(workspace?.templates.map((t) => t.name) ?? []) };
 }
 

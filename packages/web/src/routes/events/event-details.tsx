@@ -162,7 +162,7 @@ function RollupSentence({ label, children }: { label: string; children: ReactNod
 export function EventDetailsView({
   id,
   event,
-  editable,
+  editable: allowEditing,
   medium,
   mediumName = 'medium',
 }: {
@@ -177,6 +177,7 @@ export function EventDetailsView({
   const { session } = useWorkspace(),
     client = useQueryClient(),
     apiName = useApiName();
+  const editable = allowEditing && !event.source;
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   /** Runs one link change and refreshes; true when it succeeded. */
@@ -210,6 +211,19 @@ export function EventDetailsView({
     ) : null;
   return (
     <Stack>
+      {event.source ? (
+        <Notice>
+          {event.source.current
+            ? 'This is the current provider revision. Edits are imported as new evidence.'
+            : 'This provider revision was superseded. Existing citations remain available in history.'}
+          {event.source.previousEventId ? (
+            <>
+              {' '}
+              Previous evidence: <CandidateRecord id={event.source.previousEventId} />.
+            </>
+          ) : null}
+        </Notice>
+      ) : null}
       {error ? <Notice error>{error}</Notice> : null}
       <PropertyList>
         <Property label="Occurred" apiName={apiName('occurredAt')}>

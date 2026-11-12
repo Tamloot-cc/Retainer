@@ -141,6 +141,7 @@ export async function mergeRecords(
 
   const pair = [a, b].sort() as [string, string];
   const locked = await lockRecordsForUpdate(tx, workspaceId, pair);
+  for (const id of pair) await context.changes?.capture(tx, id);
   const survivor = locked.find((r) => r.id === a);
   const merged = locked.find((r) => r.id === b);
   if (!survivor || !merged || survivor.merged_into_id || merged.merged_into_id) {
@@ -186,6 +187,7 @@ export async function mergeRecords(
         and ${pointsAtB} and record_id <> all(${pair}::uuid[])`;
     inboundIds = inbound.map((r) => r.record_id).sort();
     await lockRecordsForUpdate(tx, workspaceId, inboundIds);
+    for (const id of inboundIds) await context.changes?.capture(tx, id);
     await tx`
       update field_assertions set value = ${tx.json(a)}
       where workspace_id = ${workspaceId} and field_id = any(${relationFieldIds}::uuid[])
@@ -219,6 +221,10 @@ export async function mergeRecords(
   await tx`update facts set record_id = ${a} where record_id = ${b}`;
   // Comments keep their authors and times; they were written, not re-written.
   await tx`update comments set record_id = ${a} where record_id = ${b}`;
+  const linked = await tx<
+    { event_id: string }[]
+  >`select distinct event_id from event_links where record_id=${b}`;
+  for (const { event_id } of linked) await context.changes?.capture(tx, event_id);
   await tx`update event_links set record_id = ${a} where record_id = ${b}`;
   // An event is about a record once: drop an about link that now repeats
   // another link to the survivor (1.3).

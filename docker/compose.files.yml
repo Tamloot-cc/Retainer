@@ -1,0 +1,90 @@
+# Optional private file bytes. Combine with compose.yml; the extension overlay may also be included.
+services:
+  retainer:
+    environment:
+      RETAINER_ROLE: api
+      RETAINER_FILE_STORAGE: local
+      RETAINER_FILE_PUBLIC_ORIGIN: "${RETAINER_FILE_PUBLIC_ORIGIN:-http://127.0.0.1:8788}"
+      RETAINER_FILE_CONTROL_ORIGIN: http://file-bytes:8790
+      RETAINER_FILE_EXECUTION_ORIGIN: http://file-bytes:8790
+      RETAINER_FILE_SIGNING_KEY: "${RETAINER_FILE_SIGNING_KEY:?set an external base64 file signing key}"
+      RETAINER_FILE_QUOTA_BYTES: "${RETAINER_FILE_QUOTA_BYTES:-1073741824}"
+    networks: [default, files-control]
+    depends_on:
+      file-bytes:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  file-bytes:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: retainer:files-review
+    command: ["node", "dist/file-server.js"]
+    environment:
+      RETAINER_FILE_DIRECTORY: /data/files
+      RETAINER_FILE_SIGNING_KEY: "${RETAINER_FILE_SIGNING_KEY:?set an external base64 file signing key}"
+      RETAINER_FILE_ALLOWED_ORIGINS: "${RETAINER_PUBLIC_ORIGIN:-http://127.0.0.1:8787}"
+    ports:
+      - "${RETAINER_FILE_PORT:-8788}:8790"
+    volumes: [filedata:/data/files]
+    networks: [files-control, file-egress]
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,size=16m"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8790/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  file-maintenance:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: retainer:files-review
+    command: ["node", "dist/index.js"]
+    environment:
+      DATABASE_URL: postgres://retainer:retainer@postgres:5432/retainer
+      RETAINER_ROLE: files
+      RETAINER_FILE_STORAGE: local
+      RETAINER_FILE_PUBLIC_ORIGIN: "${RETAINER_FILE_PUBLIC_ORIGIN:-http://127.0.0.1:8788}"
+      RETAINER_FILE_CONTROL_ORIGIN: http://file-bytes:8790
+      RETAINER_FILE_SIGNING_KEY: "${RETAINER_FILE_SIGNING_KEY:?set an external base64 file signing key}"
+    networks: [default, files-control]
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,size=16m"
+    # The API applies migrations first; workers must not migrate an empty database concurrently.
+    depends_on:
+      retainer:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      file-bytes:
+        condition: service_healthy
+
+volumes:
+  filedata:
+networks:
+  files-control:
+    internal: true
+  file-egress: {}

@@ -2,9 +2,10 @@ import { z } from 'zod';
 import { type Config, loadConfig, ownerDatabaseUrl } from '../config.js';
 import { createSql } from '../db/client.js';
 import { applyLogins, loginsPending } from '../db/logins.js';
-import { migrationsPending, runMigrations } from '../db/migrate.js';
+import { migrationHistoryCompatible, migrationsPending, runMigrations } from '../db/migrate.js';
 import { setLogLevel } from '../log.js';
 import { runCli } from '../operator/commands.js';
+import { extensionReleaseStatus } from '../operator/extension-releases.js';
 import { rebuildSearchText } from '../records/rebuild-search.js';
 import {
   type UpgradeReport,
@@ -19,7 +20,10 @@ import { withMigrationLock } from './deploy-lock.js';
  * the container, since the database is not reachable from outside the VPC.
  *
  * - `{ "command": "migration-status" }` reports pending work without writes.
- *   Only protocol 1 with needsStop false permits a rolling code update.
+ *   Only protocol 1 with historyChecked true and needsStop false permits a rolling code update.
+ * - `extension-release-status` checks candidate runtime/protocol and retained
+ *   release hashes against active, disabled and cleanup-capable installations.
+ *   It returns hashes/counts only and writes nothing.
  * - `{ "command": "migrate" }` applies pending migrations, sets the runtime
  *   and control roles' logins from their URLs, rebuilds stale search
  *   text and upgrades workspaces to the built-in definitions: what the
@@ -36,6 +40,17 @@ import { withMigrationLock } from './deploy-lock.js';
 const opsEvent = z.discriminatedUnion('command', [
   z.object({ command: z.literal('migration-status') }),
   z.object({
+    command: z.literal('extension-runtime-status'),
+    configurationDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    bundles: z.number().int().min(1).max(10000),
+  }),
+  z.object({
+    command: z.literal('extension-release-status'),
+    protocolVersion: z.literal(1),
+    runtimeVersion: z.literal('node24'),
+    releaseDigests: z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(10000),
+  }),
+  z.object({
     command: z.literal('migrate'),
     // At least 1: a lock_timeout of 0 would wait forever.
     waitSeconds: z.number().int().min(1).max(840).default(330),
@@ -45,7 +60,17 @@ const opsEvent = z.discriminatedUnion('command', [
 
 export type OpsEvent = z.input<typeof opsEvent>;
 export type OpsResult =
-  | { command: 'migration-status'; protocol: 1; needsStop: boolean; reasons: string[] }
+  | { command: 'extension-runtime-status'; protocol: 1; compatible: boolean }
+  | ({ command: 'extension-release-status'; protocol: 1 } & Awaited<
+      ReturnType<typeof extensionReleaseStatus>
+    >)
+  | {
+      command: 'migration-status';
+      protocol: 1;
+      historyChecked: true;
+      needsStop: boolean;
+      reasons: string[];
+    }
   | {
       command: 'migrate';
       logins: { runtime: boolean; control: boolean };
@@ -62,20 +87,60 @@ export function createOpsHandler(config: Config) {
     const parsed = opsEvent.safeParse(event);
     if (!parsed.success) {
       throw new Error(
-        'Expected {"command":"migrate"}, {"command":"migration-status"} or {"command":"cli","args":[...]}: ' +
+        'Expected {"command":"migrate"}, {"command":"migration-status"}, {"command":"extension-release-status",...} or {"command":"cli","args":[...]}: ' +
           parsed.error.issues.map((issue) => issue.message).join('; '),
       );
     }
     // Operator commands connect as the migration role, like the CLI.
     // `max: 1`, because the deploy lock and the search rebuild are session
     // locks; the workspace upgrade runs on the same connection.
+    if (parsed.data.command === 'extension-runtime-status') {
+      // Only the operator-configured private origin is reachable; payloads cannot choose a URL.
+      const origin = config.RETAINER_EXTENSION_LAUNCHER_ORIGIN;
+      if (!origin) throw new Error('extension launcher is not configured');
+      try {
+        const response = await fetch(new URL('/health', origin), {
+          signal: AbortSignal.timeout(10000),
+          redirect: 'error',
+        });
+        const status = z
+          .object({
+            status: z.literal('ok'),
+            protocolVersion: z.literal(1),
+            runtimeVersion: z.literal('node24'),
+            configurationDigest: z.literal(parsed.data.configurationDigest),
+            bundles: z.literal(parsed.data.bundles),
+          })
+          .safeParse(await response.json());
+        return {
+          command: 'extension-runtime-status',
+          protocol: 1,
+          compatible: response.ok && status.success,
+        };
+      } catch {
+        return { command: 'extension-runtime-status', protocol: 1, compatible: false };
+      }
+    }
+    if (parsed.data.command === 'extension-release-status') {
+      const sql = createSql(databaseUrl, { max: 1 });
+      try {
+        return {
+          command: 'extension-release-status',
+          protocol: 1,
+          ...(await extensionReleaseStatus(sql, parsed.data.releaseDigests)),
+        };
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    }
     if (parsed.data.command === 'migration-status') {
       const sql = createSql(databaseUrl, { max: 1 });
       try {
         // SQL can change any write rule. Return early on old schemas rather
         // than querying columns they may not have yet. Any failure is a stop.
         const reasons: string[] = [];
-        if (await migrationsPending(sql)) reasons.push('migrations');
+        if (!(await migrationHistoryCompatible(sql))) reasons.push('incompatible_migrations');
+        else if (await migrationsPending(sql)) reasons.push('migrations');
         else {
           if (await loginsPending(config, sql)) reasons.push('logins');
           // Rebuild batches lock rows, but old writers could still produce
@@ -86,7 +151,13 @@ export function createOpsHandler(config: Config) {
           if (stale?.pending) reasons.push('search');
           if (await workspaceUpgradesPending(sql)) reasons.push('definitions');
         }
-        return { command: 'migration-status', protocol: 1, needsStop: reasons.length > 0, reasons };
+        return {
+          command: 'migration-status',
+          protocol: 1,
+          historyChecked: true,
+          needsStop: reasons.length > 0,
+          reasons,
+        };
       } finally {
         await sql.end({ timeout: 5 });
       }

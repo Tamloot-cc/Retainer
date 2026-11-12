@@ -20,12 +20,15 @@
     "test:web": "playwright test"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1165.0",
+    "@aws-sdk/s3-request-presigner": "^3.1165.0",
     "@better-auth/cimd": "1.7.18",
     "@better-auth/mcp": "1.7.18",
     "@better-auth/oauth-provider": "1.7.18",
     "@better-auth/passkey": "1.7.18",
     "@hono/node-server": "^2.1.6",
     "@modelcontextprotocol/server": "^2.4.0",
+    "@retainer/extension": "workspace:*",
     "@retainer/shared": "workspace:*",
     "better-auth": "1.7.18",
     "drizzle-orm": "^0.45.4",
@@ -40,7 +43,8 @@
     "@playwright/test": "^1.65.0",
     "@retainer/sdk": "workspace:*",
     "drizzle-kit": "^0.31.11",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "@retainer/runner": "workspace:*"
   },
   "bin": {
     "retainer": "./dist/cli.js"

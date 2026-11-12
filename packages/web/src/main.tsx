@@ -267,6 +267,11 @@ const routeTree = rootRoute.addChildren([
   }),
   createRoute({
     getParentRoute: () => rootRoute,
+    path: '/extensions',
+    component: lazyRouteComponent(() => import('./routes/extensions.js'), 'ExtensionsPage'),
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
     path: '/settings',
     component: lazyRouteComponent(() => import('./accounts/settings.js'), 'SettingsPage'),
   }),

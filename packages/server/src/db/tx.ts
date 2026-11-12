@@ -2,6 +2,14 @@ import type { TransactionSql } from 'postgres';
 import type { Sql } from './client.js';
 
 export type Tx = TransactionSql<Record<string, never>>;
+const publications = new WeakMap<Tx, { publish?: () => Promise<void> }>();
+/** One terminal publication stage, after all workspace work and before COMMIT. No network I/O. */
+export function publishAtCommit(tx: Tx, publish: () => Promise<void>) {
+  const stage = publications.get(tx);
+  if (!stage) throw new Error('publication requires an inWorkspace transaction');
+  if (stage.publish) throw new Error('workspace publication already registered');
+  stage.publish = publish;
+}
 
 /** What `sql.json` accepts. */
 type JSONValue = Parameters<Tx['json']>[0];
@@ -19,11 +27,30 @@ export async function inWorkspace<T>(
   fn: (tx: Tx) => Promise<T>,
   userId?: string,
 ): Promise<T> {
-  const result = await sql.begin(async (tx) => {
-    await setScope(tx as unknown as Tx, workspaceId, userId);
-    return fn(tx as unknown as Tx);
-  });
+  const result = await sql.begin((tx) =>
+    inWorkspaceTransaction(tx as unknown as Tx, workspaceId, fn, userId),
+  );
   return result as T;
+}
+
+/** Terminal workspace stage for a control transaction that creates the workspace first. */
+export async function inWorkspaceTransaction<T>(
+  tx: Tx,
+  workspaceId: string,
+  fn: (tx: Tx) => Promise<T>,
+  userId?: string,
+): Promise<T> {
+  if (publications.has(tx)) throw new Error('workspace transaction is already scoped');
+  const stage: { publish?: () => Promise<void> } = {};
+  publications.set(tx, stage);
+  try {
+    await setScope(tx, workspaceId, userId);
+    const result = await fn(tx);
+    await stage.publish?.();
+    return result;
+  } finally {
+    publications.delete(tx);
+  }
 }
 
 /**
@@ -107,14 +134,14 @@ export async function lockPrivacyShared(tx: Tx, workspaceId: string): Promise<vo
 export type WriteLocks = {
   /** Exclusive only for `forget` (2.1). */
   privacy?: 'shared' | 'exclusive';
-  /** Exclusive only for moving events between types, which no write may interleave with (1.3). */
+  /** Exclusive for event-type moves and deterministic evidence projections; no write may interleave. */
   schema?: 'shared' | 'exclusive';
 };
 
 /**
- * A record write's locks in one round trip: the schema lock (3), shared
- * unless the write rewrites what other writes resolve against, then the
- * privacy lock, shared or exclusive for `forget`. Postgres evaluates the
+ * A record write's locks in one round trip: privacy first (exclusive for
+ * `forget`), then schema (exclusive when rewriting what other writes resolve
+ * against). This matches the extension/source-import lock order. Postgres evaluates the
  * select list left to right, so the order matches taking them one at a time.
  */
 export async function lockForWrite(
@@ -126,7 +153,7 @@ export async function lockForWrite(
     mode === 'shared'
       ? tx`pg_advisory_xact_lock_shared(${lockClass}::int4, hashtext(${workspaceId}))`
       : tx`pg_advisory_xact_lock(${lockClass}::int4, hashtext(${workspaceId}))`;
-  await tx`select ${lock(SCHEMA_LOCK_CLASS, schema)}, ${lock(PRIVACY_LOCK_CLASS, privacy)}`;
+  await tx`select ${lock(PRIVACY_LOCK_CLASS, privacy)}, ${lock(SCHEMA_LOCK_CLASS, schema)}`;
 }
 
 /** Advisory-lock class for one consolidator run per workspace at a time (4.2). */

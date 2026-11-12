@@ -22,6 +22,7 @@ import {
   index,
   integer,
   jsonb,
+  pgPolicy,
   pgTable,
   primaryKey,
   real,
@@ -305,12 +306,12 @@ export const oauthClientResources = pgTable(
 );
 
 /**
- * The workspace an OAuth grant is for: Better Auth's `referenceId`, set from
- * the workspace the person picks at consent. Deleting the workspace removes
- * the grants and their tokens.
+ * Better Auth's referenceId: the workspace UUID for existing person grants,
+ * or a reviewed installation-credential UUID for workspace app grants.
+ * Both reference kinds cascade with their owning workspace.
  */
 const grantWorkspace = () =>
-  uuid('reference_id').references(() => workspaces.id, { onDelete: 'cascade' });
+  uuid('reference_id').references(() => oauthGrantReferences.id, { onDelete: 'cascade' });
 
 /** Rotating refresh tokens, stored hashed. */
 export const oauthRefreshTokens = pgTable(
@@ -381,6 +382,7 @@ export const oauthAccessTokens = pgTable(
     index('oauth_access_tokens_user_idx').on(t.userId),
     index('oauth_access_tokens_code_idx').on(t.authorizationCodeId),
     index('oauth_access_tokens_refresh_idx').on(t.refreshId),
+    index('oauth_access_tokens_reference_idx').on(t.referenceId),
   ],
 );
 
@@ -1048,6 +1050,7 @@ export const fieldAssertions = pgTable(
     privateToUser: uuid('private_to_user'),
   },
   (t) => [
+    unique('field_assertions_ws_id_uq').on(t.workspaceId, t.id),
     tenantFk(
       'field_assertions_record_fk',
       [t.workspaceId, t.recordId],
@@ -1070,6 +1073,36 @@ export const fieldAssertions = pgTable(
       .where(sql`${t.status} = 'pending_review'`),
   ],
 );
+
+/** Additional records whose relationship path supports a derived assertion; erased before FK cascades. */
+export const assertionDependencies = pgTable(
+  'assertion_dependencies',
+  {
+    workspaceId: workspaceId(),
+    assertionId: uuid('assertion_id').notNull(),
+    supportRecordId: uuid('support_record_id').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.assertionId, t.supportRecordId] }),
+    index('assertion_dependencies_support_idx').on(t.workspaceId, t.supportRecordId),
+    tenantFk(
+      'assertion_dependencies_assertion_fk',
+      [t.workspaceId, t.assertionId],
+      [fieldAssertions.workspaceId, fieldAssertions.id],
+    ),
+    tenantFk(
+      'assertion_dependencies_support_fk',
+      [t.workspaceId, t.supportRecordId],
+      [records.workspaceId, records.id],
+    ),
+    pgPolicy('assertion_dependencies_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
 
 /** A plain-language claim about a record. Superseded, never silently deleted. */
 export const facts = pgTable(
@@ -1403,3 +1436,944 @@ export const workspaceRequestCounts = pgTable('workspace_request_counts', {
   windowStart: timestamptz('window_start').notNull(),
   count: integer('count').notNull(),
 });
+
+// Release-owned extension installations and admitted runtime generations.
+export const extensionInstallations = pgTable(
+  'extension_installations',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    registrationId: uuid('registration_id').notNull(),
+    version: text('version').notNull(),
+    releaseDigest: text('release_digest').notNull(),
+    state: text('state').notNull().default('disabled'),
+    connectionHealth: text('connection_health').notNull().default('needs_reconnect'),
+    lastError: text('last_error'),
+    setupKind: text('setup_kind').notNull().default('install'),
+    activatedAt: timestamptz('activated_at'),
+    cleanupDeadline: timestamptz('cleanup_deadline'),
+    // Fences runs, jobs and leases: every release, settings or state change bumps it.
+    generation: integer('generation').notNull().default(1),
+    // What standalone keys and OAuth grants bind to. Bumped only on disable,
+    // uninstall, a grant or execution change, and reconnect, so a plain upgrade
+    // or settings change keeps them valid.
+    grantGeneration: integer('grant_generation').notNull().default(1),
+    grantedActor: text('granted_actor').notNull(),
+    grantedScopes: jsonb('granted_scopes').notNull(),
+    settings: jsonb('settings').notNull().default({}),
+    settingsRevision: integer('settings_revision').notNull().default(1),
+    createdBy: jsonb('created_by').$type<Actor>().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('extension_installations_ws_id_uq').on(t.workspaceId, t.id),
+    unique('extension_installations_registration_uq').on(t.workspaceId, t.registrationId),
+    check(
+      'extension_installations_state',
+      sql`${t.state} in ('installing', 'active', 'setup_failed', 'disabled', 'upgrading', 'uninstalling', 'uninstalled')`,
+    ),
+    check('extension_installations_actor', sql`${t.grantedActor} in ('agent', 'integration')`),
+    check('extension_installations_generation', sql`${t.generation} > 0`),
+    check('extension_installations_grant_generation', sql`${t.grantGeneration} > 0`),
+    pgPolicy('extension_installations_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+// Standalone credentials bind a reviewed workspace grant, never the installer's ongoing membership.
+export const extensionCredentials = pgTable(
+  'extension_credentials',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    // The installation's grant_generation when issued; valid only while they match.
+    generation: integer('generation').notNull(),
+    kind: text('kind').notNull(),
+    keyHash: text('key_hash'),
+    prefix: text('prefix'),
+    clientId: text('client_id'),
+    subjectId: text('subject_id'),
+    scopes: jsonb('scopes').$type<('read' | 'write')[]>().notNull(),
+    createdBy: jsonb('created_by').$type<Actor>().notNull(),
+    createdAt: createdAt(),
+    revokedAt: timestamptz('revoked_at'),
+    pending: boolean('pending').notNull().default(false),
+  },
+  (t) => [
+    unique('extension_credentials_ws_id_uq').on(t.workspaceId, t.id),
+    unique('extension_credentials_hash_uq').on(t.keyHash),
+    tenantFk(
+      'extension_credentials_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    index('extension_credentials_install_idx').on(t.workspaceId, t.installationId),
+    check(
+      'extension_credentials_kind',
+      sql`(${t.kind}='key' and ${t.keyHash} is not null and ${t.prefix} is not null and ${t.clientId} is null and ${t.subjectId} is null)
+      or (${t.kind}='oauth' and ${t.keyHash} is null and ${t.prefix} is null and ${t.clientId} is not null and ${t.subjectId} is not null)`,
+    ),
+    check('extension_credentials_generation', sql`${t.generation}>0`),
+    check('extension_credentials_pending', sql`not ${t.pending} or ${t.kind}='oauth'`),
+    check(
+      'extension_credentials_scopes',
+      sql`jsonb_typeof(${t.scopes})='array' and jsonb_array_length(${t.scopes}) between 1 and 2 and ${t.scopes}<@'["read","write"]'::jsonb`,
+    ),
+    pgPolicy('extension_credentials_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+/** OAuth consent references preserve workspace UUIDs for person grants and use credential UUIDs for installations. */
+export const oauthGrantReferences = pgTable(
+  'oauth_grant_references',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    kind: text('kind').notNull(),
+    credentialId: uuid('credential_id'),
+  },
+  (t) => [
+    unique('oauth_grant_references_ws_id_uq').on(t.workspaceId, t.id),
+    tenantFk(
+      'oauth_grant_references_credential_fk',
+      [t.workspaceId, t.credentialId],
+      [extensionCredentials.workspaceId, extensionCredentials.id],
+    ),
+    index('oauth_grant_references_credential_idx').on(t.workspaceId, t.credentialId),
+    check(
+      'oauth_grant_references_kind',
+      sql`(${t.kind}='person' and ${t.id}=${t.workspaceId} and ${t.credentialId} is null)
+      or (${t.kind}='installation' and ${t.credentialId} is not null and ${t.id}=${t.credentialId})`,
+    ),
+    pgPolicy('oauth_grant_references_installation', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid and ${t.kind}='installation'`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid and ${t.kind}='installation'`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionContributions = pgTable(
+  'extension_contributions',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    kind: text('kind').notNull(),
+    universalId: uuid('universal_id').notNull(),
+    elementId: uuid('element_id').notNull(),
+    definition: jsonb('definition').notNull(),
+  },
+  (t) => [
+    tenantFk(
+      'extension_contributions_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    index('extension_contributions_install_idx').on(t.workspaceId, t.installationId),
+    unique('extension_contributions_owner_uq').on(t.workspaceId, t.kind, t.universalId),
+    pgPolicy('extension_contributions_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionReceipts = pgTable(
+  'extension_receipts',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    key: text('key').notNull(),
+    requestHash: text('request_hash').notNull(),
+    installationId: uuid('installation_id').notNull(),
+    generation: integer('generation').notNull(),
+    response: jsonb('response').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    tenantFk(
+      'extension_receipts_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    index('extension_receipts_install_idx').on(t.workspaceId, t.installationId),
+    unique('extension_receipts_key_uq').on(t.workspaceId, t.key),
+    pgPolicy('extension_receipts_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionJobs = pgTable(
+  'extension_jobs',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    sourceItemId: uuid('source_item_id'),
+    generation: integer('generation').notNull(),
+    releaseDigest: text('release_digest').notNull(),
+    functionId: uuid('function_id').notNull(),
+    input: jsonb('input').notNull(),
+    /** Server-copied IDs/keys only, so an accepted trigger survives public-feed retention. */
+    changeSnapshot: jsonb('change_snapshot'),
+    triggerKind: text('trigger_kind').notNull().default('job'),
+    inputHash: text('input_hash').notNull(),
+    dedupeKey: text('dedupe_key').notNull(),
+    cause: jsonb('cause').$type<string[]>().notNull().default([]),
+    /**
+     * Server-derived trigger hops behind this job; null means `cause.length`.
+     * A chain a standalone app inherits through `Retainer-Caused-By` excludes
+     * installations but adds no depth (extensions spec §9.4).
+     */
+    causeDepth: integer('cause_depth'),
+    /**
+     * The secret settings the claimed function declares, copied from the pinned
+     * release at claim. Broker admission releases only these (extensions spec §8).
+     */
+    runSecrets: text('run_secrets').array(),
+    status: text('status').notNull().default('queued'),
+    leaseOwner: text('lease_owner'),
+    fence: bigint('fence', { mode: 'number' }).notNull().default(0),
+    leaseUntil: timestamptz('lease_until'),
+    runUntil: timestamptz('run_until'),
+    attempt: integer('attempt').notNull().default(0),
+    cycleAttempt: integer('cycle_attempt').notNull().default(0),
+    availableAt: timestamptz('available_at').notNull().defaultNow(),
+    expiresAt: timestamptz('expires_at').notNull().default(sql`now() + interval '24 hours'`),
+    code: text('code'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('extension_jobs_ws_id_uq').on(t.workspaceId, t.id),
+    unique('extension_jobs_dedupe_uq').on(
+      t.workspaceId,
+      t.installationId,
+      t.generation,
+      t.dedupeKey,
+    ),
+    uniqueIndex('extension_jobs_one_running_uq')
+      .on(t.workspaceId, t.installationId)
+      .where(sql`${t.status} = 'running'`),
+    index('extension_jobs_due_idx').on(t.status, t.availableAt),
+    index('extension_jobs_retention_idx')
+      .on(t.updatedAt, t.workspaceId)
+      .where(sql`${t.status} in ('succeeded','failed','cancelled')`),
+    index('extension_jobs_expiry_idx')
+      .on(t.expiresAt, t.workspaceId)
+      .where(sql`${t.status} in ('queued','running')`),
+    index('extension_jobs_install_idx').on(t.workspaceId, t.installationId, t.createdAt),
+    /** Finds a record's newest live change job, which a later change may coalesce into (R9). */
+    index('extension_jobs_coalesce_idx')
+      .on(t.installationId, t.functionId, sql`(${t.changeSnapshot}->>'record_id')`)
+      .where(sql`${t.status} in ('queued','running') and ${t.triggerKind} = 'change'`),
+    index('extension_jobs_source_idx').on(t.workspaceId, t.sourceItemId),
+    foreignKey({
+      name: 'extension_jobs_source_fk',
+      columns: [t.workspaceId, t.sourceItemId],
+      foreignColumns: [sourceItems.workspaceId, sourceItems.id],
+    }),
+    tenantFk(
+      'extension_jobs_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    check(
+      'extension_jobs_status',
+      sql`${t.status} in ('queued', 'running', 'succeeded', 'failed', 'cancelled')`,
+    ),
+    pgPolicy('extension_jobs_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionAttempts = pgTable(
+  'extension_attempts',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    jobId: uuid('job_id').notNull(),
+    attempt: integer('attempt').notNull(),
+    fence: bigint('fence', { mode: 'number' }).notNull(),
+    status: text('status').notNull(),
+    code: text('code'),
+    startedAt: timestamptz('started_at').notNull().defaultNow(),
+    finishedAt: timestamptz('finished_at'),
+  },
+  (t) => [
+    tenantFk(
+      'extension_attempts_job_fk',
+      [t.workspaceId, t.jobId],
+      [extensionJobs.workspaceId, extensionJobs.id],
+    ),
+    unique('extension_attempts_job_attempt_uq').on(t.workspaceId, t.jobId, t.attempt),
+    pgPolicy('extension_attempts_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionKv = pgTable(
+  'extension_kv',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    key: text('key').notNull(),
+    value: jsonb('value').notNull(),
+    revision: integer('revision').notNull().default(1),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId, t.key] }),
+    tenantFk(
+      'extension_kv_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    check('extension_kv_value_size', sql`octet_length(${t.value}::text) <= 65536`),
+    pgPolicy('extension_kv_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionWriteBudgets = pgTable(
+  'extension_write_budgets',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    windowStart: timestamptz('window_start').notNull(),
+    count: integer('count').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId] }),
+    tenantFk(
+      'extension_write_budgets_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    pgPolicy('extension_write_budgets_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionPendingSecrets = pgTable(
+  'extension_pending_secrets',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    draftInstallationId: uuid('draft_installation_id').notNull(),
+    registrationId: uuid('registration_id').notNull(),
+    name: text('name').notNull(),
+    envelope: jsonb('envelope').notNull(),
+    createdBy: jsonb('created_by').$type<Actor>().notNull(),
+    createdAt: createdAt(),
+    expiresAt: timestamptz('expires_at').notNull().default(sql`now()+interval '15 minutes'`),
+    consumedAt: timestamptz('consumed_at'),
+  },
+  (t) => [
+    index('extension_pending_secrets_ws_expiry_idx').on(t.workspaceId, t.expiresAt),
+    pgPolicy('extension_pending_secrets_workspace', {
+      for: 'all',
+      to: 'retainer_secret_broker',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const extensionSecrets = pgTable(
+  'extension_secrets',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    name: text('name').notNull(),
+    envelope: jsonb('envelope').notNull(),
+    revision: integer('revision').notNull().default(1),
+    deleteAfter: timestamptz('delete_after'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId, t.name] }),
+    tenantFk(
+      'extension_secrets_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    pgPolicy('extension_secrets_workspace', {
+      for: 'all',
+      to: 'retainer_secret_broker',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionSchedules = pgTable(
+  'extension_schedules',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    functionId: uuid('function_id').notNull(),
+    nextDueAt: timestamptz('next_due_at').notNull(),
+    lastOccurrence: timestamptz('last_occurrence'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId, t.functionId] }),
+    tenantFk(
+      'extension_schedules_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    pgPolicy('extension_schedules_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+/** Metadata only: immutable bytes are held by an external storage adapter. */
+export const files = pgTable(
+  'files',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id'),
+    sourceItemId: uuid('source_item_id'),
+    storageId: text('storage_id').notNull().default('local-v1'),
+    objectKey: text('object_key').notNull(),
+    metadata: jsonb('metadata').notNull(),
+    bytes: integer('bytes').notNull(),
+    state: text('state').notNull().default('pending'),
+    createdBy: jsonb('created_by').$type<Actor>().notNull(),
+    requestKey: text('request_key').notNull(),
+    requestHash: text('request_hash').notNull(),
+    uploadExpiresAt: timestamptz('upload_expires_at')
+      .notNull()
+      .default(sql`clock_timestamp()+interval '5 minutes'`),
+    expiresAt: timestamptz('expires_at')
+      .notNull()
+      .default(sql`clock_timestamp()+interval '24 hours'`),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('files_ws_id_uq').on(t.workspaceId, t.id),
+    foreignKey({
+      name: 'files_installation_fk',
+      columns: [t.workspaceId, t.installationId],
+      foreignColumns: [extensionInstallations.workspaceId, extensionInstallations.id],
+    }),
+    unique('files_object_key_uq').on(t.objectKey),
+    unique('files_request_key_uq').on(t.workspaceId, t.requestKey),
+    index('files_expiry_idx').on(t.workspaceId, t.expiresAt),
+    index('files_installation_idx').on(t.workspaceId, t.installationId),
+    index('files_source_idx').on(t.workspaceId, t.sourceItemId),
+    foreignKey({
+      name: 'files_source_fk',
+      columns: [t.workspaceId, t.sourceItemId],
+      foreignColumns: [sourceItems.workspaceId, sourceItems.id],
+    }),
+    check('files_state', sql`${t.state} in ('pending','ready','erasing','erased')`),
+    check('files_bytes', sql`${t.bytes}>0 and ${t.bytes}<=26214400`),
+    pgPolicy('files_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const fileReferences = pgTable(
+  'file_references',
+  {
+    workspaceId: workspaceId(),
+    fileId: uuid('file_id').notNull(),
+    assertionId: uuid('assertion_id').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.fileId, t.assertionId] }),
+    tenantFk('file_references_file_fk', [t.workspaceId, t.fileId], [files.workspaceId, files.id]),
+    tenantFk(
+      'file_references_assertion_fk',
+      [t.workspaceId, t.assertionId],
+      [fieldAssertions.workspaceId, fieldAssertions.id],
+    ),
+    index('file_references_assertion_idx').on(t.workspaceId, t.assertionId),
+    pgPolicy('file_references_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+/** Must survive workspace cascades until every stored version is erased. Opaque keys only. */
+export const fileDeletions = pgTable(
+  'file_deletions',
+  {
+    id: id(),
+    workspaceId: uuid('workspace_id').notNull(),
+    storageId: text('storage_id').notNull().default('local-v1'),
+    objectKey: text('object_key').notNull(),
+    status: text('status').notNull().default('queued'),
+    availableAt: timestamptz('available_at').notNull().defaultNow(),
+    leaseUntil: timestamptz('lease_until'),
+    fence: bigint('fence', { mode: 'number' }).notNull().default(0),
+    attempt: integer('attempt').notNull().default(0),
+    code: text('code'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('file_deletions_object_key_uq').on(t.objectKey),
+    index('file_deletions_due_idx').on(t.status, t.availableAt),
+    pgPolicy('file_deletions_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+// Stable provider identities outlive installations; evidence revisions never mutate in place.
+export const sourceAccounts = pgTable(
+  'source_accounts',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    registrationId: uuid('registration_id').notNull(),
+    provider: text('provider').notNull(),
+    namespace: text('namespace').notNull(),
+    identity: text('identity').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('source_accounts_ws_id_uq').on(t.workspaceId, t.id),
+    unique('source_accounts_identity_uq').on(
+      t.workspaceId,
+      t.registrationId,
+      t.provider,
+      t.namespace,
+    ),
+    pgPolicy('source_accounts_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const sourceBindings = pgTable(
+  'source_bindings',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    generation: integer('generation').notNull(),
+    verifiedAt: timestamptz('verified_at').notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId] }),
+    tenantFk(
+      'source_bindings_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    tenantFk(
+      'source_bindings_account_fk',
+      [t.workspaceId, t.accountId],
+      [sourceAccounts.workspaceId, sourceAccounts.id],
+    ),
+    index('source_bindings_account_idx').on(t.workspaceId, t.accountId),
+    pgPolicy('source_bindings_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+// Only operation clocks and fixed bounds survive KV erasure; no provider cursor or payload.
+export const sourceSyncState = pgTable(
+  'source_sync_state',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    generation: integer('generation').notNull(),
+    scanId: uuid('scan_id').notNull(),
+    mode: text('mode').notNull(),
+    lowerBound: timestamptz('lower_bound').notNull(),
+    upperBound: timestamptz('upper_bound').notNull(),
+    startedAt: timestamptz('started_at').notNull().defaultNow(),
+    completedAt: timestamptz('completed_at'),
+    lastSuccessfulScanAt: timestamptz('last_successful_scan_at'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId] }),
+    tenantFk(
+      'source_sync_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    check('source_sync_mode', sql`${t.mode} in ('created','updated')`),
+    check('source_sync_bounds', sql`${t.lowerBound}<=${t.upperBound}`),
+    pgPolicy('source_sync_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const sourceItems = pgTable(
+  'source_items',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    accountId: uuid('account_id').notNull(),
+    externalId: text('external_id'),
+    state: text('state').notNull().default('reserved'),
+    providerRevision: text('provider_revision'),
+    preparedJobId: uuid('prepared_job_id'),
+    preparedFence: bigint('prepared_fence', { mode: 'number' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('source_items_ws_id_uq').on(t.workspaceId, t.id),
+    unique('source_items_identity_uq').on(t.workspaceId, t.accountId, t.externalId),
+    tenantFk(
+      'source_items_account_fk',
+      [t.workspaceId, t.accountId],
+      [sourceAccounts.workspaceId, sourceAccounts.id],
+    ),
+    check(
+      'source_items_state',
+      sql`${t.state} in ('reserved','live','unavailable','deleted','retracted','erased')`,
+    ),
+    check('source_items_erased_identity', sql`(${t.state}='erased')=(${t.externalId} is null)`),
+    pgPolicy('source_items_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const sourceRevisions = pgTable(
+  'source_revisions',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    itemId: uuid('item_id').notNull(),
+    eventId: uuid('event_id').notNull(),
+    contentDigest: text('content_digest').notNull(),
+    providerRevision: text('provider_revision'),
+    isCurrent: boolean('is_current').notNull().default(true),
+    previousEventId: uuid('previous_event_id'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('source_revisions_ws_id_uq').on(t.workspaceId, t.id),
+    unique('source_revisions_event_uq').on(t.workspaceId, t.eventId),
+    uniqueIndex('source_revisions_current_uq')
+      .on(t.workspaceId, t.itemId)
+      .where(sql`${t.isCurrent}`),
+    index('source_revisions_item_idx').on(t.workspaceId, t.itemId),
+    index('source_revisions_previous_idx').on(t.workspaceId, t.previousEventId),
+    tenantFk(
+      'source_revisions_item_fk',
+      [t.workspaceId, t.itemId],
+      [sourceItems.workspaceId, sourceItems.id],
+    ),
+    tenantFk(
+      'source_revisions_event_fk',
+      [t.workspaceId, t.eventId],
+      [records.workspaceId, records.id],
+    ),
+    // Previous IDs are historical hints only: forgetting a revision removes its entire item.
+    pgPolicy('source_revisions_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const sourceReceipts = pgTable(
+  'source_receipts',
+  {
+    workspaceId: workspaceId(),
+    itemId: uuid('item_id').notNull(),
+    key: text('key').notNull(),
+    contentDigest: text('content_digest').notNull(),
+    response: jsonb('response').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.itemId, t.key] }),
+    tenantFk(
+      'source_receipts_item_fk',
+      [t.workspaceId, t.itemId],
+      [sourceItems.workspaceId, sourceItems.id],
+    ),
+    pgPolicy('source_receipts_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+/** Minimal staged participant ownership makes pending source uploads erasable before an event exists. */
+export const sourceParticipants = pgTable(
+  'source_participants',
+  {
+    workspaceId: workspaceId(),
+    itemId: uuid('item_id').notNull(),
+    email: text('email').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.itemId, t.email] }),
+    tenantFk(
+      'source_participants_item_fk',
+      [t.workspaceId, t.itemId],
+      [sourceItems.workspaceId, sourceItems.id],
+    ),
+    index('source_participants_email_idx').on(t.workspaceId, t.email),
+    pgPolicy('source_participants_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+/** Allocated only at transaction end; a cursor can never pass an uncommitted lower position. */
+export const changeCounters = pgTable(
+  'change_counters',
+  {
+    workspaceId: workspaceId().primaryKey(),
+    position: bigint('position', { mode: 'number' }).notNull().default(0),
+    retainedAfter: bigint('retained_after', { mode: 'number' }).notNull().default(0),
+  },
+  (t) => [
+    pgPolicy('change_counters_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const recordChanges = pgTable(
+  'record_changes',
+  {
+    workspaceId: workspaceId(),
+    position: bigint('position', { mode: 'number' }).notNull(),
+    /** Null only for a schema-level change, which names an object type and field keys. */
+    recordId: uuid('record_id'),
+    objectTypeId: uuid('object_type_id').notNull(),
+    operation: text('operation').notNull(),
+    fieldKeys: jsonb('field_keys').$type<string[]>().notNull(),
+    relatedRecordIds: jsonb('related_record_ids').$type<string[]>().notNull().default([]),
+    originInstallationId: uuid('origin_installation_id'),
+    cause: jsonb('cause').$type<string[]>().notNull().default([]),
+    /** Server-derived trigger hops; null means `cause.length` (see extension_jobs). */
+    causeDepth: integer('cause_depth'),
+    mergedIntoId: uuid('merged_into_id'),
+    createdAt: timestamptz('created_at').notNull().default(sql`clock_timestamp()`),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.position] }),
+    index('record_changes_record_idx').on(t.workspaceId, t.recordId),
+    index('record_changes_retention_idx').on(t.createdAt),
+    check(
+      'record_changes_operation',
+      sql`${t.operation} in ('create','update','links','delete','merge','retract','supersede','review','forget','schema')`,
+    ),
+    check('record_changes_schema_record', sql`(${t.operation}='schema')=(${t.recordId} is null)`),
+    pgPolicy('record_changes_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const changeDispatch = pgTable(
+  'change_dispatch',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    generation: integer('generation').notNull(),
+    position: bigint('position', { mode: 'number' }).notNull().default(0),
+    blockedCycles: integer('blocked_cycles').notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId] }),
+    tenantFk(
+      'change_dispatch_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    pgPolicy('change_dispatch_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+/** Opaque subscription routing. Authentication still requires its one candidate's secret. */
+export const webhookBindings = pgTable(
+  'webhook_bindings',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    registrationId: uuid('registration_id').notNull(),
+    generation: integer('generation').notNull(),
+    releaseDigest: text('release_digest').notNull(),
+    sourceAccountId: uuid('source_account_id'),
+    state: text('state').notNull().default('pending'),
+    subscriptionId: text('subscription_id'),
+    route: text('route').notNull(),
+    secretName: text('secret_name').notNull(),
+    accountHintHash: text('account_hint_hash'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('webhook_bindings_ws_id_uq').on(t.workspaceId, t.id),
+    check('webhook_bindings_state_ck', sql`${t.state} in ('pending','active','retired')`),
+    check(
+      'webhook_bindings_source_ck',
+      sql`${t.state}<>'active' or ${t.sourceAccountId} is not null`,
+    ),
+    uniqueIndex('webhook_bindings_install_route_uq')
+      .on(t.workspaceId, t.installationId, t.route)
+      .where(sql`${t.state}<>'retired'`),
+    uniqueIndex('webhook_bindings_account_uq')
+      .on(t.registrationId, t.route, t.accountHintHash)
+      .where(sql`${t.state}='active' and ${t.accountHintHash} is not null`),
+    index('webhook_bindings_install_idx').on(t.workspaceId, t.installationId),
+    index('webhook_bindings_source_idx').on(t.workspaceId, t.sourceAccountId),
+    index('webhook_bindings_retention_idx')
+      .on(t.updatedAt, t.workspaceId)
+      .where(sql`${t.state}='retired'`),
+    tenantFk(
+      'webhook_bindings_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    tenantFk(
+      'webhook_bindings_account_fk',
+      [t.workspaceId, t.sourceAccountId],
+      [sourceAccounts.workspaceId, sourceAccounts.id],
+    ),
+    pgPolicy('webhook_bindings_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const webhookReceipts = pgTable(
+  'webhook_receipts',
+  {
+    workspaceId: workspaceId(),
+    bindingId: uuid('binding_id').notNull(),
+    deliveryHash: text('delivery_hash').notNull(),
+    bodyDigest: text('body_digest').notNull(),
+    sourceItemId: uuid('source_item_id').notNull(),
+    jobId: uuid('job_id').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.bindingId, t.deliveryHash] }),
+    tenantFk(
+      'webhook_receipts_binding_fk',
+      [t.workspaceId, t.bindingId],
+      [webhookBindings.workspaceId, webhookBindings.id],
+    ),
+    tenantFk(
+      'webhook_receipts_source_fk',
+      [t.workspaceId, t.sourceItemId],
+      [sourceItems.workspaceId, sourceItems.id],
+    ),
+    tenantFk(
+      'webhook_receipts_job_fk',
+      [t.workspaceId, t.jobId],
+      [extensionJobs.workspaceId, extensionJobs.id],
+    ),
+    index('webhook_receipts_job_idx').on(t.workspaceId, t.jobId),
+    index('webhook_receipts_workspace_expiry_idx').on(t.workspaceId, t.createdAt),
+    index('webhook_receipts_expiry_idx').on(t.createdAt, t.workspaceId),
+    index('webhook_receipts_source_idx').on(t.workspaceId, t.sourceItemId),
+    pgPolicy('webhook_receipts_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+export const webhookRequestCounts = pgTable(
+  'webhook_request_counts',
+  {
+    workspaceId: workspaceId(),
+    bindingId: uuid('binding_id').notNull(),
+    windowStart: timestamptz('window_start').notNull(),
+    count: integer('count').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.bindingId] }),
+    tenantFk(
+      'webhook_counts_binding_fk',
+      [t.workspaceId, t.bindingId],
+      [webhookBindings.workspaceId, webhookBindings.id],
+    ),
+    pgPolicy('webhook_counts_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();

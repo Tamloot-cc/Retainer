@@ -1,6 +1,13 @@
 # Retainer extensions
 
-Status: implementation spec; not implemented. Date: 2026-11-11.
+Status: implementation in progress. Control/lifecycle UI, isolated execution,
+files, managed sources, durable change dispatch, verified webhook ingress and
+deterministic last-contact, reviewed connection/grant management, typed source
+progress, the Granola adapter and standalone key/OAuth credentials are implemented
+locally. Private hosted provisioning, immutable publication and prepared rollout
+are implemented locally too; hosted/AMI acceptance and launch remain. Granola is
+verified against provider fixtures, not a live account. Date: 2026-11-11.
+See [implementation progress](extensions-implementation.md) for completed and outstanding work.
 
 This spec replaces the exported **Retainer Extensions** proposal supplied as
 `Retainer Extensions (1).html` (the [original artifact](https://claude.ai/artifact/LYCoHUAtziuj1dQM7ZYbFy)).
@@ -33,19 +40,19 @@ v1, not a claim that all primitives exist already.
 
 ## 2. Critical evaluation of the proposal
 
-| Finding | Severity and consequence | Resolution |
-| --- | --- | --- |
-| The manifest chooses `integration` versus `agent`. | High: package input would choose assertion precedence and could impersonate a more authoritative writer. | A reviewed registration permits an actor class; installation approval grants it; credentials enforce it. Never `user` or `system`. |
-| Repeated `logEvent` is described as updating an edited note. | High: current code returns `event_conflict` when initial values differ. Even a direct edit would leave derived assertions/facts citing obsolete evidence. | Add an explicit source-revision import operation; keep ordinary `logEvent` semantics. See §10. |
-| Erasure is said to need nothing beyond suppressed emails. | High: transcripts, queued payloads, KV, files and provider identities can retain or recreate erased content. | Extend erasure to every new store and suppress source identity across revisions/reinstallation. |
-| Existing Postgres scheduling is described as a reusable job queue. | High delivery risk: today's worker schedules consolidator passes; it has no general leased extension jobs, acknowledgements or retry state. | Build those primitives explicitly in Postgres. |
-| A container without the database network is treated as the sandbox. | High: it does not by itself isolate runs, credentials, host access or metadata endpoints. | Separate the trusted launcher from fresh execution containers and enforce resource/network limits. First-party trust remains explicit. |
-| A server-route function can find arbitrary installations and read their KV. | High: a public webhook creates a cross-workspace capability. | Narrow routing to one server-selected candidate; expose only its verification secret to a bounded verifier. |
-| Skipping own writes is the loop protection. | Medium: A → B → A still loops, and retries can emit duplicate jobs. | Server-propagated causation chain, deduplication and depth limit. |
-| Cursor moves after work is enqueued. | High if enqueue is not durable/atomic: crashes lose notes or advance past failed pages. | Transactional page checkpoint plus durable child jobs, bounded overlap, visible unresolved failures. |
-| Existing OAuth is assumed sufficient for standalone apps. | High: existing OAuth is person-bound, agent-ranked, and restricted to the MCP audience. | Add explicit installation grants and REST resource support; preserve existing MCP consent semantics. |
-| Files stay out of assertion history. | Incorrect as stated: file bytes should stay out, but references must retain provenance and historical meaning. | Store immutable references in assertions; manage bytes through authorized storage. |
-| SDK/runner MIT licensing is said to reproduce Twenty's license exception. | Unsupported legal conclusion. | Keep package boundaries; make no equivalence claim. Third-party distribution policy is outside this spec. |
+| Finding                                                                     | Severity and consequence                                                                                                                                  | Resolution                                                                                                                             |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| The manifest chooses `integration` versus `agent`.                          | High: package input would choose assertion precedence and could impersonate a more authoritative writer.                                                  | A reviewed registration permits an actor class; installation approval grants it; credentials enforce it. Never `user` or `system`.     |
+| Repeated `logEvent` is described as updating an edited note.                | High: current code returns `event_conflict` when initial values differ. Even a direct edit would leave derived assertions/facts citing obsolete evidence. | Add an explicit source-revision import operation; keep ordinary `logEvent` semantics. See §10.                                         |
+| Erasure is said to need nothing beyond suppressed emails.                   | High: transcripts, queued payloads, KV, files and provider identities can retain or recreate erased content.                                              | Extend erasure to every new store and suppress source identity across revisions/reinstallation.                                        |
+| Existing Postgres scheduling is described as a reusable job queue.          | High delivery risk: today's worker schedules consolidator passes; it has no general leased extension jobs, acknowledgements or retry state.               | Build those primitives explicitly in Postgres.                                                                                         |
+| A container without the database network is treated as the sandbox.         | High: it does not by itself isolate runs, credentials, host access or metadata endpoints.                                                                 | Separate the trusted launcher from fresh execution containers and enforce resource/network limits. First-party trust remains explicit. |
+| A server-route function can find arbitrary installations and read their KV. | High: a public webhook creates a cross-workspace capability.                                                                                              | Narrow routing to one server-selected candidate; expose only its verification secret to a bounded verifier.                            |
+| Skipping own writes is the loop protection.                                 | Medium: A → B → A still loops, and retries can emit duplicate jobs.                                                                                       | Server-propagated causation chain, deduplication and depth limit.                                                                      |
+| Cursor moves after work is enqueued.                                        | High if enqueue is not durable/atomic: crashes lose notes or advance past failed pages.                                                                   | Transactional page checkpoint plus durable child jobs, bounded overlap, visible unresolved failures.                                   |
+| Existing OAuth is assumed sufficient for standalone apps.                   | High: existing OAuth is person-bound, agent-ranked, and restricted to the MCP audience.                                                                   | Add explicit installation grants and REST resource support; preserve existing MCP consent semantics.                                   |
+| Files stay out of assertion history.                                        | Incorrect as stated: file bytes should stay out, but references must retain provenance and historical meaning.                                            | Store immutable references in assertions; manage bytes through authorized storage.                                                     |
+| SDK/runner MIT licensing is said to reproduce Twenty's license exception.   | Unsupported legal conclusion.                                                                                                                             | Keep package boundaries; make no equivalence claim. Third-party distribution policy is outside this spec.                              |
 
 The proposal's strongest choices remain: one installation per workspace/account,
 API-only writes, no model inside Retainer, deterministic ingestion, explicit
@@ -73,20 +80,20 @@ Neither is sufficient as extension ownership or permanent source deduplication.
 
 Twenty paths below are relative to the reference checkout:
 
-| Evidence | What to adopt or distinguish |
-| --- | --- |
-| `packages/twenty-server/src/engine/core-modules/application/application.entity.ts` | Registration versus workspace installation; stable universal identity and installed version. |
-| `packages/twenty-server/src/engine/core-modules/application/application-manifest/application-manifest-apply.service.ts` | Shared apply pipeline and version persistence after successful synchronization. Its optional inference of deletion from omission is not adopted. |
-| `packages/twenty-server/src/engine/core-modules/application/application-manifest/utils/preserve-application-local-metadata-state.util.ts` | Preserve workspace-local overrides and activation state. Retainer starts with explicit conflicts rather than a general override engine. |
-| `packages/twenty-shared/src/application/manifestType.ts` | Declarative manifest with stable entities. Functions, screens, AI and workflow entries demonstrate the much larger scope we are not copying wholesale. |
-| `packages/twenty-server/src/engine/core-modules/application/application-manifest/services/application-uninstall.service.ts` | Hooks need retry/completion bookkeeping and cannot be a prerequisite for access revocation. |
-| `packages/twenty-apps/public/granola/src/logic-functions/granola-webhook-resolver.ts` | The actual resolver uses a registration query parameter and server KV to locate a workspace; it forwards signature headers to the target. The proposal's `webhook-id` account lookup is illustrative, not this implementation. |
-| `packages/twenty-apps/public/granola/src/logic-functions/granola-sync-note.ts` and `utils/sync-granola-note-to-call-recording-or-throw.util.ts` | Fetch externally, then upsert a call recording with transcript content. Retainer needs different provenance and revision semantics. |
+| Evidence                                                                                                                                        | What to adopt or distinguish                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/twenty-server/src/engine/core-modules/application/application.entity.ts`                                                              | Registration versus workspace installation; stable universal identity and installed version.                                                                                                                                   |
+| `packages/twenty-server/src/engine/core-modules/application/application-manifest/application-manifest-apply.service.ts`                         | Shared apply pipeline and version persistence after successful synchronization. Its optional inference of deletion from omission is not adopted.                                                                               |
+| `packages/twenty-server/src/engine/core-modules/application/application-manifest/utils/preserve-application-local-metadata-state.util.ts`       | Preserve workspace-local overrides and activation state. Retainer starts with explicit conflicts rather than a general override engine.                                                                                        |
+| `packages/twenty-shared/src/application/manifestType.ts`                                                                                        | Declarative manifest with stable entities. Functions, screens, AI and workflow entries demonstrate the much larger scope we are not copying wholesale.                                                                         |
+| `packages/twenty-server/src/engine/core-modules/application/application-manifest/services/application-uninstall.service.ts`                     | Hooks need retry/completion bookkeeping and cannot be a prerequisite for access revocation.                                                                                                                                    |
+| `packages/twenty-apps/public/granola/src/logic-functions/granola-webhook-resolver.ts`                                                           | The actual resolver uses a registration query parameter and server KV to locate a workspace; it forwards signature headers to the target. The proposal's `webhook-id` account lookup is illustrative, not this implementation. |
+| `packages/twenty-apps/public/granola/src/logic-functions/granola-sync-note.ts` and `utils/sync-granola-note-to-call-recording-or-throw.util.ts` | Fetch externally, then upsert a call recording with transcript content. Retainer needs different provenance and revision semantics.                                                                                            |
 
 Cloud evidence: `README.md`, `infra/aws/functions.tf`, `api.tf`, `schedule.tf`,
 `build.sh`, and `deploy.sh`. API/consolidator/ops have isolated networking;
 control has outbound networking. Functions currently share a deployment package
-and a VPC execution role. The extension executor, restricted execution roles,
+and a VPC execution role. The extension coordinator, isolated execution host,
 file storage, routing and scheduling described here are new work. The existing
 build targets Node 24 on Lambda; extension compatibility must follow the actual
 runtime rather than assuming the development Node version.
@@ -141,35 +148,53 @@ Illustrative manifest (UUIDs below must be allocated permanently before shipping
   "requestedActor": "integration",
   "scopes": ["read", "write"],
   "connection": "workspace",
-  "createPeople": true,
+  "createPeople": "contacted_first",
   "onSourceDelete": "keep",
   "settings": {
-    "apiKey": { "type": "string", "secret": true, "required": true }
+    "apiKey": {
+      "type": "string",
+      "label": "Workspace API key",
+      "secret": true,
+      "required": true,
+      "reconnect": true
+    }
   },
   "schema": [],
   "views": [],
-  "functions": [{
-    "universalId": "64d5d722-e6f8-42bd-ad34-f522632473c0",
-    "name": "sync-note",
-    "trigger": { "kind": "job" },
-    "inputSchema": {
-      "type": "object",
-      "properties": { "noteId": { "type": "string", "maxLength": 500 } },
-      "required": ["noteId"],
-      "additionalProperties": false
-    },
-    "timeoutSeconds": 120
-  }]
+  "functions": [
+    {
+      "universalId": "64d5d722-e6f8-42bd-ad34-f522632473c0",
+      "name": "sync-note",
+      "trigger": { "kind": "job" },
+      "inputSchema": {
+        "type": "object",
+        "properties": { "sourceItemId": { "type": "string", "maxLength": 36 } },
+        "required": ["sourceItemId"],
+        "additionalProperties": false
+      },
+      "timeoutSeconds": 120,
+      "secrets": ["apiKey"],
+      "scopes": ["read", "write"]
+    }
+  ]
 }
 ```
 
 Required release metadata outside this example: package SHA-256, supported server
 version range, runtime version, descriptions, settings labels, and handler digest
-for each function. Registration is an operator/release action, not a workspace
-API. Reject unknown manifest versions, entry kinds, duplicate IDs, unresolved
+for each function. A complete source adapter additionally declares the source
+identity/verifier/ordering contract (§10), its install verifier, and its webhook
+contracts (§9.3); the small example is not an executable Granola release.
+Registration is an operator/release action, not a workspace API. Reject unknown manifest versions, entry kinds, duplicate IDs, unresolved
 references, unsupported settings/schema types and mutable same-version digests.
 Reject executable settings defaults and remote code references. Maximum manifest
 size is 1 MiB; settings JSON 64 KiB excluding separately stored secrets.
+
+A function may declare `secrets`, the secret settings it reads or writes, and
+`scopes`, the runtime scopes it needs, a subset of the release's `scopes`.
+Its run receives only those (§8). Absent fields keep the first contract's
+behaviour (every secret setting; the release's scopes), so catalogs built
+before them load with unchanged digests; first-party releases declare both.
 
 Each function has one trigger: `install`, `uninstall`, `route`, `serverRoute`,
 `schedule`, `change`, or `job`. Only `job` handlers are directly enqueueable by
@@ -190,20 +215,20 @@ All new workspace tables have workspace RLS, composite workspace foreign keys
 where applicable, and access through `retainer_app`; secrets use a separate broker
 role with no ordinary read grants. Generate migrations from Drizzle.
 
-| Store | Essential data and constraints |
-| --- | --- |
-| Registrations/releases | Global reviewed identity, actor ceiling, immutable manifest/digests, allowed executables, protocol/runtime range; no workspace-editable publisher metadata. |
-| Installations | Workspace, registration, installed release, desired release, state, generation, granted scopes/actor, settings, mapping, installer actor/user, source-account namespace, last error; unique workspace/registration. |
-| Contributions | Installation, element kind, universal ID, actual object/field/view ID and last applied definition; unique managing installation per element. References to shared elements are bindings, not ownership. |
-| Grants | Installation/generation, scopes, credential hash or OAuth consent/client reference, expiry and revocation. No plaintext bearer tokens. |
-| Secrets/connections | Encrypted value, key version, installation, provider, refresh revision and status. Separate from KV and settings responses. |
-| KV | Installation/key, bounded JSON value, revision for compare-and-set. 64 KiB/value, 1 MiB/installation default. No transcripts, credentials or arbitrary record copies. |
-| Jobs/attempts | Workspace, installation/generation, release/function ID, input, dedupe key, causation, status, lease owner/fence/deadline, attempt, available time, outcome. Unique installation/generation/dedupe key. |
-| Webhook receipts | Route/account binding, delivery identity/digest, accepted time, job ID; unique binding/delivery ID. Payload retention bounded and erased with its source. |
-| Schedule state | Installation/function, next due time, last scheduled occurrence; unique job key per scheduled UTC instant. |
-| Change outbox/feed | Workspace commit-ordered position, operation, record ID, changed field keys, origin installation, cause chain; no before/after record bodies. |
-| Source items/revisions | Stable account-scoped external identity, current revision/event, provider ordering marker, content digest and suppression identity. Revision uniqueness is durable, not the request-idempotency TTL. |
-| Files/references | Workspace, immutable opaque ID, storage key, checksum, media type, byte length, upload state/expiry, reference edges and deletion state. |
+| Store                  | Essential data and constraints                                                                                                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Registrations/releases | Global reviewed identity, actor ceiling, immutable manifest/digests, allowed executables, protocol/runtime range; no workspace-editable publisher metadata.                                                         |
+| Installations          | Workspace, registration, installed release, desired release, state, generation, granted scopes/actor, settings, mapping, installer actor/user, source-account namespace, last error; unique workspace/registration. |
+| Contributions          | Installation, element kind, universal ID, actual object/field/view ID and last applied definition; unique managing installation per element. References to shared elements are bindings, not ownership.             |
+| Grants                 | Installation/grant generation, scopes, credential hash or OAuth consent/client reference, expiry and revocation. No plaintext bearer tokens.                                                                        |
+| Secrets/connections    | Encrypted value, key version, installation, provider, refresh revision and status. Separate from KV and settings responses.                                                                                         |
+| KV                     | Installation/key, bounded JSON value, revision for compare-and-set. 64 KiB/value, 1 MiB/installation default. No transcripts, credentials or arbitrary record copies.                                               |
+| Jobs/attempts          | Workspace, installation/generation, release/function ID, input, dedupe key, causation, status, lease owner/fence/deadline, attempt, available time, outcome. Unique installation/generation/dedupe key.             |
+| Webhook receipts       | Route/account binding, delivery identity/digest, accepted time, job ID; unique binding/delivery ID. Payload retention bounded and erased with its source.                                                           |
+| Schedule state         | Installation/function, next due time, last scheduled occurrence; unique job key per scheduled UTC instant.                                                                                                          |
+| Change outbox/feed     | Workspace commit-ordered position, operation, record ID, changed field keys, origin installation, cause chain; no before/after record bodies.                                                                       |
+| Source items/revisions | Stable account-scoped external identity, current revision/event, provider ordering marker, content digest and suppression identity. Revision uniqueness is durable, not the request-idempotency TTL.                |
+| Files/references       | Workspace, immutable opaque ID, storage key, checksum, media type, byte length, upload state/expiry, reference edges and deletion state.                                                                            |
 
 Global lock order is deployment lock → privacy lock → schema lock → installation
 lock → source/connection identity locks → sorted record locks → feed counter.
@@ -251,9 +276,57 @@ States: `installing`, `active`, `setup_failed`, `disabled`, `upgrading`,
 V1 upgrade is additive schema plus new code/settings/views. Omission does not
 delete. Existing structural changes, removals and incompatible mappings return
 `409 upgrade_conflict`; make a new field and perform an explicit migration through
-the existing schema engine. User-edited labels/views are preserved; conflicting
-publisher changes are reported, not overwritten. A deprecated element stays
-deprecated. Do not silently adopt unrelated fields with matching names.
+the existing schema engine. A view cannot move to another object; that needs a
+new view identity. A deprecated element stays deprecated.
+
+Presentation is an override layer, as in Twenty
+(`WORKSPACE_LOCAL_STATE_PROPERTIES` and its overridable properties). Each
+contribution stores the publisher definition it was last applied from (its
+base). For an object's `labelSingular`, `labelPlural` and `description` and a
+field's `label` and `description`: if the workspace's value still equals the
+base, the publisher's new value applies; if the workspace changed it, the
+workspace value wins, the preview carries a non-blocking warning, and only the
+base moves to the new release. A contributed view is presentation as a whole
+(name, columns and their order, widths, filter, sort, grouping, visibility): an
+unedited view takes the publisher's change (`update`), an edited one
+is kept (`keep_workspace`, with a warning), and a deleted one is not recreated
+(`deleted_workspace`, with a warning; its old base and identity stay, so no base
+is stored for a view that no longer exists). The plan digest includes each
+view's decision, and the replacement rechecks the view under its row lock, so a
+view edited after the preview fails the commit with `stale_plan`. Names, types,
+settings (options), nullability, uniqueness, filterability and searchability are
+structural and stay `409 upgrade_conflict`. Do not silently adopt unrelated fields with matching names.
+
+Contributed objects and fields belong to the installation while it is not
+`uninstalled`: the schema engine refuses `delete_object` and `delete_field`
+(directly, by cascade, or when a person approves an earlier proposal) with
+`422 schema_invalid` naming the element and the blocking installation and
+registration, and points to renaming/relabelling or uninstalling first. This
+also blocks deleting a workspace's own object while an extension has added a
+field or relation to it, because the cascade would delete the contribution.
+The check runs under the exclusive schema lock, so it serializes with an
+install or upgrade that contributes the same element. As in Twenty, only presentation is workspace-local. A
+contribution deleted before this rule is treated as absent: plans don't
+recreate it, skip new fields of a deleted object, skip new views over it with a
+warning, and accept triggers on it (they never fire), so upgrade and enable
+still work. Managed source event types must still be active.
+
+An upgrade may supply pending secret references for secret settings the
+installation does not store, so a release that adds a required secret can be
+applied. Replacing a stored secret still needs reconnect, including one that
+an intermediate release stopped declaring: upgrades never delete stored
+secrets.
+
+Installations carry two counters. `generation` fences runs, jobs, leases,
+source and webhook bindings: every install, upgrade, reconnect, settings change,
+enable and disable advances it. `grant_generation` is what standalone keys and
+installation OAuth grants bind to. It advances only on disable, uninstall, a
+grant change (actor or scopes, increase or decrease, the execution model, or
+the pinned `oauthClientId`, including a release that drops it), reconnect and
+source account replacement or disconnect. Repeating a disable keeps it. A plain upgrade or an
+ordinary settings change therefore keeps standalone credentials valid, as Twenty
+keeps app tokens across upgrades. Existing credentials were migrated by setting
+`grant_generation` to the installation's `generation`.
 
 Upgrade disables new triggers, increments generation, fences old runs, and waits
 for admitted database writes to finish before applying the new release. Validate
@@ -270,7 +343,70 @@ schema and views. Cleanup failure must not restore data access. A cleanup token
 can use only the old provider connection and lifecycle acknowledgement, never CRM
 writes. Explicit data/schema deletion is a separate normal Retainer operation.
 Reinstall reuses surviving schema bindings and suppression namespace; it cannot
-resurrect forgotten sources or silently reset user customizations.
+resurrect forgotten sources or silently reset user customizations. It may target
+any compatible catalog release of the same registration, not only the retained
+one, through the same additive plan, so a release dropped by a server upgrade
+never strands an uninstalled installation. An uninstalled installation is not
+upgraded; it is reinstalled.
+
+Deleting a workspace uninstalls its extensions in the same transaction that
+schedules the deletion, as Twenty runs uninstall hooks before a workspace is
+removed. Every installation not already uninstalling or uninstalled gets an
+admin uninstall's semantics: runs are cancelled, `generation` and
+`grant_generation` advance, webhook bindings retire and secrets are retired.
+A standalone release becomes `uninstalled`; anything else becomes
+`uninstalling` with the usual 24-hour cleanup deadline. The deleting process
+does not know which executables are deployed, so the executor's maintenance
+pass queues the cleanup job. As in an admin uninstall, a release with no active
+executable, or one the executor cannot resolve, is uninstalled directly with
+`cleanup_unavailable` and not visited again. The deletion takes the workspace's
+schema lock before its row, as schema changes do. While a workspace is being deleted only cleanup runs: the
+due and maintenance functions keep its uninstall jobs and
+nothing else, and admission lets a cleanup run read the provider connection
+and nothing more. The hard delete waits until no installation is still within
+its cleanup deadline, then proceeds whether cleanup succeeded or not. The
+deadline stays 24 hours, not the 7-day grace period: it is shorter, so cleanup
+always finishes or expires before the grace period ends and deletion is never
+delayed in practice. A workspace deleted before this step existed is
+uninstalled by the first removal run instead, which waits for that cleanup (at
+most 24 more hours). A cleanup that missed its deadline is logged when the
+workspace is removed, and stays visible as `cleanup_deadline_expired` or
+`cleanup_unavailable` until then. Restoring a workspace within the grace
+period does not reinstall anything: installations stay uninstalling or
+uninstalled, their old credentials stay revoked, and an admin reinstalls them.
+
+Ordinary (non-secret, non-reconnect) settings update in place, like Twenty's
+application variables. The change cancels current runs and advances `generation`,
+but never disables the installation or advances `grant_generation`. A running
+hosted installation re-runs setup at the new generation, exactly like an upgrade
+(`upgrading`, or `installing` if first setup had not finished, with
+`needs_reconnect` health until setup succeeds), because source
+and webhook bindings are per generation; it is disabled only when no reviewed
+executable is deployed. A disabled installation stays disabled. The source scan
+state is cleared, because its cursor and any open enumeration were computed under
+the old values (for example a backfill window): resuming from them could skip
+items the new settings bring into scope. Settings changes are refused with
+`409 installation_disabled` while `uninstalling` or `uninstalled`, so they can't
+cancel cleanup or reverse an uninstall.
+
+Credential/account changes use a separate reconnect preview and commit with
+`reconnect: true`, the current installation ID/release, non-secret settings and
+new opaque pending-secret references. `POST /v1/extensions/:id/reconnect` requires
+the matching reviewed plan and human admin approval. It atomically adopts the
+staged credentials, cancels old runs, advances generation and starts setup; no
+schema repair is folded into reconnect. By default the existing source-account
+namespace is retained and the provider verifier must attest that same account.
+Explicit `replaceSourceAccount: true` retires the old source binding and callback
+addresses before setup. Previously imported evidence remains. The management UI
+separates ordinary settings, reconnect review and account replacement.
+
+An upgrade that increases scopes or changes an agent grant to integration is
+rejected without `grantChange: true`. That flag requests a separate review plan;
+it never grants access on preview. The plan includes previous/new grants and binds
+them, the current generation and settings revision in its digest. The UI labels
+approval of increased access explicitly. Human commit replaces actor/scopes and
+fences previous credentials atomically. An immutable integration actor ceiling
+permits agent or integration grants; an agent ceiling can never permit integration.
 
 ## 8. Authorization, actors and secret handling
 
@@ -283,11 +419,22 @@ may permit `integration`; neither receives human approval powers. A user-trigger
 run remains an extension actor, with `triggeredBy` attribution separately stored.
 
 Effective scopes are the intersection of registration ceiling, approved install,
-function needs and credential. Runtime grants have `read`/`write` only in v1;
+function needs and credential. The claim computes the function's share (its
+declared `scopes` within the installed grant) and the run token carries at most
+that, so a read-only function cannot write with its own token. Function scopes
+do not limit enqueueing: a read-only function may checkpoint a child `job` of
+another function in the same release, which then runs with that function's own
+scopes and secrets. Both are reviewed code from one release. The token also binds the
+claimed job's function ID, and admission matches it against the job row, so a
+credential cannot act for another function's job. Rolling out function-bound
+tokens fails closed for about one token lifetime (five minutes): tokens, broker
+code and claims from the previous release are refused, so runs in flight retry. Runtime grants have `read`/`write` only in v1;
 schema changes use lifecycle control. Platform operations (KV, enqueue, files,
 connections) require explicit installation-bound capabilities. All writes still
 use assertions and existing precedence. Never accept Actor, workspace, generation
 or causation overrides from payloads.
+
+Lifecycle functions can read their own non-secret installation settings, secret-presence flags and redacted run metadata. They cannot read CRM records before activation or during cleanup.
 
 A run has no `Caller.person` and cannot read personal memory. V1 permissions are
 workspace-wide within the existing scopes; install UI must say so. A mapping or
@@ -296,7 +443,9 @@ metadata, not an impersonated user; a workspace grant survives their departure
 until an admin disconnects it. User-owned provider credentials cannot be presented
 as organization-owned without explicit sharing consent.
 
-Installation access is rechecked inside each transaction. Take the installation
+Installation access is rechecked inside each transaction. Run, installation-key,
+OAuth and broker admission apply the same rules: the workspace is not scheduled
+for deletion, and a CRM write needs `write` in the credential's scopes. Take the installation
 lock shared for admitted runtime writes and exclusively for revocation. After
 disable returns, no old run can commit a new write; in-flight writes either
 committed before revocation or were refused. Check generation/fence before
@@ -309,50 +458,160 @@ Standalone apps get an explicit workspace installation OAuth grant with REST
 resource audience and registration-bound actor. Do not widen existing MCP tokens
 or their scopes implicitly. Existing person-bound MCP OAuth remains agent-ranked
 and retains its existing membership semantics. Accounts-mode consent must bind
-installation, client, workspace and grant generation; recheck revocation on every
+installation, client, workspace and `grant_generation`; recheck revocation on every
 request. Key-mode standalone apps use a separate revocable installation key.
 Authorization-code flows use state, PKCE and exact registered redirects; provider
 OAuth connection management is separate from Retainer access authorization.
+
+Accounts-mode manifests pin `oauthClientId` into the reviewed release digest;
+the same registration cannot switch to a different client across releases.
+Clients explicitly register the `/v1` resource; ordinary registrations keep
+their MCP resource default. Consent lists only active matching installations
+in workspaces the person administers. The approval names a current grant generation
+and explicit read/write scope subset, with optional `offline_access`.
+Never combine the REST and MCP audiences in one grant.
+
+OAuth library references use `oauth_grant_references`: existing person grants
+retain their workspace UUID, while installation references use the credential
+UUID and a tenant-safe workspace/credential FK. Backfill existing references
+before replacing the library FKs, and bootstrap a person reference for each new
+workspace under an insert trigger. The app role can access only installation
+references in its current workspace; a control-only resolver returns minimal
+claim metadata. Workspace/credential deletion cascades library grants.
+
+Consent stages a committed, unusable pending credential because the library
+has a separate database connection. After the library validates signed consent,
+recheck admin access, release/client binding and grant generation, then replace the
+old grant and activate the new one under the exclusive installation lock.
+Invalid consent leaves the working grant intact. Crashes leave only unusable
+pending references; at most 20 handshakes may be pending, with abandoned ones
+collected on later attempts after an hour. The access token names workspace,
+installation, immutable grant generation, credential, client and subject. REST
+checks the exact single audience and current credential/installation/client
+inside each transaction; it derives the approved actor and never assigns a
+personal-memory principal. Refresh cannot adopt a later grant generation. Membership
+removal does not revoke the workspace grant. Hard deletion of the approving
+user may remove library refresh tokens and require fresh admin consent.
+Admins inspect and revoke OAuth credentials in Extensions; revocation deletes
+their library reference/refresh tokens and drains admitted API writes.
+
+Key-mode standalone installation approval activates the external app grant without
+hosted setup jobs. A human admin creates an `rti_` key for an explicit subset of
+the approved read/write scopes, with a current-generation precondition. The raw
+256-bit key is returned once; only its hash, safe prefix and grant metadata are
+stored. The admin can list and revoke credentials. At most 20 current unrevoked
+keys are allowed per installation; competing issuances serialize with revocation.
+These keys are accepted only by REST in key mode, with their actor resolved from
+the installation. The installer is audit metadata and personal memory stays
+unavailable. Reads/writes, views, files and schema/installation metadata recheck
+the grant inside their transaction. Individual revoke and disable drain admitted
+writes; the old credential is refused before idempotency replay. Re-enable keeps
+the grant generation that disable advanced, so old keys stay revoked and the app
+needs a new key. Issuance takes the current `generation` as its stale-view
+precondition and binds the key to `grant_generation`. The per-installation write budget is
+shared across keys. Uploaded files belong to the installation and the change feed
+records its causation identity. Hosted execution capabilities (KV, job checkpoint,
+secret broker and managed-source attestation) remain lease-bound; standalone
+services keep their execution state and provider secrets externally.
+
+Non-secret setting definitions may provide a form default and bounded string
+choices. Approval requests still carry explicit values; defaults never contain
+secrets. A required boolean `consent: true` must be affirmatively true in preview,
+commit and settings writes, and cannot default to true. The form presents its
+sharing description and requires acknowledgement before review.
 
 Encrypt provider tokens/settings with authenticated encryption and associated
 workspace/installation/key-name data. Keys stay outside the database; retain key
 versions for rotation. Refresh under a per-connection lock, persist rotating
 refresh tokens atomically, and mark `needs_reconnect` on terminal errors. Do not
 log secrets or return them to admin reads. Give a run only its own requested
-secret; redact provider response bodies from error logs. KV is not a secret store.
+secret: the claim copies the function's declared `secrets` onto the job row,
+and both the runtime secret endpoint (404 for an undeclared name) and the
+broker's own SQL admission refuse any other. Redact provider response bodies from error logs. KV is not a secret store. A secret setting may declare `generated: true` only
+when it is optional and secret. Such provider-generated signing/refresh material
+is omitted from human settings forms and cannot be staged by an admin. Live
+runs can write it with revision CAS through `PUT /v1/extensions/:id/runtime/secrets/:name`; runs cannot overwrite human-provided
+credentials. Broker-side admission takes its own schema/installation/lease locks
+in the same transaction as the read/write. Release API validation locks before
+awaiting that broker transaction, avoiding cross-connection revocation deadlocks
+and reliance on the API connection remaining alive.
 
 ## 9. Execution, jobs and triggers
 
 ### 9.1 Executor protocol and isolation
 
 Protocol v1 invocation: `{protocolVersion, runId, attempt, installationId,
-releaseDigest, functionId, input, apiOrigin, runToken, deadline}`. The driver
+releaseDigest, functionId, input, apiOrigin, runToken, deadline}`. Lifecycle
+input is server-defined, not the function's `inputSchema`: `install` receives
+`{previousVersion}`, the release version installed before this setup (an
+upgrade, re-enable or settings re-setup), or null on a first install or a
+reinstall after uninstall; `uninstall` receives `{}`. The driver
 receives the executable mapping from the trusted registry, not this JSON.
 Result is `{status: 'succeeded'|'retry'|'failed', code?, retryAfterSeconds?}` with a
 bounded diagnostics string. API-origin and protocol compatibility are validated
 before launching. No arbitrary serialized exceptions, environment dump or secret
 return values. Timeout is 120 seconds by default, hard maximum 300; longer work
-must paginate. Inputs/outputs are at most 64 KiB.
+must paginate. The handler and its run credential get exactly the function's
+timeout; the lease lasts 15 seconds longer so the coordinator can record a
+timeout as `execution_timeout` with normal backoff instead of being fenced.
+Inputs/outputs are at most 64 KiB.
 
-Hosted: separate immutable Lambda versions for first-party bundles, outside the
-DB VPC, with dedicated execution roles permitting only required logging. No DB
-credentials, deployment credentials, instance secrets or S3-wide permissions.
-Use signed upload URLs for file bytes. An egress-capable trusted executor in the
-VPC claims jobs and invokes only registered function versions; it has narrowly
-scoped invocation and signing permissions. This is a new runtime, not the API
-function acquiring outbound internet access.
+Retry is opt-in, as with Twenty's `RetryableLogicFunctionError`. A handler
+retries by returning `retry` or throwing `RetryLater` from `@retainer/extension`
+(matched by error name, with an optional code and bounded retry-after hint).
+Any other handler exception is a terminal `handler_failed`, including raw network
+errors the handler does not convert to `RetryLater`. Platform failures (launcher
+unavailable, network to the launcher, deadline abort) always retry. A hosted
+coordinator's own Lambda timeout must cover the longest handler timeout plus the
+15-second grace, or a late acknowledgement is fenced.
 
-Self-hosted: Compose includes a trusted launcher and fresh runner container per
-invocation. Only the launcher controls container creation; extension containers
-never mount the Docker socket, host paths or DB network. Drop capabilities, run
-non-root, read-only root FS plus bounded tmpfs, enforce CPU/memory/PID/time limits,
-and destroy the container after every run. The launcher accepts registered
-bundle IDs only. Its host-level privilege is documented; a separate service and
-socket boundary are required, not a promise that arbitrary container execution is
-safe. Deny host/private/link-local destinations except the configured public API
-endpoint, including metadata endpoints. Validate DNS/redirect destinations at the
-egress boundary. Hosted public-network functions still have their own execution
-credentials, so least-privilege IAM is mandatory.
+Hosted: trusted Lambda coordinators claim jobs and sign scoped run capabilities;
+a separate Lambda handles secret brokering and raw webhook admission. Each has
+its own IAM role and database login. First-party code runs in fresh immutable
+Docker containers on a dedicated execution host, outside the database security
+group, using the same sandbox protocol as Compose. The host has no database,
+provider-secret, deployment or run-signing credentials. Its instance role can
+read only its own small launch configuration, the selected immutable release
+metadata and images. Require IMDSv2 with hop limit one, disable IPv6 metadata,
+and deny container access to the host, metadata and routed private networks.
+File bytes use signed transfer URLs rather than bucket-wide runner permissions.
+
+Compose and hosted execution use a trusted launcher and a fresh runner container
+per invocation. Only the launcher controls container creation; extension
+containers never mount the Docker socket, host paths or DB network. Drop
+capabilities, run non-root, use a read-only root FS plus bounded tmpfs, enforce
+CPU/memory/PID/time limits, and destroy the container after every run. Job
+containers have only an internal network to the trusted egress proxy; signature
+verifiers have no network at all, a five-second hard timeout and their own
+launcher slot pool: one launcher runs up to 32 runs and 8 verifiers at once, so
+busy runs cannot block webhook ingress. Launches reuse a passing health check for
+30 seconds. Deny
+host/private/link-local destinations except the configured public API endpoint,
+including metadata endpoints. Validate DNS and redirect destinations at the
+proxy. The hosted host requires an operator-reviewed hardened AMI with Docker
+isolated-gateway support; an unsupported host fails closed. This replaces the
+initial proposed per-bundle Lambda execution because containers provide the
+implemented per-invocation process, filesystem and no-network verifier boundary.
+
+The launcher accepts registered bundle IDs only. Its host-level Docker socket
+privilege is documented; a separate service and socket boundary are required.
+Catalog and executable snapshots are packaged immutable files with expected
+SHA-256 hashes, retaining every referenced installed/cleanup release. Deployment
+checks source, schema-history compatibility, image/config identity and release
+inventory before changing traffic, repeats inventory after draining all writers,
+and holds maintenance on migration or post-drain failure. After draining Lambda
+writers, the owner must prove zero live execution leases before DDL: a job
+claimed immediately before a coordinator timeout must not regain write access
+when the API restarts. Environment and host
+updates happen only after that drain. No automatic down-migrations or blind
+release/image pruning are allowed. Publication may retire an older hosted version
+from active catalog/executable/launcher configuration only after owner inventory
+proves it unreferenced. Preserve every installed/disabled/live-cleanup reference,
+the newest hosted version per registration, and standalone OAuth history. Merge
+the channel with the last completed and prospective running deployment snapshots
+before this selection, so a failed rollout or raced approval cannot lose a pinned
+release. Repeat reference checks after drain and refuse raced approvals. Keep
+immutable metadata and images; configuration retirement grants no deletion rights.
 
 Only reviewed first-party code is supported. This is not a third-party hostile
 code sandbox certification. Logs, tmp files, warm process globals and environment
@@ -368,25 +627,86 @@ at least once. External side effects still need provider idempotency because
 lease fencing cannot undo a request already sent to a provider.
 
 Default concurrency is one active run per installation; workspace and instance
-caps plus fair scheduling prevent a backfill starving other installations.
+caps plus fair scheduling prevent a backfill starving other installations. A
+long-running coordinator refills each slot as soon as a run finishes and runs
+maintenance beside claims, so one long run never stalls dispatch.
 Default budget is 60 writes/minute per installation, within the workspace limit;
 return `429` with retry guidance rather than dropping work. Queued-job quota is
-10,000/installation; enqueue and checkpoint fail together at capacity.
+10,000/installation. Change dispatch commits each change with all its jobs or
+none: at the quota it keeps the changes it already accepted, leaves the cursor
+before the first one it could not, records degraded `quota_exceeded` and resumes
+on a later pass once jobs drain. Each installation dispatches in its own
+transaction, so one full queue never rolls back or stalls another's. A backstop
+throttle, after Twenty's per-app enqueue throttler, caps new change-trigger jobs
+at 500 per installation per minute (`RETAINER_TRIGGER_ENQUEUES_PER_MINUTE`).
+Twenty drops the excess; here it waits behind the cursor the same way and records
+degraded `trigger_throttled`, so nothing is lost. Both clear on the next full
+dispatch.
 
 Retry transient network/429/5xx errors with jittered exponential delay (30 seconds
-base, one-hour cap), maximum ten attempts or 24 hours. Respect bounded
-`RetryLater`/provider retry-after hints. Invalid inputs, revoked grants and schema
-conflicts are terminal. Failed jobs remain visible and can be replayed by an
-admin after fixing the cause. Retain minimal run diagnostics for 30 days; retain
+base, one-hour cap), maximum ten attempts or 24 hours. Handlers opt in by throwing
+`RetryLater` or returning `retry` (section 9.1); the bundled adapters do so for
+provider and Retainer API network errors, 429s, 5xx and conflicts. Respect bounded
+`RetryLater`/provider retry-after hints. Invalid inputs, revoked grants, schema
+conflicts and any other handler exception are terminal. A timeout counts as an
+attempt; a graceful coordinator shutdown returns its runs to the queue, and the
+first three such releases of a job do not consume one. A lost lease is recorded
+as `lease_lost`. The bundled adapters retry Retainer API 429s, 5xx, non-JSON
+replies, lost connections and only the transient 409s (`revision_conflict`,
+`scan_conflict`, `source_revision_conflict`, `lease_expired`). Failed jobs remain visible and can be replayed by an
+admin after fixing the cause. Expiration closes unfinished attempts and uses the
+same lifecycle failure transition as execution: an expired install becomes
+`setup_failed`, and an expired upgrade becomes `disabled`, so an admin can retry.
+Retain minimal run diagnostics for 30 days; retain
 source dedupe independent of run retention. Payloads are source IDs, not notes or
 transcripts. Child enqueue dedupe is bound to installation and business operation,
 not a random attempt ID.
+
+Pinned-release availability is operational state separate from provider connection
+health and installation lifecycle. A single resolver validates registration, version,
+exact manifest digest and the server's reviewed compatibility set. Its nonthrowing
+result is shared by claim, schedule maintenance, change dispatch, webhooks and
+uninstall. Availability is a stateless filter, as in Twenty's in-memory registry: each
+worker passes the `(registration, release digest)` pairs it can run now (catalog,
+server range, `runtimeEnabled`, deployed executables) to the job, maintenance and
+change discovery functions, which return only work pinned to one of them. Nothing is
+persisted, so an older or partial catalog cannot quarantine work for another worker.
+API inspection computes `runtimeAvailability` on read from its own catalog and, where it
+knows them, deployed executables, separately from `connectionHealth`; the web app
+explains that pending work is saved. Change dispatch and webhook ingress apply the same
+executables where their process loads them; elsewhere they judge by the catalog, and
+jobs no executor can run expire with the 24-hour job lifetime.
+
+Hosted resolution requires explicit operator `runtimeEnabled: true`. A false or absent
+flag pauses existing hosted jobs as well as new activation; restoring it resumes the
+same pending work. Standalone metadata does not require hosted execution.
+
+Unavailable work stays queued without consuming execution attempts or advancing
+schedule/change cursors, and never occupies the discovery window. A worker whose
+catalog can run the release sees it immediately, without changing installation
+generation or requiring upgrade; claim re-checks the pin and leaves an unresolvable job
+queued. Expired jobs, cleanup deadlines and erasure are never filtered and continue
+independently. Uninstall remains available when a release cannot load: revoke locally,
+retire callbacks and secrets, and skip unavailable provider cleanup code. Accepted:
+maintenance that finds an uninstalling installation whose release it cannot run
+uninstalls it directly (`cleanup_unavailable`), which is safe because the deploy lock
+keeps one server version live; and work paused by `runtimeEnabled: false` for more than
+the 24-hour job lifetime expires, an install job failing setup (`setup_failed`, or
+`disabled` for an upgrade; both retryable). Unexpected per-item claim/acknowledgement
+errors do not end a worker's loop: finish processing peers, then report the
+operational failure. Admin retry recognizes reserved built-in lifecycle jobs and
+validates their strict empty input.
 
 One scheduler tick per minute transactionally locks due schedule rows, inserts
 jobs keyed by `(installation, function, scheduled UTC instant)`, then advances
 `nextDueAt`. UTC-only cron in v1; missed ticks coalesce to one catch-up job, not
 thousands of historical invocations. Multiple scheduler instances must produce
-one occurrence. Disabled installations never accumulate schedule jobs.
+one occurrence. Schedule input must be a closed object containing only required
+`scheduledAt`, a string accepting the scheduler's 24-character UTC timestamp;
+reject incompatible manifests at registration. Isolate maintenance failures per
+installation, keep unaccepted occurrences pending, and mark the inspected
+generation degraded for non-release maintenance errors without blocking other workspaces. Disabled installations
+never accumulate schedule jobs.
 
 ### 9.3 Webhooks
 
@@ -397,19 +717,87 @@ candidate installation. Provider-supplied identifiers are routing hints, never
 authorization. Account binding is verified during setup and unique within the
 registration/provider subscription namespace. Reject ambiguous bindings.
 
+A release pins a `webhooks` array: route, verifier function UUID, source-sync job
+function UUID, secret setting, required header allowlist, optional account header
+and explicit challenge support. The verifier is a `route` or `serverRoute`
+function with at most five seconds; the sync target must belong to the pinned
+managed-source capability. Normal routes use an opaque binding. A `serverRoute`
+requires an account-scoped source and a header whose value matches the provider
+account identity already attested by the setup verifier. Only that setup verifier
+may bind a callback. The account locator contract cannot change across releases
+under the same public route; allocate a new route when it changes. A global-resource
+provider uses the opaque route. In particular, Granola's `webhook-id` identifies
+a delivery and is not a provider account locator.
+
+The pinned setup verifier first reserves a durable opaque callback with
+`POST /v1/extensions/:id/runtime/webhooks/prepare`. This pending binding has no
+source-account grant and survives setup retries, including uncertainty after a
+provider creates its subscription. It lets providers return their one-time
+signing material and connection proof before `/source/verify` and webhook binding.
+Normal deliveries return 503 until setup activates; only explicitly registered,
+authenticated challenges can answer 200. Missing signing material also returns
+503. Pending addresses are not searchable by account locator. Binding attaches
+the verified source account to that same address; activation requires all declared
+callbacks and live signing material. Pending callbacks are operational setup
+metadata, never provider payload or secret storage.
+
+A callback may declare `optional: true` for a polling-capable adapter. Activation
+permits an absent optional binding, but a configured pending/active route must
+finish binding and have live signing material. The pinned setup function can
+retire its own route through `/runtime/webhooks/retire` after provider cleanup;
+this only revokes the local address and makes no claim that the provider deleted
+its subscription.
+
+Bindings are idempotent across retries for the same connected account. Explicit
+disconnect/uninstall retires their addresses; reconnect after disconnect or explicit account replacement creates a fresh opaque
+binding, even when the provider reuses a delivery ID. Ordinary disable retains
+the configured address but generation/state checks stop it immediately. Source
+erasure advances the retained binding's generation along with its source binding,
+so unrelated notifications continue and in-flight old verifications cannot commit.
+
 Verification consumes exact raw bytes, required headers, timestamp/replay checks
-and one candidate's secret. It has no CRM token or installation enumeration/KV
-API. Run provider verifier code in the bounded verifier runtime, not the API
+and one candidate's secret. It has no CRM token or installation enumeration/KV API. Authorization, cookie,
+proxy-authorization and platform `x-retainer-*` headers cannot be forwarded. Run provider verifier code in the bounded verifier runtime, not the API
 process; ingress gives it only the candidate verification material and enforces a
 five-second budget. Provider challenges are explicit registered handlers with no
-CRM access. Generic verifier results cannot choose a second workspace.
+CRM access. Generic verifier results cannot choose a second workspace. The separate verifier
+protocol carries a base64 encoding of exact raw bytes, an allowlisted header map,
+one candidate secret, pinned release/function identity and a five-second deadline.
+It cannot contain an installation/workspace selector, CRM token, API origin or
+executable path. Results contain only verified delivery/source identities,
+rejection or an explicitly allowed bounded plain-text challenge. A dedicated
+launcher bearer can invoke `/verify` only; ordinary execution uses another bearer
+and another function allowlist. Compose verifiers have no network interface
+except loopback and no proxy/API connection. Secrets arrive through stdin,
+never environment or command arguments. The transport result is bounded to
+16 KiB; request bodies remain capped at 256 KiB before envelope encoding.
 
 After successful verification, atomically record the delivery and enqueue its
 job, then answer 202. Duplicate authenticated deliveries answer 202 with no new
-job. Persistence unavailable means 503, never a false acknowledgement. Reject bad
-signatures with 401, oversized bodies with 413 (256 KiB default), and rate-limit
-before invoking the verifier. Retain receipt dedupe for seven days; source
-idempotency remains permanent. Routes must follow provider-specific signature
+job. Reusing an authenticated delivery identity with a different body returns
+`409 delivery_conflict`. The verifier returns only delivery/source external
+identities; the server reserves the local source item and enqueues its ID in that
+same transaction. Erased/deleted sources are refused rather than acknowledged as
+new work. Persistence unavailable means 503, never a false acknowledgement. Reject bad
+signatures with 401 and oversized bodies with 413 (256 KiB default). Rate-limit
+with 429 before invoking the verifier, in two layers (100/minute per binding by
+default). First, before any database access, an in-memory limit per source
+address and callback: that limit of requests, and a tenth of it in failed or
+in-flight verifications. Second, a durable per-binding budget that counts only
+failed verifications, so a provider's valid deliveries never use it up; it is
+read before verification and written only after a rejection. One source's junk
+stops in memory; failures from many sources can still exhaust the budget for
+the rest of the minute, and the provider retries. The in-flight and failure cap
+per source is `floor(limit / 10)`, at least one. The source address is the
+server's view of the connection: behind a reverse proxy (as in a Compose
+deployment) or on Lambda without `CloudFront-Viewer-Address`, every request
+shares the proxy's address, and the limit degrades to one in-memory count per
+callback per process.
+A body not received within ten seconds returns 408; setup not yet active returns
+503 for normal deliveries. Only explicitly registered plain-text challenges can
+answer 200 without an ingestion job. Retain receipt dedupe for seven days; source
+idempotency remains permanent. Maintenance prunes retired callback metadata after
+30 days; pending physical file erasure has its separate durable lifetime. Routes must follow provider-specific signature
 contracts; the example header names are not a universal protocol.
 
 ### 9.4 Change feed and loop prevention
@@ -417,59 +805,227 @@ contracts; the example header names are not a universal protocol.
 Record transactions append an outbox row only when effective values, links,
 visibility or lifecycle state change; assertion-review changes have a separate
 operation kind. Watched fields are permanent keys resolved from manifest UUIDs,
-not mutable names. Include deletion, merge, retraction and source-revision events.
+not mutable names. Include deletion, merge, retraction and source-revision events. An event-type
+move emits an old-type tombstone and new-type creation in the same transaction,
+so handlers watching either type can recompute.
 Personal memory is excluded from the workspace feed in v1.
+
+A schema change that hides or relabels values (deleting, that is deprecating,
+a field or an object type, or changing an object's label field) appends one
+`schema` change per affected object type, not one change per record:
+`recordId` is null, `objectTypeId` names the type and `changedKeys` the field
+keys whose values it hid (every active field of a deleted type, both sides of
+a deleted relation, and relations elsewhere that pointed at a deleted type).
+The schema change takes no record locks and no record snapshots, so deleting a
+field of a 50,000-record type holds the exclusive schema lock only for the
+schema rows themselves (plus one search-text rewrite statement when the field
+was searchable). A change trigger on that type queues one job for it; a trigger
+scoped to fields queues it only when one of its fields is named. Its handler
+rescans the type's current records (last-contact queues its paged scan).
+This holds only while the trigger's own binding survives: a trigger whose own
+object or watched field was deleted cannot be matched, so its dispatcher stalls
+with `schema_binding_conflict` (degraded health, cursor not advanced) on every
+later change. An admin recovers by upgrading to a release that no longer binds
+the deleted element, or by disabling or uninstalling the installation.
+Deleting an event type still deletes each event through the event lifecycle,
+so those events also get their own `delete` changes.
 
 Use a per-workspace feed counter locked at the end of the write transaction;
 allocate positions and commit while holding it. This serializes publication
 briefly and prevents a slow lower sequence from committing after a consumer has
 passed it. A bare global sequence is not a commit-order cursor. No code acquires
-new record locks after the feed lock. One change plus its trigger jobs is durably
+new record locks after the feed lock, and a transaction inserts all its change
+rows in one statement. Feed readers and the dispatcher read the counter without
+locking it, so they never block writers; every position at or below a committed
+head is committed. After reading, they recheck `retained_after` and answer
+`410 cursor_expired` if pruning overtook their cursor, never a gap. Pruning
+deletes at most 1000 rows per transaction under the counter lock and advances
+`retained_after` with each batch. One change plus its trigger jobs is durably
 linked through dispatcher checkpoints; never rely on in-process notifications.
 
 `GET /v1/changes?after=<opaqueCursor>&limit=100` and `list_changes` return IDs,
-operation, changed keys, origin and next cursor. Read scope required; authorize
+operation (`create`, `update`, `links`, `delete`, `merge`, `retract`,
+`supersede`, `review`, `forget` or `schema`), changed keys, origin, next cursor
+and `headCursor`. Read scope required; authorize
 referenced records at read time. Tombstones contain only authorized minimal IDs.
 Retention is 30 days; expired cursors return `410 cursor_expired` with a rescan
-instruction, never silent truncation. Agents persist their own cursors; this is
+instruction, never silent truncation. Capture `headCursor` from a fresh page
+before scanning current records, then replay after that cursor; writes during
+the scan are replayed and handlers tolerate overlap. Agents persist their own cursors; this is
 not delivery acknowledgement or exactly-once extraction.
 
 Cause metadata is server-derived from the triggering job/run and propagated to
 writes and child jobs. Skip any installation already in the chain; cap depth at
-8 and record `trigger_cycle_blocked`. This stops A → B → A as well as direct
-self-triggering. Coalesce duplicate `(installation,function,changePosition)` jobs.
+8 and count blocked matches. Direct self-writes are expected and do not degrade
+connection health; a multi-installation repeat/depth breach records
+`trigger_cycle_blocked`. This stops A → B → A as well as direct
+self-triggering. Jobs dedupe per `(installation,function,changePosition)`, and
+change jobs coalesce per record: a later `update` or `review` change does not add
+a job when the newest live (queued or running) job for the same installation,
+function and record is a queued, never-started `update` or `review` of the same
+object type. Only the newest job qualifies: folding into an older one would run
+the change before a later lifecycle job (update, delete, undelete, update must
+not end on the delete). The job moves to the latest position
+and snapshot, keeps the union of changed keys and related records (so a record
+relinked away from is still recomputed) and the union of cause chains (so every
+installation behind any absorbed change stays excluded, and A → B → A remains
+blocked). The depth cap counts server-derived hops (`cause_depth`), not the length
+of the exclusion chain, and a coalesced job takes the deeper of the two, so a
+union never manufactures a false `trigger_cycle_blocked`. A running or retrying
+job absorbs nothing; the change queues a new job.
+Lifecycle and schema changes (create, delete, merge, retract, supersede, links,
+schema, and both halves of a type move) always keep their own job, because their metadata
+(tombstone, `mergedIntoId`, old type) is not a superset of a later update's.
+
+Agents and API keys carry no server cause, so loops through them are bounded by
+the throttle in §9.2, not stopped. A standalone app has no server job either: its
+key or OAuth grant starts the chain at itself, so on its own a standalone →
+hosted → standalone loop is never blocked. A standalone app answering a feed
+change sends that change's cursor as `Retainer-Caused-By`; its writes then
+inherit the change's recorded chain plus itself, and a hosted function already in
+it is not triggered again. Only standalone installation credentials with read
+scope may send the header (others get `400` or `403`), and a cursor no longer in
+the feed returns `410 cursor_expired`. The inherited chain only excludes
+installations: it adds no depth (the write counts as the app's first hop), so a
+long referenced chain cannot make the depth cap block the app's write. Trade-off:
+by naming a change, an app can hide its own write from every installation already
+in that change's chain. That is accepted, because the header can only suppress
+triggers, never cause one or reach data the app cannot read, and loops that slip
+past it are bounded by the throttle.
+Accepted trigger jobs retain only the authorized minimal change metadata, so
+public-feed pruning cannot strand accepted work. Erasure scrubs those copies and
+requeues every live run with a new fence (§11); KV entries that name an erased
+record, item or handle are deleted wherever they are. Preserve unrelated durable jobs and
+keep immutable backfill bounds in job input. A dispatcher that has fallen behind
+retention stops with degraded `cursor_expired`; it never advances past the gap.
+Disable and re-enable only through the reviewed adapter catch-up path: activation captures a fresh dispatch head, and the adapter queues its current-record backfill while later changes remain durable.
+
 Handlers read current data and recompute deterministically, tolerating duplicate
 or superseded changes. Last-contact recomputes from surviving events, including
 retraction/deletion; it cannot just retain the maximum timestamp ever seen.
 
+### 9.5 Deterministic last contact
+
+The first-party `last-contact` release contributes nullable `lastContactAt`
+`date_time` fields to person and company. It computes the latest current visible
+`conversation` in each record's existing event history at or before server time,
+including the existing one-hop `rollUpEvents` paths. Hidden notes, private memory,
+superseded evidence and deleted events do not count. It respects the workspace's
+rollup settings rather than enabling them implicitly. Moving an event to a
+non-conversation type removes it from this projection.
+
+Its optional manifest `lastContact` capability pins the runtime function UUIDs
+and contributed object/field UUIDs. `POST /v1/extensions/:id/runtime/last-contact`
+requires a live admitted function with write scope; it accepts only record IDs or
+a bounded scan cursor. It never accepts an actor, value, field override or source.
+The server validates current contribution ownership and field compatibility,
+then computes and replaces only that installation actor's previous claims for
+those fields. Each new claim cites the winning conversation and uses its actual
+`occurredAt` as `observedAt`; unlinking the latest event can therefore decrease
+the value without inventing a newer evidence time. No eligible event withdraws
+its own claims. Human values retain ordinary assertion precedence and review
+rules. Identical evidence/path is a no-op, including after a human rejection.
+
+Recomputation takes the privacy lock shared and schema lock exclusive before
+installation/source/record admission, making the event/link snapshot and claim
+replacement atomic with competing writes. `assertion_dependencies` records the
+supporting event and, for a rollup, its intermediate record. Forget collects and
+hard-deletes dependent assertions before those support rows cascade, then
+recomputes affected fields in the same privacy transaction. A surviving event
+cannot preserve a company claim derived through a forgotten person. Subsequent
+work can restore a value from other surviving evidence.
+
+Install/re-enable enqueues an initial paged scan after activation. Conversation,
+person and company change handlers recompute affected IDs and their current
+rollup targets. The scan processes 20 records per API transaction with a fixed
+upper record ID. Scan root/page/cursor/checkpoint lives only in erasable KV;
+child job input is empty, and its dedupe key carries no contact ID. Clearing KV
+restarts with a new operational root so old successful child receipts cannot
+strand the new scan. A 15-minute coalesced schedule resumes stalled scans and
+starts fresh scans after completion, repairing disabled windows and changes to
+other objects' rollup paths. Failed durable jobs remain visible for retry.
+Excessive incremental fanout falls back to the paged scan, never a silently
+truncated update. Direct self-writes remain quiet under cause-chain dispatch.
+
 ## 10. Source ingestion, edits and deletion
 
-Do not change `logEvent` into an upsert. Add `sync_source_event` (REST
-`POST /v1/extensions/:installation/source-events`) for managed imports. Require
+Do not change `logEvent` into an upsert. Add a managed import endpoint,
+`POST /v1/extensions/:installation/source-events`; it is REST only, since runs
+can't use MCP. Require
 write scope plus installation match. Input contains stable source account/item
-ID, normalized content digest, provider revision/order marker when available,
+ID, optional normalized content digest assertion, provider revision/order marker when available,
 expected current revision, event body, and ready file references. Return
 `{sourceItemId, revisionId, eventId, created, unchanged, previousEventId?}`.
 The normalized import body is:
 
 ```ts
 type SourceEventImport = {
-  sourceAccountId: string; // server-verified binding, never a workspace selector
-  externalId: string;
-  contentDigest: string; // recomputed by the server from canonical event content
+  sourceItemId: string; // local identity reserved under the verified source account
+  contentDigest?: string; // checked against the server's canonical digest when supplied
   providerRevision?: string;
   expectedRevisionId: string | null; // null means create only
   event: {
-    type: string; // resolved through the installation's stable schema binding
+    type: string; // event type universal UUID from the release-pinned binding
     occurredAt: string;
     title: string;
     summary?: string;
-    fields?: Record<string, unknown>; // resolved permanent field keys
-    participants?: Array<{ email: string }>;
+    fields?: Record<string, unknown>; // field universal UUIDs, or permanent field keys
+    participants?: Array<{ email: string; name?: string; contacted?: boolean }>;
     about?: string[];
   };
 };
 ```
+
+Setup binds an account through `/source/verify`, callable only by the registered
+isolated install verifier for the live generation. Normal credentials cannot
+attest provider identities. Activation refuses missing verification. Account
+replacement requires a human disconnect, generation revocation and setup again;
+retained data stays in its former namespace. Releases pin provider name, identity
+strategy, verifier function, ingestion job functions, event type UUIDs and revision
+ordering. An account-scoped provider must return a stable provider account ID.
+A reviewed `global-resource` strategy is allowed only when provider resource IDs
+have a stable provider-wide namespace; it makes no claim to verify an account ID
+that the provider does not expose. Neither strategy uses a mutable display name,
+credential hash or installation ID as the durable source namespace. Provider
+credential ownership and explicit Retainer workspace-sharing approval remain
+separate checks. Granola does not document an account/workspace identity endpoint.
+Its v1 connection is therefore explicitly labelled a human-supplied shared API
+credential: a successful authenticated list verifies access, and required
+`shareAccessibleNotes` consent approves sharing its accessible summaries and
+transcripts with the Retainer workspace. It does not claim organization ownership.
+Optional webhooks require the provider to return exactly workspace scope and a
+null creator; a null creator by itself is insufficient. The reviewed global
+resource namespace uses Granola's case-insensitive note IDs, normalized to lower
+case, and survives key rotation/reinstallation.
+
+A live managed-source run can read its current local binding with
+`GET /v1/extensions/:id/source`. Normal keys cannot use this runtime metadata
+surface. Fields in a `source-events` import accept stable field universal UUIDs or
+permanent keys; the server resolves both to permanent keys for canonical content.
+Supplying both aliases for one field is `422 invalid_source_field`. An isolated
+adapter can therefore use public schema identities without learning database keys.
+
+Before enqueueing ingestion, reserve `{sourceAccountId, externalId}` through
+`POST /v1/extensions/:id/source-items`. The bounded `/source-items/batch`
+variant accepts at most 30 unique provider identities, returns results in input
+order, and reports `source_erased`/`source_deleted` per identity. Other validation
+or persistence errors roll back the whole batch. It takes one write admission,
+serializes with erasure and uses sorted item locks for competing pages. Reservation
+alone creates no ingestion job or content. Jobs carry only the returned local
+`sourceItemId`; queue admission validates it against the current binding. The
+registered ingestion job may read the provider ID, stage participant emails with
+`/source-items/:item/prepare`, and upload files bound to that item. Staging is
+required for each job attempt before issuing an upload URL, so erasure can find
+pending transcripts even before the first event revision exists. Staged emails
+are suppression-checked and erased with the source. As in core event links, an
+erased participant is dropped from staging and import (not stored, linked or
+created, and left out of the content digest) while the rest of the event imports. A source job cannot import
+another item's evidence or attach another item's uploads.
+
+The server returns its canonical content digest, including normalized fields and
+file metadata/checksums rather than transient upload IDs. Re-uploading identical
+bytes does not alone create a new evidence revision. Permanent receipts retain
+provider-revision results independently of request-idempotency expiration.
 
 The adapter declares how provider revisions compare, or explicitly declares them
 opaque; the server cannot lexically order arbitrary provider strings. Persist the
@@ -496,8 +1052,9 @@ Default activity/context presents the current revision once; explicit history
 shows prior revisions and supersession, with old citations still resolving.
 `occurredAt` is when the meeting happened, not its edit time. Participant changes
 are represented by the new revision, not `logEvent`'s additive-link retry behavior.
-Map source identity to `(registration, stable provider account, external ID)`;
-keep it across reinstall. This is a deliberate change from the proposal's promise
+Map source identity to `(registration, stable provider account, external ID)`
+or `(registration, reviewed provider-wide namespace, external ID)` for a
+global-resource provider; keep it across reinstall. This is a deliberate change from the proposal's promise
 of the same event ID on edit and must ship before claiming edited-note sync works.
 
 `onSourceDelete` is a requested policy shown at install. `keep` retains the current
@@ -506,6 +1063,15 @@ evidence and its derivatives through normal rules. Neither hard-erases data or
 allows deleting unrelated events. A transient 404/permission error is not proof
 of deletion; require a verified deletion signal or provider-defined definitive
 lookup. Deleted/retracted identities are not silently recreated on future sync.
+The item's ingestion job reports transient unavailability separately from a
+deletion backed by a provider event or definitive lookup. `keep` preserves the
+current evidence; `retract` runs the normal event/derived-claim retraction path.
+Replaying the same current immutable revision after a successful provider lookup
+restores `live` availability without creating new evidence. Replaying a historical
+receipt cannot restore a different current revision's availability.
+Ordinary record deletion also marks the current managed item retracted. Direct
+field/participant editing of managed revisions is refused; the UI shows their
+current or superseded status and preserves explicit historical reads.
 
 Catch-up starts 31 days back for Granola, with explicit larger backfills. A page
 transaction enqueues all item jobs and commits its checkpoint together. Advance
@@ -514,8 +1080,66 @@ remain tracked independently and keep the sync status degraded. Use a fixed
 upper watermark and an overlap window when the provider permits bounded queries;
 otherwise rescan an overlapping window with durable dedupe. Display both last
 successful scan and unresolved item failures; scan completion is not import
-completion. Recover webhook gaps by polling, including private self-hosted servers
+completion. `source.scanFunctionIds` pins the job/schedule functions allowed to
+start scans; the setup verifier can also start one after binding. The typed
+`source_sync_state` row stores only a scan UUID, fixed operation-clock bounds,
+generation and completion clocks. Provider cursors and page data remain in
+privacy-erased KV. Competing starts serialize per installation. Only the pinned
+page job whose input exactly matches the current scan/generation can advance
+success in its atomic children/KV checkpoint. A rolled-back checkpoint cannot
+advertise completion. The read-only source-sync view reports current-generation
+pending and failed source-item jobs separately. Reconnect, account replacement,
+disconnect and settings changes reset scan state; ordinary disable/enable retains
+it for catch-up. Settings changes cancel pending work before advancing the fence.
+Recover webhook gaps by polling, including private self-hosted servers
 without public webhook ingress.
+
+### Granola provider contract
+
+The reviewed adapter uses only the fixed public API origin, refuses redirects,
+paces requests, bounds response/transcript bytes and returns static diagnostic
+codes. It lists all accessible notes rather than using search. The initial
+created-time backfill uses daily windows with overlap; expired/invalid cursors
+restart a smaller window, down to a visible minimum-window failure. Incremental
+polls use `updated_after` from two days before the last complete scan (Twenty's
+fixed catch-up lookback) and deliberately omit `created_after`, so later edits to
+old imported notes are discoverable. The watermark advances when enumeration
+completes even if some item imports failed; the two-day lookback lists those
+notes again, and revision dedupe skips live notes whose `updated_at` is unchanged.
+Cursors and recent cursor hashes remain in erased KV. Empty pages with `hasMore`
+continue; repeated cursors fail visibly. KV erasure starts a new random child
+identity epoch without weakening permanent source suppression.
+
+A note's `updated_at` orders revisions. Meeting time comes from calendar start,
+then the first transcript segment, then creation time. Only shared summary, title,
+participants, source URL and complete transcript files are imported. Private notes
+and photos are excluded in v1. Inline-transcript 413 switches to paginated fetches;
+a metadata recheck rejects edits during that fetch. Oversized content fails rather
+than being truncated. A 404 means unavailable, never deleted; a documented
+non-null `deleted_at` is definitive deletion evidence. Authentication failures
+require reconnect. Polling repairs callback gaps; newly shared old unchanged notes
+outside the initial window need an explicit larger rescan when callbacks are off.
+
+Webhook setup prepares the stable local URL before provider creation, requests
+exact workspace scope and stores the one-time signing secret through broker CAS.
+Recovery lists only exact unredacted own callback URLs; if the matching secret is
+lost, it deletes/recreates its own endpoint. Other and redacted endpoints are
+untouched. The raw-byte verifier checks the signature and requires header
+`webhook-id` to equal payload `event_id`, returning only authenticated IDs.
+Uninstall cleans up owned endpoints within the existing cleanup deadline;
+provider outages remain visible and cannot imply successful remote cleanup.
+
+Webhook reuse is bound to the same provider-credential and signing-secret
+revisions in erasable operational KV. A rotated API key proves workspace scope
+again by creating the endpoint; listing an old workspace endpoint as a personal
+admin is not proof that the new key is workspace-scoped.
+
+Provider contract references: [API access](https://docs.granola.ai/introduction),
+[list notes](https://docs.granola.ai/api-reference/list-notes),
+[get note](https://docs.granola.ai/api-reference/get-note),
+[paginated transcript](https://docs.granola.ai/api-reference/get-transcript), and
+[webhooks](https://docs.granola.ai/webhooks). These were checked on 2026-11-11;
+provider fixtures establish local behavior, not a live account or hosted proof.
 
 Create-people policy: `never` default, `contacted_first`, or `everyone`, with a
 standard visible setting. Enforce it server-side for the managed participant
@@ -554,7 +1178,11 @@ transcript search and streaming media are deferred.
 
 Erasure first removes authorization and reference visibility in the DB transaction,
 then durable deletion jobs remove objects and their retained storage versions.
-The maximum previously issued download window is 60 seconds. Do not declare
+Erasure must also prevent a previously signed or already-started upload from
+recreating content. Immutable conditional uploads and an opaque zero-byte object
+barrier may be used; remove all content-bearing retained versions and preserve
+the barrier through concurrent retries. The barrier contains no filename or
+source identity. The maximum previously issued download window is 60 seconds. Do not declare
 physical erasure complete until storage deletion succeeds; expose pending/failure
 status. Shared references require explicit ownership tracking: preserve a blob
 only if an independent authorized source legitimately retains it, otherwise erase
@@ -569,7 +1197,26 @@ imports acquire existing privacy locks. Ordinary KV is restricted to operational
 cursors/IDs; documented source-linked state must be deleted during forget. Arbitrary
 personal-data caching in KV is unsupported. Account/workspace purge cleans every
 new table and file namespace; remote provider deletion is a separate product
-operation and must never be implied by local erasure.
+operation and must never be implied by local erasure. Workspace deletion runs
+each hosted installation's uninstall cleanup first (section 7), which
+unregisters provider webhooks and subscriptions but deletes no provider data.
+
+For managed sources, erasure expands to every revision of each affected item and
+staged participant ownership before collecting files. It removes provider IDs,
+ordering markers, content digests, receipts and staged emails; keeps only an
+opaque erased item and keyed identity tombstone; clears the affected installation's
+KV; and advances its generation to fence fetched in-memory content. Erased-source
+jobs are cancelled and redacted. Unrelated durable jobs are retained/requeued under
+the new generation. Only installations bound to an affected source account or
+item advance their generation and lose all KV. Every running job in the
+workspace, in any installation, has its open attempt cancelled and is requeued
+with a new fence, because a run that only read the erased record could otherwise
+write its content back after erasure commits. Other installations keep their
+generation, queued jobs and KV, except that KV entries and job inputs naming an
+erased record, item, change or handle (email or phone) are deleted or redacted
+and cancelled, in every installation and generation. Backfill jobs must retain their non-sensitive requested date
+bounds independently of resettable KV cursors, so privacy recovery cannot silently
+shrink a requested scan. A setup interrupted by erasure requires setup retry.
 
 ## 12. Public interfaces and user experience
 
@@ -578,19 +1225,20 @@ installation ID must match the credential; cross-workspace references return 404
 Lifecycle endpoints require human admin plus the existing schema scope where
 schema changes occur. Read-only preview may be available to schema-capable agents.
 
-| Interface | Contract |
-| --- | --- |
-| `GET /v1/extensions/catalog` | Bundled compatible releases/capabilities; no secrets. |
-| `GET /v1/extensions` and `GET /v1/extensions/:id` | Installed state, release, grants, health, settings with secret-presence flags, contributions and sync status. |
-| `POST /v1/extensions/preview` | Registration/release, mappings and settings references → plan digest, schema/view diff, grant changes, warnings/conflicts. |
-| `POST /v1/extensions` | Commit install using plan digest and idempotency key → installation and lifecycle job. |
-| `POST /v1/extensions/:id/upgrade` | Commit an upgrade preview; no implicit permission increase. |
-| `POST /v1/extensions/:id/disable`, `/enable`, `/uninstall` | Generation-fenced lifecycle transitions; enable validates connection and mappings. |
-| `PATCH /v1/extensions/:id/settings` | Expected settings revision, validated settings/secret references; credential/account changes require reconnect and fence old jobs. |
-| `GET /v1/extensions/:id/runs`, `POST /v1/extensions/:id/runs/:run/retry` | Paginated redacted diagnostics and admin retry; no raw provider bodies. |
-| `POST /v1/extensions/:id/source-events` | Revision-aware managed source import (§10). |
-| `POST /v1/files/uploads`, `POST /v1/files/:id/finalize`, `GET /v1/files/:id/download` | Intent/finalize/authorized download; attachment references remain ordinary record writes. |
-| `GET /v1/changes` | Cursor-based workspace feed (§9.4). |
+| Interface                                                                             | Contract                                                                                                                           |
+| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/extensions/catalog`                                                          | Bundled compatible releases/capabilities; no secrets.                                                                              |
+| `GET /v1/extensions` and `GET /v1/extensions/:id`                                     | Installed state, release, grants, health, settings with secret-presence flags, contributions and sync status.                      |
+| `POST /v1/extensions/preview`                                                         | Registration/release, mappings and settings references → plan digest, schema/view diff, grant changes, warnings/conflicts.         |
+| `POST /v1/extensions`                                                                 | Commit install using plan digest and idempotency key → installation and lifecycle job.                                             |
+| `POST /v1/extensions/:id/upgrade`                                                     | Commit an upgrade preview; no implicit permission increase.                                                                        |
+| `POST /v1/extensions/:id/disable`, `/enable`, `/uninstall`                            | Generation-fenced lifecycle transitions; enable validates connection and mappings.                                                 |
+| `POST /v1/extensions/:id/reconnect`                                                   | Reviewed same-release credential/account replacement; human approval and stale-plan fencing.                                       |
+| `PATCH /v1/extensions/:id/settings`                                                   | Expected settings revision, validated settings/secret references; credential/account changes require reconnect and fence old jobs. |
+| `GET /v1/extensions/:id/runs`, `POST /v1/extensions/:id/runs/:run/retry`              | Paginated redacted diagnostics and admin retry; no raw provider bodies.                                                            |
+| `POST /v1/extensions/:id/source-events`                                               | Revision-aware managed source import (§10).                                                                                        |
+| `POST /v1/files/uploads`, `POST /v1/files/:id/finalize`, `GET /v1/files/:id/download` | Intent/finalize/authorized download; attachment references remain ordinary record writes.                                          |
+| `GET /v1/changes`                                                                     | Cursor-based workspace feed (§9.4).                                                                                                |
 
 Installation-scoped runtime endpoints provide KV get/CAS, enqueue/checkpoint,
 connection retrieval and file intents; reject admin credentials where a run-only
@@ -598,8 +1246,10 @@ capability is required. Lifecycle requests use durable receipts tied to request
 hash/install generation, not only the generic 24-hour idempotency cache.
 
 MCP v1 exposes `list_extensions`, `get_extension`, `preview_extension`,
-`list_extension_runs`, `list_changes`, and `sync_source_event` for appropriately
-bound credentials. Human approvals occur through settings/admin interfaces;
+`list_extension_runs` and `list_changes`. Run tokens are not MCP credentials:
+`/mcp` refuses them with 401, and runs use only the REST runtime and API
+endpoints, including `POST /v1/extensions/:id/source-events` for managed
+imports, so a run can't reach tools beyond its function's needs. Human approvals occur through settings/admin interfaces;
 agents cannot approve via an MCP tool. SDK methods mirror REST. App-provided tools
 and model-facing instructions remain deferred.
 
@@ -639,15 +1289,17 @@ own source code for product Lambda handlers or first-party integrations. Keep
 SDK/web/runner packages MIT and server modules AGPL under current boundaries;
 do not copy Twenty source or make legal promises about arbitrary extension code.
 
-Cloud changes must add dedicated executor/verifier/execution roles and packaging;
+Cloud changes must add separate coordinator, broker and host roles and packaging;
 do not reuse the current shared function role for extension code. Add explicit
 webhook routing and file-signing support without giving the isolated API internet
 access. Broker/runtime control endpoints must also work in key mode and must not
 be accidentally disabled by the existing accounts-only control function flag.
 Use a dedicated runtime control entry point rather than conflating it with login.
 
-Build manifests and artifacts from the same main commit; deploy immutable function
-versions before advertising compatible catalog releases. No cloud API creates
+Build manifests and artifacts from the same clean main commit; publish pinned
+images and retained configuration before advertising compatible catalog releases.
+Bind the host snapshot, Lambda catalog hashes and archive source/checksum during
+preflight, then prepare/drain before changing environments or replacing the host. No cloud API creates
 arbitrary functions from workspace input. Extend existing migration-status,
 maintenance routing, stop/start lists and deploy locks to ingress, dispatchers,
 file workers and executions. During a stopped migration, webhook ingress returns
@@ -658,7 +1310,39 @@ cloud preflight. Breaking migrations remain allowed with explicit stopped rollou
 failed preflight leaves the old service intact and failed migration leaves workers
 stopped. A code rollback must check schema/protocol compatibility first.
 
+Operator status proves it checked every applied migration timestamp and hash
+against the packaged journal. Unknown newer migrations or changed historical SQL
+produce `incompatible_migrations`; migration refuses before DDL or definition
+upgrades. Deploy requires the explicit `historyChecked` capability and a packaged
+maintenance responder, so an older artifact lacking the check cannot bypass it. Candidate release inventory includes only manifests that support the packaged
+server version: inside the release's `serverRange`, or, for releases built
+before ranges, in its exact `serverVersions` list (kept as an exact set so those
+digests stay valid; a manifest gives exactly one). Retaining incompatible bytes
+cannot make a referenced installation safe to dispatch. A range is a bounded
+semver subset (release versions, `>=`, `>`, `<=`, `<`, `=`, alternatives with
+`||`, an upper bound in every alternative), like Twenty's `engines.twenty`.
+First-party builds use the checked-in reviewed range in
+`scripts/extension-release.mjs`, not an automatic wildcard or the current
+package version alone; a server version outside it refuses artifact generation.
+A server patch inside the range needs no new release. For a move to a new server
+line, first review/test a bridge extension release whose range covers both,
+publish/install it while the old server is running, and verify all referenced
+installations (including disabled and live cleanup) support the new server before
+rolling it out. A genuinely incompatible adapter needs an explicit migration or
+removal plan; availability quarantine never authorizes incompatible execution.
+Packaged catalog and executable files may also pin expected SHA-256 hashes;
+missing or mismatched release configuration fails before runtime initialization.
+
 ## 14. Delivery sequence and acceptance
+
+Production first-party artifact versions use `1.0.<main-history-count>`. The
+builder requires a clean commit reachable from `origin/main`, including a
+detached CI checkout; main history must remain append-only. Development artifacts
+remain explicitly marked and cannot be published as production. Retain prior
+catalog entries, executable mappings and immutable images while installations
+still reference them. Never rebuild a published version under a different image
+digest. Setup and upgrade UI offers the newest compatible numeric version while
+installed controls resolve their exact reviewed release.
 
 1. **Control foundation:** registrations, manifests, install/preview, contributions,
    saved views, grants, settings/secrets, RLS, SDK and UI. No trigger activation.
@@ -675,18 +1359,18 @@ Every phase includes unit, real-Postgres integration, API and agent scenarios;
 UI changes also use a fresh `pnpm build` before Playwright. Each test file has a
 fresh database. Add these required adversarial cases, not only happy paths:
 
-| Area | Required evidence |
-| --- | --- |
+| Area           | Required evidence                                                                                                                                                                                         |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Install/schema | Concurrent installs create one installation; stale preview races schema edit; collision rolls back schema/views/install together; deprecated field remains deprecated; user-edited view survives upgrade. |
-| Authorization | Manifest cannot choose user/system actor; runtime cannot escalate scope or touch another installation; personal memory inaccessible; standalone REST token cannot widen MCP consent. |
-| Revocation | Disable races a write, replay, lease renewal and upload-finalize; no old API write commits after disable returns; cleanup cannot write CRM. |
-| Jobs | Crash before/after provider call; lost acknowledgement; expired worker resumes after lease takeover; child enqueue/checkpoint atomicity; queue quota leaves cursor unchanged. |
-| Webhooks | Forged account hint, ambiguous binding, bad raw-body signature, replay, duplicate delivery, verifier timeout and DB outage; 202 only follows durable acceptance. |
-| Changes | Concurrent transaction commits cannot be skipped by a cursor; dispatcher crash replays safely; A → B → A blocked; removed/merged records and field renames handled; private rows absent. |
-| Imports | Same revision concurrent twice creates one event; edit retires old evidence/derivatives atomically; older fetched version cannot win; suppressed source never returns after reinstall. |
-| Files/privacy | Cross-workspace IDs and forged finalize rejected; unattached upload collected; historical references retained; forget racing import/download/worker; storage deletion failures remain visible. |
-| Lifecycle | Timeout after subscription creation does not duplicate hooks; uninstall works while provider is down; reconnect fences old account; rollback preserves data. |
-| Deployment | Main artifact/digest match, incompatible runner rejected, stopped migration fences all writers, worker recovery after outage, narrow IAM and no DB access from execution. |
+| Authorization  | Manifest cannot choose user/system actor; runtime cannot escalate scope or touch another installation; personal memory inaccessible; standalone REST token cannot widen MCP consent.                      |
+| Revocation     | Disable races a write, replay, lease renewal and upload-finalize; no old API write commits after disable returns; cleanup cannot write CRM.                                                               |
+| Jobs           | Crash before/after provider call; lost acknowledgement; expired worker resumes after lease takeover; child enqueue/checkpoint atomicity; queue quota leaves cursor unchanged.                             |
+| Webhooks       | Forged account hint, ambiguous binding, bad raw-body signature, replay, duplicate delivery, verifier timeout and DB outage; 202 only follows durable acceptance.                                          |
+| Changes        | Concurrent transaction commits cannot be skipped by a cursor; dispatcher crash replays safely; A → B → A blocked; removed/merged records and field renames handled; private rows absent.                  |
+| Imports        | Same revision concurrent twice creates one event; edit retires old evidence/derivatives atomically; older fetched version cannot win; suppressed source never returns after reinstall.                    |
+| Files/privacy  | Cross-workspace IDs and forged finalize rejected; unattached upload collected; historical references retained; forget racing import/download/worker; storage deletion failures remain visible.            |
+| Lifecycle      | Timeout after subscription creation does not duplicate hooks; uninstall works while provider is down; reconnect fences old account; rollback preserves data.                                              |
+| Deployment     | Main artifact/digest match, incompatible runner rejected, stopped migration fences all writers, worker recovery after outage, narrow IAM and no DB access from execution.                                 |
 
 Definition of done: an admin installs Granola, safely imports history and edits,
 receives and recovers missed notifications, inspects/retries failures, disables

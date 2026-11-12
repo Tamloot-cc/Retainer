@@ -12,10 +12,19 @@ import type {
 import { isoDateTimeSchema } from '@retainer/shared';
 import { z } from 'zod';
 import type { Caller } from '../caller.js';
+import { ChangeCollector } from '../changes/collect.js';
 import type { Sql } from '../db/client.js';
 import type { WorkspaceSettings } from '../db/schema.js';
-import { inWorkspace, lockForWrite, type Tx, type WriteLocks } from '../db/tx.js';
+import {
+  inWorkspace,
+  lockForWrite,
+  lockPrivacyShared,
+  lockSchemaShared,
+  type Tx,
+  type WriteLocks,
+} from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
+import { admitCaller } from '../extension-runtime/admission.js';
 import { claimIdempotencyKey, requestHash, storeIdempotentResult } from '../idempotency.js';
 import { lockSource, retractEventClaims } from '../memory/events.js';
 import { lockPerson } from '../memory/profiles.js';
@@ -69,8 +78,8 @@ const DEADLOCK_RETRIES = 3;
  * A record write: one short workspace transaction holding the schema lock
  * in shared mode, so the schema it validated against stays current (3),
  * and the privacy lock, so it serializes with `forget` (2.1). Only
- * `forget` takes the privacy lock exclusively, and only moving events
- * between types takes the schema lock exclusively (1.3).
+ * `forget` takes the privacy lock exclusively, and moving events
+ * between types or an atomic deterministic projection takes the schema lock exclusively.
  *
  * A relation write locks its source record, then its target `FOR KEY
  * SHARE`; merges and cascading deletes lock targets before sources. The two
@@ -93,7 +102,7 @@ export async function withWrite<T>(
   locks: WriteLocks = {},
   { asPerson = true }: TransactionOptions = {},
 ): Promise<T> {
-  const person = asPerson ? caller.person : undefined;
+  const person = !caller.run && !caller.installation && asPerson ? caller.person : undefined;
   for (let attempt = 0; ; attempt++) {
     try {
       return await inWorkspace(
@@ -101,17 +110,23 @@ export async function withWrite<T>(
         caller.workspaceId,
         async (tx) => {
           await lockForWrite(tx, caller.workspaceId, locks);
+          await admitCaller(tx, caller, true);
           const schema = await getSchema(tx, caller.workspaceId);
           const [workspace] = await tx<{ settings: WorkspaceSettings }[]>`
             select settings from workspaces where id = ${caller.workspaceId}`;
-          return fn(tx, {
+          const changes = await ChangeCollector.forCaller(tx, caller, schema);
+          const result = await fn(tx, {
             workspaceId: caller.workspaceId,
             actor: caller.actor,
+            ...(caller.run ? { run: caller.run } : {}),
+            ...(caller.installation ? { installation: caller.installation } : {}),
             schema,
             confidenceThreshold:
               workspace?.settings.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD,
             person,
+            changes,
           });
+          return result;
         },
         person?.id,
       );
@@ -127,16 +142,25 @@ export async function withRead<T>(
   sql: Sql,
   caller: Caller,
   fn: (tx: Tx, schema: CompiledSchema) => Promise<T>,
+  options: { privacy?: boolean; schema?: boolean } = {},
 ): Promise<T> {
-  const { person, workspaceId } = caller;
+  const { workspaceId } = caller;
+  const person = caller.run || caller.installation ? undefined : caller.person;
   return inWorkspace(
     sql,
     workspaceId,
     async (tx) => {
+      if (options.privacy) await lockPrivacyShared(tx, workspaceId);
+      if (options.schema && !caller.run && !caller.installation)
+        await lockSchemaShared(tx, workspaceId);
       // A read with a person can see their personal memory on any path
       // (search, an event's citations), so it holds their membership lock
       // and re-checks access first: a removal either committed before, and
       // the read is refused, or waits for it (personal memory spec 4.3).
+      if (caller.run || caller.installation) {
+        await lockSchemaShared(tx, workspaceId);
+        await admitCaller(tx, caller);
+      }
       if (person) await lockPerson(tx, { workspaceId, person });
       return fn(tx, await getSchema(tx, workspaceId));
     },

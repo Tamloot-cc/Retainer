@@ -314,3 +314,15 @@ and the normal `{error: {code: "maintenance", message}}` shape. Browser
 navigations receive a self-refreshing HTML page. It enforces the same edge secret
 as the application. Its `X-Retainer-Maintenance: not-executed` header guarantees
 that application code was never invoked; do not attach it to arbitrary failures.
+
+Optional first-party extension execution is a development preview. See the
+[execution topology, lifecycle and local verification](extensions-execution.md)
+before enabling its Compose overlay. The default catalog is empty.
+
+Optional [private file storage](files.md) uses a dedicated byte service and volume
+through `docker/compose.files.yml`, with signed transfers and durable erasure.
+
+For isolated functions that upload transcripts, add
+`docker/compose.extensions-files.yml` after the execution and file overlays.
+[Execution and file networking](extensions-execution.md#isolated-transcript-uploads-with-local-file-storage)
+explains the exact private byte-origin exception and its live verification command.

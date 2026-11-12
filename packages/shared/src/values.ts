@@ -5,6 +5,7 @@ import {
   compositeValueSchemas,
   type EmailsValue,
   type FullNameValue,
+  filesValueSchema,
   fullNameValueSchema,
   type LinksValue,
   moneyValueSchema,
@@ -118,6 +119,7 @@ export const FIELD_VALUE_FORMATS = {
   address: keysOf(addressValueSchema),
   relation: "the related record's ID; a many_to_many relation takes an array of IDs ([] clears it)",
   json: 'any JSON value',
+  files: 'an array of at most 20 ready immutable file IDs; upload and finalize files first',
 } as const satisfies Record<FieldType, string>;
 
 /**
@@ -284,6 +286,8 @@ export function normalizeFieldValue(field: ValueField, value: unknown): unknown 
       );
       return [...new Set(ids.map((id) => id.toLowerCase()))].sort();
     }
+    case 'files':
+      return [...new Set(parseWith(filesValueSchema, value).map((id) => id.toLowerCase()))];
     case 'json':
       if (value === undefined) fail('expected a JSON value');
       return JSON.parse(JSON.stringify(value));
@@ -299,8 +303,16 @@ export function validateFieldValue(field: ValueField, value: unknown): unknown {
     return null;
   }
   const normalized = normalizeFieldValue(field, value);
-  if (collection && !field.isNullable && (normalized as unknown[]).length === 0) {
-    throw new FieldValueError('is required: give at least one record');
+  if (
+    (collection || field.type === 'files') &&
+    !field.isNullable &&
+    (normalized as unknown[]).length === 0
+  ) {
+    throw new FieldValueError(
+      field.type === 'files'
+        ? 'is required: give at least one file'
+        : 'is required: give at least one record',
+    );
   }
   return normalized;
 }

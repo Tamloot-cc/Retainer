@@ -1,7 +1,7 @@
 import type { Actor, SchemaChange as SchemaChangeView, SchemaOwner } from '@retainer/shared';
 import { canApproveDestructive } from '../caller.js';
 import type { ApiKeyScope, SchemaChangeStatus } from '../db/schema.js';
-import { jsonValue, lockSchemaExclusive, type Tx } from '../db/tx.js';
+import { jsonValue, lockPrivacyShared, lockSchemaExclusive, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { loadSchemaState } from '../schema/load.js';
 import {
@@ -57,7 +57,7 @@ export function ownerFor(actor: Actor): SchemaOwner {
  * On the trusted path, the engine also protects the elements server code
  * depends on, which older workspaces may not have protected yet.
  */
-function plan(
+export function planSchemaChange(
   current: SchemaState,
   operations: SchemaOperation[],
   owner: SchemaOwner,
@@ -76,6 +76,46 @@ function plan(
   }
   if (all.length > 0) throw new SchemaValidationError(dedupe(all));
   return { desired, ops: diffSchemas(current, desired) };
+}
+
+/**
+ * An installed extension's contributed objects and fields can't be deleted:
+ * its plans, views and triggers bind to them, and deletion is permanent.
+ * Like Twenty's app-owned metadata, only labels and names are workspace-local.
+ * Uninstalling the extension releases them. Runs inside the schema lock.
+ */
+async function refuseContributedDeletes(tx: Tx, current: SchemaState, desired: SchemaState) {
+  const deleted = new Map<string, string>();
+  for (const object of desired.objects) {
+    const before = current.objects.find((o) => o.universalId === object.universalId);
+    if (!before) continue;
+    if (object.status === 'deprecated' && before.status === 'active' && before.id)
+      deleted.set(before.id, object.nameSingular);
+    for (const field of object.fields) {
+      const prior = before.fields.find((f) => f.universalId === field.universalId);
+      if (field.status === 'deprecated' && prior?.status === 'active' && prior.id)
+        deleted.set(prior.id, `${object.nameSingular}.${field.name}`);
+    }
+  }
+  if (deleted.size === 0) return;
+  const managed = await tx<
+    { element_id: string; installation_id: string; registration_id: string }[]
+  >`
+    select c.element_id, c.installation_id, i.registration_id from extension_contributions c
+    join extension_installations i on i.id = c.installation_id
+    where c.kind in ('object', 'field') and i.state <> 'uninstalled'
+      and c.element_id = any(${[...deleted.keys()]}::uuid[])
+    order by c.element_id`;
+  if (managed.length === 0) return;
+  throw new SchemaValidationError(
+    managed.map((row) => ({
+      path: deleted.get(row.element_id) ?? row.element_id,
+      message:
+        `belongs to extension installation ${row.installation_id} ` +
+        `(registration ${row.registration_id}), so it cannot be deleted; ` +
+        'rename or relabel it instead, or uninstall that extension first',
+    })),
+  );
 }
 
 function dedupe(issues: SchemaIssue[]): SchemaIssue[] {
@@ -98,14 +138,17 @@ export async function runSchemaChange(
   request: SchemaChangeRequest,
 ): Promise<SchemaChangeResult> {
   const { workspaceId, actor } = request;
+  await lockPrivacyShared(tx, workspaceId);
   await lockSchemaExclusive(tx, workspaceId);
   const current = await loadSchemaState(tx, workspaceId);
-  const { desired, ops } = plan(
+  const { desired, ops } = planSchemaChange(
     current,
     request.operations,
     request.owner ?? ownerFor(actor),
     request.trusted,
   );
+
+  await refuseContributedDeletes(tx, current, desired);
 
   if (ops.length === 0) {
     return {
@@ -177,6 +220,7 @@ export async function decideSchemaChange(
   if (!canApproveDestructive(actor, input.scopes)) {
     throw forbidden('only a user key with admin scope can decide schema changes');
   }
+  await lockPrivacyShared(tx, workspaceId);
   await lockSchemaExclusive(tx, workspaceId);
   const [row] = await tx<ChangeRow[]>`
     select * from schema_changes where id = ${changeId} and workspace_id = ${workspaceId}
@@ -193,9 +237,10 @@ export async function decideSchemaChange(
 
   const current = await loadSchemaState(tx, workspaceId);
   const operations = row.request as SchemaOperation[];
-  let planned: ReturnType<typeof plan>;
+  let planned: ReturnType<typeof planSchemaChange>;
   try {
-    planned = plan(current, operations, ownerFor(row.requested_by));
+    planned = planSchemaChange(current, operations, ownerFor(row.requested_by));
+    await refuseContributedDeletes(tx, current, planned.desired);
     await checkExistingRecords(tx, workspaceId, current, planned.desired, planned.ops);
   } catch (error) {
     if (!(error instanceof SchemaValidationError || error instanceof SchemaCheckError)) throw error;

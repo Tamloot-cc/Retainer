@@ -1,0 +1,2 @@
+CREATE INDEX "extension_contributions_install_idx" ON "extension_contributions" USING btree ("workspace_id","installation_id");--> statement-breakpoint
+CREATE INDEX "extension_receipts_install_idx" ON "extension_receipts" USING btree ("workspace_id","installation_id");

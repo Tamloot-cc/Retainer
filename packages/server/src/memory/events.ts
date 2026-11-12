@@ -199,6 +199,7 @@ export async function logEvent(
       // seen here, so a retry never lands on a deleted event (6.2, 6.4).
       if (existing.deleted_at) throw retracted(existing.record_id);
       await checkSameEvent(tx, context, existing, object, occurredAt, values);
+      await context.changes?.capture(tx, existing.record_id);
       const stored = await loadLinks(tx, workspaceId, existing.record_id);
       const { rows, changed } = await addLinks(
         tx,
@@ -329,6 +330,13 @@ async function canonicalRecordsAll(
 
 /** A live, visible event record, locked for a change to its links. */
 async function lockEvent(tx: Tx, context: WriteContext, id: string): Promise<{ id: string }> {
+  const [managed] = await tx`select 1 from source_revisions where event_id=${id}`;
+  if (managed)
+    throw new AppError(
+      409,
+      'immutable_source_revision',
+      'managed event participants are immutable; import a new revision',
+    );
   const [row] = await tx<{ id: string; object_type_id: string; deleted_at: Date | null }[]>`
     select r.id, r.object_type_id, r.deleted_at from records r
     where r.id = ${id} and r.workspace_id = ${context.workspaceId}
@@ -356,6 +364,7 @@ export async function addEventLinks(
 ): Promise<PresentedRecord & { added: AddedLinks }> {
   const participants = normalizeParticipants(input.participants);
   await lockEvent(tx, context, id);
+  await context.changes?.capture(tx, id);
   const stored = await loadLinks(tx, context.workspaceId, id);
   const { changed, rows } = await addLinks(tx, context.workspaceId, context.schema, id, stored, {
     participants,
@@ -381,6 +390,7 @@ export async function removeEventLink(
 ): Promise<PresentedRecord> {
   requireUser(context.actor, 'remove a participant or an about record');
   await lockEvent(tx, context, id);
+  await context.changes?.capture(tx, id);
   // The about record is locked and followed through merges, as in addLinks,
   // so a merge cannot move its link to the survivor before the delete runs.
   const match =
@@ -425,9 +435,10 @@ export async function lockSource(
       object_type_id: string;
       deleted_at: Date | null;
       occurred_at: Date | null;
+      current_evidence: boolean;
     }[]
   >`
-    select r.id, r.object_type_id, r.deleted_at, e.occurred_at from records r
+    select r.id, r.object_type_id, r.deleted_at, e.occurred_at, ${currentSourceEvidence(tx, tx`r.id`)} as current_evidence from records r
     left join event_records e on e.record_id = r.id
     where r.id = ${recordId} and r.workspace_id = ${context.workspaceId}
     for key share of r`;
@@ -449,6 +460,13 @@ export async function lockSource(
       source: row.id,
     });
   }
+  if (!row.current_evidence)
+    throw new AppError(
+      409,
+      'source_superseded',
+      'this source revision was superseded; cite its current evidence',
+      { source: row.id },
+    );
   return { id: row.id, occurredAt: row.occurred_at };
 }
 
@@ -520,7 +538,12 @@ export function currentFact(tx: Tx): Fragment {
 export function liveFactSource(tx: Tx, factId: Fragment): Fragment {
   return tx`select 1 from fact_sources s
     join records src on src.id = s.source_record_id and src.deleted_at is null
-    where s.fact_id = ${factId}`;
+    where s.fact_id = ${factId} and ${currentSourceEvidence(tx, tx`src.id`)}`;
+}
+
+/** Historical citations still resolve by ID; normal activity and new derivations use current evidence. */
+export function currentSourceEvidence(tx: Tx, event: Fragment): Fragment {
+  return tx`not exists(select 1 from source_revisions revision where revision.event_id=${event} and not revision.is_current)`;
 }
 
 /**
@@ -596,6 +619,7 @@ export function directAttachments(
     from (${union}) a
     join records ev on ev.id = a.event_id and ev.deleted_at is null
       and ev.object_type_id = any(${eventTypeIds}::uuid[])
+    where ${currentSourceEvidence(tx, tx`ev.id`)}
     order by a.event_id, a.rank, a.field_id)`;
 }
 

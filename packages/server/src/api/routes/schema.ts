@@ -3,8 +3,9 @@ import { requireScope } from '../../auth/middleware.js';
 import type { Sql } from '../../db/client.js';
 import { after, page } from '../../db/pagination.js';
 import { SCHEMA_CHANGE_STATUSES } from '../../db/schema.js';
-import { inWorkspace } from '../../db/tx.js';
+import { inWorkspace, lockSchemaShared } from '../../db/tx.js';
 import { AppError } from '../../errors.js';
+import { admitCaller } from '../../extension-runtime/admission.js';
 import { idParam, limitParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 import {
@@ -49,6 +50,8 @@ export function schemaRoutes(app: Hono<AppEnv>, sql: Sql) {
     }
     return c.json(
       await inWorkspace(sql, workspaceId, async (tx) => {
+        await lockSchemaShared(tx, workspaceId);
+        await admitCaller(tx, c.get('caller'), false, 'runtime');
         const limit = limitParam(c, 50, 200);
         const where = status ? tx`status = ${status}` : tx`true`;
         const rows = await tx<
@@ -73,7 +76,11 @@ export function schemaRoutes(app: Hono<AppEnv>, sql: Sql) {
     const { workspaceId } = c.get('caller');
     const id = idParam(c);
     return c.json(
-      await inWorkspace(sql, workspaceId, (tx) => getSchemaChange(tx, workspaceId, id)),
+      await inWorkspace(sql, workspaceId, async (tx) => {
+        await lockSchemaShared(tx, workspaceId);
+        await admitCaller(tx, c.get('caller'), false, 'runtime');
+        return getSchemaChange(tx, workspaceId, id);
+      }),
     );
   });
 

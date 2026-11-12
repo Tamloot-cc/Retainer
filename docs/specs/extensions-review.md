@@ -1,0 +1,159 @@
+# Extensions review: comparison with Twenty and fix plan
+
+Status: review of PR #79 at `b806989`; fixes in progress. Date: 2026-11-12.
+
+This review compares the extensions implementation with Twenty's apps
+(`~/Development/twenty` at `a5065176`) and with [the extensions spec](extensions.md).
+It lists divergences the spec did not call for, the riskiest remaining defects,
+and what we borrow from Twenty for each. Section 5 is the implementation plan.
+
+Findings marked **verified** were checked against the code by the reviewer;
+the rest were found by reading code and are cited, but still need a failing
+test before they are fixed. Paths are relative to the repository root;
+Twenty paths are relative to `packages/twenty-server/src/engine` unless they
+start with `twenty-apps/`.
+
+## 1. Verdict
+
+The design follows Twenty's shape: a catalog release becomes one installation
+per workspace, a declarative manifest is applied, install and uninstall hooks
+run, settings and secrets are encrypted, and functions run on webhooks,
+schedules and record changes. Most divergences are ones the spec asked for:
+Postgres leases instead of BullMQ, fenced short-lived run tokens, a fresh
+container per run, a commit-ordered change feed and immutable source
+revisions. Several are stronger than Twenty: lease fencing, 202 only after a
+durable receipt, installation-bound AES-GCM secrets and durable file erasure.
+
+The implementation is much heavier than Twenty's, and the review bots only
+checked each commit against the previous findings. The problems below come
+from comparing the design as a whole.
+
+## 2. Divergences the spec did not call for
+
+| Divergence                                                                                                                                                             | Evidence                                                                                                            | Twenty                                                                                                                                                                          | Decision                                                                                                                                      |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every install, upgrade or reinstall bumps `generation`, which revokes every standalone key and OAuth grant. A settings change also disables the installation.          | `packages/server/src/extensions/service.ts:573`, `:809-815`; `admission.ts:93`; `oauth-token.ts:190-193`            | App tokens bind to the application and survive upgrades; variable values update in place (`core-modules/application/application-variable/application-variable.service.ts:133`). | Split a `grant_generation` that changes only on disable, grant change or reconnect. Settings that are not reconnect settings update in place. |
+| `serverVersions` is an exact list inside the digest, checked on every `catalog.get`. Every server patch needs a new release of every extension.                        | `extensions/catalog.ts:73,79`                                                                                       | `engines.twenty` semver range, checked at install and upgrade (`application-version-validation.service.ts:80-110`).                                                             | Adopt a reviewed semver range. Keep the deploy preflight.                                                                                     |
+| A workspace label edit plus a publisher label change fails the whole upgrade with 409; any view change needs a new view ID.                                            | `extensions/contributions.ts:42-48`; `service.ts:384-388`; `test/api/extension-upgrades.test.ts:140`                | Override layer keeps the publisher base and workspace overrides apart (`preserve-application-local-metadata-state.util.ts`, `WORKSPACE_LOCAL_STATE_PROPERTIES`).                | Adopt: store the publisher base; workspace overrides win; upgrades never conflict on presentation.                                            |
+| Any handler exception is retried, up to ten times. Spec §9.2 says invalid inputs are terminal.                                                                         | `packages/runner/src/index.ts:37-41`; `queue.ts:708-726`                                                            | Retry only on `RetryableLogicFunctionError`, at most three (`logic-function-job-runner.service.ts:51-77`).                                                                      | Adopt opt-in retry: an exported `RetryLater` error and the `retry` result retry; anything else fails. Infrastructure failures still retry.    |
+| Run tokens also authenticate `/mcp`; they carry the installation's scopes and can read any of its secrets. Spec §8 promises only the function's own requested secrets. | `packages/server/src/mcp/route.ts:46`; `extension-runtime/tokens.ts:11-23`; `api/routes/extension-runtime.ts:56-58` | One app token injected per run (looser).                                                                                                                                        | Remove run tokens from `/mcp`. Bind function ID in the token and limit secrets to the function's declared list.                               |
+| Upgrades re-run install hooks without the previous version.                                                                                                            | `service.ts:558,651`                                                                                                | Post-install hook receives `previousVersion` (`application-install.service.ts`).                                                                                                | Pass `previousVersion` to lifecycle input.                                                                                                    |
+
+Status of row 1: done (Phase 2 item 1). Migrations 0088–0089 add
+`grant_generation`, backfilled from `generation`; keys, OAuth grants and their
+SQL lookups bind to it. Ordinary settings update in place: they fence runs but
+neither disable the installation nor revoke its credentials.
+
+Status of row 2: done (Phase 2). Releases declare a reviewed, bounded semver
+`serverRange` (`packages/extension/src/semver.ts`; first-party
+`>=0.1.0 <0.2.0` in `scripts/extension-release.mjs`), so a server patch inside
+it needs no new release. Catalogs built with the exact `serverVersions` list
+still load as an exact set with unchanged digests. Bridge releases are needed
+only to move to a new server line.
+
+Status of rows 5–6: done (Phase 2 item 5). Run tokens bind the function ID,
+checked against the job on every admission. Functions declare `secrets` and
+`scopes` (absent keeps the old behaviour and digests); the claim narrows the
+run's scopes to the function's within the grant and records its secrets on the
+job, which the runtime endpoint and the broker's SQL admission (migration 0094)
+both enforce. Bundled Granola and last-contact declare theirs. Install jobs
+carry `previousVersion` (null on a first install). Run tokens are not accepted
+by `/mcp` (Phase 1).
+
+Status of row 3: done (Phase 2). Contributions' stored definitions are the
+publisher base. Object labels and description and field label and description
+are workspace-overridable: a workspace edit wins with a preview warning and
+only the base moves; an unedited value takes the publisher's change. Views are
+updated when unedited, kept (`keep_workspace`, with a warning) when edited
+and not recreated (`deleted_workspace`) when deleted;
+the decision is in the plan digest and rechecked under the view's row lock.
+Structural changes stay `409 upgrade_conflict`.
+
+## 3. Risks and fixes
+
+| #   | Risk                                                                                                                                                                                                                                                                                                                         | Evidence                                                                                                                           | Fix (Twenty mechanism where one exists)                                                                                                                                                                                                                                                                                                                                                        |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1  | **Timeouts never back off (verified).** The run aborts exactly at `run_until`, and `complete()` requires `run_until > now()`, so the result is reported as fenced. The job is reclaimed at once as `lease_expired`, about ten times in a row, holding the installation's only slot. No test covers it.                       | `worker/extensions.ts:140-143`; `extension-runtime/queue.ts:554,597`                                                               | Handler budget = function timeout; `run_until` = timeout + grace. Record `execution_timeout` and schedule normal backoff. Twenty returns a timeout as a normal result (`buildLogicFunctionTimeoutResult`).                                                                                                                                                                                     |
+| R2  | **Change feed lock blocks all writes (verified).** `GET /v1/changes` holds `FOR SHARE` on the workspace counter for the whole read; pruning takes `FOR UPDATE` and deletes with no limit; change rows are inserted one per round trip under the lock; deprecating a field emits one change per record under the schema lock. | `changes/service.ts:109-111`; `worker/changes.ts:107-118`; `changes/collect.ts:89-107,227-233`; `schema-engine/persist.ts:172-176` | Read the counter without a lock and recheck `retained_after` after reading (410 if overtaken); prune in batches; insert all change rows in one statement; emit one schema-level change for deprecation. Twenty has no ordered feed to borrow.                                                                                                                                                  |
+| R3  | **Any erasure wipes every installation's KV and restarts its running jobs (verified)**, not only the affected installation.                                                                                                                                                                                                  | `privacy/extension-erasure.ts:39-55`                                                                                               | Restrict KV deletion and job requeue to `source_affected` installations or jobs whose input matches, as spec §11 says.                                                                                                                                                                                                                                                                         |
+| R4  | **One erased attendee blocks every later import that lists them (verified).**                                                                                                                                                                                                                                                | `sources/service.ts:411-414`, `:519-522`                                                                                           | Drop the suppressed handle before computing the digest, as core `addLinks` does (`memory/event-links.ts:483-487`).                                                                                                                                                                                                                                                                             |
+| R5  | **Settings change during `uninstalling` reverses the uninstall (verified).** Secrets are already retired; state returns to `disabled`.                                                                                                                                                                                       | `service.ts:772`, `:809-815`                                                                                                       | Refuse settings changes unless the installation is installed and not uninstalling.                                                                                                                                                                                                                                                                                                             |
+| R6  | **Three ways an installation gets stuck permanently.** A user deletes a contributed field or object; an upgrade adds a required secret (no accepted request can supply it); an uninstalled installation's exact release is gone after a server bump, so it cannot be reinstalled.                                            | `service.ts:545`, `contributions.ts:71,102`; `service.ts:268,318-333`; `service.ts:278,282`                                        | Twenty forbids deleting app-owned entities (only `isActive` and labels are workspace-local); its variable sync adds empty variables that the admin fills; reinstall is a fresh install. Guard deletion of contributed elements in the schema engine (deprecate instead); allow supplying new required secrets on upgrade; allow reinstall to any compatible release through the additive plan. |
+| R7  | **Workspace deletion skips provider cleanup**, so provider webhooks stay registered.                                                                                                                                                                                                                                         | due query excludes `deletion_scheduled_at` (migration 0059); `workspaces/deletion.ts` unchanged                                    | Borrow `runUninstallHooksForWorkspaceDeletion` (`application-uninstall.service.ts:47-117`): run best-effort uninstall cleanup before the hard delete and record completion.                                                                                                                                                                                                                    |
+| R8  | **Granola watermark advances even when item imports failed**, with a 60-second overlap measured on the runner's clock. A failed, never-edited note is never listed again.                                                                                                                                                    | `queue.ts:796`; `packages/runner/src/granola.ts:203,210-215`                                                                       | Borrow Twenty's fixed lookback (`twenty-apps/public/granola/src/logic-functions/granola-daily-catch-up.ts`, two days): always rescan at least two days; revision dedupe skips unchanged notes.                                                                                                                                                                                                 |
+| R9  | **Loops through agents are not caught, and changes are not coalesced.** Agent and API-key writes carry an empty cause; standalone writes start a fresh chain. Jobs dedupe per change position, so 50 edits queue 50 jobs and a backfill can hit the 10k cap and roll back a dispatch batch.                                  | `changes/collect.ts:63-75`; `queue.ts:352-364`                                                                                     | Borrow Twenty's enqueue throttler as a backstop (`application-job-enqueue-throttler.service.ts`; `call-database-event-trigger-jobs.job.ts:116-137`) and coalesce: while a job for the same installation, function and record is still queued, do not add another.                                                                                                                              |
+| R10 | **Webhook ingress fails when runs are busy.** Verifiers share the launcher's 32 slots with runs and do a full health check per launch inside a 5-second budget. The per-binding rate limit counts before verification, so anyone with the URL can exhaust it.                                                                | `launcher/docker.ts:204-224,284-287`; `webhooks/service.ts:312-325`                                                                | Separate verifier capacity and cache the health check; count only failed verifications against the binding limit and add a cheap in-memory limit before any database write.                                                                                                                                                                                                                    |
+| R11 | **Head-of-line blocking.** The executor starts the next tick only after the whole batch finishes, so one 300-second run stalls dispatch.                                                                                                                                                                                     | `packages/server/src/index.ts:154-169`                                                                                             | Continuous semaphore-fed loop, as BullMQ workers do.                                                                                                                                                                                                                                                                                                                                           |
+| R12 | `admitRun` does not refuse a workspace scheduled for deletion and has no explicit write-scope check (the SQL copy does).                                                                                                                                                                                                     | `extension-runtime/admission.ts:26-27,57` vs `:91-92,116`; migration 0068                                                          | Match `admitInstallation`.                                                                                                                                                                                                                                                                                                                                                                     |
+
+Status of R7: done (Phase 2 item 2). Deleting a workspace uninstalls its
+extensions in the same transaction: hosted ones become `uninstalling` and the
+executor queues their cleanup (or uninstalls directly without an active
+executable), standalone ones become `uninstalled`; all lose their grant.
+Migration 0090 lets cleanup (and only cleanup) be discovered, queued,
+reaped and admitted to secrets while the workspace is being deleted, and the
+hard delete waits until each cleanup finishes or passes its 24-hour deadline
+(spec §7). Completion is recorded on the installations themselves; a missed
+deadline is logged when the workspace is removed.
+
+Status of R9: done (Phase 2 item 3). Change jobs coalesce per installation,
+function and record into the record's newest live job only, when it is queued,
+unstarted and an update/review, keeping the latest position and snapshot and the
+union of keys, related records and cause chains; lifecycle changes keep their own
+job. The depth cap counts server-derived hops (`cause_depth`), so merged chains
+and chains inherited through `Retainer-Caused-By` never cause a false block. Dispatch commits per change, so the queued-job quota
+and a new 500-per-minute enqueue throttle (`trigger_throttled`) defer the rest
+behind the cursor instead of rolling back the batch. Standalone apps can name the
+change they answer with `Retainer-Caused-By` to inherit its chain, which blocks a
+standalone → hosted → standalone loop; without it the throttle bounds the loop
+(spec §9.2, §9.4). Fixed on the way: the dispatcher and the feed sorted
+`position::text` as text, so a batch crossing a digit boundary (9 → 10) ran out
+of order and could move the cursor backwards or skip rows.
+
+Suspected, to confirm with a test before fixing: Docker default address pools
+can run out with 32 per-run networks; schedules added by an upgrade fire
+immediately; consent activation revokes the working grant on a 200 response
+that carries an error; `files/service.ts:179-182` lets superseded or rejected
+assertions keep files downloadable; Last Contact keeps old claims when the
+granted actor class changes.
+
+## 4. Over-built compared with Twenty
+
+Fixed only where Twenty's version is better or safer.
+
+| Item                                                                                                                                    | Twenty                                                          | Decision                                                                                                                                                                           |
+| --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime availability markers, reconciliation probes and catalog identities (migrations 0084-0087, `extension-runtime/availability.ts`). | In-memory lookup; a stopped app or missing function is skipped. | **Simplify.** Pass the worker's loadable `(registration, digest)` pairs to the `*_due` functions as an array and filter there. Unavailable work stays queued with no marker state. |
+| A new Docker network per run (about eight Docker calls per launch).                                                                     | Child process in a temp dir: weaker isolation.                  | Keep. Confirm the address-pool risk separately.                                                                                                                                    |
+| 44 migrations including review fix-ups.                                                                                                 | Not applicable.                                                 | Keep.                                                                                                                                                                              |
+| Registration-style webhook route with no user yet.                                                                                      | Twenty's resolver is also registration-level.                   | Keep.                                                                                                                                                                              |
+| Two-phase OAuth consent over Better Auth.                                                                                               | Own OAuth server.                                               | Keep; required by Better Auth's separate pool.                                                                                                                                     |
+
+## 5. Implementation plan
+
+Each fix lands with a failing test first (real Postgres where it touches the
+database, concurrent tests for anything described as serialized), then the
+fix, then an independent review. Phase 1 streams own disjoint files and add no
+migrations, so they run in parallel in separate worktrees. Phase 2 needs
+migrations and runs one stream at a time.
+
+### Phase 1 (parallel, no migrations)
+
+- **Runtime:** R1, opt-in retry (§2), R11, the verifier part of R10.
+- **Changes and webhooks:** R2 (except the schema-level change, which needs a
+  new operation kind), the ingress part of R10.
+- **Data:** R3, R4, R8.
+- **Control and auth:** R5, R6, R12, removing run tokens from `/mcp`.
+
+### Phase 2 (sequential, migrations)
+
+1. `grant_generation` and in-place settings (§2). Done.
+2. R7 workspace-deletion cleanup. Done.
+3. R9 coalescing and throttle.
+4. Label override layer and semver server ranges (§2).
+5. Function-scoped run tokens and secrets, `previousVersion` (§2). Done.
+6. Schema-level change for deprecation (R2). Done: one `schema` change per
+   affected object type, no per-record fan-out or record locks.
+7. Availability simplification (§4). Done: workers pass their runnable
+   `(registration, digest)` pairs to the `*_due` functions (migration 0096);
+   the marker table, probe function and catalog identity are gone (0097).

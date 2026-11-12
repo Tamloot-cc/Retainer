@@ -1,29 +1,50 @@
 import { resolve } from 'node:path';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { OAUTH_SCOPES } from '@retainer/shared';
-import { Hono } from 'hono';
+import { type Context, Hono } from 'hono';
 import { authenticate } from '../auth/middleware.js';
-import { oauthSettings } from '../auth/oauth-token.js';
+import { installationOAuthSettings, oauthSettings } from '../auth/oauth-token.js';
 import { meRoute, sessionRoutes } from '../auth/session.js';
 import { publicOriginSchema } from '../config.js';
 import type { Sql } from '../db/client.js';
 import { AppError } from '../errors.js';
+import type { SecretBroker } from '../extension-runtime/secrets.js';
+import type { RunTokens } from '../extension-runtime/tokens.js';
+import type { ExtensionCatalog } from '../extensions/catalog.js';
+import { Extensions } from '../extensions/service.js';
+import type { FileStorage } from '../file-storage/contract.js';
 import { type RateLimit, rateLimit } from '../http/rate-limit.js';
 import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
 import { mcpRoute } from '../mcp/route.js';
+import { Sources } from '../sources/service.js';
 import { VERSION } from '../version.js';
+import type { Webhooks } from '../webhooks/service.js';
+import { changeRoutes } from './routes/changes.js';
 import { commentRoutes } from './routes/comments.js';
+import { runtimeRoutes } from './routes/extension-runtime.js';
+import { extensionRoutes } from './routes/extensions.js';
+import { fileRoutes } from './routes/files.js';
+import { lastContactRoutes } from './routes/last-contact.js';
 import { memoryRoutes } from './routes/memory.js';
 import { recordRoutes } from './routes/records.js';
 import { retrievalRoutes } from './routes/retrieval.js';
 import { schemaRoutes } from './routes/schema.js';
+import { sourceRoutes } from './routes/sources.js';
 import { templateRoutes } from './routes/templates.js';
 import { viewRoutes } from './routes/views.js';
 import { webReadRoutes } from './routes/web-read.js';
+import { webhookIngress, webhookRuntime } from './routes/webhooks.js';
 
 export type AppDeps = {
+  webhooks?: Webhooks | undefined;
+  fileStorage?: FileStorage | undefined;
+  fileQuota?: number | undefined;
   /** A pool connected as the runtime role, so RLS applies to every query. */
   sql: Sql;
+  extensionCatalog?: ExtensionCatalog;
+  extensionActivation?: ReadonlySet<string>;
+  runTokens?: RunTokens;
+  extensionSecrets?: SecretBroker;
   webDir?: string;
   publicOrigin?: string;
   /**
@@ -33,6 +54,8 @@ export type AppDeps = {
   accountsSecret?: string;
   /** The per-workspace rate limit on /v1 and /mcp (accounts spec 4.8); none if unset. */
   rateLimit?: RateLimit;
+  /** The caller's address, for the webhook ingress limiter; never read from a client header. */
+  clientIp?: (c: Context<AppEnv>) => string | undefined;
 };
 
 export function createApp(deps: AppDeps) {
@@ -54,10 +77,21 @@ export function createApp(deps: AppDeps) {
     }
   });
 
+  webhookIngress(app, deps.webhooks, deps.clientIp);
   if (!deps.accountsSecret) sessionRoutes(app, deps.sql, publicOrigin);
   const v1 = new Hono<AppEnv>();
   const limit = rateLimit(deps.sql, deps.rateLimit ?? { limit: 0 });
-  v1.use('*', authenticate(deps.sql, { publicOrigin, accountsSecret: deps.accountsSecret }));
+  v1.use(
+    '*',
+    authenticate(deps.sql, {
+      publicOrigin,
+      accountsSecret: deps.accountsSecret,
+      runTokens: deps.runTokens,
+      installationKeys: !deps.accountsSecret,
+      oauth:
+        deps.accountsSecret && publicOrigin ? installationOAuthSettings(publicOrigin) : undefined,
+    }),
+  );
   v1.use('*', limit);
   meRoute(v1, deps.sql);
   webReadRoutes(v1, deps.sql);
@@ -66,15 +100,47 @@ export function createApp(deps: AppDeps) {
   recordRoutes(v1, deps.sql);
   memoryRoutes(v1, deps.sql);
   commentRoutes(v1, deps.sql);
+  changeRoutes(v1, deps.sql);
   retrievalRoutes(v1, deps.sql);
   viewRoutes(v1, deps.sql);
+  const extensions = new Extensions(
+    deps.sql,
+    deps.extensionCatalog,
+    deps.extensionSecrets,
+    deps.extensionActivation,
+  );
+  extensionRoutes(v1, extensions, !deps.accountsSecret);
+  runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets);
+  lastContactRoutes(v1, deps.sql, extensions.catalog);
+  webhookRuntime(v1, deps.webhooks);
+  fileRoutes(v1, deps.sql, deps.fileStorage, deps.fileQuota);
+  sourceRoutes(
+    v1,
+    new Sources(deps.sql, (registration, version, digest) => {
+      const release = extensions.catalog.get(registration, version);
+      if (release.digest !== digest)
+        throw new AppError(409, 'incompatible_runtime', 'source release changed');
+      return release.manifest;
+    }),
+  );
   app.route('/v1', v1);
 
   // Accounts mode: apps connect to /mcp over OAuth as well as with API keys
   // (accounts spec 4.7). The authorization server is Better Auth, under
   // /account; this function only checks its tokens.
   const oauth = deps.accountsSecret && publicOrigin ? oauthSettings(publicOrigin) : undefined;
-  if (oauth) {
+  if (oauth && publicOrigin) {
+    const rest = installationOAuthSettings(publicOrigin);
+    app.get('/.well-known/oauth-protected-resource/v1', (c) => {
+      c.header('Cache-Control', 'public, max-age=3600');
+      return c.json({
+        resource: rest.resource,
+        authorization_servers: [rest.issuer],
+        bearer_methods_supported: ['header'],
+        scopes_supported: ['read', 'write', 'offline_access'],
+        resource_name: 'Retainer workspace apps',
+      });
+    });
     // RFC 9728 protected resource metadata: static, so the API serves it.
     const metadata = {
       resource: oauth.resource,
@@ -93,7 +159,15 @@ export function createApp(deps: AppDeps) {
       });
     }
   }
-  mcpRoute(app, deps.sql, { publicOrigin, oauth, rateLimit: limit });
+  mcpRoute(app, deps.sql, {
+    publicOrigin,
+    oauth,
+    rateLimit: limit,
+    extensionCatalog: deps.extensionCatalog,
+    extensionActivation: deps.extensionActivation,
+    fileStorage: deps.fileStorage,
+    fileQuota: deps.fileQuota,
+  });
 
   if (deps.webDir) {
     const root = resolve(deps.webDir);

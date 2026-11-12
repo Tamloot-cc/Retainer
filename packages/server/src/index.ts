@@ -16,6 +16,8 @@ import {
   type Sql,
 } from './db/client.js';
 import { applyLogins } from './db/logins.js';
+import { createExtensionControlApp } from './extension-control/app.js';
+import { extensionServices } from './extension-control/configuration.js';
 import { log, setLogLevel } from './log.js';
 import { bootstrap, firstBootBanner } from './operator/bootstrap.js';
 import { rebuildSearchText } from './records/rebuild-search.js';
@@ -78,12 +80,34 @@ if (accountsMode(config) && (role === 'all' || role === 'control')) {
   stops.push(startPurger({ sql: control }).stop);
 }
 
-if (role === 'api' || role === 'all' || role === 'control') {
+const extensionApiSql =
+  role === 'api' || role === 'all' || role === 'extensions'
+    ? pool(createApiSql(config, { max: config.RETAINER_DB_POOL_MAX }))
+    : undefined;
+const extensionWorkerSql =
+  role === 'worker' || role === 'all' || role === 'files'
+    ? pool(createRuntimeSql(config, { max: config.RETAINER_DB_POOL_MAX }))
+    : undefined;
+const extensions = await extensionServices(config, {
+  broker: role === 'all' || role === 'api' || role === 'extensions',
+  ...(extensionApiSql && ['all', 'api', 'extensions'].includes(role)
+    ? { ingressSql: extensionApiSql }
+    : {}),
+  ...(extensionWorkerSql ? { workerSql: extensionWorkerSql } : {}),
+});
+if (role === 'api' || role === 'all' || role === 'control' || role === 'extensions') {
   const app =
     role === 'control'
       ? undefined
-      : createApp({
-          sql: pool(createApiSql(config, { max: config.RETAINER_DB_POOL_MAX })),
+      : (role === 'extensions' ? createExtensionControlApp : createApp)({
+          sql: extensionApiSql as Sql,
+          fileStorage: extensions.fileStorage,
+          fileQuota: config.RETAINER_FILE_QUOTA_BYTES,
+          extensionCatalog: extensions.catalog,
+          extensionActivation: extensions.activationReady,
+          webhooks: extensions.webhooks,
+          ...(extensions.tokens ? { runTokens: extensions.tokens } : {}),
+          ...(extensions.broker ? { extensionSecrets: extensions.broker } : {}),
           webDir: config.RETAINER_WEB_DIR,
           // The same origin /account issues OAuth tokens for, even in its own container.
           publicOrigin: accountsMode(config)
@@ -91,6 +115,7 @@ if (role === 'api' || role === 'all' || role === 'control') {
             : config.RETAINER_PUBLIC_ORIGIN,
           accountsSecret: config.RETAINER_AUTH_SECRET,
           rateLimit: { limit: rateLimitPerMinute(config) },
+          clientIp: (c) => getConnInfo(c).remote.address,
         });
   const fetch = (request: Request, env: Record<string, unknown>) => {
     if (accounts) {
@@ -117,17 +142,81 @@ if (role === 'api' || role === 'all' || role === 'control') {
   );
 }
 
-if (config.RETAINER_ROLE === 'worker' || config.RETAINER_ROLE === 'all') {
+if (
+  config.RETAINER_ROLE === 'worker' ||
+  config.RETAINER_ROLE === 'all' ||
+  config.RETAINER_ROLE === 'files'
+) {
   const worker = await startWorker({
     sql: pool(createRuntimeSql(config, { max: config.RETAINER_DB_POOL_MAX })),
     intervalMinutes: config.RETAINER_CONSOLIDATE_INTERVAL_MINUTES,
   });
   stops.push(worker.stop);
+  const executor = extensions.executor;
+  if (executor) {
+    // Continuous loop: a finished run frees its slot at once, so one long run never stalls dispatch.
+    const running = executor.run({
+      onError: () => log.error('Extension executor pass failed.'),
+    });
+    stops.push(async () => {
+      executor.stop();
+      await running;
+    });
+  }
+}
+
+if (extensions.fileMaintenance) {
+  let running = Promise.resolve(),
+    busy = false;
+  const tick = () => {
+    if (busy) return;
+    busy = true;
+    running = (extensions.fileMaintenance as NonNullable<typeof extensions.fileMaintenance>)
+      .tick()
+      .then(() => {})
+      .catch(() => log.error('File storage maintenance failed.'))
+      .finally(() => {
+        busy = false;
+      });
+  };
+  const timer = setInterval(tick, 60000);
+  tick();
+  stops.push(async () => {
+    clearInterval(timer);
+    extensions.fileMaintenance?.stop();
+    await running;
+  });
+}
+
+if (extensions.changeMaintenance) {
+  let running = Promise.resolve(),
+    busy = false;
+  const tick = () => {
+    if (busy) return;
+    busy = true;
+    running = (extensions.changeMaintenance as NonNullable<typeof extensions.changeMaintenance>)
+      .tick()
+      .then((result) => {
+        if (result.failed) log.error('Change dispatch or retention remains pending.');
+      })
+      .catch(() => log.error('Change maintenance failed.'))
+      .finally(() => {
+        busy = false;
+      });
+  };
+  const timer = setInterval(tick, 1000);
+  tick();
+  stops.push(async () => {
+    clearInterval(timer);
+    extensions.changeMaintenance?.stop();
+    await running;
+  });
 }
 
 async function shutdown(signal: string) {
   log.info(`${signal} received, shutting down.`);
   await Promise.allSettled(stops.map((stop) => stop()));
+  await extensions.close();
   await Promise.allSettled(pools.map((sql) => sql.end({ timeout: 5 })));
   process.exit(0);
 }

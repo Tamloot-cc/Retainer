@@ -1,9 +1,11 @@
 import { type Actor, type ActorType, isProfileAlias } from '@retainer/shared';
-import type { CallerPerson } from '../caller.js';
+import type { CallerPerson, InstallationBinding, RunBinding } from '../caller.js';
+import type { ChangeCollector } from '../changes/collect.js';
 import { isUuid } from '../db/ids.js';
 import type { AssertionStatus, ReviewReason } from '../db/schema.js';
 import { jsonValue, type Tx } from '../db/tx.js';
 import { AppError, notFound, profileNotSupported } from '../errors.js';
+import { attachFileReferences, validateFileReferences } from '../files/references.js';
 import { isSuppressed, suppressedOf, suppressibleHandles } from '../privacy/suppression.js';
 import type { CompiledObject, CompiledSchema } from '../schema/compiled.js';
 import { type FieldState, relationTargetIds } from '../schema/types.js';
@@ -15,6 +17,11 @@ import { compareAssertions, pickWinner, type RankedAssertion, reviewReason } fro
 export type WriteContext = {
   workspaceId: string;
   actor: Actor;
+  run?: RunBinding;
+  installation?: InstallationBinding;
+  /** Server-only managed-import context; never read from an ordinary record payload. */
+  sourceItemId?: string;
+  changes?: ChangeCollector;
   schema: CompiledSchema;
   /** Agent assertions below this confidence wait for review (rule 2.3). */
   confidenceThreshold: number;
@@ -316,6 +323,13 @@ export async function writeFields(
   writes: Map<FieldState, unknown>,
   options: WriteOptions = {},
 ): Promise<Record<string, FieldWriteStatus>> {
+  const [managed] = await tx`select 1 from source_revisions where event_id=${record.id}`;
+  if (managed)
+    throw new AppError(
+      409,
+      'immutable_source_revision',
+      'managed evidence is immutable; import a new source revision',
+    );
   if (
     options.expectedUpdatedAt !== undefined &&
     record.updated_at.getTime() !== new Date(options.expectedUpdatedAt).getTime()
@@ -324,6 +338,7 @@ export async function writeFields(
       updatedAt: record.updated_at.toISOString(),
     });
   }
+  await validateFileReferences(tx, context, record.id, writes);
   await checkRelationTargets(tx, context, object, writes);
   if (!options.skipSuppressionCheck) await checkSuppressed(tx, context, record, writes);
 
@@ -361,6 +376,7 @@ export async function writeFields(
         ${reason ? 'pending_review' : 'active'}, ${reason}, ${observedAt}, clock_timestamp())
       returning id, field_id, value, actor, status, observed_at, created_at`;
     const assertion = inserted as AssertionRow;
+    await attachFileReferences(tx, context.workspaceId, assertion.id, field, value);
 
     if (reason) {
       statuses[field.name] = 'pending_review';
@@ -396,6 +412,7 @@ async function applyWinners(
   winners: Map<FieldState, AssertionRow | undefined>,
   identifiersDone: ReadonlySet<FieldState> = new Set(),
 ): Promise<void> {
+  await context.changes?.capture(tx, record.id);
   const data = { ...record.data };
   for (const [field, winner] of winners) {
     if (field.type === 'relation') {
@@ -657,6 +674,7 @@ export async function insertRecord(
     values (${context.workspaceId}, ${object.id}, ${tx.json(context.actor)},
       ${tx.json(context.actor)}, ${privateTo})
     returning id, object_type_id, data, updated_at, deleted_at, merged_into_id`;
+  if (row) context.changes?.created(row.id);
   return row as LockedRecord;
 }
 
@@ -744,12 +762,16 @@ export async function markDeleted(
   ids: readonly string[],
 ): Promise<string[]> {
   if (ids.length === 0) return [];
+  for (const id of ids) await context.changes?.capture(tx, id);
   const deleted = await tx<{ id: string }[]>`
     update records set deleted_at = clock_timestamp(), updated_at = clock_timestamp(),
       updated_by = ${tx.json(context.actor)}
     where id = any(${[...ids]}::uuid[]) and deleted_at is null
     returning id`;
   const sorted = deleted.map((r) => r.id).sort();
+  if (sorted.length)
+    await tx`update source_items set state='retracted',updated_at=clock_timestamp()
+    where id in(select item_id from source_revisions where event_id=any(${sorted}::uuid[]) and is_current) and state<>'erased'`;
   await closeSuggestionsFor(tx, context, sorted);
   return sorted;
 }

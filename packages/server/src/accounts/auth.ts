@@ -13,7 +13,15 @@ import { jwt } from 'better-auth/plugins/jwt';
 import type { GoogleOptions } from 'better-auth/social-providers';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ACCOUNT_COOKIE_PREFIX } from '../auth/account-session.js';
-import { AUTH_BASE_PATH, oauthSettings, WORKSPACE_CLAIM } from '../auth/oauth-token.js';
+import {
+  AUTH_BASE_PATH,
+  GENERATION_CLAIM,
+  GRANT_CLAIM,
+  INSTALLATION_CLAIM,
+  installationOAuthSettings,
+  oauthSettings,
+  WORKSPACE_CLAIM,
+} from '../auth/oauth-token.js';
 import { type AccountsConfig, signInProviders } from '../config.js';
 import type { Sql } from '../db/client.js';
 import { isUuid } from '../db/ids.js';
@@ -210,6 +218,7 @@ function betterAuthFor(options: AuthOptions) {
   const { config, publicOrigin, sql } = options;
   const origin = new URL(publicOrigin);
   const oauth = oauthSettings(publicOrigin);
+  const restResource = installationOAuthSettings(publicOrigin).resource;
   return betterAuth({
     appName: 'Retainer',
     baseURL: publicOrigin,
@@ -366,6 +375,16 @@ function betterAuthFor(options: AuthOptions) {
       }),
       mcp({
         resource: oauth.resource,
+        resources: [
+          {
+            identifier: restResource,
+            name: 'Retainer workspace apps',
+            allowedScopes: ['read', 'write', 'offline_access'],
+          },
+        ],
+        // REST is explicit opt-in at registration; MCP keeps its existing default.
+        // Connecting still requires the exact client ID in a reviewed manifest.
+        clientRegistrationAllowedResources: [restResource],
         loginPage: OAUTH_SIGN_IN_PAGE,
         consentPage: OAUTH_CONSENT_PAGE,
         // What an agent's key can have, never admin; offline_access gets a
@@ -384,12 +403,43 @@ function betterAuthFor(options: AuthOptions) {
           shouldRedirect: () => false,
           consentReferenceId: () => pickedWorkspace.getStore() ?? NO_WORKSPACE,
         },
-        customAccessTokenClaims: ({ referenceId }) => {
-          // Every grant names a workspace; refuse to sign one that does not.
-          if (!referenceId || !isUuid(referenceId) || referenceId === NO_WORKSPACE) {
-            throw new Error('refusing to issue an access token without a workspace');
+        customAccessTokenClaims: async ({ referenceId, resources }) => {
+          if (!referenceId || !isUuid(referenceId) || referenceId === NO_WORKSPACE)
+            throw new Error('refusing to issue an access token without an approved reference');
+          const [reference] = await sql<
+            {
+              kind: 'person' | 'installation';
+              workspace_id: string;
+              credential_id: string | null;
+              installation_id: string | null;
+              generation: number | null;
+              active: boolean;
+            }[]
+          >`select kind,workspace_id,credential_id,installation_id,generation,active from retainer_oauth_reference(${referenceId}::uuid)`;
+          if (!reference?.active)
+            throw new APIError('BAD_REQUEST', {
+              code: 'invalid_grant',
+              message: 'This grant is inactive; connect again.',
+            });
+          if (resources?.includes(restResource)) {
+            if (
+              resources.length !== 1 ||
+              reference.kind !== 'installation' ||
+              !reference.credential_id ||
+              !reference.installation_id ||
+              !reference.generation
+            )
+              throw new Error('REST requires a separate installation consent');
+            return {
+              [WORKSPACE_CLAIM]: reference.workspace_id,
+              [INSTALLATION_CLAIM]: reference.installation_id,
+              [GRANT_CLAIM]: reference.credential_id,
+              [GENERATION_CLAIM]: reference.generation,
+            };
           }
-          return { [WORKSPACE_CLAIM]: referenceId };
+          if (reference.kind !== 'person' || reference.workspace_id !== referenceId)
+            throw new Error('MCP requires a separate person consent');
+          return { [WORKSPACE_CLAIM]: reference.workspace_id };
         },
         schema: {
           oauthClient: { modelName: 'oauth_clients' },

@@ -1,9 +1,16 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
+import { ExtensionCatalog } from '../extensions/catalog.js';
+import { Extensions } from '../extensions/service.js';
+import type { FileStorage } from '../file-storage/contract.js';
+import { Files } from '../files/service.js';
 import { VERSION } from '../version.js';
 import { SERVER_ICON } from './icon.js';
 import { INSTRUCTIONS } from './instructions.js';
+import { registerChangeTools } from './tools/changes.js';
+import { registerExtensionTools } from './tools/extensions.js';
+import { registerFileTools } from './tools/files.js';
 import { registerReadTools } from './tools/read.js';
 import { registerSetupTools } from './tools/setup.js';
 import { registerWriteTools } from './tools/write.js';
@@ -17,7 +24,16 @@ import { registerWriteTools } from './tools/write.js';
  *
  * Builds the MCP server for one authenticated caller.
  */
-export function createMcpServer(sql: Sql, caller: Caller): McpServer {
+export function createMcpServer(
+  sql: Sql,
+  caller: Caller,
+  catalog = new ExtensionCatalog(),
+  options: {
+    fileStorage?: FileStorage | undefined;
+    fileQuota?: number | undefined;
+    extensionActivation?: ReadonlySet<string> | undefined;
+  } = {},
+): McpServer {
   const server = new McpServer(
     { name: 'retainer', title: 'Retainer', version: VERSION, icons: [SERVER_ICON] },
     {
@@ -30,8 +46,15 @@ export function createMcpServer(sql: Sql, caller: Caller): McpServer {
     },
   );
 
+  registerExtensionTools(
+    server,
+    new Extensions(sql, catalog, undefined, options.extensionActivation),
+    caller,
+  );
+  registerFileTools(server, new Files(sql, options.fileStorage, options.fileQuota), caller);
   registerSetupTools(server, sql, caller);
   registerReadTools(server, sql, caller);
+  registerChangeTools(server, sql, caller);
   registerWriteTools(server, sql, caller);
 
   return server;

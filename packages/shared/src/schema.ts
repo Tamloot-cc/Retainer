@@ -76,6 +76,7 @@ export const BASE_EVENT_TYPE_IDS = {
  */
 export const BASE_EVENT_FIELD_IDS = {
   conversationMedium: '6475aaeb-54ab-4e7c-8e43-d1a4469a12a0',
+  conversationTranscript: 'fe832d36-cccb-48e4-8423-942e793741f9',
 } as const;
 
 export type BaseEventTypeName = keyof typeof BASE_EVENT_TYPE_IDS;

@@ -113,7 +113,8 @@ export async function disconnect(
 ): Promise<void> {
   await sql.begin(async (tx) => {
     const [found] = await tx<{ workspace_id: string }[]>`
-      select reference_id as workspace_id from oauth_consents where id = ${connectionId}`;
+      select oc.reference_id as workspace_id from oauth_consents oc
+      join workspaces w on w.id=oc.reference_id where oc.id = ${connectionId}`;
     if (!found) throw notFound('connection');
     await lockWorkspaceOrganization(tx, found.workspace_id);
     const [consent] = await tx<{ user_id: string; workspace_id: string }[]>`

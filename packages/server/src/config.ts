@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { readFileSync, statSync } from 'node:fs';
 import { SIGN_IN_PROVIDERS, type SignInProvider } from '@retainer/shared';
 import { z } from 'zod';
 import { LOG_LEVELS } from './log.js';
@@ -30,6 +32,8 @@ export const RUNTIME_ROLE = 'retainer_app';
  * runtime role. No BYPASSRLS and no DDL.
  */
 export const CONTROL_ROLE = 'retainer_control';
+export const SECRET_BROKER_ROLE = 'retainer_secret_broker';
+export const EXECUTOR_ROLE = 'retainer_executor';
 
 const emptyToUndefined = (value: unknown) => (value === '' ? undefined : value);
 
@@ -56,6 +60,19 @@ const configSchema = z
   .object({
     RETAINER_PUBLIC_ORIGIN: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
     RETAINER_WEB_DIR: z.string().optional(),
+    RETAINER_FILE_STORAGE: z.preprocess(emptyToUndefined, z.enum(['local', 's3']).optional()),
+    RETAINER_FILE_PUBLIC_ORIGIN: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
+    RETAINER_FILE_CONTROL_ORIGIN: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
+    RETAINER_FILE_EXECUTION_ORIGIN: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
+    RETAINER_FILE_SIGNING_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    RETAINER_FILE_STORAGE_ID: z.string().default('local-v1'),
+    RETAINER_FILE_S3_BUCKET: z.preprocess(emptyToUndefined, z.string().optional()),
+    RETAINER_FILE_QUOTA_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(1099511627776)
+      .default(1073741824),
     /**
      * The migration role, which owns the tables. Migrations, boot tasks and the
      * operator CLI connect with it. Without RETAINER_RUNTIME_DATABASE_URL the
@@ -75,11 +92,61 @@ const configSchema = z
      * Without it, account work connects as the owner and switches role.
      */
     RETAINER_CONTROL_DATABASE_URL: loginUrl(CONTROL_ROLE),
+    RETAINER_SECRET_BROKER_DATABASE_URL: loginUrl(SECRET_BROKER_ROLE),
+    RETAINER_EXECUTOR_DATABASE_URL: loginUrl(EXECUTOR_ROLE),
+    RETAINER_EXTENSION_CATALOG: z.preprocess(emptyToUndefined, z.string().max(2097152).optional()),
+    RETAINER_EXTENSION_EXECUTABLES: z.preprocess(
+      emptyToUndefined,
+      z.string().max(2097152).optional(),
+    ),
+    RETAINER_EXTENSION_CATALOG_FILE: z.preprocess(
+      emptyToUndefined,
+      z.string().min(1).max(4096).optional(),
+    ),
+    RETAINER_EXTENSION_EXECUTABLES_FILE: z.preprocess(
+      emptyToUndefined,
+      z.string().min(1).max(4096).optional(),
+    ),
+    RETAINER_EXTENSION_CATALOG_SHA256: z.preprocess(
+      emptyToUndefined,
+      z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .optional(),
+    ),
+    RETAINER_EXTENSION_EXECUTABLES_SHA256: z.preprocess(
+      emptyToUndefined,
+      z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .optional(),
+    ),
+    RETAINER_EXTENSION_RUN_PUBLIC_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    RETAINER_EXTENSION_RUN_PRIVATE_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    RETAINER_EXTENSION_RUN_KEY_ID: z.string().default('v1'),
+    RETAINER_EXTENSION_API_ORIGIN: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
+    RETAINER_EXTENSION_ISSUER: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
+    RETAINER_EXTENSION_SECRET_KEYS: z.preprocess(emptyToUndefined, z.string().optional()),
+    RETAINER_EXTENSION_LAUNCHER_ORIGIN: z.preprocess(
+      emptyToUndefined,
+      publicOriginSchema.optional(),
+    ),
+    RETAINER_LAUNCHER_TOKEN: z.preprocess(emptyToUndefined, z.string().min(32).optional()),
+    RETAINER_EXTENSION_VERIFIER_ORIGIN: z.preprocess(
+      emptyToUndefined,
+      publicOriginSchema.optional(),
+    ),
+    RETAINER_VERIFIER_TOKEN: z.preprocess(emptyToUndefined, z.string().min(32).optional()),
+    RETAINER_WEBHOOK_RATE_LIMIT: z.coerce.number().int().min(1).max(10000).default(100),
+    /** New change-trigger jobs per installation per minute; the excess waits (extensions §9.4). */
+    RETAINER_TRIGGER_ENQUEUES_PER_MINUTE: z.coerce.number().int().min(1).max(100000).default(500),
     /**
      * `control` serves only /account: sign-in and account management. `all`
      * serves everything, including /account in accounts mode.
      */
-    RETAINER_ROLE: z.enum(['api', 'worker', 'control', 'all']).default('all'),
+    RETAINER_ROLE: z
+      .enum(['api', 'worker', 'control', 'extensions', 'files', 'all'])
+      .default('all'),
     /**
      * Turns on accounts mode (accounts spec 4.1): people sign in with Google,
      * Microsoft or a passkey. Signs session cookies, so changing it signs
@@ -184,7 +251,37 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .join('\n');
     throw new Error(`Invalid configuration:\n${problems}`);
   }
-  return parsed.data;
+  const config = parsed.data;
+  // Operator-owned immutable release files avoid large manifests in small environment blocks.
+  // Never accept these paths from an installation request or evaluate package code here.
+  for (const [value, path] of [
+    ['RETAINER_EXTENSION_CATALOG', 'RETAINER_EXTENSION_CATALOG_FILE'],
+    ['RETAINER_EXTENSION_EXECUTABLES', 'RETAINER_EXTENSION_EXECUTABLES_FILE'],
+  ] as const) {
+    const file = config[path];
+    if (file) {
+      if (config[value]) throw new Error(`set only one of ${value} and ${path}`);
+      try {
+        const stat = statSync(file);
+        if (!stat.isFile() || stat.size > 2097152) throw new Error('invalid release file');
+        const bytes = readFileSync(file);
+        if (bytes.length > 2097152) throw new Error('invalid release file');
+        config[value] = bytes.toString('utf8');
+      } catch {
+        throw new Error(`cannot load bounded operator release configuration: ${path}`);
+      }
+    }
+    const expected =
+      value === 'RETAINER_EXTENSION_CATALOG'
+        ? config.RETAINER_EXTENSION_CATALOG_SHA256
+        : config.RETAINER_EXTENSION_EXECUTABLES_SHA256;
+    if (
+      expected &&
+      (!config[value] || createHash('sha256').update(config[value]).digest('hex') !== expected)
+    )
+      throw new Error(`operator release configuration digest mismatch: ${value}`);
+  }
+  return config;
 }
 
 /**

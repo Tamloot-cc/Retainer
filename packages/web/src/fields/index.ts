@@ -5,6 +5,7 @@ import type { FieldModule } from './common.js';
 import * as date from './date/index.js';
 import * as date_time from './date_time/index.js';
 import * as emails from './emails/index.js';
+import * as files from './files/index.js';
 import * as full_name from './full_name/index.js';
 import * as json from './json/index.js';
 import * as links from './links/index.js';
@@ -31,4 +32,5 @@ export const fields = {
   address,
   relation,
   json,
+  files,
 } satisfies Record<FieldType, FieldModule>;

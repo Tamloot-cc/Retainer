@@ -1,11 +1,19 @@
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 import type { TransactionSql } from 'postgres';
-import { CONTROL_ROLE, type Config, passwordOf } from '../config.js';
+import {
+  CONTROL_ROLE,
+  type Config,
+  EXECUTOR_ROLE,
+  passwordOf,
+  SECRET_BROKER_ROLE,
+} from '../config.js';
 import { createSql, RUNTIME_ROLE, type Sql } from './client.js';
 
 /** The roles a function may log in as, and the role each may switch to. */
 const LOGIN_ROLES = {
   [RUNTIME_ROLE]: null,
+  [SECRET_BROKER_ROLE]: null,
+  [EXECUTOR_ROLE]: null,
   // Seeds a new workspace by switching to the runtime role, without
   // inheriting its privileges (drizzle/0027_accounts_security.sql).
   [CONTROL_ROLE]: RUNTIME_ROLE,
@@ -60,6 +68,14 @@ export async function applyLogins(
   const control = config.RETAINER_CONTROL_DATABASE_URL;
   if (runtime) await setRoleLogin(owner, RUNTIME_ROLE, passwordOf(runtime));
   if (control) await setRoleLogin(owner, CONTROL_ROLE, passwordOf(control));
+  if (config.RETAINER_SECRET_BROKER_DATABASE_URL)
+    await setRoleLogin(
+      owner,
+      SECRET_BROKER_ROLE,
+      passwordOf(config.RETAINER_SECRET_BROKER_DATABASE_URL),
+    );
+  if (config.RETAINER_EXECUTOR_DATABASE_URL)
+    await setRoleLogin(owner, EXECUTOR_ROLE, passwordOf(config.RETAINER_EXECUTOR_DATABASE_URL));
   return { runtime: runtime !== undefined, control: control !== undefined };
 }
 
@@ -129,6 +145,8 @@ export async function loginsPending(config: Config, owner: Sql): Promise<boolean
   for (const [role, url] of [
     [RUNTIME_ROLE, config.RETAINER_RUNTIME_DATABASE_URL],
     [CONTROL_ROLE, config.RETAINER_CONTROL_DATABASE_URL],
+    [SECRET_BROKER_ROLE, config.RETAINER_SECRET_BROKER_DATABASE_URL],
+    [EXECUTOR_ROLE, config.RETAINER_EXECUTOR_DATABASE_URL],
   ] as const) {
     if (!url) continue;
     if ((await owner.begin((tx) => roleProblems(tx, role))).length > 0) return true;

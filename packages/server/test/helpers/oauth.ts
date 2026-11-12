@@ -55,7 +55,13 @@ export type OAuthFlow = {
  */
 export async function authorize(
   accounts: Hono,
-  input: { cookie: string; clientId?: string; redirectUri?: string; scope?: string },
+  input: {
+    cookie: string;
+    clientId?: string;
+    redirectUri?: string;
+    scope?: string;
+    resource?: string;
+  },
 ): Promise<OAuthFlow> {
   const clientId = input.clientId ?? CLAUDE_CLIENT_ID;
   const redirectUri = input.redirectUri ?? CLAUDE_REDIRECT;
@@ -68,7 +74,7 @@ export async function authorize(
     state: randomBytes(8).toString('hex'),
     code_challenge: challenge,
     code_challenge_method: 'S256',
-    resource: `${ORIGIN}/mcp`,
+    resource: input.resource ?? `${ORIGIN}/mcp`,
     ...(input.scope ? { scope: input.scope } : {}),
   });
   const res = await accounts.request(`${ORIGIN}/account/auth/oauth2/authorize?${query}`, {
@@ -85,7 +91,13 @@ export async function authorize(
 export async function consent(
   accounts: Hono,
   flow: OAuthFlow,
-  input: { cookie: string; workspaceId?: string; accept?: boolean },
+  input: {
+    cookie: string;
+    workspaceId?: string;
+    accept?: boolean;
+    installationId?: string;
+    expectedGeneration?: number;
+  },
 ): Promise<Response> {
   return accounts.request(`${ORIGIN}/account/oauth/consent`, {
     method: 'POST',
@@ -99,6 +111,8 @@ export async function consent(
       oauth_query: flow.consentUrl.search.slice(1),
       accept: input.accept ?? true,
       ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+      ...(input.installationId ? { installationId: input.installationId } : {}),
+      ...(input.expectedGeneration ? { expectedGeneration: input.expectedGeneration } : {}),
     }),
   });
 }

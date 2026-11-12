@@ -9,6 +9,10 @@ import type { ApiKeyScope } from './db/schema.js';
 export type Caller = {
   workspaceId: string;
   actor: Actor;
+  /** A signed, installation-bound execution credential; never reaches personal memory. */
+  run?: RunBinding;
+  /** A standalone workspace grant; no hosted lease, installer impersonation or personal memory. */
+  installation?: InstallationBinding;
   scopes: readonly ApiKeyScope[];
   /** The signed-in person, in accounts mode. */
   userId?: string;
@@ -46,3 +50,32 @@ export type PersonCheck =
 export function canApproveDestructive(actor: Actor, scopes: readonly ApiKeyScope[]): boolean {
   return actor.type === 'user' && scopes.includes('admin');
 }
+
+export type RunBinding = {
+  installationId: string;
+  registrationId: string;
+  generation: number;
+  jobId: string;
+  owner: string;
+  fence: string;
+  releaseDigest: string;
+  /** The claimed job's function; a run credential acts only for its own job's function. */
+  functionId: string;
+  scopes: ('read' | 'write')[];
+};
+
+export type InstallationBinding = {
+  installationId: string;
+  registrationId: string;
+  /** The installation grant this credential was issued for; release upgrades keep it. */
+  grantGeneration: number;
+  credentialId: string;
+  kind: 'key' | 'oauth';
+  scopes: ('read' | 'write')[];
+  /**
+   * The feed position this request reacts to, from `Retainer-Caused-By`.
+   * Its writes inherit that change's server-recorded cause chain, so a
+   * hosted function that triggered the app is not triggered again (§9.4).
+   */
+  causedBy?: string;
+};

@@ -15,6 +15,7 @@ import type { Sql } from '../db/client.js';
 import type { StoredViewConfig } from '../db/schema.js';
 import { inWorkspace, jsonValue, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
+import { admitCaller } from '../extension-runtime/admission.js';
 import { checkAggregateOp } from '../records/aggregate.js';
 import { builtInNames, compileFilter, compileSort, queryInputSchema } from '../records/query.js';
 import { requireObject } from '../records/service.js';
@@ -513,9 +514,11 @@ async function withViews<T>(
   sql: Sql,
   caller: Caller,
   fn: (tx: Tx, schema: CompiledSchema) => Promise<T>,
+  write = false,
 ): Promise<T> {
   return inWorkspace(sql, caller.workspaceId, async (tx) => {
     await lockSchemaShared(tx, caller.workspaceId);
+    await admitCaller(tx, caller, write);
     return fn(tx, await getSchema(tx, caller.workspaceId));
   });
 }
@@ -568,27 +571,111 @@ export async function createView(
   objectName: string,
   input: CreateViewInput,
 ): Promise<SavedView> {
-  return withViews(sql, caller, async (tx, schema) => {
-    const object = requireObject(schema, objectName);
-    const config = merge({}, toStored(tx, object, input));
-    requireKindField(input.kind, config);
-    let { position } = input;
-    if (position === undefined) {
-      const [last] = await tx<{ max: number | null }[]>`
+  return withViews(
+    sql,
+    caller,
+    (tx) => createViewInTransaction(tx, caller, objectName, input),
+    true,
+  );
+}
+
+/** Used by installation control so schema, views and ownership commit together. */
+export async function createViewInTransaction(
+  tx: Tx,
+  caller: Caller,
+  objectName: string,
+  input: CreateViewInput,
+): Promise<SavedView> {
+  const schema = await getSchema(tx, caller.workspaceId);
+  const object = requireObject(schema, objectName);
+  const config = merge({}, toStored(tx, object, input));
+  requireKindField(input.kind, config);
+  let { position } = input;
+  if (position === undefined) {
+    const [last] = await tx<{ max: number | null }[]>`
         select max(v.position) as max from views v
         where v.object_type_id = ${object.id} and ${visibleTo(tx, caller.actor)}`;
-      position = (last?.max ?? 0) + 1;
-    }
-    const [row] = await tx<ViewRow[]>`
+    position = (last?.max ?? 0) + 1;
+  }
+  const [row] = await tx<ViewRow[]>`
       insert into views (workspace_id, object_type_id, name, kind, visibility, position, config,
         created_by, updated_by)
       values (${caller.workspaceId}, ${object.id}, ${input.name}, ${input.kind}, ${input.visibility},
         ${position}, ${tx.json(jsonValue(config))}, ${tx.json(caller.actor)},
         ${tx.json(caller.actor)})
       returning *`;
-    if (!row) throw new Error('view insert returned no row');
-    return presentView(tx, object, row);
-  });
+  if (!row) throw new Error('view insert returned no row');
+  return presentView(tx, object, row);
+}
+
+/**
+ * A view an extension contributes: a workspace table of these fields, named by
+ * universal ID. Installation control stores it as the view's publisher base.
+ */
+export type ManagedView = { name: string; fieldIds: readonly string[] };
+
+/** The stored row a managed view describes, or null when a field no longer exists. */
+function managedRow(object: CompiledObject, view: ManagedView, activeOnly: boolean) {
+  const keys = view.fieldIds.map(
+    (id) =>
+      object.state.fields.find(
+        (f) => f.universalId === id && (!activeOnly || f.status === 'active'),
+      )?.key,
+  );
+  if (keys.some((k) => !k)) return null;
+  const config: StoredViewConfig = { columns: { order: keys as string[] } };
+  return { name: view.name, kind: 'table' as const, visibility: 'workspace' as const, config };
+}
+
+/**
+ * Whether the workspace changed a managed view since installation control
+ * last stored it from `base`: its name, kind, visibility or any of its config
+ * (columns, order, widths, filter, sort, grouping). A deleted view counts as
+ * changed. With `lock`, the row stays locked until commit.
+ */
+export async function managedViewEdited(
+  tx: Tx,
+  workspaceId: string,
+  id: string,
+  base: ManagedView,
+  lock = false,
+): Promise<boolean> {
+  const [row] = await tx<ViewRow[]>`select * from views where id = ${id}
+    ${lock ? tx`for update` : tx``}`;
+  const object = row && (await getSchema(tx, workspaceId)).objectsById.get(row.object_type_id);
+  const expected = object && managedRow(object, base, false);
+  if (!row || !expected) return true;
+  const [same] = await tx<{ same: boolean }[]>`
+    select ${tx.json(jsonValue(row.config))}::jsonb = ${tx.json(jsonValue(expected.config))}::jsonb as same`;
+  return !(
+    same?.same &&
+    row.name === expected.name &&
+    row.kind === expected.kind &&
+    row.visibility === expected.visibility
+  );
+}
+
+/**
+ * Replaces a managed view with the publisher's next definition, but only while
+ * the workspace has not edited it since `base` (checked under the row lock).
+ * Returns false, changing nothing, when it has.
+ */
+export async function replaceManagedView(
+  tx: Tx,
+  caller: Caller,
+  id: string,
+  base: ManagedView,
+  next: ManagedView,
+): Promise<boolean> {
+  if (await managedViewEdited(tx, caller.workspaceId, id, base, true)) return false;
+  const [row] = await tx<ViewRow[]>`select * from views where id = ${id}`;
+  const object =
+    row && (await getSchema(tx, caller.workspaceId)).objectsById.get(row.object_type_id);
+  const desired = object && managedRow(object, next, true);
+  if (!row || !desired) throw invalidView('managed view fields are not active');
+  await tx`update views set name = ${desired.name}, config = ${tx.json(jsonValue(desired.config))},
+    updated_by = ${tx.json(caller.actor)}, updated_at = now() where id = ${id}`;
+  return true;
 }
 
 /**
@@ -601,19 +688,22 @@ export async function updateView(
   id: string,
   input: UpdateViewInput,
 ): Promise<SavedView> {
-  return withViews(sql, caller, async (tx, schema) => {
-    const { row, object } = await loadView(tx, schema, caller, id, true);
-    if (input.visibility !== undefined && input.visibility !== row.visibility) {
-      if (!sameActor(row.created_by, caller.actor))
-        throw forbidden('only the person or agent that created a view can change who sees it');
-    }
-    const config = merge(row.config, toStored(tx, object, input));
-    const kind = input.kind ?? row.kind;
-    // Check the kind's field when the request changes either, so a view
-    // whose field was removed can still be renamed or moved.
-    if (input.kind !== undefined || input.groupBy === null || input.dateField === null)
-      requireKindField(kind, presentView(tx, object, { ...row, config }));
-    const [updated] = await tx<ViewRow[]>`
+  return withViews(
+    sql,
+    caller,
+    async (tx, schema) => {
+      const { row, object } = await loadView(tx, schema, caller, id, true);
+      if (input.visibility !== undefined && input.visibility !== row.visibility) {
+        if (!sameActor(row.created_by, caller.actor))
+          throw forbidden('only the person or agent that created a view can change who sees it');
+      }
+      const config = merge(row.config, toStored(tx, object, input));
+      const kind = input.kind ?? row.kind;
+      // Check the kind's field when the request changes either, so a view
+      // whose field was removed can still be renamed or moved.
+      if (input.kind !== undefined || input.groupBy === null || input.dateField === null)
+        requireKindField(kind, presentView(tx, object, { ...row, config }));
+      const [updated] = await tx<ViewRow[]>`
       update views set
         name = ${input.name ?? row.name},
         kind = ${kind},
@@ -624,9 +714,11 @@ export async function updateView(
         updated_at = now()
       where id = ${id}
       returning *`;
-    if (!updated) throw notFound(`view ${id}`);
-    return presentView(tx, object, updated);
-  });
+      if (!updated) throw notFound(`view ${id}`);
+      return presentView(tx, object, updated);
+    },
+    true,
+  );
 }
 
 export async function deleteView(
@@ -634,11 +726,16 @@ export async function deleteView(
   caller: Caller,
   id: string,
 ): Promise<{ id: string; deleted: true }> {
-  return withViews(sql, caller, async (tx, schema) => {
-    await loadView(tx, schema, caller, id, true);
-    await tx`delete from views where id = ${id}`;
-    return { id, deleted: true };
-  });
+  return withViews(
+    sql,
+    caller,
+    async (tx, schema) => {
+      await loadView(tx, schema, caller, id, true);
+      await tx`delete from views where id = ${id}`;
+      return { id, deleted: true };
+    },
+    true,
+  );
 }
 
 /**

@@ -43,6 +43,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@retainer/shared": "workspace:*"
+    "@retainer/shared": "workspace:*",
+    "@retainer/extension": "workspace:*"
   }
 }

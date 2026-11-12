@@ -324,17 +324,36 @@ describe('API-key lookup', () => {
 describe('SECURITY DEFINER functions', () => {
   // Every way around RLS is listed here (ARCHITECTURE.md 7.2, accounts spec
   // 7.4). Adding one means adding it here, on purpose, with a review.
-  const ALLOWED = [
-    // Personal memory spec 4.6: owned by its own role, not the migration's.
-    'retainer_erase_private_derivatives',
-    'retainer_lookup_api_key',
-    'retainer_session_access',
-    'retainer_token_access',
-    'retainer_token_keys',
-    'retainer_workspaces_due',
-  ];
+  const ALLOWED: Record<string, string | null> = {
+    retainer_adopt_extension_secret: RUNTIME_ROLE,
+    retainer_admit_secret_run: 'retainer_secret_broker',
+    retainer_admit_webhook: 'retainer_secret_broker',
+    retainer_webhook_candidate: RUNTIME_ROLE,
+    retainer_erase_private_derivatives: RUNTIME_ROLE,
+    retainer_extension_jobs_due: 'retainer_executor',
+    retainer_extension_maintenance_due: 'retainer_executor',
+    retainer_finish_extension_cleanup: RUNTIME_ROLE,
+    retainer_extension_pending_secrets: RUNTIME_ROLE,
+    retainer_extension_secret_names: RUNTIME_ROLE,
+    retainer_extension_slot_available: RUNTIME_ROLE,
+    retainer_file_maintenance_due: 'retainer_executor',
+    retainer_extension_changes_due: 'retainer_executor',
+    retainer_change_retention_due: 'retainer_executor',
+    retainer_queue_file_deletion: null,
+    retainer_lookup_api_key: RUNTIME_ROLE,
+    retainer_lookup_extension_key: RUNTIME_ROLE,
+    retainer_bootstrap_oauth_reference: null,
+    retainer_oauth_reference: 'retainer_control',
+    retainer_extension_oauth_client_active: RUNTIME_ROLE,
+    retainer_retire_extension_secrets: RUNTIME_ROLE,
+    retainer_session_access: RUNTIME_ROLE,
+    retainer_token_access: RUNTIME_ROLE,
+    retainer_token_keys: RUNTIME_ROLE,
+    retainer_workspaces_due: RUNTIME_ROLE,
+    retainer_workspace_extension_cleanup_pending: 'retainer_control',
+  };
 
-  it('exist only on the list, each fixing its search_path, runnable only by the runtime role', async () => {
+  it('exist only on the reviewed list, each fixing its search_path and execution role', async () => {
     const rows = await db.owner<{ name: string; config: string[] | null; grantees: string[] }[]>`
       select p.proname as name, p.proconfig as config,
         array(select a.grantee::regrole::text from aclexplode(p.proacl) a
@@ -342,10 +361,10 @@ describe('SECURITY DEFINER functions', () => {
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where p.prosecdef and n.nspname = 'public'
       order by p.proname`;
-    expect(rows.map((r) => r.name)).toEqual(ALLOWED);
+    expect(rows.map((r) => r.name)).toEqual(Object.keys(ALLOWED).sort());
     for (const row of rows) {
       expect(row.config, row.name).toContain('search_path=pg_catalog, pg_temp');
-      expect(row.grantees, row.name).toEqual([RUNTIME_ROLE]);
+      expect(row.grantees, row.name).toEqual(ALLOWED[row.name] ? [ALLOWED[row.name]] : []);
     }
   });
 });

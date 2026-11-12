@@ -18,7 +18,7 @@ import type { Fragment } from 'postgres';
 import { z } from 'zod';
 import { jsonValue, type Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
-import { directAttachments } from '../memory/events.js';
+import { currentSourceEvidence, directAttachments } from '../memory/events.js';
 import { type CompiledObject, type CompiledSchema, objectNamed } from '../schema/compiled.js';
 import type { FieldState } from '../schema/types.js';
 import { normalizeDomain, normalizeEmail, normalizePhone } from './derive.js';
@@ -485,7 +485,7 @@ export function matchingRecords(
 ): Fragment {
   const where = input.filter ? compileFilter(tx, object, input.filter) : tx`true`;
   return tx`r.workspace_id = ${workspaceId} and r.object_type_id = ${object.id}
-    and r.deleted_at is null and ${where}
+    and r.deleted_at is null and ${currentSourceEvidence(tx, tx`r.id`)} and ${where}
     ${input.search ? tx`and r.search @@ ${plainPrefixQuery(tx, input.search)}` : tx``}
     ${input.linked ? tx`and ${linkedTo(tx, workspaceId, schema, object, input.linked)}` : tx``}`;
 }
@@ -707,7 +707,7 @@ export async function queryEvents(
     join event_records e on e.record_id = r.id and e.workspace_id = r.workspace_id
     where r.workspace_id = ${workspaceId}
       and r.object_type_id = any(${schema.eventTypeIds}::uuid[])
-      and r.deleted_at is null and ${where}
+      and r.deleted_at is null and ${currentSourceEvidence(tx, tx`r.id`)} and ${where}
       ${input.search ? tx`and r.search @@ ${plainPrefixQuery(tx, input.search)}` : tx``}
       ${input.linked ? tx`and ${attachedTo(tx, workspaceId, schema, input.linked)}` : tx``}
     order by ${eventSort(tx, input.sort)}

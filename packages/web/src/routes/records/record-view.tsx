@@ -162,7 +162,7 @@ export function RecordView({
     enabled: !!history,
   });
   const object = objectByName(schema, r.object),
-    canWrite = canMutate(session);
+    canWrite = canMutate(session) && !r.event?.source;
   const own = object?.fields.filter((f) => !isInverseRelation(f)) ?? [];
   const inverse = object?.fields.filter(isInverseRelation) ?? [];
   const incoming = polymorphicLinksTo(schema.objects, r.object);
@@ -387,8 +387,10 @@ export function InlineEditor({
   const current = record.fields[field.name] ?? null;
   const [draft, setDraft] = useState<unknown>(current),
     [error, setError] = useState(''),
-    [busy, setBusy] = useState(false),
+    [saving, setBusy] = useState(false),
+    [uploading, setUploading] = useState(false),
     [stale, setStale] = useState(false);
+  const busy = saving || uploading;
   const { Input, Display } = fields[field.type];
   const picker = pickerFor(field);
   // Wait only for the record (the next save's precondition); the rest of the
@@ -504,6 +506,7 @@ export function InlineEditor({
         <>
           {problems}
           <Input
+            onBusyChange={setUploading}
             field={field}
             value={draft}
             references={record.relationReferences}

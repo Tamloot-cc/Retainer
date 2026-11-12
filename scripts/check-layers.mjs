@@ -16,13 +16,40 @@ const MIT_PACKAGES = readdirSync(join(ROOT, 'packages')).filter(
 const LAYERS = [
   [
     'foundation',
-    ['caller', 'config', 'errors', 'log', 'version', 'stable-json', 'idempotency', 'db', 'schema'],
+    [
+      'caller',
+      'config',
+      'errors',
+      'log',
+      'version',
+      'stable-json',
+      'idempotency',
+      'db',
+      'schema',
+      'extension-runtime',
+      'file-storage',
+    ],
   ],
-  ['core', ['records', 'memory', 'privacy']],
+  ['core', ['records', 'memory', 'privacy', 'files', 'sources', 'changes']],
   ['features', ['views', 'comments', 'retrieval', 'reads']],
-  ['admin', ['schema-engine', 'templates', 'workspaces']],
-  ['interfaces', ['http', 'auth', 'api', 'mcp', 'worker', 'operator', 'accounts']],
-  ['entry', ['index', 'cli', 'lambda']],
+  ['admin', ['schema-engine', 'templates', 'workspaces', 'extensions']],
+  [
+    'interfaces',
+    [
+      'http',
+      'auth',
+      'api',
+      'mcp',
+      'worker',
+      'operator',
+      'accounts',
+      'egress',
+      'launcher',
+      'extension-control',
+      'webhooks',
+    ],
+  ],
+  ['entry', ['index', 'cli', 'lambda', 'egress-proxy', 'extension-launcher', 'file-server']],
 ];
 // Events are records, so these modules depend on each other by design.
 const MAY_SHARE_A_CYCLE = 'core';

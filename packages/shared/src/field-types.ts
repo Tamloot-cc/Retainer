@@ -20,7 +20,12 @@ export const FIELD_TYPES = [
   'address',
   'relation',
   'json',
+  'files',
 ] as const;
+
+/** Immutable ready file IDs only; bytes and display metadata use the authorized file API. */
+export const filesValueSchema = z.array(z.uuid()).max(20);
+export type FilesValue = z.infer<typeof filesValueSchema>;
 
 export type FieldType = (typeof FIELD_TYPES)[number];
 

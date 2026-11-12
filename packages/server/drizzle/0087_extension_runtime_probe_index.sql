@@ -1,0 +1,1 @@
+CREATE INDEX "extension_runtime_unavailable_probe_idx" ON "extension_runtime_unavailable" USING btree ("runtime_identity","retry_at","installation_id");

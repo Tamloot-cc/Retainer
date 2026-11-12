@@ -264,6 +264,14 @@ export async function moveEvents(
   const defaults = prepareDefaults(target, input.defaults);
   const events = await lockEvents(tx, context, source, input.events);
   const ids = events.map((e) => e.id);
+  const [managed] =
+    await tx`select event_id from source_revisions where event_id=any(${ids}::uuid[]) limit 1`;
+  if (managed)
+    throw new AppError(
+      409,
+      'immutable_source_revision',
+      'managed evidence cannot move between event types; import a new revision',
+    );
   const result: MoveEventsResult = {
     id: null,
     dryRun: input.dryRun,
@@ -307,6 +315,7 @@ export async function moveEvents(
   }
   await checkInboundRelations(tx, context, target, ids);
 
+  for (const event of events) await context.changes?.capture(tx, event.id);
   // From here on, the move itself. Every derived row is rebuilt from the
   // assertions once they belong to the target's fields.
   await tx`

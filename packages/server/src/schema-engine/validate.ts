@@ -272,6 +272,8 @@ function validateField(
     );
   }
 
+  if (field.type === 'files' && (field.isFilterable || field.isSearchable))
+    issue(path, 'files cannot be filtered or searched');
   if (field.type !== 'relation') return;
 
   const targetIds = relationTargetIds(settings);

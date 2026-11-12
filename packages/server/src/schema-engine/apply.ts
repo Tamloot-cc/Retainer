@@ -67,7 +67,12 @@ export const coreFieldUniversalId = (objectUniversalId: string, role: CoreRole) 
   deriveUuid(`${objectUniversalId}:core:${role}`);
 
 /** Types whose values make sense in structured filters by default. */
-const NOT_FILTERABLE_BY_DEFAULT: ReadonlySet<FieldType> = new Set(['json', 'address', 'full_name']);
+const NOT_FILTERABLE_BY_DEFAULT: ReadonlySet<FieldType> = new Set([
+  'json',
+  'address',
+  'full_name',
+  'files',
+]);
 
 export type ApplyContext = {
   /** Owner recorded on everything this change creates. */

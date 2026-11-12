@@ -7,6 +7,8 @@ import { createAccountsServer } from '../src/accounts/index.js';
 import { createApp } from '../src/api/app.js';
 import { CONTROL_ROLE, loadConfig } from '../src/config.js';
 import { createSql, RUNTIME_ROLE } from '../src/db/client.js';
+import { ExtensionCatalog } from '../src/extensions/catalog.js';
+import { extensionFixture } from '../test/helpers/extensions.js';
 import {
   type FakeMicrosoft,
   MICROSOFT_SETTINGS,
@@ -29,6 +31,7 @@ export type Profile = { sub?: string; email: string; name: string };
 export const test = base.extend<{
   /** False runs the server with Google alone, as before Microsoft sign-in. */
   withMicrosoft: boolean;
+  standaloneOAuth: boolean;
   accounts: {
     url: string;
     owner: ReturnType<typeof createSql>;
@@ -36,10 +39,12 @@ export const test = base.extend<{
     signIn: (context: BrowserContext, profile: Profile) => Promise<void>;
     /** The fake Microsoft, when it is on. */
     microsoft: FakeMicrosoft | null;
+    standalone: { clientId: string; registrationId: string; redirectUri: string } | null;
   };
 }>({
   withMicrosoft: [true, { option: true }],
-  accounts: async ({ browserName: _browserName, withMicrosoft }, use) => {
+  standaloneOAuth: [false, { option: true }],
+  accounts: async ({ browserName: _browserName, withMicrosoft, standaloneOAuth }, use) => {
     const microsoft = withMicrosoft ? await startFakeMicrosoft() : null;
     const adminUrl = process.env.DATABASE_URL;
     if (!adminUrl) throw new Error('DATABASE_URL is required');
@@ -75,7 +80,7 @@ export const test = base.extend<{
       RETAINER_PUBLIC_ORIGIN: url,
       LOG_LEVEL: 'error',
     });
-    const accountsApp = createAccountsServer({
+    const authOptions = {
       config,
       sql: control,
       authSql: authControl,
@@ -86,7 +91,7 @@ export const test = base.extend<{
       ...(microsoft ? { microsoftAuthority: microsoft.authority } : {}),
       google: {
         verifyIdToken: async () => true,
-        getUserInfo: async (token) => {
+        getUserInfo: async (token: { idToken?: string }) => {
           const profile = JSON.parse(token.idToken ?? '{}') as Required<Profile>;
           return {
             user: {
@@ -99,11 +104,51 @@ export const test = base.extend<{
           } as never;
         },
       },
-    });
+    };
+    let accountsApp = createAccountsServer(authOptions);
+    let catalog: ExtensionCatalog | undefined;
+    let standalone: { clientId: string; registrationId: string; redirectUri: string } | null = null;
+    if (standaloneOAuth) {
+      const redirectUri = 'https://workspace-app.example/callback';
+      const response = await accountsApp.request(`${url}/account/auth/oauth2/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          client_name: 'Browser workspace app',
+          redirect_uris: [redirectUri],
+          token_endpoint_auth_method: 'none',
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+          scope: 'read write offline_access',
+          resources: [`${url}/v1`],
+        }),
+      });
+      if (response.status !== 201)
+        throw new Error(`fixture client failed: ${await response.text()}`);
+      const { client_id: clientId } = (await response.json()) as { client_id: string };
+      const manifest = extensionFixture({
+        name: 'browser-workspace-app',
+        execution: 'standalone',
+        scopes: ['read', 'write'],
+        oauthClientId: clientId,
+      });
+      catalog = new ExtensionCatalog([{ manifest, actorCeiling: 'integration' }]);
+      standalone = { clientId, registrationId: manifest.universalId, redirectUri };
+      accountsApp = createAccountsServer({
+        ...authOptions,
+        config: {
+          ...config,
+          RETAINER_EXTENSION_CATALOG: JSON.stringify(
+            catalog.list().map(({ digest: _digest, ...release }) => release),
+          ),
+        },
+      });
+    }
     const api = createApp({
       sql: runtime,
       publicOrigin: url,
       accountsSecret: AUTH_SECRET,
+      ...(catalog ? { extensionCatalog: catalog } : {}),
       webDir: fileURLToPath(new URL('../../web/dist', import.meta.url)),
     });
     handle = (request) => {
@@ -127,7 +172,7 @@ export const test = base.extend<{
     }
 
     try {
-      await use({ url, owner, signIn, microsoft });
+      await use({ url, owner, signIn, microsoft, standalone });
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((e) => (e ? reject(e) : resolve()));

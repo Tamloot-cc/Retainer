@@ -5,6 +5,8 @@ import { createAccountsServer } from '../../src/accounts/index.js';
 import { createApp } from '../../src/api/app.js';
 import { CONTROL_ROLE, loadConfig } from '../../src/config.js';
 import { RUNTIME_ROLE } from '../../src/db/client.js';
+import type { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import type { FileStorage } from '../../src/file-storage/contract.js';
 import type { TestDatabase } from './db.js';
 import { type FakeMicrosoft, MICROSOFT_SETTINGS, type MicrosoftAccount } from './microsoft.js';
 
@@ -72,6 +74,8 @@ export function startAccountsApp(
     microsoft?: FakeMicrosoft;
     /** False runs with Microsoft alone. */
     google?: boolean;
+    extensionCatalog?: ExtensionCatalog;
+    fileStorage?: FileStorage;
   } = {},
 ): AccountsTestApp {
   const config = loadConfig({
@@ -83,6 +87,17 @@ export function startAccountsApp(
     ...(options.microsoft ? MICROSOFT_SETTINGS : {}),
     RETAINER_PUBLIC_ORIGIN: ORIGIN,
     LOG_LEVEL: 'error',
+    ...(options.extensionCatalog
+      ? {
+          RETAINER_EXTENSION_CATALOG: JSON.stringify(
+            options.extensionCatalog.list().map(({ manifest, actorCeiling, runtimeEnabled }) => ({
+              manifest,
+              actorCeiling,
+              runtimeEnabled,
+            })),
+          ),
+        }
+      : {}),
   });
   const accounts = createAccountsServer({
     config,
@@ -115,6 +130,8 @@ export function startAccountsApp(
     sql: db.connect({ role: RUNTIME_ROLE, max: 4 }),
     publicOrigin: ORIGIN,
     accountsSecret: AUTH_SECRET,
+    ...(options.extensionCatalog ? { extensionCatalog: options.extensionCatalog } : {}),
+    ...(options.fileStorage ? { fileStorage: options.fileStorage } : {}),
   });
 
   /** Better Auth's sign-in, as a page starts it. */

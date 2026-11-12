@@ -1,0 +1,1 @@
+GRANT SELECT,INSERT,UPDATE,DELETE ON source_accounts,source_bindings,source_items,source_revisions,source_receipts,source_participants TO retainer_app;

@@ -1,0 +1,5 @@
+services:
+  extension-egress:
+    environment:
+      RETAINER_EXECUTION_API_ORIGINS: http://retainer:8787,http://file-bytes:8790
+    networks: [extension-egress, file-egress]
