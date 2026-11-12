@@ -107,8 +107,7 @@ connection with its owner and health.
   (retainer-api.md §4.3). On `410 cursor_expired` (an outage longer than
   Tamloot's 90-day retention), it rescans the backfill window and restarts
   from `head`.
-- `sync-session` (job): fetches the session detail, transcript and the
-  session's tasks. It imports the session revision, then reconciles the tasks
+- `sync-session` (job): fetches the session detail and the session's tasks. It imports the session revision, then reconciles the tasks
   (below).
 - `disconnect`: there is nothing to clean up at Tamloot in v1, because no
   webhooks are registered.
@@ -126,20 +125,15 @@ retracted. Syncing both in one job, revision first, avoids that.
 - source item: `(registration, Tamloot user_id, session id)`;
   `providerRevision` is Tamloot's integer `revision`, compared numerically.
 - `channel: "tamloot"`, `externalId`: the session ID.
-- `occurredAt: session_date`; `title`; `summary`: the visible notes as
-  Markdown, in position order, AI notes and the user's own notes alike, with
-  no length cap.
-- `medium`: from Tamloot's session `kind`: `meeting` and `in_person` become
-  `meeting`, `call` stays `call`. A `null` kind leaves it empty.
-- `participants`: emails of linked contacts and calendar attendees, without
-  the owner's own email. Unmatched participants follow the install's
-  create-people policy.
-- `transcript`: the `files` field, holding the turns transcript uploaded as
-  `text/plain`.
-- Contributed fields on `conversation`: `tamlootUrl` (link) and
-  `calendarEventUid` (text, filterable). The second lets people and agents
-  find the same meeting recorded by two members. V1 keeps both events, and
-  merging them is deferred.
+- `occurredAt: session_date`; `title`; `summary`: the notes as Markdown, in
+  the order Tamloot returns them, AI notes and the user's own notes alike,
+  with no length cap.
+- `participants`: the emails of every contact Tamloot lists in
+  `participants`. Tamloot already leaves out rooms, group calendars and the
+  owner's own addresses. Unmatched participants follow the install's
+  create-people policy, which uses the participant's `name`.
+- `medium` stays empty, and there is no transcript and no contributed field
+  on `conversation` in v1 (see §5).
 - Only sessions with `recording_status: completed` are imported. Scheduled
   and failed sessions are skipped until they complete.
 
@@ -150,10 +144,10 @@ same registration.
   `isUnique`, not searchable).
 - Each task: `upsert_record` with `match: {tamlootTaskId}`,
   `ifMissing: "create"`, and `source`: the current revision's event. Values:
-  `title`: the task content; `status`: `todo` or `done`; `person`: the person
-  matched by the task contact's emails, if one exists.
-- `is_tamloot_request` tasks are requests addressed to Tamloot itself and are
-  skipped.
+  `title`: the task content; `status`: `open` becomes `todo`, `done` stays
+  `done`; `person`: the person matched by the task's `contact_emails`, if one
+  exists.
+- Tamloot leaves out requests addressed to Tamloot itself.
 - A Tamloot task that is gone (a tombstone, or missing from the session's
   current task list) has its Retainer task soft-deleted, unless a person has
   edited it in Retainer. In that case it is kept and no longer synced. See
@@ -179,9 +173,8 @@ logged event (ARCHITECTURE.md 1.2 and 4.1). Matching never uses field names:
   create-people policy makes the server depend on that field,
   `person.emails` joins `PROTECTED_FIELD_IDS` in the same change, as the
   protection rule requires.
-- The fields this extension contributes (`tamlootUrl`, `calendarEventUid`,
-  `tamlootTaskId`) are tracked by universal ID. If one is removed, its values
-  are skipped and the connection reports `degraded`; the rest of the sync
+- The field this extension contributes (`tamlootTaskId`) is tracked by
+  universal ID. If it is removed, task sync is skipped and the connection reports `degraded`; the rest of the sync
   continues. The same applies to the unprotected base task fields the
   adapter writes (`title`, `person`).
 
@@ -196,18 +189,18 @@ writes, or 6 minutes at the default 60 writes a minute per connection.
 
 In dependency order:
 
-1. `files` field type and the conversation transcript field (in progress).
-2. `sync_source_event` with immutable revisions and retraction of derived
+1. `sync_source_event` with immutable revisions and retraction of derived
    assertions (§10 of extensions.md).
-3. Member connections (§2 here).
-4. Field contributions on base objects, with `isUnique`. The manifest already
+2. Member connections (§2 here).
+3. Field contributions on base objects, with `isUnique`. The manifest already
    accepts them; this needs an end-to-end test.
-5. The adapter bundle in `packages/runner` and a catalog entry, then the
+4. The adapter bundle in `packages/runner` and a catalog entry, then the
    acceptance scenarios: backfill, edit/regeneration, task regeneration,
    deletion, reconnect, disconnect, a member leaving, and two members recording
    one meeting.
 
-The change feed, webhook ingress (extensions.md §9.4 and §9.3) and standalone
+The `files` field is not needed, because v1 imports no transcript. The
+change feed, webhook ingress (extensions.md §9.4 and §9.3) and standalone
 OAuth are not needed for v1.
 
 ## 5. Later
@@ -216,8 +209,10 @@ OAuth are not needed for v1.
   plus a Retainer `route` trigger, so new meetings arrive within seconds.
   Polling stays as the safety net.
 - Organization-wide Tamloot keys, after Tamloot's access model v2.
-- Linking or merging the same meeting recorded by two members, by
-  `calendarEventUid`.
+- More fields, each an additive Tamloot API change (retainer-api.md §5):
+  the transcript as a `files` field (needs `files`), `medium` from the session
+  kind, a `tamlootUrl` link, and `calendarEventUid` for linking or merging the
+  same meeting recorded by two members. V1 keeps both members' events.
 - Tamloot as a standalone reader of Retainer.
 
 ## 6. Open questions
