@@ -28,22 +28,46 @@ export async function settle(
   }
 }
 
-/** Retainer API conflicts, rate limits and outages, and lost connections, are worth retrying. */
+/** 409 codes that a later attempt can resolve: optimistic-revision races and a replaced lease. */
+const TRANSIENT_CONFLICTS = new Set([
+  'revision_conflict',
+  'scan_conflict',
+  'source_revision_conflict',
+  'lease_expired',
+]);
+/** Retainer API rate limits, outages, transient conflicts and lost connections are worth retrying. */
 export function transient(error: unknown): unknown {
   if (isRetryLater(error)) return error;
   if (error instanceof RetainerApiError) {
     if (error.status === 429) return new RetryLater({ code: 'api_rate_limited' });
-    if (error.status === 409 || error.status >= 500)
+    if (error.status >= 500 || (error.status === 409 && TRANSIENT_CONFLICTS.has(error.code)))
       return new RetryLater({ code: 'api_unavailable' });
     return error;
   }
-  // fetch reports a lost connection as this TypeError; a non-JSON reply is a proxy or outage page.
-  if (
-    (error instanceof TypeError && error.message === 'fetch failed') ||
-    error instanceof SyntaxError
-  )
+  // fetch reports a lost connection as this TypeError.
+  if (error instanceof TypeError && error.message === 'fetch failed')
     return new RetryLater({ code: 'api_unavailable' });
   return error;
+}
+/**
+ * The Retainer API client's fetch. A reply that is not JSON (a proxy or outage page) becomes
+ * RetryLater here, so a handler's own parse errors stay terminal.
+ */
+export function apiFetch(transport: typeof fetch, signal: AbortSignal): typeof fetch {
+  return async (url, init) => {
+    const response = await transport(url, { ...init, signal });
+    const text = await response.text();
+    try {
+      JSON.parse(text);
+    } catch {
+      throw new RetryLater({ code: 'api_unavailable' });
+    }
+    return new Response(text, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  };
 }
 export async function retryTransient<T>(run: () => Promise<T>): Promise<T> {
   try {

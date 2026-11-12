@@ -17,7 +17,7 @@ import {
   type granolaNote,
 } from './granola-contract.js';
 import { GranolaError, GranolaProvider } from './granola-provider.js';
-import { transient } from './outcome.js';
+import { apiFetch, transient } from './outcome.js';
 
 const DAY = 86400000,
   OVERLAP = 60000;
@@ -418,7 +418,7 @@ export async function executeGranola(
   const sdk = new RetainerClient({
     baseUrl: invocation.apiOrigin,
     apiKey: invocation.runToken,
-    fetch: (url, init) => transport(url, { ...init, signal }),
+    fetch: apiFetch(transport, signal),
   });
   const id = invocation.installationId;
   try {

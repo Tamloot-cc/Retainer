@@ -3,7 +3,7 @@ import { type Invocation, RetryLater } from '@retainer/extension';
 import { RetainerApiError } from '@retainer/sdk';
 import { describe, expect, it } from 'vitest';
 import { LAST_CONTACT } from './last-contact.js';
-import { settle, transient } from './outcome.js';
+import { apiFetch, settle, transient } from './outcome.js';
 import { execute } from './registry.js';
 
 const live = () => new AbortController().signal;
@@ -47,12 +47,27 @@ describe('handler outcome classification', () => {
     });
   });
   it('retries Retainer outages, rate limits, conflicts and lost connections only', () => {
-    for (const status of [409, 429, 500, 503])
+    for (const status of [429, 500, 503])
       expect(transient(new RetainerApiError(status, 'x', 'x'))).toBeInstanceOf(RetryLater);
     for (const status of [400, 403, 404, 422])
       expect(transient(new RetainerApiError(status, 'x', 'x'))).not.toBeInstanceOf(RetryLater);
+    for (const code of ['revision_conflict', 'source_revision_conflict', 'lease_expired'])
+      expect(transient(new RetainerApiError(409, code, 'x'))).toBeInstanceOf(RetryLater);
+    for (const code of ['idempotency_conflict', 'installation_disabled', 'suppressed'])
+      expect(transient(new RetainerApiError(409, code, 'x'))).not.toBeInstanceOf(RetryLater);
     expect(transient(new TypeError('fetch failed'))).toBeInstanceOf(RetryLater);
     expect(transient(new TypeError('x is undefined'))).not.toBeInstanceOf(RetryLater);
+    // A handler's own parse error is a bug, not an outage.
+    expect(transient(new SyntaxError('Unexpected token'))).not.toBeInstanceOf(RetryLater);
+  });
+  it('retries a Retainer API reply that is not JSON, and passes JSON replies through', async () => {
+    const signal = new AbortController().signal;
+    const html = apiFetch(async () => new Response('<html>502</html>', { status: 502 }), signal);
+    await expect(html('https://retainer.test/v1/x')).rejects.toBeInstanceOf(RetryLater);
+    const json = apiFetch(async () => Response.json({ ok: true }, { status: 201 }), signal);
+    const reply = await json('https://retainer.test/v1/x');
+    expect(reply.status).toBe(201);
+    expect(await reply.json()).toEqual({ ok: true });
   });
   it('makes a bundled adapter retry an API outage and fail a rejected request', async () => {
     const run = (status: number): Invocation => ({
@@ -75,6 +90,12 @@ describe('handler outcome classification', () => {
     await expect(outcome(503)).resolves.toEqual({ status: 'retry', code: 'api_unavailable' });
     await expect(outcome(429)).resolves.toEqual({ status: 'retry', code: 'api_rate_limited' });
     await expect(outcome(403)).resolves.toEqual({ status: 'failed', code: 'handler_failed' });
+    await expect(outcome(409)).resolves.toEqual({ status: 'failed', code: 'handler_failed' });
+    const proxy = async () => new Response('<html>Bad gateway</html>', { status: 502 });
+    await expect(settle(() => execute(run(502), signal, proxy), signal)).resolves.toEqual({
+      status: 'retry',
+      code: 'api_unavailable',
+    });
     const offline = async () => {
       throw new TypeError('fetch failed');
     };

@@ -3,7 +3,7 @@ import { defineExtension, type ExecutionResult, type Invocation } from '@retaine
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
 import { BASE_EVENT_TYPE_IDS, BASE_OBJECT_IDS } from '@retainer/shared';
 import { z } from 'zod';
-import { retryTransient } from './outcome.js';
+import { apiFetch, retryTransient } from './outcome.js';
 
 export const LAST_CONTACT = {
   registration: 'c1e8ba8a-69bb-4b2e-8db3-6ddc6c7b1606',
@@ -152,7 +152,7 @@ async function lastContact(
   const sdk = new RetainerClient({
     baseUrl: invocation.apiOrigin,
     apiKey: invocation.runToken,
-    fetch: (url, init) => transport(url, { ...init, signal }),
+    fetch: apiFetch(transport, signal),
   });
   const read = async () => {
     const row = await sdk.extensionKv(invocation.installationId, 'last-contact-scan');

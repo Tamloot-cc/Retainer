@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { executeGranola } from './granola.js';
 import { GRANOLA_FUNCTION_IDS } from './granola-contract.js';
 import { executeLastContact, LAST_CONTACT_FUNCTION_IDS } from './last-contact.js';
-import { retryTransient } from './outcome.js';
+import { apiFetch, retryTransient } from './outcome.js';
 import { executeWebhookFixture, WEBHOOK_SETUP_ID, WEBHOOK_SYNC_ID } from './webhook-fixture.js';
 
 /** Permanent fixture identity. Production integrations add reviewed, build-time imports here. */
@@ -37,7 +37,7 @@ async function executeFixture(
   const sdk = new RetainerClient({
     baseUrl: invocation.apiOrigin,
     apiKey: invocation.runToken,
-    fetch: (url, options) => transport(url, { ...options, signal }),
+    fetch: apiFetch(transport, signal),
   });
   if (invocation.functionId === FIXTURE_INSTALL_ID) {
     if (!z.strictObject({}).safeParse(invocation.input).success)
