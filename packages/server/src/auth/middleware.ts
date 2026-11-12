@@ -121,6 +121,9 @@ export function authenticate(sql: Sql, options: AuthOptions = {}): MiddlewareHan
             'invalid_request',
             `${CAUSED_BY_HEADER} is accepted only from standalone installation credentials`,
           );
+        // The cursor names a feed change, which only a reader may see.
+        if (!caller.scopes.includes('read'))
+          throw new AppError(403, 'forbidden', `${CAUSED_BY_HEADER} requires read scope`);
         caller = {
           ...caller,
           installation: {

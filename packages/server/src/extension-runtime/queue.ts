@@ -73,6 +73,7 @@ type Job = {
   cycle_attempt: number;
   expires_at: Date;
   cause: string[];
+  cause_depth: number | null;
 };
 /** A feed row as the dispatcher reads it. */
 type DispatchedChange = {
@@ -82,6 +83,7 @@ type DispatchedChange = {
   operation: string;
   field_keys: string[];
   cause: string[];
+  cause_depth: number | null;
   origin_installation_id: string | null;
   related_record_ids: string[];
   merged_into_id: string | null;
@@ -196,6 +198,7 @@ export class ExtensionQueue {
     cause: string[],
     kind: 'job' | 'schedule' | 'install' | 'uninstall' | 'change' = 'job',
     setupChild = false,
+    depth = cause.length,
   ) {
     if (
       !runnable(installation, kind) &&
@@ -238,9 +241,9 @@ export class ExtensionQueue {
         retryAfterSeconds: 60,
       });
     const [job] = await tx<{ id: string }[]>`insert into extension_jobs
-      (workspace_id,installation_id,generation,release_digest,function_id,input,input_hash,dedupe_key,cause,trigger_kind,source_item_id)
+      (workspace_id,installation_id,generation,release_digest,function_id,input,input_hash,dedupe_key,cause,cause_depth,trigger_kind,source_item_id)
       values (${installation.workspace_id},${installation.id},${installation.generation},${installation.release_digest},
-        ${input.functionId},${tx.json(jsonValue(input.input))},${hash},${input.dedupeKey},${tx.json(cause)},${kind},${sourceItemId}) returning id`;
+        ${input.functionId},${tx.json(jsonValue(input.input))},${hash},${input.dedupeKey},${tx.json(cause)},${depth},${kind},${sourceItemId}) returning id`;
     if (!job) throw new Error('job insert returned no row');
     return job.id;
   }
@@ -252,9 +255,14 @@ export class ExtensionQueue {
    * recomputed) and the union of cause chains (so every installation behind
    * any absorbed change stays excluded and A → B → A remains blocked).
    * Handlers read current data, so the superseded positions need no job of
-   * their own (§9.4). Only update/review changes coalesce, and only into
-   * update/review jobs of the same object type. Otherwise a new job is
-   * queued, unless the installation already queued its per-minute share.
+   * their own (§9.4). Only an update/review change coalesces, and only into
+   * the record's newest live (queued or running) job, when that job is an
+   * unstarted update/review of the same object type: folding into an older
+   * job would run the change before a later lifecycle job (update, delete,
+   * undelete, update must not end on the delete). The job's depth is the
+   * deeper of the two, so coalescing never manufactures a depth breach.
+   * Otherwise a new job is queued, unless the installation already queued
+   * its per-minute share.
    */
   private async acceptChange(
     tx: Tx,
@@ -265,24 +273,43 @@ export class ExtensionQueue {
     const workspace = installation.workspace_id,
       dedupeKey = `change:${row.position}:${functionId}`;
     if (COALESCED_OPERATIONS.includes(row.operation)) {
-      const [target] = await tx<
-        { id: string; cause: string[] }[]
-      >`select id,cause from extension_jobs
-        where installation_id=${installation.id} and function_id=${functionId}
-          and (change_snapshot->>'record_id')=${row.record_id} and status='queued' and trigger_kind='change'
-          and generation=${installation.generation} and release_digest=${installation.release_digest} and attempt=0
-          and change_snapshot->>'object_type_id'=${row.object_type_id}
-          and change_snapshot->>'operation'=any(${COALESCED_OPERATIONS}::text[])
-        order by created_at,id limit 1 for update`;
+      const [newest] = await tx<
+        {
+          id: string;
+          cause: string[];
+          depth: number;
+          status: string;
+          attempt: number;
+          generation: number;
+          release_digest: string;
+          object_type_id: string | null;
+          operation: string | null;
+        }[]
+      >`select id,cause,coalesce(cause_depth,jsonb_array_length(cause)) as depth,status,attempt,generation,release_digest,
+          change_snapshot->>'object_type_id' as object_type_id,change_snapshot->>'operation' as operation
+        from extension_jobs where installation_id=${installation.id} and function_id=${functionId}
+          and (change_snapshot->>'record_id')=${row.record_id} and status in ('queued','running') and trigger_kind='change'
+        order by (change_snapshot->>'position')::bigint desc,created_at desc,id desc limit 1 for update`;
+      const target =
+        newest &&
+        newest.status === 'queued' &&
+        newest.attempt === 0 &&
+        newest.generation === installation.generation &&
+        newest.release_digest === installation.release_digest &&
+        newest.object_type_id === row.object_type_id &&
+        COALESCED_OPERATIONS.includes(newest.operation ?? '')
+          ? newest
+          : undefined;
       if (target) {
         const cause = [...new Set([...target.cause, ...row.cause])],
+          depth = Math.max(target.depth, row.cause_depth ?? row.cause.length),
           input = { changePosition: row.position };
         const [moved] = await tx<
           { id: string }[]
         >`update extension_jobs j set input=${tx.json(input)},
-            input_hash=${requestHash({ functionId, input, cause })},dedupe_key=${dedupeKey},cause=${tx.json(cause)},
+            input_hash=${requestHash({ functionId, input, cause })},dedupe_key=${dedupeKey},cause=${tx.json(cause)},cause_depth=${depth},
             change_snapshot=(to_jsonb(c)-'workspace_id'-'created_at')||jsonb_build_object(
-              'position',c.position::text,'cause',${tx.json(cause)}::jsonb,
+              'position',c.position::text,'cause',${tx.json(cause)}::jsonb,'cause_depth',${depth}::int,
               'field_keys',(select coalesce(jsonb_agg(distinct k order by k),'[]'::jsonb) from (
                 select jsonb_array_elements_text(j.change_snapshot->'field_keys') as k
                 union select jsonb_array_elements_text(c.field_keys)) keys),
@@ -323,6 +350,8 @@ export class ExtensionQueue {
       { functionId, input: { changePosition: row.position }, dedupeKey },
       row.cause,
       'change',
+      false,
+      row.cause_depth ?? row.cause.length,
     );
     const [snapshot] = await tx<{ present: boolean }[]>`with copied as (
         update extension_jobs j set change_snapshot=(to_jsonb(c)-'workspace_id'-'created_at')||jsonb_build_object('position',c.position::text)
@@ -414,7 +443,7 @@ export class ExtensionQueue {
           );
         // Order by the column, not the `position::text` alias, which sorts as text.
         const rows = await tx<DispatchedChange[]>`
-        select position::text,record_id,object_type_id,operation,field_keys,cause,origin_installation_id,related_record_ids,merged_into_id from record_changes
+        select position::text,record_id,object_type_id,operation,field_keys,cause,cause_depth,origin_installation_id,related_record_ids,merged_into_id from record_changes
         where position>${checkpoint.position}::bigint order by record_changes.position limit ${limit}`;
         if (await overtaken(tx, workspace, checkpoint.position))
           throw conflict(
@@ -482,7 +511,9 @@ export class ExtensionQueue {
                     ...(row.merged_into_id ? [row.merged_into_id] : []),
                   ].some((id) => relatedTypes.get(id) === object.id);
                 if (!direct && !indirect) continue;
-                if (row.cause.includes(id) || row.cause.length >= 8) {
+                // Exclusion uses the whole chain; the depth cap counts only
+                // server-derived hops, not a chain inherited by a standalone app.
+                if (row.cause.includes(id) || (row.cause_depth ?? row.cause.length) >= 8) {
                   counts.blocked++;
                   if (row.origin_installation_id !== id) counts.cycles++;
                   continue;
@@ -943,6 +974,7 @@ export class ExtensionQueue {
             job.cause,
             'job',
             job.trigger_kind === 'install',
+            job.cause_depth ?? job.cause.length,
           ),
         );
       let revision: number | undefined;

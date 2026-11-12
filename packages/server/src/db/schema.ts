@@ -1679,6 +1679,12 @@ export const extensionJobs = pgTable(
     inputHash: text('input_hash').notNull(),
     dedupeKey: text('dedupe_key').notNull(),
     cause: jsonb('cause').$type<string[]>().notNull().default([]),
+    /**
+     * Server-derived trigger hops behind this job; null means `cause.length`.
+     * A chain a standalone app inherits through `Retainer-Caused-By` excludes
+     * installations but adds no depth (extensions spec §9.4).
+     */
+    causeDepth: integer('cause_depth'),
     status: text('status').notNull().default('queued'),
     leaseOwner: text('lease_owner'),
     fence: bigint('fence', { mode: 'number' }).notNull().default(0),
@@ -1711,10 +1717,10 @@ export const extensionJobs = pgTable(
       .on(t.expiresAt, t.workspaceId)
       .where(sql`${t.status} in ('queued','running')`),
     index('extension_jobs_install_idx').on(t.workspaceId, t.installationId, t.createdAt),
-    /** Finds the queued change job a later change to the same record coalesces into (R9). */
+    /** Finds a record's newest live change job, which a later change may coalesce into (R9). */
     index('extension_jobs_coalesce_idx')
       .on(t.installationId, t.functionId, sql`(${t.changeSnapshot}->>'record_id')`)
-      .where(sql`${t.status} = 'queued' and ${t.triggerKind} = 'change'`),
+      .where(sql`${t.status} in ('queued','running') and ${t.triggerKind} = 'change'`),
     index('extension_jobs_source_idx').on(t.workspaceId, t.sourceItemId),
     foreignKey({
       name: 'extension_jobs_source_fk',
@@ -2240,6 +2246,8 @@ export const recordChanges = pgTable(
     relatedRecordIds: jsonb('related_record_ids').$type<string[]>().notNull().default([]),
     originInstallationId: uuid('origin_installation_id'),
     cause: jsonb('cause').$type<string[]>().notNull().default([]),
+    /** Server-derived trigger hops; null means `cause.length` (see extension_jobs). */
+    causeDepth: integer('cause_depth'),
     mergedIntoId: uuid('merged_into_id'),
     createdAt: timestamptz('created_at').notNull().default(sql`clock_timestamp()`),
   },

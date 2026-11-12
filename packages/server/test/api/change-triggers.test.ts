@@ -740,4 +740,152 @@ describe('change trigger coalescing and throttling (R9)', () => {
     });
     expect(spoof.status).toBe(400);
   });
+  async function feedRows(
+    h: Awaited<ReturnType<typeof setup>>,
+    record: string,
+    rows: { operation: string; cause?: string[] }[],
+  ) {
+    const [type] = await db.owner<
+      { object_type_id: string }[]
+    >`select object_type_id from records where id=${record}`;
+    if (!type) throw new Error('record missing');
+    const [counter] = await db.owner<{ position: string }[]>`update change_counters
+      set position=position+${rows.length} where workspace_id=${h.workspace.id} returning position::text`;
+    const end = BigInt(counter?.position ?? '0');
+    for (const [i, row] of rows.entries())
+      await db.owner`insert into record_changes(workspace_id,position,record_id,object_type_id,operation,field_keys,cause)
+        values(${h.workspace.id},${(end - BigInt(rows.length - 1 - i)).toString()}::bigint,${record},${type.object_type_id},
+          ${row.operation},${db.owner.json(row.operation === 'update' ? [h.field.key] : [])},${db.owner.json(row.cause ?? [])})`;
+  }
+  it('never folds a change into a job queued before a later lifecycle job', async () => {
+    const h = await setup(),
+      id = h.ids[0];
+    if (!id) throw new Error('installation missing');
+    const person = await h.person('Ordered person');
+    await h.queue.dispatchChanges(h.workspace.id, id);
+    const creation = await h.claim(id, person);
+    await h.queue.complete(creation.run, { status: 'succeeded' });
+    await h.edit(h.keys.admin, person, 'Before delete'); // P2 -> J1
+    // P3 delete, P4 undelete (which the collector also labels delete).
+    await feedRows(h, person, [{ operation: 'delete' }, { operation: 'delete' }]);
+    await h.edit(h.keys.admin, person, 'After undelete'); // P5
+    expect(await h.queue.dispatchChanges(h.workspace.id, id)).toEqual({ queued: 4, blocked: 0 });
+    const queued = (await h.changeJobs(id)).filter((j) => j.status === 'queued');
+    expect(queued.map((j) => [j.input.changePosition, j.change_snapshot?.operation])).toEqual([
+      ['2', 'update'],
+      ['3', 'delete'],
+      ['4', 'delete'],
+      ['5', 'update'],
+    ]);
+    // The next update folds into the newest job, which runs last.
+    await h.edit(h.keys.admin, person, 'Later');
+    expect((await h.queue.dispatchChanges(h.workspace.id, id)).coalesced).toBe(1);
+    expect(
+      (await h.changeJobs(id))
+        .filter((j) => j.status === 'queued')
+        .map((j) => j.input.changePosition),
+    ).toEqual(['2', '3', '4', '6']);
+  });
+  it('keeps the deeper depth when chains merge, so coalescing never manufactures a depth block', async () => {
+    const h = await setup(2),
+      [a, b] = h.ids;
+    if (!a || !b) throw new Error('installations missing');
+    const person = await h.person('Deep person');
+    await h.queue.dispatchChanges(h.workspace.id, a);
+    await h.queue.dispatchChanges(h.workspace.id, b);
+    const chain = () => Array.from({ length: 5 }, () => randomUUID());
+    await feedRows(h, person, [
+      { operation: 'update', cause: chain() },
+      { operation: 'update', cause: chain() },
+    ]);
+    expect((await h.queue.dispatchChanges(h.workspace.id, a)).coalesced).toBe(1);
+    await h.queue.dispatchChanges(h.workspace.id, b);
+    const [merged] = await db.owner<
+      { cause: string[]; cause_depth: number }[]
+    >`select cause,cause_depth from extension_jobs where installation_id=${a} and trigger_kind='change' and status='queued'
+      order by (input->>'changePosition')::bigint desc limit 1`;
+    expect(merged?.cause).toHaveLength(10);
+    expect(merged?.cause_depth).toBe(5);
+    const run = await h.claim(a, person);
+    await h.edit(run.key, person, 'From deep A');
+    await h.queue.complete(run.run, { status: 'succeeded' });
+    const [change] = await db.owner<
+      { cause: string[]; cause_depth: number }[]
+    >`select cause,cause_depth from record_changes where record_id=${person} order by record_changes.position desc limit 1`;
+    expect(change?.cause).toHaveLength(11);
+    expect(change?.cause_depth).toBe(6);
+    expect(await h.queue.dispatchChanges(h.workspace.id, b)).toEqual({
+      queued: 0,
+      blocked: 0,
+      coalesced: 1,
+    });
+  });
+  it('orders dispatch and the feed by number across the 9 to 10 boundary', async () => {
+    const h = await setup(),
+      id = h.ids[0];
+    if (!id) throw new Error('installation missing');
+    const person = await h.person('Boundary person'); // P1
+    for (let i = 0; i < 11; i++) await h.edit(h.keys.admin, person, `Edit ${i}`); // P2..P12
+    expect(await h.queue.dispatchChanges(h.workspace.id, id, 10)).toEqual({
+      queued: 2,
+      blocked: 0,
+      coalesced: 8,
+    });
+    expect(await h.cursor(id)).toBe('10');
+    expect((await h.changeJobs(id)).map((j) => j.input.changePosition)).toEqual(['1', '10']);
+    await h.queue.dispatchChanges(h.workspace.id, id, 10);
+    expect(await h.cursor(id)).toBe('12');
+    const decode = (cursor: string) =>
+      JSON.parse(Buffer.from(cursor, 'base64url').toString()).p as string;
+    const page = await h.app.request('/v1/changes?limit=10', { key: h.keys.admin });
+    expect(page.body.changes.map((c: { cursor: string }) => decode(c.cursor))).toEqual(
+      Array.from({ length: 10 }, (_, i) => String(i + 1)),
+    );
+    expect(decode(page.body.nextCursor)).toBe('10');
+    const rest = await h.app.request(`/v1/changes?limit=10&after=${page.body.nextCursor}`, {
+      key: h.keys.admin,
+    });
+    expect(rest.body.changes.map((c: { cursor: string }) => decode(c.cursor))).toEqual([
+      '11',
+      '12',
+    ]);
+  });
+  it('checks Retainer-Caused-By: read scope, an existing change, and no inherited depth', async () => {
+    const h = await setup(0, 1),
+      app = h.standaloneKeys[0];
+    if (!app) throw new Error('installation missing');
+    const person = await h.person('Header checks');
+    const cursor = (p: string) =>
+      Buffer.from(JSON.stringify({ v: 1, w: h.workspace.id, p })).toString('base64url');
+    const write = (key: string, header: string) =>
+      h.app.request(`/v1/records/${person}`, {
+        key,
+        method: 'PATCH',
+        body: { values: { jobTitle: `Caused by ${header}` } },
+        headers: { 'Retainer-Caused-By': header },
+      });
+    expect((await write(app.key, cursor('999999'))).status).toBe(410);
+    const writeOnly = await h.app.request(`/v1/extensions/${app.id}/keys`, {
+      key: h.keys.admin,
+      body: {
+        expectedGeneration: (await h.app.request(`/v1/extensions/${app.id}`, { key: h.keys.admin }))
+          .body.generation,
+        scopes: ['write'],
+      },
+    });
+    expect(writeOnly.status).toBe(201);
+    expect((await write(writeOnly.body.key, cursor('1'))).status).toBe(403);
+    // A long inherited chain excludes installations but adds no depth.
+    const long = Array.from({ length: 9 }, () => randomUUID());
+    await feedRows(h, person, [{ operation: 'update', cause: long }]);
+    const [last] = await db.owner<
+      { position: string }[]
+    >`select position::text from record_changes where record_id=${person} order by record_changes.position desc limit 1`;
+    expect((await write(app.key, cursor(last?.position ?? ''))).status).toBe(200);
+    const [change] = await db.owner<
+      { cause: string[]; cause_depth: number }[]
+    >`select cause,cause_depth from record_changes where record_id=${person} order by record_changes.position desc limit 1`;
+    expect(change?.cause).toEqual([...long, app.id]);
+    expect(change?.cause_depth).toBe(1);
+  });
 });

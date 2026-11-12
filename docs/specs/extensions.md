@@ -794,13 +794,19 @@ writes and child jobs. Skip any installation already in the chain; cap depth at
 connection health; a multi-installation repeat/depth breach records
 `trigger_cycle_blocked`. This stops A → B → A as well as direct
 self-triggering. Jobs dedupe per `(installation,function,changePosition)`, and
-change jobs coalesce per record: while a job for the same installation, function
-and record is still queued and has never started, a later `update` or `review`
-change to that record does not add a job. The job moves to the latest position
+change jobs coalesce per record: a later `update` or `review` change does not add
+a job when the newest live (queued or running) job for the same installation,
+function and record is a queued, never-started `update` or `review` of the same
+object type. Only the newest job qualifies: folding into an older one would run
+the change before a later lifecycle job (update, delete, undelete, update must
+not end on the delete). The job moves to the latest position
 and snapshot, keeps the union of changed keys and related records (so a record
 relinked away from is still recomputed) and the union of cause chains (so every
 installation behind any absorbed change stays excluded, and A → B → A remains
-blocked). A running or retrying job absorbs nothing; the change queues a new job.
+blocked). The depth cap counts server-derived hops (`cause_depth`), not the length
+of the exclusion chain, and a coalesced job takes the deeper of the two, so a
+union never manufactures a false `trigger_cycle_blocked`. A running or retrying
+job absorbs nothing; the change queues a new job.
 Lifecycle changes (create, delete, merge, retract, supersede, links, and both
 halves of a type move) always keep their own job, because their metadata
 (tombstone, `mergedIntoId`, old type) is not a superset of a later update's.
@@ -811,9 +817,15 @@ key or OAuth grant starts the chain at itself, so on its own a standalone →
 hosted → standalone loop is never blocked. A standalone app answering a feed
 change sends that change's cursor as `Retainer-Caused-By`; its writes then
 inherit the change's recorded chain plus itself, and a hosted function already in
-it is not triggered again. Only standalone installation credentials may send the
-header (others get `400`), it can only add installations to a chain, and a cursor
-no longer in the feed returns `410 cursor_expired`.
+it is not triggered again. Only standalone installation credentials with read
+scope may send the header (others get `400` or `403`), and a cursor no longer in
+the feed returns `410 cursor_expired`. The inherited chain only excludes
+installations: it adds no depth (the write counts as the app's first hop), so a
+long referenced chain cannot make the depth cap block the app's write. Trade-off:
+by naming a change, an app can hide its own write from every installation already
+in that change's chain. That is accepted, because the header can only suppress
+triggers, never cause one or reach data the app cannot read, and loops that slip
+past it are bounded by the throttle.
 Accepted trigger jobs retain only the authorized minimal change metadata, so
 public-feed pruning cannot strand accepted work. Erasure scrubs those copies and
 requeues every live run with a new fence (§11); KV entries that name an erased
