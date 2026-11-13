@@ -9,6 +9,7 @@ import { defineExtension } from '../packages/extension/dist/index.js';
 import { enrichmentManifest } from '../packages/runner/dist/enrichment-contract.js';
 import { granolaManifest } from '../packages/runner/dist/granola-contract.js';
 import { lastContactManifest } from '../packages/runner/dist/last-contact.js';
+import { tamlootManifest } from '../packages/runner/dist/tamloot-contract.js';
 import { stableJson } from '../packages/server/dist/stable-json.js';
 import { extensionRelease, extensionServerRange } from './extension-release.mjs';
 
@@ -411,5 +412,44 @@ writeEnrichment(
     packageDigest,
     runtimeVersion: 'node24',
     driverTarget: 'enrichment',
+  })),
+);
+
+// Each member connects their own Tamloot account.
+const tamloot = tamlootManifest({
+  version,
+  packageDigest,
+  handlerDigest: hash(readFileSync(resolve(root, 'packages/runner/dist/tamloot.js'))),
+  serverRange: manifest.serverRange,
+});
+const tamlootDigest = hash(stableJson(tamloot)),
+  tamlootOut = resolve(root, 'artifacts/extensions/tamloot');
+mkdirSync(tamlootOut, { recursive: true });
+const writeTamloot = (name, value) =>
+  writeFileSync(resolve(tamlootOut, name), `${JSON.stringify(value, null, 2)}\n`);
+writeTamloot('manifest.json', tamloot);
+writeTamloot('catalog.json', [
+  { manifest: tamloot, actorCeiling: 'integration', runtimeEnabled: true },
+]);
+writeTamloot('metadata.json', {
+  commit,
+  version: tamloot.version,
+  development,
+  releaseDigest: tamlootDigest,
+  contentDigest: contentDigest(tamloot),
+  packageDigest,
+  bundleId: 'tamloot',
+  functionIds: tamloot.functions.map((fn) => fn.universalId),
+});
+writeTamloot(
+  'executables.json',
+  tamloot.functions.map((fn) => ({
+    registrationId: tamloot.universalId,
+    releaseDigest: tamlootDigest,
+    functionId: fn.universalId,
+    handlerDigest: fn.handlerDigest,
+    packageDigest,
+    runtimeVersion: 'node24',
+    driverTarget: 'tamloot',
   })),
 );

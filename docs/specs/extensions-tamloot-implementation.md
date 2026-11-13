@@ -1,10 +1,10 @@
 # Member connections and the Tamloot extension: implementation spec
 
-Status: implementation and local validation, 2026-11-13. Manifest,
-persistence, member lifecycle, runtime scoping and the web connection UI
-are committed. Managed-task reconciliation is implemented and tested against
-real Postgres. The Tamloot bundle is implemented; its final verification and
-commit follow the server support. Hosted rollout remains out of scope.
+Status: implemented and locally verified, 2026-11-13. Member connections,
+managed tasks and the Tamloot bundle are complete on this branch. Build,
+typecheck, lint, the full test suite (1,315 server tests), release artifact
+checks and all 71 browser tests passed. Hosted rollout and a real-key test
+remain out of scope.
 Implements the product spec
 [extensions-tamloot.md](extensions-tamloot.md) on the platform in
 [extensions.md](extensions.md) and [extensions-lambda.md](extensions-lambda.md).
@@ -622,9 +622,9 @@ Real Postgres, a fresh database per file, no mocked database.
 5. Web: connection card, staged member credentials, reconnect generation
    preconditions and admin table. Implemented and tested locally, including
    real-Postgres browser coverage.
-6. Managed-task server support and schema bindings are implemented and
-   tested. The Tamloot bundle and provider fixtures are implemented; final
-   verification and their own commit follow the server support.
+6. Managed-task server support and schema bindings are committed in
+   `3e19519`. The Tamloot bundle, provider fixtures and release metadata are
+   implemented and locally verified. The complete test suite passes.
 7. Hosted rollout and a live test with a real Tamloot key. Out of scope for
    this branch task; do not access retainer-cloud.
 

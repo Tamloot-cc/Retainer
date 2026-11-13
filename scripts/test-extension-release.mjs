@@ -110,7 +110,7 @@ test('real artifact builds reuse content across unrelated commits but detect a r
         cwd: directory,
         stdio: 'pipe',
       });
-      return ['fixture', 'last-contact', 'granola', 'enrichment'].map((bundle) =>
+      return ['fixture', 'last-contact', 'granola', 'enrichment', 'tamloot'].map((bundle) =>
         JSON.parse(
           readFileSync(join(directory, 'artifacts/extensions', bundle, 'metadata.json'), 'utf8'),
         ),
