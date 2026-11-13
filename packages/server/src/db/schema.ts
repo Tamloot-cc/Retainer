@@ -1469,6 +1469,7 @@ export const extensionInstallations = pgTable(
     mapping: jsonb('mapping').notNull().default({ outputs: {} }),
     mappingRevision: integer('mapping_revision').notNull().default(0),
     createdBy: jsonb('created_by').$type<Actor>().notNull(),
+    lastClaimedAt: timestamptz('last_claimed_at'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1628,14 +1629,75 @@ export const extensionReceipts = pgTable(
   ],
 ).enableRLS();
 
+/** A person's credential boundary; the installation still owns every grant and CRM write. */
+export const extensionConnections = pgTable(
+  'extension_connections',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    owner: jsonb('owner').$type<Actor>().notNull(),
+    ownerId: text('owner_id').notNull(),
+    state: text('state').notNull().default('connecting'),
+    health: text('health').notNull().default('ok'),
+    lastError: text('last_error'),
+    generation: integer('generation').notNull().default(1),
+    settings: jsonb('settings')
+      .$type<Record<string, string | boolean | number>>()
+      .notNull()
+      .default({}),
+    settingsRevision: integer('settings_revision').notNull().default(1),
+    sourceAccountId: uuid('source_account_id'),
+    lastClaimedAt: timestamptz('last_claimed_at'),
+    createdAt: createdAt(),
+    connectedAt: timestamptz('connected_at'),
+    disconnectedAt: timestamptz('disconnected_at'),
+  },
+  (t) => [
+    unique('extension_connections_scope_uq').on(t.workspaceId, t.installationId, t.id),
+    index('extension_connections_account_idx').on(t.workspaceId, t.sourceAccountId),
+    uniqueIndex('extension_connections_owner_uq')
+      .on(t.workspaceId, t.installationId, t.ownerId)
+      .where(sql`${t.state}<>'disconnected'`),
+    tenantFk(
+      'extension_connections_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    tenantFk(
+      'extension_connections_account_fk',
+      [t.workspaceId, t.sourceAccountId],
+      [sourceAccounts.workspaceId, sourceAccounts.id],
+    ),
+    check(
+      'extension_connections_owner',
+      sql`coalesce(${t.owner}->>'type'='user' and ${t.owner}->>'id'=${t.ownerId} and length(${t.ownerId})>0,false)`,
+    ),
+    check(
+      'extension_connections_state',
+      sql`${t.state} in ('connecting','active','setup_failed','needs_reconnect','disconnected')`,
+    ),
+    check('extension_connections_health', sql`${t.health} in ('ok','needs_reconnect','degraded')`),
+    check('extension_connections_versions', sql`${t.generation}>0 and ${t.settingsRevision}>0`),
+    pgPolicy('extension_connections_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
 export const extensionJobs = pgTable(
   'extension_jobs',
   {
     id: id(),
     workspaceId: workspaceId(),
     installationId: uuid('installation_id').notNull(),
+    connectionId: uuid('connection_id'),
     sourceItemId: uuid('source_item_id'),
     generation: integer('generation').notNull(),
+    connectionGeneration: integer('connection_generation'),
     releaseDigest: text('release_digest').notNull(),
     functionId: uuid('function_id').notNull(),
     input: jsonb('input').notNull(),
@@ -1670,16 +1732,36 @@ export const extensionJobs = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
+    foreignKey({
+      name: 'extension_jobs_connection_fk',
+      columns: [t.workspaceId, t.installationId, t.connectionId],
+      foreignColumns: [
+        extensionConnections.workspaceId,
+        extensionConnections.installationId,
+        extensionConnections.id,
+      ],
+    }).onDelete('cascade'),
     unique('extension_jobs_ws_id_uq').on(t.workspaceId, t.id),
-    unique('extension_jobs_dedupe_uq').on(
-      t.workspaceId,
-      t.installationId,
-      t.generation,
-      t.dedupeKey,
-    ),
+    unique('extension_jobs_dedupe_uq')
+      .on(
+        t.workspaceId,
+        t.installationId,
+        t.connectionId,
+        t.connectionGeneration,
+        t.generation,
+        t.dedupeKey,
+      )
+      .nullsNotDistinct(),
     uniqueIndex('extension_jobs_one_running_uq')
       .on(t.workspaceId, t.installationId)
-      .where(sql`${t.status} = 'running'`),
+      .where(sql`${t.status} = 'running' and ${t.connectionId} is null`),
+    uniqueIndex('extension_jobs_one_running_connection_uq')
+      .on(t.workspaceId, t.installationId, t.connectionId)
+      .where(sql`${t.status} = 'running' and ${t.connectionId} is not null`),
+    check(
+      'extension_jobs_connection_generation',
+      sql`(${t.connectionId} is null and ${t.connectionGeneration} is null) or (${t.connectionId} is not null and ${t.connectionGeneration} is not null and ${t.connectionGeneration}>0)`,
+    ),
     index('extension_jobs_due_idx').on(t.status, t.availableAt),
     index('extension_jobs_retention_idx')
       .on(t.updatedAt, t.workspaceId)
@@ -1750,12 +1832,24 @@ export const extensionKv = pgTable(
   {
     workspaceId: workspaceId(),
     installationId: uuid('installation_id').notNull(),
+    connectionId: uuid('connection_id'),
     key: text('key').notNull(),
     value: jsonb('value').notNull(),
     revision: integer('revision').notNull().default(1),
   },
   (t) => [
-    primaryKey({ columns: [t.workspaceId, t.installationId, t.key] }),
+    foreignKey({
+      name: 'extension_kv_connection_fk',
+      columns: [t.workspaceId, t.installationId, t.connectionId],
+      foreignColumns: [
+        extensionConnections.workspaceId,
+        extensionConnections.installationId,
+        extensionConnections.id,
+      ],
+    }).onDelete('cascade'),
+    unique('extension_kv_scope_uq')
+      .on(t.workspaceId, t.installationId, t.connectionId, t.key)
+      .nullsNotDistinct(),
     tenantFk(
       'extension_kv_install_fk',
       [t.workspaceId, t.installationId],
@@ -1776,11 +1870,23 @@ export const extensionWriteBudgets = pgTable(
   {
     workspaceId: workspaceId(),
     installationId: uuid('installation_id').notNull(),
+    connectionId: uuid('connection_id'),
     windowStart: timestamptz('window_start').notNull(),
     count: integer('count').notNull(),
   },
   (t) => [
-    primaryKey({ columns: [t.workspaceId, t.installationId] }),
+    foreignKey({
+      name: 'extension_write_budgets_connection_fk',
+      columns: [t.workspaceId, t.installationId, t.connectionId],
+      foreignColumns: [
+        extensionConnections.workspaceId,
+        extensionConnections.installationId,
+        extensionConnections.id,
+      ],
+    }).onDelete('cascade'),
+    unique('extension_write_budgets_scope_uq')
+      .on(t.workspaceId, t.installationId, t.connectionId)
+      .nullsNotDistinct(),
     tenantFk(
       'extension_write_budgets_install_fk',
       [t.workspaceId, t.installationId],
@@ -1800,6 +1906,8 @@ export const extensionPendingSecrets = pgTable(
   {
     id: id(),
     workspaceId: workspaceId(),
+    connectionId: uuid('connection_id'),
+    ownerId: text('owner_id'),
     draftInstallationId: uuid('draft_installation_id').notNull(),
     registrationId: uuid('registration_id').notNull(),
     name: text('name').notNull(),
@@ -1824,13 +1932,25 @@ export const extensionSecrets = pgTable(
   {
     workspaceId: workspaceId(),
     installationId: uuid('installation_id').notNull(),
+    connectionId: uuid('connection_id'),
     name: text('name').notNull(),
     envelope: jsonb('envelope').notNull(),
     revision: integer('revision').notNull().default(1),
     deleteAfter: timestamptz('delete_after'),
   },
   (t) => [
-    primaryKey({ columns: [t.workspaceId, t.installationId, t.name] }),
+    foreignKey({
+      name: 'extension_secrets_connection_fk',
+      columns: [t.workspaceId, t.installationId, t.connectionId],
+      foreignColumns: [
+        extensionConnections.workspaceId,
+        extensionConnections.installationId,
+        extensionConnections.id,
+      ],
+    }).onDelete('cascade'),
+    unique('extension_secrets_scope_uq')
+      .on(t.workspaceId, t.installationId, t.connectionId, t.name)
+      .nullsNotDistinct(),
     tenantFk(
       'extension_secrets_install_fk',
       [t.workspaceId, t.installationId],
@@ -1850,12 +1970,24 @@ export const extensionSchedules = pgTable(
   {
     workspaceId: workspaceId(),
     installationId: uuid('installation_id').notNull(),
+    connectionId: uuid('connection_id'),
     functionId: uuid('function_id').notNull(),
     nextDueAt: timestamptz('next_due_at').notNull(),
     lastOccurrence: timestamptz('last_occurrence'),
   },
   (t) => [
-    primaryKey({ columns: [t.workspaceId, t.installationId, t.functionId] }),
+    foreignKey({
+      name: 'extension_schedules_connection_fk',
+      columns: [t.workspaceId, t.installationId, t.connectionId],
+      foreignColumns: [
+        extensionConnections.workspaceId,
+        extensionConnections.installationId,
+        extensionConnections.id,
+      ],
+    }).onDelete('cascade'),
+    unique('extension_schedules_scope_uq')
+      .on(t.workspaceId, t.installationId, t.connectionId, t.functionId)
+      .nullsNotDistinct(),
     tenantFk(
       'extension_schedules_install_fk',
       [t.workspaceId, t.installationId],
@@ -2006,12 +2138,25 @@ export const sourceBindings = pgTable(
   {
     workspaceId: workspaceId(),
     installationId: uuid('installation_id').notNull(),
+    connectionId: uuid('connection_id'),
     accountId: uuid('account_id').notNull(),
     generation: integer('generation').notNull(),
     verifiedAt: timestamptz('verified_at').notNull().defaultNow(),
   },
   (t) => [
-    primaryKey({ columns: [t.workspaceId, t.installationId] }),
+    unique('source_bindings_account_scope_uq').on(t.workspaceId, t.installationId, t.accountId),
+    foreignKey({
+      name: 'source_bindings_connection_fk',
+      columns: [t.workspaceId, t.installationId, t.connectionId],
+      foreignColumns: [
+        extensionConnections.workspaceId,
+        extensionConnections.installationId,
+        extensionConnections.id,
+      ],
+    }).onDelete('cascade'),
+    unique('source_bindings_scope_uq')
+      .on(t.workspaceId, t.installationId, t.connectionId)
+      .nullsNotDistinct(),
     tenantFk(
       'source_bindings_install_fk',
       [t.workspaceId, t.installationId],
@@ -2037,6 +2182,7 @@ export const sourceSyncState = pgTable(
   {
     workspaceId: workspaceId(),
     installationId: uuid('installation_id').notNull(),
+    connectionId: uuid('connection_id'),
     generation: integer('generation').notNull(),
     scanId: uuid('scan_id').notNull(),
     mode: text('mode').notNull(),
@@ -2047,7 +2193,18 @@ export const sourceSyncState = pgTable(
     lastSuccessfulScanAt: timestamptz('last_successful_scan_at'),
   },
   (t) => [
-    primaryKey({ columns: [t.workspaceId, t.installationId] }),
+    foreignKey({
+      name: 'source_sync_state_connection_fk',
+      columns: [t.workspaceId, t.installationId, t.connectionId],
+      foreignColumns: [
+        extensionConnections.workspaceId,
+        extensionConnections.installationId,
+        extensionConnections.id,
+      ],
+    }).onDelete('cascade'),
+    unique('source_sync_state_scope_uq')
+      .on(t.workspaceId, t.installationId, t.connectionId)
+      .nullsNotDistinct(),
     tenantFk(
       'source_sync_install_fk',
       [t.workspaceId, t.installationId],

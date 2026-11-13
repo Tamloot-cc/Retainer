@@ -178,7 +178,7 @@ export class SecretBroker {
               { revision: number }[]
             >`insert into extension_secrets(workspace_id,installation_id,name,envelope)
             values(${identity.workspaceId},${identity.installationId},${identity.name},${tx.json(envelope)})
-            on conflict(workspace_id,installation_id,name) do update set envelope=excluded.envelope,revision=extension_secrets.revision+1,delete_after=null
+            on conflict(workspace_id,installation_id,connection_id,name) do update set envelope=excluded.envelope,revision=extension_secrets.revision+1,delete_after=null
             where extension_secrets.delete_after is not null returning revision`
           : await tx<
               { revision: number }[]

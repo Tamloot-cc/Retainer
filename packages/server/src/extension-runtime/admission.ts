@@ -66,7 +66,7 @@ export async function admitRun(
     const [budget] =
       await tx`insert into extension_write_budgets(workspace_id,installation_id,window_start,count)
       values(${workspace},${run.installationId},date_trunc('minute',clock_timestamp()),1)
-      on conflict(workspace_id,installation_id) do update set
+      on conflict(workspace_id,installation_id,connection_id) do update set
         window_start=excluded.window_start,
         count=case when extension_write_budgets.window_start<>excluded.window_start then 1 else extension_write_budgets.count+1 end
       where extension_write_budgets.window_start<>excluded.window_start or extension_write_budgets.count<60 returning count`;
@@ -135,7 +135,7 @@ export async function admitInstallation(
     const [budget] =
       await tx`insert into extension_write_budgets(workspace_id,installation_id,window_start,count)
       values(${workspace},${binding.installationId},date_trunc('minute',clock_timestamp()),1)
-      on conflict(workspace_id,installation_id) do update set window_start=excluded.window_start,
+      on conflict(workspace_id,installation_id,connection_id) do update set window_start=excluded.window_start,
         count=case when extension_write_budgets.window_start<>excluded.window_start then 1 else extension_write_budgets.count+1 end
       where extension_write_budgets.window_start<>excluded.window_start or extension_write_budgets.count<60 returning count`;
     if (!budget)

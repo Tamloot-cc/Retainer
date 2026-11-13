@@ -694,6 +694,27 @@
       "when": 1794518107578,
       "tag": "0098_extension_mapping",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1794574102657,
+      "tag": "0099_member_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1794574117779,
+      "tag": "0100_member_connection_capabilities",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1794574554427,
+      "tag": "0101_member_connection_account_index",
+      "breakpoints": true
     }
   ]
 }

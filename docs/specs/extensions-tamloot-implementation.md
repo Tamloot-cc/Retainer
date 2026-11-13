@@ -1,6 +1,7 @@
 # Member connections and the Tamloot extension: implementation spec
 
-Status: proposed, 2026-11-13. Not implemented. Implements the product spec
+Status: implementation in progress, 2026-11-13. Delivery step 1 is implemented
+in `baea95a`; member lifecycle and the Tamloot bundle are not implemented yet. Implements the product spec
 [extensions-tamloot.md](extensions-tamloot.md) on the platform in
 [extensions.md](extensions.md) and [extensions-lambda.md](extensions-lambda.md).
 Tamloot's side is implemented (Tamloot #2395, #2397, #2398;
@@ -123,7 +124,9 @@ jobs and pending secrets. Change job dedupe to include both connection ID
 and connection generation; retain installation generation too.
 `extension_jobs_one_running_uq` becomes unique on
 `(workspace_id, installation_id, connection_id) nulls not distinct` where
-`status = 'running'`. Connection ID and generation must both be null or both
+`status = 'running'`. Drizzle cannot express null equality on a partial
+index, so use two generated partial indexes with the same effect: the null
+workspace scope and the non-null member scopes. Connection ID and generation must both be null or both
 present on a job. Pending-secret rows keep their draft installation ID and
 bind an owner and draft connection ID before adoption.
 
@@ -177,7 +180,7 @@ installations need no migration of data.
   and workspace moves. Disconnect only where effective membership is lost,
   in that same transaction. Connecting takes the shared member lock and
   rechecks membership; leaving takes its exclusive form. Use the existing
-  organization, schema, privacy, membership, installation and queue lock
+  organization, privacy, schema, membership, installation and queue lock
   order. Do not take the membership lock after the installation lock.
 - **Workspace deletion.** `extension-runtime/workspace-deletion.ts` already
   starts uninstall and fences runs; it does not immediately remove state.
@@ -459,7 +462,7 @@ assertions without a live source dependency, retaining the original sourced
 assertions in history. Never create user-ranked assertions on their behalf.
 Untouched tasks are reconciled to the new event. A failed task write remains
 pending and replayable even after the source event receipt has committed.
-Keep this operation inside the existing schema/privacy/source/record lock
+Keep this operation inside the existing privacy/schema/source/record lock
 order. Test updates and source retraction concurrently.
 
 **Schema bindings.** Declare task output fields by universal ID in the reviewed
@@ -524,9 +527,12 @@ Real Postgres, a fresh database per file, no mocked database.
 
 ## 7. Delivery sequence
 
-1. Manifest and validation (MIT package), with old-digest tests.
+1. Manifest and validation (MIT package), with old-digest tests. Done in
+   `baea95a`; full typecheck, lint and tests passed.
 2. Migration: `extension_connections`, connection scope constraints, broker
-   SQL capabilities and populated workspace-state upgrade tests.
+   SQL capabilities and populated workspace-state upgrade tests. Persistence
+   and null-scope compatibility are implemented; member broker admission
+   and lifecycle follow in steps 3–4.
 3. Lifecycle, REST, SDK and member removal.
 4. Runtime scoping: claim, run token, admission, runtime endpoints,
    schedules, fair claims, budgets.

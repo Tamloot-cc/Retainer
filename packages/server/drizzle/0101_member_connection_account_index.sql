@@ -1,0 +1,1 @@
+CREATE INDEX "extension_connections_account_idx" ON "extension_connections" USING btree ("workspace_id","source_account_id");

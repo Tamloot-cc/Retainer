@@ -129,7 +129,7 @@ export class Sources {
       if (!account) throw new Error('source account insert returned no row');
       await tx`insert into source_bindings(workspace_id,installation_id,account_id,generation)
         values(${caller.workspaceId},${id},${account.id},${run.generation})
-        on conflict(workspace_id,installation_id) do update set account_id=excluded.account_id,generation=excluded.generation,verified_at=clock_timestamp()`;
+        on conflict(workspace_id,installation_id,connection_id) do update set account_id=excluded.account_id,generation=excluded.generation,verified_at=clock_timestamp()`;
       return {
         sourceAccountId: account.id,
         provider: policy.provider,
@@ -216,7 +216,7 @@ export class Sources {
       // The unique installation row serializes competing starts, without taking a queue lock after admission.
       await tx`insert into source_sync_state(workspace_id,installation_id,generation,scan_id,mode,lower_bound,upper_bound)
         values(${caller.workspaceId},${id},${run.generation},${input.scanId},${input.mode},${input.from},${input.through})
-        on conflict(workspace_id,installation_id) do nothing`;
+        on conflict(workspace_id,installation_id,connection_id) do nothing`;
       const [current] =
         await tx`select *,lower_bound=${input.from}::timestamptz and upper_bound=${input.through}::timestamptz as same_bounds
         from source_sync_state where installation_id=${id} for update`;

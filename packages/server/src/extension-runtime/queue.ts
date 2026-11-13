@@ -1087,7 +1087,7 @@ export class ExtensionQueue {
         revision = (previous?.revision ?? 0) + 1;
         await tx`insert into extension_kv(workspace_id,installation_id,key,value,revision)
           values(${lease.workspaceId},${installation.id},${kv.key},${tx.json(jsonValue(kv.value))},${revision})
-          on conflict(workspace_id,installation_id,key) do update set value=excluded.value,revision=excluded.revision`;
+          on conflict(workspace_id,installation_id,connection_id,key) do update set value=excluded.value,revision=excluded.revision`;
       }
       if (input.scanComplete) {
         const scan = sourceScanSchema.safeParse(job.input);
@@ -1123,12 +1123,12 @@ export class ExtensionQueue {
         if (fn.trigger.kind !== 'schedule') continue;
         await tx`insert into extension_schedules(workspace_id,installation_id,function_id,next_due_at)
           values(${workspace},${installationId},${fn.universalId},${nextOccurrence(fn.trigger.cron, installation.activated_at ?? clock.now)})
-          on conflict(workspace_id,installation_id,function_id) do nothing`;
+          on conflict(workspace_id,installation_id,connection_id,function_id) do nothing`;
       }
       if (!manifest.functions.some((fn) => fn.trigger.kind === 'schedule')) {
         await tx`insert into extension_schedules(workspace_id,installation_id,function_id,next_due_at)
           values(${workspace},${installationId},${SYSTEM_LIFECYCLE_FUNCTION_ID},'infinity'::timestamptz)
-          on conflict(workspace_id,installation_id,function_id) do nothing`;
+          on conflict(workspace_id,installation_id,connection_id,function_id) do nothing`;
       }
       const due = await tx<
         { function_id: string; next_due_at: Date }[]
