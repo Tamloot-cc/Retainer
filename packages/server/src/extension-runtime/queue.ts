@@ -325,7 +325,7 @@ export class ExtensionQueue {
       sourceItemId = z.uuid().parse((input.input as { sourceItemId?: unknown }).sourceItemId);
       const [item] =
         await tx`select s.id from source_items s join source_bindings b on b.account_id=s.account_id
-        where s.id=${sourceItemId} and s.state not in ('erased','retracted','deleted') and b.installation_id=${installation.id} and b.generation=${installation.generation} and b.connection_id is not distinct from ${installation.connection_id ?? null}::uuid`;
+        where s.id=${sourceItemId} and s.state<> 'erased' and (${!!manifest.source?.tasks} or s.state not in ('retracted','deleted')) and b.installation_id=${installation.id} and b.generation=${installation.generation} and b.connection_id is not distinct from ${installation.connection_id ?? null}::uuid`;
       if (!item) throw notFound('source item');
     }
     if (Buffer.byteLength(stableJson(input.input)) > 65536)

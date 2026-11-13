@@ -255,6 +255,17 @@ export const manifestSchema = z.strictObject({
       scanFunctionIds: z.array(uuid).min(1).max(20).optional(),
       eventTypeIds: z.array(uuid).min(1).max(20),
       revisionOrder: z.enum(['integer', 'timestamp', 'opaque']),
+      /** Server-managed derived task identities; only the pinned ingestion functions may reconcile them. */
+      tasks: z
+        .strictObject({
+          objectId: uuid,
+          identityFieldId: uuid,
+          titleFieldId: uuid,
+          statusFieldId: uuid,
+          personFieldId: uuid.optional(),
+          statuses: z.strictObject({ open: name, done: name }),
+        })
+        .optional(),
     })
     .optional(),
   /** Release-owned ingress contracts; workspace settings cannot choose verifiers or job functions. */
@@ -614,6 +625,31 @@ export function defineExtension(value: unknown): ExtensionManifest {
   }
   if (manifest.source) {
     const source = manifest.source;
+    if (source.tasks) {
+      const tasks = source.tasks,
+        fields = [
+          tasks.identityFieldId,
+          tasks.titleFieldId,
+          tasks.statusFieldId,
+          ...(tasks.personFieldId ? [tasks.personFieldId] : []),
+        ];
+      if (new Set(fields).size !== fields.length || tasks.statuses.open === tasks.statuses.done)
+        throw new Error('unsupported_manifest: managed task fields and statuses must be distinct');
+      if (
+        !manifest.schema.some(
+          (c) =>
+            c.kind === 'field' &&
+            c.objectId === tasks.objectId &&
+            c.definition.universalId === tasks.identityFieldId &&
+            c.definition.type === 'text' &&
+            c.definition.isUnique === true,
+        )
+      )
+        throw new Error(
+          'unsupported_manifest: managed task identity requires a contributed unique text field',
+        );
+    }
+
     if (
       manifest.execution !== 'hosted' ||
       !manifest.scopes.includes('write') ||
@@ -787,4 +823,33 @@ export type ExtensionConnectionInput = {
   secretRefs?: Record<string, string>;
   /** Required when reconnecting; a stale form cannot replace a newer credential. */
   expectedGeneration?: number;
+};
+
+export type ManagedSourceTask = {
+  externalId: string;
+  title: string;
+  status: 'open' | 'done';
+  contactEmails: string[];
+};
+export type SourceTaskBatchInput = {
+  expectedTaskRevision: number;
+  expectedRevisionId: string | null;
+  tasks: ManagedSourceTask[];
+  complete: boolean;
+};
+export type SourceTaskBatchResult = {
+  applied: number;
+  removed: number;
+  detached: number;
+  unchanged: number;
+  erased: number;
+  hasMore: boolean;
+  checkpoint: number;
+  bindingStatus: 'ok' | 'degraded';
+  warnings: string[];
+};
+export type SourceTaskSchema = {
+  status: 'ok' | 'degraded';
+  fields: Record<string, { name: string; type: string }>;
+  errors: { field: string; reason: string }[];
 };

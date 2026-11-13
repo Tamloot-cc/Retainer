@@ -1,9 +1,11 @@
 # Member connections and the Tamloot extension: implementation spec
 
-Status: implementation in progress, 2026-11-13. Manifest and persistence
-are committed (`baea95a`, `7abaaf8`). Member lifecycle and runtime scoping
-are implemented and tested locally. The web connection card and admin table are implemented and tested locally.
-Managed-task reconciliation and the Tamloot bundle remain. Implements the product spec
+Status: implementation and local validation, 2026-11-13. Manifest,
+persistence, member lifecycle, runtime scoping and the web connection UI
+are committed. Managed-task reconciliation is implemented and tested against
+real Postgres. The Tamloot bundle is implemented; its final verification and
+commit follow the server support. Hosted rollout remains out of scope.
+Implements the product spec
 [extensions-tamloot.md](extensions-tamloot.md) on the platform in
 [extensions.md](extensions.md) and [extensions-lambda.md](extensions-lambda.md).
 Tamloot's side is implemented (Tamloot #2395, #2397, #2398;
@@ -346,8 +348,8 @@ defineExtension({
     provider: 'tamloot',
     identity: 'account',
     verifyFunctionId: TAMLOOT.connect,
-    syncFunctionIds: [TAMLOOT.syncSession],
-    scanFunctionIds: [TAMLOOT.backfill, TAMLOOT.poll],
+    syncFunctionIds: [TAMLOOT.sync],
+    scanFunctionIds: [TAMLOOT.scan, TAMLOOT.poll],
     eventTypeIds: [BASE_EVENT_TYPE_IDS.conversation],
     revisionOrder: 'integer',
   },
@@ -369,9 +371,9 @@ defineExtension({
   views: [],
   functions: [
     fn(TAMLOOT.connect, 'connect', { kind: 'connect' }),
-    fn(TAMLOOT.backfill, 'backfill', { kind: 'job' }),
+    fn(TAMLOOT.scan, 'scan', { kind: 'job' }),
     fn(TAMLOOT.poll, 'poll', { kind: 'schedule', cron: '*/5 * * * *', timezone: 'UTC' }),
-    fn(TAMLOOT.syncSession, 'sync-session', { kind: 'job' }),
+    fn(TAMLOOT.sync, 'sync-session', { kind: 'job' }),
   ],
 });
 ```
@@ -381,11 +383,13 @@ are Tamloot txids, compared as `BigInt` by `sources/policy.ts:20`.
 
 ### 4.2 Tamloot client (`tamloot-provider.ts`)
 
-Base URL from the release, never from settings. Every response is parsed
-with zod. 401 throws `needs_reconnect`. 429 and 5xx throw `RetryLater` with
+Base URL from the release, never from settings: `https://api.tamloot.cc`.
+The implemented `/v1/me` wraps `{user_id, email}` in `data`. Every response is parsed
+with zod. 401 reports `provider_unauthorized`, which marks only the connection as
+`needs_reconnect`. 429 and 5xx return retry with
 the `Retry-After` hint: Tamloot's 10 requests a second is one limit for all
 callers (retainer-api.md §2). Endpoints: `GET /v1/me`,
-`GET /v1/changes/head`, `GET /v1/changes?cursor&limit=500`,
+`GET /v1/changes/head`, `GET /v1/changes?cursor&limit=25`,
 `GET /v1/sessions?from&to&limit=25&offset`, `GET /v1/sessions/{id}`,
 `GET /v1/tasks?session_id`.
 
@@ -400,7 +404,9 @@ callers (retainer-api.md §2). Endpoints: `GET /v1/me`,
    `GET /v1/extensions/:id/source-items`. It pages local IDs for this account,
    including reserved items whose import failed. Re-enable and upgrade cancel
    old-generation jobs too: retaining the feed cursor alone would lose that
-   accepted work. Recovery never queues erased or deliberately retracted items.
+   accepted work. Recovery never queues erased items. A retracted or deleted
+   item is queued only when it has managed tasks still awaiting cleanup; that
+   run can remove tasks but cannot recreate its meeting.
 
 ### 4.4 `backfill`
 
@@ -421,16 +427,17 @@ Do not sweep retained items merely because a list omitted them.
 
 ### 4.5 `poll`
 
-Drains `/v1/changes` from the KV cursor, page by page, within its deadline.
+The schedule starts a typed updated-mode scan. Each scan job reads one
+`/v1/changes` page of up to 25 entries and checkpoints its next page child.
+Small pages keep each transaction and provider call bounded.
 Each page collapses entries to session IDs (a task entry uses its
 `session_id`). Reserve local source IDs in batches of at most 30, then
-checkpoint at most 1,000 children per call (the existing queue limit). A
-500-entry feed page fits, subject to the request byte limit; if it needs
-several checkpoints, advance the feed cursor only after every child is accepted. Use a page cursor hash in dedupe keys, together with the local
+checkpoint the next cursor with every child in one transaction. Use a page
+cursor hash in dedupe keys, together with the local
 source item, so a task-only change still fetches an unchanged session
 revision. Job input is only `{sourceItemId}`, never a provider ID or revision.
 
-On `410 cursor_expired`, fetch `head` **before** the recovery enumeration,
+On a missing cursor after erasure, or `410 cursor_expired`, fetch `head` **before** the recovery enumeration,
 then atomically checkpoint that cursor and a backfill child. Also refetch
 previously imported live source items, including ones outside backfillDays:
 otherwise an expired deletion could leave an old meeting and its tasks live
@@ -465,8 +472,9 @@ An entry's `op` is a hint; the fetch decides (retainer-api.md §4.4).
    Never follow a merged task ID to delete a survivor. Persist detachment in
    a source-task binding, not by merely dropping a KV map entry. A replay,
    source restore, reconnect or a task moved between sessions must not attach
-   it again. Untouched missing tasks are soft-deleted. Do not recreate a
-   soft-deleted or forgotten task on a later retry.
+   it again. Untouched missing tasks are soft-deleted. A locally deleted or
+   forgotten task never reappears. A task moved between Tamloot sessions may
+   reuse its server-removed record; it never creates a second identity.
 
 **Server support for kept tasks.** The outcome in the product spec §6.1 stays
 settled. Its claim that no server work is needed cannot hold under concurrent
@@ -501,6 +509,62 @@ tasks without a pagination flag. A response at that ceiling is incomplete
 for deletion purposes: upsert returned tasks, report degraded health, and
 skip absence-based deletion. Test this with fixtures. No Tamloot-side change
 is part of this work.
+
+### 4.7 Managed tasks on the server
+
+The source policy gains `tasks`: object, identity, title, status and optional
+person-field universal IDs, plus the source's open/done status mapping. The
+identity field must be a contributed unique text field. The server resolves
+all bindings under the schema lock. No client picks a field or record ID.
+`GET /v1/extensions/:id/source-tasks/schema` returns current names and binding
+health to a live run, without changing public schema reads.
+
+`source_tasks` binds `(account, provider task ID)` to one record, its current
+source item/event, the installation and its display actor. States distinguish
+synced, human-detached, locally deleted and provider-removed tasks. This
+survives KV erasure, reconnect and reinstall. A moved task can restore only a
+record this reconciler removed; it never restores a local deletion, follows a
+merged ID to delete a survivor, or reattaches a human-detached task.
+
+`POST /v1/extensions/:id/source-items/:item/tasks` accepts the current event
+revision, the task-write revision read before fetching provider state, the
+fetched task list and whether that list is complete. Only the
+item's pinned ingestion job can call it. It checks the revision under the
+account task lock, then sorted source item rows for every affected item,
+then the source event and sorted task records. The account lock serializes
+moves across sessions and avoids hundreds of advisory locks for a large list.
+A concurrent task snapshot that already advanced the task-write revision rejects the older
+snapshot. A task moved between items also advances the previous item’s
+task-write revision; a stale old-session snapshot must refetch. An unchanged
+task writes no assertions. User history is checked under those same locks.
+Each request changes at most 30 task roots and returns `hasMore` and a server checkpoint. It
+charges the connection's write budget for changed roots. Ordinary relation
+cascades use the normal deletion lifecycle, including event retraction. If a
+cascade would delete another edited managed task, removal fails with
+`source_task_delete_conflict`; it must not silently discard that edit.
+A child ingestion job continues from that checkpoint, so a large regeneration does not exhaust
+one job's retry allowance. Each child refetches current provider state.
+Task creates and updates use the normal value validator. Added required fields
+produce field-specific errors; the importer cannot bypass workspace constraints.
+
+Retraction detaches edited managed tasks before retracting their source
+assertions, including ordinary event deletion. It copies current sourced
+values as installation-ranked direct assertions; existing human assertions
+keep normal precedence. The original sourced assertions stay in history.
+This does not manufacture user-ranked writes or change general precedence.
+
+Privacy erasure is stronger than provider removal. It erases associated task
+records and mappings, including detached copies derived from that source,
+and writes keyed task-identity tombstones. Forgetting a task suppresses that
+task without erasing its meeting. Recovery and retries check those tombstones.
+Workspace deletion cascades the new store. No raw provider task ID or copied
+text stays in an erasure receipt, KV, job input or diagnostic.
+
+Polling starts a typed operation-clock scan and queues a page job, as Granola
+does. That job drains the feed and completes the scan checkpoint. The same
+page function handles created-mode backfill and updated-mode feed scans.
+Provider cursors still decide what to read; these clocks do not filter the
+feed. This preserves the platform's scan/import status distinction.
 
 ## 5. Hosted rollout (`retainer-cloud`)
 
@@ -548,8 +612,8 @@ Real Postgres, a fresh database per file, no mocked database.
    `baea95a`; full typecheck, lint and tests passed.
 2. Migration: `extension_connections`, connection scope constraints, broker
    SQL capabilities and populated workspace-state upgrade tests. Persistence
-   and null-scope compatibility are implemented; member broker admission
-   and lifecycle follow in steps 3–4.
+   and null-scope compatibility, member broker admission and lifecycle are
+   implemented and tested locally.
 3. Lifecycle, REST, SDK, read-only MCP and effective member removal. Implemented
    and tested locally.
 4. Runtime scoping: claim, run token, admission, runtime endpoints,
@@ -558,9 +622,9 @@ Real Postgres, a fresh database per file, no mocked database.
 5. Web: connection card, staged member credentials, reconnect generation
    preconditions and admin table. Implemented and tested locally, including
    real-Postgres browser coverage.
-6. Managed-task server support, schema bindings and Tamloot bundle, fixtures
-   and tests. Can start beside step 3, against the
-   new manifest.
+6. Managed-task server support and schema bindings are implemented and
+   tested. The Tamloot bundle and provider fixtures are implemented; final
+   verification and their own commit follow the server support.
 7. Hosted rollout and a live test with a real Tamloot key. Out of scope for
    this branch task; do not access retainer-cloud.
 

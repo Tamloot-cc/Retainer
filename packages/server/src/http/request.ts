@@ -4,12 +4,41 @@ import { z } from 'zod';
 import { AppError, profileNotSupported } from '../errors.js';
 
 /** Parses a JSON body with a schema; malformed JSON and invalid shapes are 400s. */
-export async function readBody<T extends z.ZodType>(c: Context, schema: T): Promise<z.infer<T>> {
+export async function readBody<T extends z.ZodType>(
+  c: Context,
+  schema: T,
+  maxBytes?: number,
+): Promise<z.infer<T>> {
   let body: unknown;
   try {
-    const text = await c.req.text();
+    let text: string;
+    if (maxBytes && c.req.raw.body) {
+      const reader = c.req.raw.body.getReader(),
+        chunks: Uint8Array[] = [];
+      let bytes = 0;
+      try {
+        while (true) {
+          const next = await reader.read();
+          if (next.done) break;
+          bytes += next.value.byteLength;
+          if (bytes > maxBytes) {
+            await reader.cancel();
+            throw new AppError(
+              413,
+              'quota_exceeded',
+              'request body exceeds the source transport limit',
+            );
+          }
+          chunks.push(next.value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      text = Buffer.concat(chunks).toString('utf8');
+    } else text = await c.req.text();
     body = text.trim() === '' ? {} : JSON.parse(text);
-  } catch {
+  } catch (error) {
+    if (error instanceof AppError) throw error;
     throw new AppError(400, 'invalid_json', 'the request body is not valid JSON');
   }
   const parsed = schema.safeParse(body);

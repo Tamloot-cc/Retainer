@@ -30,12 +30,12 @@ attendees and stores assertions. An outside agent can subsequently read the
 change feed and derive tasks. No agent needs to run for ingestion to continue.
 
 V1 includes first-party hosted functions, standalone app connections, workspace
-connections, schema contributions and saved views, generated settings forms,
+and member connections, schema contributions and saved views, generated
+settings forms,
 secret storage, installation KV, files, webhooks, schedules, record-change
 triggers, a public change feed, and run inspection/retry. Only Tamloot-published,
 release-bundled packages are executable. Third-party uploads, npm installation,
-custom screens, personal connections, callable MCP functions, guides, dependency
-resolution, and a marketplace are deferred. These are delivery phases of one
+custom screens, callable MCP functions, guides, dependency resolution, and a marketplace are deferred. These are delivery phases of one
 v1, not a claim that all primitives exist already.
 
 ## 2. Critical evaluation of the proposal
@@ -205,8 +205,18 @@ reject remote references and enforce size/depth limits.
 
 Registration identity is stable across releases; installation identity is stable
 across disable/re-enable. V1 supports one installation per registration/workspace,
-with one connected source account. Replacing the account requires disconnect and
-explicit reconnect, retaining a separate source-account namespace. Credentials,
+with one connected source account for a workspace extension. A member extension
+has one connection per person instead. Each connection owns its credentials,
+settings, generation, jobs, schedules, KV, budgets and source-account binding.
+The admin approves the installation grant and shared-data consent once; each
+member supplies their own connection settings and secrets. Writes retain the
+installation's integration or agent rank, even when a member owns the key.
+A connection's verified account is pinned across reconnect; a different account
+needs a new connection. Retained source identity survives disconnect and reinstall.
+The `connect` hook verifies member credentials; `disconnect` cleanup has neither
+CRM access nor secrets. Effective membership loss fences the connection before
+cleanup. See [the member connection contract](extensions-tamloot-implementation.md#3-part-a-member-connections)
+for validation, broker capabilities, fairness and lifecycle details. Credentials,
 source identities and retained data never follow a mutable display name.
 
 ## 6. Persistence and ownership
@@ -230,8 +240,9 @@ role with no ordinary read grants. Generate migrations from Drizzle.
 | Source items/revisions | Stable account-scoped external identity, current revision/event, provider ordering marker, content digest and suppression identity. Revision uniqueness is durable, not the request-idempotency TTL.                |
 | Files/references       | Workspace, immutable opaque ID, storage key, checksum, media type, byte length, upload state/expiry, reference edges and deletion state.                                                                            |
 
-Global lock order is deployment lock → privacy lock → schema lock → installation
-lock → source/connection identity locks → sorted record locks → feed counter.
+Global lock order is deployment lock → privacy lock → schema lock → membership
+lock (where needed) → installation lock → queue lease → source/connection identity
+locks → source item rows → event records → sorted target records → feed counter.
 Use shared/exclusive modes appropriate to the operation, skip unused locks, and
 never acquire an earlier lock while holding a later one. In particular, runtime
 writes acquire schema before installation; lifecycle code must not hold the
@@ -1075,6 +1086,18 @@ receipt cannot restore a different current revision's availability.
 Ordinary record deletion also marks the current managed item retracted. Direct
 field/participant editing of managed revisions is refused; the UI shows their
 current or superseded status and preserves explicit historical reads.
+
+A reviewed source policy can also declare managed `tasks`, binding identity,
+title, status and an optional person relation by universal ID. The source run
+reads bounded binding names/health and submits task snapshots with both the
+current event revision and the task-write revision read before provider I/O.
+The server resolves schema bindings, locks the task account and affected source items
+before sorted task records, and reconciles a bounded prefix. Human assertion
+history permanently detaches a task; source retraction preserves its values as
+installation-ranked direct claims. Untouched missing tasks are soft-deleted.
+Incomplete lists never imply deletion. Durable task bindings survive KV loss;
+privacy erasure removes derived copies and suppresses their provider identities.
+See [managed task reconciliation](extensions-tamloot-implementation.md#47-managed-tasks-on-the-server).
 
 Catch-up starts 31 days back for Granola, with explicit larger backfills. A page
 transaction enqueues all item jobs and commits its checkpoint together. Advance

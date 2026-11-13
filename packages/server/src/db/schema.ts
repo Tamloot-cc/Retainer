@@ -2221,6 +2221,63 @@ export const sourceSyncState = pgTable(
     }),
   ],
 ).enableRLS();
+/** Durable child identities; provider removal and local deletion have different restore rules. */
+export const sourceTasks = pgTable(
+  'source_tasks',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    externalId: text('external_id').notNull(),
+    itemId: uuid('item_id').notNull(),
+    recordId: uuid('record_id').notNull(),
+    sourceEventId: uuid('source_event_id').notNull(),
+    state: text('state').notNull().default('synced'),
+    contentDigest: text('content_digest'),
+    actorName: text('actor_name'),
+  },
+  (t) => [
+    unique('source_tasks_identity_uq').on(t.workspaceId, t.accountId, t.externalId),
+    tenantFk(
+      'source_tasks_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    tenantFk(
+      'source_tasks_account_fk',
+      [t.workspaceId, t.accountId],
+      [sourceAccounts.workspaceId, sourceAccounts.id],
+    ),
+    tenantFk(
+      'source_tasks_item_fk',
+      [t.workspaceId, t.itemId],
+      [sourceItems.workspaceId, sourceItems.id],
+    ),
+    tenantFk(
+      'source_tasks_record_fk',
+      [t.workspaceId, t.recordId],
+      [records.workspaceId, records.id],
+    ),
+    tenantFk(
+      'source_tasks_event_fk',
+      [t.workspaceId, t.sourceEventId],
+      [records.workspaceId, records.id],
+    ),
+    index('source_tasks_install_idx').on(t.workspaceId, t.installationId),
+    index('source_tasks_item_idx').on(t.workspaceId, t.itemId),
+    index('source_tasks_record_idx').on(t.workspaceId, t.recordId),
+    index('source_tasks_event_idx').on(t.workspaceId, t.sourceEventId),
+    check('source_tasks_state', sql`${t.state} in ('synced','detached','local_deleted','removed')`),
+    pgPolicy('source_tasks_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
 export const sourceItems = pgTable(
   'source_items',
   {
@@ -2230,6 +2287,7 @@ export const sourceItems = pgTable(
     externalId: text('external_id'),
     state: text('state').notNull().default('reserved'),
     providerRevision: text('provider_revision'),
+    taskWriteRevision: integer('task_write_revision').notNull().default(0),
     preparedJobId: uuid('prepared_job_id'),
     preparedFence: bigint('prepared_fence', { mode: 'number' }),
     createdAt: createdAt(),

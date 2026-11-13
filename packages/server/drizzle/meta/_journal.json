@@ -729,6 +729,20 @@
       "when": 1794574818034,
       "tag": "0103_member_broker_admission",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1794579289783,
+      "tag": "0104_managed_source_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1794579290972,
+      "tag": "0105_managed_source_task_grants",
+      "breakpoints": true
     }
   ]
 }

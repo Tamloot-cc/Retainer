@@ -10,11 +10,25 @@ import {
   reserveSourceSchema,
   sourceBindingSchema,
   sourceEventSchema,
+  sourceTaskBatchSchema,
   sourceUnavailableSchema,
 } from '../../sources/contract.js';
 import type { Sources } from '../../sources/service.js';
 
 export function sourceRoutes(app: Hono<AppEnv>, sources: Sources) {
+  app.get('/extensions/:id/source-tasks/schema', requireScope('read'), async (c) =>
+    c.json(await sources.taskSchema(c.get('caller'), idParam(c))),
+  );
+  app.post('/extensions/:id/source-items/:item/tasks', requireScope('write'), async (c) =>
+    c.json(
+      await sources.tasks(
+        c.get('caller'),
+        idParam(c),
+        idParam(c, 'item'),
+        await readBody(c, sourceTaskBatchSchema, 2 * 1024 * 1024),
+      ),
+    ),
+  );
   app.get('/extensions/:id/source-items', requireScope('read'), async (c) =>
     c.json(
       await sources.items(
@@ -90,6 +104,12 @@ export function sourceRoutes(app: Hono<AppEnv>, sources: Sources) {
     c.json(await sources.get(c.get('caller'), idParam(c), z.uuid().parse(c.req.param('item')))),
   );
   app.post('/extensions/:id/source-events', requireScope('write'), async (c) =>
-    c.json(await sources.sync(c.get('caller'), idParam(c), await readBody(c, sourceEventSchema))),
+    c.json(
+      await sources.sync(
+        c.get('caller'),
+        idParam(c),
+        await readBody(c, sourceEventSchema, 2 * 1024 * 1024),
+      ),
+    ),
   );
 }

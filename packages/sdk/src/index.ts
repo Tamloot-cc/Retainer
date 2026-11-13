@@ -672,6 +672,21 @@ export class RetainerClient {
       input,
     );
   }
+  sourceTaskSchema(installationId: string) {
+    return this.get<import('@retainer/extension').SourceTaskSchema>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/source-tasks/schema`,
+    );
+  }
+  syncSourceTasks(
+    installationId: string,
+    itemId: string,
+    input: import('@retainer/extension').SourceTaskBatchInput,
+  ) {
+    return this.post<import('@retainer/extension').SourceTaskBatchResult>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/source-items/${encodeURIComponent(itemId)}/tasks`,
+      input,
+    );
+  }
   disconnectSource(installationId: string) {
     return this.post<{ disconnected: true }>(
       `/v1/extensions/${encodeURIComponent(installationId)}/source/disconnect`,

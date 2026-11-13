@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { ExtensionManifest, InputSchema } from '@retainer/extension';
-import { BASE_EVENT_TYPE_IDS } from '@retainer/shared';
+import { BASE_EVENT_TYPE_IDS, BASE_FIELD_IDS, BASE_OBJECT_IDS } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { removeFromOrganization } from '../../src/accounts/people.js';
@@ -37,8 +37,24 @@ const fn = (
   inputSchema,
   timeoutSeconds: 120,
 });
+const taskFieldId = randomUUID();
 const manifest = extensionFixture({
+  schema: [
+    {
+      kind: 'field',
+      objectId: BASE_OBJECT_IDS.task,
+      definition: {
+        universalId: taskFieldId,
+        name: 'memberTaskId',
+        label: 'Member task ID',
+        type: 'text',
+        isUnique: true,
+        isNullable: true,
+      },
+    },
+  ],
   name: 'member-fixture',
+  onSourceDelete: 'retract',
   connection: 'member',
   scopes: ['read', 'write'],
   settings: {
@@ -68,6 +84,14 @@ const manifest = extensionFixture({
     },
   },
   source: {
+    tasks: {
+      objectId: BASE_OBJECT_IDS.task,
+      identityFieldId: taskFieldId,
+      titleFieldId: '5f37aa96-fac8-4572-9647-6b0da5d6d0c8',
+      statusFieldId: BASE_FIELD_IDS.taskStatus,
+      personFieldId: '3d66fcfe-2e9c-4aeb-a88a-7d6b3c2194ba',
+      statuses: { open: 'todo', done: 'done' },
+    },
     provider: 'fixture',
     identity: 'account',
     verifyFunctionId: connectId,
@@ -669,5 +693,439 @@ describe('member connection API, broker and execution with real Postgres', () =>
         caller.run,
       ),
     ).rejects.toMatchObject({ code: 'installation_disabled' });
+  });
+});
+
+async function taskFixture() {
+  const h = await setup(),
+    c = await connecting(h, h.keys.dana, 'task-key');
+  const parent = await work(h, await activate(h, c, 'task-account'));
+  const account = (await t.request(`${h.base}/source`, { key: parent.token })).body.sourceAccountId;
+  const item = (
+    await t.request(`${h.base}/source-items`, {
+      key: parent.token,
+      body: { sourceAccountId: account, externalId: randomUUID() },
+    })
+  ).body.sourceItemId;
+  const child = await t.request(`${h.base}/runtime/checkpoint`, {
+    key: parent.token,
+    body: {
+      children: [{ functionId: syncId, input: { sourceItemId: item }, dedupeKey: 'task-sync' }],
+    },
+  });
+  expect(child.status).toBe(200);
+  await h.queue.complete(parent.run, { status: 'succeeded' });
+  const sync = await work(h, child.body.ids[0]);
+  const imported = await t.request(`${h.base}/source-events`, {
+    key: sync.token,
+    body: {
+      sourceItemId: item,
+      providerRevision: '1',
+      expectedRevisionId: null,
+      event: {
+        type: BASE_EVENT_TYPE_IDS.conversation,
+        occurredAt: '2026-01-01T12:00:00Z',
+        title: 'Meeting',
+        summary: 'a'.repeat(21000),
+      },
+    },
+  });
+  expect(imported.status).toBe(200);
+  const revision = imported.body.revisionId;
+  const tasks = async (values: unknown[], complete = true) => {
+    const snapshot = await t.request(`${h.base}/source-items/${item}`, { key: sync.token });
+    return t.request(`${h.base}/source-items/${item}/tasks`, {
+      key: sync.token,
+      body: {
+        expectedRevisionId: revision,
+        expectedTaskRevision: snapshot.body.taskWriteRevision,
+        tasks: values,
+        complete,
+      },
+    });
+  };
+  return { ...h, sync, item, revision, tasks, event: imported.body.eventId };
+}
+const managedTask = (externalId: string, title = 'Follow up') => ({
+  externalId,
+  title,
+  status: 'open',
+  contactEmails: [],
+});
+describe('managed source tasks with real Postgres', () => {
+  it('serializes competing snapshots, is idempotent and keeps edited tasks permanently', async () => {
+    const h = await taskFixture();
+    const results = await Promise.all([
+      h.tasks([managedTask('one'), managedTask('two')]),
+      h.tasks([managedTask('one'), managedTask('two')]),
+    ]);
+    expect(results.every((r) => [200, 409].includes(r.status))).toBe(true);
+    expect(results.reduce((sum, r) => sum + (r.body.applied ?? 0), 0)).toBe(2);
+    const rows =
+      await db.owner`select record_id,external_id from source_tasks where item_id=${h.item} order by external_id`;
+    const edited = await t.request(`/v1/records/${rows[0]!.record_id}`, {
+      key: h.keys.dana,
+      method: 'PATCH',
+      body: { values: { title: 'My edited task' } },
+    });
+    expect(edited.status).toBe(200);
+    const removed = await h.tasks([]);
+    expect(removed.status).toBe(200);
+    expect(removed.body).toMatchObject({ detached: 1, removed: 1 });
+    const kept = await t.request(`/v1/records/${rows[0]!.record_id}`, { key: h.keys.admin });
+    expect(kept.status).toBe(200);
+    expect(kept.body.fields.title).toBe('My edited task');
+    expect(
+      (await h.tasks([managedTask('one', 'Overwrite'), managedTask('two')])).body,
+    ).toMatchObject({ applied: 1 });
+    expect(
+      (await db.owner`select state from source_tasks where record_id=${rows[0]!.record_id}`)[0]!
+        .state,
+    ).toBe('detached');
+  });
+  it('skips absence deletion for incomplete snapshots and never restores a locally deleted task', async () => {
+    const h = await taskFixture();
+    expect((await h.tasks([managedTask('one')])).status).toBe(200);
+    expect((await h.tasks([], false)).body.removed).toBe(0);
+    const [row] = await db.owner`select record_id from source_tasks where item_id=${h.item}`;
+    expect(
+      (await t.request(`/v1/records/${row!.record_id}`, { key: h.keys.dana, method: 'DELETE' }))
+        .status,
+    ).toBe(200);
+    expect((await h.tasks([managedTask('one')])).body.applied).toBe(0);
+    expect(
+      (await db.owner`select deleted_at from records where id=${row!.record_id}`)[0]!.deleted_at,
+    ).not.toBeNull();
+  });
+  it('detaches under the same locks before source retraction and erases derived task copies on forget', async () => {
+    const h = await taskFixture();
+    await h.tasks([managedTask('one'), managedTask('two')]);
+    const rows =
+      await db.owner`select record_id from source_tasks where item_id=${h.item} order by external_id`;
+    expect(
+      (
+        await t.request(`/v1/records/${rows[0]!.record_id}`, {
+          key: h.keys.dana,
+          method: 'PATCH',
+          body: { values: { title: 'Keep this' } },
+        })
+      ).status,
+    ).toBe(200);
+    const removed = await t.request(`${h.base}/source-items/${h.item}/unavailable`, {
+      key: h.sync.token,
+      body: { status: 'deleted', evidence: 'definitive_lookup' },
+    });
+    expect(removed.status).toBe(200);
+    const [binding] =
+      await db.owner`select state from source_tasks where record_id=${rows[0]!.record_id}`;
+    expect(binding!.state).toBe('detached');
+    expect(
+      (await t.request(`/v1/records/${h.event}/forget`, { key: h.keys.admin, body: {} })).status,
+    ).toBe(200);
+    expect(
+      await db.owner`select id from records where id=any(${rows.map((r) => r.record_id)}::uuid[])`,
+    ).toHaveLength(0);
+    expect(
+      await db.owner`select 1 from event_identity_tombstones where workspace_id=${h.workspace}`,
+    ).toHaveLength(3);
+  });
+});
+
+describe('managed task continuation and edit races', () => {
+  it('commits bounded progress and resumes without repeating assertions', async () => {
+    const h = await taskFixture(),
+      values = Array.from({ length: 35 }, (_, i) => managedTask(`batch-${i}`));
+    const first = await h.tasks(values);
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ applied: 30, hasMore: true });
+    const second = await h.tasks(values);
+    expect(second.status).toBe(200);
+    expect(second.body).toMatchObject({ applied: 5, hasMore: false });
+    expect(second.body.checkpoint).toBeGreaterThan(first.body.checkpoint);
+    const third = await h.tasks(values);
+    expect(third.body).toMatchObject({
+      applied: 0,
+      hasMore: false,
+      checkpoint: second.body.checkpoint,
+    });
+    expect(await db.owner`select id from source_tasks where item_id=${h.item}`).toHaveLength(35);
+  });
+  it('serializes a human edit against source removal and never silently loses the edit', async () => {
+    const h = await taskFixture();
+    await h.tasks([managedTask('race')]);
+    const [binding] = await db.owner`select record_id from source_tasks where item_id=${h.item}`;
+    const [edit, remove] = await Promise.all([
+      t.request(`/v1/records/${binding!.record_id}`, {
+        key: h.keys.dana,
+        method: 'PATCH',
+        body: { values: { title: 'My raced edit' } },
+      }),
+      h.tasks([]),
+    ]);
+    expect(remove.status).toBe(200);
+    if (edit.status === 200) {
+      const kept = await t.request(`/v1/records/${binding!.record_id}`, { key: h.keys.admin });
+      expect(kept.status).toBe(200);
+      expect(kept.body.fields.title).toBe('My raced edit');
+    } else expect(edit.status).toBe(409);
+  });
+});
+
+describe('managed task schema and identity safety', () => {
+  it('resolves renamed fields by reviewed IDs and stops safely when an open status is removed', async () => {
+    const h = await taskFixture();
+    const renamed = await t.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        operations: [{ op: 'rename_field', object: 'task', field: 'title', name: 'action' }],
+      },
+    });
+    expect(renamed.status).toBe(200);
+    expect((await h.tasks([{ ...managedTask('renamed'), status: 'done' }])).body.applied).toBe(1);
+    const schema = await t.request(`${h.base}/source-tasks/schema`, { key: h.sync.token });
+    expect(schema.body.fields.title.name).toBe('action');
+    const removed = await t.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        operations: [{ op: 'remove_option', object: 'task', field: 'status', value: 'todo' }],
+      },
+    });
+    expect(removed.status).toBe(200);
+    const result = await h.tasks([]);
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ bindingStatus: 'degraded', removed: 0 });
+    expect(
+      await db.owner`select id from source_tasks where item_id=${h.item} and state='synced'`,
+    ).toHaveLength(1);
+  });
+  it('treats the provider ceiling of 500 tasks as incomplete even if marked complete', async () => {
+    const h = await taskFixture();
+    await h.tasks([managedTask('retained')]);
+    const result = await h.tasks(
+      Array.from({ length: 500 }, (_, i) => managedTask(`ceiling-${i}`)),
+    );
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      applied: 30,
+      removed: 0,
+      hasMore: true,
+      warnings: ['source_tasks_incomplete'],
+    });
+    expect(
+      (
+        await db.owner`select state from source_tasks where item_id=${h.item} and external_id='retained'`
+      )[0]!.state,
+    ).toBe('synced');
+  });
+  it('restores only a provider-removed task when it moves sessions, preserving its local ID', async () => {
+    const h = await taskFixture();
+    await h.tasks([managedTask('moved')]);
+    const [prior] = await db.owner`select record_id from source_tasks where item_id=${h.item}`;
+    await h.tasks([]);
+    const account = (await t.request(`${h.base}/source`, { key: h.sync.token })).body
+      .sourceAccountId;
+    const item = (
+      await t.request(`${h.base}/source-items`, {
+        key: h.sync.token,
+        body: { sourceAccountId: account, externalId: randomUUID() },
+      })
+    ).body.sourceItemId;
+    const next = await t.request(`${h.base}/runtime/checkpoint`, {
+      key: h.sync.token,
+      body: {
+        children: [{ functionId: syncId, input: { sourceItemId: item }, dedupeKey: 'moved-task' }],
+      },
+    });
+    expect(next.status).toBe(200);
+    await h.queue.complete(h.sync.run, { status: 'succeeded' });
+    const sync = await work(h, next.body.ids[0]);
+    const imported = await t.request(`${h.base}/source-events`, {
+      key: sync.token,
+      body: {
+        sourceItemId: item,
+        providerRevision: '1',
+        expectedRevisionId: null,
+        event: {
+          type: BASE_EVENT_TYPE_IDS.conversation,
+          title: 'New meeting',
+          occurredAt: '2026-01-02T12:00:00Z',
+        },
+      },
+    });
+    expect(imported.status).toBe(200);
+    const result = await t.request(`${h.base}/source-items/${item}/tasks`, {
+      key: sync.token,
+      body: {
+        expectedRevisionId: imported.body.revisionId,
+        expectedTaskRevision: 0,
+        tasks: [managedTask('moved', 'Moved action')],
+        complete: true,
+      },
+    });
+    expect(result.status).toBe(200);
+    const [binding] =
+      await db.owner`select record_id,item_id,state from source_tasks where account_id=${account} and external_id='moved'`;
+    expect(binding).toMatchObject({ record_id: prior!.record_id, item_id: item, state: 'synced' });
+    const [oldItem] =
+      await db.owner`select task_write_revision from source_items where id=${h.item}`;
+    expect(oldItem!.task_write_revision).toBe(3);
+  });
+  it('suppresses a forgotten task identity without erasing its meeting', async () => {
+    const h = await taskFixture();
+    await h.tasks([managedTask('forgotten')]);
+    const [task] = await db.owner`select record_id from source_tasks where item_id=${h.item}`;
+    expect(
+      (await t.request(`/v1/records/${task!.record_id}/forget`, { key: h.keys.admin, body: {} }))
+        .status,
+    ).toBe(200);
+    expect(await db.owner`select id from records where id=${h.event}`).toHaveLength(1);
+    expect(await db.owner`select id from source_tasks where item_id=${h.item}`).toHaveLength(0);
+    expect(
+      await db.owner`select 1 from event_identity_tombstones where workspace_id=${h.workspace}`,
+    ).toHaveLength(1);
+  });
+});
+
+describe('managed task cascading deletion', () => {
+  it('retracts evidence for events reached through ordinary cascade rules', async () => {
+    const h = await taskFixture();
+    await h.tasks([managedTask('cascade')]);
+    const [task] = await db.owner`select record_id from source_tasks where item_id=${h.item}`;
+    const schema = await t.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_field',
+            object: 'conversation',
+            field: {
+              name: 'action',
+              label: 'Action',
+              type: 'relation',
+              settings: { targetObject: 'task', inverseField: 'discussions', onDelete: 'cascade' },
+            },
+          },
+        ],
+      },
+    });
+    expect(schema.status).toBe(200);
+    const event = await t.request('/v1/events', {
+      key: h.keys.admin,
+      body: {
+        type: 'conversation',
+        channel: 'test',
+        occurredAt: '2026-01-02T12:00:00Z',
+        title: 'Task discussion',
+        fields: { action: task!.record_id },
+      },
+    });
+    expect(event.status).toBe(201);
+    const person = await t.request('/v1/objects/person/records', {
+      key: h.keys.admin,
+      body: { values: { name: 'Cascade person' } },
+    });
+    expect(person.status).toBe(201);
+    const claim = await t.request(`/v1/records/${person.body.id}`, {
+      key: h.keys.admin,
+      method: 'PATCH',
+      body: { values: { jobTitle: 'Evidence from discussion' }, source: event.body.id },
+    });
+    expect(claim.status).toBe(200);
+    expect((await h.tasks([])).status).toBe(200);
+    const assertions =
+      await db.owner`select status from field_assertions where record_id=${person.body.id} and source_record_id=${event.body.id}`;
+    expect(assertions.length).toBeGreaterThan(0);
+    expect(assertions.every((a) => a.status === 'retracted')).toBe(true);
+  });
+});
+
+describe('managed task cascade conflicts', () => {
+  async function linkedTasks() {
+    const h = await taskFixture();
+    await h.tasks([managedTask('parent'), managedTask('child')]);
+    const rows =
+      await db.owner`select record_id,external_id from source_tasks where item_id=${h.item}`;
+    const parent = rows.find((r) => r.external_id === 'parent')!.record_id,
+      child = rows.find((r) => r.external_id === 'child')!.record_id;
+    const schema = await t.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_field',
+            object: 'task',
+            field: {
+              name: 'parent',
+              label: 'Parent',
+              type: 'relation',
+              settings: { targetObject: 'task', inverseField: 'children', onDelete: 'cascade' },
+            },
+          },
+        ],
+      },
+    });
+    expect(schema.status).toBe(200);
+    expect(
+      (
+        await t.request(`/v1/records/${child}`, {
+          key: h.sync.token,
+          method: 'PATCH',
+          body: { values: { parent } },
+        })
+      ).status,
+    ).toBe(200);
+    return { ...h, parent, child };
+  }
+  it('does not retry deletion of a task already removed by the same cascade', async () => {
+    const h = await linkedTasks();
+    const result = await h.tasks([]);
+    expect(result.status).toBe(200);
+    expect(
+      await db.owner`select id from records where id=any(${[h.parent, h.child]}::uuid[]) and deleted_at is null`,
+    ).toHaveLength(0);
+  });
+  it('fails closed if a custom cascade would remove an edited managed task', async () => {
+    const h = await linkedTasks();
+    expect(
+      (
+        await t.request(`/v1/records/${h.child}`, {
+          key: h.keys.dana,
+          method: 'PATCH',
+          body: { values: { title: 'Keep the child' } },
+        })
+      ).status,
+    ).toBe(200);
+    const result = await h.tasks([]);
+    expect(result.status).toBe(409);
+    expect(result.body.error.code).toBe('source_task_delete_conflict');
+    expect(
+      await db.owner`select id from records where id=any(${[h.parent, h.child]}::uuid[]) and deleted_at is null`,
+    ).toHaveLength(2);
+  });
+});
+
+describe('managed task value validation', () => {
+  it('enforces workspace-required fields instead of bypassing the normal create rules', async () => {
+    const h = await taskFixture();
+    const changed = await t.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_field',
+            object: 'task',
+            field: { name: 'approval', label: 'Approval', type: 'text', isNullable: false },
+          },
+        ],
+      },
+    });
+    expect(changed.status).toBe(200);
+    const result = await h.tasks([managedTask('requires-approval')]);
+    expect(result.status).toBe(422);
+    expect(result.body.error.details.errors).toContainEqual({
+      field: 'approval',
+      message: 'is required',
+    });
+    expect(await db.owner`select id from source_tasks where item_id=${h.item}`).toHaveLength(0);
   });
 });

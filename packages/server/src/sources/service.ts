@@ -18,6 +18,7 @@ import { isEventIdentitySuppressed, isSuppressed, suppressedOf } from '../privac
 import { withRead, withWrite } from '../records/service.js';
 import { normalizeFieldValue } from '../records/values.js';
 import { insertRecord, markDeleted, type WriteContext, writeFields } from '../records/write.js';
+import { getSchema } from '../schema/compiled.js';
 import {
   prepareSourceSchema,
   reserveSourceBatchSchema,
@@ -26,10 +27,12 @@ import {
   type SourceResult,
   sourceBindingSchema,
   sourceEventSchema,
+  sourceTaskBatchSchema,
   sourceUnavailableSchema,
 } from './contract.js';
 import { compareRevision, type SourcePolicy, sourceIdentityChannel } from './policy.js';
 import { reserveSourceItem } from './reserve.js';
+import { reconcileTasks, taskSchema } from './tasks.js';
 
 type Resolve = (registration: string, version: string, digest: string) => ExtensionManifest;
 type Binding = {
@@ -42,6 +45,7 @@ type Binding = {
   settings: Record<string, unknown>;
 };
 type Item = {
+  task_write_revision?: number;
   id: string;
   account_id: string;
   external_id: string | null;
@@ -220,7 +224,7 @@ export class Sources {
       const rows = await tx<
         { id: string }[]
       >`select id from source_items where account_id=${binding.account_id}
-        and state in ('reserved','live','unavailable') ${cursor ? tx`and id>${cursor}::uuid` : tx``} order by id limit ${limit + 1}`;
+        and (state in ('reserved','live','unavailable') ${policy.tasks ? tx`or (state in ('deleted','retracted') and exists(select 1 from source_tasks t where t.item_id=source_items.id and t.state='synced'))` : tx``}) ${cursor ? tx`and id>${cursor}::uuid` : tx``} order by id limit ${limit + 1}`;
       const page = rows.slice(0, limit);
       return {
         items: page.map((row) => ({ sourceItemId: row.id })),
@@ -425,6 +429,7 @@ export class Sources {
         >`select id,event_id,content_digest from source_revisions where item_id=${itemId} and is_current`;
         return {
           sourceItemId: item.id,
+          taskWriteRevision: item.task_write_revision ?? 0,
           sourceAccountId: item.account_id,
           externalId: item.external_id,
           state: item.state,
@@ -634,6 +639,71 @@ export class Sources {
         writes.set(name, normalizeFieldValue(name, { first: participant.name, last: '' }));
       await writeFields(tx, context, person, record, writes);
     }
+  }
+  async taskSchema(caller: Caller, id: string) {
+    const run = this.runtime(caller, id);
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await lockSchemaShared(tx, caller.workspaceId);
+      await admitRun(tx, caller.workspaceId, run, false, 'runtime');
+      const { policy } = await this.release(tx, caller);
+      if (!policy.tasks) throw notFound('managed tasks');
+      return taskSchema(await getSchema(tx, caller.workspaceId), policy).response;
+    });
+  }
+  async tasks(
+    caller: Caller,
+    id: string,
+    itemId: string,
+    raw: z.input<typeof sourceTaskBatchSchema>,
+  ) {
+    this.runtime(caller, id);
+    const input = sourceTaskBatchSchema.parse(raw);
+    return withWrite(
+      this.sql,
+      caller,
+      async (tx, context) => {
+        const binding = await this.binding(tx, caller),
+          { policy } = await this.release(tx, caller);
+        if (!policy.tasks) throw notFound('managed tasks');
+        await this.ingestionJob(tx, caller, policy, itemId);
+        // One account lock stabilizes cross-session ownership without one advisory lock per task.
+        const identities = input.tasks.map((t) => t.externalId).sort();
+        await tx`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify(['source-tasks', binding.account_id])},0))`;
+        const previous = await tx<
+          { item_id: string }[]
+        >`select distinct item_id from source_tasks where account_id=${binding.account_id} and external_id=any(${identities}::text[])`;
+        const items = [...new Set([itemId, ...previous.map((t) => t.item_id)])].sort();
+        await tx`select id from source_items where id=any(${items}::uuid[]) order by id for update`;
+        const [item] = await tx<Item[]>`select * from source_items where id=${itemId}`;
+        if (!item) throw notFound('source item');
+        await this.usable(tx, caller, binding, item);
+        if ((item.task_write_revision ?? 0) !== input.expectedTaskRevision)
+          throw conflict(
+            'source_revision_conflict',
+            'task snapshot was replaced; fetch current provider state again',
+          );
+        const [current] = await tx<
+          Revision[]
+        >`select id,event_id,content_digest from source_revisions where item_id=${itemId} and is_current`;
+        if (
+          (current?.id ?? null) !== input.expectedRevisionId ||
+          (input.tasks.length && item.state !== 'live')
+        )
+          throw conflict('source_revision_conflict', 'task evidence is no longer current');
+        if (current) await tx`select id from records where id=${current.event_id} for key share`;
+        return reconcileTasks(
+          tx,
+          context,
+          policy,
+          binding,
+          itemId,
+          current?.event_id ?? null,
+          input,
+        );
+      },
+      {},
+      { asPerson: false },
+    );
   }
   async sync(
     caller: Caller,
