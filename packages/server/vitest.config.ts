@@ -9,6 +9,10 @@ if (existsSync(envFile) && !process.env.CI) process.loadEnvFile(envFile);
 // Tests import the MIT packages from source so they never run against a
 // stale build.
 const alias = {
+  '@retainer/runner/tamloot-contract': fileURLToPath(
+    new URL('../runner/src/tamloot-contract.ts', import.meta.url),
+  ),
+  '@retainer/runner/tamloot': fileURLToPath(new URL('../runner/src/tamloot.ts', import.meta.url)),
   '@retainer/runner/last-contact': fileURLToPath(
     new URL('../runner/src/last-contact.ts', import.meta.url),
   ),

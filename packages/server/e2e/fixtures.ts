@@ -12,6 +12,7 @@ import { createApp } from '../src/api/app.js';
 import { createApiKey } from '../src/auth/keys.js';
 import { createSql, RUNTIME_ROLE } from '../src/db/client.js';
 import { type ClaimedJob, ExtensionQueue } from '../src/extension-runtime/queue.js';
+import { SecretBroker, SecretCipher } from '../src/extension-runtime/secrets.js';
 import { RunTokens } from '../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../src/extensions/catalog.js';
 import { createFileServer, LocalFileStorage } from '../src/file-storage/local.js';
@@ -90,6 +91,51 @@ export const browserMappingManifest = manifestFixture({
     ],
   },
 });
+export const browserMemberManifest = manifestFixture({
+  universalId: 'd76ad98b-ac74-4fe5-82ac-0947165f8780',
+  name: 'member-browser',
+  connection: 'member',
+  scopes: ['read', 'write'],
+  settings: {
+    share: {
+      type: 'boolean',
+      label: 'Share member data',
+      required: true,
+      consent: true,
+      default: false,
+      secret: false,
+      reconnect: false,
+    },
+    days: {
+      type: 'number',
+      label: 'History days',
+      level: 'connection',
+      required: true,
+      default: 31,
+      secret: false,
+      reconnect: false,
+    },
+    apiKey: {
+      type: 'string',
+      label: 'Member API key',
+      level: 'connection',
+      required: true,
+      secret: true,
+      reconnect: true,
+    },
+  },
+  functions: [
+    {
+      universalId: 'de31f9cb-954f-4f93-bcca-b794e9372833',
+      name: 'connect',
+      description: 'Browser member setup',
+      handlerDigest: 'a'.repeat(64),
+      trigger: { kind: 'connect' },
+      inputSchema: { type: 'object', additionalProperties: false },
+      timeoutSeconds: 120,
+    },
+  ],
+});
 export const test = base.extend<
   {
     retainer: {
@@ -98,6 +144,7 @@ export const test = base.extend<
       request: (path: string, body?: unknown, key?: string, method?: string) => Promise<any>;
       /** Runs the consolidator once, which suggests merges. */
       consolidate: () => Promise<unknown>;
+      activateMembers: () => Promise<void>;
       sourceEvidence: () => Promise<{
         personId: string;
         previousEventId: string;
@@ -111,6 +158,7 @@ export const test = base.extend<
     fileStorage: boolean;
     sourceFixture: boolean;
     mappingFixture: boolean;
+    memberFixture: boolean;
   }
 >({
   extensionFixture: [false, { option: true, scope: 'worker' }],
@@ -118,6 +166,7 @@ export const test = base.extend<
   fileStorage: [false, { option: true, scope: 'worker' }],
   sourceFixture: [false, { option: true, scope: 'worker' }],
   mappingFixture: [false, { option: true, scope: 'worker' }],
+  memberFixture: [false, { option: true, scope: 'worker' }],
   retainer: async (
     {
       browserName: _browserName,
@@ -126,6 +175,7 @@ export const test = base.extend<
       fileStorage: withFiles,
       sourceFixture,
       mappingFixture,
+      memberFixture,
     },
     use,
   ) => {
@@ -201,8 +251,21 @@ export const test = base.extend<
       ? new ExtensionCatalog([
           { manifest: sourceManifest, actorCeiling: 'integration', runtimeEnabled: true },
         ])
+      : memberFixture
+        ? new ExtensionCatalog([
+            { manifest: browserMemberManifest, actorCeiling: 'integration', runtimeEnabled: true },
+          ])
+        : undefined;
+    const secretSql = memberFixture
+      ? createSql(dbUrl.toString(), { role: 'retainer_secret_broker' })
       : undefined;
-    const pair = sourceFixture ? await generateKeyPair('EdDSA') : undefined;
+    const extensionSecrets = secretSql
+      ? new SecretBroker(
+          secretSql,
+          new SecretCipher('browser', new Map([['browser', randomBytes(32)]])),
+        )
+      : undefined;
+    const pair = sourceFixture || memberFixture ? await generateKeyPair('EdDSA') : undefined;
     const runTokens = pair
       ? new RunTokens({
           issuer: 'https://retainer.test',
@@ -214,6 +277,7 @@ export const test = base.extend<
     const app = createApp({
       sql,
       ...(storage ? { fileStorage: storage } : {}),
+      ...(extensionSecrets ? { extensionSecrets } : {}),
       ...(catalog && runTokens
         ? {
             extensionCatalog: catalog,
@@ -261,6 +325,42 @@ export const test = base.extend<
       const result = await response.json();
       if (!response.ok) throw new Error(JSON.stringify(result));
       return result;
+    }
+    async function activateMembers() {
+      if (!memberFixture || !catalog || !runTokens)
+        throw new Error('member fixture is not enabled');
+      const queue = new ExtensionQueue(sql, catalog.runtime);
+      for (const kind of ['install', 'connect']) {
+        const jobs =
+          await owner`select j.id,j.installation_id from extension_jobs j join extension_installations i on i.id=j.installation_id and i.generation=j.generation
+          where j.workspace_id=${workspace.id} and i.registration_id=${browserMemberManifest.universalId} and j.status='queued' and j.trigger_kind=${kind} order by j.id`;
+        for (const job of jobs) {
+          const run = await queue.claim(workspace.id, job.id, `browser-member-${kind}`);
+          if (!run) throw new Error('member fixture job missing');
+          if (kind === 'connect') {
+            const token = await runTokens.issue(sql, run, browserMemberManifest.universalId, [
+              'read',
+              'write',
+            ]);
+            const response = await fetch(
+              `${url}/v1/extensions/${job.installation_id}/runtime/secrets/apiKey`,
+              { headers: { authorization: `Bearer ${token}` } },
+            );
+            const body = await response.json();
+            if (
+              !response.ok ||
+              typeof body !== 'object' ||
+              body === null ||
+              !('value' in body) ||
+              typeof body.value !== 'string' ||
+              !body.value
+            )
+              throw new Error('member secret round trip failed');
+          }
+          await queue.complete(run, { status: 'succeeded' });
+          await queue.scheduleTick(workspace.id, job.installation_id);
+        }
+      }
     }
     async function sourceEvidence() {
       if (!catalog || !runTokens) throw new Error('source fixture is not enabled');
@@ -355,6 +455,7 @@ export const test = base.extend<
         request,
         consolidate: () => consolidateWorkspace(sql, workspace.id),
         sourceEvidence,
+        activateMembers,
       });
     } finally {
       await new Promise<void>((resolve, reject) => {
@@ -368,6 +469,7 @@ export const test = base.extend<
         await new Promise<void>((r) => byteServer.close(() => r()));
       }
       if (fileDirectory) await rm(fileDirectory, { recursive: true, force: true });
+      if (secretSql) await secretSql.end();
       await sql.end();
       await owner.end();
       await admin.unsafe(`drop database "${name}" with (force)`);

@@ -52,6 +52,11 @@ export function canApproveDestructive(actor: Actor, scopes: readonly ApiKeyScope
 }
 
 export type RunBinding = {
+  /** Absent/null is the original workspace scope. Both fields are set for member runs. */
+  connectionId?: string | null;
+  connectionGeneration?: number | null;
+  /** Reviewed registration name, copied by the trusted executor for display only. */
+  registrationName?: string;
   installationId: string;
   registrationId: string;
   generation: number;

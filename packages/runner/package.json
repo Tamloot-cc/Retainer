@@ -22,6 +22,8 @@
     "./granola": "./dist/granola.js",
     "./granola-contract": "./dist/granola-contract.js",
     "./enrichment": "./dist/enrichment.js",
-    "./enrichment-contract": "./dist/enrichment-contract.js"
+    "./enrichment-contract": "./dist/enrichment-contract.js",
+    "./tamloot": "./dist/tamloot.js",
+    "./tamloot-contract": "./dist/tamloot-contract.js"
   }
 }

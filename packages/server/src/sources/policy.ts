@@ -47,3 +47,7 @@ export function compareRevision(
 /** JSON boundaries avoid ambiguous concatenation and keep registration/account identity stable. */
 export const sourceIdentityChannel = (registration: string, provider: string, namespace: string) =>
   `retainer-source:${JSON.stringify([registration, provider, namespace])}`;
+
+/** Managed task identities occupy a separate privacy namespace from their meetings. */
+export const taskIdentityChannel = (registration: string, provider: string, namespace: string) =>
+  `retainer-task:${JSON.stringify([registration, provider, namespace])}`;

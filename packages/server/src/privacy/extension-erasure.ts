@@ -50,9 +50,11 @@ export async function eraseExtensionState(
     await tx`delete from extension_kv where installation_id=${installation.id}`;
     await tx`update extension_attempts set status='cancelled',code='privacy_erased',finished_at=clock_timestamp()
       where finished_at is null and job_id in(select id from extension_jobs where installation_id=${installation.id})`;
+    await tx`update extension_connections set generation=generation+1,state='setup_failed',health='degraded',last_error='privacy_setup_restart_required'
+      where installation_id=${installation.id} and state='connecting'`;
     // Unrelated durable work moves to the new generation with a new fence; a setup run must be retried.
     await tx`update extension_jobs set generation=${generation},
-      status=case when ${erasedInput} or (trigger_kind='install' and status in ('queued','running')) then 'cancelled'
+      status=case when ${erasedInput} or (trigger_kind in ('install','connect') and status in ('queued','running')) then 'cancelled'
         when status='running' then 'queued' else status end,
       lease_owner=null,lease_until=null,run_until=null,fence=fence+1,updated_at=clock_timestamp()
       where installation_id=${installation.id} and generation=${current}`;

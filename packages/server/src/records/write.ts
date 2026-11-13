@@ -21,6 +21,7 @@ export type WriteContext = {
   installation?: InstallationBinding;
   /** Server-only managed-import context; never read from an ordinary record payload. */
   sourceItemId?: string;
+  managedTaskRemovalIds?: readonly string[];
   changes?: ChangeCollector;
   schema: CompiledSchema;
   /** Agent assertions below this confidence wait for review (rule 2.3). */
@@ -752,6 +753,16 @@ export async function softDeleteRecord(
       recordId: rootId,
     });
   }
+  if (context.managedTaskRemovalIds) {
+    const [edited] = await tx`select 1 from source_tasks t where t.record_id=any(${sorted}::uuid[])
+      and (t.state='detached' or exists(select 1 from field_assertions a where a.record_id=t.record_id and a.actor->>'type'='user')) limit 1`;
+    if (edited)
+      throw new AppError(
+        409,
+        'source_task_delete_conflict',
+        'a cascade would remove a task a person edited; change the relationship before syncing removal',
+      );
+  }
   return markDeleted(tx, context, sorted);
 }
 
@@ -772,6 +783,7 @@ export async function markDeleted(
   if (sorted.length)
     await tx`update source_items set state='retracted',updated_at=clock_timestamp()
     where id in(select item_id from source_revisions where event_id=any(${sorted}::uuid[]) and is_current) and state<>'erased'`;
+  await tx`update source_tasks set state='local_deleted',content_digest=null where record_id=any(${sorted}::uuid[]) and state='synced' and record_id<>all(${[...(context.managedTaskRemovalIds ?? [])]}::uuid[])`;
   await closeSuggestionsFor(tx, context, sorted);
   return sorted;
 }

@@ -35,6 +35,7 @@ import {
   objectNamed,
 } from '../schema/compiled.js';
 import type { FieldState } from '../schema/types.js';
+import { detachEditedTasks } from '../sources/task-detach.js';
 import {
   type AddLinksInput,
   addLinks,
@@ -493,12 +494,14 @@ export async function retractEventClaims(
     select distinct record_id from field_assertions
     where workspace_id = ${context.workspaceId} and source_record_id = any(${ids}::uuid[])
       and record_id <> all(${ids}::uuid[])
-      and status in ('active', 'superseded', 'pending_review')`;
+      and status in ('active', 'superseded', 'pending_review')
+    union select record_id from source_tasks where source_event_id=any(${ids}::uuid[]) and state='synced'`;
   const locked = await lockRecordsForUpdate(
     tx,
     context.workspaceId,
     affected.map((a) => a.record_id),
   );
+  await detachEditedTasks(tx, context, locked, ids);
   const retracted = await tx<RemovedClaim[]>`
     with target as (
       select id, record_id, field_id, status from field_assertions

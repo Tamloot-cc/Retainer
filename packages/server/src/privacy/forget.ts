@@ -124,6 +124,7 @@ export async function forgetRecord(
     handleValues,
     recordIds,
   );
+  recordIds.push(...sourceErasure.taskRecordIds.filter((id) => !recordIds.includes(id)));
   const eventIds = sourceErasure.eventIds;
   const erased = [...new Set([...recordIds, ...eventIds])];
   context.changes?.erase(erased);
@@ -140,7 +141,15 @@ export async function forgetRecord(
 
   // Claims on other records that cite those events or point at the record.
   const object = schema.objectsById.get(chain[0]?.object_type_id ?? '');
-  const relationFieldIds = object ? inboundRelationFields(schema, object) : [];
+  const taskTypes = sourceErasure.taskRecordIds.length
+    ? await tx<
+        { object_type_id: string }[]
+      >`select distinct object_type_id from records where id=any(${sourceErasure.taskRecordIds}::uuid[])`
+    : [];
+  const erasedObjects = [object, ...taskTypes.map((r) => schema.objectsById.get(r.object_type_id))];
+  const relationFieldIds = [
+    ...new Set(erasedObjects.flatMap((o) => (o ? inboundRelationFields(schema, o) : []))),
+  ];
   const pointsAtRecord = tx`field_id = any(${relationFieldIds}::uuid[])
     and value = any(array(select to_jsonb(x::text) from unnest(${recordIds}::uuid[]) x))`;
   // A set (many_to_many) that holds the record, in any assertion, current

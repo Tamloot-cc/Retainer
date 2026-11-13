@@ -115,3 +115,40 @@ it('keeps the existing health response contract for database outages', async () 
   });
   expect(await client.health()).toEqual(expected);
 });
+
+it('uses scoped member connection routes, staged references and reconnect generation fencing', async () => {
+  const seen: { url: string; method: string; body: unknown }[] = [];
+  const client = new RetainerClient({
+    baseUrl: 'http://retainer.test',
+    fetch: async (url, init) => {
+      seen.push({
+        url: String(url),
+        method: init?.method ?? 'GET',
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      });
+      return Response.json({});
+    },
+  });
+  await client.extensionConnections('install/id');
+  await client.stageExtensionConnectionSecret('install/id', {
+    name: 'apiKey',
+    value: 'credential',
+  });
+  await client.connectExtension('install/id', {
+    settings: { days: 31 },
+    secretRefs: { apiKey: 'pending' },
+  });
+  await client.reconnectExtension('install/id', 'member/id', {
+    settings: { days: 60 },
+    expectedGeneration: 2,
+    secretRefs: { apiKey: 'next' },
+  });
+  await client.disconnectExtension('install/id', 'member/id');
+  await client.extensionRuns('install/id', { connection: 'member/id' });
+  expect(seen.map((r) => r.method)).toEqual(['GET', 'POST', 'POST', 'POST', 'DELETE', 'GET']);
+  expect(seen[0]?.url).toBe('http://retainer.test/v1/extensions/install%2Fid/connections');
+  expect(seen[3]?.url).toContain('/connections/member%2Fid/reconnect');
+  expect(seen[3]?.body).toMatchObject({ expectedGeneration: 2, secretRefs: { apiKey: 'next' } });
+  expect(seen[5]?.url).toContain('connection=member%2Fid');
+  expect(seen[2]?.body).not.toHaveProperty('owner');
+});

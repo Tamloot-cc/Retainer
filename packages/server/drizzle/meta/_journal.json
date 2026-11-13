@@ -694,6 +694,55 @@
       "when": 1794518107578,
       "tag": "0098_extension_mapping",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1794574102657,
+      "tag": "0099_member_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1794574117779,
+      "tag": "0100_member_connection_capabilities",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1794574554427,
+      "tag": "0101_member_connection_account_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1794574816830,
+      "tag": "0102_member_connection_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1794574818034,
+      "tag": "0103_member_broker_admission",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1794579289783,
+      "tag": "0104_managed_source_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1794579290972,
+      "tag": "0105_managed_source_task_grants",
+      "breakpoints": true
     }
   ]
 }

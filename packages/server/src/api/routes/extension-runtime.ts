@@ -70,6 +70,7 @@ export function runtimeRoutes(
       return {
         workspaceId: caller.workspaceId,
         installationId: run.installationId,
+        connectionId: run.connectionId,
         registrationId: run.registrationId,
         name,
       };

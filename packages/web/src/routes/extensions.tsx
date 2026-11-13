@@ -16,9 +16,9 @@ import {
   Page,
   Panel,
   Row,
-  SelectMenu,
   Stack,
 } from '../ui/index.js';
+import { MemberConnectionPanel } from './extension-connections.js';
 import {
   choicesFromView,
   defaultChoices,
@@ -28,6 +28,7 @@ import {
   mappingObject,
   serverIssues,
 } from './extension-mapping.js';
+import { SettingFields } from './extension-setting-fields.js';
 import { describeDiffOp } from './schema/schema-model.js';
 import { QueryError } from './state.js';
 
@@ -92,7 +93,9 @@ export function ExtensionsPage() {
     reconnect?: boolean;
     mappingView?: ExtensionMappingView;
   } | null>(null);
-  const [runs, setRuns] = useState<Installation | null>(null);
+  const [runs, setRuns] = useState<{ installation: Installation; connection?: string } | null>(
+    null,
+  );
   const [credentials, setCredentials] = useState<Installation | null>(null);
   const refresh = () =>
     Promise.all([
@@ -182,7 +185,7 @@ export function ExtensionsPage() {
                   Access: {installation.grantedScopes.join(' and ')} workspace CRM data. Writes are
                   attributed to this {installation.grantedActor}.
                 </Muted>
-                {release?.manifest.source ? (
+                {release?.manifest.source && release.manifest.connection === 'workspace' ? (
                   <SourceSyncStatus installationId={installation.id} />
                 ) : null}
                 {release?.manifest.mapping && installation.state !== 'uninstalled' ? (
@@ -197,8 +200,17 @@ export function ExtensionsPage() {
                       : {})}
                   />
                 ) : null}
+                {release?.manifest.connection === 'member' ? (
+                  <MemberConnectionPanel
+                    installation={installation}
+                    release={release}
+                    admin={admin}
+                    onChanged={refresh}
+                    onRuns={(connection) => setRuns({ installation, connection })}
+                  />
+                ) : null}
                 <Row>
-                  <Button onClick={() => setRuns(installation)}>View runs</Button>
+                  <Button onClick={() => setRuns({ installation })}>View runs</Button>
                   {admin && release?.manifest.execution === 'standalone' ? (
                     <Button onClick={() => setCredentials(installation)}>App credentials</Button>
                   ) : null}
@@ -209,6 +221,7 @@ export function ExtensionsPage() {
                   ) : null}
                   {admin &&
                   release &&
+                  release.manifest.connection === 'workspace' &&
                   !['uninstalled', 'uninstalling'].includes(installation.state) &&
                   (release.manifest.source ||
                     Object.values(release.manifest.settings).some(
@@ -306,100 +319,15 @@ export function ExtensionsPage() {
           onClose={() => setCredentials(null)}
         />
       ) : null}
-      {runs ? <RunDialog installation={runs} admin={admin} onClose={() => setRuns(null)} /> : null}
+      {runs ? (
+        <RunDialog
+          installation={runs.installation}
+          connection={runs.connection}
+          admin={admin}
+          onClose={() => setRuns(null)}
+        />
+      ) : null}
     </Page>
-  );
-}
-
-function SettingFields({
-  release,
-  values,
-  secrets,
-  onChange,
-  onSecret,
-  existing,
-  references,
-  allowConnectionEdit = false,
-}: {
-  release: Release;
-  values: Settings;
-  secrets: Record<string, string>;
-  onChange: (key: string, value: string | boolean | number) => void;
-  onSecret: (key: string, value: string) => void;
-  existing?: Installation;
-  references: Record<string, string>;
-  allowConnectionEdit?: boolean;
-}) {
-  return (
-    <>
-      {Object.entries(release.manifest.settings)
-        .filter(([, definition]) => !definition.generated)
-        .map(([key, definition]) => {
-          const locked =
-            !!existing && !allowConnectionEdit && (definition.secret || definition.reconnect);
-          return (
-            <Label key={key}>
-              {definition.label}
-              {definition.required ? ' (required)' : ''}
-              {definition.secret ? (
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  value={secrets[key] ?? ''}
-                  disabled={locked}
-                  required={definition.required && !existing?.secrets?.[key] && !references[key]}
-                  placeholder={
-                    existing?.secrets?.[key]
-                      ? 'Connected'
-                      : references[key]
-                        ? 'Provided for approval'
-                        : ''
-                  }
-                  onChange={(e) => onSecret(key, e.target.value)}
-                />
-              ) : definition.options ? (
-                <fieldset disabled={locked}>
-                  <SelectMenu
-                    label={definition.label}
-                    value={typeof values[key] === 'string' ? String(values[key]) : null}
-                    options={definition.options.map((value) => ({
-                      value,
-                      label: stateLabel(value),
-                    }))}
-                    onChange={(value) => onChange(key, value)}
-                    fill
-                  />
-                </fieldset>
-              ) : definition.type === 'boolean' ? (
-                <Input
-                  type="checkbox"
-                  checked={values[key] === true}
-                  required={definition.consent}
-                  disabled={locked}
-                  onChange={(e) => onChange(key, e.target.checked)}
-                />
-              ) : (
-                <Input
-                  type={definition.type === 'number' ? 'number' : 'text'}
-                  value={String(values[key] ?? '')}
-                  disabled={locked}
-                  required={definition.required}
-                  onChange={(e) =>
-                    onChange(
-                      key,
-                      definition.type === 'number' ? e.target.valueAsNumber : e.target.value,
-                    )
-                  }
-                />
-              )}
-              {definition.description ? <Muted small>{definition.description}</Muted> : null}
-              {locked ? (
-                <Muted small>Use Reconnect to change credentials or account settings.</Muted>
-              ) : null}
-            </Label>
-          );
-        })}
-    </>
   );
 }
 
@@ -434,7 +362,12 @@ export function ExtensionSettings({
   const [values, setValues] = useState<Settings>(() => ({
     ...Object.fromEntries(
       Object.entries(release.manifest.settings)
-        .filter(([, def]) => !def.secret && (def.default !== undefined || def.type === 'boolean'))
+        .filter(
+          ([, def]) =>
+            def.level !== 'connection' &&
+            !def.secret &&
+            (def.default !== undefined || def.type === 'boolean'),
+        )
         .map(([key, def]) => [key, def.default ?? false]),
     ),
     ...installation?.settings,
@@ -745,19 +678,25 @@ function MappingSummary({
 
 function RunDialog({
   installation,
+  connection,
   admin,
   onClose,
 }: {
   installation: Installation;
+  connection?: string;
   admin: boolean;
   onClose: () => void;
 }) {
   const client = useQueryClient();
   const [cursor, setCursor] = useState<string | undefined>();
   const runs = useQuery({
-    queryKey: [...queryKey, 'runs', installation.id, cursor],
+    queryKey: [...queryKey, 'runs', installation.id, connection, cursor],
     queryFn: ({ signal }) =>
-      api.extensionRuns(installation.id, { signal, ...(cursor ? { cursor } : {}) }),
+      api.extensionRuns(installation.id, {
+        signal,
+        ...(connection ? { connection } : {}),
+        ...(cursor ? { cursor } : {}),
+      }),
     refetchInterval: 3000,
   });
   const retry = useMutation({

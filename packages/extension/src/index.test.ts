@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   defineExtension,
@@ -514,5 +514,176 @@ describe('strict extension contracts', () => {
     expect(lifecycleInputSchema.parse({})).toEqual({});
     expect(lifecycleInputSchema.safeParse({ previousVersion: 'x' }).success).toBe(false);
     expect(lifecycleInputSchema.safeParse({ other: 1 }).success).toBe(false);
+  });
+});
+
+describe('member connection manifests', () => {
+  const hook = (kind: 'connect' | 'disconnect' | 'install') => ({
+    universalId: randomUUID(),
+    name: kind,
+    description: `${kind} lifecycle`,
+    handlerDigest: 'b'.repeat(64),
+    trigger: { kind },
+    inputSchema: { type: 'object', additionalProperties: false },
+  });
+  const member = () => ({
+    ...fixture(),
+    connection: 'member',
+    settings: {
+      apiKey: { type: 'string', label: 'API key', secret: true, level: 'connection' },
+      share: { type: 'boolean', label: 'Share', required: true, consent: true },
+    },
+    functions: [hook('connect')],
+  });
+
+  it('preserves the old workspace manifest bytes and digest without adding setting levels', () => {
+    const manifest = defineExtension(fixture());
+    expect(manifest.settings.enabled).not.toHaveProperty('level');
+    expect(createHash('sha256').update(JSON.stringify(manifest)).digest('hex')).toBe(
+      'e718f3640ab006e4d9407367ea2e3987289698a1fe89c42ff1f7e1180592d416',
+    );
+  });
+
+  it('accepts per-member secrets and installer-approved sharing consent', () => {
+    const manifest = defineExtension(member());
+    expect(manifest.connection).toBe('member');
+    expect(manifest.settings.apiKey?.level).toBe('connection');
+    expect(manifest.settings.share).not.toHaveProperty('level');
+    expect(manifest.functions[0]?.trigger.kind).toBe('connect');
+  });
+
+  it('requires exactly one connect hook and at most one disconnect hook', () => {
+    for (const functions of [
+      [],
+      [hook('connect'), hook('connect')],
+      [hook('connect'), hook('disconnect'), hook('disconnect')],
+    ])
+      expect(() => defineExtension({ ...member(), functions })).toThrow('one connect');
+    expect(
+      defineExtension({ ...member(), functions: [hook('connect'), hook('disconnect')] }).functions,
+    ).toHaveLength(2);
+  });
+
+  it('rejects member settings and lifecycle hooks on workspace releases', () => {
+    for (const change of [
+      { settings: member().settings },
+      { functions: [hook('connect')] },
+      { functions: [hook('disconnect')] },
+    ])
+      expect(() => defineExtension({ ...fixture(), ...change })).toThrow('workspace releases');
+  });
+
+  it('requires hosted execution and rejects ownerless triggers and webhooks', () => {
+    expect(() =>
+      defineExtension({ ...member(), execution: 'standalone', functions: [] }),
+    ).toThrow();
+    for (const trigger of [
+      { kind: 'route', route: 'callback' },
+      { kind: 'serverRoute', route: 'callback' },
+      { kind: 'change', objectId: randomUUID(), fieldIds: [] },
+    ])
+      expect(() =>
+        defineExtension({
+          ...member(),
+          functions: [hook('connect'), { ...hook('install'), name: 'watch', trigger }],
+        }),
+      ).toThrow('change or route');
+    expect(() =>
+      defineExtension({
+        ...member(),
+        webhooks: [
+          {
+            route: 'callback',
+            verifierFunctionId: randomUUID(),
+            syncFunctionId: randomUUID(),
+            secretSetting: 'apiKey',
+            headers: ['webhook-id'],
+          },
+        ],
+      }),
+    ).toThrow('member webhooks');
+  });
+
+  it('requires secrets at connection level and sharing consent at installation level', () => {
+    for (const level of [undefined, 'installation'])
+      expect(() =>
+        defineExtension({
+          ...member(),
+          settings: {
+            apiKey: { type: 'string', label: 'Key', secret: true, ...(level ? { level } : {}) },
+          },
+        }),
+      ).toThrow('connection level');
+    expect(() =>
+      defineExtension({
+        ...member(),
+        settings: {
+          share: {
+            type: 'boolean',
+            label: 'Share',
+            consent: true,
+            required: true,
+            level: 'connection',
+          },
+        },
+      }),
+    ).toThrow('installation level');
+  });
+
+  it('pins source verification to the connect hook and requires account identity', () => {
+    const input = member();
+    const syncId = randomUUID();
+    const source = {
+      provider: 'fixture',
+      identity: 'account',
+      verifyFunctionId: input.functions[0]?.universalId,
+      syncFunctionIds: [syncId],
+      eventTypeIds: [randomUUID()],
+      revisionOrder: 'integer',
+    };
+    const sync = {
+      ...hook('install'),
+      universalId: syncId,
+      name: 'sync',
+      trigger: { kind: 'job' },
+      inputSchema: {
+        type: 'object',
+        properties: { sourceItemId: { type: 'string', maxLength: 36 } },
+        required: ['sourceItemId'],
+        additionalProperties: false,
+      },
+    };
+    const manifest = { ...input, source, functions: [...input.functions, sync] };
+    expect(defineExtension(manifest).source?.verifyFunctionId).toBe(
+      input.functions[0]?.universalId,
+    );
+    expect(() =>
+      defineExtension({ ...manifest, source: { ...source, identity: 'global-resource' } }),
+    ).toThrow('account identity');
+    expect(() =>
+      defineExtension({ ...manifest, source: { ...source, verifyFunctionId: syncId } }),
+    ).toThrow('connect function');
+    const install = hook('install');
+    expect(() =>
+      defineExtension({
+        ...manifest,
+        functions: [...manifest.functions, install],
+        source: { ...source, verifyFunctionId: install.universalId },
+      }),
+    ).toThrow('connect function');
+  });
+
+  it('disconnect hooks receive no implicit secrets and cannot request them', () => {
+    const disconnect = hook('disconnect');
+    const manifest = defineExtension({ ...member(), functions: [hook('connect'), disconnect] });
+    const fn = manifest.functions.find((entry) => entry.trigger.kind === 'disconnect');
+    if (!fn) throw new Error('disconnect missing');
+    expect(functionSecrets(manifest, fn)).toEqual([]);
+    expect(() =>
+      defineExtension({
+        ...member(),
+        functions: [hook('connect'), { ...disconnect, secrets: ['apiKey'] }],
+      }),
+    ).toThrow('cannot request secrets');
   });
 });

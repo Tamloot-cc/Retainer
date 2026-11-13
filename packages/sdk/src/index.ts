@@ -1,4 +1,6 @@
 import type {
+  ExtensionConnection,
+  ExtensionConnectionInput,
   ExtensionInstallation,
   ExtensionInstallInput,
   ExtensionManifest,
@@ -656,9 +658,32 @@ export class RetainerClient {
       input,
     );
   }
+  sourceRecoveryItems(installationId: string, options: PageOptions = {}) {
+    const { signal, ...params } = options;
+    return this.get<{ items: { sourceItemId: string }[]; nextCursor: string | null }>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/source-items`,
+      params,
+      signal,
+    );
+  }
   syncSourceEvent(installationId: string, input: import('@retainer/shared').SourceEventImport) {
     return this.post<import('@retainer/shared').SourceEventResult>(
       `/v1/extensions/${encodeURIComponent(installationId)}/source-events`,
+      input,
+    );
+  }
+  sourceTaskSchema(installationId: string) {
+    return this.get<import('@retainer/extension').SourceTaskSchema>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/source-tasks/schema`,
+    );
+  }
+  syncSourceTasks(
+    installationId: string,
+    itemId: string,
+    input: import('@retainer/extension').SourceTaskBatchInput,
+  ) {
+    return this.post<import('@retainer/extension').SourceTaskBatchResult>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/source-items/${encodeURIComponent(itemId)}/tasks`,
       input,
     );
   }
@@ -683,12 +708,43 @@ export class RetainerClient {
   installExtension(input: ExtensionInstallInput & { planDigest: string }, idempotencyKey: string) {
     return this.post<ExtensionInstallation>('/v1/extensions', input, undefined, idempotencyKey);
   }
-  extensionRuns(id: string, options: PageOptions = {}) {
+  extensionConnections(id: string, signal?: AbortSignal) {
+    return this.get<{ connections: ExtensionConnection[] }>(
+      `/v1/extensions/${encodeURIComponent(id)}/connections`,
+      {},
+      signal,
+    );
+  }
+  stageExtensionConnectionSecret(
+    id: string,
+    input: { connectionId?: string; name: string; value: string },
+  ) {
+    return this.post<{
+      pendingSecretId: string;
+      installationId: string;
+      connectionId: string;
+      expiresAt: string;
+    }>(`/v1/extensions/${encodeURIComponent(id)}/connections/secrets`, input);
+  }
+  connectExtension(id: string, input: ExtensionConnectionInput) {
+    return this.post<{ id: string; state: 'connecting' }>(
+      `/v1/extensions/${encodeURIComponent(id)}/connections`,
+      input,
+    );
+  }
+  disconnectExtension(id: string, connection: string) {
+    return this.send<{ disconnected: true }>(
+      'DELETE',
+      `/v1/extensions/${encodeURIComponent(id)}/connections/${encodeURIComponent(connection)}`,
+    );
+  }
+  extensionRuns(id: string, options: PageOptions & { connection?: string } = {}) {
     const { signal, ...params } = options;
     return this.get<{
       runs: {
         id: string;
         functionId: string;
+        connectionId: string | null;
         status: string;
         attempt: number;
         generation: number;
@@ -735,15 +791,32 @@ export class RetainerClient {
   }
   reconnectExtension(
     id: string,
+    connection: string,
+    input: ExtensionConnectionInput & { expectedGeneration: number },
+  ): Promise<{ id: string; state: 'connecting' }>;
+  reconnectExtension(
+    id: string,
     input: ExtensionInstallInput & { planDigest: string },
     idempotencyKey: string,
+  ): Promise<ExtensionInstallation>;
+  reconnectExtension(
+    id: string,
+    connectionOrInput: string | (ExtensionInstallInput & { planDigest: string }),
+    inputOrKey: (ExtensionConnectionInput & { expectedGeneration: number }) | string,
   ) {
-    return this.post<ExtensionInstallation>(
-      `/v1/extensions/${encodeURIComponent(id)}/reconnect`,
-      input,
-      undefined,
-      idempotencyKey,
-    );
+    if (typeof connectionOrInput === 'string' && typeof inputOrKey !== 'string')
+      return this.post<{ id: string; state: 'connecting' }>(
+        `/v1/extensions/${encodeURIComponent(id)}/connections/${encodeURIComponent(connectionOrInput)}/reconnect`,
+        inputOrKey,
+      );
+    if (typeof connectionOrInput !== 'string' && typeof inputOrKey === 'string')
+      return this.post<ExtensionInstallation>(
+        `/v1/extensions/${encodeURIComponent(id)}/reconnect`,
+        connectionOrInput,
+        undefined,
+        inputOrKey,
+      );
+    throw new TypeError('invalid reconnect arguments');
   }
   updateExtensionSettings(
     id: string,

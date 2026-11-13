@@ -2,6 +2,7 @@ import type { Hono } from 'hono';
 import { z } from 'zod';
 import { requireScope } from '../../auth/middleware.js';
 import { AppError } from '../../errors.js';
+import { connectionInputSchema } from '../../extensions/connections.js';
 import {
   commitInputSchema,
   type Extensions,
@@ -11,6 +12,56 @@ import { idParam, limitParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 
 export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMode = true) {
+  app.get('/extensions/:id/connections', requireScope('read'), async (c) =>
+    c.json(await extensions.connections.list(c.get('caller'), idParam(c))),
+  );
+  app.post('/extensions/:id/connections/secrets', requireScope('read'), async (c) =>
+    c.json(
+      await extensions.connections.stage(
+        c.get('caller'),
+        idParam(c),
+        await readBody(
+          c,
+          z.strictObject({
+            connectionId: z.uuid().optional(),
+            name: z.string().min(1).max(100),
+            value: z.string().min(1).max(65536),
+          }),
+        ),
+      ),
+      201,
+    ),
+  );
+  app.post('/extensions/:id/connections', requireScope('read'), async (c) =>
+    c.json(
+      await extensions.connections.connect(
+        c.get('caller'),
+        idParam(c),
+        await readBody(c, connectionInputSchema),
+      ),
+      201,
+    ),
+  );
+  app.post('/extensions/:id/connections/:connection/reconnect', requireScope('read'), async (c) =>
+    c.json(
+      await extensions.connections.connect(
+        c.get('caller'),
+        idParam(c),
+        await readBody(c, connectionInputSchema),
+        idParam(c, 'connection'),
+      ),
+    ),
+  );
+  app.delete('/extensions/:id/connections/:connection', requireScope('read'), async (c) =>
+    c.json(
+      await extensions.connections.disconnect(
+        c.get('caller'),
+        idParam(c),
+        idParam(c, 'connection'),
+      ),
+    ),
+  );
+
   app.post('/extensions/secrets', requireScope('admin'), async (c) =>
     c.json(
       await extensions.stageSecret(
@@ -78,6 +129,7 @@ export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMo
         idParam(c),
         limitParam(c, 50, 100),
         c.req.query('cursor'),
+        c.req.query('connection') ? z.uuid().parse(c.req.query('connection')) : undefined,
       ),
     ),
   );

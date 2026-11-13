@@ -40,19 +40,41 @@ export async function admitRun(
     );
   // Hold a shared row lock through commit so lease takeover cannot overtake an admitted write.
   const [job] =
-    await tx`select trigger_kind from extension_jobs where id=${run.jobId} and installation_id=${run.installationId}
+    await tx`select trigger_kind,connection_id,connection_generation from extension_jobs where id=${run.jobId} and installation_id=${run.installationId}
     and function_id=${run.functionId} and generation=${run.generation} and release_digest=${run.releaseDigest} and status='running'
     and lease_owner=${run.owner} and fence=${run.fence}::bigint
     and lease_until>clock_timestamp() and run_until>clock_timestamp() for share`;
   if (!job) throw new AppError(409, 'lease_expired', 'run lease expired or was replaced');
+  if (
+    (job.connection_id ?? null) !== (run.connectionId ?? null) ||
+    (job.connection_generation ?? null) !== (run.connectionGeneration ?? null)
+  )
+    throw new AppError(409, 'connection_disconnected', 'run connection binding changed');
+  const [connection] = run.connectionId
+    ? await tx`
+    select owner,state,generation,disconnected_at+interval '24 hours'>clock_timestamp() as cleanup_live
+    from extension_connections where id=${run.connectionId} and installation_id=${run.installationId}`
+    : [];
+  if (run.connectionId && (!connection || connection.generation !== run.connectionGeneration))
+    throw new AppError(409, 'connection_disconnected', 'connection was disconnected or replaced');
   const ordinary =
-    !['install', 'uninstall'].includes(job.trigger_kind) && installation.state === 'active';
-  const setup =
-    job.trigger_kind === 'install' && ['installing', 'upgrading'].includes(installation.state);
-  const cleanup =
-    job.trigger_kind === 'uninstall' &&
-    installation.state === 'uninstalling' &&
-    installation.cleanup_live === true;
+    !['install', 'uninstall', 'connect', 'disconnect'].includes(job.trigger_kind) &&
+    installation.state === 'active' &&
+    (!connection || connection.state === 'active');
+  const setup = connection
+    ? job.trigger_kind === 'connect' &&
+      connection.state === 'connecting' &&
+      installation.state === 'active'
+    : job.trigger_kind === 'install' && ['installing', 'upgrading'].includes(installation.state);
+  const cleanup = connection
+    ? job.trigger_kind === 'disconnect' &&
+      connection.state === 'disconnected' &&
+      connection.cleanup_live === true &&
+      installation.state !== 'uninstalled' &&
+      (installation.state !== 'uninstalling' || installation.cleanup_live === true)
+    : job.trigger_kind === 'uninstall' &&
+      installation.state === 'uninstalling' &&
+      installation.cleanup_live === true;
   // A workspace being deleted runs only its extensions' cleanup (extensions spec 7).
   if (installation.deleting && !cleanup)
     throw new AppError(409, 'installation_disabled', 'the workspace is being deleted');
@@ -64,9 +86,9 @@ export async function admitRun(
     throw new AppError(403, 'forbidden', 'run credential requires write scope');
   if (write) {
     const [budget] =
-      await tx`insert into extension_write_budgets(workspace_id,installation_id,window_start,count)
-      values(${workspace},${run.installationId},date_trunc('minute',clock_timestamp()),1)
-      on conflict(workspace_id,installation_id) do update set
+      await tx`insert into extension_write_budgets(workspace_id,installation_id,connection_id,window_start,count)
+      values(${workspace},${run.installationId},${run.connectionId ?? null},date_trunc('minute',clock_timestamp()),1)
+      on conflict(workspace_id,installation_id,connection_id) do update set
         window_start=excluded.window_start,
         count=case when extension_write_budgets.window_start<>excluded.window_start then 1 else extension_write_budgets.count+1 end
       where extension_write_budgets.window_start<>excluded.window_start or extension_write_budgets.count<60 returning count`;
@@ -76,7 +98,15 @@ export async function admitRun(
       });
   }
   return {
-    actor: { type: installation.granted_actor, id: run.installationId },
+    actor: {
+      type: installation.granted_actor,
+      id: run.installationId,
+      ...(connection
+        ? {
+            name: `${run.registrationName ?? 'Extension'} (${connection.owner.name ?? connection.owner.id}'s account)`,
+          }
+        : {}),
+    },
     scopes: run.scopes,
   };
 }
@@ -135,7 +165,7 @@ export async function admitInstallation(
     const [budget] =
       await tx`insert into extension_write_budgets(workspace_id,installation_id,window_start,count)
       values(${workspace},${binding.installationId},date_trunc('minute',clock_timestamp()),1)
-      on conflict(workspace_id,installation_id) do update set window_start=excluded.window_start,
+      on conflict(workspace_id,installation_id,connection_id) do update set window_start=excluded.window_start,
         count=case when extension_write_budgets.window_start<>excluded.window_start then 1 else extension_write_budgets.count+1 end
       where extension_write_budgets.window_start<>excluded.window_start or extension_write_budgets.count<60 returning count`;
     if (!budget)

@@ -50,6 +50,7 @@ export type SourceEventResult = {
   };
 };
 export type SourceItemView = {
+  taskWriteRevision: number;
   sourceItemId: string;
   sourceAccountId: string;
   externalId: string;

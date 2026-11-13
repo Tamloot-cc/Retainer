@@ -21,6 +21,19 @@ describe('authenticated versioned extension secrets', () => {
       'cannot be decrypted',
     );
   });
+  it('binds member ciphertext to one connection while retaining the old null-scope AAD', () => {
+    const cipher = new SecretCipher('v1', new Map([['v1', randomBytes(32)]]));
+    const member = { ...identity, connectionId: 'member-one' };
+    const encrypted = cipher.encrypt('member credential', member);
+    expect(cipher.decrypt(encrypted, member)).toBe('member credential');
+    expect(() => cipher.decrypt(encrypted, { ...member, connectionId: 'member-two' })).toThrow(
+      'cannot be decrypted',
+    );
+    expect(() => cipher.decrypt(encrypted, identity)).toThrow('cannot be decrypted');
+    expect(
+      cipher.decrypt(cipher.encrypt('workspace', identity), { ...identity, connectionId: null }),
+    ).toBe('workspace');
+  });
   it('retains old key versions for rotation, copies key buffers and uses fresh nonces', () => {
     const old = randomBytes(32),
       next = randomBytes(32);

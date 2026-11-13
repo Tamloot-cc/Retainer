@@ -7,6 +7,8 @@ import { executeGranola } from './granola.js';
 import { GRANOLA_FUNCTION_IDS } from './granola-contract.js';
 import { executeLastContact, LAST_CONTACT_FUNCTION_IDS } from './last-contact.js';
 import { apiFetch, retryTransient } from './outcome.js';
+import { executeTamloot } from './tamloot.js';
+import { TAMLOOT_FUNCTION_IDS } from './tamloot-contract.js';
 import { executeWebhookFixture, WEBHOOK_SETUP_ID, WEBHOOK_SYNC_ID } from './webhook-fixture.js';
 
 /** Permanent fixture identity. Production integrations add reviewed, build-time imports here. */
@@ -21,6 +23,8 @@ export async function execute(
   signal: AbortSignal,
   transport: typeof fetch = fetch,
 ): Promise<ExecutionResult> {
+  if (TAMLOOT_FUNCTION_IDS.includes(invocation.functionId))
+    return executeTamloot(invocation, signal, transport);
   if (GRANOLA_FUNCTION_IDS.includes(invocation.functionId))
     return executeGranola(invocation, signal, transport);
   if (ENRICHMENT_FUNCTION_IDS.includes(invocation.functionId))

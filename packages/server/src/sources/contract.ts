@@ -47,7 +47,7 @@ export const sourceEventSchema = z.strictObject({
     type: z.uuid(),
     occurredAt: isoDateTimeSchema,
     title: z.string().max(500),
-    summary: z.string().max(20000).optional(),
+    summary: z.string().optional(),
     fields: z.record(z.string(), z.unknown()).default({}),
     participants: z
       .array(
@@ -82,3 +82,30 @@ export type SourceResult = {
     hiddenFactIds: string[];
   };
 };
+
+export const sourceTaskBatchSchema = z
+  .strictObject({
+    expectedTaskRevision: z.number().int().nonnegative(),
+    expectedRevisionId: z.uuid().nullable(),
+    tasks: z
+      .array(
+        z.strictObject({
+          externalId: z.string().min(1).max(500),
+          title: z.string().min(1).max(20000),
+          status: z.enum(['open', 'done']),
+          contactEmails: z
+            .array(
+              z
+                .email()
+                .max(320)
+                .transform((s) => s.toLowerCase()),
+            )
+            .max(200),
+        }),
+      )
+      .max(500),
+    complete: z.boolean(),
+  })
+  .refine((input) => new Set(input.tasks.map((t) => t.externalId)).size === input.tasks.length, {
+    message: 'duplicate task identities',
+  });

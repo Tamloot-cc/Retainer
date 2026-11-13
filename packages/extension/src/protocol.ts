@@ -24,10 +24,10 @@ export const executionResultSchema = z.strictObject({
   retryAfterSeconds: z.number().int().min(0).max(3600).optional(),
 });
 /**
- * The server-defined input of an `install` lifecycle function: the release
+ * The server-defined input of an `install` or `connect` lifecycle function: the release
  * version installed before this setup (an upgrade, re-enable or settings
  * re-setup), or null on a first install. Lifecycle input is not the
- * function's `inputSchema`; `uninstall` input is `{}`. Jobs queued before
+ * function's `inputSchema`; `uninstall` and `disconnect` input is `{}`. Jobs queued before
  * this field existed carry `{}`.
  */
 export const lifecycleInputSchema = z.strictObject({

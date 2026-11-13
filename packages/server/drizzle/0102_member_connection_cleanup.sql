@@ -1,0 +1,1 @@
+ALTER TABLE "extension_connections" ADD COLUMN "disconnect_function_id" uuid;
