@@ -349,7 +349,8 @@ export async function executeTamloot(
       if (!cursor) {
         const head = await provider.request('/v1/changes/head', tamlootHead),
           scan = backfill(settings.data.backfillDays);
-        await sdk.beginSourceScan(id, scan);
+        // The page job begins the scan after this atomic cursor/child checkpoint.
+        // A failed checkpoint must not leave an active scan with no durable cursor.
         await sdk.extensionCheckpoint(id, {
           children: [scanChild(scan, `connect:${scan.scanId}`)],
           kv: { key: FEED, expectedRevision: null, value: { cursor: head.data.cursor } },

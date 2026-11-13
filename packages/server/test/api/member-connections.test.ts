@@ -128,8 +128,10 @@ const manifest = extensionFixture({
     ),
   ],
 });
+const upgradedManifest = extensionFixture({ ...manifest, version: '1.1.0' });
 const catalog = new ExtensionCatalog([
   { manifest, actorCeiling: 'integration', runtimeEnabled: true },
+  { manifest: upgradedManifest, actorCeiling: 'integration', runtimeEnabled: true },
 ]);
 let t: TestApp, tokens: RunTokens, broker: SecretBroker, brokerSql: ReturnType<typeof db.connect>;
 beforeAll(async () => {
@@ -1127,5 +1129,36 @@ describe('managed task value validation', () => {
       message: 'is required',
     });
     expect(await db.owner`select id from source_tasks where item_id=${h.item}`).toHaveLength(0);
+  });
+});
+
+describe('member upgrade hook input', () => {
+  it('passes the replaced release version from installation setup to each connect hook', async () => {
+    const h = await setup(),
+      c = await connecting(h, h.keys.dana, 'upgrade-key');
+    await activate(h, c, 'upgrade-account');
+    const input = {
+      installationId: h.id,
+      registrationId: manifest.universalId,
+      version: upgradedManifest.version,
+      settings: { share: true },
+    };
+    const plan = await t.request('/v1/extensions/preview', { key: h.keys.admin, body: input });
+    expect(plan.status).toBe(200);
+    const upgraded = await t.request(`${h.base}/upgrade`, {
+      key: h.keys.admin,
+      headers: { 'Idempotency-Key': randomUUID() },
+      body: { ...input, planDigest: plan.body.planDigest },
+    });
+    expect(upgraded.status).toBe(200);
+    const [job] =
+      await db.owner`select j.id,j.input from extension_jobs j join extension_installations i on i.id=j.installation_id and i.generation=j.generation where i.id=${h.id} and j.trigger_kind='install' and j.status='queued'`;
+    expect(job?.input).toEqual({ previousVersion: '1.0.0' });
+    const run = await h.queue.claim(h.workspace, job?.id, 'upgrade-install');
+    if (!run) throw new Error('upgrade setup missing');
+    await h.queue.complete(run, { status: 'succeeded' });
+    const [connection] =
+      await db.owner`select j.input from extension_jobs j join extension_installations i on i.id=j.installation_id and i.generation=j.generation where j.connection_id=${c.cid} and j.trigger_kind='connect' and j.status='queued'`;
+    expect(connection?.input).toEqual({ previousVersion: '1.0.0' });
   });
 });

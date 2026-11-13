@@ -2,7 +2,7 @@
 
 Status: implemented and locally verified, 2026-11-13. Member connections,
 managed tasks and the Tamloot bundle are complete on this branch. Build,
-typecheck, lint, the full test suite (1,315 server tests), release artifact
+typecheck, lint, the full test suite (1,318 server tests), release artifact
 checks and all 71 browser tests passed. Hosted rollout and a real-key test
 remain out of scope.
 Implements the product spec
@@ -399,7 +399,9 @@ callers (retainer-api.md §2). Endpoints: `GET /v1/me`,
    different account on reconnect.
 2. On a first connect, or when `cursor` is missing: `GET /v1/changes/head`,
    then checkpoint `{cursor}` in KV and a `backfill` child for
-   `now − backfillDays` in one call. On reconnect with a cursor, keep it.
+   `now − backfillDays` in one call. The first page job begins that scan;
+   do not create an active scan before its cursor and child are durable.
+   On reconnect with a cursor, keep it.
 3. Every connection setup also queues retained-item recovery through
    `GET /v1/extensions/:id/source-items`. It pages local IDs for this account,
    including reserved items whose import failed. Re-enable and upgrade cancel

@@ -140,7 +140,7 @@ jobs:
             --model claude-opus-5-5
             --fallback-model claude-sonnet-5
             --effort high
-            --max-turns 40
+            --max-turns 80
             --mcp-config .github/claude/mcp-config.resend.json
             --allowedTools "Read,Grep,Glob,Skill,WebSearch,WebFetch,Bash,mcp__resend__send-email"
         env:

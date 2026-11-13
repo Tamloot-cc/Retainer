@@ -1148,7 +1148,7 @@ export class ExtensionQueue {
             installation.workspace_id,
             installation.id,
             c.id,
-            installation.version,
+            lifecycleInputSchema.parse(job.input).previousVersion ?? null,
           );
       }
       return true;

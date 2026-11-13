@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import type { Invocation } from '@retainer/extension';
+import { type Invocation, isRetryLater, retryLaterResult } from '@retainer/extension';
 import { executeTamloot } from '@retainer/runner/tamloot';
 import { TAMLOOT, tamlootManifest } from '@retainer/runner/tamloot-contract';
 import { generateKeyPair } from 'jose';
@@ -89,11 +89,21 @@ async function fixture() {
       { id: task2, content: 'Second action', status: 'done', contact_emails: [] },
     ];
   let cursor = 1;
+  let checkpointFailures = 0,
+    checkpointCommitsBeforeFailure = false;
   const requests: string[] = [],
     bodies: string[] = [];
   const transport: typeof fetch = async (url, init) => {
     const target = new URL(String(url));
     if (target.origin === 'https://retainer.test') {
+      if (target.pathname.endsWith('/runtime/checkpoint') && checkpointFailures > 0) {
+        checkpointFailures--;
+        if (checkpointCommitsBeforeFailure) await app.inProcessFetch(url, init);
+        return Response.json(
+          { error: { code: 'unavailable', message: 'fixture checkpoint outage' } },
+          { status: 503 },
+        );
+      }
       if (init?.body) bodies.push(String(init.body));
       return app.inProcessFetch(url, init);
     }
@@ -174,7 +184,10 @@ async function fixture() {
       },
       new AbortController().signal,
       transport,
-    );
+    ).catch((error) => {
+      if (isRetryLater(error)) return retryLaterResult(error);
+      throw error;
+    });
     await queue.complete(job, result);
     return result;
   }
@@ -187,6 +200,7 @@ async function fixture() {
       const run = await queue.claim(workspace.id, next.id, 'tamloot-fixture');
       if (!run) throw new Error('missing fixture claim');
       results.push(await execute(run));
+      if (results.at(-1)?.status === 'retry') return results;
     }
     throw new Error('fixture queue did not drain');
   }
@@ -222,6 +236,13 @@ async function fixture() {
     bodies,
     task1,
     task2,
+    failNextCheckpoint: (afterCommit = false) => {
+      checkpointFailures++;
+      checkpointCommitsBeforeFailure = afterCommit;
+    },
+    retryNow: async () => {
+      await db.owner`update extension_jobs set available_at=clock_timestamp() where installation_id=${id} and status='queued'`;
+    },
     setVersion: (v: number) => {
       version = v;
     },
@@ -339,4 +360,31 @@ describe('Tamloot bundle through real API and Postgres with provider HTTP fixtur
     const [connection] = await db.owner`select health from extension_connections where id=${cid}`;
     expect(connection!.health).toBe('needs_reconnect');
   }, 60000);
+});
+
+describe('Tamloot connect checkpoint recovery', () => {
+  it.each(['before', 'after'] as const)(
+    'recovers a checkpoint failure %s commit without losing backfill',
+    async (when) => {
+      const h = await fixture(),
+        cid = await h.connect();
+      h.failNextCheckpoint(when === 'after');
+      expect(await h.drain()).toContainEqual({ status: 'retry', code: 'api_unavailable' });
+      expect(
+        await db.owner`select scan_id from source_sync_state where connection_id=${cid}`,
+      ).toHaveLength(0);
+      expect(
+        await db.owner`select key from extension_kv where connection_id=${cid} and key='tamloot-feed'`,
+      ).toHaveLength(when === 'after' ? 1 : 0);
+      await h.retryNow();
+      const results = await h.drain();
+      expect(results.every((result) => result.status === 'succeeded')).toBe(true);
+      const [connection] = await db.owner`select state from extension_connections where id=${cid}`;
+      expect(connection?.state).toBe('active');
+      expect(
+        await db.owner`select id from source_tasks where installation_id=${h.id}`,
+      ).toHaveLength(2);
+    },
+    60000,
+  );
 });
