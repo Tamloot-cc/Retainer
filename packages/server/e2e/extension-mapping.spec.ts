@@ -37,6 +37,9 @@ test('imports an agent draft, edits it, approves the reviewed mapping and remaps
   const bindings = dialog.getByRole('list', { name: 'Field mapping' });
   await expect(bindings.getByText('Employee count → Employee Count')).toBeVisible();
   await expect(bindings.getByText('New field')).toBeVisible();
+  // The new field shows once, on its mapping line, not again as a raw schema operation.
+  await expect(dialog.getByText('Unknown change')).toHaveCount(0);
+  await expect(dialog.getByText(/^Add field /)).toHaveCount(0);
   await expect(bindings.getByText('Headquarters → Address')).toBeVisible();
   await expect(dialog.getByText(/attributed to an agent/)).toBeVisible();
   expect((await r.request('/extensions', undefined, r.keys.user)).installations).toHaveLength(0);

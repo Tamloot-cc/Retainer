@@ -7,6 +7,7 @@ import {
   aboutEdges,
   canRollUpEvents,
   cardinality,
+  describeDiffOp,
   describeOperation,
   isManyRelation,
   matchesField,
@@ -344,6 +345,30 @@ describe('schema page model', () => {
     expect(
       describeOperation({ op: 'future_thing' } as unknown as Parameters<typeof d>[0], objects),
     ).toBe('future thing');
+  });
+});
+
+describe('describeDiffOp', () => {
+  it('describes kind-keyed diff operations, not “Unknown change”', () => {
+    const d = (op: Parameters<typeof describeDiffOp>[0]) => describeDiffOp(op, objects);
+    expect(
+      d({
+        kind: 'create_field',
+        objectId: 'x',
+        object: 'person',
+        field: { name: 'linkedinUrl', label: 'LinkedIn URL', type: 'text' },
+      }),
+    ).toMatch(/^Add field LinkedIn URL \(.+\) to Person$/);
+    expect(
+      d({ kind: 'update_field', object: 'person', field: 'name', property: 'isUnique', to: true }),
+    ).toBe('Change Person → Name: unique');
+    expect(
+      d({ kind: 'update_object', object: 'person', property: 'labelPlural', to: 'Humans' }),
+    ).toBe('Change Person: plural label “Humans”');
+    expect(d({ kind: 'deprecate_field', object: 'person', field: 'name' })).toBe(
+      'Delete field Person → Name',
+    );
+    expect(d({ kind: 'future_thing' })).toBe('future thing');
   });
 });
 

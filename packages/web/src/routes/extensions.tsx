@@ -1,6 +1,5 @@
 import type { ExtensionMappingChoices, ExtensionMappingView } from '@retainer/extension';
 import { RetainerApiError } from '@retainer/sdk';
-import type { SchemaOperation } from '@retainer/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useAccount } from '../accounts/context.js';
@@ -29,7 +28,7 @@ import {
   mappingObject,
   serverIssues,
 } from './extension-mapping.js';
-import { describeOperation } from './schema/schema-model.js';
+import { describeDiffOp } from './schema/schema-model.js';
 import { QueryError } from './state.js';
 
 type Release = Awaited<ReturnType<typeof api.extensionCatalog>>['releases'][number];
@@ -37,6 +36,27 @@ type Installation = Awaited<ReturnType<typeof api.extensions>>['installations'][
 type Settings = Installation['settings'];
 type Preview = Awaited<ReturnType<typeof api.previewExtension>>;
 type Plan = { preview: Preview; input: Parameters<typeof api.previewExtension>[0]; key: string };
+type DiffOp = { kind: string; [key: string]: unknown };
+
+/**
+ * The preview's schema changes to list. Fields the mapping creates are left
+ * out: the mapping lines already show them as "New field".
+ */
+function previewSchemaOps(preview: Preview, mappingObjectId?: string) {
+  const created = new Set(
+    (preview.mapping ?? []).flatMap((b) =>
+      b.action === 'create' && b.contribution && b.field ? [b.field.name] : [],
+    ),
+  );
+  return (preview.operations as DiffOp[]).filter(
+    (op) =>
+      !(
+        op.kind === 'create_field' &&
+        op.objectId === mappingObjectId &&
+        created.has(String((op.field as { name?: unknown } | undefined)?.name))
+      ),
+  );
+}
 const queryKey = ['extensions'];
 const VIEW_ACTIONS = {
   create: 'Create',
@@ -503,6 +523,8 @@ export function ExtensionSettings({
   const busy = review.isPending || save.isPending;
   const error = save.error ?? review.error;
   const updating = !!retained && !upgrade && !reconnect && !editMapping;
+  const schemaOps = plan ? previewSchemaOps(plan.preview, mapping?.objectId) : [];
+
   return (
     <Dialog
       open
@@ -622,15 +644,15 @@ export function ExtensionSettings({
                     : 'retract its evidence and derived claims'}
                   .
                 </p>
-                {plan.preview.operations.length ? (
+                {schemaOps.length ? (
                   <ul className="list-disc pl-5">
-                    {plan.preview.operations.map((operation) => (
+                    {schemaOps.map((operation) => (
                       <li key={JSON.stringify(operation)}>
-                        {describeOperation(operation as SchemaOperation, schema.objects)}
+                        {describeDiffOp(operation, schema.objects)}
                       </li>
                     ))}
                   </ul>
-                ) : (
+                ) : plan.preview.mapping?.length ? null : (
                   <Muted>No schema changes.</Muted>
                 )}
                 {plan.preview.mapping && mapping ? (

@@ -250,3 +250,69 @@ export function describeOperation(op: SchemaOperation, objects: ObjectView[]) {
       return String((op as { op?: unknown }).op ?? 'Unknown change').replaceAll('_', ' ');
   }
 }
+
+const DIFF_PROPERTY_WORDS: Record<string, string> = {
+  labelSingular: 'singular label',
+  labelPlural: 'plural label',
+  labelFieldId: 'label field',
+  label: 'label',
+  description: 'description',
+};
+/**
+ * One schema-engine diff operation (the `kind`-keyed form an extension preview
+ * and a schema change's `operations` carry) in words. Unknown shapes fall back
+ * to the operation kind.
+ */
+export function describeDiffOp(
+  op: { kind: string; [key: string]: unknown },
+  objects: ObjectView[],
+) {
+  const s = (v: unknown) => String(v ?? '');
+  const obj = (name: unknown) => objectByName({ objects }, s(name))?.labelSingular ?? s(name);
+  const fld = (object: unknown, field: unknown) =>
+    `${obj(object)} → ${objectByName({ objects }, s(object))?.fields.find((f) => f.name === s(field))?.label ?? s(field)}`;
+  const quote = (v: unknown) => `“${s(v)}”`;
+  const named = (v: unknown) => (v ?? {}) as Record<string, unknown>;
+  switch (op.kind) {
+    case 'create_object': {
+      const o = named(op.object);
+      return `Add object ${s(o.labelSingular || o.nameSingular)}`;
+    }
+    case 'update_object':
+    case 'update_field': {
+      const where = op.kind === 'update_object' ? obj(op.object) : fld(op.object, op.field);
+      const flag = FLAG_WORDS[s(op.property)];
+      if (flag) return `Change ${where}: ${op.to ? flag[0] : flag[1]}`;
+      const what = DIFF_PROPERTY_WORDS[s(op.property)] ?? s(op.property);
+      if (op.property === 'labelFieldId') return `Change ${where}: ${what}`;
+      return `Change ${where}: ${op.to ? `${what} ${quote(op.to)}` : `clear ${what}`}`;
+    }
+    case 'rename_object':
+      return `Rename object ${obj(named(op.from).nameSingular)} to ${s(named(op.to).nameSingular)} / ${s(named(op.to).namePlural)}`;
+    case 'deprecate_object':
+      return `Delete object ${obj(op.object)}`;
+    case 'protect_object':
+      return `Protect object ${obj(op.object)}`;
+    case 'create_field': {
+      const f = named(op.field);
+      const type = fields[s(f.type) as keyof typeof fields]?.label ?? s(f.type);
+      return `Add field ${s(f.label || f.name)} (${type}) to ${obj(op.object)}`;
+    }
+    case 'rename_field':
+      return `Rename ${fld(op.object, op.from)} to ${s(op.to)}`;
+    case 'deprecate_field':
+      return `Delete field ${fld(op.object, op.field)}`;
+    case 'protect_field':
+      return `Protect field ${fld(op.object, op.field)}`;
+    case 'add_option': {
+      const o = named(op.option);
+      return `Add option ${quote(o.label || o.value)} to ${fld(op.object, op.field)}`;
+    }
+    case 'update_option':
+      return `Rename option ${s(op.value)} of ${fld(op.object, op.field)} to ${quote(op.to)}`;
+    case 'remove_option':
+      return `Remove option ${s(op.value)} from ${fld(op.object, op.field)}`;
+    default:
+      return s(op.kind || 'Unknown change').replaceAll('_', ' ');
+  }
+}
