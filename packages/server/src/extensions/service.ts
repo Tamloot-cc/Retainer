@@ -1056,23 +1056,27 @@ export class Extensions {
     const due = await discoverySql<{ workspace_id: string; installation_id: string }[]>`
       select * from retainer_extension_upgrades_due(${limit},
         ${targets.map((t) => t.registrationId)}::uuid[], ${targets.map((t) => t.digest)}::text[])`;
+    // Discovery takes the oldest rows first. A row that made no progress (it
+    // failed, or a re-check under the lock skipped it) moves behind the rest,
+    // so such rows never starve the others.
+    const rotate = (item: (typeof due)[number]) =>
+      inWorkspace(this.sql, item.workspace_id, async (tx) => {
+        await tx`update extension_installations set updated_at = now() where id = ${item.installation_id}`;
+      }).catch(() => {});
     for (const item of due) {
       // One installation's failure never stops the pass or the executor.
       try {
         const outcome = await this.autoUpgrade(item.workspace_id, item.installation_id, targets);
         if (outcome === 'upgraded') result.upgraded++;
         else if (outcome === 'held') result.held++;
+        else await rotate(item);
       } catch (error) {
         result.failed++;
         const code = error instanceof AppError ? error.code : 'internal';
         log.error(
           `Automatic upgrade of extension installation ${item.installation_id} in workspace ${item.workspace_id} failed (${code}).`,
         );
-        // Discovery takes the oldest rows first: move this one behind the rest,
-        // so failing installations never starve the others.
-        await inWorkspace(this.sql, item.workspace_id, async (tx) => {
-          await tx`update extension_installations set updated_at = now() where id = ${item.installation_id}`;
-        }).catch(() => {});
+        await rotate(item);
       }
     }
     return result;

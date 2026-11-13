@@ -37,6 +37,8 @@ const same = randomUUID(),
   downgrade = randomUUID(),
   standalone = randomUUID(),
   stuck = randomUUID(),
+  ahead = randomUUID(),
+  later = randomUUID(),
   behind = randomUUID(),
   hosted = randomUUID();
 const releases = [
@@ -58,6 +60,10 @@ const releases = [
   release(racing, '1.0.1'),
   release(downgrade, '1.0.0'),
   release(downgrade, '1.0.1'),
+  release(ahead, '1.0.0'),
+  release(ahead, '1.0.1'),
+  release(later, '1.0.0'),
+  release(later, '1.0.1'),
   release(stuck, '1.0.0'),
   release(stuck, '1.0.1'),
   release(behind, '1.0.0'),
@@ -238,6 +244,30 @@ describe('automatic extension upgrades', () => {
     expect(await flaky.upgradeDue(discovery(), 1)).toMatchObject({ failed: 0, upgraded: 1 });
     expect((await row(waiting.installed.id)).version).toBe('1.0.1');
     expect((await row(failing.installed.id)).version).toBe('1.0.0');
+  });
+
+  it('moves a skipped installation behind the others', async () => {
+    const newer = await install(ahead);
+    const waiting = await install(later);
+    // A rolled-back catalog: the target is older than what is installed.
+    await db.owner`update extension_installations set version = '9.0.0' where id = ${newer.installed.id}`;
+    const only = extensions
+      .upgradeTargets()
+      .filter((t) => ([ahead, later] as string[]).includes(t.registrationId));
+    class Narrow extends Extensions {
+      override upgradeTargets() {
+        return only;
+      }
+    }
+    const narrow = new Narrow(
+      db.connect({ role: RUNTIME_ROLE, max: 2 }),
+      catalog,
+      undefined,
+      new Set(),
+    );
+    expect(await narrow.upgradeDue(discovery(), 1)).toMatchObject({ upgraded: 0, failed: 0 });
+    expect(await narrow.upgradeDue(discovery(), 1)).toMatchObject({ upgraded: 1 });
+    expect((await row(waiting.installed.id)).version).toBe('1.0.1');
   });
 
   it('never targets a release that is not deployed', () => {

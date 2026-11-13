@@ -188,7 +188,10 @@ describe('fill-only mapped writes', () => {
       { actor: { type: string; id: string }; confidence: number }[]
     >`select a.actor, a.confidence from field_assertions a join fields f on f.id=a.field_id
       where a.record_id=${acme} and f.name='employeeCount'`;
-    expect(assertion).toEqual({ actor: { type: 'agent', id: h.id }, confidence: 1 });
+    expect(assertion).toEqual({
+      actor: { type: 'agent', id: h.id, name: 'Fixture' },
+      confidence: 1,
+    });
     const count = await h.assertions(acme);
     const replay = await h.write(token, { recordId: acme, lookup: 'acme.com', values });
     expect(replay.body).toEqual({
