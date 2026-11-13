@@ -34,7 +34,9 @@ connections** that §1 of extensions.md defers into v1, as one connection per
 member under a workspace installation. The installation itself stays as it
 is: one per workspace and registration.
 
-**Manifest.** `connection: 'member'` joins `'workspace'`. Settings get a level:
+**Manifest.** `connection: 'member'` joins `'workspace'`. Each registration
+chooses one. Extensions an admin sets up once for everyone, such as company
+enrichment and Granola, stay `'workspace'`. Settings get a level:
 installation settings (no secrets) are approved by the admin, and connection
 settings (the Tamloot API key, `secret: true`, `reconnect: true`) are entered
 by each member.
@@ -154,8 +156,8 @@ same registration.
 - Tamloot leaves out requests addressed to Tamloot itself.
 - A Tamloot task that is gone (a tombstone, or missing from the session's
   current task list) has its Retainer task soft-deleted, unless a person has
-  edited it in Retainer. In that case it is kept and no longer synced. See
-  open question 1.
+  edited it in Retainer. In that case it is kept and no longer synced
+  (decided, §6).
 - **Rank.** Tamloot's tasks are model output written as `integration`, so an
   agent's different value goes to `pending_review`. A person's edit still
   wins.
@@ -219,12 +221,22 @@ OAuth are not needed for v1.
   same meeting recorded by two members. V1 keeps both members' events.
 - Tamloot as a standalone reader of Retainer.
 
-## 6. Open questions
+## 6. Decisions
 
-1. **A task a person edited.** How does the adapter know a person edited a
-   task in Retainer? Options: the write response reports non-integration
-   winners, or the adapter reads the record's assertion history. Either way,
-   keep the rule simple: never delete what a person touched.
-2. **Create-people default.** Tamloot's linked contacts are people the user
-   chose to track, so `everyone` may suit this registration better than the
-   platform default `never`.
+Both former open questions are decided (2026-11-13). Neither needs a server
+change; both are adapter and manifest work.
+
+1. **A task a person edited is kept.** Before soft-deleting a gone task,
+   the adapter reads its assertion history (`GET /v1/records/:id/assertions`,
+   `read` scope) and keeps the task if any assertion's actor is a `user`. A
+   kept task is no longer synced. Deletion uses `DELETE /v1/records/:id`
+   (`write` scope). Both routes accept run tokens with those scopes today.
+   Tamloot keeping completed tasks on regeneration (retainer-api.md §7) would
+   make this case rarer, but is not required.
+2. **Create-people defaults to `everyone`.** The manifest ceiling and the
+   setting's default are both `everyone`. Tamloot's participants are its
+   linked contacts, which already leave out rooms, group calendars and the
+   owner's own addresses (#2394), and calendar sync links every invitee, so
+   `contacted_first` would differ little. Colleagues on a call are still
+   created. The server already applies the policy when it imports a source
+   event; admins can lower it to `never`.
