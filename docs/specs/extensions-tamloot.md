@@ -108,7 +108,11 @@ connection with its owner and health.
   Tamloot's 90-day retention), it rescans the backfill window and restarts
   from `head`.
 - `sync-session` (job): fetches the session detail and the session's tasks. It imports the session revision, then reconciles the tasks
-  (below).
+  (below). A feed entry's `op` is only a hint (retainer-api.md §4.4): a
+  tombstone also enqueues `sync-session`, and the fetch decides. 200 imports,
+  410 or 404 is the deletion. Tamloot can keep a `delete` entry for a session
+  that was restored in a racing transaction, so acting on `op` alone could
+  remove a live session.
 - `disconnect`: there is nothing to clean up at Tamloot in v1, because no
   webhooks are registered.
 
@@ -180,7 +184,7 @@ logged event (ARCHITECTURE.md 1.2 and 4.1). Matching never uses field names:
 
 **Deletion.** `onSourceDelete: "retract"` is the default for this
 registration. Deleting a session in Tamloot is a deliberate act and arrives as
-a verified feed tombstone. Admins can choose `keep`.
+a feed tombstone, verified by a 410 or 404 from the session fetch. Admins can choose `keep`.
 
 **Limits.** A 31-day backfill of 60 sessions with 5 tasks each is about 360
 writes, or 6 minutes at the default 60 writes a minute per connection.
