@@ -49,12 +49,9 @@ export class RunTokens {
     const run: RunBinding = {
       installationId: job.installationId,
       ...(job.connectionId
-        ? {
-            connectionId: job.connectionId,
-            connectionGeneration: job.connectionGeneration,
-            registrationName: job.registrationName,
-          }
+        ? { connectionId: job.connectionId, connectionGeneration: job.connectionGeneration }
         : {}),
+      ...(job.registrationName ? { registrationName: job.registrationName } : {}),
       registrationId,
       generation: job.generation,
       jobId: job.jobId,

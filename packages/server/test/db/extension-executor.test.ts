@@ -208,7 +208,7 @@ describe('trusted executor protocol with an explicitly in-process test driver', 
     expect(job?.status).toBe('succeeded');
     const [assertion] =
       await db.owner`select actor from field_assertions where actor->>'id'=${id} limit 1`;
-    expect(assertion?.actor).toEqual({ type: 'integration', id });
+    expect(assertion?.actor).toEqual({ type: 'integration', id, name: 'Fixture' });
   });
   it('keeps provider exceptions out of stored diagnostics and does not execute an unregistered artifact', async () => {
     const { jobId, executor } = await setup();

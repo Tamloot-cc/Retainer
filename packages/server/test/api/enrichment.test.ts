@@ -220,6 +220,12 @@ describe('company enrichment through a fake Exa', () => {
     });
     const filled = await h.fields(acme);
     expect(filled.employeeCount).toBe(12);
+    // History labels the writes with the extension's name, not its installation ID.
+    const actors = await db.owner<{ actor: unknown }[]>`
+      select distinct actor from field_assertions where record_id=${acme} and actor->>'type'='agent'`;
+    expect(actors.map((a) => a.actor)).toEqual([
+      { type: 'agent', id: h.id, name: 'Company-enrichment' },
+    ]);
     expect(filled.linkedinUrl).toMatchObject({
       primary: { url: 'https://www.linkedin.com/company/fixture-co' },
     });

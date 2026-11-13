@@ -101,11 +101,14 @@ export async function admitRun(
     actor: {
       type: installation.granted_actor,
       id: run.installationId,
+      // History shows the name, so a workspace run is labelled by its extension too.
       ...(connection
         ? {
             name: `${run.registrationName ?? 'Extension'} (${connection.owner.name ?? connection.owner.id}'s account)`,
           }
-        : {}),
+        : run.registrationName
+          ? { name: run.registrationName }
+          : {}),
     },
     scopes: run.scopes,
   };
