@@ -38,6 +38,16 @@ jobs:
       DATABASE_URL: postgres://retainer:retainer@localhost:5432/retainer
 
     steps:
+      # The parallel integration suite peaks above Postgres's default 100
+      # connections, and a refused connection stalls tests until they time
+      # out. Service containers take no server flags, so set it and restart.
+      - name: Raise the Postgres connection limit
+        run: |
+          pg=${{ job.services.postgres.id }}
+          docker exec "$pg" psql -U retainer -c "alter system set max_connections = 300"
+          docker restart "$pg"
+          until docker exec "$pg" pg_isready -U retainer; do sleep 1; done
+          docker exec "$pg" psql -U retainer -Atc "show max_connections"
       - uses: actions/checkout@v7
       # Dependabot may bump only the first FROM of a multi-stage Dockerfile.
       - name: Both Dockerfile stages use the same Node image
