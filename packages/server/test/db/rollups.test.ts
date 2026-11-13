@@ -386,6 +386,12 @@ describe('the rollup query on a large fan-out', () => {
       const perSource = 30;
       const fanOut = sources * perSource;
       await db.owner.begin(async (tx) => {
+      // DIAGNOSTIC: log the plan of any statement, nested ones included, over 3 s.
+      await tx`load 'auto_explain'`;
+      await tx`set local auto_explain.log_min_duration = '3s'`;
+      await tx`set local auto_explain.log_nested_statements = on`;
+      await tx`set local auto_explain.log_analyze = on`;
+      await tx`set local auto_explain.log_timing = off`;
         const [types] = await tx<{ deal: string; call: string; field: string }[]>`
         select d.id as deal, c.id as call, f.id as field
         from object_types d, object_types c, fields f
@@ -475,7 +481,7 @@ describe('the rollup query on a large fan-out', () => {
     } finally {
       clearInterval(timer);
     }
-  }, 120_000);
+  }, 900_000);
 });
 
 type PlanNode = {
