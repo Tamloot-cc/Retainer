@@ -140,8 +140,10 @@ async function setup(
     driver: ExecutionDriver,
     registry = new ExecutionRegistry(executables),
     concurrency = 4,
+    upgrades?: ConstructorParameters<typeof ExtensionExecutor>[0]['upgrades'],
   ) =>
     new ExtensionExecutor({
+      ...(upgrades ? { upgrades } : {}),
       sql: t.sql,
       discoverySql: db.connect({ role: 'retainer_executor' }),
       catalog,
@@ -155,6 +157,22 @@ async function setup(
   return { workspace: workspace.id, admin: keys.admin, id, jobId, queue, executor };
 }
 describe('trusted executor protocol with an explicitly in-process test driver', () => {
+  it('checks automatic upgrades on every pass and at the start of a run', async () => {
+    const { executor } = await setup();
+    let passes = 0;
+    const upgrades = {
+      upgradeDue: async () => {
+        passes++;
+        return { upgraded: 0, held: 0 };
+      },
+    };
+    const idle = { invoke: async () => ({ status: 'succeeded' as const }) };
+    await executor(idle, undefined, 4, upgrades).tick();
+    expect(passes).toBe(1);
+    // A short run checks once: the next check waits for the upgrade interval.
+    await executor(idle, undefined, 4, upgrades).run({ idleMs: 5, idleTimeoutMs: 50 });
+    expect(passes).toBe(2);
+  });
   it('keeps a late coordinator claim visible to deployment until its lease expires', async () => {
     const h = await setup();
     const lease = await h.queue.claim(h.workspace, h.jobId, 'late-coordinator');

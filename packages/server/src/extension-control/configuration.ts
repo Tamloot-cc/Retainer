@@ -6,6 +6,7 @@ import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../extension-runtime/secrets.js';
 import { RunTokens } from '../extension-runtime/tokens.js';
 import { parseExtensionCatalog } from '../extensions/catalog.js';
+import { Extensions } from '../extensions/service.js';
 import { createFileStorage } from '../file-storage/configuration.js';
 import { Webhooks } from '../webhooks/service.js';
 import { ChangeMaintenance } from '../worker/changes.js';
@@ -233,6 +234,8 @@ export async function extensionServices(
         apiOrigin,
         owner: `executor-${crypto.randomUUID()}`,
         activation: activationReady,
+        // Automatic upgrades run where the deployed releases are known.
+        upgrades: new Extensions(options.workerSql, catalog, broker, activationReady),
       });
     }
     return {

@@ -1468,6 +1468,12 @@ export const extensionInstallations = pgTable(
      */
     mapping: jsonb('mapping').notNull().default({ outputs: {} }),
     mappingRevision: integer('mapping_revision').notNull().default(0),
+    /**
+     * The newest release digest the automatic upgrade checked and left for an
+     * admin to approve (extensions/auto-upgrade.ts), so it is not planned again
+     * until a newer release ships.
+     */
+    upgradeHeldDigest: text('upgrade_held_digest'),
     createdBy: jsonb('created_by').$type<Actor>().notNull(),
     lastClaimedAt: timestamptz('last_claimed_at'),
     createdAt: createdAt(),

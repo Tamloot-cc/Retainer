@@ -1,0 +1,1 @@
+ALTER TABLE "extension_installations" ADD COLUMN "upgrade_held_digest" text;

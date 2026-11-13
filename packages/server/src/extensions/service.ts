@@ -34,14 +34,16 @@ import {
 } from '../extension-runtime/locks.js';
 import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { pendingSecrets, type SecretBroker } from '../extension-runtime/secrets.js';
+import { log } from '../log.js';
 import { loadSchemaState } from '../schema/load.js';
-import { planSchemaChange, runSchemaChange } from '../schema-engine/engine.js';
+import { planSchemaChange, runSchemaChange, SYSTEM_ACTOR } from '../schema-engine/engine.js';
 import {
   createViewInTransaction,
   type ManagedView,
   managedViewEdited,
   replaceManagedView,
 } from '../views/service.js';
+import { holdReason, type UpgradeTarget, upgradeTargets } from './auto-upgrade.js';
 import { ExtensionCatalog, hash } from './catalog.js';
 import { MemberConnections } from './connections.js';
 import {
@@ -97,6 +99,7 @@ type Row = {
   created_by: ExtensionInstallation['createdBy'];
   mapping: StoredMapping;
   mapping_revision: number;
+  upgrade_held_digest?: string | null;
 };
 
 /** A row's stored mapping, tolerating rows written before the column had its shape. */
@@ -761,191 +764,207 @@ export class Extensions {
       const plan = await this.plan(tx, caller, input);
       if (plan.preview.planDigest !== input.planDigest)
         throw conflict('stale_plan', 'schema, settings or installation changed; preview again');
-      if (input.reconnect && plan.operations.length)
-        throw conflict(
-          'schema_binding_conflict',
-          'repair schema bindings through a validated upgrade before reconnecting',
-        );
-      if (plan.existing && !input.mappingChange) {
-        const [pending] =
-          await tx`select 1 from extension_jobs where installation_id=${plan.existing.id}
-          and trigger_kind='disconnect' and status in ('queued','running') limit 1`;
-        if (pending)
-          throw new AppError(
-            409,
-            'cleanup_pending',
-            'wait for disconnect cleanup before changing the release',
-            {
-              retryAfterSeconds: 15,
-            },
-          );
-      }
-      const result = await runSchemaChange(tx, {
-        workspaceId: caller.workspaceId,
-        actor: caller.actor,
-        scopes: caller.scopes,
-        operations: plan.operations,
-        owner: 'workspace',
-        reason: `Install extension ${plan.release.manifest.name}`,
-      });
-      if (result.status !== 'applied' && result.status !== 'unchanged')
-        throw conflict('schema_binding_conflict', 'extension schema could not be applied');
-      if (input.mappingChange && plan.existing)
-        return this.commitMapping(tx, caller, plan, key, requestHash);
-      if (plan.existing) {
-        await cancelRuns(tx, plan.existing.id);
-        if (input.reconnect || input.replaceSourceAccount)
-          await tx`delete from source_sync_state where installation_id=${plan.existing.id}`;
-      }
-      const manifest = plan.release.manifest;
-      const standalone = manifest.execution === 'standalone';
-      const ready = standalone || this.activation.has(plan.release.digest);
-      const setupKind = input.installationId && !input.reconnect ? 'upgrade' : 'install';
-      const state = standalone
-        ? 'active'
-        : ready
-          ? setupKind === 'upgrade'
-            ? 'upgrading'
-            : 'installing'
-          : 'disabled';
-      // Standalone credentials survive a release change unless what they were
-      // granted changes: the actor, the scopes, the execution model, the pinned
-      // OAuth client (a release may drop it; the catalog only forbids switching)
-      // or the account. The installed release is pinned, so this is the only
-      // path by which its client can change.
-      const previous = plan.existing
-        ? resolveRelease(this.catalog.runtime, plan.existing)
-        : undefined;
-      const regrant =
-        !!plan.existing &&
-        (input.reconnect === true ||
-          input.replaceSourceAccount === true ||
-          plan.existing.granted_actor !== manifest.requestedActor ||
-          !sameScopes(plan.existing.granted_scopes, manifest.scopes) ||
-          !previous?.available ||
-          previous.manifest.execution !== manifest.execution ||
-          previous.manifest.oauthClientId !== manifest.oauthClientId);
-      const [row] = await tx<Row[]>`insert into extension_installations
-        (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, settings, created_by, state, setup_kind, mapping)
-        values (${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId}, ${manifest.universalId}, ${manifest.version}, ${plan.release.digest},
-          ${manifest.requestedActor}, ${tx.json(manifest.scopes)}, ${tx.json(input.settings)}, ${tx.json(caller.actor)}, ${state}, ${setupKind},
-          ${tx.json(jsonValue(plan.mapped.stored))})
-        on conflict (workspace_id, registration_id) do update set state = excluded.state,setup_kind=excluded.setup_kind,
-          last_error=null,connection_health='needs_reconnect',activated_at=null,cleanup_deadline=null,
-          version = excluded.version, release_digest = excluded.release_digest,granted_scopes=excluded.granted_scopes,granted_actor=excluded.granted_actor,
-          generation = extension_installations.generation + 1, settings = excluded.settings,
-          grant_generation = extension_installations.grant_generation + ${regrant ? 1 : 0},
-          settings_revision = extension_installations.settings_revision + 1, mapping = excluded.mapping,
-          mapping_revision = extension_installations.mapping_revision
-            + case when extension_installations.mapping is distinct from excluded.mapping then 1 else 0 end,
-          updated_at = now()
-        returning *`;
-      if (!row) throw new Error('installation insert returned no row');
-      if (manifest.connection === 'member') {
-        // Membership removal can run before setup finishes. Cache the hook
-        // with the release adoption, under the same installation lock.
-        const disconnect =
-          manifest.functions.find((fn) => fn.trigger.kind === 'disconnect')?.universalId ?? null;
-        await tx`update extension_connections set disconnect_function_id=${disconnect}
-          where installation_id=${row.id} and state<>'disconnected'`;
-      }
-      if (input.replaceSourceAccount) {
-        await tx`delete from source_bindings where installation_id=${row.id}`;
-        await tx`update webhook_bindings set state='retired',updated_at=clock_timestamp() where installation_id=${row.id} and state<>'retired'`;
-      }
-      for (const [name, reference] of Object.entries(input.secretRefs ?? {})) {
-        const [adopted] = await tx<
-          { ok: boolean }[]
-        >`select retainer_adopt_extension_secret(${reference}::uuid,${row.id}::uuid,${manifest.universalId}::uuid,${name}) as ok`;
-        if (!adopted?.ok)
-          throw conflict(
-            'connection_required',
-            'pending secret expired before installation completed',
-          );
-      }
-      const schema = await loadSchemaState(tx, caller.workspaceId);
-      const save = (kind: string, universalId: string, elementId: string, definition: unknown) =>
-        saveContribution(tx, caller.workspaceId, row.id, kind, universalId, elementId, definition);
-      await saveMappingContributions(tx, caller.workspaceId, row.id, schema, plan.mapped);
-      for (const c of manifest.schema) {
-        const element =
-          c.kind === 'object'
-            ? schema.objects.find((o) => o.universalId === c.definition.universalId)
-            : schema.objects
-                .flatMap((o) => o.fields)
-                .find((f) => f.universalId === c.definition.universalId);
-        if (!element?.id && plan.retired.has(c.definition.universalId)) continue;
-        if (!element?.id)
-          throw conflict('schema_binding_conflict', 'contribution missing after apply');
-        await save(c.kind, c.definition.universalId, element.id, c.definition);
-        if (c.kind === 'object') {
-          const object = schema.objects.find((o) => o.id === element.id);
-          for (const f of c.definition.fields) {
-            const field = object?.fields.find((v) => v.universalId === f.universalId);
-            if (!field?.id && plan.retired.has(f.universalId)) continue;
-            if (!field?.id) throw conflict('schema_binding_conflict', 'contributed field missing');
-            await save('field', f.universalId, field.id, f);
-          }
-        }
-      }
-      for (const view of manifest.views) {
-        const action = plan.preview.views.find((v) => v.universalId === view.universalId)?.action;
-        if (!action) continue;
-        const [retained] = await tx<
-          { element_id: string; definition: ManagedView }[]
-        >`select element_id, definition from extension_contributions where kind = 'view' and universal_id = ${view.universalId}`;
-        if (retained && !plan.existing)
-          throw conflict('schema_binding_conflict', 'view identity already managed');
-        if (retained) {
-          if (action === 'retain' || action === 'deleted_workspace') continue;
-          if (
-            action === 'update' &&
-            !(await replaceManagedView(tx, caller, retained.element_id, retained.definition, view))
-          )
-            throw conflict('stale_plan', 'a contributed view changed; preview again');
-          // Kept or replaced, the publisher base moves to this release.
-          await save('view', view.universalId, retained.element_id, view);
-          continue;
-        }
-        const object = schema.objects.find((o) => o.universalId === view.objectId);
-        if (!object) throw conflict('schema_binding_conflict', 'view object missing');
-        const created = await createViewInTransaction(tx, caller, object.nameSingular, {
-          name: view.name,
-          kind: 'table',
-          visibility: 'workspace',
-          columns: {
-            order: view.fieldIds.map(
-              (id) => object.fields.find((f) => f.universalId === id)?.name ?? '',
-            ),
-          },
-        });
-        await save('view', view.universalId, created.id, view);
-      }
-      const [presence] = await tx<
-        { names: string[] }[]
-      >`select retainer_extension_secret_names(${row.id}::uuid) as names`;
-      row.secret_names = presence?.names ?? [];
-      if (standalone) {
-        await tx`update extension_installations set connection_health='ok',activated_at=clock_timestamp() where id=${row.id}`;
-        row.connection_health = 'ok';
-      }
-      // Setup learns which release it replaces; a first install or a reinstall after
-      // uninstall starts fresh (null).
-      const previousVersion =
-        plan.existing && plan.existing.state !== 'uninstalled' ? plan.existing.version : null;
-      if (ready && !standalone)
-        await this.queue().enqueueLifecycle(
-          tx,
-          caller.workspaceId,
-          row.id,
-          'install',
-          previousVersion,
-        );
-      const response = present(row);
-      await tx`insert into extension_receipts (workspace_id, key, request_hash, installation_id, generation, response)
-        values (${caller.workspaceId}, ${key}, ${requestHash}, ${row.id}, ${row.generation}, ${tx.json(jsonValue(response))})`;
-      return response;
+      return this.commitPlan(tx, caller, input, plan, key, requestHash);
     });
+  }
+
+  /**
+   * Commits a validated plan: applies its schema, adopts the release and
+   * queues setup. A reviewed install or upgrade and an automatic upgrade
+   * (auto-upgrade.ts) both end here, under the same locks.
+   */
+  private async commitPlan(
+    tx: Tx,
+    caller: Caller,
+    input: ExtensionInstallInput,
+    plan: Awaited<ReturnType<Extensions['plan']>>,
+    key: string,
+    requestHash: string,
+  ) {
+    if (input.reconnect && plan.operations.length)
+      throw conflict(
+        'schema_binding_conflict',
+        'repair schema bindings through a validated upgrade before reconnecting',
+      );
+    if (plan.existing && !input.mappingChange) {
+      const [pending] =
+        await tx`select 1 from extension_jobs where installation_id=${plan.existing.id}
+        and trigger_kind='disconnect' and status in ('queued','running') limit 1`;
+      if (pending)
+        throw new AppError(
+          409,
+          'cleanup_pending',
+          'wait for disconnect cleanup before changing the release',
+          {
+            retryAfterSeconds: 15,
+          },
+        );
+    }
+    const result = await runSchemaChange(tx, {
+      workspaceId: caller.workspaceId,
+      actor: caller.actor,
+      scopes: caller.scopes,
+      operations: plan.operations,
+      owner: 'workspace',
+      reason: `Install extension ${plan.release.manifest.name}`,
+    });
+    if (result.status !== 'applied' && result.status !== 'unchanged')
+      throw conflict('schema_binding_conflict', 'extension schema could not be applied');
+    if (input.mappingChange && plan.existing)
+      return this.commitMapping(tx, caller, plan, key, requestHash);
+    if (plan.existing) {
+      await cancelRuns(tx, plan.existing.id);
+      if (input.reconnect || input.replaceSourceAccount)
+        await tx`delete from source_sync_state where installation_id=${plan.existing.id}`;
+    }
+    const manifest = plan.release.manifest;
+    const standalone = manifest.execution === 'standalone';
+    const ready = standalone || this.activation.has(plan.release.digest);
+    const setupKind = input.installationId && !input.reconnect ? 'upgrade' : 'install';
+    const state = standalone
+      ? 'active'
+      : ready
+        ? setupKind === 'upgrade'
+          ? 'upgrading'
+          : 'installing'
+        : 'disabled';
+    // Standalone credentials survive a release change unless what they were
+    // granted changes: the actor, the scopes, the execution model, the pinned
+    // OAuth client (a release may drop it; the catalog only forbids switching)
+    // or the account. The installed release is pinned, so this is the only
+    // path by which its client can change.
+    const previous = plan.existing
+      ? resolveRelease(this.catalog.runtime, plan.existing)
+      : undefined;
+    const regrant =
+      !!plan.existing &&
+      (input.reconnect === true ||
+        input.replaceSourceAccount === true ||
+        plan.existing.granted_actor !== manifest.requestedActor ||
+        !sameScopes(plan.existing.granted_scopes, manifest.scopes) ||
+        !previous?.available ||
+        previous.manifest.execution !== manifest.execution ||
+        previous.manifest.oauthClientId !== manifest.oauthClientId);
+    const [row] = await tx<Row[]>`insert into extension_installations
+      (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, settings, created_by, state, setup_kind, mapping)
+      values (${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId}, ${manifest.universalId}, ${manifest.version}, ${plan.release.digest},
+        ${manifest.requestedActor}, ${tx.json(manifest.scopes)}, ${tx.json(input.settings)}, ${tx.json(caller.actor)}, ${state}, ${setupKind},
+        ${tx.json(jsonValue(plan.mapped.stored))})
+      on conflict (workspace_id, registration_id) do update set state = excluded.state,setup_kind=excluded.setup_kind,
+        last_error=null,connection_health='needs_reconnect',activated_at=null,cleanup_deadline=null,
+        version = excluded.version, release_digest = excluded.release_digest,granted_scopes=excluded.granted_scopes,granted_actor=excluded.granted_actor,
+        generation = extension_installations.generation + 1, settings = excluded.settings,
+        grant_generation = extension_installations.grant_generation + ${regrant ? 1 : 0},
+        settings_revision = extension_installations.settings_revision + 1, mapping = excluded.mapping,
+        mapping_revision = extension_installations.mapping_revision
+          + case when extension_installations.mapping is distinct from excluded.mapping then 1 else 0 end,
+        updated_at = now()
+      returning *`;
+    if (!row) throw new Error('installation insert returned no row');
+    if (manifest.connection === 'member') {
+      // Membership removal can run before setup finishes. Cache the hook
+      // with the release adoption, under the same installation lock.
+      const disconnect =
+        manifest.functions.find((fn) => fn.trigger.kind === 'disconnect')?.universalId ?? null;
+      await tx`update extension_connections set disconnect_function_id=${disconnect}
+        where installation_id=${row.id} and state<>'disconnected'`;
+    }
+    if (input.replaceSourceAccount) {
+      await tx`delete from source_bindings where installation_id=${row.id}`;
+      await tx`update webhook_bindings set state='retired',updated_at=clock_timestamp() where installation_id=${row.id} and state<>'retired'`;
+    }
+    for (const [name, reference] of Object.entries(input.secretRefs ?? {})) {
+      const [adopted] = await tx<
+        { ok: boolean }[]
+      >`select retainer_adopt_extension_secret(${reference}::uuid,${row.id}::uuid,${manifest.universalId}::uuid,${name}) as ok`;
+      if (!adopted?.ok)
+        throw conflict(
+          'connection_required',
+          'pending secret expired before installation completed',
+        );
+    }
+    const schema = await loadSchemaState(tx, caller.workspaceId);
+    const save = (kind: string, universalId: string, elementId: string, definition: unknown) =>
+      saveContribution(tx, caller.workspaceId, row.id, kind, universalId, elementId, definition);
+    await saveMappingContributions(tx, caller.workspaceId, row.id, schema, plan.mapped);
+    for (const c of manifest.schema) {
+      const element =
+        c.kind === 'object'
+          ? schema.objects.find((o) => o.universalId === c.definition.universalId)
+          : schema.objects
+              .flatMap((o) => o.fields)
+              .find((f) => f.universalId === c.definition.universalId);
+      if (!element?.id && plan.retired.has(c.definition.universalId)) continue;
+      if (!element?.id)
+        throw conflict('schema_binding_conflict', 'contribution missing after apply');
+      await save(c.kind, c.definition.universalId, element.id, c.definition);
+      if (c.kind === 'object') {
+        const object = schema.objects.find((o) => o.id === element.id);
+        for (const f of c.definition.fields) {
+          const field = object?.fields.find((v) => v.universalId === f.universalId);
+          if (!field?.id && plan.retired.has(f.universalId)) continue;
+          if (!field?.id) throw conflict('schema_binding_conflict', 'contributed field missing');
+          await save('field', f.universalId, field.id, f);
+        }
+      }
+    }
+    for (const view of manifest.views) {
+      const action = plan.preview.views.find((v) => v.universalId === view.universalId)?.action;
+      if (!action) continue;
+      const [retained] = await tx<
+        { element_id: string; definition: ManagedView }[]
+      >`select element_id, definition from extension_contributions where kind = 'view' and universal_id = ${view.universalId}`;
+      if (retained && !plan.existing)
+        throw conflict('schema_binding_conflict', 'view identity already managed');
+      if (retained) {
+        if (action === 'retain' || action === 'deleted_workspace') continue;
+        if (
+          action === 'update' &&
+          !(await replaceManagedView(tx, caller, retained.element_id, retained.definition, view))
+        )
+          throw conflict('stale_plan', 'a contributed view changed; preview again');
+        // Kept or replaced, the publisher base moves to this release.
+        await save('view', view.universalId, retained.element_id, view);
+        continue;
+      }
+      const object = schema.objects.find((o) => o.universalId === view.objectId);
+      if (!object) throw conflict('schema_binding_conflict', 'view object missing');
+      const created = await createViewInTransaction(tx, caller, object.nameSingular, {
+        name: view.name,
+        kind: 'table',
+        visibility: 'workspace',
+        columns: {
+          order: view.fieldIds.map(
+            (id) => object.fields.find((f) => f.universalId === id)?.name ?? '',
+          ),
+        },
+      });
+      await save('view', view.universalId, created.id, view);
+    }
+    const [presence] = await tx<
+      { names: string[] }[]
+    >`select retainer_extension_secret_names(${row.id}::uuid) as names`;
+    row.secret_names = presence?.names ?? [];
+    if (standalone) {
+      await tx`update extension_installations set connection_health='ok',activated_at=clock_timestamp() where id=${row.id}`;
+      row.connection_health = 'ok';
+    }
+    // Setup learns which release it replaces; a first install or a reinstall after
+    // uninstall starts fresh (null).
+    const previousVersion =
+      plan.existing && plan.existing.state !== 'uninstalled' ? plan.existing.version : null;
+    if (ready && !standalone)
+      await this.queue().enqueueLifecycle(
+        tx,
+        caller.workspaceId,
+        row.id,
+        'install',
+        previousVersion,
+      );
+    const response = present(row);
+    await tx`insert into extension_receipts (workspace_id, key, request_hash, installation_id, generation, response)
+      values (${caller.workspaceId}, ${key}, ${requestHash}, ${row.id}, ${row.generation}, ${tx.json(jsonValue(response))})`;
+    return response;
   }
 
   /**
@@ -987,6 +1006,116 @@ export class Extensions {
     await tx`insert into extension_receipts (workspace_id, key, request_hash, installation_id, generation, response)
       values (${caller.workspaceId}, ${key}, ${requestHash}, ${row.id}, ${row.generation}, ${tx.json(jsonValue(response))})`;
     return response;
+  }
+
+  /** The release each registration upgrades to on its own, when this process can run it. */
+  upgradeTargets(): UpgradeTarget[] {
+    return upgradeTargets(
+      this.catalog.list(),
+      (release) =>
+        release.manifest.execution === 'standalone' || this.activation.has(release.digest),
+    );
+  }
+
+  /**
+   * One automatic-upgrade pass (auto-upgrade.ts): every active installation
+   * behind its target either upgrades as the system actor or is held for an
+   * admin. Discovery runs as the executor; each upgrade runs in its workspace.
+   */
+  async upgradeDue(discoverySql: Sql, limit = 50) {
+    const targets = this.upgradeTargets();
+    const result = { upgraded: 0, held: 0 };
+    if (!targets.length) return result;
+    const due = await discoverySql<{ workspace_id: string; installation_id: string }[]>`
+      select * from retainer_extension_upgrades_due(${limit},
+        ${targets.map((t) => t.registrationId)}::uuid[], ${targets.map((t) => t.digest)}::text[])`;
+    for (const item of due) {
+      const outcome = await this.autoUpgrade(item.workspace_id, item.installation_id, targets);
+      if (outcome === 'upgraded') result.upgraded++;
+      else if (outcome === 'held') result.held++;
+    }
+    return result;
+  }
+
+  /** Upgrades one installation to its target, holds it for an admin, or skips it. */
+  async autoUpgrade(
+    workspaceId: string,
+    installationId: string,
+    targets: readonly UpgradeTarget[] = this.upgradeTargets(),
+  ): Promise<'upgraded' | 'held' | 'skipped'> {
+    const caller: Caller = {
+      workspaceId,
+      actor: SYSTEM_ACTOR,
+      scopes: ['read', 'write', 'schema:write', 'admin'],
+    };
+    return inWorkspace(this.sql, workspaceId, async (tx) => {
+      const [candidate] = await tx<
+        Row[]
+      >`select * from extension_installations where id = ${installationId}`;
+      if (!candidate) return 'skipped';
+      await lockPrivacyShared(tx, workspaceId);
+      await lockSchemaExclusive(tx, workspaceId);
+      await lockInstallation(tx, workspaceId, candidate.registration_id);
+      // Re-read under the lock: an admin may have upgraded, disabled or held it.
+      const [current] = await tx<
+        Row[]
+      >`select * from extension_installations where id = ${installationId}`;
+      const target = targets.find((t) => t.registrationId === current?.registration_id);
+      if (
+        !current ||
+        !target ||
+        current.state !== 'active' ||
+        current.release_digest === target.digest ||
+        current.upgrade_held_digest === target.digest
+      )
+        return 'skipped';
+      const [cleanup] = await tx`select 1 from extension_jobs where installation_id=${current.id}
+        and trigger_kind='disconnect' and status in ('queued','running') limit 1`;
+      if (cleanup) return 'skipped';
+      const name = this.catalog.get(target.registrationId, target.version).manifest.name;
+      const hold = async (reason: string) => {
+        await tx`update extension_installations set upgrade_held_digest = ${target.digest}
+          where id = ${current.id}`;
+        log.info(
+          `Extension ${name} ${current.version} -> ${target.version} in workspace ${workspaceId}: held for an admin (${reason}).`,
+        );
+        return 'held' as const;
+      };
+      const input: ExtensionInstallInput = {
+        registrationId: target.registrationId,
+        version: target.version,
+        installationId: current.id,
+        settings: current.settings,
+      };
+      let plan: Awaited<ReturnType<Extensions['plan']>>;
+      try {
+        plan = await this.plan(tx, caller, input);
+      } catch (error) {
+        // A plan an admin could not approve unchanged either (more access, a
+        // missing secret, a binding conflict) is held with its code.
+        if (error instanceof AppError) return hold(error.code);
+        throw error;
+      }
+      const previous = resolveRelease(this.catalog.runtime, current);
+      const reason = holdReason({
+        previous: previous?.available ? previous.manifest : undefined,
+        next: plan.release.manifest,
+        grantedActor: current.granted_actor,
+        grantedScopes: current.granted_scopes,
+        schemaOperations: plan.operations.length,
+        viewActions: plan.preview.views.map((view) => view.action),
+        storedMapping: storedMapping(current),
+        plannedMapping: plan.mapped.stored,
+      });
+      if (reason) return hold(reason);
+      // One receipt per installation and release: a retried pass returns it.
+      const key = `auto-upgrade:${current.id}:${target.digest}`;
+      await this.commitPlan(tx, caller, input, plan, key, hash({ input, actor: caller.actor }));
+      log.info(
+        `Extension ${name} upgraded from ${current.version} to ${target.version} in workspace ${workspaceId}.`,
+      );
+      return 'upgraded';
+    });
   }
 
   async issueKey(

@@ -743,6 +743,20 @@
       "when": 1794579290972,
       "tag": "0105_managed_source_task_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1794604409510,
+      "tag": "0106_extension_upgrade_hold",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1794604410588,
+      "tag": "0107_extension_upgrades_due",
+      "breakpoints": true
     }
   ]
 }
