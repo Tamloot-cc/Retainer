@@ -432,6 +432,7 @@ describe('the rollup query on a large fan-out', () => {
         };
         const noise = 2000;
         await seed(other.id, noise, 0);
+        await tx`set local auto_explain.log_min_duration = '5ms'`;
         await seed(acme.id, sources, (noise + 1) * perSource);
       });
       mark('seeded');

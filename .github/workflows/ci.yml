@@ -68,7 +68,7 @@ jobs:
       # DIAGNOSTIC (not for merge): plans auto_explain logged.
       - name: Postgres slow-statement plans
         if: always()
-        run: docker logs ${{ job.services.postgres.id }} 2>&1 | grep -n -A80 'duration:' | head -400 || true
+        run: docker logs ${{ job.services.postgres.id }} 2>&1 | grep -n -A40 'duration:' | grep -v 'duplicate key' | head -1500 || true
       - name: Build extension isolation test images
         run: |
           docker build -f docker/Dockerfile -t retainer:extensions-review -t retainer:files-review .
