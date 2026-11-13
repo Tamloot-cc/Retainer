@@ -360,118 +360,118 @@ describe('the rollup query on a large fan-out', () => {
         .catch((e) => console.log('DIAG spy failed', e.message));
     }, 10_000);
     try {
-    const ws = (await createWorkspace(db.owner, { name: 'Fan-out', template: 'sales' })).id;
-    await schemaChange(
-      [
-        { op: 'update_field', object: 'deal', field: 'company', rollUpEvents: true },
-        // An event relation field, so attachment through one is looked up too.
-        {
-          op: 'create_field',
-          object: 'conversation',
-          field: {
-            name: 'deal',
-            label: 'Deal',
-            type: 'relation',
-            settings: { targetObject: 'deal' },
+      const ws = (await createWorkspace(db.owner, { name: 'Fan-out', template: 'sales' })).id;
+      await schemaChange(
+        [
+          { op: 'update_field', object: 'deal', field: 'company', rollUpEvents: true },
+          // An event relation field, so attachment through one is looked up too.
+          {
+            op: 'create_field',
+            object: 'conversation',
+            field: {
+              name: 'deal',
+              label: 'Deal',
+              type: 'relation',
+              settings: { targetObject: 'deal' },
+            },
           },
-        },
-      ],
-      ws,
-    );
-    const acme = await createRecord(app, as(AGENT, ws), 'company', { name: 'Acme' });
-    const other = await createRecord(app, as(AGENT, ws), 'company', { name: 'Other' });
-    // More events per source than one page, so the per-source cut matters,
-    // in a workspace far larger than the fan-out, as a real one is.
-    const sources = 300;
-    const perSource = 30;
-    const fanOut = sources * perSource;
-    await db.owner.begin(async (tx) => {
-      const [types] = await tx<{ deal: string; call: string; field: string }[]>`
+        ],
+        ws,
+      );
+      const acme = await createRecord(app, as(AGENT, ws), 'company', { name: 'Acme' });
+      const other = await createRecord(app, as(AGENT, ws), 'company', { name: 'Other' });
+      // More events per source than one page, so the per-source cut matters,
+      // in a workspace far larger than the fan-out, as a real one is.
+      const sources = 300;
+      const perSource = 30;
+      const fanOut = sources * perSource;
+      await db.owner.begin(async (tx) => {
+        const [types] = await tx<{ deal: string; call: string; field: string }[]>`
         select d.id as deal, c.id as call, f.id as field
         from object_types d, object_types c, fields f
         where d.workspace_id = ${ws} and d.name_singular = 'deal'
           and c.workspace_id = ${ws} and c.name_singular = 'conversation'
           and f.object_type_id = d.id and f.name = 'company'`;
-      if (!types) throw new Error('sales template objects missing');
-      const actor = tx.json(AGENT);
-      // Deals pointing at a company, each with events about it. Acme's are
-      // the newest, after every one of the other company's.
-      const seed = async (target: string, deals: number, offset: number) => {
-        await tx`
+        if (!types) throw new Error('sales template objects missing');
+        const actor = tx.json(AGENT);
+        // Deals pointing at a company, each with events about it. Acme's are
+        // the newest, after every one of the other company's.
+        const seed = async (target: string, deals: number, offset: number) => {
+          await tx`
           create temp table seed on commit drop as
           select gen_random_uuid() as deal_id, g as n from generate_series(1, ${deals}) g`;
-        await tx`
+          await tx`
           insert into records (id, workspace_id, object_type_id, data, created_by, updated_by)
           select deal_id, ${ws}, ${types.deal}, '{}'::jsonb, ${actor}, ${actor} from seed`;
-        await tx`
+          await tx`
           insert into record_links
             (workspace_id, field_id, source_record_id, target_record_id, created_by)
           select ${ws}, ${types.field}, deal_id, ${target}, ${actor} from seed`;
-        await tx`
+          await tx`
           create temp table seed_events on commit drop as
           select gen_random_uuid() as event_id, s.deal_id, ${offset} + s.n * ${perSource} + k as n
           from seed s cross join generate_series(1, ${perSource}) k`;
-        await tx`
+          await tx`
           insert into records (id, workspace_id, object_type_id, data, created_by, updated_by)
           select event_id, ${ws}, ${types.call}, '{}'::jsonb, ${actor}, ${actor}
           from seed_events`;
-        await tx`
+          await tx`
           insert into event_records (workspace_id, record_id, occurred_at, channel)
           select ${ws}, event_id, timestamptz '2025-01-01' + n * interval '1 minute', 'api'
           from seed_events`;
-        await tx`
+          await tx`
           insert into event_links (workspace_id, event_id, position, record_id, link)
           select ${ws}, event_id, 0, deal_id, 'about' from seed_events`;
-        await tx`drop table seed, seed_events`;
-      };
-      const noise = 2000;
-      await seed(other.id, noise, 0);
-      await seed(acme.id, sources, (noise + 1) * perSource);
-    });
-    mark('seeded');
-    await db.owner`analyze records, record_links, event_records, event_links`;
-    mark('analyzed');
+          await tx`drop table seed, seed_events`;
+        };
+        const noise = 2000;
+        await seed(other.id, noise, 0);
+        await seed(acme.id, sources, (noise + 1) * perSource);
+      });
+      mark('seeded');
+      await db.owner`analyze records, record_links, event_records, event_links`;
+      mark('analyzed');
 
-    const limit = 10;
-    const [plan, newest] = await withRead(app, as(AGENT, ws), async (tx, schema) => {
-      const history = () => eventHistory(tx, schema, ws, acme.id, { limit: limit + 1 });
-      const [row] = await tx<{ 'QUERY PLAN': PlanRoot[] }[]>`
+      const limit = 10;
+      const [plan, newest] = await withRead(app, as(AGENT, ws), async (tx, schema) => {
+        const history = () => eventHistory(tx, schema, ws, acme.id, { limit: limit + 1 });
+        const [row] = await tx<{ 'QUERY PLAN': PlanRoot[] }[]>`
         explain (analyze, format json)
         select h.event_id from ${history()} h
         order by h.occurred_at desc, h.event_id desc limit ${limit + 1}`;
-      const rows = await tx<{ event_id: string }[]>`
+        const rows = await tx<{ event_id: string }[]>`
         select h.event_id from ${history()} h
         order by h.occurred_at desc, h.event_id desc limit ${limit + 1}`;
-      return [row?.['QUERY PLAN'][0]?.Plan as PlanNode, rows];
-    });
+        return [row?.['QUERY PLAN'][0]?.Plan as PlanNode, rows];
+      });
 
-    mark('queried');
-    console.log('DIAG plan', JSON.stringify(plan));
-    // The newest events overall are the last-seeded ones.
-    const expected = await db.owner<{ record_id: string }[]>`
+      mark('queried');
+      console.log('DIAG plan', JSON.stringify(plan));
+      // The newest events overall are the last-seeded ones.
+      const expected = await db.owner<{ record_id: string }[]>`
       select record_id from event_records where workspace_id = ${ws}
       order by occurred_at desc, record_id desc limit ${limit + 1}`;
-    expect(newest.map((r) => r.event_id)).toEqual(expected.map((r) => r.record_id));
+      expect(newest.map((r) => r.event_id)).toEqual(expected.map((r) => r.record_id));
 
-    const nodes = flatten(plan);
-    const tables = ['record_links', 'event_links', 'event_records', 'records'];
-    const scans = nodes.filter((p) => p['Relation Name'] && tables.includes(p['Relation Name']));
-    // Every table is read by index, and only for the fan-out: no scan
-    // returns more rows, in all its loops, than the fan-out has events.
-    expect(scans.filter((p) => p['Node Type'] === 'Seq Scan')).toEqual([]);
-    for (const scan of scans) {
-      const read = (scan['Actual Rows'] ?? 0) + (scan['Rows Removed by Filter'] ?? 0);
-      expect(read * (scan['Actual Loops'] ?? 0)).toBeLessThanOrEqual(fanOut);
-    }
-    // Each source is cut to its own newest page, so the merge sees at most
-    // sources × (limit + 1) rows, not every event.
-    const perSourceLimit = nodes.find(
-      (p) => p['Node Type'] === 'Limit' && (p['Actual Loops'] ?? 0) >= sources,
-    );
-    expect(perSourceLimit).toBeDefined();
-    expect(perSourceLimit?.['Actual Rows'] ?? Infinity).toBeLessThanOrEqual(limit + 1);
-    const merged = nodes.find((p) => p['Node Type'] === 'Append');
-    expect(merged?.['Actual Rows'] ?? Infinity).toBeLessThanOrEqual(sources * (limit + 1));
+      const nodes = flatten(plan);
+      const tables = ['record_links', 'event_links', 'event_records', 'records'];
+      const scans = nodes.filter((p) => p['Relation Name'] && tables.includes(p['Relation Name']));
+      // Every table is read by index, and only for the fan-out: no scan
+      // returns more rows, in all its loops, than the fan-out has events.
+      expect(scans.filter((p) => p['Node Type'] === 'Seq Scan')).toEqual([]);
+      for (const scan of scans) {
+        const read = (scan['Actual Rows'] ?? 0) + (scan['Rows Removed by Filter'] ?? 0);
+        expect(read * (scan['Actual Loops'] ?? 0)).toBeLessThanOrEqual(fanOut);
+      }
+      // Each source is cut to its own newest page, so the merge sees at most
+      // sources × (limit + 1) rows, not every event.
+      const perSourceLimit = nodes.find(
+        (p) => p['Node Type'] === 'Limit' && (p['Actual Loops'] ?? 0) >= sources,
+      );
+      expect(perSourceLimit).toBeDefined();
+      expect(perSourceLimit?.['Actual Rows'] ?? Infinity).toBeLessThanOrEqual(limit + 1);
+      const merged = nodes.find((p) => p['Node Type'] === 'Append');
+      expect(merged?.['Actual Rows'] ?? Infinity).toBeLessThanOrEqual(sources * (limit + 1));
     } finally {
       clearInterval(timer);
     }
