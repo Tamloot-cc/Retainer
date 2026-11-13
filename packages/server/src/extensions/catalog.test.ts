@@ -102,3 +102,29 @@ describe('release-owned catalog', () => {
     expect(() => defineExtension({ ...initial, oauthClientId: ' ' })).toThrow();
   });
 });
+
+it('keeps a registration connection mode immutable across releases', () => {
+  const workspace = manifest();
+  const member = defineExtension({
+    ...workspace,
+    version: '1.1.0',
+    execution: 'hosted',
+    connection: 'member',
+    functions: [
+      {
+        universalId: 'b4adb12e-455a-4dd0-a793-1a2ec770a813',
+        name: 'connect',
+        description: 'Connect',
+        handlerDigest: 'a'.repeat(64),
+        trigger: { kind: 'connect' },
+        inputSchema: { type: 'object', additionalProperties: false },
+      },
+    ],
+  });
+  expect(
+    () =>
+      new ExtensionCatalog(
+        [workspace, member].map((manifest) => ({ manifest, actorCeiling: 'integration' })),
+      ),
+  ).toThrow('connection mode cannot change');
+});

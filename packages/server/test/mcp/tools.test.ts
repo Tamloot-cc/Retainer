@@ -40,6 +40,7 @@ const TOOLS = [
   'get_timeline',
   'list_changes',
   'list_comments',
+  'list_extension_connections',
   'list_extension_runs',
   'list_extensions',
   'list_templates',

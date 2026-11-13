@@ -1,6 +1,13 @@
 import type { Actor } from '@retainer/shared';
 import { RUNTIME_ROLE } from '../db/client.js';
-import { lockMemberExclusive, lockPrivacyShared, setScope, type Tx } from '../db/tx.js';
+import {
+  lockMemberExclusive,
+  lockPrivacyShared,
+  lockSchemaShared,
+  setScope,
+  type Tx,
+} from '../db/tx.js';
+import { disconnectMemberConnections } from '../extension-runtime/connections.js';
 import { deletePersonalMemory } from '../privacy/personal.js';
 
 /** A person and a workspace they may have lost access to. */
@@ -49,6 +56,7 @@ export async function endLostMemberships(
 
   for (const { workspaceId, userId } of lost) {
     await lockPrivacyShared(tx, workspaceId);
+    await lockSchemaShared(tx, workspaceId);
     await lockMemberExclusive(tx, workspaceId, userId);
     await tx`
       update api_keys set revoked_at = now()
@@ -58,6 +66,7 @@ export async function endLostMemberships(
   await tx.unsafe(`set local role ${RUNTIME_ROLE}`);
   for (const { workspaceId, userId } of lost) {
     await setScope(tx, workspaceId, userId);
+    await disconnectMemberConnections(tx, workspaceId, userId);
     await deletePersonalMemory(tx, workspaceId, userId, actor);
   }
   return lost.length;

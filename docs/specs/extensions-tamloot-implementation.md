@@ -1,7 +1,8 @@
 # Member connections and the Tamloot extension: implementation spec
 
-Status: implementation in progress, 2026-11-13. Delivery step 1 is implemented
-in `baea95a`; member lifecycle and the Tamloot bundle are not implemented yet. Implements the product spec
+Status: implementation in progress, 2026-11-13. Manifest and persistence
+are committed (`baea95a`, `7abaaf8`). Member lifecycle and runtime scoping
+are implemented and tested locally. Web and the Tamloot bundle remain. Implements the product spec
 [extensions-tamloot.md](extensions-tamloot.md) on the platform in
 [extensions.md](extensions.md) and [extensions-lambda.md](extensions-lambda.md).
 Tamloot's side is implemented (Tamloot #2395, #2397, #2398;
@@ -73,6 +74,8 @@ and tracked separately.
 - Each setting gains `level: 'installation' | 'connection'`, default
   `'installation'` when absent. Do not add a zod default: adding a serialized
   property would change existing release digests.
+- Connection mode cannot change across releases of one registration. Use a
+  new registration to change its ownership model.
 - Two trigger kinds: `connect` and `disconnect`. They take lifecycle input
   like `install` and `uninstall` (`protocol.ts` `lifecycleInputSchema`).
 - Validation in `defineExtension`:
@@ -106,6 +109,9 @@ New table `extension_connections` (generated with `pnpm db:generate`):
 - Unique index on `(workspace_id, installation_id, owner_id)` where
   `state <> 'disconnected'`: one live connection per owner.
 - A disconnected row stays, as provenance for the attribution in §3.6.
+- `source_account_id` remembers the verified account after binding retirement.
+  `disconnect_function_id` remembers the reviewed cleanup hook, so membership
+  removal can queue it without importing the catalog into the lower layer.
 - Check that `owner` is a user actor, generation and revisions are positive,
   and state and health use the allowed values. The tenant key is
   `(workspace_id, installation_id, id)`, unique for child FKs. A child cannot
@@ -158,7 +164,8 @@ installations need no migration of data.
   connection hook or requiring a source binding. It has no schedules until
   someone connects. Approval validates only installation-level settings.
 - **Reconnect.** `POST …/connections/:cid/reconnect` with new connection
-  secrets. Bumps the connection generation, then runs `connect` with
+  secrets and `expectedGeneration`. A stale form is refused before replacing
+  a key. Bumps the connection generation, then runs `connect` with
   `previousVersion` set. A different source account is refused
   (`source_account_changed`); the member disconnects and connects again.
 - **Disconnect.** `DELETE …/connections/:cid`. In one transaction: bump the
@@ -276,11 +283,14 @@ winner logic are unchanged.
 ### 3.7 Interfaces
 
 - REST: `GET/POST /v1/extensions/:id/connections`,
+  `POST /v1/extensions/:id/connections/secrets` stages an owner-bound key,
   `POST /v1/extensions/:id/connections/:cid/reconnect`,
   `DELETE /v1/extensions/:id/connections/:cid`. `GET /v1/extensions/:id/runs`
   takes `connection`.
 - SDK: `extensionConnections`, `connectExtension`, `reconnectExtension`,
-  `disconnectExtension`.
+  `disconnectExtension`, plus `stageExtensionConnectionSecret`.
+  `reconnectExtension` overloads its existing workspace reconnect signature;
+  existing clients keep that signature and its reviewed-plan flow.
 - MCP: read-only, as for installations. MCP cannot connect.
 - Web (`packages/web/src/routes/extensions.tsx`): a member registration's
   page shows "Your Tamloot connection" to everyone (connect, reconnect,
@@ -385,6 +395,11 @@ callers (retainer-api.md §2). Endpoints: `GET /v1/me`,
 2. On a first connect, or when `cursor` is missing: `GET /v1/changes/head`,
    then checkpoint `{cursor}` in KV and a `backfill` child for
    `now − backfillDays` in one call. On reconnect with a cursor, keep it.
+3. Every connection setup also queues retained-item recovery through
+   `GET /v1/extensions/:id/source-items`. It pages local IDs for this account,
+   including reserved items whose import failed. Re-enable and upgrade cancel
+   old-generation jobs too: retaining the feed cursor alone would lose that
+   accepted work. Recovery never queues erased or deliberately retracted items.
 
 ### 4.4 `backfill`
 
@@ -418,7 +433,8 @@ On `410 cursor_expired`, fetch `head` **before** the recovery enumeration,
 then atomically checkpoint that cursor and a backfill child. Also refetch
 previously imported live source items, including ones outside backfillDays:
 otherwise an expired deletion could leave an old meeting and its tasks live
-forever. This needs a bounded runtime list of this account's local items.
+forever. The runtime list is `GET /v1/extensions/:id/source-items?limit&cursor`: only
+local IDs, only this account, only pinned scan/setup functions.
 After privacy clears KV, use the same recovery. Completed source task work
 is tracked durably (§4.6); an unchanged evidence receipt cannot skip it.
 
@@ -533,9 +549,11 @@ Real Postgres, a fresh database per file, no mocked database.
    SQL capabilities and populated workspace-state upgrade tests. Persistence
    and null-scope compatibility are implemented; member broker admission
    and lifecycle follow in steps 3–4.
-3. Lifecycle, REST, SDK and member removal.
+3. Lifecycle, REST, SDK, read-only MCP and effective member removal. Implemented
+   and tested locally.
 4. Runtime scoping: claim, run token, admission, runtime endpoints,
-   schedules, fair claims, budgets.
+   schedules, fair claims, budgets and account-scoped recovery reads. Implemented
+   and tested locally.
 5. Web: connection card and admin table.
 6. Managed-task server support, schema bindings and Tamloot bundle, fixtures
    and tests. Can start beside step 3, against the

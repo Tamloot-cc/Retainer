@@ -1,5 +1,6 @@
 import { lockSchemaShared, type Tx } from '../db/tx.js';
 import { type RuntimeCatalog, resolveRelease } from './availability.js';
+import { disconnectConnection } from './connections.js';
 import { cancelRuns, lockExtension } from './locks.js';
 
 type Pin = {
@@ -56,6 +57,9 @@ export async function uninstallForWorkspaceDeletion(
       cleanup_deadline=case when ${next}='uninstalling' then clock_timestamp()+interval '24 hours' else null end,
       generation=generation+1,grant_generation=grant_generation+1,updated_at=now()
       where id=${current.id}`;
+    const connections =
+      await tx`select id from extension_connections where installation_id=${current.id} and state<>'disconnected' order by id`;
+    for (const c of connections) await disconnectConnection(tx, workspace, c.id);
     await tx`update webhook_bindings set state='retired',updated_at=clock_timestamp() where installation_id=${current.id} and state<>'retired'`;
     await tx`select retainer_retire_extension_secrets(${current.id}::uuid)`;
     moved++;

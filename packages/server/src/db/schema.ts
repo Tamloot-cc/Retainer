@@ -1648,6 +1648,7 @@ export const extensionConnections = pgTable(
       .default({}),
     settingsRevision: integer('settings_revision').notNull().default(1),
     sourceAccountId: uuid('source_account_id'),
+    disconnectFunctionId: uuid('disconnect_function_id'),
     lastClaimedAt: timestamptz('last_claimed_at'),
     createdAt: createdAt(),
     connectedAt: timestamptz('connected_at'),

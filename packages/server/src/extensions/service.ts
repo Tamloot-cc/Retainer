@@ -25,6 +25,7 @@ import {
   releaseAvailability,
   resolveRelease,
 } from '../extension-runtime/availability.js';
+import { disconnectConnection } from '../extension-runtime/connections.js';
 import { hashInstallationKey, mintInstallationKey } from '../extension-runtime/credentials.js';
 import { cancelRuns, lockExtension as lockInstallation } from '../extension-runtime/locks.js';
 import { ExtensionQueue } from '../extension-runtime/queue.js';
@@ -38,6 +39,7 @@ import {
   replaceManagedView,
 } from '../views/service.js';
 import { ExtensionCatalog, hash } from './catalog.js';
+import { MemberConnections } from './connections.js';
 import {
   type ContributionRow,
   contributionOperations,
@@ -182,8 +184,10 @@ export class Extensions {
     private readonly deployed?: ReadonlySet<string>,
   ) {
     this.activation = deployed ?? new Set();
+    this.connections = new MemberConnections(sql, catalog, secrets);
   }
   private readonly activation: ReadonlySet<string>;
+  readonly connections: MemberConnections;
   private queue() {
     return new ExtensionQueue(this.sql, this.catalog.runtime);
   }
@@ -202,7 +206,8 @@ export class Extensions {
     const release = this.catalog.get(input.registrationId, input.version);
     if (
       !release.manifest.settings[input.name]?.secret ||
-      release.manifest.settings[input.name]?.generated
+      release.manifest.settings[input.name]?.generated ||
+      release.manifest.settings[input.name]?.level === 'connection'
     )
       throw new AppError(422, 'invalid_secret', 'setting is not a declared human-provided secret');
     if (!this.secrets)
@@ -239,6 +244,12 @@ export class Extensions {
       }
       const [row] = await tx<Row[]>`select i.* from extension_installations i where i.id = ${id}`;
       if (!row) throw notFound('extension installation');
+      if (caller.run?.connectionId) {
+        const [connection] =
+          await tx`select settings from extension_connections where id=${caller.run.connectionId} and installation_id=${id}`;
+        if (!connection) throw notFound('member connection');
+        row.settings = { ...row.settings, ...connection.settings };
+      }
       const contributions = await tx<{ kind: string; universalId: string; elementId: string }[]>`
         select kind, universal_id as "universalId", element_id as "elementId"
         from extension_contributions where installation_id = ${id} order by kind, universal_id`;
@@ -255,7 +266,7 @@ export class Extensions {
         );
       const [presence] = await tx<
         { names: string[] }[]
-      >`select retainer_extension_secret_names(${id}::uuid) as names`;
+      >`select ${caller.run?.connectionId ? tx`retainer_connection_secret_names(${id}::uuid,${caller.run.connectionId}::uuid)` : tx`retainer_extension_secret_names(${id}::uuid)`} as names`;
       return {
         ...present(row, this.catalog.runtime, this.deployed),
         secrets: Object.fromEntries((presence?.names ?? []).map((name) => [name, true])),
@@ -265,7 +276,7 @@ export class Extensions {
     });
   }
 
-  async runs(caller: Caller, id: string, limit = 50, cursor?: string) {
+  async runs(caller: Caller, id: string, limit = 50, cursor?: string, connectionId?: string) {
     scope(caller, 'read');
     if (
       (caller.run || caller.installation) &&
@@ -283,12 +294,18 @@ export class Extensions {
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       await lockSchemaShared(tx, caller.workspaceId);
       await admitCaller(tx, caller, false, 'runtime');
-      const [installation] = await tx`select id from extension_installations where id=${id}`;
+      const [installation] =
+        await tx`select id,registration_id,version from extension_installations where id=${id}`;
       if (!installation) throw notFound('extension installation');
+      const [member] =
+        await tx`select 1 from extension_connections where installation_id=${id} limit 1`;
+      const owner = caller.person?.id ?? (caller.actor.type === 'user' ? caller.actor.id : null);
+      const all = canApproveDestructive(caller.actor, caller.scopes);
       const rows = await tx<
         {
           id: string;
           functionId: string;
+          connectionId: string | null;
           status: string;
           attempt: number;
           generation: number;
@@ -298,8 +315,11 @@ export class Extensions {
           updatedAt: Date;
         }[]
       >`
-        select id,function_id as "functionId",status,attempt,generation,release_digest as "releaseDigest",code,
+        select id,function_id as "functionId",connection_id as "connectionId",status,attempt,generation,release_digest as "releaseDigest",code,
           created_at as "createdAt",updated_at as "updatedAt" from extension_jobs where installation_id=${id}
+          ${connectionId ? tx`and connection_id=${connectionId}` : tx``}
+          ${caller.run ? tx`and connection_id is not distinct from ${caller.run.connectionId ?? null}::uuid` : tx``}
+          ${member && !all && !caller.run ? tx`and connection_id in(select id from extension_connections where installation_id=${id} and owner_id=${owner})` : tx``}
           ${after ? tx`and id<${after}::uuid` : tx``} order by id desc limit ${limit + 1}`;
       const page = rows.slice(0, limit),
         last = page.at(-1);
@@ -323,6 +343,7 @@ export class Extensions {
       const definition = manifest.settings[key];
       if (
         !definition ||
+        definition.level === 'connection' ||
         definition.secret ||
         typeof value !== definition.type ||
         (definition.options && !definition.options.includes(String(value))) ||
@@ -336,7 +357,7 @@ export class Extensions {
         );
     }
     for (const [key, definition] of Object.entries(manifest.settings)) {
-      if (definition.secret) continue;
+      if (definition.secret || definition.level === 'connection') continue;
       if (definition.required && !Object.hasOwn(input.settings, key))
         throw new AppError(422, 'invalid_settings', 'required setting missing', { key });
     }
@@ -416,13 +437,19 @@ export class Extensions {
     const newSecrets = new Set<string>();
     if (existing && input.installationId && existing.version !== input.version)
       for (const [name, definition] of Object.entries(manifest.settings))
-        if (definition.secret && !definition.generated && !stored?.names.includes(name))
+        if (
+          definition.secret &&
+          definition.level !== 'connection' &&
+          !definition.generated &&
+          !stored?.names.includes(name)
+        )
           newSecrets.add(name);
     for (const [name, id] of Object.entries(refs)) {
       const definition = manifest.settings[name],
         staged = pending.find((p) => p.id === id);
       if (
         !definition?.secret ||
+        definition.level === 'connection' ||
         definition.generated ||
         !staged ||
         staged.name !== name ||
@@ -444,6 +471,7 @@ export class Extensions {
     for (const [name, definition] of Object.entries(manifest.settings))
       if (
         definition.secret &&
+        definition.level !== 'connection' &&
         definition.required &&
         !Object.hasOwn(refs, name) &&
         !stored?.names.includes(name)
@@ -1068,7 +1096,12 @@ export class Extensions {
             'connection_required',
             'use reconnect to change provider credentials or account settings',
           );
-        if (!definition.secret && definition.required && !Object.hasOwn(input.settings, key))
+        if (
+          definition.level !== 'connection' &&
+          !definition.secret &&
+          definition.required &&
+          !Object.hasOwn(input.settings, key)
+        )
           throw new AppError(422, 'invalid_settings', 'required setting missing', { key });
       }
       if (Buffer.byteLength(JSON.stringify(input.settings)) > 65536)
@@ -1077,6 +1110,7 @@ export class Extensions {
         const definition = release.manifest.settings[key];
         if (
           !definition ||
+          definition.level === 'connection' ||
           typeof value !== definition.type ||
           definition.secret ||
           (definition.options && !definition.options.includes(String(value))) ||
@@ -1203,6 +1237,9 @@ export class Extensions {
         where id = ${id} returning *`;
       if (!row) throw notFound('extension installation');
       if (state === 'uninstalled') {
+        const connections =
+          await tx`select id from extension_connections where installation_id=${id} and state<>'disconnected' order by id`;
+        for (const c of connections) await disconnectConnection(tx, caller.workspaceId, c.id);
         await tx`update webhook_bindings set state='retired',updated_at=clock_timestamp() where installation_id=${id} and state<>'retired'`;
         await tx`select retainer_retire_extension_secrets(${id}::uuid)`;
       }

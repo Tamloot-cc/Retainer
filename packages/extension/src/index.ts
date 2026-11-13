@@ -6,7 +6,7 @@ import { verifierHeaderAllowed } from './webhook.js';
 export { nextOccurrence } from './cron.js';
 export { parseServerRange, satisfiesServerRange } from './semver.js';
 
-import { FIELD_TYPES } from '@retainer/shared';
+import { type Actor, FIELD_TYPES } from '@retainer/shared';
 import { z } from 'zod';
 
 const uuid = z.uuid();
@@ -762,3 +762,29 @@ export type ExtensionInstallation = {
 
 export * from './protocol.js';
 export * from './webhook.js';
+
+/** A person's credential boundary beneath the installation's approved workspace grant. */
+export type ExtensionConnection = {
+  id: string;
+  installationId: string;
+  owner: Actor;
+  state: 'connecting' | 'active' | 'setup_failed' | 'needs_reconnect' | 'disconnected';
+  health: 'ok' | 'needs_reconnect' | 'degraded';
+  lastError: string | null;
+  generation: number;
+  settings: Record<string, string | boolean | number>;
+  settingsRevision: number;
+  /** Names only; credentials never appear in reads. */
+  secrets: string[];
+  createdAt: string;
+  connectedAt: string | null;
+  disconnectedAt: string | null;
+  lastSuccessfulScanAt: string | null;
+  failedItems: number;
+};
+export type ExtensionConnectionInput = {
+  settings: Record<string, string | boolean | number>;
+  secretRefs?: Record<string, string>;
+  /** Required when reconnecting; a stale form cannot replace a newer credential. */
+  expectedGeneration?: number;
+};

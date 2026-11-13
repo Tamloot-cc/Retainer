@@ -9,6 +9,9 @@ import { admitRun } from './admission.js';
 import type { ClaimedJob } from './queue.js';
 
 const binding = z.strictObject({
+  connectionId: z.uuid().nullable().optional(),
+  connectionGeneration: z.number().int().positive().nullable().optional(),
+  registrationName: z.string().min(1).max(200).optional(),
   installationId: z.uuid(),
   registrationId: z.uuid(),
   generation: z.number().int().positive(),
@@ -45,6 +48,13 @@ export class RunTokens {
       throw new AppError(403, 'forbidden', "run scopes exceed the function's effective scopes");
     const run: RunBinding = {
       installationId: job.installationId,
+      ...(job.connectionId
+        ? {
+            connectionId: job.connectionId,
+            connectionGeneration: job.connectionGeneration,
+            registrationName: job.registrationName,
+          }
+        : {}),
       registrationId,
       generation: job.generation,
       jobId: job.jobId,

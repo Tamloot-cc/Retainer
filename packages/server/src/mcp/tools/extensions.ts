@@ -26,6 +26,16 @@ export function registerExtensionTools(server: McpServer, extensions: Extensions
     ({ id }) => run(caller, 'read', () => extensions.get(caller, id)),
   );
   server.registerTool(
+    'list_extension_connections',
+    {
+      description:
+        'Read member extension connections and their health. Returns only connections this credential may inspect; no secrets. People connect their accounts through the web app.',
+      inputSchema: z.strictObject({ id: z.uuid() }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    ({ id }) => run(caller, 'read', () => extensions.connections.list(caller, id)),
+  );
+  server.registerTool(
     'list_extension_runs',
     {
       description:
@@ -34,11 +44,12 @@ export function registerExtensionTools(server: McpServer, extensions: Extensions
         id: z.uuid(),
         limit: z.number().int().min(1).max(100).default(50),
         cursor: z.string().optional(),
+        connection: z.uuid().optional(),
       }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    ({ id, limit, cursor }) =>
-      run(caller, 'read', () => extensions.runs(caller, id, limit, cursor)),
+    ({ id, limit, cursor, connection }) =>
+      run(caller, 'read', () => extensions.runs(caller, id, limit, cursor, connection)),
   );
   server.registerTool(
     'preview_extension',

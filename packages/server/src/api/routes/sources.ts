@@ -2,7 +2,7 @@ import { sourceScanSchema } from '@retainer/shared';
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import { requireScope } from '../../auth/middleware.js';
-import { idParam, readBody } from '../../http/request.js';
+import { idParam, limitParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 import {
   prepareSourceSchema,
@@ -15,8 +15,24 @@ import {
 import type { Sources } from '../../sources/service.js';
 
 export function sourceRoutes(app: Hono<AppEnv>, sources: Sources) {
+  app.get('/extensions/:id/source-items', requireScope('read'), async (c) =>
+    c.json(
+      await sources.items(
+        c.get('caller'),
+        idParam(c),
+        limitParam(c, 30, 100),
+        c.req.query('cursor'),
+      ),
+    ),
+  );
   app.get('/extensions/:id/source-sync', requireScope('read'), async (c) =>
-    c.json(await sources.syncStatus(c.get('caller'), idParam(c))),
+    c.json(
+      await sources.syncStatus(
+        c.get('caller'),
+        idParam(c),
+        c.req.query('connection') ? z.uuid().parse(c.req.query('connection')) : undefined,
+      ),
+    ),
   );
   app.post('/extensions/:id/source-sync', requireScope('write'), async (c) =>
     c.json(

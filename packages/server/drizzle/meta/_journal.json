@@ -715,6 +715,20 @@
       "when": 1794574554427,
       "tag": "0101_member_connection_account_index",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1794574816830,
+      "tag": "0102_member_connection_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1794574818034,
+      "tag": "0103_member_broker_admission",
+      "breakpoints": true
     }
   ]
 }

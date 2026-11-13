@@ -122,10 +122,12 @@ export class ChangeMaintenance {
               generation: number;
               release_digest: string;
               trigger_kind: string;
+              connection_id: string | null;
+              connection_generation: number | null;
             }[]
           >`update extension_jobs set status='failed',code='job_expired',lease_owner=null,lease_until=null,run_until=null,updated_at=clock_timestamp()
               where id in(select id from extension_jobs where installation_id=any(${installations.map((row) => row.id)}::uuid[]) and expires_at<=clock_timestamp() and (status='queued' or status='running' and lease_until<=clock_timestamp())
-                order by expires_at,id limit 1000 for update skip locked) returning id,installation_id,generation,release_digest,trigger_kind`;
+                order by expires_at,id limit 1000 for update skip locked) returning id,installation_id,generation,release_digest,trigger_kind,connection_id,connection_generation`;
           for (const job of expired) {
             await tx`update extension_attempts set status='failed',code='job_expired',finished_at=clock_timestamp()
               where job_id=${job.id} and finished_at is null`;

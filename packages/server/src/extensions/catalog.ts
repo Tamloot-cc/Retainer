@@ -20,10 +20,15 @@ export class ExtensionCatalog {
   private readonly releases = new Map<string, ReviewedRelease & { digest: string }>();
   constructor(releases: readonly ReviewedRelease[] = []) {
     const actors = new Map<string, string>();
+    const connections = new Map<string, string>();
     const locators = new Map<string, string>();
     const clients = new Map<string, string>();
     for (const release of releases) {
       const manifest = defineExtension(release.manifest);
+      const connection = connections.get(manifest.universalId);
+      if (connection && connection !== manifest.connection)
+        throw new Error('registration connection mode cannot change across releases');
+      connections.set(manifest.universalId, manifest.connection);
       if (release.actorCeiling === 'agent' && manifest.requestedActor === 'integration')
         throw new Error('registration does not permit requested actor');
       for (const hook of manifest.webhooks ?? []) {

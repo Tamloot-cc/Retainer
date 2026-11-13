@@ -5,7 +5,7 @@ import {
   type SourceSyncStatus,
   sourceScanSchema,
 } from '@retainer/shared';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, jsonValue, lockForWrite, lockSchemaShared, type Tx } from '../db/tx.js';
@@ -83,9 +83,10 @@ export class Sources {
     if (!run) throw forbidden('source operation requires an installation credential');
     const [binding] = await tx<
       Binding[]
-    >`select b.account_id,a.namespace,a.provider,a.registration_id,i.version,i.release_digest,i.settings
+    >`select b.account_id,a.namespace,a.provider,a.registration_id,i.version,i.release_digest,(i.settings || coalesce(c.settings,'{}'::jsonb)) as settings
       from source_bindings b join source_accounts a on a.id=b.account_id join extension_installations i on i.id=b.installation_id
-      where b.installation_id=${run.installationId} and b.generation=${run.generation} and a.registration_id=${run.registrationId}`;
+      left join extension_connections c on c.id=b.connection_id and c.installation_id=i.id
+      where b.installation_id=${run.installationId} and b.connection_id is not distinct from ${run.connectionId ?? null}::uuid and b.generation=${run.generation} and a.registration_id=${run.registrationId}`;
     if (!binding)
       throw conflict(
         'source_connection_required',
@@ -103,7 +104,10 @@ export class Sources {
       const { policy } = await this.release(tx, caller);
       const [job] =
         await tx`select function_id,trigger_kind from extension_jobs where id=${run.jobId}`;
-      if (job?.trigger_kind !== 'install' || job.function_id !== policy.verifyFunctionId)
+      if (
+        job?.trigger_kind !== (run.connectionId ? 'connect' : 'install') ||
+        job.function_id !== policy.verifyFunctionId
+      )
         throw forbidden('only the registered source verifier may attest a connection');
       if ((policy.identity === 'account') !== (input.accountId !== undefined))
         throw new AppError(
@@ -114,8 +118,9 @@ export class Sources {
       const identity =
         policy.identity === 'global-resource' ? 'global' : (input.accountId as string);
       const namespace = requestHash({ identity, strategy: policy.identity });
-      const [prior] =
-        await tx`select a.namespace,a.provider from source_bindings b join source_accounts a on a.id=b.account_id where b.installation_id=${id}`;
+      const [prior] = run.connectionId
+        ? await tx`select a.namespace,a.provider from extension_connections c join source_accounts a on a.id=c.source_account_id where c.id=${run.connectionId} and c.installation_id=${id}`
+        : await tx`select a.namespace,a.provider from source_bindings b join source_accounts a on a.id=b.account_id where b.installation_id=${id} and b.connection_id is null`;
       if (prior && (prior.namespace !== namespace || prior.provider !== policy.provider))
         throw conflict(
           'source_account_changed',
@@ -127,9 +132,20 @@ export class Sources {
         values(${caller.workspaceId},${run.registrationId},${policy.provider},${namespace},${identity})
         on conflict(workspace_id,registration_id,provider,namespace) do update set namespace=excluded.namespace returning id`;
       if (!account) throw new Error('source account insert returned no row');
-      await tx`insert into source_bindings(workspace_id,installation_id,account_id,generation)
-        values(${caller.workspaceId},${id},${account.id},${run.generation})
+      if (run.connectionId) {
+        const [other] =
+          await tx`select 1 from source_bindings where installation_id=${id} and account_id=${account.id} and connection_id<>${run.connectionId}`;
+        if (other)
+          throw conflict(
+            'source_account_in_use',
+            'this source account is already connected in this workspace',
+          );
+      }
+      await tx`insert into source_bindings(workspace_id,installation_id,connection_id,account_id,generation)
+        values(${caller.workspaceId},${id},${run.connectionId ?? null},${account.id},${run.generation})
         on conflict(workspace_id,installation_id,connection_id) do update set account_id=excluded.account_id,generation=excluded.generation,verified_at=clock_timestamp()`;
+      if (run.connectionId)
+        await tx`update extension_connections set source_account_id=${account.id} where id=${run.connectionId}`;
       return {
         sourceAccountId: account.id,
         provider: policy.provider,
@@ -185,6 +201,33 @@ export class Sources {
       };
     });
   }
+  /** Recovery enumerates local identities, never provider payloads, in the admitted account only. */
+  async items(caller: Caller, id: string, limit = 30, cursor?: string) {
+    const run = this.runtime(caller, id);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new AppError(400, 'invalid_request', 'limit must be between 1 and 100');
+    if (cursor) z.uuid().parse(cursor);
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await lockSchemaShared(tx, caller.workspaceId);
+      await admitRun(tx, caller.workspaceId, run, false, 'runtime');
+      const { policy } = await this.release(tx, caller),
+        binding = await this.binding(tx, caller);
+      if (
+        run.functionId !== policy.verifyFunctionId &&
+        !policy.scanFunctionIds?.includes(run.functionId)
+      )
+        throw forbidden('only registered source scan functions may enumerate recovery items');
+      const rows = await tx<
+        { id: string }[]
+      >`select id from source_items where account_id=${binding.account_id}
+        and state in ('reserved','live','unavailable') ${cursor ? tx`and id>${cursor}::uuid` : tx``} order by id limit ${limit + 1}`;
+      const page = rows.slice(0, limit);
+      return {
+        items: page.map((row) => ({ sourceItemId: row.id })),
+        nextCursor: rows.length > limit ? (page.at(-1)?.id ?? null) : null,
+      };
+    });
+  }
   async beginScan(caller: Caller, id: string, raw: SourceScan) {
     const run = this.runtime(caller, id),
       input = sourceScanSchema.parse(raw);
@@ -197,7 +240,8 @@ export class Sources {
         await tx`select function_id,trigger_kind from extension_jobs where id=${run.jobId}`;
       if (
         !(
-          (job?.trigger_kind === 'install' && job.function_id === policy.verifyFunctionId) ||
+          (['install', 'connect'].includes(job?.trigger_kind) &&
+            job?.function_id === policy.verifyFunctionId) ||
           (policy.scanFunctionIds ?? []).includes(job?.function_id)
         )
       )
@@ -214,12 +258,12 @@ export class Sources {
           'source scan bounds exceed the allowed clock window',
         );
       // The unique installation row serializes competing starts, without taking a queue lock after admission.
-      await tx`insert into source_sync_state(workspace_id,installation_id,generation,scan_id,mode,lower_bound,upper_bound)
-        values(${caller.workspaceId},${id},${run.generation},${input.scanId},${input.mode},${input.from},${input.through})
+      await tx`insert into source_sync_state(workspace_id,installation_id,connection_id,generation,scan_id,mode,lower_bound,upper_bound)
+        values(${caller.workspaceId},${id},${run.connectionId ?? null},${run.generation},${input.scanId},${input.mode},${input.from},${input.through})
         on conflict(workspace_id,installation_id,connection_id) do nothing`;
       const [current] =
         await tx`select *,lower_bound=${input.from}::timestamptz and upper_bound=${input.through}::timestamptz as same_bounds
-        from source_sync_state where installation_id=${id} for update`;
+        from source_sync_state where installation_id=${id} and connection_id is not distinct from ${run.connectionId ?? null}::uuid for update`;
       if (!current) throw new Error('source scan missing');
       if (current.scan_id === input.scanId && (!current.same_bounds || current.mode !== input.mode))
         throw conflict('scan_conflict', 'scan identity was used for different bounds');
@@ -231,13 +275,13 @@ export class Sources {
         throw conflict('scan_conflict', 'an enumeration is already in progress');
       if (current.scan_id !== input.scanId)
         await tx`update source_sync_state set generation=${run.generation},scan_id=${input.scanId},mode=${input.mode},
-          lower_bound=${input.from},upper_bound=${input.through},started_at=clock_timestamp(),completed_at=null where installation_id=${id}`;
+          lower_bound=${input.from},upper_bound=${input.through},started_at=clock_timestamp(),completed_at=null where installation_id=${id} and connection_id is not distinct from ${run.connectionId ?? null}::uuid`;
       else if (current.generation !== run.generation)
-        await tx`update source_sync_state set generation=${run.generation} where installation_id=${id}`;
+        await tx`update source_sync_state set generation=${run.generation} where installation_id=${id} and connection_id is not distinct from ${run.connectionId ?? null}::uuid`;
       return { scanId: input.scanId };
     });
   }
-  async syncStatus(caller: Caller, id: string): Promise<SourceSyncStatus> {
+  async syncStatus(caller: Caller, id: string, connectionId?: string): Promise<SourceSyncStatus> {
     if (caller.installation && caller.installation.installationId !== id)
       throw notFound('installation source');
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
@@ -258,11 +302,26 @@ export class Sources {
         ).source
       )
         throw notFound('installation source');
-      const [state] = await tx`select * from source_sync_state where installation_id=${id}`;
+      const manifest = this.resolve(
+        installation.registration_id,
+        installation.version,
+        installation.release_digest,
+      );
+      let cid = caller.run?.connectionId ?? null;
+      if (manifest.connection === 'member' && !caller.run) {
+        const owner = caller.person?.id ?? (caller.actor.type === 'user' ? caller.actor.id : null);
+        const [c] = await tx`select id from extension_connections where installation_id=${id}
+          ${connectionId ? tx`and id=${connectionId}` : tx`and state<>'disconnected' and owner_id=${owner}`}
+          ${canApproveDestructive(caller.actor, caller.scopes) ? tx`` : tx`and owner_id=${owner}`} order by created_at desc limit 1`;
+        if (!c) throw notFound('member connection');
+        cid = c.id;
+      }
+      const [state] =
+        await tx`select * from source_sync_state where installation_id=${id} and connection_id is not distinct from ${cid}::uuid`;
       const [counts] = await tx<{ pending: number; failed: number }[]>`select
         count(*) filter(where status in ('queued','running'))::int as pending,
         count(*) filter(where status='failed')::int as failed
-        from extension_jobs where installation_id=${id} and generation=${installation.generation} and source_item_id is not null`;
+        from extension_jobs where installation_id=${id} and connection_id is not distinct from ${cid}::uuid and generation=${installation.generation} and source_item_id is not null and (${cid}::uuid is null or connection_generation=(select generation from extension_connections where id=${cid}))`;
       return {
         lastSuccessfulScanAt: state?.last_successful_scan_at?.toISOString() ?? null,
         activeScan:
