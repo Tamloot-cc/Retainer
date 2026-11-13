@@ -121,14 +121,14 @@ The gateway calls the Messages API with:
 
 Error mapping:
 
-| Condition                                      | Response                          | Run should              |
-| ---------------------------------------------- | --------------------------------- | ----------------------- |
-| No key configured                              | `503 model_unavailable`           | Use its fallback        |
-| Workspace or installation budget spent (§3.3)  | `429 model_budget_exhausted`      | Use its fallback        |
-| Provider 429, 5xx, timeout (30 s)              | `503 model_retry`, `Retry-After`  | `retry`                 |
-| Refusal after fallback                         | `422 model_refused`               | Treat as no answer      |
-| Output fails the schema                        | `502 model_invalid_output`        | Treat as no answer      |
-| Request over the limits above                  | `422 validation_failed`           | Fix the bundle          |
+| Condition                                     | Response                         | Run should         |
+| --------------------------------------------- | -------------------------------- | ------------------ |
+| No key configured                             | `503 model_unavailable`          | Use its fallback   |
+| Workspace or installation budget spent (§3.3) | `429 model_budget_exhausted`     | Use its fallback   |
+| Provider 429, 5xx, timeout (30 s)             | `503 model_retry`, `Retry-After` | `retry`            |
+| Refusal after fallback                        | `422 model_refused`              | Treat as no answer |
+| Output fails the schema                       | `502 model_invalid_output`       | Treat as no answer |
+| Request over the limits above                 | `422 validation_failed`          | Fix the bundle     |
 
 The SDK gets a `model(...)` method that throws `RetryLater` on
 `model_retry` and returns a typed result for the rest.
@@ -240,7 +240,7 @@ launcher with the egress proxy, as jobs do.
 The function returns, alongside `status`:
 
 ```ts
-suggestion: Record<OutputKey, Choice & { reason: string /* ≤ 200 chars */ }>
+suggestion: Record<OutputKey, Choice & { reason: string /* ≤ 200 chars */ }>;
 ```
 
 where `Choice` is the draft format from the enrichment spec §3.3
