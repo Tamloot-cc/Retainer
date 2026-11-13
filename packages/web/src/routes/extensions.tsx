@@ -69,6 +69,10 @@ const VIEW_ACTIONS = {
 const stateLabel = (state: string) =>
   state.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
 
+/** Whether a release is newer than a version (versions compare numerically). */
+const newer = (release: Release, version: string) =>
+  release.manifest.version.localeCompare(version, 'en', { numeric: true }) > 0;
+
 export function ExtensionsPage() {
   const accountState = useAccount();
   const { session } = useWorkspace(),
@@ -134,10 +138,7 @@ export function ExtensionsPage() {
   const newest = new Map<string, Release>();
   for (const release of catalog.data.releases) {
     const previous = newest.get(release.manifest.universalId);
-    if (
-      !previous ||
-      release.manifest.version.localeCompare(previous.manifest.version, 'en', { numeric: true }) > 0
-    )
+    if (!previous || newer(release, previous.manifest.version))
       newest.set(release.manifest.universalId, release);
   }
   return (
@@ -159,12 +160,25 @@ export function ExtensionsPage() {
               r.manifest.universalId === installation.registrationId &&
               r.manifest.version === installation.version,
           );
+          const candidate = newest.get(installation.registrationId);
+          const upgrade =
+            candidate &&
+            !['uninstalled', 'uninstalling'].includes(installation.state) &&
+            newer(candidate, installation.version)
+              ? candidate
+              : undefined;
           return (
             <Panel key={installation.id} title={release?.manifest.name ?? 'Unavailable extension'}>
               <Stack>
                 <p>
                   {stateLabel(installation.state)} · Version {installation.version}
                 </p>
+                {upgrade ? (
+                  <Notice>
+                    Version {upgrade.manifest.version} is available. Review what it changes before
+                    you upgrade.
+                  </Notice>
+                ) : null}
                 {installation.runtimeAvailability?.state === 'unavailable' &&
                 ['active', 'installing', 'upgrading', 'uninstalling'].includes(
                   installation.state,
@@ -210,6 +224,11 @@ export function ExtensionsPage() {
                   />
                 ) : null}
                 <Row>
+                  {admin && upgrade ? (
+                    <Button onClick={() => setSelection({ release: upgrade, installation })}>
+                      Upgrade to {upgrade.manifest.version}
+                    </Button>
+                  ) : null}
                   <Button onClick={() => setRuns({ installation })}>View runs</Button>
                   {admin && release?.manifest.execution === 'standalone' ? (
                     <Button onClick={() => setCredentials(installation)}>App credentials</Button>
@@ -272,12 +291,8 @@ export function ExtensionsPage() {
           const installation = installed.find(
             (i) => i.registrationId === release.manifest.universalId,
           );
-          const upgrade =
-            installation &&
-            installation.state !== 'uninstalled' &&
-            release.manifest.version.localeCompare(installation.version, 'en', { numeric: true }) >
-              0;
-          if (installation && installation.state !== 'uninstalled' && !upgrade) return null;
+          // An installed extension offers its upgrade on its own card.
+          if (installation && installation.state !== 'uninstalled') return null;
           return (
             <Panel
               key={`${release.manifest.universalId}:${release.manifest.version}`}
@@ -291,7 +306,7 @@ export function ExtensionsPage() {
                       setSelection({ release, ...(installation ? { installation } : {}) })
                     }
                   >
-                    {upgrade ? 'Review upgrade' : 'Set up'}
+                    Set up
                   </Button>
                 ) : (
                   <Muted>A workspace admin can connect this service.</Muted>
