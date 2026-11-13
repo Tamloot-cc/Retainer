@@ -343,6 +343,23 @@ describe('rolled-up history', () => {
 
 describe('the rollup query on a large fan-out', () => {
   it('merges each source’s newest events by index, never the whole set', async () => {
+    // DIAGNOSTIC (not for merge): log what this database is doing.
+    const t0 = Date.now();
+    const mark = (what: string) => console.log(`DIAG ${what} at ${Date.now() - t0}ms`);
+    const spy = db.connect({ max: 1 });
+    const dbName = db.name;
+    const timer = setInterval(() => {
+      void spy`
+        select a.pid, a.state, a.wait_event_type, a.wait_event, a.backend_type,
+          (now() - a.query_start)::text as running, pg_blocking_pids(a.pid) as blocked_by,
+          left(regexp_replace(a.query, '\s+', ' ', 'g'), 400) as query
+        from pg_stat_activity a
+        where a.pid <> pg_backend_pid() and (a.datname = ${dbName} or a.backend_type <> 'client backend')
+          and a.state is distinct from 'idle'`
+        .then((rows) => console.log(`DIAG ${Date.now() - t0}ms activity`, JSON.stringify(rows)))
+        .catch((e) => console.log('DIAG spy failed', e.message));
+    }, 10_000);
+    try {
     const ws = (await createWorkspace(db.owner, { name: 'Fan-out', template: 'sales' })).id;
     await schemaChange(
       [
@@ -411,7 +428,9 @@ describe('the rollup query on a large fan-out', () => {
       await seed(other.id, noise, 0);
       await seed(acme.id, sources, (noise + 1) * perSource);
     });
+    mark('seeded');
     await db.owner`analyze records, record_links, event_records, event_links`;
+    mark('analyzed');
 
     const limit = 10;
     const [plan, newest] = await withRead(app, as(AGENT, ws), async (tx, schema) => {
@@ -426,6 +445,8 @@ describe('the rollup query on a large fan-out', () => {
       return [row?.['QUERY PLAN'][0]?.Plan as PlanNode, rows];
     });
 
+    mark('queried');
+    console.log('DIAG plan', JSON.stringify(plan));
     // The newest events overall are the last-seeded ones.
     const expected = await db.owner<{ record_id: string }[]>`
       select record_id from event_records where workspace_id = ${ws}
@@ -451,6 +472,9 @@ describe('the rollup query on a large fan-out', () => {
     expect(perSourceLimit?.['Actual Rows'] ?? Infinity).toBeLessThanOrEqual(limit + 1);
     const merged = nodes.find((p) => p['Node Type'] === 'Append');
     expect(merged?.['Actual Rows'] ?? Infinity).toBeLessThanOrEqual(sources * (limit + 1));
+    } finally {
+      clearInterval(timer);
+    }
   }, 120_000);
 });
 
