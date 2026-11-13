@@ -26,7 +26,7 @@ beforeAll(async () => {
     new SecretCipher('test', new Map([['test', randomBytes(32)]])),
   );
 });
-async function fixture() {
+async function fixture(createPeople: 'never' | 'everyone' = 'everyone') {
   const manifest = tamlootManifest({
       packageDigest: 'a'.repeat(64),
       handlerDigest: 'b'.repeat(64),
@@ -54,7 +54,7 @@ async function fixture() {
   const input = {
     registrationId: manifest.universalId,
     version: manifest.version,
-    settings: { shareMeetings: true, createPeople: 'everyone' },
+    settings: { shareMeetings: true, createPeople },
   };
   const preview = await app.request('/v1/extensions/preview', { key: keys.admin, body: input });
   expect(preview.status).toBe(200);
@@ -415,6 +415,30 @@ describe('Tamloot backfill ownership before polling', () => {
       await db.owner`select scan_id,completed_at from source_sync_state where connection_id=${cid}`;
     expect(completed?.scan_id).toBe(active?.scan_id);
     expect(completed?.completed_at).not.toBeNull();
+    expect(await db.owner`select id from source_tasks where installation_id=${h.id}`).toHaveLength(
+      2,
+    );
+  }, 60000);
+});
+
+describe('Tamloot supported contact creation policies', () => {
+  it('offers everyone or never and rejects contacted_first without outbound evidence', async () => {
+    const h = await fixture('never');
+    const unsupported = await h.app.request('/v1/extensions/preview', {
+      key: h.keys.admin,
+      body: {
+        installationId: h.id,
+        registrationId: TAMLOOT.registration,
+        version: '1.0.0',
+        settings: { shareMeetings: true, createPeople: 'contacted_first' },
+      },
+    });
+    expect(unsupported.status).toBe(422);
+    await h.connect();
+    expect((await h.drain()).every((result) => result.status === 'succeeded')).toBe(true);
+    expect(
+      await db.owner`select record_id from record_identifiers where workspace_id=${h.workspace} and kind='email' and is_claim`,
+    ).toHaveLength(0);
     expect(await db.owner`select id from source_tasks where installation_id=${h.id}`).toHaveLength(
       2,
     );

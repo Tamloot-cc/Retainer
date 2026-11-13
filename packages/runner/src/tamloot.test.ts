@@ -19,6 +19,7 @@ describe('Tamloot release and provider boundaries', () => {
       onSourceDelete: 'retract',
     });
     expect(manifest.settings.createPeople.default).toBe('everyone');
+    expect(manifest.settings.createPeople.options).toEqual(['never', 'everyone']);
     expect(manifest.source?.tasks?.identityFieldId).toBe(TAMLOOT.taskIdField);
     expect(manifest.settings.apiKey.level).toBe('connection');
     expect(() => defineExtension({ ...manifest, schema: [] })).toThrow(

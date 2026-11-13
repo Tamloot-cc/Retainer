@@ -2,7 +2,7 @@
 
 Status: implemented and locally verified, 2026-11-13. Member connections,
 managed tasks and the Tamloot bundle are complete on this branch. Build,
-typecheck, lint, the full test suite (1,319 server tests), release artifact
+typecheck, lint, the full test suite (1,320 server tests), release artifact
 checks and all 71 browser tests passed. Hosted rollout and a real-key test
 remain out of scope.
 Implements the product spec
@@ -332,7 +332,7 @@ defineExtension({
       level: 'installation',
       required: true,
       default: 'everyone',
-      options: ['never', 'contacted_first', 'everyone'],
+      options: ['never', 'everyone'],
     },
     backfillDays: { type: 'number', level: 'connection', required: true, default: 31 },
     apiKey: {
@@ -377,6 +377,11 @@ defineExtension({
   ],
 });
 ```
+
+Tamloot v1 does not return the outbound-contact or organizer evidence required
+by the platform's `contacted_first` policy. Offer only `everyone` and `never`;
+never infer outbound contact from presence in the participant list. The ceiling
+and default remain `everyone`.
 
 The hosted bundle name is `tamloot` (within the 12-character limit). Revisions
 are Tamloot txids, compared as `BigInt` by `sources/policy.ts:20`.

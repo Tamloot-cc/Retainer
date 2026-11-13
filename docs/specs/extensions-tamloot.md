@@ -224,20 +224,20 @@ OAuth are not needed for v1.
 
 ## 6. Decisions
 
-Both former open questions are decided (2026-11-13). Neither needs a server
-change; both are adapter and manifest work.
+Both former open questions are decided (2026-11-13). The implementation spec
+keeps these outcomes and refines the task-write steps for concurrency.
 
-1. **A task a person edited is kept.** Before soft-deleting a gone task,
-   the adapter reads its assertion history (`GET /v1/records/:id/assertions`,
-   `read` scope) and keeps the task if any assertion's actor is a `user`. A
-   kept task is no longer synced. Deletion uses `DELETE /v1/records/:id`
-   (`write` scope). Both routes accept run tokens with those scopes today.
+1. **A task a person edited is kept.** A kept task is no longer synced.
+   Managed task support checks all assertion history and applies removal under
+   record locks. An adapter-only history read followed by deletion would race
+   a person's edit; the implementation spec §4.7 gives the server steps.
    Tamloot keeping completed tasks on regeneration (retainer-api.md §7) would
    make this case rarer, but is not required.
 2. **Create-people defaults to `everyone`.** The manifest ceiling and the
    setting's default are both `everyone`. Tamloot's participants are its
    linked contacts, which already leave out rooms, group calendars and the
-   owner's own addresses (#2394), and calendar sync links every invitee, so
-   `contacted_first` would differ little. Colleagues on a call are still
-   created. The server already applies the policy when it imports a source
-   event; admins can lower it to `never`.
+   owner's own addresses (#2394), and calendar sync links every invitee.
+   Colleagues on a call are still created. The server applies this policy
+   when it imports a source event; admins can lower it to `never`. Tamloot
+   v1 does not expose outbound-contact evidence, so its bundle does not offer
+   `contacted_first` (the platform requires that evidence).

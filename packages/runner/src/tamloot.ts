@@ -26,7 +26,7 @@ const DAY = 86400000,
 const settingsSchema = z.object({
   shareMeetings: z.literal(true),
   backfillDays: z.number().int().min(1).max(3650),
-  createPeople: z.enum(['never', 'contacted_first', 'everyone']),
+  createPeople: z.enum(['never', 'everyone']),
 });
 const feedSchema = z.object({ cursor: z.string().min(1).max(8000) });
 const progressSchema = z.strictObject({

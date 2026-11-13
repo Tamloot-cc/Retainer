@@ -132,7 +132,7 @@ export function tamlootManifest(build: {
         label: 'Create contacts',
         required: true,
         default: 'everyone',
-        options: ['never', 'contacted_first', 'everyone'],
+        options: ['never', 'everyone'],
         secret: false,
         reconnect: false,
       },
