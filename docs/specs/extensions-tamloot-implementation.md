@@ -17,20 +17,20 @@ and tracked separately.
 
 ## 1. Decisions
 
-| Question | Decision |
-| --- | --- |
-| Which extensions connect per member? | Each registration declares `connection: 'workspace'` or `'member'` in its manifest. Workspace registrations (Granola, company enrichment, last contact) behave exactly as today: the admin sets them up once and they apply to everyone. Only registrations whose source data belongs to one person, like Tamloot, declare `'member'`. |
-| How are workspace installations stored after this change? | Unchanged. They have no connection rows, and every per-installation table treats a null `connection_id` as the installation's own scope. No backfill and no change to existing bundles. |
-| What does the admin approve, and what does a member enter? | The admin installs and approves schema, actor, scopes, policies, consent and installation settings, as today. A member enters only connection settings: their own credential. A member registration may not declare installation-level secrets in v1. |
-| What does a connection own? | Its secrets, KV, schedules, jobs, the one-run-at-a-time limit, the write budget, the source binding and the source scan state. The installation keeps release, grant, mapping, contributions and installation settings. |
-| How is a connection fenced? | A connection has its own `generation`. Jobs record it, run tokens carry it, and admission checks it beside the installation generation. Disconnect bumps it, exactly as disable bumps the installation's. |
-| Whose rank do the writes carry? | The installation's granted actor (`integration`), never the member's `user` rank. The run actor names the connection, so history can show "Tamloot (Dana's account)". |
-| Who can connect? | A person in accounts mode, or the user behind a user key in key mode. Agent keys, installation credentials and run tokens cannot. One connection per owner per installation. |
-| What happens when a member leaves? | `removeFromOrganization` (`accounts/people.ts`) disconnects every connection that person owns, in the same transaction. |
-| Can a member registration take webhooks? | Not in v1. The manifest rejects `webhooks` with `connection: 'member'`. Tamloot polls (extensions-tamloot.md §5). |
-| A task a person edited | Kept and no longer synced (extensions-tamloot.md §6.1). The adapter reads the task's assertions and keeps it if any actor is a `user`. No server change: both routes accept run tokens today (`web-read.ts:48`, `records.ts:79`). |
-| Create-people default | `everyone`, as manifest ceiling and setting default (extensions-tamloot.md §6.2). The server already applies it (`sources/service.ts:552`). |
-| Deleted sessions | `onSourceDelete: 'retract'`. The policy is release-pinned today (`sources/service.ts:449`), so admins cannot switch it to `keep` in v1. |
+| Question                                                   | Decision                                                                                                                                                                                                                                                                                                                               |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Which extensions connect per member?                       | Each registration declares `connection: 'workspace'` or `'member'` in its manifest. Workspace registrations (Granola, company enrichment, last contact) behave exactly as today: the admin sets them up once and they apply to everyone. Only registrations whose source data belongs to one person, like Tamloot, declare `'member'`. |
+| How are workspace installations stored after this change?  | Unchanged. They have no connection rows, and every per-installation table treats a null `connection_id` as the installation's own scope. No backfill and no change to existing bundles.                                                                                                                                                |
+| What does the admin approve, and what does a member enter? | The admin installs and approves schema, actor, scopes, policies, consent and installation settings, as today. A member enters only connection settings: their own credential. A member registration may not declare installation-level secrets in v1.                                                                                  |
+| What does a connection own?                                | Its secrets, KV, schedules, jobs, the one-run-at-a-time limit, the write budget, the source binding and the source scan state. The installation keeps release, grant, mapping, contributions and installation settings.                                                                                                                |
+| How is a connection fenced?                                | A connection has its own `generation`. Jobs record it, run tokens carry it, and admission checks it beside the installation generation. Disconnect bumps it, exactly as disable bumps the installation's.                                                                                                                              |
+| Whose rank do the writes carry?                            | The installation's granted actor (`integration`), never the member's `user` rank. The run actor names the connection, so history can show "Tamloot (Dana's account)".                                                                                                                                                                  |
+| Who can connect?                                           | A person in accounts mode, or the user behind a user key in key mode. Agent keys, installation credentials and run tokens cannot. One connection per owner per installation.                                                                                                                                                           |
+| What happens when a member leaves?                         | `removeFromOrganization` (`accounts/people.ts`) disconnects every connection that person owns, in the same transaction.                                                                                                                                                                                                                |
+| Can a member registration take webhooks?                   | Not in v1. The manifest rejects `webhooks` with `connection: 'member'`. Tamloot polls (extensions-tamloot.md §5).                                                                                                                                                                                                                      |
+| A task a person edited                                     | Kept and no longer synced (extensions-tamloot.md §6.1). The adapter reads the task's assertions and keeps it if any actor is a `user`. No server change: both routes accept run tokens today (`web-read.ts:48`, `records.ts:79`).                                                                                                      |
+| Create-people default                                      | `everyone`, as manifest ceiling and setting default (extensions-tamloot.md §6.2). The server already applies it (`sources/service.ts:552`).                                                                                                                                                                                            |
+| Deleted sessions                                           | `onSourceDelete: 'retract'`. The policy is release-pinned today (`sources/service.ts:449`), so admins cannot switch it to `keep` in v1.                                                                                                                                                                                                |
 
 ## 2. Gaps in the current platform
 
@@ -71,16 +71,16 @@ and tracked separately.
 
 New table `extension_connections` (generated with `pnpm db:generate`):
 
-| Column | Notes |
-| --- | --- |
-| `id`, `workspace_id`, `installation_id` | Tenant FK to the installation, RLS like its siblings |
-| `owner` | `jsonb` `Actor` of type `user`: the person (accounts mode) or the key's user (key mode) |
-| `owner_id` | `text`, `owner->>'id'`, for the unique index |
-| `state` | `connecting`, `active`, `setup_failed`, `needs_reconnect`, `disconnected` |
-| `health`, `last_error` | As on installations: `ok`, `needs_reconnect`, `degraded` |
-| `generation` | Fence, starts at 1, bumped by disconnect, reconnect and setup failure |
-| `settings`, `settings_revision` | Non-secret connection settings |
-| `created_at`, `connected_at`, `disconnected_at` | |
+| Column                                          | Notes                                                                                   |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `id`, `workspace_id`, `installation_id`         | Tenant FK to the installation, RLS like its siblings                                    |
+| `owner`                                         | `jsonb` `Actor` of type `user`: the person (accounts mode) or the key's user (key mode) |
+| `owner_id`                                      | `text`, `owner->>'id'`, for the unique index                                            |
+| `state`                                         | `connecting`, `active`, `setup_failed`, `needs_reconnect`, `disconnected`               |
+| `health`, `last_error`                          | As on installations: `ok`, `needs_reconnect`, `degraded`                                |
+| `generation`                                    | Fence, starts at 1, bumped by disconnect, reconnect and setup failure                   |
+| `settings`, `settings_revision`                 | Non-secret connection settings                                                          |
+| `created_at`, `connected_at`, `disconnected_at` |                                                                                         |
 
 - Unique index on `(workspace_id, installation_id, owner_id)` where
   `state <> 'disconnected'`: one live connection per owner.
@@ -160,13 +160,13 @@ installations need no migration of data.
 
 ### 3.5 Who may do what
 
-| Action | Member (owner) | Workspace admin | Agent key, MCP |
-| --- | --- | --- | --- |
-| Connect self | Yes | Yes, for themself | No |
-| Reconnect | Own | Own | No |
-| Disconnect | Own | Any | No |
-| List connections | Own | All, with owner and health | Read-only, own key's user |
-| See runs | Own connection's | All | Read-only |
+| Action           | Member (owner)   | Workspace admin            | Agent key, MCP            |
+| ---------------- | ---------------- | -------------------------- | ------------------------- |
+| Connect self     | Yes              | Yes, for themself          | No                        |
+| Reconnect        | Own              | Own                        | No                        |
+| Disconnect       | Own              | Any                        | No                        |
+| List connections | Own              | All, with owner and health | Read-only, own key's user |
+| See runs         | Own connection's | All                        | Read-only                 |
 
 Installing still needs an admin. A member can connect only to an active
 installation.
