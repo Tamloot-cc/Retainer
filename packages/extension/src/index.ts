@@ -79,6 +79,8 @@ const inputSchema: z.ZodType<InputSchema> = z.lazy(() =>
 const trigger = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('install') }),
   z.strictObject({ kind: z.literal('uninstall') }),
+  z.strictObject({ kind: z.literal('connect') }),
+  z.strictObject({ kind: z.literal('disconnect') }),
   z.strictObject({ kind: z.literal('job') }),
   z.strictObject({ kind: z.literal('route'), route: name }),
   z.strictObject({ kind: z.literal('serverRoute'), route: name }),
@@ -230,7 +232,7 @@ export const manifestSchema = z.strictObject({
     .array(z.enum(['read', 'write']))
     .min(1)
     .max(2),
-  connection: z.literal('workspace'),
+  connection: z.enum(['workspace', 'member']),
   createPeople: z.enum(['never', 'contacted_first', 'everyone']),
   onSourceDelete: z.enum(['keep', 'retract']),
   /** Narrow server-computed derivation; only these functions may replace their own derived claims. */
@@ -279,6 +281,8 @@ export const manifestSchema = z.strictObject({
     z.strictObject({
       type: z.enum(['string', 'boolean', 'number']),
       label,
+      /** Absent means installation; keep old serialized manifests and release digests unchanged. */
+      level: z.enum(['installation', 'connection']).optional(),
       description: z.string().max(2000).optional(),
       secret: z.boolean().default(false),
       /** Provider-generated secret, writable only by admitted runs; never an admin form input. */
@@ -415,8 +419,9 @@ type FunctionDefinition = ExtensionManifest['functions'][number];
 /** The secret settings a function's run may read or write (spec 8). */
 export function functionSecrets(
   manifest: Pick<ExtensionManifest, 'settings'>,
-  fn: Pick<FunctionDefinition, 'secrets'>,
+  fn: Pick<FunctionDefinition, 'secrets'> & { trigger?: FunctionDefinition['trigger'] },
 ): string[] {
+  if (fn.trigger?.kind === 'disconnect') return [];
   return (
     fn.secrets ??
     Object.entries(manifest.settings)
@@ -439,6 +444,44 @@ export function supportsServer(
   if (manifest.serverRange !== undefined)
     return satisfiesServerRange(serverVersion, manifest.serverRange);
   return manifest.serverVersions?.includes(serverVersion) ?? false;
+}
+/** Member credentials and hooks have their own scope; workspace releases retain the first contract. */
+function checkConnections(manifest: ExtensionManifest): void {
+  const hooks = (kind: 'connect' | 'disconnect') =>
+    manifest.functions.filter((fn) => fn.trigger.kind === kind);
+  if (manifest.connection === 'workspace') {
+    if (
+      Object.values(manifest.settings).some((setting) => setting.level === 'connection') ||
+      hooks('connect').length ||
+      hooks('disconnect').length
+    )
+      throw new Error(
+        'unsupported_manifest: workspace releases cannot declare member settings or hooks',
+      );
+    return;
+  }
+  if (manifest.execution !== 'hosted')
+    throw new Error('unsupported_manifest: member connections require hosted execution');
+  if (hooks('connect').length !== 1 || hooks('disconnect').length > 1)
+    throw new Error(
+      'unsupported_manifest: member releases require one connect and at most one disconnect hook',
+    );
+  if (manifest.webhooks?.length)
+    throw new Error('unsupported_manifest: member webhooks are not supported');
+  if (manifest.functions.some((fn) => ['change', 'route', 'serverRoute'].includes(fn.trigger.kind)))
+    throw new Error(
+      'unsupported_manifest: member releases cannot declare change or route triggers',
+    );
+  if (manifest.source && manifest.source.identity !== 'account')
+    throw new Error('unsupported_manifest: member sources require account identity');
+  for (const setting of Object.values(manifest.settings)) {
+    if (setting.secret && setting.level !== 'connection')
+      throw new Error('unsupported_manifest: member secrets require connection level');
+    if (setting.consent && setting.level === 'connection')
+      throw new Error('unsupported_manifest: sharing consent requires installation level');
+  }
+  if (hooks('disconnect').some((fn) => fn.secrets?.length))
+    throw new Error('unsupported_manifest: disconnect hooks cannot request secrets');
 }
 export function defineExtension(value: unknown): ExtensionManifest {
   bounded(value);
@@ -489,6 +532,7 @@ export function defineExtension(value: unknown): ExtensionManifest {
     )
       throw new Error('unsupported_manifest: invalid setting default, choices or consent');
   }
+  checkConnections(manifest);
   if (manifest.lastContact) {
     const policy = manifest.lastContact;
     if (
@@ -578,10 +622,10 @@ export function defineExtension(value: unknown): ExtensionManifest {
       throw new Error('unsupported_manifest: managed sources require hosted write authority');
     if (
       manifest.functions.find((f) => f.universalId === source.verifyFunctionId)?.trigger.kind !==
-      'install'
+      (manifest.connection === 'member' ? 'connect' : 'install')
     )
       throw new Error(
-        'unsupported_manifest: source verification requires a registered install function',
+        `unsupported_manifest: source verification requires a registered ${manifest.connection === 'member' ? 'connect' : 'install'} function`,
       );
     if (
       new Set(source.syncFunctionIds).size !== source.syncFunctionIds.length ||
