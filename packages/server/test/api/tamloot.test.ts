@@ -243,6 +243,14 @@ async function fixture() {
     retryNow: async () => {
       await db.owner`update extension_jobs set available_at=clock_timestamp() where installation_id=${id} and status='queued'`;
     },
+    runNext: async () => {
+      const [next] =
+        await db.owner`select id from extension_jobs where installation_id=${id} and status='queued' and available_at<=clock_timestamp() order by created_at,id limit 1`;
+      if (!next) throw new Error('missing next fixture job');
+      const run = await queue.claim(workspace.id, next.id, 'tamloot-step');
+      if (!run) throw new Error('missing next fixture claim');
+      return { functionId: run.functionId, result: await execute(run) };
+    },
     setVersion: (v: number) => {
       version = v;
     },
@@ -387,4 +395,28 @@ describe('Tamloot connect checkpoint recovery', () => {
     },
     60000,
   );
+});
+
+describe('Tamloot backfill ownership before polling', () => {
+  it('publishes the backfill before activating a connection so polling resumes a delayed first page', async () => {
+    const h = await fixture(),
+      cid = await h.connect();
+    expect(await h.runNext()).toEqual({
+      functionId: TAMLOOT.connect,
+      result: { status: 'succeeded' },
+    });
+    const [active] =
+      await db.owner`select scan_id,mode from source_sync_state where connection_id=${cid} and completed_at is null`;
+    expect(active?.mode).toBe('created');
+    await db.owner`update extension_jobs set available_at=clock_timestamp()+interval '10 minutes' where connection_id=${cid} and function_id=${TAMLOOT.scan} and status='queued'`;
+    expect((await h.poll()).every((result) => result.status === 'succeeded')).toBe(true);
+    expect(h.requests).toContain('/v1/sessions');
+    const [completed] =
+      await db.owner`select scan_id,completed_at from source_sync_state where connection_id=${cid}`;
+    expect(completed?.scan_id).toBe(active?.scan_id);
+    expect(completed?.completed_at).not.toBeNull();
+    expect(await db.owner`select id from source_tasks where installation_id=${h.id}`).toHaveLength(
+      2,
+    );
+  }, 60000);
 });
