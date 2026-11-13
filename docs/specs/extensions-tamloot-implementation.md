@@ -2,7 +2,7 @@
 
 Status: implemented and locally verified, 2026-11-13. Member connections,
 managed tasks and the Tamloot bundle are complete on this branch. Build,
-typecheck, lint, the full test suite (1,322 server tests), release artifact
+typecheck, lint, the full test suite (1,338 server tests), release artifact
 checks and all 71 browser tests passed. Hosted rollout and a real-key test
 remain out of scope.
 Implements the product spec
@@ -187,6 +187,17 @@ installations need no migration of data.
   installation generation as today, which fences every connection. Enable and
   upgrade re-queue `connect` for every connection not `disconnected`.
   Uninstall disconnects every connection.
+  Upgrade and reinstall return `409 cleanup_pending`, with
+  `retryAfterSeconds: 15`, while disconnect cleanup is queued or running.
+  The check holds the installation lock, before any release or schema change.
+  Same-release settings, enable, disable, source disconnect and workspace
+  deletion carry pending disconnect jobs into the new installation generation.
+  They keep the job ID, release, connection generation, retry budget and expiry.
+  A running cleanup attempt is fenced and queued again. Delivery remains at
+  least once; provider side effects must be idempotent. Normal jobs are cancelled.
+  Uninstall waits for retained and newly queued cleanup within its deadline.
+  Handler failures stay on the job and connection. Deadline or unavailable
+  cleanup records an explicit failure before the installation finishes.
 - **Member removal.** Extend `workspaces/leaving.ts:endLostMemberships`,
   which already covers organization removal, workspace removal, role loss
   and workspace moves. Disconnect only where effective membership is lost,

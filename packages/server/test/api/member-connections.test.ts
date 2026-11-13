@@ -10,6 +10,7 @@ import { admitRun } from '../../src/extension-runtime/admission.js';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
+import { uninstallForWorkspaceDeletion } from '../../src/extension-runtime/workspace-deletion.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { Extensions } from '../../src/extensions/service.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
@@ -1140,6 +1141,292 @@ describe('managed task value validation', () => {
 });
 
 describe('member upgrade hook input', () => {
+  it('settings and enable retain the same cleanup identity, expiry and retry budget', async () => {
+    const h = await setup(),
+      c = await connecting(h, h.keys.dana, 'settings-key');
+    await activate(h, c, 'settings-account');
+    const job = await disconnect(h, c.cid);
+    await db.owner`update extension_jobs set cycle_attempt=3 where id=${job.id}`;
+    expect(
+      (
+        await t.request(`${h.base}/settings`, {
+          key: h.keys.admin,
+          method: 'PATCH',
+          body: { expectedRevision: 1, settings: { share: true } },
+        })
+      ).status,
+    ).toBe(200);
+    expect((await t.request(`${h.base}/disable`, { key: h.keys.admin, body: {} })).status).toBe(
+      200,
+    );
+    expect((await t.request(`${h.base}/enable`, { key: h.keys.admin, body: {} })).status).toBe(200);
+    const [retained] = await db.owner`select * from extension_jobs where id=${job.id}`;
+    expect(retained).toMatchObject({
+      status: 'queued',
+      release_digest: job.release_digest,
+      connection_generation: job.connection_generation,
+      expires_at: job.expires_at,
+      cycle_attempt: 3,
+    });
+    expect(
+      (await t.request(`${h.base}/source/disconnect`, { key: h.keys.admin, body: {} })).status,
+    ).toBe(200);
+    const run = await h.queue.claim(h.workspace, job.id, 'settings-cleanup');
+    if (!run) throw new Error('cleanup missing');
+    await h.queue.complete(run, { status: 'succeeded' });
+  });
+
+  it.each(['admin', 'maintenance'] as const)(
+    'records unavailable cleanup through %s',
+    async (path) => {
+      const h = await setup(),
+        c = await connecting(h, h.keys.dana, 'unavailable-key');
+      await activate(h, c, 'unavailable-account');
+      const job = await disconnect(h, c.cid);
+      if (path === 'admin') {
+        const service = new Extensions(t.sql, catalog, broker, new Set());
+        const result = await service.transition(
+          {
+            workspaceId: h.workspace,
+            actor: { type: 'user', id: 'admin' },
+            scopes: ['admin', 'schema:write', 'read', 'write'],
+          },
+          h.id,
+          'uninstalled',
+        );
+        expect(result.lastError).toBe('cleanup_unavailable');
+      } else {
+        await inWorkspace(t.sql, h.workspace, (tx) =>
+          uninstallForWorkspaceDeletion(tx, h.workspace, catalog.runtime),
+        );
+        const queue = new ExtensionQueue(t.sql, catalog.runtime, undefined, new Set());
+        const discovery = db.connect({ role: 'retainer_executor' });
+        try {
+          await queue.maintain(discovery);
+        } finally {
+          await discovery.end();
+        }
+      }
+      expect(
+        (await db.owner`select status,code from extension_jobs where id=${job.id}`)[0],
+      ).toMatchObject({ status: 'failed', code: 'cleanup_unavailable' });
+      expect(
+        (await db.owner`select last_error from extension_connections where id=${c.cid}`)[0]
+          ?.last_error,
+      ).toBe('cleanup_unavailable');
+    },
+  );
+
+  it('does not admit or claim cleanup past the uninstall deadline before maintenance', async () => {
+    const h = await setup(),
+      c = await connecting(h, h.keys.dana, 'deadline-key');
+    await activate(h, c, 'deadline-account');
+    await t.request(`${h.base}/uninstall`, { key: h.keys.admin, body: {} });
+    const [job] =
+      await db.owner`select id from extension_jobs where connection_id=${c.cid} and trigger_kind='disconnect'`;
+    const run = await work(h, job?.id);
+    await db.owner`update extension_installations set cleanup_deadline=now()-interval '1 second' where id=${h.id}`;
+    expect((await t.request(h.base, { key: run.token })).status).toBe(409);
+    await db.owner`update extension_jobs set lease_until=now()-interval '1 second' where id=${job?.id}`;
+    expect(await h.queue.claim(h.workspace, job?.id, 'expired-cleanup')).toBeNull();
+    expect(
+      (await db.owner`select status,code from extension_jobs where id=${job?.id}`)[0],
+    ).toMatchObject({ status: 'failed', code: 'cleanup_deadline_expired' });
+  });
+
+  async function upgrade(h: Setup) {
+    const input = {
+      installationId: h.id,
+      registrationId: manifest.universalId,
+      version: upgradedManifest.version,
+      settings: { share: true },
+    };
+    const plan = await t.request('/v1/extensions/preview', { key: h.keys.admin, body: input });
+    expect(plan.status).toBe(200);
+    return t.request(`${h.base}/upgrade`, {
+      key: h.keys.admin,
+      headers: { 'Idempotency-Key': randomUUID() },
+      body: { ...input, planDigest: plan.body.planDigest },
+    });
+  }
+  async function disconnect(h: Setup, cid: string) {
+    expect(
+      (await t.request(`${h.base}/connections/${cid}`, { key: h.keys.dana, method: 'DELETE' }))
+        .status,
+    ).toBe(200);
+    const [job] =
+      await db.owner`select * from extension_jobs where connection_id=${cid} and trigger_kind='disconnect'`;
+    if (!job) throw new Error('cleanup missing');
+    return job;
+  }
+
+  it.each([false, true])('upgrade waits for pending cleanup (running=%s)', async (running) => {
+    const h = await setup(),
+      c = await connecting(h, h.keys.dana, 'wait-key');
+    await activate(h, c, 'wait-account');
+    const job = await disconnect(h, c.cid);
+    const lease = running ? await h.queue.claim(h.workspace, job.id, 'pending-cleanup') : null;
+    if (running && !lease) throw new Error('cleanup lease missing');
+    const response = await upgrade(h);
+    expect(response.status).toBe(409);
+    expect(response.body.error).toMatchObject({
+      code: 'cleanup_pending',
+      details: { retryAfterSeconds: 15 },
+    });
+    const [retained] =
+      await db.owner`select generation,status from extension_jobs where id=${job.id}`;
+    expect(retained).toMatchObject({
+      generation: job.generation,
+      status: running ? 'running' : 'queued',
+    });
+    const run = lease ?? (await h.queue.claim(h.workspace, job.id, 'finish-cleanup'));
+    if (!run) throw new Error('cleanup lease missing');
+    await h.queue.complete(run, { status: 'succeeded' });
+    expect((await upgrade(h)).status).toBe(200);
+  });
+
+  it('serializes disconnect and upgrade without dropping either release cleanup', async () => {
+    const h = await setup(),
+      c = await connecting(h, h.keys.dana, 'race-key');
+    await activate(h, c, 'race-account');
+    const [response, job] = await Promise.all([upgrade(h), disconnect(h, c.cid)]);
+    expect([200, 409]).toContain(response.status);
+    if (response.status === 409) expect(response.body.error.code).toBe('cleanup_pending');
+    const run = await h.queue.claim(h.workspace, job.id, 'racing-cleanup');
+    expect(run?.functionId).toBe(response.status === 200 ? upgradedDisconnectId : disconnectId);
+    if (!run) throw new Error('cleanup lease missing');
+    await h.queue.complete(run, { status: 'succeeded' });
+  });
+
+  it.each(['before', 'after', 'concurrent'] as const)(
+    'disable retains disconnect cleanup: %s',
+    async (order) => {
+      const h = await setup(),
+        c = await connecting(h, h.keys.dana, 'disable-key');
+      await activate(h, c, 'disable-account');
+      let oldRun: Awaited<ReturnType<typeof work>> | undefined;
+      if (order === 'before') {
+        const job = await disconnect(h, c.cid);
+        oldRun = await work(h, job.id);
+      }
+      const disable = () => t.request(`${h.base}/disable`, { key: h.keys.admin, body: {} });
+      const response =
+        order === 'concurrent'
+          ? (await Promise.all([disable(), disconnect(h, c.cid)]))[0]
+          : await disable();
+      expect(response.status).toBe(200);
+      if (order === 'after') await disconnect(h, c.cid);
+      if (oldRun) {
+        await expect(h.queue.complete(oldRun.run, { status: 'succeeded' })).rejects.toMatchObject({
+          code: 'lease_expired',
+        });
+        expect((await t.request(h.base, { key: oldRun.token })).status).toBe(409);
+      }
+      const [job] =
+        await db.owner`select j.* from extension_jobs j join extension_installations i on i.id=j.installation_id and i.generation=j.generation where j.connection_id=${c.cid} and j.trigger_kind='disconnect' and j.status='queued'`;
+      const discovery = db.connect({ role: 'retainer_executor' });
+      try {
+        expect((await h.queue.discover(discovery)).some((row) => row.job_id === job?.id)).toBe(
+          true,
+        );
+      } finally {
+        await discovery.end();
+      }
+      const run = await work(h, job?.id);
+      expect(
+        (await t.request('/v1/objects/person/query', { key: run.token, body: {} })).status,
+      ).toBe(409);
+      await h.queue.complete(run.run, { status: 'succeeded' });
+      expect(
+        (await db.owner`select state from extension_installations where id=${h.id}`)[0]?.state,
+      ).toBe('disabled');
+    },
+  );
+
+  it.each(['before', 'after', 'concurrent'] as const)(
+    'uninstall retains and waits for cleanup: %s',
+    async (order) => {
+      const h = await setup(),
+        c = await connecting(h, h.keys.dana, 'uninstall-key');
+      await activate(h, c, 'uninstall-account');
+      if (order === 'before') {
+        const job = await disconnect(h, c.cid);
+        await work(h, job.id);
+      }
+      const uninstall = () => t.request(`${h.base}/uninstall`, { key: h.keys.admin, body: {} });
+      const response =
+        order === 'concurrent'
+          ? (await Promise.all([uninstall(), disconnect(h, c.cid)]))[0]
+          : await uninstall();
+      expect(response.status).toBe(200);
+      if (order === 'after') await disconnect(h, c.cid);
+      const [system] =
+        await db.owner`select id from extension_jobs where installation_id=${h.id} and trigger_kind='uninstall' and status='queued'`;
+      const setupRun = await h.queue.claim(h.workspace, system?.id, 'uninstall-system');
+      if (!setupRun) throw new Error('uninstall missing');
+      await h.queue.complete(setupRun, { status: 'succeeded' });
+      expect(
+        (await db.owner`select state from extension_installations where id=${h.id}`)[0]?.state,
+      ).toBe('uninstalling');
+      const [job] =
+        await db.owner`select id from extension_jobs where connection_id=${c.cid} and trigger_kind='disconnect' and status='queued'`;
+      const run = await work(h, job?.id);
+      await h.queue.complete(run.run, { status: 'succeeded' });
+      expect(
+        (await db.owner`select state from extension_installations where id=${h.id}`)[0]?.state,
+      ).toBe('uninstalled');
+      expect(
+        await db.owner`select id from extension_jobs where connection_id=${c.cid} and trigger_kind='disconnect'`,
+      ).toHaveLength(1);
+    },
+  );
+
+  it.each([false, true])(
+    'records cleanup failure and bounds uninstall by its deadline (handler failure=%s)',
+    async (failure) => {
+      const h = await setup(),
+        c = await connecting(h, h.keys.dana, 'failure-key');
+      await activate(h, c, 'failure-account');
+      await t.request(`${h.base}/uninstall`, { key: h.keys.admin, body: {} });
+      const [job] =
+        await db.owner`select id from extension_jobs where connection_id=${c.cid} and trigger_kind='disconnect'`;
+      const run = await work(h, job?.id);
+      if (failure)
+        await h.queue.complete(run.run, { status: 'failed', code: 'provider_cleanup_failed' });
+      await db.owner`update extension_installations set cleanup_deadline=now()-interval '1 second' where id=${h.id}`;
+      const discovery = db.connect({ role: 'retainer_executor' });
+      try {
+        await h.queue.maintain(discovery);
+      } finally {
+        await discovery.end();
+      }
+      const code = failure ? 'provider_cleanup_failed' : 'cleanup_deadline_expired';
+      expect(
+        (await db.owner`select status,code from extension_jobs where id=${job?.id}`)[0],
+      ).toMatchObject({ status: 'failed', code });
+      expect(
+        (await db.owner`select health,last_error from extension_connections where id=${c.cid}`)[0],
+      ).toMatchObject({ health: 'degraded', last_error: code });
+      expect(
+        (await db.owner`select state,last_error from extension_installations where id=${h.id}`)[0],
+      ).toMatchObject({ state: 'uninstalled', last_error: 'cleanup_deadline_expired' });
+    },
+  );
+
+  it('workspace deletion carries previously disconnected cleanup into its cleanup generation', async () => {
+    const h = await setup(),
+      c = await connecting(h, h.keys.dana, 'delete-key');
+    await activate(h, c, 'delete-account');
+    const job = await disconnect(h, c.cid);
+    await inWorkspace(t.sql, h.workspace, (tx) =>
+      uninstallForWorkspaceDeletion(tx, h.workspace, catalog.runtime),
+    );
+    const run = await h.queue.claim(h.workspace, job.id, 'workspace-cleanup');
+    expect(run?.functionId).toBe(disconnectId);
+    if (!run) throw new Error('cleanup missing');
+    await h.queue.complete(run, { status: 'succeeded' });
+  });
+
   it.each([false, true])(
     'uses the adopted release cleanup hook while upgrade setup completes concurrently=%s',
     async (concurrent) => {

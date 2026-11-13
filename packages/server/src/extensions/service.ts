@@ -27,7 +27,11 @@ import {
 } from '../extension-runtime/availability.js';
 import { disconnectConnection } from '../extension-runtime/connections.js';
 import { hashInstallationKey, mintInstallationKey } from '../extension-runtime/credentials.js';
-import { cancelRuns, lockExtension as lockInstallation } from '../extension-runtime/locks.js';
+import {
+  cancelRuns,
+  failDisconnectCleanup,
+  lockExtension as lockInstallation,
+} from '../extension-runtime/locks.js';
 import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { pendingSecrets, type SecretBroker } from '../extension-runtime/secrets.js';
 import { loadSchemaState } from '../schema/load.js';
@@ -762,6 +766,20 @@ export class Extensions {
           'schema_binding_conflict',
           'repair schema bindings through a validated upgrade before reconnecting',
         );
+      if (plan.existing && !input.mappingChange) {
+        const [pending] =
+          await tx`select 1 from extension_jobs where installation_id=${plan.existing.id}
+          and trigger_kind='disconnect' and status in ('queued','running') limit 1`;
+        if (pending)
+          throw new AppError(
+            409,
+            'cleanup_pending',
+            'wait for disconnect cleanup before changing the release',
+            {
+              retryAfterSeconds: 15,
+            },
+          );
+      }
       const result = await runSchemaChange(tx, {
         workspaceId: caller.workspaceId,
         actor: caller.actor,
@@ -1134,7 +1152,7 @@ export class Extensions {
       // Ordinary settings update in place: runs started under the old values are
       // fenced (new generation), but the installation stays enabled and its
       // standalone credentials keep their grant.
-      await cancelRuns(tx, id);
+      await cancelRuns(tx, id, current.generation + 1);
       // The scan cursor and any open enumeration were computed under the old
       // settings (a backfill window, a filter). Resuming from them could skip
       // items the new settings bring into scope, so the next scan starts over.
@@ -1200,7 +1218,7 @@ export class Extensions {
           'schema_binding_conflict',
           'retained schema bindings must be repaired with a validated upgrade',
         );
-      await cancelRuns(tx, id);
+      await cancelRuns(tx, id, current.generation + 1);
       const [row] = await tx<
         Row[]
       >`update extension_installations set state=${standalone ? 'active' : 'installing'},setup_kind='install',generation=generation+1,
@@ -1232,7 +1250,9 @@ export class Extensions {
         this.activation.has(current.release_digest)
           ? 'uninstalling'
           : state;
-      await cancelRuns(tx, id);
+      const nextGeneration =
+        current.generation + (current.state === nextState && current.last_error === null ? 0 : 1);
+      await cancelRuns(tx, id, nextGeneration);
       // Repeating a disable keeps the grant: every path that disables a standalone
       // installation already advanced it, and paths that disable without doing so
       // (hosted setup failures) have no standalone credentials to revoke.
@@ -1253,6 +1273,12 @@ export class Extensions {
       }
       if (nextState === 'uninstalling')
         await this.queue().enqueueLifecycle(tx, caller.workspaceId, id, 'uninstall');
+      else if (nextState === 'uninstalled') {
+        if (await failDisconnectCleanup(tx, id, 'cleanup_unavailable')) {
+          row.last_error = 'cleanup_unavailable';
+          await tx`update extension_installations set last_error='cleanup_unavailable' where id=${id}`;
+        }
+      }
       return present(row);
     });
   }

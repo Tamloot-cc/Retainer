@@ -24,7 +24,7 @@ import {
   runnableReleases,
 } from './availability.js';
 import { failInstallation } from './lifecycle.js';
-import { cancelRuns, lockExtension, lockQueue } from './locks.js';
+import { cancelRuns, failDisconnectCleanup, lockExtension, lockQueue } from './locks.js';
 import { type ContributionRow, retiredContributions } from './retired.js';
 
 export type Lease = {
@@ -125,7 +125,10 @@ const runnable = (i: Installation, kind: string) =>
     ? kind === 'connect'
       ? i.state === 'active' && i.connection_state === 'connecting'
       : kind === 'disconnect'
-        ? i.connection_state === 'disconnected' && i.connection_cleanup_live === true
+        ? i.connection_state === 'disconnected' &&
+          i.connection_cleanup_live === true &&
+          i.state !== 'uninstalled' &&
+          (i.state !== 'uninstalling' || i.cleanup_live === true)
         : i.state === 'active' && i.connection_state === 'active'
     : kind === 'install'
       ? ['installing', 'upgrading'].includes(i.state)
@@ -802,6 +805,7 @@ export class ExtensionQueue {
             await this.startCleanup(tx, installation);
             return;
           }
+          await failDisconnectCleanup(tx, installation.id, 'cleanup_deadline_expired');
           await cancelRuns(tx, installation.id);
           await tx`update extension_installations set state='uninstalled',generation=generation+1,
             last_error='cleanup_deadline_expired',updated_at=now() where id=${installation.id}`;
@@ -858,6 +862,7 @@ export class ExtensionQueue {
       return;
     }
     const standalone = resolution.available && resolution.manifest.execution === 'standalone';
+    await failDisconnectCleanup(tx, installation.id, 'cleanup_unavailable');
     await tx`update extension_installations set state='uninstalled',cleanup_deadline=null,
       last_error=${standalone ? null : 'cleanup_unavailable'},updated_at=now() where id=${installation.id}`;
   }
@@ -880,6 +885,19 @@ export class ExtensionQueue {
         await tx`update extension_jobs set status='cancelled',code='installation_disabled',lease_until=null where id=${id}`;
         await tx`update extension_attempts set status='cancelled',code='installation_disabled',finished_at=now()
           where job_id=${id} and finished_at is null`;
+        return null;
+      }
+      if (
+        job.trigger_kind === 'disconnect' &&
+        job.connection_id &&
+        job.connection_generation === installation.connection_generation &&
+        (installation.connection_cleanup_live !== true ||
+          installation.state === 'uninstalled' ||
+          (installation.state === 'uninstalling' && installation.cleanup_live !== true))
+      ) {
+        await tx`update extension_jobs set status='failed',code='cleanup_deadline_expired',lease_owner=null,lease_until=null,run_until=null,updated_at=now() where id=${id}`;
+        await tx`update extension_attempts set status='failed',code='cleanup_deadline_expired',finished_at=now() where job_id=${id} and finished_at is null`;
+        await this.finishLifecycle(tx, installation, job, 'failed', 'cleanup_deadline_expired');
         return null;
       }
       if (

@@ -347,6 +347,17 @@ automatic schema rollback: failed new setup stays disabled on the installed
 release, with retry or a separately validated compatible code rollback. Rollback
 never drops new fields or assertions. No release automatically increases scopes.
 
+A queued or running member disconnect hook blocks release adoption with
+`409 cleanup_pending` and `retryAfterSeconds: 15`. The check and release switch
+hold the same installation lock as disconnect. Same-release settings, enable,
+disable, source disconnect and workspace deletion retain pending cleanup jobs
+in the new generation. Their identity, connection fence, retry budget and
+expiry stay intact. Running attempts are fenced and requeued; provider effects
+remain at least once. Normal jobs are cancelled. Uninstall keeps existing
+disconnect cleanup and waits for it with newly queued cleanup, within the
+deadline. Handler failure, deadline expiry and unavailable cleanup remain
+explicit job and connection errors.
+
 Disable revokes runs and stops scheduling immediately. Uninstall additionally
 queues restricted provider cleanup, removes secrets after cleanup or a 24-hour
 cleanup deadline, and retains records, assertions, source identity/tombstones,

@@ -166,7 +166,9 @@ export class Sources {
       const [i] = await tx`select registration_id from extension_installations where id=${id}`;
       if (!i) throw notFound('installation source');
       await lockExtension(tx, caller.workspaceId, i.registration_id);
-      await cancelRuns(tx, id);
+      const [current] = await tx`select generation from extension_installations where id=${id}`;
+      if (!current) throw notFound('installation source');
+      await cancelRuns(tx, id, current.generation + 1);
       await tx`delete from source_bindings where installation_id=${id}`;
       await tx`delete from source_sync_state where installation_id=${id}`;
       await tx`update webhook_bindings set state='retired',updated_at=clock_timestamp() where installation_id=${id} and state<>'retired'`;

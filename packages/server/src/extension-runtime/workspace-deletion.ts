@@ -9,6 +9,7 @@ type Pin = {
   version: string;
   release_digest: string;
   state: string;
+  generation: number;
 };
 
 /**
@@ -44,7 +45,7 @@ export async function uninstallForWorkspaceDeletion(
     // The same lock order as an admin transition: schema, then the installation.
     await lockExtension(tx, workspace, candidate.registration_id);
     const [current] = await tx<Pin[]>`
-      select id,registration_id,version,release_digest,state from extension_installations
+      select id,registration_id,version,release_digest,state,generation from extension_installations
       where id=${candidate.id}`;
     if (!current || ['uninstalling', 'uninstalled'].includes(current.state)) continue;
     const resolution = catalog ? resolveRelease(catalog, current) : undefined;
@@ -52,7 +53,7 @@ export async function uninstallForWorkspaceDeletion(
       resolution?.available && resolution.manifest.execution === 'standalone'
         ? 'uninstalled'
         : 'uninstalling';
-    await cancelRuns(tx, current.id);
+    await cancelRuns(tx, current.id, current.generation + 1);
     await tx`update extension_installations set state=${next},last_error=null,
       cleanup_deadline=case when ${next}='uninstalling' then clock_timestamp()+interval '24 hours' else null end,
       generation=generation+1,grant_generation=grant_generation+1,updated_at=now()

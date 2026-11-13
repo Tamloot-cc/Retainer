@@ -69,7 +69,9 @@ export async function admitRun(
   const cleanup = connection
     ? job.trigger_kind === 'disconnect' &&
       connection.state === 'disconnected' &&
-      connection.cleanup_live === true
+      connection.cleanup_live === true &&
+      installation.state !== 'uninstalled' &&
+      (installation.state !== 'uninstalling' || installation.cleanup_live === true)
     : job.trigger_kind === 'uninstall' &&
       installation.state === 'uninstalling' &&
       installation.cleanup_live === true;
