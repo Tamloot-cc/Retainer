@@ -958,7 +958,7 @@ export class ExtensionQueue {
       return {
         connectionId: job.connection_id,
         connectionGeneration: job.connection_generation,
-        registrationName: manifest.name,
+        registrationName: manifest.name.replace(/^./, (letter) => letter.toUpperCase()),
         workspaceId: workspace,
         installationId: installation.id,
         jobId: id,

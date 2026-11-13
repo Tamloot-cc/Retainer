@@ -276,7 +276,7 @@ describe('member connection API, broker and execution with real Postgres', () =>
     expect(saved?.created_by).toEqual({
       type: 'integration',
       id: h.id,
-      name: "member-fixture (Dana's account)",
+      name: "Member-fixture (Dana's account)",
     });
     const runs = await t.request(`${h.base}/runs`, { key: h.keys.dana });
     expect(runs.body.runs.every((r: { connectionId: string }) => r.connectionId === a.cid)).toBe(

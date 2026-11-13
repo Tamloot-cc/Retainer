@@ -2,7 +2,8 @@
 
 Status: implementation in progress, 2026-11-13. Manifest and persistence
 are committed (`baea95a`, `7abaaf8`). Member lifecycle and runtime scoping
-are implemented and tested locally. Web and the Tamloot bundle remain. Implements the product spec
+are implemented and tested locally. The web connection card and admin table are implemented and tested locally.
+Managed-task reconciliation and the Tamloot bundle remain. Implements the product spec
 [extensions-tamloot.md](extensions-tamloot.md) on the platform in
 [extensions.md](extensions.md) and [extensions-lambda.md](extensions-lambda.md).
 Tamloot's side is implemented (Tamloot #2395, #2397, #2398;
@@ -554,7 +555,9 @@ Real Postgres, a fresh database per file, no mocked database.
 4. Runtime scoping: claim, run token, admission, runtime endpoints,
    schedules, fair claims, budgets and account-scoped recovery reads. Implemented
    and tested locally.
-5. Web: connection card and admin table.
+5. Web: connection card, staged member credentials, reconnect generation
+   preconditions and admin table. Implemented and tested locally, including
+   real-Postgres browser coverage.
 6. Managed-task server support, schema bindings and Tamloot bundle, fixtures
    and tests. Can start beside step 3, against the
    new manifest.
