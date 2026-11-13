@@ -75,7 +75,7 @@ beforeAll(() => {
 });
 
 async function install(registrationId: string) {
-  const { keys } = await t.setupWorkspace(
+  const { workspace, keys } = await t.setupWorkspace(
     { name: `Auto upgrade ${randomUUID()}` },
     { admin: { actor: { type: 'user', id: 'admin' }, scopes: ['admin'] } },
   );
@@ -90,7 +90,7 @@ async function install(registrationId: string) {
     { ...input, planDigest: plan.planDigest },
     'install',
   );
-  return { sdk, installed };
+  return { sdk, installed, workspaceId: workspace.id };
 }
 const row = async (id: string) => {
   const [found] = await db.owner<
@@ -120,17 +120,13 @@ describe('automatic extension upgrades', () => {
   });
 
   it('holds an upgrade that asks for more access, and does not check it again', async () => {
-    const { installed } = await install(wider);
+    const { installed, workspaceId } = await install(wider);
     await extensions.upgradeDue(discovery());
     const held = await row(installed.id);
     expect(held).toMatchObject({ version: '1.0.0', state: 'active' });
     expect(held.upgrade_held_digest).toBe(catalog.get(wider, '1.0.1').digest);
     // Held for this release: a direct retry skips it rather than planning again.
-    const [workspace] = await db.owner<{ workspace_id: string }[]>`
-      select workspace_id from extension_installations where id = ${installed.id}`;
-    expect(await extensions.autoUpgrade(workspace?.workspace_id ?? '', installed.id)).toBe(
-      'skipped',
-    );
+    expect(await extensions.autoUpgrade(workspaceId, installed.id)).toBe('skipped');
   });
 
   it('holds an upgrade that adds a setting and leaves the installed release running', async () => {
@@ -154,13 +150,11 @@ describe('automatic extension upgrades', () => {
   });
 
   it('upgrades exactly once when two passes race', async () => {
-    const { installed } = await install(racing);
+    const { installed, workspaceId } = await install(racing);
     const before = await row(installed.id);
-    const [workspace] = await db.owner<{ workspace_id: string }[]>`
-      select workspace_id from extension_installations where id = ${installed.id}`;
     const outcomes = await Promise.all([
-      extensions.autoUpgrade(workspace?.workspace_id ?? '', installed.id),
-      extensions.autoUpgrade(workspace?.workspace_id ?? '', installed.id),
+      extensions.autoUpgrade(workspaceId, installed.id),
+      extensions.autoUpgrade(workspaceId, installed.id),
     ]);
     expect(outcomes.sort()).toEqual(['skipped', 'upgraded']);
     const after = await row(installed.id);

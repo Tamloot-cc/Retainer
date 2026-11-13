@@ -148,10 +148,12 @@ code but nothing an admin approves. The executor checks about once a minute
 (and on every hosted pass) for active installations behind the newest release
 of their registration, when this server can run that release. It plans the
 upgrade as the system actor, under the same locks as a reviewed upgrade, and
-applies it only when nothing needs approval: no schema or view changes, no
-mapping change, the same actor, scopes, execution and connection, no new
-settings and the same source. The upgrade keeps settings, secrets, mapping and
-grants, advances the generation and re-runs setup, like a reviewed one.
+applies it only when the new manifest equals the installed one apart from its
+version and its package and handler digests, and the plan finds no schema, view
+or mapping work. Any other manifest change (access, settings, schema, views,
+mapping, triggers, source) needs an admin. The upgrade keeps settings, secrets,
+mapping and grants, advances the generation and re-runs setup, like a reviewed
+one.
 
 Anything else is held: the installation keeps running its release, records the
 held release digest (`upgrade_held_digest`) so it is not planned again, and its

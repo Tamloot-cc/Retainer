@@ -1,5 +1,5 @@
 {
-  "id": "ed772f09-3ada-4b02-a9bf-d6668dab9712",
+  "id": "d8b5496d-5891-4bf6-876e-9fc1e358f171",
   "prevId": "257967e9-fc9c-45fa-9bae-b3e18f3ceac5",
   "version": "7",
   "dialect": "postgresql",
@@ -2409,7 +2409,36 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "extension_installations_active_registration_idx": {
+          "name": "extension_installations_active_registration_idx",
+          "columns": [
+            {
+              "expression": "registration_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"extension_installations\".\"state\" = 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "extension_installations_workspace_id_workspaces_id_fk": {
           "name": "extension_installations_workspace_id_workspaces_id_fk",

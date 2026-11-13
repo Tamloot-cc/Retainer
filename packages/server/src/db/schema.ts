@@ -1482,6 +1482,10 @@ export const extensionInstallations = pgTable(
   (t) => [
     unique('extension_installations_ws_id_uq').on(t.workspaceId, t.id),
     unique('extension_installations_registration_uq').on(t.workspaceId, t.registrationId),
+    // Automatic-upgrade discovery reads active installations by registration.
+    index('extension_installations_active_registration_idx')
+      .on(t.registrationId, t.updatedAt, t.id)
+      .where(sql`${t.state} = 'active'`),
     check(
       'extension_installations_state',
       sql`${t.state} in ('installing', 'active', 'setup_failed', 'disabled', 'upgrading', 'uninstalling', 'uninstalled')`,

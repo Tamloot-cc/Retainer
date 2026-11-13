@@ -1,4 +1,9 @@
-import type { ExtensionMappingChoices, ExtensionMappingView } from '@retainer/extension';
+import {
+  compareVersions,
+  type ExtensionMappingChoices,
+  type ExtensionMappingView,
+  newestReleases,
+} from '@retainer/extension';
 import { RetainerApiError } from '@retainer/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -69,10 +74,6 @@ const VIEW_ACTIONS = {
 const stateLabel = (state: string) =>
   state.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
 
-/** Whether a release is newer than a version (versions compare numerically). */
-const newer = (release: Release, version: string) =>
-  release.manifest.version.localeCompare(version, 'en', { numeric: true }) > 0;
-
 export function ExtensionsPage() {
   const accountState = useAccount();
   const { session } = useWorkspace(),
@@ -135,12 +136,7 @@ export function ExtensionsPage() {
       </Page>
     );
   const installed = installations.data.installations;
-  const newest = new Map<string, Release>();
-  for (const release of catalog.data.releases) {
-    const previous = newest.get(release.manifest.universalId);
-    if (!previous || newer(release, previous.manifest.version))
-      newest.set(release.manifest.universalId, release);
-  }
+  const newest = newestReleases(catalog.data.releases);
   return (
     <Page
       title="Extensions"
@@ -164,7 +160,7 @@ export function ExtensionsPage() {
           const upgrade =
             candidate &&
             !['uninstalled', 'uninstalling'].includes(installation.state) &&
-            newer(candidate, installation.version)
+            compareVersions(candidate.manifest.version, installation.version) > 0
               ? candidate
               : undefined;
           return (

@@ -157,7 +157,7 @@ async function setup(
   return { workspace: workspace.id, admin: keys.admin, id, jobId, queue, executor };
 }
 describe('trusted executor protocol with an explicitly in-process test driver', () => {
-  it('checks automatic upgrades on every pass and at the start of a run', async () => {
+  it('checks automatic upgrades at most once a minute, starting with the first pass', async () => {
     const { executor } = await setup();
     let passes = 0;
     const upgrades = {
@@ -167,7 +167,10 @@ describe('trusted executor protocol with an explicitly in-process test driver', 
       },
     };
     const idle = { invoke: async () => ({ status: 'succeeded' as const }) };
-    await executor(idle, undefined, 4, upgrades).tick();
+    const ticking = executor(idle, undefined, 4, upgrades);
+    await ticking.tick();
+    await ticking.tick();
+    // Within the interval a second pass of the same executor does not check again.
     expect(passes).toBe(1);
     // A short run checks once: the next check waits for the upgrade interval.
     await executor(idle, undefined, 4, upgrades).run({ idleMs: 5, idleTimeoutMs: 50 });

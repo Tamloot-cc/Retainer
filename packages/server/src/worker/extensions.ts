@@ -65,6 +65,8 @@ export class ExtensionExecutor {
   private readonly active = new Map<AbortController, () => void>();
   private stopped = false;
   private draining = false;
+  /** When this executor last checked automatic upgrades; the first pass always checks. */
+  private upgradedAt = Number.NEGATIVE_INFINITY;
   constructor(
     private readonly options: {
       sql: Sql;
@@ -282,19 +284,13 @@ export class ExtensionExecutor {
       perWorkspace = new Map<string, number>();
     let maintaining: Promise<void> | undefined,
       maintainedAt = 0,
-      // The first pass of a run checks upgrades; a hosted run is short.
-      upgradedAt = Number.NEGATIVE_INFINITY,
       idleSince: number | undefined;
     const maintain = () => {
       if (maintaining || Date.now() - maintainedAt < maintenanceMs) return;
       maintainedAt = Date.now();
-      const upgrade = Date.now() - upgradedAt >= upgradeMs;
-      if (upgrade) upgradedAt = Date.now();
       maintaining = this.queue
         .maintain(this.options.discoverySql)
-        .then(async () => {
-          if (upgrade) await this.options.upgrades?.upgradeDue(this.options.discoverySql);
-        })
+        .then(() => this.upgrade(upgradeMs))
         .catch(report)
         .finally(() => {
           maintaining = undefined;
@@ -379,12 +375,18 @@ export class ExtensionExecutor {
       await Promise.allSettled([...running, maintaining]);
     }
   }
+  /** Runs an automatic-upgrade pass when the last one is at least `intervalMs` old. */
+  private async upgrade(intervalMs = 60_000) {
+    if (!this.options.upgrades || Date.now() - this.upgradedAt < intervalMs) return;
+    this.upgradedAt = Date.now();
+    await this.options.upgrades.upgradeDue(this.options.discoverySql);
+  }
   async tick(limit = 1000) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
       throw new Error('executor pass limit must be 1–1000');
     if (this.stopped || this.draining) return { executed: 0, fenced: 0 };
     await this.queue.maintain(this.options.discoverySql);
-    await this.options.upgrades?.upgradeDue(this.options.discoverySql);
+    await this.upgrade();
     const due = await this.queue.discover(this.options.discoverySql, limit);
     let next = 0,
       executed = 0,

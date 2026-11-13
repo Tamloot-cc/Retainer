@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { defineExtension, supportsServer } from './index.js';
 import { fixture } from './index.test.js';
-import { parseServerRange, satisfiesServerRange } from './semver.js';
+import {
+  compareVersions,
+  newestReleases,
+  parseServerRange,
+  satisfiesServerRange,
+} from './semver.js';
 
 describe('reviewed server ranges', () => {
   it('evaluates bounded comparator sets and alternatives numerically', () => {
@@ -62,5 +67,30 @@ describe('reviewed server ranges', () => {
       /exactly one of serverRange or serverVersions/,
     );
     expect(() => defineExtension({ ...base, serverRange: '>=0.1.0' })).toThrow(/upper bound/);
+  });
+});
+
+describe('release ordering', () => {
+  it('compares each part as a number', () => {
+    expect(compareVersions('1.0.10', '1.0.9')).toBe(1);
+    expect(compareVersions('1.0.9', '1.0.10')).toBe(-1);
+    expect(compareVersions('2.0.0', '1.99.99')).toBe(1);
+    expect(compareVersions('1.0.0', '1.0.0')).toBe(0);
+    expect(() => compareVersions('1.0', '1.0.0')).toThrow(/x\.y\.z/);
+  });
+  it('keeps the newest release of each registration', () => {
+    const release = (universalId: string, version: string) => ({
+      manifest: { universalId, version },
+    });
+    const newest = newestReleases([
+      release('a', '1.0.9'),
+      release('a', '1.0.10'),
+      release('b', '2.0.0'),
+      release('a', '1.0.2'),
+    ]);
+    expect([...newest.values()].map((r) => r.manifest)).toEqual([
+      { universalId: 'a', version: '1.0.10' },
+      { universalId: 'b', version: '2.0.0' },
+    ]);
   });
 });

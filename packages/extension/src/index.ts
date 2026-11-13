@@ -4,7 +4,12 @@ import { parseServerRange, satisfiesServerRange } from './semver.js';
 import { verifierHeaderAllowed } from './webhook.js';
 
 export { nextOccurrence } from './cron.js';
-export { parseServerRange, satisfiesServerRange } from './semver.js';
+export {
+  compareVersions,
+  newestReleases,
+  parseServerRange,
+  satisfiesServerRange,
+} from './semver.js';
 
 import { type Actor, FIELD_TYPES } from '@retainer/shared';
 import { z } from 'zod';

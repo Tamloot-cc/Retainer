@@ -1,9 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { defineExtension, type ExtensionManifest } from '@retainer/extension';
 import { describe, expect, it } from 'vitest';
-import { compareVersions, holdReason, upgradeTargets } from './auto-upgrade.js';
+import { holdReason, upgradeTargets } from './auto-upgrade.js';
 
 const id = randomUUID();
+const fn = {
+  universalId: randomUUID(),
+  name: 'sync',
+  description: 'Sync',
+  handlerDigest: 'b'.repeat(64),
+  trigger: { kind: 'job' as const },
+  inputSchema: { type: 'object' as const, additionalProperties: false as const },
+  timeoutSeconds: 120,
+};
 const manifest = (overrides: Partial<ExtensionManifest> = {}) =>
   defineExtension({
     manifestVersion: 1,
@@ -15,7 +24,7 @@ const manifest = (overrides: Partial<ExtensionManifest> = {}) =>
     serverRange: '>=0.1.0 <0.2.0',
     runtimeVersion: 'node24',
     protocolVersion: 1,
-    execution: 'standalone',
+    execution: 'hosted',
     requestedActor: 'agent',
     scopes: ['read'],
     connection: 'workspace',
@@ -24,28 +33,17 @@ const manifest = (overrides: Partial<ExtensionManifest> = {}) =>
     settings: {},
     schema: [],
     views: [],
-    functions: [],
+    functions: [fn],
     ...overrides,
   });
 const base = {
   previous: manifest(),
   next: manifest({ version: '1.0.1' }),
-  grantedActor: 'agent',
-  grantedScopes: ['read'],
   schemaOperations: 0,
   viewActions: ['retain'],
   storedMapping: { outputs: {} },
   plannedMapping: { outputs: {} },
 };
-
-describe('compareVersions', () => {
-  it('compares each part as a number', () => {
-    expect(compareVersions('1.0.10', '1.0.9')).toBe(1);
-    expect(compareVersions('1.0.9', '1.0.10')).toBe(-1);
-    expect(compareVersions('2.0.0', '1.99.99')).toBe(1);
-    expect(compareVersions('1.0.0', '1.0.0')).toBe(0);
-  });
-});
 
 describe('upgradeTargets', () => {
   const release = (version: string) => ({ manifest: manifest({ version }), digest: version });
@@ -69,7 +67,38 @@ describe('holdReason', () => {
   it('lets a version-only change through', () => {
     expect(holdReason(base)).toBeNull();
   });
-  it('holds what an admin has to approve', () => {
+  it('lets a code-only change through', () => {
+    const next = manifest({
+      version: '1.0.1',
+      packageDigest: 'c'.repeat(64),
+      functions: [{ ...fn, handlerDigest: 'd'.repeat(64) }],
+    });
+    expect(holdReason({ ...base, next })).toBeNull();
+  });
+  it('holds any change to the release contract', () => {
+    const changed: Partial<ExtensionManifest>[] = [
+      { scopes: ['read', 'write'] },
+      { requestedActor: 'integration' },
+      { createPeople: 'everyone' },
+      {
+        settings: {
+          region: {
+            type: 'string',
+            label: 'Region',
+            required: false,
+            secret: false,
+            reconnect: false,
+          },
+        },
+      },
+      { functions: [fn, { ...fn, universalId: randomUUID(), name: 'other' }] },
+    ];
+    for (const overrides of changed)
+      expect(holdReason({ ...base, next: manifest({ version: '1.0.1', ...overrides }) })).toBe(
+        'release_changes',
+      );
+  });
+  it('holds work the plan finds even when the contract is the same', () => {
     expect(holdReason({ ...base, previous: undefined })).toBe('previous_release_unavailable');
     expect(holdReason({ ...base, schemaOperations: 1 })).toBe('schema_changes');
     expect(holdReason({ ...base, viewActions: ['retain', 'create'] })).toBe('view_changes');
@@ -77,28 +106,6 @@ describe('holdReason', () => {
     expect(holdReason({ ...base, plannedMapping: { outputs: { a: { target: 'x' } } } })).toBe(
       'mapping_changes',
     );
-    expect(holdReason({ ...base, next: manifest({ scopes: ['read', 'write'] }) })).toBe(
-      'access_changes',
-    );
-    expect(holdReason({ ...base, next: manifest({ requestedActor: 'integration' }) })).toBe(
-      'access_changes',
-    );
-    expect(
-      holdReason({
-        ...base,
-        next: manifest({
-          settings: {
-            region: {
-              type: 'string',
-              label: 'Region',
-              required: false,
-              secret: false,
-              reconnect: false,
-            },
-          },
-        }),
-      }),
-    ).toBe('new_settings');
   });
   it('keeps a view the workspace edited or deleted without holding', () => {
     expect(

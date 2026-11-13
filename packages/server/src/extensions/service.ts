@@ -99,8 +99,17 @@ type Row = {
   created_by: ExtensionInstallation['createdBy'];
   mapping: StoredMapping;
   mapping_revision: number;
-  upgrade_held_digest?: string | null;
+  upgrade_held_digest: string | null;
 };
+
+type Plan = Awaited<ReturnType<Extensions['plan']>>;
+
+/** Whether disconnect cleanup is still running, which blocks a release change. */
+async function cleanupPending(tx: Tx, installationId: string) {
+  const [pending] = await tx`select 1 from extension_jobs where installation_id=${installationId}
+    and trigger_kind='disconnect' and status in ('queued','running') limit 1`;
+  return !!pending;
+}
 
 /** A row's stored mapping, tolerating rows written before the column had its shape. */
 function storedMapping(row: Pick<Row, 'mapping'> | undefined): StoredMapping {
@@ -777,7 +786,7 @@ export class Extensions {
     tx: Tx,
     caller: Caller,
     input: ExtensionInstallInput,
-    plan: Awaited<ReturnType<Extensions['plan']>>,
+    plan: Plan,
     key: string,
     requestHash: string,
   ) {
@@ -787,10 +796,7 @@ export class Extensions {
         'repair schema bindings through a validated upgrade before reconnecting',
       );
     if (plan.existing && !input.mappingChange) {
-      const [pending] =
-        await tx`select 1 from extension_jobs where installation_id=${plan.existing.id}
-        and trigger_kind='disconnect' and status in ('queued','running') limit 1`;
-      if (pending)
+      if (await cleanupPending(tx, plan.existing.id))
         throw new AppError(
           409,
           'cleanup_pending',
@@ -976,7 +982,7 @@ export class Extensions {
   private async commitMapping(
     tx: Tx,
     caller: Caller,
-    plan: Awaited<ReturnType<Extensions['plan']>>,
+    plan: Plan,
     key: string,
     requestHash: string,
   ) {
@@ -1010,12 +1016,15 @@ export class Extensions {
 
   /** The release each registration upgrades to on its own, when this process can run it. */
   upgradeTargets(): UpgradeTarget[] {
-    return upgradeTargets(
+    // The catalog and the deployed releases are fixed for this process.
+    this.targets ??= upgradeTargets(
       this.catalog.list(),
       (release) =>
         release.manifest.execution === 'standalone' || this.activation.has(release.digest),
     );
+    return this.targets;
   }
+  private targets: UpgradeTarget[] | undefined;
 
   /**
    * One automatic-upgrade pass (auto-upgrade.ts): every active installation
@@ -1048,11 +1057,27 @@ export class Extensions {
       actor: SYSTEM_ACTOR,
       scopes: ['read', 'write', 'schema:write', 'admin'],
     };
+    type Candidate = Pick<Row, 'id' | 'registration_id' | 'state' | 'release_digest'> &
+      Pick<Row, 'upgrade_held_digest'>;
+    // Whether there is anything to do, checked again under the locks.
+    const due = async (tx: Tx, row: Candidate | undefined) => {
+      const target = targets.find((t) => t.registrationId === row?.registration_id);
+      if (
+        !row ||
+        !target ||
+        row.state !== 'active' ||
+        row.release_digest === target.digest ||
+        row.upgrade_held_digest === target.digest ||
+        (await cleanupPending(tx, row.id))
+      )
+        return undefined;
+      return target;
+    };
     return inWorkspace(this.sql, workspaceId, async (tx) => {
-      const [candidate] = await tx<
-        Row[]
-      >`select * from extension_installations where id = ${installationId}`;
-      if (!candidate) return 'skipped';
+      // Before the exclusive schema lock, which blocks the workspace's writes.
+      const [candidate] = await tx<Candidate[]>`select id, registration_id, state,
+        release_digest, upgrade_held_digest from extension_installations where id = ${installationId}`;
+      if (!candidate || !(await due(tx, candidate))) return 'skipped';
       await lockPrivacyShared(tx, workspaceId);
       await lockSchemaExclusive(tx, workspaceId);
       await lockInstallation(tx, workspaceId, candidate.registration_id);
@@ -1060,18 +1085,8 @@ export class Extensions {
       const [current] = await tx<
         Row[]
       >`select * from extension_installations where id = ${installationId}`;
-      const target = targets.find((t) => t.registrationId === current?.registration_id);
-      if (
-        !current ||
-        !target ||
-        current.state !== 'active' ||
-        current.release_digest === target.digest ||
-        current.upgrade_held_digest === target.digest
-      )
-        return 'skipped';
-      const [cleanup] = await tx`select 1 from extension_jobs where installation_id=${current.id}
-        and trigger_kind='disconnect' and status in ('queued','running') limit 1`;
-      if (cleanup) return 'skipped';
+      const target = await due(tx, current);
+      if (!current || !target) return 'skipped';
       const name = this.catalog.get(target.registrationId, target.version).manifest.name;
       const hold = async (reason: string) => {
         await tx`update extension_installations set upgrade_held_digest = ${target.digest}
@@ -1087,7 +1102,7 @@ export class Extensions {
         installationId: current.id,
         settings: current.settings,
       };
-      let plan: Awaited<ReturnType<Extensions['plan']>>;
+      let plan: Plan;
       try {
         plan = await this.plan(tx, caller, input);
       } catch (error) {
@@ -1100,8 +1115,6 @@ export class Extensions {
       const reason = holdReason({
         previous: previous?.available ? previous.manifest : undefined,
         next: plan.release.manifest,
-        grantedActor: current.granted_actor,
-        grantedScopes: current.granted_scopes,
         schemaOperations: plan.operations.length,
         viewActions: plan.preview.views.map((view) => view.action),
         storedMapping: storedMapping(current),

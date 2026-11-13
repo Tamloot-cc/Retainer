@@ -1,1 +1,2 @@
-ALTER TABLE "extension_installations" ADD COLUMN "upgrade_held_digest" text;
+ALTER TABLE "extension_installations" ADD COLUMN "upgrade_held_digest" text;--> statement-breakpoint
+CREATE INDEX "extension_installations_active_registration_idx" ON "extension_installations" USING btree ("registration_id","updated_at","id") WHERE "extension_installations"."state" = 'active';
