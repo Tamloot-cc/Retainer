@@ -212,14 +212,30 @@ defineExtension({
   createPeople: 'everyone',
   onSourceDelete: 'retract',
   settings: {
-    shareMeetings: { type: 'boolean', level: 'installation', consent: true,
-      required: true, default: false,
-      label: 'Members’ connected meetings are visible to the whole workspace' },
-    createPeople: { type: 'string', level: 'installation', required: true,
-      default: 'everyone', options: ['never', 'contacted_first', 'everyone'] },
+    shareMeetings: {
+      type: 'boolean',
+      level: 'installation',
+      consent: true,
+      required: true,
+      default: false,
+      label: 'Members’ connected meetings are visible to the whole workspace',
+    },
+    createPeople: {
+      type: 'string',
+      level: 'installation',
+      required: true,
+      default: 'everyone',
+      options: ['never', 'contacted_first', 'everyone'],
+    },
     backfillDays: { type: 'number', level: 'connection', required: true, default: 31 },
-    apiKey: { type: 'string', level: 'connection', secret: true, required: true,
-      reconnect: true, label: 'Tamloot API key (read-only)' },
+    apiKey: {
+      type: 'string',
+      level: 'connection',
+      secret: true,
+      required: true,
+      reconnect: true,
+      label: 'Tamloot API key (read-only)',
+    },
   },
   source: {
     provider: 'tamloot',
@@ -230,9 +246,21 @@ defineExtension({
     eventTypeIds: [BASE_EVENT_TYPE_IDS.conversation],
     revisionOrder: 'integer',
   },
-  schema: [{ kind: 'field', objectId: BASE_OBJECT_IDS.task, definition: {
-    universalId: TAMLOOT.taskIdField, name: 'tamlootTaskId', label: 'Tamloot task',
-    type: 'text', isUnique: true, isSearchable: false, isNullable: true } }],
+  schema: [
+    {
+      kind: 'field',
+      objectId: BASE_OBJECT_IDS.task,
+      definition: {
+        universalId: TAMLOOT.taskIdField,
+        name: 'tamlootTaskId',
+        label: 'Tamloot task',
+        type: 'text',
+        isUnique: true,
+        isSearchable: false,
+        isNullable: true,
+      },
+    },
+  ],
   views: [],
   functions: [
     fn(TAMLOOT.connect, 'connect', { kind: 'connect' }),
