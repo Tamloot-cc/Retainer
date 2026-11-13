@@ -16,6 +16,9 @@ rules.
 - `pnpm test:web` runs Playwright against the built web app and real Postgres
   (`DATABASE_URL` required; fresh cloned database per test).
 - `pnpm dev` runs the server with `RETAINER_ROLE=all` from `.env`.
+- `pnpm test:docker` runs the Docker tests (extension sandbox, extension and
+  file storage in Compose). CI skips them except in a release, so run them
+  before pushing a change to `docker/`, the extension runtime or file storage.
 
 ## Worktrees
 

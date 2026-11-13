@@ -4,8 +4,13 @@ on:
   pull_request:
   push:
     branches: [main]
-  # The release workflow runs the same checks before publishing.
+  # The release workflow runs the same checks before publishing, plus the
+  # Docker tests that push and pull-request CI leave to `pnpm test:docker`.
   workflow_call:
+    inputs:
+      docker:
+        type: boolean
+        default: true
 
 concurrency:
   # github.workflow is the caller's name when the release workflow calls this
@@ -14,11 +19,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Four jobs run side by side; the slowest sets CI's time.
   check:
-    name: Lint, typecheck, test
+    name: Lint, typecheck
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      # Dependabot may bump only the first FROM of a multi-stage Dockerfile.
+      - name: Both Dockerfile stages use the same Node image
+        run: |
+          tags="$(grep -oE '^FROM .*node:[^ ]+' docker/Dockerfile | grep -oE 'node:[^ ]+' | sort -u)"
+          [ "$(echo "$tags" | wc -l)" -eq 1 ] ||
+            { echo "::error file=docker/Dockerfile::The stages use different Node images: $(echo $tags)"; exit 1; }
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm typecheck
 
+  test:
+    name: Unit and integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:18
@@ -49,34 +76,56 @@ jobs:
           until docker exec "$pg" pg_isready -U retainer; do sleep 1; done
           docker exec "$pg" psql -U retainer -Atc "show max_connections"
       - uses: actions/checkout@v7
-      # Dependabot may bump only the first FROM of a multi-stage Dockerfile.
-      - name: Both Dockerfile stages use the same Node image
-        run: |
-          tags="$(grep -oE '^FROM .*node:[^ ]+' docker/Dockerfile | grep -oE 'node:[^ ]+' | sort -u)"
-          [ "$(echo "$tags" | wc -l)" -eq 1 ] ||
-            { echo "::error file=docker/Dockerfile::The stages use different Node images: $(echo $tags)"; exit 1; }
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
       - run: pnpm build
-      - run: pnpm typecheck
       - run: pnpm test
-      - name: Build extension isolation test images
+
+  web:
+    name: Web app (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: retainer
+          POSTGRES_PASSWORD: retainer
+          POSTGRES_DB: retainer
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U retainer"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+
+    env:
+      DATABASE_URL: postgres://retainer:retainer@localhost:5432/retainer
+
+    steps:
+      # The parallel integration suite peaks above Postgres's default 100
+      # connections, and a refused connection stalls tests until they time
+      # out. Service containers take no server flags, so set it and restart.
+      - name: Raise the Postgres connection limit
         run: |
-          docker build -f docker/Dockerfile -t retainer:extensions-review -t retainer:files-review .
-          docker build -f docker/Dockerfile.extension-runner --build-arg RELEASE_DIGEST=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --build-arg BUNDLE_ID=fixture -t retainer:extension-runner-fixture .
-      - run: pnpm test:extensions:sandbox
-      - name: Build reviewed lifecycle fixture
-        run: |
-          node scripts/build-extension-artifacts.mjs --development
-          digest=$(node -p "JSON.parse(require('fs').readFileSync('artifacts/extensions/fixture/metadata.json')).releaseDigest")
-          docker build -f docker/Dockerfile.extension-runner --build-arg RELEASE_DIGEST="$digest" --build-arg BUNDLE_ID=fixture -t retainer:extension-runner-fixture .
-      - run: pnpm test:extensions:compose
-      - run: pnpm test:files:compose
+          pg=${{ job.services.postgres.id }}
+          docker exec "$pg" psql -U retainer -c "alter system set max_connections = 300"
+          docker restart "$pg"
+          until docker exec "$pg" pg_isready -U retainer; do sleep 1; done
+          docker exec "$pg" psql -U retainer -Atc "show max_connections"
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - run: pnpm --filter @retainer/server exec playwright install --with-deps chromium
       - run: pnpm test:web
       - uses: actions/upload-artifact@v7
@@ -85,3 +134,22 @@ jobs:
           name: web-browser-traces
           path: packages/server/test-results
           retention-days: 7
+
+  # Push and pull-request CI skip these (about 5 minutes); run them locally
+  # with `pnpm test:docker` before pushing a change to docker/, the extension
+  # runtime or file storage. A release still runs them.
+  docker:
+    name: Docker (extensions, files)
+    if: inputs.docker == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test:docker

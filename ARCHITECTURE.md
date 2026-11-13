@@ -2024,7 +2024,9 @@ model inside it, so every layer except 5 is deterministic.
 
 Browser tests use Playwright against the built app and real Postgres, with a
 fresh database cloned from a migrated template per test. Run `pnpm build`
-then `pnpm test:web`; CI runs these after the existing test layers.
+then `pnpm test:web`; CI runs these beside the other layers, in parallel.
+The Docker tests (extension sandbox, extensions and file storage in Compose)
+run locally with `pnpm test:docker` and in a release, not on every push.
 
 ### Rules
 
