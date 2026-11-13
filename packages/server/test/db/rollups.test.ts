@@ -398,6 +398,11 @@ describe('the rollup query on a large fan-out', () => {
           insert into records (id, workspace_id, object_type_id, data, created_by, updated_by)
           select event_id, ${ws}, ${types.call}, '{}'::jsonb, ${actor}, ${actor}
           from seed_events`;
+        // The inserts below check each row against records. Refresh the
+        // statistics first, which count this transaction's own rows: without
+        // them those checks can pick an index on the workspace alone and read
+        // every seeded record for each row inserted.
+        await tx`analyze records`;
         await tx`
           insert into event_records (workspace_id, record_id, occurred_at, channel)
           select ${ws}, event_id, timestamptz '2025-01-01' + n * interval '1 minute', 'api'
