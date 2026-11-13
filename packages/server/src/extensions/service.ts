@@ -1068,6 +1068,11 @@ export class Extensions {
         log.error(
           `Automatic upgrade of extension installation ${item.installation_id} in workspace ${item.workspace_id} failed (${code}).`,
         );
+        // Discovery takes the oldest rows first: move this one behind the rest,
+        // so failing installations never starve the others.
+        await inWorkspace(this.sql, item.workspace_id, async (tx) => {
+          await tx`update extension_installations set updated_at = now() where id = ${item.installation_id}`;
+        }).catch(() => {});
       }
     }
     return result;

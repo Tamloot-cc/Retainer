@@ -36,6 +36,8 @@ const same = randomUUID(),
   racing = randomUUID(),
   downgrade = randomUUID(),
   standalone = randomUUID(),
+  stuck = randomUUID(),
+  behind = randomUUID(),
   hosted = randomUUID();
 const releases = [
   release(same, '1.0.0'),
@@ -56,6 +58,10 @@ const releases = [
   release(racing, '1.0.1'),
   release(downgrade, '1.0.0'),
   release(downgrade, '1.0.1'),
+  release(stuck, '1.0.0'),
+  release(stuck, '1.0.1'),
+  release(behind, '1.0.0'),
+  release(behind, '1.0.1'),
   release(standalone, '1.0.0'),
   release(standalone, '1.0.1'),
   release(hosted, '1.0.0', { execution: 'hosted' }),
@@ -204,6 +210,34 @@ describe('automatic extension upgrades', () => {
     );
     await maintenance.tick();
     expect((await row(installed.id)).version).toBe('1.0.1');
+  });
+
+  it('moves a failing installation behind the others', async () => {
+    const failing = await install(stuck);
+    const waiting = await install(behind);
+    // Only these two are due; the failing one is older, so it comes first.
+    const only = extensions
+      .upgradeTargets()
+      .filter((t) => ([stuck, behind] as string[]).includes(t.registrationId));
+    class Failing extends Extensions {
+      override upgradeTargets() {
+        return only;
+      }
+      override async autoUpgrade(workspaceId: string, installationId: string) {
+        if (installationId === failing.installed.id) throw new Error('provider exploded');
+        return super.autoUpgrade(workspaceId, installationId, only);
+      }
+    }
+    const flaky = new Failing(
+      db.connect({ role: RUNTIME_ROLE, max: 2 }),
+      catalog,
+      undefined,
+      new Set(),
+    );
+    expect(await flaky.upgradeDue(discovery(), 1)).toMatchObject({ failed: 1, upgraded: 0 });
+    expect(await flaky.upgradeDue(discovery(), 1)).toMatchObject({ failed: 0, upgraded: 1 });
+    expect((await row(waiting.installed.id)).version).toBe('1.0.1');
+    expect((await row(failing.installed.id)).version).toBe('1.0.0');
   });
 
   it('never targets a release that is not deployed', () => {
