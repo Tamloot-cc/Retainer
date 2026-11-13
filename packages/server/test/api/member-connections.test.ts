@@ -128,7 +128,14 @@ const manifest = extensionFixture({
     ),
   ],
 });
-const upgradedManifest = extensionFixture({ ...manifest, version: '1.1.0' });
+const upgradedDisconnectId = randomUUID();
+const upgradedManifest = extensionFixture({
+  ...manifest,
+  version: '1.1.0',
+  functions: manifest.functions.map((f) =>
+    f.trigger.kind === 'disconnect' ? { ...f, universalId: upgradedDisconnectId } : f,
+  ),
+});
 const catalog = new ExtensionCatalog([
   { manifest, actorCeiling: 'integration', runtimeEnabled: true },
   { manifest: upgradedManifest, actorCeiling: 'integration', runtimeEnabled: true },
@@ -1133,6 +1140,53 @@ describe('managed task value validation', () => {
 });
 
 describe('member upgrade hook input', () => {
+  it.each([false, true])(
+    'uses the adopted release cleanup hook while upgrade setup completes concurrently=%s',
+    async (concurrent) => {
+      const h = await setup(),
+        c = await connecting(h, h.keys.dana, 'cleanup-key');
+      await activate(h, c, 'cleanup-account');
+      const input = {
+        installationId: h.id,
+        registrationId: manifest.universalId,
+        version: upgradedManifest.version,
+        settings: { share: true },
+      };
+      const plan = await t.request('/v1/extensions/preview', { key: h.keys.admin, body: input });
+      expect(plan.status).toBe(200);
+      expect(
+        (
+          await t.request(`${h.base}/upgrade`, {
+            key: h.keys.admin,
+            headers: { 'Idempotency-Key': randomUUID() },
+            body: { ...input, planDigest: plan.body.planDigest },
+          })
+        ).status,
+      ).toBe(200);
+      const [job] =
+        await db.owner`select j.id from extension_jobs j join extension_installations i on i.id=j.installation_id and i.generation=j.generation where i.id=${h.id} and j.trigger_kind='install' and j.status='queued'`;
+      const setupRun = await h.queue.claim(h.workspace, job?.id, 'upgrade-cleanup');
+      if (!setupRun) throw new Error('upgrade setup missing');
+      const disconnect = () =>
+        t.request(`${h.base}/connections/${c.cid}`, { key: h.keys.dana, method: 'DELETE' });
+      const response = concurrent
+        ? (
+            await Promise.all([disconnect(), h.queue.complete(setupRun, { status: 'succeeded' })])
+          )[0]
+        : await disconnect();
+      expect(response.status).toBe(200);
+      const [cleanup] =
+        await db.owner`select id,function_id,release_digest from extension_jobs where connection_id=${c.cid} and trigger_kind='disconnect' and status='queued'`;
+      expect(cleanup?.function_id).toBe(upgradedDisconnectId);
+      expect(cleanup?.release_digest).toBe(catalog.get(manifest.universalId, '1.1.0').digest);
+      const run = await h.queue.claim(h.workspace, cleanup?.id, 'upgraded-disconnect');
+      expect(run?.functionId).toBe(upgradedDisconnectId);
+      if (!run) throw new Error('disconnect cleanup missing');
+      await h.queue.complete(run, { status: 'succeeded' });
+      if (!concurrent) await h.queue.complete(setupRun, { status: 'succeeded' });
+    },
+  );
+
   it('passes the replaced release version from installation setup to each connect hook', async () => {
     const h = await setup(),
       c = await connecting(h, h.keys.dana, 'upgrade-key');

@@ -823,6 +823,14 @@ export class Extensions {
           updated_at = now()
         returning *`;
       if (!row) throw new Error('installation insert returned no row');
+      if (manifest.connection === 'member') {
+        // Membership removal can run before setup finishes. Cache the hook
+        // with the release adoption, under the same installation lock.
+        const disconnect =
+          manifest.functions.find((fn) => fn.trigger.kind === 'disconnect')?.universalId ?? null;
+        await tx`update extension_connections set disconnect_function_id=${disconnect}
+          where installation_id=${row.id} and state<>'disconnected'`;
+      }
       if (input.replaceSourceAccount) {
         await tx`delete from source_bindings where installation_id=${row.id}`;
         await tx`update webhook_bindings set state='retired',updated_at=clock_timestamp() where installation_id=${row.id} and state<>'retired'`;

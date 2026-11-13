@@ -2,7 +2,7 @@
 
 Status: implemented and locally verified, 2026-11-13. Member connections,
 managed tasks and the Tamloot bundle are complete on this branch. Build,
-typecheck, lint, the full test suite (1,320 server tests), release artifact
+typecheck, lint, the full test suite (1,322 server tests), release artifact
 checks and all 71 browser tests passed. Hosted rollout and a real-key test
 remain out of scope.
 Implements the product spec
@@ -115,6 +115,8 @@ New table `extension_connections` (generated with `pnpm db:generate`):
 - `source_account_id` remembers the verified account after binding retirement.
   `disconnect_function_id` remembers the reviewed cleanup hook, so membership
   removal can queue it without importing the catalog into the lower layer.
+  Release adoption updates this hook in the same transaction as the installed
+  digest. Disconnect during upgrade setup therefore uses that release's hook.
 - Check that `owner` is a user actor, generation and revisions are positive,
   and state and health use the allowed values. The tenant key is
   `(workspace_id, installation_id, id)`, unique for child FKs. A child cannot
