@@ -13,6 +13,7 @@ import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { uninstallForWorkspaceDeletion } from '../../src/extension-runtime/workspace-deletion.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { Extensions } from '../../src/extensions/service.js';
+import { ChangeMaintenance } from '../../src/worker/changes.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
@@ -1141,6 +1142,47 @@ describe('managed task value validation', () => {
 });
 
 describe('member upgrade hook input', () => {
+  it.each([false, true])(
+    'retention expires unclaimable cleanup and unblocks upgrade (disabled=%s)',
+    async (disabled) => {
+      const h = await setup(),
+        c = await connecting(h, h.keys.dana, 'retention-key');
+      await activate(h, c, 'retention-account');
+      const job = await disconnect(h, c.cid);
+      if (disabled)
+        expect((await t.request(`${h.base}/disable`, { key: h.keys.admin, body: {} })).status).toBe(
+          200,
+        );
+      const unavailable = new ExtensionQueue(t.sql, catalog.runtime, undefined, new Set());
+      const discovery = db.connect({ role: 'retainer_executor' });
+      try {
+        expect((await unavailable.discover(discovery)).some((row) => row.job_id === job.id)).toBe(
+          false,
+        );
+        expect((await upgrade(h)).body.error.code).toBe('cleanup_pending');
+        // Simulate the original, never-extended cleanup window passing with no
+        // executor able to claim this release. Retention has no runnable filter.
+        await db.owner`update extension_connections set disconnected_at=now()-interval '25 hours' where id=${c.cid}`;
+        await db.owner`update extension_jobs set expires_at=now()-interval '1 second' where id=${job.id}`;
+        expect((await unavailable.discover(discovery)).some((row) => row.job_id === job.id)).toBe(
+          false,
+        );
+        expect((await new ChangeMaintenance(t.sql, discovery).tick()).failed).toBe(0);
+        expect(
+          (await db.owner`select status,code from extension_jobs where id=${job.id}`)[0],
+        ).toMatchObject({ status: 'failed', code: 'job_expired' });
+        expect(
+          (
+            await db.owner`select health,last_error from extension_connections where id=${c.cid}`
+          )[0],
+        ).toMatchObject({ health: 'degraded', last_error: 'job_expired' });
+        expect((await upgrade(h)).status).toBe(200);
+      } finally {
+        await discovery.end();
+      }
+    },
+  );
+
   it('settings and enable retain the same cleanup identity, expiry and retry budget', async () => {
     const h = await setup(),
       c = await connecting(h, h.keys.dana, 'settings-key');

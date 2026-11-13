@@ -2,7 +2,7 @@
 
 Status: implemented and locally verified, 2026-11-13. Member connections,
 managed tasks and the Tamloot bundle are complete on this branch. Build,
-typecheck, lint, the full test suite (1,338 server tests), release artifact
+typecheck, lint, the full test suite (1,340 server tests), release artifact
 checks and all 71 browser tests passed. Hosted rollout and a real-key test
 remain out of scope.
 Implements the product spec
@@ -198,6 +198,10 @@ installations need no migration of data.
   Uninstall waits for retained and newly queued cleanup within its deadline.
   Handler failures stay on the job and connection. Deadline or unavailable
   cleanup records an explicit failure before the installation finishes.
+  `worker/changes.ts:ChangeMaintenance.tick` expires unclaimed jobs through
+  `retainer_change_retention_due`, without a runnable-release or installation
+  state filter. It records `job_expired` on the job and connection even if
+  discovery cannot return the cleanup. This also releases the upgrade guard.
 - **Member removal.** Extend `workspaces/leaving.ts:endLostMemberships`,
   which already covers organization removal, workspace removal, role loss
   and workspace moves. Disconnect only where effective membership is lost,
