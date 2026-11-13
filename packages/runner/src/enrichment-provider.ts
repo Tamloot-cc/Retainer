@@ -145,14 +145,20 @@ export class ExaProvider {
   }
 
   /**
-   * Checks the key with Exa's free team-info call. If that path does not
-   * exist for this key, one search for exa.ai checks it instead.
+   * Checks the key with Exa's free team-info call. That call is part of
+   * Websets, which only Pro teams can use: a key without it gets 401 there but
+   * works for search, so a missing path or a refusal falls back to one search
+   * for exa.ai. An invalid key is refused by that search too.
    */
   async check(): Promise<void> {
     try {
       await this.request('/websets/v0/teams/me', exaTeam);
     } catch (error) {
-      if (!(error instanceof ExaError) || error.code !== 'provider_not_found') throw error;
+      if (
+        !(error instanceof ExaError) ||
+        (error.code !== 'provider_not_found' && error.code !== 'provider_unauthorized')
+      )
+        throw error;
       await this.request('/search', exaSearchResponse, exaSearchRequest('exa.ai'));
     }
   }

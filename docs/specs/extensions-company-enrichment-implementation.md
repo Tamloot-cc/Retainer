@@ -319,19 +319,19 @@ Exa documents its API in the OpenAPI spec at `https://exa.ai/docs/exa-spec.yaml`
   - Text contents are listed at $1 per 1,000 pages, so a lookup costs at most $0.008.
   - The default limit is 10 QPS per Exa team. A 429 carries `Retry-After` when Exa sends it. A team that is out of credits gets `402`.
 
-**Credential check.** `GET /v0/teams/me`, Exa's free "Get team info" call. Its documented base is the Websets server, `https://api.exa.ai/websets`. If staging shows that this call rejects a valid search-only key, setup falls back to the lookup request for `exa.ai`, which costs one search.
+**Credential check.** `GET /v0/teams/me`, Exa's free "Get team info" call. Its documented base is the Websets server, `https://api.exa.ai/websets`. It does reject a valid key whose team is not on a Pro plan: 401 with "Your team does not have access to the API" (confirmed 2026-11-13; search with the same key returned 200). So a 401, 403 or 404 from it falls back to the lookup request for `exa.ai`, which costs one search; an invalid key is refused by that search too.
 
 The sample confirmed that `auto` with `category: "company"` returns `entities`. Before the catalog entry ships, staging must still confirm three things:
 
 - `category: "company"` accepts `includeDomains`. The spec says only date filters are refused, and the agent skill says otherwise for `excludeDomains`.
 - A domain as the query finds the company as well as its name does. The sample queried by name.
-- The team-info path works.
+- ~~The team-info path works.~~ It refuses non-Pro teams; setup falls back to a search.
 
 ### 4.4 `setup`
 
 1. Read `apiKey` through the runtime secret endpoint.
 2. Call the credential check (§4.3).
-   - A 401 or 403 means a bad key: return `failed` with `provider_unauthorized`. `failInstallation` marks it `needs_reconnect`.
+   - A 401 or 403 from the fallback search means a bad key: return `failed` with `provider_unauthorized`. `failInstallation` marks it `needs_reconnect`.
    - A 402 means the Exa team is out of credits: return `failed` with `provider_payment_required`, which marks the installation `degraded`. The admin adds credits in Exa and retries setup.
    - A network error, 429 or 5xx is transient: retry.
    - Success: return `succeeded`, which activates the installation.

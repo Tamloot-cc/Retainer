@@ -324,7 +324,9 @@ describe('company enrichment through a fake Exa', () => {
   it('asks for a reconnect when Exa rejects the key, and reports exhausted credits', async () => {
     const rejected = await setup('bad-key');
     rejected.exa.team = () => new Response('{}', { status: 401 });
+    rejected.exa.search = () => new Response('{}', { status: 401 });
     expect(await rejected.drain()).toEqual([{ status: 'failed', code: 'provider_unauthorized' }]);
+    expect(rejected.exa.requests.map((r) => r.path)).toEqual(['/websets/v0/teams/me', '/search']);
     expect(await rejected.detail()).toMatchObject({
       state: 'setup_failed',
       connectionHealth: 'needs_reconnect',
@@ -341,6 +343,19 @@ describe('company enrichment through a fake Exa', () => {
     expect(await h.drain()).toEqual([{ status: 'succeeded' }]);
     expect(h.exa.requests.map((r) => r.path)).toEqual(['/websets/v0/teams/me', '/search']);
     expect(h.exa.requests[1]?.body?.query).toBe('exa.ai');
+  });
+
+  it('accepts a key whose team cannot use Websets when search works', async () => {
+    const h = await setup();
+    // What Exa returns to a team that is not on a Pro plan.
+    h.exa.team = () =>
+      new Response(
+        JSON.stringify({ statusCode: 401, message: 'Your team does not have access to the API.' }),
+        { status: 401 },
+      );
+    expect(await h.drain()).toEqual([{ status: 'succeeded' }]);
+    expect((await h.detail()).state).toBe('active');
+    expect(h.exa.requests.map((r) => r.path)).toEqual(['/websets/v0/teams/me', '/search']);
   });
 
   it('fails a run whose mapped field was deleted, without calling Exa', async () => {
