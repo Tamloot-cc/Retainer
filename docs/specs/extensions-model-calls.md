@@ -14,8 +14,12 @@ Extensions can call a language model at two points:
    that none is.
 
 Retainer pays for these calls with its own model key. Extensions never see the
-key: they call a **model gateway** in the server, which holds the key, enforces
-budgets, records usage and keeps prompts out of logs.
+key: they call a **model gateway** in the server, which holds the key, records
+usage and keeps prompts out of logs.
+
+What an extension sends to the model is the extension's choice. The platform
+doesn't restrict which workspace data goes into a prompt; the admin approves
+that once, when they approve a release that declares model calls (§3.1).
 
 ## 1. Product rule change
 
@@ -52,16 +56,21 @@ deterministic) is unchanged.
 - **Where the key lives.** In the server only: `RETAINER_MODEL_API_KEY`. On
   the hosted service it's set in the `retainer-cloud` production environment.
   The runner never holds it. A key inside a runner Lambda or container would
-  reach every bundle that runs there, and per-workspace budgets would depend
-  on extension code obeying them.
+  reach every bundle that runs there, and usage couldn't be attributed to a
+  workspace reliably.
 - **Self-hosting.** The operator may set the same variable with their own key.
   Without it, the gateway returns `503 model_unavailable`, and every
   model-backed step has a deterministic fallback (§5.4, §6.5). No extension
   requires a model to work.
-- **Provider and model.** Anthropic, through the official TypeScript SDK
-  (`@anthropic-ai/sdk`) in a new server module. The default model is
-  `claude-opus-5-5`, set by `RETAINER_MODEL` (§10 asks whether to use a cheaper
-  one). Extensions don't choose the model: the gateway does, so a model change
+- **Provider and package.** Anthropic, through its official TypeScript SDK,
+  `@anthropic-ai/sdk`, used only in the new server module (§3.5). A
+  multi-provider layer such as the Vercel AI SDK was considered and not
+  chosen: there is one provider, and features such as structured outputs and
+  refusal fallback arrive in the official SDK first. The gateway's request and
+  response types (§3.2) don't expose SDK types, so a provider change stays
+  inside that module.
+- **Model.** The default is `claude-opus-5-5`, set by `RETAINER_MODEL`
+  (§10 asks whether to use a cheaper one). Extensions don't choose the model: the gateway does, so a model change
   needs no new release.
 - **What a model may decide.** Only a choice from options the code built, in a
   fixed output schema. Code always produces the written values. In enrichment,
@@ -82,15 +91,17 @@ deterministic) is unchanged.
 A function declares `model: true`. As with `mappedWrite` and `secrets`, the
 flag is part of the reviewed release digest. The install review shows it in
 plain words: "This extension sends data from your workspace to Anthropic, which
-Retainer uses to process it." Releases without the flag keep their digests.
+Retainer uses to process it." Approving the release approves that; there is no
+separate list of which fields or records may be sent. Releases without the
+flag keep their digests.
 
-A release that declares `suggestMapping` (§5.1) must also declare `mapping`.
+A release that declares `suggestMapping` (§4.1) must also declare `mapping`.
 
 ### 3.2 Endpoint
 
 `POST /v1/extensions/:id/runtime/model`, for runs, and
 `POST /v1/extensions/runtime/suggestions/:suggestionId/model`, for suggestion
-runs (§5.2). Both accept only run credentials for a function that declares
+runs (§4). Both accept only run credentials for a function that declares
 `model: true`. Admission is the existing `admitRun`
 (`extension-runtime/admission.ts`) plus that check.
 
@@ -99,8 +110,8 @@ Request:
 ```ts
 {
   purpose: string;              // /^[a-z][a-z0-9_]{0,39}$/, e.g. 'pick_company'; for usage reports
-  system: string;               // ≤ 8 KiB
-  input: string;                // ≤ 64 KiB, the user turn
+  system: string;               // ≤ 64 KiB
+  input: string;                // ≤ 1 MiB, the user turn
   output: JSONSchema;           // the answer's shape; ≤ 8 KiB, objects only
   effort?: 'low' | 'medium' | 'high';  // default 'low'
   maxOutputTokens?: number;     // default 4,000, cap 16,000
@@ -124,32 +135,24 @@ Error mapping:
 | Condition                                      | Response                          | Run should              |
 | ---------------------------------------------- | --------------------------------- | ----------------------- |
 | No key configured                              | `503 model_unavailable`           | Use its fallback        |
-| Workspace or installation budget spent (§3.3)  | `429 model_budget_exhausted`      | Use its fallback        |
 | Provider 429, 5xx, timeout (30 s)              | `503 model_retry`, `Retry-After`  | `retry`                 |
 | Refusal after fallback                         | `422 model_refused`               | Treat as no answer      |
 | Output fails the schema                        | `502 model_invalid_output`        | Treat as no answer      |
-| Request over the limits above                  | `422 validation_failed`           | Fix the bundle          |
+| Request over the size limits above             | `422 validation_failed`           | Fix the bundle          |
 
 The SDK gets a `model(...)` method that throws `RetryLater` on
 `model_retry` and returns a typed result for the rest.
 
-### 3.3 Budgets and usage
+### 3.3 Usage
 
 New table `model_usage`: workspace, installation (nullable for suggestion
 runs), registration, function ID, purpose, run or suggestion ID, model, input
 and output tokens, cost in micro-dollars, created at. No prompt, input or
 output text.
 
-Limits, checked before each call under the installation lock:
-
-- Per workspace per calendar month (UTC), in dollars:
-  `RETAINER_MODEL_WORKSPACE_MONTHLY_USD`. Hosted default $5. Self-hosted
-  default: unlimited.
-- Per installation: 60 calls per minute, like the write budget
-  (`extensions.md:658`).
-
-The cost of a call is known only after it returns, so a workspace can go over
-its limit by one call's cost. That's accepted.
+There is no spend limit in v1. `model_usage` is what a later limit, per
+workspace or per plan, would be checked against, so adding one needs no new
+data.
 
 Admins see the month's model spend per extension on the installed view. The
 operator status page (extensions-lambda.md §3.5) adds total spend per day.
@@ -180,12 +183,16 @@ the layer check enforces that.
 
 Today every run belongs to an installation, and lifecycle functions can't read
 CRM data before activation (`extensions.md:459`). A mapping suggestion has to
-run before the installation exists, so it needs a new kind of run.
+run before the installation exists, so it needs a new kind of run. Unlike
+lifecycle runs, a suggestion run can read the workspace: a good suggestion
+often needs to see what a field actually holds, not just its name.
 
 ### 4.1 Trigger
 
 A new trigger kind, `suggestMapping`. At most one function per release. It
-takes no `scopes` and no `secrets`, and must declare `model: true`.
+must declare `model: true`. Its `scopes` may include only read scopes, and must
+be a subset of the release's scopes. It takes no `secrets`: provider keys are
+entered at install, after the suggestion.
 
 ### 4.2 Request and lifecycle
 
@@ -196,7 +203,9 @@ expires at (1 hour after creation).
 
 1. **Request.** `POST /v1/extensions/mapping-suggestions` with
    `{ registrationId, version, installationId? }`. Human admin only, as
-   approval is. `installationId` is set when editing an installed mapping.
+   approval is. Requesting a suggestion is the admin's consent to that one
+   run reading the workspace with the function's read scopes and sending what
+   it reads to the model. The web app says so next to the request (§5.2). `installationId` is set when editing an installed mapping.
    The server checks that the release declares `suggestMapping`, then stores
    the request with a snapshot of its input (§4.3). Returns
    `202 { id }`. A second request for the same workspace, release and
@@ -219,7 +228,7 @@ The existing shape is unchanged; a new shape adds:
   kind: 'suggestMapping',
   suggestionId: uuid,
   releaseDigest, functionId, apiOrigin, deadline,
-  runToken: string,          // usable only on the suggestion model endpoint
+  runToken: string,          // the function's read scopes plus the suggestion model endpoint
   input: {
     outputs: Array<{ key, label, description, types, suggested?: { name, label, type } }>,
     object: { name, label },
@@ -229,11 +238,13 @@ The existing shape is unchanged; a new shape adds:
 }
 ```
 
-The input carries schema metadata only: no records, no values. The run token
-binds the suggestion ID, workspace and release, expires at the deadline, and
-grants nothing but the model endpoint. The function never calls the Retainer
-API otherwise. Hosted runs use the job Lambda; self-hosted runs use the
-launcher with the egress proxy, as jobs do.
+The input carries the schema, so the function needs no call for it. The run
+token binds the suggestion ID, workspace and release, and expires at the
+deadline. It grants the function's declared read scopes on the REST API (for
+example `query_records` on the mapping object to sample values) and the
+suggestion model endpoint. It can't write, and it can't read secrets or
+installation KV, since no installation exists yet. Hosted runs use the job
+Lambda; self-hosted runs use the launcher with the egress proxy, as jobs do.
 
 ### 4.4 Result
 
@@ -275,7 +286,10 @@ The mapping step (enrichment spec §3.8) changes like this:
 
 1. When the release declares `suggestMapping` and the admin opens the mapping
    step, the web app requests a suggestion and shows the rows filled from
-   §5.1, with a "Suggesting matches…" line above them.
+   §5.1, with a "Suggesting matches…" line above them. Under it, in plain
+   words: "To suggest matches, <extension> reads your <object> records and
+   sends them to Anthropic." A **Don't suggest** link cancels the request
+   before it runs.
 2. When the suggestion arrives, rows the admin hasn't touched take the
    suggested choice. Each suggested row shows a small "Suggested" label and
    the reason under the picker. Rows the admin already changed keep the
@@ -292,14 +306,19 @@ bindings alone.
 
 ### 5.3 Enrichment's `suggestMapping`
 
-Prompt input: the three outputs with their definitions and accepted types, and
-the Company fields from §4.3. Output schema: one entry per output key with
-`action`, optional `field` and `reason`.
+Scopes: `read`. Before the model call, the function samples up to 20
+companies with `query_records`, preferring recently updated ones, and takes up
+to 5 non-empty values per compatible field.
+
+Prompt input: the three outputs with their definitions and accepted types, the
+Company fields from §4.3, and the sampled values per field. Output schema: one
+entry per output key with `action`, optional `field` and `reason`.
 
 Instructions to the model, in short:
 
 - Choose an existing field only when its meaning matches the output, not just
-  its type. A `number` field called `deal_size` is not an employee count.
+  its type. A `number` field called `deal_size` is not an employee count, and
+  a field called `size` whose values are 12, 340 and 5,000 probably is.
 - Prefer an existing field over creating one when it clearly matches.
 - Prefer `create` over a doubtful match; the admin can change it.
 - `skip` only when the output duplicates something the workspace clearly
@@ -309,7 +328,7 @@ Instructions to the model, in short:
 
 ### 5.4 Fallback
 
-No key, budget spent, refusal or invalid output: the suggestion fails with
+No key, refusal or invalid output: the suggestion fails with
 that code, and the form keeps the §5.1 defaults. Installation is never blocked
 on a suggestion.
 
@@ -376,8 +395,8 @@ fill-only rule (enrichment spec §3.5) is unchanged.
 
 ### 6.5 Fallback
 
-If the gateway returns `model_unavailable`, `model_budget_exhausted`,
-`model_refused` or `model_invalid_output`, the run uses only the shortcut
+If the gateway returns `model_unavailable`, `model_refused` or
+`model_invalid_output`, the run uses only the shortcut
 (step 3). If the shortcut doesn't apply, the outcome is `no_match` with code
 `no_match_model_unavailable`, so the run list shows why. `model_retry` retries
 the run.
@@ -414,11 +433,12 @@ Suggestion runs show on the mapping screen only, not in the run list.
 
 - **Gateway (unit and integration, real Postgres):** admission refuses runs of
   functions without `model: true`; schema validation of output; each error
-  mapping in §3.2; budgets under concurrency (two runs at the limit, only one
-  passes the per-minute cap); `model_usage` rows contain no content. The
+  mapping in §3.2; usage is recorded once per call, including under
+  concurrent calls; `model_usage` rows contain no content. The
   provider is faked at the HTTP boundary; the database is real.
-- **Suggestion runs:** the token works only on the suggestion endpoint and
-  only until the deadline; input contains no record values; invalid suggested
+- **Suggestion runs:** the token reads with the function's declared scopes
+  only, can't write, read secrets or KV, and stops working at the deadline; a
+  function declaring a write scope is rejected by `defineExtension`; invalid suggested
   choices become `skip`; expiry deletes rows; a duplicate request returns the
   same suggestion.
 - **Layer check:** core modules importing `model/` fail `pnpm lint`.
@@ -433,15 +453,15 @@ Suggestion runs show on the mapping screen only, not in the run list.
 ## 9. Delivery sequence
 
 1. Docs: update the rule everywhere in §1. This spec moves to "accepted".
-2. Gateway: module, endpoint, `model_usage`, budgets, SDK method, manifest
+2. Gateway: module, endpoint, `model_usage`, SDK method, manifest
    flag, layer rule.
 3. Mapped-write `confidence` (§6.4).
 4. Suggestion runs: table, endpoints, invocation union, worker dispatch.
 5. Web: §5.1 defaults in `shared`, then the suggestion flow.
 6. Enrichment release with `suggestMapping` and the new lookup. Staging with a
    real Exa key and the platform model key, plus the recorded eval.
-7. Hosted: `RETAINER_MODEL_API_KEY`, `RETAINER_MODEL` and the monthly limit in
-   the `retainer-cloud` production environment; privacy policy update before
+7. Hosted: `RETAINER_MODEL_API_KEY` and `RETAINER_MODEL` in the
+   `retainer-cloud` production environment; privacy policy update before
    release.
 
 ## 10. Open questions
@@ -450,8 +470,8 @@ Suggestion runs show on the mapping screen only, not in the run list.
    candidates is a small classification task, and `claude-haiku-5-5` would cost
    about a fortieth as much. Measure both on the recorded eval in step 6 and
    choose then?
-2. **Hosted monthly limit.** $5 per workspace is a placeholder. Should it
-   depend on the plan?
-3. **Sample values in suggestions.** Field names alone can be ambiguous.
-   Sending a few values per field would improve suggestions, but it means CRM
-   data leaves before installation. Left out of v1.
+
+## 11. Later
+
+- **Spend limits.** No limit in v1. A per-workspace or per-plan limit can be
+  checked against `model_usage` (§3.3) when it's needed.
