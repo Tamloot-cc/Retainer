@@ -376,6 +376,11 @@ describe('the rollup query on a large fan-out', () => {
           and c.workspace_id = ${ws} and c.name_singular = 'conversation'
           and f.object_type_id = d.id and f.name = 'company'`;
       if (!types) throw new Error('sales template objects missing');
+      // These rows go in directly, already consistent, so skip the per-row
+      // triggers and foreign-key checks. Planned while the statistics miss
+      // this transaction's own rows, those checks can pick an index on the
+      // workspace alone and read every seeded record for each row inserted.
+      await tx`set local session_replication_role = replica`;
       const actor = tx.json(AGENT);
       // Deals pointing at a company, each with events about it. Acme's are
       // the newest, after every one of the other company's.
