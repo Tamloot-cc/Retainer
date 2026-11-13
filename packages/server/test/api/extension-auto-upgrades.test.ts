@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { RUNTIME_ROLE } from '../../src/db/client.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { Extensions } from '../../src/extensions/service.js';
+import { ChangeMaintenance } from '../../src/worker/changes.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
@@ -33,6 +34,8 @@ const same = randomUUID(),
   setting = randomUUID(),
   disabled = randomUUID(),
   racing = randomUUID(),
+  downgrade = randomUUID(),
+  standalone = randomUUID(),
   hosted = randomUUID();
 const releases = [
   release(same, '1.0.0'),
@@ -51,6 +54,10 @@ const releases = [
   release(disabled, '1.0.1'),
   release(racing, '1.0.0'),
   release(racing, '1.0.1'),
+  release(downgrade, '1.0.0'),
+  release(downgrade, '1.0.1'),
+  release(standalone, '1.0.0'),
+  release(standalone, '1.0.1'),
   release(hosted, '1.0.0', { execution: 'hosted' }),
   release(hosted, '1.0.1', { execution: 'hosted' }),
 ];
@@ -160,6 +167,43 @@ describe('automatic extension upgrades', () => {
     const after = await row(installed.id);
     expect(after).toMatchObject({ version: '1.0.1', state: 'active' });
     expect(after.generation).toBe(before.generation + 1);
+  });
+
+  it("keeps a person's move back to an older release", async () => {
+    const { sdk, installed } = await install(downgrade);
+    await extensions.upgradeDue(discovery());
+    expect((await row(installed.id)).version).toBe('1.0.1');
+    // 1.0.1 is broken: an admin moves back to 1.0.0.
+    const back = { registrationId: downgrade, version: '1.0.0', settings: { enabled: true } };
+    const plan = await sdk.previewExtension({ ...back, installationId: installed.id });
+    await sdk.upgradeExtension(
+      installed.id,
+      { ...back, installationId: installed.id, planDigest: plan.planDigest },
+      'back',
+    );
+    const moved = await row(installed.id);
+    expect(moved).toMatchObject({
+      version: '1.0.0',
+      upgrade_held_digest: catalog.get(downgrade, '1.0.1').digest,
+    });
+    // The next pass neither undoes the choice nor fails on the earlier receipt.
+    expect((await extensions.upgradeDue(discovery())).failed).toBe(0);
+    expect(await row(installed.id)).toMatchObject({
+      version: '1.0.0',
+      generation: moved.generation,
+    });
+  });
+
+  it('runs from change maintenance where no executor does', async () => {
+    const { installed } = await install(standalone);
+    const maintenance = new ChangeMaintenance(
+      db.connect({ role: RUNTIME_ROLE, max: 2 }),
+      discovery(),
+      undefined,
+      extensions,
+    );
+    await maintenance.tick();
+    expect((await row(installed.id)).version).toBe('1.0.1');
   });
 
   it('never targets a release that is not deployed', () => {

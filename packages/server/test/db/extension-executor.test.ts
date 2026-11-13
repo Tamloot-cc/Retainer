@@ -163,7 +163,7 @@ describe('trusted executor protocol with an explicitly in-process test driver', 
     const upgrades = {
       upgradeDue: async () => {
         passes++;
-        return { upgraded: 0, held: 0 };
+        return { upgraded: 0, held: 0, failed: 0 };
       },
     };
     const idle = { invoke: async () => ({ status: 'succeeded' as const }) };

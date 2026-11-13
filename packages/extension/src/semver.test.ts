@@ -77,6 +77,10 @@ describe('release ordering', () => {
     expect(compareVersions('2.0.0', '1.99.99')).toBe(1);
     expect(compareVersions('1.0.0', '1.0.0')).toBe(0);
     expect(() => compareVersions('1.0', '1.0.0')).toThrow(/x\.y\.z/);
+    // Every version the manifest schema accepts, including zero-padded CalVer.
+    expect(compareVersions('2026.01.05', '2026.1.4')).toBe(1);
+    expect(compareVersions('2026.01.05', '2026.1.5')).toBe(0);
+    expect(compareVersions('1.0.12345678901', '1.0.9')).toBe(1);
   });
   it('keeps the newest release of each registration', () => {
     const release = (universalId: string, version: string) => ({

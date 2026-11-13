@@ -28,10 +28,20 @@ function compare(a: Version, b: Version): number {
  * agree on which release is newest.
  */
 export function compareVersions(a: string, b: string): number {
-  const x = parseVersion(a),
-    y = parseVersion(b);
-  if (!x || !y) throw new Error('unsupported_manifest: version must be x.y.z');
-  return Math.sign(compare(x, y));
+  // Every version the manifest accepts (`\d+.\d+.\d+`, leading zeros and any
+  // length included), so a valid catalog never makes ordering throw.
+  const parse = (value: string) => {
+    if (!/^\d+\.\d+\.\d+$/.test(value))
+      throw new Error('unsupported_manifest: version must be x.y.z');
+    return value.split('.').map(BigInt);
+  };
+  const x = parse(a),
+    y = parse(b);
+  for (let i = 0; i < 3; i++) {
+    const [p, q] = [x[i] as bigint, y[i] as bigint];
+    if (p !== q) return p > q ? 1 : -1;
+  }
+  return 0;
 }
 
 /** The newest release of each registration, keyed by its universal ID. */

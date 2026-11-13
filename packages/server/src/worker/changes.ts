@@ -4,6 +4,7 @@ import { inWorkspace, lockPrivacyShared, lockSchemaShared } from '../db/tx.js';
 import { failInstallation } from '../extension-runtime/lifecycle.js';
 import { lockExtension, lockQueue } from '../extension-runtime/locks.js';
 import type { ExtensionQueue } from '../extension-runtime/queue.js';
+import type { Extensions } from '../extensions/service.js';
 
 /** Rows deleted per pruning transaction, so a writer waits for one batch at most. */
 export const PRUNE_BATCH = 1000;
@@ -13,6 +14,7 @@ export class ChangeMaintenance {
   private stopped = false;
   private after: string | null = null;
   private pruneAfter = 0;
+  private upgradeAfter = 0;
   stop() {
     this.stopped = true;
   }
@@ -20,6 +22,11 @@ export class ChangeMaintenance {
     private readonly sql: Sql,
     private readonly discovery: Sql,
     private readonly queue?: ExtensionQueue,
+    /**
+     * Automatic upgrades (extensions/auto-upgrade.ts), checked at most once a
+     * minute. Set only where no extension executor runs them.
+     */
+    private readonly upgrades?: Pick<Extensions, 'upgradeDue'>,
   ) {}
   /**
    * Deletes expired feed rows in bounded transactions until none are left,
@@ -86,6 +93,10 @@ export class ChangeMaintenance {
       } catch {
         failed++;
       }
+    }
+    if (this.upgrades && !this.stopped && Date.now() >= this.upgradeAfter) {
+      this.upgradeAfter = Date.now() + 60000;
+      failed += (await this.upgrades.upgradeDue(this.discovery)).failed;
     }
     if (this.stopped || Date.now() >= deadline || Date.now() < this.pruneAfter)
       return { queued, blocked, pruned, failed };

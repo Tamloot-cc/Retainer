@@ -170,10 +170,6 @@ export async function extensionServices(
             activation,
           )
         : undefined;
-    const changeMaintenance =
-      options.workerSql && discovery
-        ? new ChangeMaintenance(options.workerSql, discovery, changeQueue)
-        : undefined;
     let webhooks: Webhooks | undefined;
     if (options.ingressSql && (lambda || verifierConfigured)) {
       if (
@@ -238,6 +234,17 @@ export async function extensionServices(
         upgrades: new Extensions(options.workerSql, catalog, broker, activationReady),
       });
     }
+    // Without an executor (standalone apps only), change maintenance runs the
+    // automatic upgrades the executor would.
+    const changeMaintenance =
+      options.workerSql && discovery
+        ? new ChangeMaintenance(
+            options.workerSql,
+            discovery,
+            changeQueue,
+            executor ? undefined : new Extensions(options.workerSql, catalog, broker, activation),
+          )
+        : undefined;
     return {
       catalog,
       tokens,

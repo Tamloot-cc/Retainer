@@ -1,10 +1,12 @@
 import {
+  compareVersions,
   type ExtensionInstallation,
   type ExtensionInstallInput,
   type ExtensionManifest,
   type ExtensionMappingView,
   type ExtensionPreview,
   mappingChoicesSchema,
+  newestReleases,
 } from '@retainer/extension';
 import { HIDDEN_TYPE_IDS } from '@retainer/shared';
 import { z } from 'zod';
@@ -947,6 +949,22 @@ export class Extensions {
       });
       await save('view', view.universalId, created.id, view);
     }
+    // A person moving an installation back to an older release has chosen it:
+    // the newest release is held, so an automatic upgrade does not undo that.
+    // Any other change of release by a person clears an earlier hold.
+    const previousRelease =
+      plan.existing && plan.existing.state !== 'uninstalled' ? plan.existing.version : undefined;
+    if (
+      caller.actor.type !== 'system' &&
+      previousRelease !== undefined &&
+      previousRelease !== manifest.version
+    ) {
+      const newest = newestReleases(this.catalog.list()).get(manifest.universalId);
+      const held =
+        compareVersions(manifest.version, previousRelease) < 0 && newest ? newest.digest : null;
+      await tx`update extension_installations set upgrade_held_digest = ${held} where id = ${row.id}`;
+      row.upgrade_held_digest = held;
+    }
     const [presence] = await tx<
       { names: string[] }[]
     >`select retainer_extension_secret_names(${row.id}::uuid) as names`;
@@ -1033,15 +1051,24 @@ export class Extensions {
    */
   async upgradeDue(discoverySql: Sql, limit = 50) {
     const targets = this.upgradeTargets();
-    const result = { upgraded: 0, held: 0 };
+    const result = { upgraded: 0, held: 0, failed: 0 };
     if (!targets.length) return result;
     const due = await discoverySql<{ workspace_id: string; installation_id: string }[]>`
       select * from retainer_extension_upgrades_due(${limit},
         ${targets.map((t) => t.registrationId)}::uuid[], ${targets.map((t) => t.digest)}::text[])`;
     for (const item of due) {
-      const outcome = await this.autoUpgrade(item.workspace_id, item.installation_id, targets);
-      if (outcome === 'upgraded') result.upgraded++;
-      else if (outcome === 'held') result.held++;
+      // One installation's failure never stops the pass or the executor.
+      try {
+        const outcome = await this.autoUpgrade(item.workspace_id, item.installation_id, targets);
+        if (outcome === 'upgraded') result.upgraded++;
+        else if (outcome === 'held') result.held++;
+      } catch (error) {
+        result.failed++;
+        const code = error instanceof AppError ? error.code : 'internal';
+        log.error(
+          `Automatic upgrade of extension installation ${item.installation_id} in workspace ${item.workspace_id} failed (${code}).`,
+        );
+      }
     }
     return result;
   }
@@ -1057,8 +1084,10 @@ export class Extensions {
       actor: SYSTEM_ACTOR,
       scopes: ['read', 'write', 'schema:write', 'admin'],
     };
-    type Candidate = Pick<Row, 'id' | 'registration_id' | 'state' | 'release_digest'> &
-      Pick<Row, 'upgrade_held_digest'>;
+    type Candidate = Pick<
+      Row,
+      'id' | 'registration_id' | 'version' | 'state' | 'release_digest' | 'upgrade_held_digest'
+    >;
     // Whether there is anything to do, checked again under the locks.
     const due = async (tx: Tx, row: Candidate | undefined) => {
       const target = targets.find((t) => t.registrationId === row?.registration_id);
@@ -1068,6 +1097,8 @@ export class Extensions {
         row.state !== 'active' ||
         row.release_digest === target.digest ||
         row.upgrade_held_digest === target.digest ||
+        // Only forward: a newer installed release is a person's choice.
+        compareVersions(target.version, row.version) <= 0 ||
         (await cleanupPending(tx, row.id))
       )
         return undefined;
@@ -1075,8 +1106,8 @@ export class Extensions {
     };
     return inWorkspace(this.sql, workspaceId, async (tx) => {
       // Before the exclusive schema lock, which blocks the workspace's writes.
-      const [candidate] = await tx<Candidate[]>`select id, registration_id, state,
-        release_digest, upgrade_held_digest from extension_installations where id = ${installationId}`;
+      const [candidate] = await tx<Candidate[]>`select id, registration_id, version,
+        state, release_digest, upgrade_held_digest from extension_installations where id = ${installationId}`;
       if (!candidate || !(await due(tx, candidate))) return 'skipped';
       await lockPrivacyShared(tx, workspaceId);
       await lockSchemaExclusive(tx, workspaceId);
@@ -1121,8 +1152,9 @@ export class Extensions {
         plannedMapping: plan.mapped.stored,
       });
       if (reason) return hold(reason);
-      // One receipt per installation and release: a retried pass returns it.
-      const key = `auto-upgrade:${current.id}:${target.digest}`;
+      // Unique per generation: an installation moved back by a person and
+      // forward again later gets a new receipt.
+      const key = `auto-upgrade:${current.id}:${current.generation}:${target.digest}`;
       await this.commitPlan(tx, caller, input, plan, key, hash({ input, actor: caller.actor }));
       log.info(
         `Extension ${name} upgraded from ${current.version} to ${target.version} in workspace ${workspaceId}.`,
