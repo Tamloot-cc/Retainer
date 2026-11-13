@@ -141,6 +141,28 @@ no unresolved failures remain in the current generation. Schedule maintenance
 recovers missed ticks and initialization after a worker crash; disabled installs
 accumulate none. An expired worker cannot acknowledge or write after replacement.
 
+## Automatic upgrades
+
+First-party release versions count commits on main, so most new versions change
+code but nothing an admin approves. The executor checks about once a minute
+(and on every hosted pass) for active installations behind the newest release
+of their registration, when this server can run that release. It plans the
+upgrade as the system actor, under the same locks as a reviewed upgrade, and
+applies it only when the new manifest equals the installed one apart from its
+version and its package and handler digests, and the plan finds no schema, view
+or mapping work. Any other manifest change (access, settings, schema, views,
+mapping, triggers, source) needs an admin. The upgrade keeps settings, secrets,
+mapping and grants, advances the generation and re-runs setup, like a reviewed
+one.
+
+Anything else is held: the installation keeps running its release, records the
+held release digest (`upgrade_held_digest`) so it is not planned again, and its
+card in the web app offers **Upgrade to …** for an admin to review. A newer
+release is checked afresh. Disabled, failed and uninstalled installations are
+never upgraded automatically, and a newest release that is not deployed yet is
+waited for rather than replaced by an older one. Each upgrade or hold logs one
+line with the extension, the versions and the workspace.
+
 ## Unavailable releases and server upgrades
 
 A missing or incompatible pinned release pauses its pending work in that runtime. It

@@ -85,7 +85,7 @@ describe('signed run credentials and transactional admission', () => {
     expect(response.status).toBe(201);
     const [assertion] =
       await db.owner`select actor from field_assertions where record_id=${response.body.id} limit 1`;
-    expect(assertion?.actor).toEqual({ type: 'integration', id });
+    expect(assertion?.actor).toEqual({ type: 'integration', id, name: 'Fixture' });
     expect(
       (await t.request(`/v1/extensions/${id}/runtime/checkpoint`, { key, body: { children: [] } }))
         .status,

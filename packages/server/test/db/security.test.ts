@@ -336,6 +336,7 @@ describe('SECURITY DEFINER functions', () => {
     retainer_erase_private_derivatives: RUNTIME_ROLE,
     retainer_extension_jobs_due: 'retainer_executor',
     retainer_extension_maintenance_due: 'retainer_executor',
+    retainer_extension_upgrades_due: 'retainer_executor',
     retainer_finish_extension_cleanup: RUNTIME_ROLE,
     retainer_extension_pending_secrets: RUNTIME_ROLE,
     retainer_extension_secret_names: RUNTIME_ROLE,

@@ -1468,6 +1468,12 @@ export const extensionInstallations = pgTable(
      */
     mapping: jsonb('mapping').notNull().default({ outputs: {} }),
     mappingRevision: integer('mapping_revision').notNull().default(0),
+    /**
+     * The newest release digest the automatic upgrade checked and left for an
+     * admin to approve (extensions/auto-upgrade.ts), so it is not planned again
+     * until a newer release ships.
+     */
+    upgradeHeldDigest: text('upgrade_held_digest'),
     createdBy: jsonb('created_by').$type<Actor>().notNull(),
     lastClaimedAt: timestamptz('last_claimed_at'),
     createdAt: createdAt(),
@@ -1476,6 +1482,10 @@ export const extensionInstallations = pgTable(
   (t) => [
     unique('extension_installations_ws_id_uq').on(t.workspaceId, t.id),
     unique('extension_installations_registration_uq').on(t.workspaceId, t.registrationId),
+    // Automatic-upgrade discovery reads active installations by registration.
+    index('extension_installations_active_registration_idx')
+      .on(t.registrationId, t.updatedAt, t.id)
+      .where(sql`${t.state} = 'active'`),
     check(
       'extension_installations_state',
       sql`${t.state} in ('installing', 'active', 'setup_failed', 'disabled', 'upgrading', 'uninstalling', 'uninstalled')`,

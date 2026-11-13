@@ -183,6 +183,29 @@ describe('generated extension settings and human approval', () => {
     expect(screen.getByText(/Pending work is saved/)).toBeTruthy();
     expect(screen.queryByText(/Needs attention:/)).toBeNull();
   });
+  it('offers a newer release on the installed card instead of a second card', async () => {
+    const upgraded = { ...release, manifest: { ...release.manifest, version: '1.0.10' } };
+    vi.spyOn(api, 'extensionCatalog').mockResolvedValue({ releases: [upgraded, release] });
+    vi.spyOn(api, 'extensions').mockResolvedValue({
+      installations: [{ ...installation, connectionHealth: 'ok' }],
+    });
+    mount(<ExtensionsPage />);
+    // 1.0.10 is newer than 1.0.0: versions compare numerically, not as text.
+    expect(await screen.findByRole('button', { name: 'Upgrade to 1.0.10' })).toBeTruthy();
+    expect(screen.getByText(/Version 1\.0\.10 is available/)).toBeTruthy();
+    expect(screen.queryByText(`${release.manifest.name} · 1.0.10`)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Set up' })).toBeNull();
+  });
+  it('shows no upgrade when the installed release is the newest', async () => {
+    vi.spyOn(api, 'extensionCatalog').mockResolvedValue({ releases: [release] });
+    vi.spyOn(api, 'extensions').mockResolvedValue({
+      installations: [{ ...installation, connectionHealth: 'ok' }],
+    });
+    mount(<ExtensionsPage />);
+    expect(await screen.findByRole('button', { name: 'View runs' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Upgrade to/ })).toBeNull();
+    expect(screen.queryByText(/is available/)).toBeNull();
+  });
   it('creates only selected app access, shows the returned key once and discards it when closing', async () => {
     const rawKey = 'rti_shown_once_only';
     vi.spyOn(api, 'extensionCredentials').mockResolvedValue({ credentials: [] });

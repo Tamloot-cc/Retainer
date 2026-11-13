@@ -126,12 +126,12 @@ Otherwise one workspace's extension could read what another's stored.
 Errors the proxy adds, with Anthropic's error body shape so the SDK raises
 its usual typed errors:
 
-| Condition                       | Response                       |
-| ------------------------------- | ------------------------------ |
-| No key configured               | `503`, `model_unavailable`     |
-| Token not admitted              | `401`, `authentication_error`  |
-| Function lacks `model: true`    | `403`, `permission_error`      |
-| Path or stored state refused    | `404` or `400`, as above       |
+| Condition                    | Response                      |
+| ---------------------------- | ----------------------------- |
+| No key configured            | `503`, `model_unavailable`    |
+| Token not admitted           | `401`, `authentication_error` |
+| Function lacks `model: true` | `403`, `permission_error`     |
+| Path or stored state refused | `404` or `400`, as above      |
 
 Provider errors (429, 5xx, refusals in the response) pass through unchanged.
 The extension handles them, for example by throwing `RetryLater` on a 429.

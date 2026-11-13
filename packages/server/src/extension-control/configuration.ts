@@ -6,6 +6,7 @@ import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../extension-runtime/secrets.js';
 import { RunTokens } from '../extension-runtime/tokens.js';
 import { parseExtensionCatalog } from '../extensions/catalog.js';
+import { Extensions } from '../extensions/service.js';
 import { createFileStorage } from '../file-storage/configuration.js';
 import { Webhooks } from '../webhooks/service.js';
 import { ChangeMaintenance } from '../worker/changes.js';
@@ -169,10 +170,6 @@ export async function extensionServices(
             activation,
           )
         : undefined;
-    const changeMaintenance =
-      options.workerSql && discovery
-        ? new ChangeMaintenance(options.workerSql, discovery, changeQueue)
-        : undefined;
     let webhooks: Webhooks | undefined;
     if (options.ingressSql && (lambda || verifierConfigured)) {
       if (
@@ -233,8 +230,21 @@ export async function extensionServices(
         apiOrigin,
         owner: `executor-${crypto.randomUUID()}`,
         activation: activationReady,
+        // Automatic upgrades run where the deployed releases are known.
+        upgrades: new Extensions(options.workerSql, catalog, broker, activationReady),
       });
     }
+    // Without an executor (standalone apps only), change maintenance runs the
+    // automatic upgrades the executor would.
+    const changeMaintenance =
+      options.workerSql && discovery
+        ? new ChangeMaintenance(
+            options.workerSql,
+            discovery,
+            changeQueue,
+            executor ? undefined : new Extensions(options.workerSql, catalog, broker, activation),
+          )
+        : undefined;
     return {
       catalog,
       tokens,

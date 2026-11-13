@@ -10,6 +10,7 @@ import { AppError } from '../errors.js';
 import { type ClaimedJob, ExtensionQueue } from '../extension-runtime/queue.js';
 import type { RunTokens } from '../extension-runtime/tokens.js';
 import type { ExtensionCatalog } from '../extensions/catalog.js';
+import type { Extensions } from '../extensions/service.js';
 
 const executableSchema = z.strictObject({
   registrationId: z.uuid(),
@@ -64,6 +65,8 @@ export class ExtensionExecutor {
   private readonly active = new Map<AbortController, () => void>();
   private stopped = false;
   private draining = false;
+  /** When this executor last checked automatic upgrades; the first pass always checks. */
+  private upgradedAt = Number.NEGATIVE_INFINITY;
   constructor(
     private readonly options: {
       sql: Sql;
@@ -77,6 +80,8 @@ export class ExtensionExecutor {
       concurrency?: number;
       /** Release digests with a deployed executable (extensionServices' activationReady). */
       activation?: ReadonlySet<string>;
+      /** Automatic upgrades (extensions/auto-upgrade.ts), checked about once a minute. */
+      upgrades?: Pick<Extensions, 'upgradeDue'>;
     },
   ) {
     const origin = new URL(options.apiOrigin);
@@ -261,6 +266,8 @@ export class ExtensionExecutor {
     options: {
       idleMs?: number;
       maintenanceMs?: number;
+      /** How often to check automatic upgrades; the first pass always checks. */
+      upgradeMs?: number;
       onError?: (error: unknown) => void;
       idleTimeoutMs?: number;
       /** Runs after the last claim settles, before waiting for executions to acknowledge. */
@@ -269,6 +276,7 @@ export class ExtensionExecutor {
   ) {
     const idleMs = options.idleMs ?? 1000,
       maintenanceMs = options.maintenanceMs ?? 1000,
+      upgradeMs = options.upgradeMs ?? 60_000,
       report = options.onError ?? (() => {}),
       concurrency = this.options.concurrency ?? 4,
       running = new Set<Promise<void>>(),
@@ -282,6 +290,7 @@ export class ExtensionExecutor {
       maintainedAt = Date.now();
       maintaining = this.queue
         .maintain(this.options.discoverySql)
+        .then(() => this.upgrade(upgradeMs))
         .catch(report)
         .finally(() => {
           maintaining = undefined;
@@ -366,11 +375,18 @@ export class ExtensionExecutor {
       await Promise.allSettled([...running, maintaining]);
     }
   }
+  /** Runs an automatic-upgrade pass when the last one is at least `intervalMs` old. */
+  private async upgrade(intervalMs = 60_000) {
+    if (!this.options.upgrades || Date.now() - this.upgradedAt < intervalMs) return;
+    this.upgradedAt = Date.now();
+    await this.options.upgrades.upgradeDue(this.options.discoverySql);
+  }
   async tick(limit = 1000) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
       throw new Error('executor pass limit must be 1–1000');
     if (this.stopped || this.draining) return { executed: 0, fenced: 0 };
     await this.queue.maintain(this.options.discoverySql);
+    await this.upgrade();
     const due = await this.queue.discover(this.options.discoverySql, limit);
     let next = 0,
       executed = 0,
