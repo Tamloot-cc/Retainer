@@ -2,7 +2,8 @@
 
 Status: proposal, 2026-11-11. Not implemented. Extends
 [extensions.md](extensions.md). The Tamloot API work is specified in the
-Tamloot monorepo at `docs/integrations/retainer-api.md`.
+Tamloot monorepo at `docs/integrations/retainer-api.md`. The implementation
+plan is [extensions-tamloot-implementation.md](extensions-tamloot-implementation.md).
 
 ## 1. Decision
 
