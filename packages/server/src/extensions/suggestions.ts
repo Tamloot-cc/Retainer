@@ -8,7 +8,7 @@ import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, jsonValue, lockSchemaShared } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
-import { admitRun } from '../extension-runtime/admission.js';
+import { admitCaller, admitRun } from '../extension-runtime/admission.js';
 import type { ContributionRow } from '../extension-runtime/retired.js';
 import { loadSchemaState } from '../schema/load.js';
 import type { ExtensionCatalog } from './catalog.js';
@@ -90,8 +90,14 @@ export async function getSuggestions(
   id: string,
   version?: string,
 ): Promise<ExtensionSuggestions> {
+  if (
+    (caller.run || caller.installation) &&
+    (caller.run?.installationId ?? caller.installation?.installationId) !== id
+  )
+    throw notFound('extension installation');
   return inWorkspace(sql, caller.workspaceId, async (tx) => {
     await lockSchemaShared(tx, caller.workspaceId);
+    await admitCaller(tx, caller, false, 'runtime');
     const [installation] =
       await tx`select registration_id,version from extension_installations where id=${id}`;
     if (!installation) throw notFound('extension installation');

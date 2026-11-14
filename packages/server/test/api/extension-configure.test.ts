@@ -2,10 +2,12 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { BASE_OBJECT_IDS } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
+import type { Caller } from '../../src/caller.js';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { Extensions } from '../../src/extensions/service.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
@@ -65,8 +67,17 @@ const mapped = extensionFixture({
     ],
   },
 });
+const other = extensionFixture({
+  ...base,
+  universalId: randomUUID(),
+  settings: {
+    enabled: { type: 'boolean', label: 'Enabled', secret: false, required: true, reconnect: false },
+  },
+  functions: base.functions.map((fn) => ({ ...fn, secrets: [] })),
+});
+const standalone = extensionFixture({ execution: 'standalone', scopes: ['read'] });
 const catalog = new ExtensionCatalog(
-  [base, next, mapped].map((manifest) => ({
+  [base, next, mapped, other, standalone].map((manifest) => ({
     manifest,
     actorCeiling: 'integration' as const,
     runtimeEnabled: true,
@@ -142,7 +153,7 @@ async function claim(workspace: string, id: string) {
   const job = await queue().claim(workspace, row.id, randomUUID());
   expect(job).not.toBeNull();
   if (!job) throw new Error('claim failed');
-  const token = await tokens.issue(t.sql, job, base.universalId, job.scopes);
+  const token = await tokens.issue(t.sql, job, job.registrationId, job.scopes);
   return { job, token };
 }
 async function turnOn(key: string, id: string) {
@@ -379,6 +390,98 @@ describe('configuration before installation approval', () => {
     expect(
       (await t.request(`/v1/extensions/${a.id}/suggestions`, { key: a.key })).body.settings,
     ).toBeUndefined();
+  });
+
+  it('keeps suggestion metadata private to its installation for run tokens and standalone keys', async () => {
+    const a = await setup();
+    const install = async (target: typeof standalone, settings: Record<string, boolean> = {}) => {
+      const input = { registrationId: target.universalId, version: target.version, settings };
+      const preview = await t.request('/v1/extensions/preview', { key: a.key, body: input });
+      expect(preview.status).toBe(200);
+      const result = await t.request('/v1/extensions', {
+        key: a.key,
+        body: { ...input, planDigest: preview.body.planDigest },
+        headers: { 'Idempotency-Key': randomUUID() },
+      });
+      expect(result.status).toBe(201);
+      return result.body;
+    };
+    const b = await install(other, { enabled: true });
+    const bRun = await claim(a.workspace, b.id);
+    expect(
+      (
+        await t.request(`/v1/extensions/${b.id}/runtime/suggestions`, {
+          method: 'PUT',
+          key: bRun.token,
+          body: { settings: { enabled: false } },
+        })
+      ).status,
+    ).toBe(200);
+    await queue().complete(bRun.job, { status: 'succeeded' });
+    const aRun = await claim(a.workspace, a.id);
+    expect(
+      (await t.request(`/v1/extensions/${a.id}/suggestions`, { key: aRun.token })).status,
+    ).toBe(200);
+    expect(
+      (await t.request(`/v1/extensions/${b.id}/suggestions`, { key: aRun.token })).status,
+    ).toBe(404);
+    expect(
+      (await t.request(`/v1/extensions/${b.id}/suggestions`, { key: a.key })).body.settings,
+    ).toEqual({ enabled: false });
+
+    const app = await install(standalone);
+    const credential = await t.request(`/v1/extensions/${app.id}/keys`, {
+      key: a.key,
+      body: { expectedGeneration: app.generation, scopes: ['read'] },
+    });
+    expect(credential.status).toBe(201);
+    expect(
+      (await t.request(`/v1/extensions/${b.id}/suggestions`, { key: credential.body.key })).status,
+    ).toBe(404);
+  });
+
+  it('rechecks admission for previously authenticated run and installation callers', async () => {
+    const a = await setup();
+    const run = await claim(a.workspace, a.id);
+    const caller = await tokens.authenticate(t.sql, run.token);
+    const service = new Extensions(t.sql, catalog);
+    expect((await service.suggestions(caller, a.id)).status).toBe('running');
+    await queue().complete(run.job, { status: 'succeeded' });
+    await expect(service.suggestions(caller, a.id)).rejects.toMatchObject({ status: 409 });
+
+    const input = {
+      registrationId: standalone.universalId,
+      version: standalone.version,
+      settings: {},
+    };
+    const preview = await t.request('/v1/extensions/preview', { key: a.key, body: input });
+    const app = await t.request('/v1/extensions', {
+      key: a.key,
+      body: { ...input, planDigest: preview.body.planDigest },
+      headers: { 'Idempotency-Key': randomUUID() },
+    });
+    const credential = await t.request(`/v1/extensions/${app.body.id}/keys`, {
+      key: a.key,
+      body: { expectedGeneration: app.body.generation, scopes: ['read'] },
+    });
+    const installedCaller: Caller = {
+      workspaceId: a.workspace,
+      actor: { type: 'integration', id: app.body.id },
+      scopes: ['read'],
+      installation: {
+        installationId: app.body.id,
+        registrationId: standalone.universalId,
+        grantGeneration: app.body.grantGeneration,
+        credentialId: credential.body.id,
+        kind: 'key',
+        scopes: ['read'],
+      },
+    };
+    expect((await service.suggestions(installedCaller, app.body.id)).status).toBe('failed');
+    await t.request(`/v1/extensions/${app.body.id}/disable`, { key: a.key, body: {} });
+    await expect(service.suggestions(installedCaller, app.body.id)).rejects.toMatchObject({
+      status: 409,
+    });
   });
 
   it('cancel and expiry remove jobs, secrets and suggestions without running uninstall', async () => {
