@@ -343,3 +343,95 @@ describe('fill-only mapped writes', () => {
     }
   });
 });
+
+describe('confidence (model calls spec 5)', () => {
+  const held = async (record: string) =>
+    db.owner<{ status: string; confidence: number; review_reason: string }[]>`
+      select status, confidence, review_reason from field_assertions where record_id=${record}
+        and status='pending_review'`;
+
+  it('holds values below the threshold for review, and a later write adds no second pending value, even concurrently', async () => {
+    const h = await setup();
+    const acme = await h.company({ name: 'Acme', domain: 'https://www.acme.com/' });
+    const { token } = await h.run(acme);
+    const low = {
+      recordId: acme,
+      lookup: 'acme.com',
+      values: { employee_count: 52 },
+      confidence: 0.3,
+    };
+    const res = await h.write(token, low);
+    expect(res.status).toBe(200);
+    expect(res.body.fields).toEqual({ employee_count: 'pending_review' });
+    expect(await held(acme)).toEqual([
+      { status: 'pending_review', confidence: 0.3, review_reason: 'low_confidence' },
+    ]);
+    // Held values aren't in the record, so fill-only alone would see the field empty.
+    expect((await h.read(acme)).fields.employeeCount).toBeUndefined();
+    const count = await h.assertions(acme);
+    const again = await Promise.all([
+      h.write(token, low),
+      h.write(token, { ...low, confidence: 0.4 }),
+    ]);
+    for (const response of again) {
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        outcome: 'skipped',
+        reason: 'nothing_to_fill',
+        fields: { employee_count: 'pending_review' },
+      });
+    }
+    expect(await h.assertions(acme)).toBe(count);
+    expect(await held(acme)).toHaveLength(1);
+  });
+
+  it('applies a value at or above the threshold, with its confidence', async () => {
+    const h = await setup();
+    const acme = await h.company({ name: 'Acme', domain: 'https://www.acme.com/' });
+    const { token } = await h.run(acme);
+    const res = await h.write(token, {
+      recordId: acme,
+      lookup: 'acme.com',
+      values: { employee_count: 52 },
+      confidence: 0.7,
+    });
+    expect(res.body.fields).toEqual({ employee_count: 'applied' });
+    expect((await h.read(acme)).fields.employeeCount).toBe(52);
+    const [row] = await db.owner<{ confidence: number }[]>`
+      select confidence from field_assertions a join fields f on f.id=a.field_id
+      where a.record_id=${acme} and f.name='employeeCount'`;
+    expect(row?.confidence).toBeCloseTo(0.7);
+  });
+
+  it('holds a medium pick when the workspace raised its threshold', async () => {
+    const h = await setup();
+    await db.owner`update workspaces set settings = settings || '{"confidenceThreshold":0.8}'::jsonb
+      where id=${h.workspace.id}`;
+    const acme = await h.company({ name: 'Acme', domain: 'https://www.acme.com/' });
+    const { token } = await h.run(acme);
+    const res = await h.write(token, {
+      recordId: acme,
+      lookup: 'acme.com',
+      values: { employee_count: 52 },
+      confidence: 0.7,
+    });
+    expect(res.body.fields).toEqual({ employee_count: 'pending_review' });
+  });
+
+  it('refuses a confidence below 1 from an installation granted the integration actor', async () => {
+    const h = await setup();
+    await db.owner`update extension_installations set granted_actor='integration' where id=${h.id}`;
+    const acme = await h.company({ name: 'Acme', domain: 'https://www.acme.com/' });
+    const { token } = await h.run(acme);
+    const input = { recordId: acme, lookup: 'acme.com', values: { employee_count: 52 } };
+    const before = await h.assertions(acme);
+    const refused = await h.write(token, { ...input, confidence: 0.9 });
+    expect(refused.status).toBe(422);
+    expect(refused.body.error.code).toBe('validation_failed');
+    expect(await h.assertions(acme)).toBe(before);
+    // A confidence of 1 is what an integration writes anyway.
+    expect((await h.write(token, { ...input, confidence: 1 })).body.fields).toEqual({
+      employee_count: 'applied',
+    });
+  });
+});

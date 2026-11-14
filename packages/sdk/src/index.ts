@@ -845,7 +845,9 @@ export class RetainerClient {
   }
   /**
    * The fill-only mapped write of a run whose function declares `mappedWrite`:
-   * fills only mapped fields that have no value and were not cleared.
+   * fills only mapped fields that have no value and were not cleared. A
+   * `confidence` below the workspace's threshold holds the values for review
+   * (agent actors only).
    */
   extensionMappedWrite(
     installationId: string,
@@ -854,6 +856,7 @@ export class RetainerClient {
       lookup?: string;
       values: Record<string, unknown>;
       observedAt?: string;
+      confidence?: number;
     },
   ) {
     return this.post<{
@@ -987,6 +990,19 @@ export class RetainerClient {
     return this.post<{ id: string }>(`/v1/extensions/${encodeURIComponent(id)}/configure`, {
       version,
     });
+  }
+  /** An installation's model use this calendar month (UTC). */
+  extensionUsage(id: string, signal?: AbortSignal) {
+    return this.get<{
+      model: {
+        month: string;
+        requests: number;
+        inputTokens: number;
+        outputTokens: number;
+        cacheReadTokens: number;
+        cacheWriteTokens: number;
+      };
+    }>(`/v1/extensions/${encodeURIComponent(id)}/usage`, undefined, signal);
   }
   extensionSuggestions(id: string, version?: string, signal?: AbortSignal) {
     return this.get<import('@retainer/extension').ExtensionSuggestions>(

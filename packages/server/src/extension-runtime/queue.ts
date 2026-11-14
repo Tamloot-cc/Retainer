@@ -1,7 +1,8 @@
-import type { InputSchema } from '@retainer/extension';
+import type { ExtensionUse, InputSchema } from '@retainer/extension';
 import {
   functionScopes,
   functionSecrets,
+  functionUses,
   lifecycleInputSchema,
   nextOccurrence,
   SYSTEM_LIFECYCLE_FUNCTION_ID,
@@ -45,6 +46,8 @@ export type ClaimedJob = Lease & {
   system: boolean;
   registrationId: string;
   scopes: ('read' | 'write')[];
+  /** Capabilities the function declares and the grant includes (model calls spec 3.1). */
+  uses: ExtensionUse[];
   generation: number;
   releaseDigest: string;
   functionId: string;
@@ -75,6 +78,7 @@ type Installation = {
   cleanup_deadline: Date | null;
   cleanup_live: boolean | null;
   granted_scopes: ('read' | 'write')[];
+  granted_uses: ExtensionUse[];
 };
 type Job = {
   connection_id: string | null;
@@ -1023,6 +1027,17 @@ export class ExtensionQueue {
             ? functionScopes(manifest, fn).filter((s) => installation.granted_scopes.includes(s))
             : installation.granted_scopes;
       const secrets = fn ? functionSecrets(manifest, fn) : [];
+      // A configure run pinned to an upgrade's target release has that
+      // release's approved uses; every other run the installation's grant.
+      let granted = installation.granted_uses ?? [];
+      if (job.release_digest !== installation.release_digest) {
+        const [approval] = await tx<{ uses: ExtensionUse[] }[]>`
+          select uses from extension_access_approvals where installation_id=${installation.id}
+          and release_digest=${job.release_digest} and generation=${installation.generation}
+          and settings_revision=(select settings_revision from extension_installations where id=${installation.id})`;
+        granted = approval?.uses ?? [];
+      }
+      const uses = fn ? functionUses(fn).filter((use) => granted.includes(use)) : [];
       if (!scopes.length) {
         await tx`update extension_jobs set status='failed',code='forbidden',lease_owner=null,lease_until=null,run_until=null where id=${id}`;
         await tx`update extension_attempts set status='failed',code='forbidden',finished_at=now() where job_id=${id} and finished_at is null`;
@@ -1066,6 +1081,7 @@ export class ExtensionQueue {
         system,
         registrationId: installation.registration_id,
         scopes,
+        uses,
         generation: claimed.generation,
         releaseDigest: claimed.release_digest,
         functionId: claimed.function_id,

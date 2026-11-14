@@ -22,6 +22,8 @@ async function createHandler() {
     publicOrigin: config.RETAINER_PUBLIC_ORIGIN,
     accountsSecret: config.RETAINER_AUTH_SECRET,
     rateLimit: { limit: rateLimitPerMinute(config) },
+    // The hosted `model` function reports usage here (model calls spec 3.6).
+    modelUsageSecret: config.RETAINER_MODEL_USAGE_SECRET,
     // API Gateway's or, behind CloudFront, CloudFront's view; never a client header.
     clientIp: (c) => clientIpOf((c.env as { event?: unknown }).event, config.RETAINER_EDGE_SECRET),
   });

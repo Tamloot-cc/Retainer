@@ -4,7 +4,7 @@ import { type Config, EXECUTOR_ROLE, ownerDatabaseUrl, SECRET_BROKER_ROLE } from
 import { createSql, type Sql } from '../db/client.js';
 import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../extension-runtime/secrets.js';
-import { RunTokens } from '../extension-runtime/tokens.js';
+import { importRunPublicKey, RunTokens } from '../extension-runtime/tokens.js';
 import { parseExtensionCatalog } from '../extensions/catalog.js';
 import { Extensions } from '../extensions/service.js';
 import { createFileStorage } from '../file-storage/configuration.js';
@@ -45,8 +45,7 @@ export async function extensionServices(
     let tokens: RunTokens | undefined;
     if (config.RETAINER_EXTENSION_RUN_PUBLIC_KEY) {
       const publicJwk = jwk.parse(JSON.parse(config.RETAINER_EXTENSION_RUN_PUBLIC_KEY));
-      const verificationKey = await importJWK(publicJwk, 'EdDSA');
-      if (verificationKey instanceof Uint8Array) throw new Error('asymmetric run keys required');
+      const verificationKey = await importRunPublicKey(config.RETAINER_EXTENSION_RUN_PUBLIC_KEY);
       let signingKey: CryptoKey | undefined;
       if (options.workerSql && config.RETAINER_EXTENSION_RUN_PRIVATE_KEY) {
         const privateJwk = jwk
@@ -230,6 +229,7 @@ export async function extensionServices(
             ),
         ...(lambda ? { concurrency: config.RETAINER_EXECUTOR_CONCURRENCY } : {}),
         apiOrigin,
+        ...(config.RETAINER_MODEL_ORIGIN ? { modelOrigin: config.RETAINER_MODEL_ORIGIN } : {}),
         owner: `executor-${crypto.randomUUID()}`,
         activation: activationReady,
         // Automatic upgrades run where the deployed releases are known.

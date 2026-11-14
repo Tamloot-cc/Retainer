@@ -14,6 +14,10 @@ export {
 import { type Actor, FIELD_TYPES } from '@retainer/shared';
 import { z } from 'zod';
 
+/** Capabilities a function may declare in `uses`; open for later ones (model calls spec 11). */
+export const EXTENSION_USES = ['model'] as const;
+export type ExtensionUse = (typeof EXTENSION_USES)[number];
+
 const uuid = z.uuid();
 const name = z.string().regex(/^[a-z][a-zA-Z0-9-]{0,99}$/);
 const label = z.string().min(1).max(200);
@@ -145,6 +149,12 @@ export const functionSchema = z.strictObject({
    * mapped write. Reviewed with the release, like `secrets` and `scopes`.
    */
   mappedWrite: z.literal(true).optional(),
+  /**
+   * Platform capabilities the function uses (model calls spec 3.1). Reviewed
+   * with the release and approved with its access; a run gets one only when
+   * its function declares it and the installation's grant includes it.
+   */
+  uses: z.array(z.enum(EXTENSION_USES)).min(1).max(EXTENSION_USES.length).optional(),
 });
 /** Field types a mapped output can target: scalar values only in v1. */
 export const MAPPABLE_FIELD_TYPES = FIELD_TYPES.filter(
@@ -453,6 +463,14 @@ export function functionScopes(
 ): ('read' | 'write')[] {
   return fn.scopes ?? manifest.scopes;
 }
+/** The capabilities a function's run may receive, before the installation's grant (spec 3.1). */
+export function functionUses(fn: Pick<FunctionDefinition, 'uses'>): ExtensionUse[] {
+  return fn.uses ?? [];
+}
+/** A release's uses: the union of its functions'. Approved with its access. */
+export function releaseUses(manifest: Pick<ExtensionManifest, 'functions'>): ExtensionUse[] {
+  return EXTENSION_USES.filter((use) => manifest.functions.some((fn) => fn.uses?.includes(use)));
+}
 /** Whether a release supports this server: inside its range, or in its exact list. */
 export function supportsServer(
   manifest: Pick<ExtensionManifest, 'serverRange' | 'serverVersions'>,
@@ -649,6 +667,11 @@ export function defineExtension(value: unknown): ExtensionManifest {
         fn.scopes.some((scope) => !manifest.scopes.includes(scope)))
     )
       throw new Error('unsupported_manifest: function scopes must be distinct release scopes');
+    if (fn.uses && new Set(fn.uses).size !== fn.uses.length)
+      throw new Error('unsupported_manifest: duplicate function use');
+    // Webhook verifiers have no network, and standalone apps run no hosted code.
+    if (fn.uses?.length && ['route', 'serverRoute'].includes(fn.trigger.kind))
+      throw new Error('unsupported_manifest: webhook verifiers cannot use platform capabilities');
   }
   if (manifest.source) {
     const source = manifest.source;
@@ -775,8 +798,13 @@ export type ExtensionPreview = {
     name: string;
     action: 'create' | 'retain' | 'update' | 'keep_workspace' | 'deleted_workspace';
   }[];
-  grants: { actor: 'integration' | 'agent'; scopes: ('read' | 'write')[] };
-  previousGrants?: { actor: 'integration' | 'agent'; scopes: ('read' | 'write')[] };
+  /** `uses` lists the release's platform capabilities; `model` sends workspace data to Anthropic. */
+  grants: { actor: 'integration' | 'agent'; scopes: ('read' | 'write')[]; uses: ExtensionUse[] };
+  previousGrants?: {
+    actor: 'integration' | 'agent';
+    scopes: ('read' | 'write')[];
+    uses: ExtensionUse[];
+  };
   /** The resolved output bindings, for a release that declares a mapping. */
   mapping?: ExtensionMappingBinding[];
   warnings: string[];
@@ -825,11 +853,14 @@ export type ExtensionInstallation = {
   settings: Record<string, string | boolean | number>;
   grantedActor: 'integration' | 'agent';
   grantedScopes: ('read' | 'write')[];
+  /** Platform capabilities an admin approved, such as `model` (model calls spec 3.1). */
+  grantedUses: ExtensionUse[];
   createdBy: { type: string; id: string };
   /** Single-installation reads of a release that declares a mapping. */
   mapping?: ExtensionMappingView;
 };
 
+export * from './model.js';
 export * from './protocol.js';
 export * from './webhook.js';
 

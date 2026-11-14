@@ -101,6 +101,34 @@ personal-memory identity, and are checked against live lease/fence, generation,
 release and installation grant in every admitted CRM transaction. They cannot
 approve installations, change schema, or retry runs as an admin.
 
+## Model calls
+
+A function that declares `uses: ['model']`, on an installation whose admin
+approved model use, calls a model through Retainer's model proxy
+([extensions-model-calls.md](specs/extensions-model-calls.md)). Its run gets a
+second token next to the run token, good for model calls only, and the proxy's
+base URL; the bundle builds its client with `modelClient(invocation)`. The proxy
+checks the token and the request, swaps in Retainer's Anthropic key, streams
+the response back and records token counts in `ai_usage`, never content.
+
+- `RETAINER_MODEL_API_KEY`: the Anthropic key, set on the API service that
+  serves `/v1/extensions/runtime/model`. Without it the proxy answers
+  `503 model_unavailable`, and each extension decides what to do without a
+  model.
+- `RETAINER_MODEL_ORIGIN`: the proxy's base URL that runs receive, executor
+  only. Defaults to the execution API origin plus
+  `/v1/extensions/runtime/model`, which the egress proxy already allows.
+- `RETAINER_MODEL_UPSTREAM_ORIGIN`: where the proxy forwards requests.
+  Defaults to `https://api.anthropic.com/`.
+- `RETAINER_MODEL_USAGE_SECRET`: hosted service only, set on the `model` and
+  `extensions` functions. It mounts the internal usage route the `model`
+  function reports to; self-hosting writes usage directly.
+
+The proxy forwards only Messages, token counting and the models list, and only
+listed body fields and beta flags, so no request reaches anything stored in the
+Anthropic account. `retainer model usage [--days <n>]` prints the tokens used
+per day across workspaces; each extension's Overview tab shows its month.
+
 ## Lifecycle and recovery
 
 Human approval atomically applies additive schema/views, adopts staged encrypted

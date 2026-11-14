@@ -1,7 +1,7 @@
 # Model calls in extensions
 
 Status: accepted, 2026-11-14, and revised the same day after a review against
-the code (§12); being built, nothing in it has shipped yet.
+the code (§12); PR 1 (the platform, §9) is built, nothing in it has shipped yet.
 First written 2026-11-13. Builds on the extension platform in
 [extensions.md](extensions.md) and the output mapping and enrichment bundle in
 [extensions-company-enrichment-implementation.md](extensions-company-enrichment-implementation.md)
@@ -197,7 +197,8 @@ throws when the invocation has no `model`, which means the function didn't
 declare it or the grant doesn't include it.
 
 **Proxy.** It mirrors the Anthropic API paths under its base URL. The SDK
-sends the model token as `x-api-key`. The proxy:
+sends the model token as its key: `x-api-key`, or `Authorization: Bearer` in
+SDK 1.x; the proxy reads either and forwards neither. The proxy:
 
 1. Verifies the token: signature with the run public key, audience and
    expiry. It doesn't ask the database whether the run is still current
@@ -303,8 +304,9 @@ too low, because the final count arrives in the last event. A request
 Anthropic rejects records nothing.
 
 Admins see the month's token use on an extension's Overview tab when its
-release uses the model. The operator status page (extensions-lambda.md §3.5)
-adds the total per day.
+release uses the model (`GET /v1/extensions/:id/usage`). The operator gets the
+total per day from `retainer model usage [--days <n>]`, which the hosted
+service runs through the `ops` function's `cli` command.
 
 ### 3.4.1 Request size
 
@@ -316,10 +318,12 @@ resized or split; the Files API isn't available (§3.2.1).
 ### 3.5 Layering
 
 The proxy is a new server module, `packages/server/src/model/`, at the same
-layer as `egress`, and is called only from `extension-runtime`. It joins the
-layer list in `ARCHITECTURE.md` §8 and `scripts/check-layers.mjs`. Core modules
-(`records`, `schema-engine`, `retrieval`, `worker/consolidate`) must not import
-it, and the layer check enforces that. The hosted entry point is
+layer as `egress`. Only the modules that mount it, report on it or start it
+(`api`, `extension-control`, `operator`, `lambda`) may import it; the model
+token it checks is minted in `extension-runtime`. It joins the layer list in
+`ARCHITECTURE.md` §8 and `scripts/check-layers.mjs`. Core modules (`records`,
+`schema-engine`, `retrieval`, `worker/consolidate`) must not import it, and the
+layer check enforces that. The hosted entry point is
 `packages/server/src/lambda/model.ts`.
 
 ### 3.6 Hosted placement
@@ -627,6 +631,14 @@ Two pull requests in this repo, with the hosted change between them.
 
    Nothing calls the model when it merges, because no release declares
    `uses: ['model']` yet, so it is safe to deploy on its own.
+
+   Settings it adds: `RETAINER_MODEL_API_KEY` (the proxy), `RETAINER_MODEL_ORIGIN`
+   (the coordinator's `model.origin`; defaults to the self-hosted route),
+   `RETAINER_MODEL_UPSTREAM_ORIGIN` (defaults to Anthropic's API) and
+   `RETAINER_MODEL_USAGE_SECRET` (hosted only). The `model` function also reads
+   `RETAINER_EXTENSION_RUN_PUBLIC_KEY`, `RETAINER_EXTENSION_RUN_KEY_ID`,
+   `RETAINER_EXTENSION_ISSUER` and `RETAINER_PUBLIC_ORIGIN`, and no database
+   setting.
 3. **Hosted, in `retainer-cloud`** (§8). The `model` function and its
    settings live in the private repo, so they are a separate change there. If
    deploying PR 1 needs the function to exist, this lands first. Then a

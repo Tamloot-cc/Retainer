@@ -1964,7 +1964,7 @@ from its own layer and the ones below it:
 | Layer      | Modules                                                                                                                           | Holds                                                                             |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | Entry      | `index`, `cli`, `lambda`, `egress-proxy`, `extension-launcher`, `file-server`                                                     | Starting the server, the CLI and the Lambda functions                             |
-| Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`, `egress`, `launcher`, `extension-control`, `webhooks`             | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
+| Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`, `egress`, `model`, `launcher`, `extension-control`, `webhooks`    | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
 | Admin      | `schema-engine`, `templates`, `workspaces`, `extensions`                                                                          | Changing a schema and creating workspaces                                         |
 | Features   | `views`, `comments`, `retrieval`, `reads`                                                                                         | Built on records and memory                                                       |
 | Core       | `records`, `memory`, `privacy`, `files`, `sources`, `changes`                                                                     | The write rules                                                                   |
@@ -1976,7 +1976,10 @@ read side and `schema-engine` the write side. Events are records, so the core
 modules may import each other. No other modules may form a cycle, and no files
 may. `scripts/check-layers.mjs` enforces this as part of `pnpm lint`, and fails
 when a new module has no layer. It also refuses MIT packages importing server
-code.
+code, and lets only `api`, `extension-control`, `operator` and `lambda` import
+`model`, the proxy for extension model calls
+([extensions-model-calls.md](docs/specs/extensions-model-calls.md) §3.5).
+Retainer's core never calls a model.
 
 ## 9. Stack
 

@@ -76,6 +76,11 @@ export class ExtensionExecutor {
       tokens: RunTokens;
       driver: ExecutionDriver;
       apiOrigin: string;
+      /**
+       * The model proxy's base URL a run with `model` receives (model calls
+       * spec 3.2). Defaults to the self-hosted route under the API origin.
+       */
+      modelOrigin?: string;
       owner: string;
       concurrency?: number;
       /** Release digests with a deployed executable (extensionServices' activationReady). */
@@ -146,6 +151,15 @@ export class ExtensionExecutor {
         job.registrationId,
         job.scopes,
       );
+      // Only a run whose function declares `model` and whose grant includes it.
+      const model = job.uses.includes('model')
+        ? {
+            origin:
+              this.options.modelOrigin ??
+              `${new URL(this.options.apiOrigin).origin}/v1/extensions/runtime/model`,
+            token: await this.options.tokens.issueModel(job),
+          }
+        : undefined;
       const invocation = decodeInvocation(
         JSON.stringify({
           protocolVersion: 1,
@@ -158,6 +172,7 @@ export class ExtensionExecutor {
           apiOrigin: new URL(this.options.apiOrigin).origin,
           runToken,
           deadline: job.deadline.toISOString(),
+          ...(model ? { model } : {}),
         }),
       );
       // The handler budget ends at job.deadline; the lease's grace lets the timeout be recorded.

@@ -9,7 +9,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "typecheck": "pnpm --filter @retainer/shared build && pnpm --filter @retainer/extension build && pnpm --filter @retainer/sdk build && pnpm -r typecheck",
-    "test": "pnpm -r test && node --test scripts/test-extension-release.mjs",
+    "test": "pnpm -r test && node --test scripts/test-extension-release.mjs scripts/test-check-layers.mjs",
     "lint": "biome check . && node scripts/check-layers.mjs",
     "format": "biome format --write .",
     "dev": "pnpm --filter @retainer/server dev",

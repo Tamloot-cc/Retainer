@@ -9,6 +9,7 @@ import { AppError } from '../errors.js';
 import { Extensions } from '../extensions/service.js';
 import { rateLimit } from '../http/rate-limit.js';
 import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
+import { mountModelRoutes } from '../model/mount.js';
 
 /** Dedicated runtime/broker surface in key mode and accounts mode; never loads account sign-in code. */
 export function createExtensionControlApp(deps: AppDeps) {
@@ -26,6 +27,7 @@ export function createExtensionControlApp(deps: AppDeps) {
     }
   });
   webhookIngress(app, deps.webhooks, deps.clientIp);
+  mountModelRoutes(app, deps);
   const v1 = new Hono<AppEnv>();
   v1.use(
     '*',

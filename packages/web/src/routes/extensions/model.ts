@@ -139,5 +139,13 @@ export const canReconnect = (release: Release, installation: Installation) =>
     Object.values(release.manifest.settings).some((setting) => setting.reconnect));
 
 /** What the extension may do, in plain words. */
-export const accessText = (scopes: readonly string[], actor: string) =>
-  `It can ${scopes.join(' and ')} workspace CRM data. Its changes are recorded as made by an ${actor}.`;
+export const accessText = (
+  scopes: readonly string[],
+  actor: string,
+  uses: readonly string[] = [],
+) =>
+  `It can ${scopes.join(' and ')} workspace CRM data. Its changes are recorded as made by an ${actor}.${
+    uses.includes('model')
+      ? ' It sends data from your workspace to Anthropic, which Retainer uses to process it.'
+      : ''
+  }`;

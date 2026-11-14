@@ -55,7 +55,7 @@ const preview: Awaited<ReturnType<typeof api.previewExtension>> = {
   releaseDigest: release.digest,
   operations: [],
   views: [],
-  grants: { actor: 'integration', scopes: ['read', 'write'] },
+  grants: { actor: 'integration', scopes: ['read', 'write'], uses: [] },
   warnings: ['Runtime activation is unavailable.'],
 };
 function mount(element: React.ReactNode, admin = true) {
@@ -173,6 +173,7 @@ describe('extension pages and human approval', () => {
     secrets: { apiKey: true },
     grantedActor: 'agent',
     grantedScopes: ['read'],
+    grantedUses: [],
     createdBy: { type: 'user', id: 'admin' },
   };
   it('explains unavailable execution while keeping the provider connection separate', async () => {
@@ -296,9 +297,10 @@ describe('extension pages and human approval', () => {
       installationId: installation.id,
       expiresAt: '2099-01-01T00:00:00Z',
     });
-    const plan = vi
-      .spyOn(api, 'previewExtension')
-      .mockResolvedValue({ ...preview, previousGrants: { actor: 'agent', scopes: ['read'] } });
+    const plan = vi.spyOn(api, 'previewExtension').mockResolvedValue({
+      ...preview,
+      previousGrants: { actor: 'agent', scopes: ['read'], uses: [] },
+    });
     const reconnect = vi
       .spyOn(api, 'reconnectExtension')
       .mockResolvedValue({ ...installation, generation: 2, state: 'installing' });
@@ -333,7 +335,7 @@ describe('extension pages and human approval', () => {
     const upgraded = { ...release, manifest: { ...release.manifest, version: '1.1.0' } };
     vi.spyOn(api, 'previewExtension').mockResolvedValue({
       ...preview,
-      previousGrants: { actor: 'agent', scopes: ['read'] },
+      previousGrants: { actor: 'agent', scopes: ['read'], uses: [] },
     });
     const upgrade = vi
       .spyOn(api, 'upgradeExtension')

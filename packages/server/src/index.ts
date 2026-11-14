@@ -116,6 +116,12 @@ if (role === 'api' || role === 'all' || role === 'control' || role === 'extensio
           accountsSecret: config.RETAINER_AUTH_SECRET,
           rateLimit: { limit: rateLimitPerMinute(config) },
           clientIp: (c) => getConnInfo(c).remote.address,
+          // Self-hosted serves the model proxy in this process (model calls spec 3.6).
+          model: {
+            apiKey: config.RETAINER_MODEL_API_KEY,
+            upstream: config.RETAINER_MODEL_UPSTREAM_ORIGIN,
+          },
+          modelUsageSecret: config.RETAINER_MODEL_USAGE_SECRET,
         });
   const fetch = (request: Request, env: Record<string, unknown>) => {
     if (accounts) {

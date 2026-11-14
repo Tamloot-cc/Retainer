@@ -64,6 +64,14 @@ describe('upgradeTargets', () => {
 });
 
 describe('holdReason', () => {
+  it('holds a release that adds model use: more access for an admin to approve (model calls spec 3.1)', () => {
+    expect(
+      holdReason({
+        ...base,
+        next: manifest({ version: '1.0.1', functions: [{ ...fn, uses: ['model'] }] }),
+      }),
+    ).toBe('release_changes');
+  });
   it('lets a version-only change through', () => {
     expect(holdReason(base)).toBeNull();
   });

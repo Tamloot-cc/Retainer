@@ -293,8 +293,8 @@ describe('additive extension upgrades', () => {
     const { sdk, installed, input, keys } = await setup();
     const upgrade = { ...input, installationId: installed.id, version: '3.0.0', grantChange: true };
     const plan = await sdk.previewExtension(upgrade);
-    expect(plan.previousGrants).toEqual({ actor: 'agent', scopes: ['read'] });
-    expect(plan.grants).toEqual({ actor: 'integration', scopes: ['read', 'write'] });
+    expect(plan.previousGrants).toEqual({ actor: 'agent', scopes: ['read'], uses: [] });
+    expect(plan.grants).toEqual({ actor: 'integration', scopes: ['read', 'write'], uses: [] });
     const agent = new RetainerClient({
       baseUrl: 'http://retainer.test/',
       apiKey: keys.agent,

@@ -20,6 +20,11 @@ export const mappedWriteSchema = z.strictObject({
   /** Only outputs the run has a valid value for. */
   values: z.record(outputKeySchema, z.json()),
   observedAt: z.iso.datetime({ offset: true }).optional(),
+  /**
+   * How certain the run is, from 0 to 1 (model calls spec 5). Below the
+   * workspace's threshold the values wait for review. Agent actors only.
+   */
+  confidence: z.number().min(0).max(1).optional(),
 });
 export type MappedWriteInput = z.infer<typeof mappedWriteSchema>;
 
@@ -63,6 +68,15 @@ export async function mappedWrite(
 ): Promise<MappedWriteResult> {
   const run = caller.run;
   if (!run) throw forbidden('this endpoint requires a live run credential');
+  const confidence = input.confidence ?? 1;
+  // Review by confidence belongs to agent writes (records/winner.ts), so a
+  // number that would do nothing is refused rather than accepted.
+  if (confidence < 1 && caller.actor.type !== 'agent')
+    throw new AppError(
+      422,
+      'validation_failed',
+      'confidence below 1 needs an installation granted the agent actor',
+    );
   try {
     return await withWrite(sql, caller, async (tx, context) => {
       const [installation] = await tx<
@@ -126,10 +140,26 @@ export async function mappedWrite(
       const fields: MappedWriteResult['fields'] = {};
       const values: Record<string, unknown> = {};
       const outputOf = new Map<string, string>();
+      // A held value isn't in records.data, so fill-only alone would see the
+      // field as empty and add a second pending assertion. Under the record
+      // lock, so concurrent runs see each other's.
+      const held = new Set(
+        (
+          await tx<{ field_id: string }[]>`
+            select distinct field_id from field_assertions
+            where record_id = ${record.id} and status = 'pending_review'
+              and field_id = any(${[...targets.values()].map((f) => f.id as string)}::uuid[])
+              and actor->>'type' = ${caller.actor.type} and actor->>'id' = ${run.installationId}`
+        ).map((row) => row.field_id),
+      );
       for (const [key, field] of targets) {
         const value = input.values[key];
         if (Object.hasOwn(record.data, field.key)) {
           fields[key] = record.data[field.key] === null ? 'cleared' : 'populated';
+          continue;
+        }
+        if (held.has(field.id as string)) {
+          fields[key] = 'pending_review';
           continue;
         }
         if (value === null)
@@ -142,7 +172,7 @@ export async function mappedWrite(
       if (!outputOf.size) return { outcome: 'skipped', reason: 'nothing_to_fill', fields };
       const writes = prepareValues(object as CompiledObject, values, 'update');
       const statuses = await writeFields(tx, context, object, record, writes, {
-        confidence: 1,
+        confidence,
         ...(input.observedAt ? { observedAt: new Date(input.observedAt) } : {}),
       });
       for (const [name, status] of Object.entries(statuses)) {
