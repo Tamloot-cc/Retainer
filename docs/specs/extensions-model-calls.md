@@ -567,10 +567,15 @@ much, and the bundle keeps the cheaper one if accuracy holds.
 
 Choices the enrichment release made where §6 left them open:
 
-- **Trigger.** `enrich` watches the company's name as well as its domain:
-  the search and the guard on another domain use the name, so a company
-  that gets or changes its name is looked up again. A company whose mapped
-  fields are all set still ends at `nothing_to_fill` without a search.
+- **Trigger.** `enrich` still watches only the domain. The search and the
+  guard on another domain use the company's name, so a company created
+  without a name and named later isn't looked up again until its domain
+  changes. Watching the base name field too was tried and dropped: that field
+  isn't protected, a workspace can delete it once another field is the label,
+  and a trigger on a deleted field makes every dispatch pass fail with
+  `schema_binding_conflict` (`extension-runtime/queue.ts`), which would stop
+  enrichment in that workspace. Watching the name needs a server change that
+  lets a trigger skip a field that no longer exists.
 - **Which functions use the model.** `configure`, `enrich` and `backfill`
   declare `uses: ['model']`; `setup` doesn't. Backfill runs the same lookup as
   `enrich`, so it gets the same shortcut, model pick, guards and confidence.

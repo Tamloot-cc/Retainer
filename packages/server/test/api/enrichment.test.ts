@@ -318,7 +318,7 @@ describe('company enrichment through a fake Exa', () => {
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_domain' }]);
     expect(h.exa.requests.filter((r) => r.path === '/search')).toEqual([]);
     expect((await h.patch(blank, { name: 'Renamed' })).status).toBe(200);
-    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_domain' }]);
+    expect(await h.drain()).toEqual([]);
     expect((await h.patch(blank, { domain: 'later.example' })).status).toBe(200);
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
     expect((await h.fields(blank)).employeeCount).toBe(12);
@@ -522,7 +522,7 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     expect((await h.fields(acme)).employeeCount).toBeUndefined();
   });
 
-  it('looks the company up again when it gets a name', async () => {
+  it('does not look a company up again when it only gets a name', async () => {
     const h = await setup();
     await h.drain();
     h.exa.search = () => twoResults('https://fixture.example/', 'fixture.example');
@@ -530,10 +530,10 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     const unnamed = await h.company({ domain: 'old-fixture.example' });
     // No name: a pick on another domain can't be accepted.
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_match_model' }]);
+    // The trigger watches the domain only (spec 6.7): the base name field can
+    // be deleted, and a trigger on a deleted field would stop all dispatch.
     expect((await h.patch(unnamed, { name: 'Fixture Co' })).status).toBe(200);
-    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_model_high' }]);
-    expect((await h.fields(unnamed)).employeeCount).toBe(12);
-    expect(h.exa.requests.at(-1)?.body?.query).toBe('Fixture Co old-fixture.example');
+    expect(await h.drain()).toEqual([]);
   });
 
   it('ends without a match when the server has no model key', async () => {
