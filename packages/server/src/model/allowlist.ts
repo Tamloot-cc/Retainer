@@ -97,13 +97,14 @@ export function refusedBody(body: unknown): Refusal | undefined {
         type: 'invalid_request_error',
         message: `field ${key} is not allowed through the model proxy`,
       };
-  // Iterative, so a deeply nested body can't overflow the stack.
+  // Iterative, so a deep or wide body can't overflow the stack.
   const stack: unknown[] = [body];
   while (stack.length) {
     const value = stack.pop();
     if (!value || typeof value !== 'object') continue;
     if (Array.isArray(value)) {
-      stack.push(...value);
+      // One at a time: spreading a wide array overflows the argument limit.
+      for (const item of value) stack.push(item);
       continue;
     }
     const source = (value as { source?: unknown }).source;
@@ -113,7 +114,7 @@ export function refusedBody(body: unknown): Refusal | undefined {
         type: 'invalid_request_error',
         message: 'content with a file source is not allowed through the model proxy',
       };
-    stack.push(...Object.values(value));
+    for (const item of Object.values(value)) stack.push(item);
   }
   return undefined;
 }

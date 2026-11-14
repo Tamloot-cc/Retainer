@@ -113,6 +113,16 @@ describe('allowed body fields and content', () => {
     for (let i = 0; i < 100_000; i++) deep = [deep];
     expect(refusedBody({ ...ok, messages: deep })).toMatchObject({ status: 400 });
   });
+
+  it('walks a wide array or object without overflowing the argument limit', () => {
+    const wide = Array.from({ length: 300_000 }, () => null);
+    expect(refusedBody({ ...ok, metadata: { wide } })).toBeUndefined();
+    const keys = Object.fromEntries(wide.map((_, i) => [`k${i}`, null]));
+    expect(refusedBody({ ...ok, metadata: keys })).toBeUndefined();
+    expect(
+      refusedBody({ ...ok, messages: [...wide, { content: [{ source: { type: 'file' } }] }] }),
+    ).toMatchObject({ status: 400 });
+  });
 });
 
 describe('beta flags', () => {
