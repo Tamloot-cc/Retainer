@@ -64,10 +64,7 @@ export async function createModelApp(
   });
   const app = new Hono();
   // The function URL is the proxy's base URL: the SDK appends `/v1/messages`.
-  app.all('*', (c) => {
-    c.header('Cache-Control', 'no-store');
-    return proxy(c.req.raw, c.req.path);
-  });
+  app.all('*', (c) => proxy(c.req.raw, c.req.path));
   return app;
 }
 
