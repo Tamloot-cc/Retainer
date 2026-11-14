@@ -475,7 +475,10 @@ export async function executeEnrichment(
         const open = mapping.outputs.filter(
           (o) => o.status === 'ok' && o.field && !Object.hasOwn(record.fields, o.field.name),
         );
-        if (domain && open.length) await fill(run, mapping, record, domain, open);
+        if (!domain) return;
+        if (open.length) await fill(run, mapping, record, domain, open);
+        // As in enrich: a retry after a lost write response finds nothing open.
+        else await releaseLeftoverPick(run, record.id, domain);
       });
       if (page.nextCursor)
         await sdk.extensionCheckpoint(id, {

@@ -555,6 +555,30 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     expect(left?.value).toEqual({});
   });
 
+  it('clears the pick when a backfill write committed but its response was lost', async () => {
+    const h = await setup();
+    await h.drain();
+    // Enriched first with headquarters only, so the backfill has outputs to fill.
+    h.exa.search = (domain) => Response.json(exaCompany(`https://${domain}/`, { total: null }));
+    const acme = await h.company({ name: 'Acme', domain: 'acme.example' });
+    await h.drain();
+    h.exa.search = (domain) => twoResults('https://redirect.example/', domain);
+    upstream.respond(structured({ index: 0, certainty: 'high' }));
+    h.failNext('/runtime/mapped-writes', true);
+    await h.queue.enqueue(h.workspace, h.id, {
+      functionId: ENRICHMENT.backfill,
+      input: {},
+      dedupeKey: randomUUID(),
+    });
+    expect(await h.drain()).toEqual([{ status: 'retry', code: 'api_unavailable' }]);
+    expect((await h.fields(acme)).employeeCount).toBe(12);
+    await db.owner`update extension_jobs set available_at=clock_timestamp() where installation_id=${h.id} and status='queued'`;
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'backfill_page' }]);
+    const [left] = await db.owner<{ value: unknown }[]>`
+      select value from extension_kv where installation_id=${h.id} and key=${`pick:${acme}:acme.example`}`;
+    expect(left?.value).toEqual({});
+  });
+
   it('backfills a company whose first values are still held for review', async () => {
     const h = await setup();
     await h.drain();
