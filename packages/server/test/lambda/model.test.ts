@@ -92,12 +92,15 @@ describe('the hosted model function', () => {
     );
     const response = await post(app, message);
     expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
     await response.text();
     expect(upstream.received.at(-1)?.headers['x-api-key']).toBe('sk-hosted-key');
     const rows = await db.owner`select * from ai_usage where installation_id=${installationId}`;
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ function_id: PICK, model: 'claude-opus-5-5', partial: false });
-    expect((await post(app, message, 'rt_model_forged')).status).toBe(401);
+    const forged = await post(app, message, 'rt_model_forged');
+    expect(forged.status).toBe(401);
+    expect(forged.headers.get('cache-control')).toBe('no-store');
   });
 
   it('refuses a body over 6 MB with 413', async () => {

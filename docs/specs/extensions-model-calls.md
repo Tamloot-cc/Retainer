@@ -1,7 +1,8 @@
 # Model calls in extensions
 
 Status: accepted, 2026-11-14, and revised the same day after a review against
-the code (§12); PR 1 (the platform, §9) is built, nothing in it has shipped yet.
+the code (§12); PR 1 (the platform, §9) has shipped, and the hosted `model`
+function is live (§9, step 3).
 First written 2026-11-13. Builds on the extension platform in
 [extensions.md](extensions.md) and the output mapping and enrichment bundle in
 [extensions-company-enrichment-implementation.md](extensions-company-enrichment-implementation.md)
@@ -213,8 +214,8 @@ SDK 1.x; the proxy reads either and forwards neither. The proxy:
 
 If the extension's connection closes before the response ends, the proxy
 aborts its request to Anthropic, so generation stops being billed, and records
-what it saw as partial (§3.4). §3.6 says where the hosted function may not be
-able to.
+what it saw as partial (§3.4). The hosted function can't: §3.6 says what
+happens there instead.
 
 A request may run until the run's deadline. The proxy's own timeout covers
 the longest handler deadline (300 s) plus a margin, and never runs past the
@@ -377,10 +378,15 @@ extension job functions:
 - **Streaming.** It answers through a Lambda function URL with response
   streaming, set as `model.origin` in each invocation that has the field. Its
   timeout covers 300 s plus a margin.
-- **Disconnects.** If a function URL doesn't tell the function that its
-  caller went away, the proxy can't abort the request to Anthropic there: the
-  call runs to its end and is recorded whole. The staging check in step 3
-  (§9) finds out which it is.
+- **Disconnects.** A function URL doesn't tell the function that its caller
+  went away, so the proxy can't abort the request to Anthropic there: the call
+  runs to its end and is recorded whole, never as `partial`. The staging check
+  in step 3 (§9) measured it on 2026-11-14: streams cut off by the caller at 3 s
+  and 8 s ran on for 26.5 s and 17.8 s, to their full `max_tokens`, and their
+  rows carried the final counts. An abandoned call costs at most its
+  `max_tokens`, and never runs past the model token's expiry. `partial` rows
+  come from the self-hosted proxy, or from a hosted stream Anthropic itself
+  cuts off.
 - **Concurrency.** The function URL is public, with no edge in front of it,
   and each call holds one execution for up to 300 s. `model` gets reserved
   concurrency, so a large backfill or junk traffic can't take executions from
@@ -645,7 +651,10 @@ Two pull requests in this repo, with the hosted change between them.
    deploying PR 1 needs the function to exist, this lands first. Then a
    staging check of streaming and of what the function sees when its caller
    disconnects; a fix it calls for in the proxy is a small follow-up before
-   PR 2.
+   PR 2. Done on 2026-11-14 (`retainer-cloud` #20): responses stream as they
+   arrive, and disconnects are not seen (§3.6). The follow-up set
+   `Cache-Control: no-store` on every proxy response, which the mounts had
+   tried to set and lost.
 4. **PR 2: the enrichment release.** `configure` suggests the mapping, and
    the new lookup; staging with a real Exa key and the model key, plus the
    domain set in §6.6. (Installation in two steps itself shipped in #90 and
@@ -744,3 +753,11 @@ users, so none of these keeps anything for old bundles or installations:
   set that measures the shortcut and guards today's matches (§6.6).
 - The delivery sequence became two pull requests, with the hosted change
   between them (§9).
+
+2026-11-14, after the hosted staging check (§9, step 3):
+
+- §3.6 records that the hosted function isn't told about a disconnect, and
+  what that costs.
+- The proxy sets `Cache-Control: no-store` on its own responses. The mounts
+  set it on Hono's context, which a handler that returns its own `Response`
+  drops.

@@ -57,7 +57,7 @@ export type ModelProxyOptions = {
 export function anthropicError(status: number, type: string, message: string): Response {
   return new Response(JSON.stringify({ type: 'error', error: { type, message } }), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
   });
 }
 
@@ -174,7 +174,9 @@ export function createModelProxy(options: ModelProxyOptions) {
       await finish(true);
       return anthropicError(502, 'api_error', 'the model provider could not be reached');
     }
-    const outgoing = new Headers();
+    // Set here, not by the mount: a handler returning this Response drops
+    // headers set on Hono's context.
+    const outgoing = new Headers({ 'cache-control': 'no-store' });
     for (const name of FORWARDED_RESPONSE_HEADERS) {
       const value = response.headers.get(name);
       if (value !== null) outgoing.set(name, value);
