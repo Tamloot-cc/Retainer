@@ -5,7 +5,7 @@ import type {
   ExtensionSuggestions,
 } from '@retainer/extension';
 import { RetainerApiError } from '@retainer/sdk';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
@@ -108,15 +108,17 @@ export function ExtensionSetup(props: Parameters<typeof BasicExtensionSetup>[0])
 }
 
 function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
+  const client = useQueryClient();
   const refresh = useRefreshExtensions();
   const [installation, setInstallation] = useState(props.installation);
-  const [phase, setPhase] = useState<'access' | 'waiting' | 'review'>(
-    props.mode === 'mapping'
-      ? 'waiting'
-      : props.installation?.state === 'configuring'
+  const [phase, setPhase] = useState<'checking' | 'access' | 'waiting' | 'review'>(
+    props.mode === 'upgrade' && props.installation
+      ? 'checking'
+      : props.mode === 'mapping' || props.installation?.state === 'configuring'
         ? 'waiting'
         : 'access',
   );
+  const [providedSecrets, setProvidedSecrets] = useState<string[]>([]);
   const [suggested, setSuggested] = useState<ExtensionSuggestions>();
   const query = useQuery({
     queryKey: ['extension-suggestions', installation?.id, props.release.digest],
@@ -124,15 +126,36 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
       if (!installation) throw new Error('Installation is required');
       return api.extensionSuggestions(installation.id, props.release.manifest.version, signal);
     },
-    enabled: phase === 'waiting' && !!installation,
+    enabled: ['checking', 'waiting'].includes(phase) && !!installation,
     refetchInterval: phase === 'waiting' ? 1000 : false,
   });
   useEffect(() => {
-    if (phase === 'waiting' && query.data && ['ready', 'failed'].includes(query.data.status)) {
+    if (!query.data) return;
+    if (phase === 'checking') {
+      if (query.isFetching) return;
+      if (!query.data.access) {
+        setPhase('access');
+        return;
+      }
+      const approvedSettings = query.data.access.settings;
+      setInstallation((current) =>
+        current ? { ...current, settings: approvedSettings } : current,
+      );
+      setProvidedSecrets(query.data.access.secrets);
+      if (['ready', 'failed'].includes(query.data.status)) {
+        setSuggested(query.data);
+        setPhase('review');
+      } else setPhase('waiting');
+    } else if (
+      phase === 'waiting' &&
+      !query.isFetching &&
+      ['ready', 'failed'].includes(query.data.status)
+    ) {
+      if (query.data.access) setProvidedSecrets(query.data.access.secrets);
       setSuggested(query.data);
       setPhase('review');
     }
-  }, [phase, query.data]);
+  }, [phase, query.data, query.isFetching]);
   const cancel = useMutation({
     mutationFn: async () => {
       if (installation?.state === 'active')
@@ -156,14 +179,10 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
   const approve = useMutation({
     mutationFn: async ({ id, input }: { id: string; input?: ExtensionInstallInput }) => {
       const current = await api.extension(id);
-      setInstallation({
-        ...current,
-        settings: input?.settings ?? current.settings,
-        secrets: {
-          ...current.secrets,
-          ...Object.fromEntries(Object.keys(input?.secretRefs ?? {}).map((name) => [name, true])),
-        },
-      });
+      setInstallation({ ...current, settings: input?.settings ?? current.settings });
+      setProvidedSecrets(Object.keys(input?.secretRefs ?? {}));
+      const review = await api.extensionSuggestions(id, props.release.manifest.version);
+      client.setQueryData(['extension-suggestions', id, props.release.digest], review);
       await refresh();
       setPhase('waiting');
     },
@@ -179,11 +198,12 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
         <BasicExtensionSetup
           {...props}
           accessOnly
+          onCancel={() => cancel.mutate()}
           onDone={(id, input) => approve.mutate({ id, ...(input ? { input } : {}) })}
         />
       </Stack>
     );
-  if (phase === 'waiting')
+  if (phase === 'waiting' || phase === 'checking')
     return (
       <Stack>
         <Loading>Preparing suggestions…</Loading>
@@ -209,7 +229,11 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
           {props.mode === 'mapping' ? 'Suggest mapping' : 'Suggest again'}
         </Button>
       ) : null}
+      {props.mode === 'upgrade' ? (
+        <Button onClick={() => setPhase('access')}>Review access again</Button>
+      ) : null}
       <BasicExtensionSetup
+        providedSecrets={providedSecrets}
         key={suggested ? JSON.stringify(suggested) : 'manual'}
         {...props}
         onCancel={() => cancel.mutate()}
@@ -229,12 +253,14 @@ function BasicExtensionSetup({
   onDone,
   accessOnly = false,
   suggestions,
+  providedSecrets = [],
 }: {
   release: Release;
   /** The installation to change, or for `install` an uninstalled one to set up again. */
   installation?: Installation;
   mode: SetupMode;
   accessOnly?: boolean;
+  providedSecrets?: string[];
   suggestions?: ExtensionSuggestions;
   /** The approved mapping, for `mapping`. */
   mappingView?: ExtensionMappingView;
@@ -419,7 +445,9 @@ function BasicExtensionSetup({
             secrets={secrets}
             {...(retained ? { existing: retained } : {})}
             references={references}
-            allowConnectionEdit={reconnect}
+            allowConnectionEdit={reconnect || retained?.state === 'configuring'}
+            allowNewCredentials={accessOnly || upgrade}
+            providedSecrets={providedSecrets}
             onChange={(key, value) => setValues((v) => ({ ...v, [key]: value }))}
             onSecret={(key, value) => {
               setSecrets((v) => ({ ...v, [key]: value }));

@@ -109,6 +109,19 @@ export const browserConfigureManifest = manifestFixture({
     },
   ],
 });
+const browserSecretConfigureManifest = manifestFixture({
+  ...browserConfigureManifest,
+  settings: {
+    providerKey: {
+      type: 'string',
+      label: 'Provider key',
+      secret: true,
+      required: true,
+      reconnect: true,
+    },
+  },
+  functions: browserConfigureManifest.functions.map((fn) => ({ ...fn, secrets: ['providerKey'] })),
+});
 const browserMapping = browserMappingManifest.mapping;
 if (!browserMapping) throw new Error('mapping fixture needs a mapping');
 const browserConfigurePrevious = manifestFixture({
@@ -175,6 +188,7 @@ export const test = base.extend<
       activateMembers: () => Promise<void>;
       finishConfigure: (setup?: boolean) => Promise<void>;
       previousConfiguration: () => Promise<string>;
+      expireConfigurationSecrets: () => Promise<void>;
       sourceEvidence: () => Promise<{
         personId: string;
         previousEventId: string;
@@ -190,6 +204,7 @@ export const test = base.extend<
     mappingFixture: boolean;
     memberFixture: boolean;
     configureFixture: boolean;
+    configureSecretFixture: boolean;
   }
 >({
   extensionFixture: [false, { option: true, scope: 'worker' }],
@@ -197,6 +212,7 @@ export const test = base.extend<
   fileStorage: [false, { option: true, scope: 'worker' }],
   sourceFixture: [false, { option: true, scope: 'worker' }],
   mappingFixture: [false, { option: true, scope: 'worker' }],
+  configureSecretFixture: [false, { option: true, scope: 'worker' }],
   configureFixture: [false, { option: true, scope: 'worker' }],
   memberFixture: [false, { option: true, scope: 'worker' }],
   retainer: async (
@@ -209,6 +225,7 @@ export const test = base.extend<
       mappingFixture,
       memberFixture,
       configureFixture,
+      configureSecretFixture,
     },
     use,
   ) => {
@@ -280,30 +297,35 @@ export const test = base.extend<
       if (!a || typeof a === 'string') throw new Error('file address missing');
       storage = new LocalFileStorage(`http://127.0.0.1:${a.port}`, fileKey);
     }
-    const catalog = configureFixture
-      ? new ExtensionCatalog(
-          [browserConfigurePrevious, browserConfigureManifest].map((manifest) => ({
-            manifest,
-            actorCeiling: 'agent',
-            runtimeEnabled: true,
-          })),
-        )
-      : sourceFixture
-        ? new ExtensionCatalog([
-            { manifest: sourceManifest, actorCeiling: 'integration', runtimeEnabled: true },
-          ])
-        : memberFixture
+    const catalog =
+      configureFixture || configureSecretFixture
+        ? new ExtensionCatalog(
+            [
+              browserConfigurePrevious,
+              configureSecretFixture ? browserSecretConfigureManifest : browserConfigureManifest,
+            ].map((manifest) => ({
+              manifest,
+              actorCeiling: 'agent',
+              runtimeEnabled: true,
+            })),
+          )
+        : sourceFixture
           ? new ExtensionCatalog([
-              {
-                manifest: browserMemberManifest,
-                actorCeiling: 'integration',
-                runtimeEnabled: true,
-              },
+              { manifest: sourceManifest, actorCeiling: 'integration', runtimeEnabled: true },
             ])
-          : undefined;
-    const secretSql = memberFixture
-      ? createSql(dbUrl.toString(), { role: 'retainer_secret_broker' })
-      : undefined;
+          : memberFixture
+            ? new ExtensionCatalog([
+                {
+                  manifest: browserMemberManifest,
+                  actorCeiling: 'integration',
+                  runtimeEnabled: true,
+                },
+              ])
+            : undefined;
+    const secretSql =
+      memberFixture || configureSecretFixture
+        ? createSql(dbUrl.toString(), { role: 'retainer_secret_broker' })
+        : undefined;
     const extensionSecrets = secretSql
       ? new SecretBroker(
           secretSql,
@@ -311,7 +333,7 @@ export const test = base.extend<
         )
       : undefined;
     const pair =
-      sourceFixture || memberFixture || configureFixture
+      sourceFixture || memberFixture || configureFixture || configureSecretFixture
         ? await generateKeyPair('EdDSA')
         : undefined;
     const runTokens = pair
@@ -397,6 +419,14 @@ export const test = base.extend<
         browserConfigureManifest.universalId,
         job.scopes,
       );
+      if (configureSecretFixture) {
+        const secret = await request(
+          `/extensions/${job.installationId}/runtime/secrets/providerKey`,
+          undefined,
+          token,
+        );
+        if (!secret.value) throw new Error('target secret is missing');
+      }
       await request(
         `/extensions/${job.installationId}/runtime/suggestions`,
         {
@@ -575,6 +605,9 @@ export const test = base.extend<
         activateMembers,
         finishConfigure,
         previousConfiguration,
+        expireConfigurationSecrets: async () => {
+          await owner`update extension_pending_secrets set expires_at=now()-interval '1 second' where workspace_id=${workspace.id} and consumed_at is null`;
+        },
       });
     } finally {
       await new Promise<void>((resolve, reject) => {

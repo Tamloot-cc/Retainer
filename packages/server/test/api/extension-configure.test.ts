@@ -553,6 +553,11 @@ describe('configuration before installation approval', () => {
       version: base.version,
       grantedScopes: ['read', 'write'],
     });
+    const review = await t.request(`/v1/extensions/${a.id}/suggestions?version=${next.version}`, {
+      key: a.key,
+    });
+    expect(review.body.access).toEqual({ settings: { enabled: true }, secrets: ['extraKey'] });
+    expect(JSON.stringify(review.body)).not.toContain('target-only');
     const { job, token } = await claim(a.workspace, a.id);
     expect(job.releaseDigest).toBe(catalog.get(base.universalId, next.version).digest);
     expect(job.scopes).toEqual(['read']);

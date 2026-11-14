@@ -62,6 +62,10 @@ test('keeps the old release active while suggesting an upgrade mapping', async (
   await page.getByRole('button', { name: 'Approve access', exact: true }).click();
   await expect(page.getByText('Preparing suggestions…')).toBeVisible();
   expect((await r.request(`/extensions/${id}`, undefined, r.keys.user)).version).toBe('1.0.0');
+  await page.getByRole('button', { name: 'Continue later' }).click();
+  await page.getByRole('link', { name: 'Upgrade to 2.0.0' }).click();
+  await expect(page.getByText('Preparing suggestions…')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Approve access', exact: true })).toHaveCount(0);
   await r.finishConfigure();
   await expect(page.getByText('The existing company address.')).toBeVisible();
   await page.getByRole('button', { name: 'Review upgrade' }).click();

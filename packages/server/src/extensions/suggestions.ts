@@ -10,6 +10,7 @@ import { inWorkspace, jsonValue, lockSchemaShared } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
 import { admitCaller, admitRun } from '../extension-runtime/admission.js';
 import type { ContributionRow } from '../extension-runtime/retired.js';
+import { pendingSecrets } from '../extension-runtime/secrets.js';
 import { loadSchemaState } from '../schema/load.js';
 import type { ExtensionCatalog } from './catalog.js';
 import { resolveMapping, type StoredMapping } from './mapping.js';
@@ -105,6 +106,21 @@ export async function getSuggestions(
       String(installation.registration_id),
       version ?? String(installation.version),
     );
+    const [approval] = await tx<
+      {
+        secret_refs: Record<string, string>;
+        settings: NonNullable<ExtensionSuggestions['access']>['settings'];
+      }[]
+    >`
+      select a.secret_refs,a.settings from extension_access_approvals a
+      join extension_installations i on i.id=a.installation_id and i.workspace_id=a.workspace_id
+      where a.installation_id=${id} and a.release_digest=${release.digest}
+      and a.generation=i.generation and a.settings_revision=i.settings_revision`;
+    const refs = Object.values(approval?.secret_refs ?? {});
+    const access =
+      approval && (await pendingSecrets(tx, refs)).length === refs.length
+        ? { settings: approval.settings, secrets: Object.keys(approval.secret_refs) }
+        : undefined;
     const [row] = await tx<
       {
         mapping: ExtensionSuggestions['mapping'];
@@ -116,7 +132,13 @@ export async function getSuggestions(
       select s.mapping,s.settings,j.status,j.code from extension_suggestions s join extension_jobs j on j.id=s.job_id
       join extension_installations i on i.id=s.installation_id and i.generation=j.generation
       where s.installation_id=${id} and s.release_digest=${release.digest}`;
-    if (!row) return { status: 'failed', code: 'suggestions_unavailable', issues: {} };
+    if (!row)
+      return {
+        status: 'failed',
+        code: 'suggestions_unavailable',
+        issues: {},
+        ...(access ? { access } : {}),
+      };
     const status =
       row.status === 'succeeded'
         ? 'ready'
@@ -158,6 +180,7 @@ export async function getSuggestions(
     }
     return {
       status,
+      ...(access ? { access } : {}),
       ...(row.code ? { code: row.code } : {}),
       issues,
       ...(status === 'ready' && row.mapping ? { mapping: row.mapping } : {}),

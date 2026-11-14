@@ -15,6 +15,8 @@ export function SettingFields({
   existing,
   references,
   allowConnectionEdit = false,
+  allowNewCredentials = false,
+  providedSecrets = [],
   level = 'installation',
   connectionSecrets,
   providedLabel = 'Provided for approval',
@@ -27,6 +29,8 @@ export function SettingFields({
   existing?: Installation;
   references: Record<string, string>;
   allowConnectionEdit?: boolean;
+  allowNewCredentials?: boolean;
+  providedSecrets?: string[];
   level?: 'installation' | 'connection';
   connectionSecrets?: string[];
   providedLabel?: string;
@@ -43,7 +47,13 @@ export function SettingFields({
         )
         .map(([key, definition]) => {
           const locked =
-            !!existing && !allowConnectionEdit && (definition.secret || definition.reconnect);
+            !!existing &&
+            !allowConnectionEdit &&
+            (definition.secret || definition.reconnect) &&
+            !(
+              allowNewCredentials &&
+              (definition.secret ? !presence?.[key] : !Object.hasOwn(existing.settings, key))
+            );
           return (
             <Label key={key}>
               {definition.label}
@@ -54,8 +64,19 @@ export function SettingFields({
                   autoComplete="new-password"
                   value={secrets[key] ?? ''}
                   disabled={locked}
-                  required={definition.required && !presence?.[key] && !references[key]}
-                  placeholder={presence?.[key] ? 'Connected' : references[key] ? providedLabel : ''}
+                  required={
+                    definition.required &&
+                    !presence?.[key] &&
+                    !references[key] &&
+                    !providedSecrets.includes(key)
+                  }
+                  placeholder={
+                    presence?.[key]
+                      ? 'Connected'
+                      : references[key] || providedSecrets.includes(key)
+                        ? providedLabel
+                        : ''
+                  }
                   onChange={(e) => onSecret(key, e.target.value)}
                 />
               ) : definition.options ? (

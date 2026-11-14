@@ -890,6 +890,8 @@ export type SourceTaskSchema = {
 
 /** Suggestions never become approved settings or field bindings without human review. */
 export type ExtensionSuggestions = {
+  /** Valid target-release approval; only non-secret settings and staged secret names. */
+  access?: { settings: Record<string, string | number | boolean>; secrets: string[] };
   status: 'queued' | 'running' | 'ready' | 'failed';
   code?: string;
   mapping?: Record<string, ExtensionMappingChoice & { reason?: string }>;

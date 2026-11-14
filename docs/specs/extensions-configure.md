@@ -361,7 +361,14 @@ Through `packages/server/src/db/schema.ts` and `pnpm db:generate`:
 | `PUT /v1/extensions/:id/runtime/suggestions`    | the `configure` run token | Save suggestions                                         |
 
 `GET …/suggestions` returns `{status: 'queued' | 'running' | 'ready' | 'failed',
-code?, mapping?, settings?, issues}`. `issues` comes from `resolveMapping` in
+code?, mapping?, settings?, issues, access?}`. `access` contains the target approval's non-secret settings and names of its
+valid staged secrets, never secret values or references. The web app checks this
+metadata when reopening an active upgrade: a valid approval resumes its configure
+job or completed suggestions; absent, invalidated or expired approval material
+returns to access review. New secret names remain editable; credentials already
+stored by the active installation still require reconnect.
+
+`issues` comes from `resolveMapping` in
 review mode (`packages/server/src/extensions/mapping.ts:63`) against the
 current schema, keyed by output, with the reasons the web app already
 translates (`REASONS`, `mapping.tsx:86`). A suggestion with an issue is shown
@@ -506,7 +513,7 @@ Model-backed field selection remains dependent on the separately proposed model
 platform; the shipped enrichment selector uses exact compatible API-name matches.
 
 Validation: build, TypeScript checks, lint/layer checks, the real-Postgres server
-suite (`vitest run --maxWorkers=4`), web unit tests, the full 74-test Playwright
+suite (`vitest run --maxWorkers=4`), web unit tests, the full 75-test Playwright
 suite plus the on-request mapping scenario, and `pnpm test:docker` (sandbox,
 extension lifecycle and file storage). Tests use synthetic provider responses;
 no real Exa key or model request is part of validation.
