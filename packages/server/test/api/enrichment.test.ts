@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import type { ServerResponse } from 'node:http';
 import { executeEnrichment } from '@retainer/runner/enrichment';
 import { ENRICHMENT, enrichmentManifest } from '@retainer/runner/enrichment-contract';
 import { generateKeyPair } from 'jose';
@@ -9,10 +10,12 @@ import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
+import { answer, fakeAnthropic, type Received, type Upstream } from '../helpers/model.js';
 
 const db = useTestDatabase();
-let tokens: RunTokens, broker: SecretBroker;
+let tokens: RunTokens, broker: SecretBroker, upstream: Upstream;
 beforeAll(async () => {
+  upstream = await fakeAnthropic();
   const pair = await generateKeyPair('EdDSA');
   tokens = new RunTokens({
     issuer: 'https://retainer.test',
@@ -71,7 +74,21 @@ function exaCompany(
   };
 }
 
-async function setup(key = 'exa-fixture-key') {
+/** Answers a Messages request with structured output, as the model would. */
+const structured =
+  (output: unknown, stopReason = 'end_turn') =>
+  (request: Received, res: ServerResponse) =>
+    answer(request, res, 'claude-opus-5-5', {
+      text: stopReason === 'refusal' ? null : JSON.stringify(output),
+      stopReason,
+    });
+/** The Messages requests that reached the fake Anthropic API, as sent. */
+const messages = () =>
+  upstream.received
+    .filter((r) => r.url === '/v1/messages')
+    .map((r) => ({ headers: r.headers, body: JSON.parse(r.body) }));
+
+async function setup(key = 'exa-fixture-key', options: { modelKey?: boolean } = {}) {
   const manifest = enrichmentManifest({
     packageDigest: 'a'.repeat(64),
     handlerDigest: 'b'.repeat(64),
@@ -83,6 +100,10 @@ async function setup(key = 'exa-fixture-key') {
     extensionActivation: new Set(catalog.list().map((r) => r.digest)),
     runTokens: tokens,
     extensionSecrets: broker,
+    model: {
+      apiKey: options.modelKey === false ? undefined : 'sk-model-fixture',
+      upstream: upstream.origin,
+    },
   });
   const { workspace, keys } = await app.setupWorkspace(
     { name: `Enrichment ${randomUUID()}` },
@@ -140,7 +161,7 @@ async function setup(key = 'exa-fixture-key') {
   const id = installed.body.id as string;
   const queue = new ExtensionQueue(app.sql, catalog.runtime);
 
-  /** The fake Exa: answers by path, records each request without its key. */
+  /** The fake Exa: answers by path and by the query's domain, its last word. */
   const exa = {
     requests: [] as { path: string; body: Record<string, unknown> | null; key: string | null }[],
     search: (domain: string): Response => Response.json(exaCompany(`https://www.${domain}/`)),
@@ -158,14 +179,27 @@ async function setup(key = 'exa-fixture-key') {
       });
       if (target.pathname === '/websets/v0/teams/me') return exa.team();
       expect(target.pathname).toBe('/search');
-      return exa.search(body.query);
+      return exa.search(String(body.query).split(' ').at(-1) ?? '');
     }
     expect(target.origin).toBe('https://retainer.test');
-    if (init?.body) apiBodies.push(String(init.body));
+    if (init?.body && !target.pathname.startsWith('/v1/extensions/runtime/model'))
+      apiBodies.push(String(init.body));
+    if (failNext && target.pathname.endsWith(failNext)) {
+      failNext = undefined;
+      return new Response('upstream outage', { status: 502 });
+    }
     return app.inProcessFetch(url, init);
   };
+  /** Answers the next Retainer API request whose path ends so with a 502 page. */
+  let failNext: string | undefined;
   async function execute(job: ClaimedJob) {
     const token = await tokens.issue(app.sql, job, manifest.universalId, job.scopes);
+    const model = job.uses.includes('model')
+      ? {
+          origin: 'https://retainer.test/v1/extensions/runtime/model',
+          token: await tokens.issueModel(job),
+        }
+      : undefined;
     const result = await executeEnrichment(
       {
         protocolVersion: 1,
@@ -178,6 +212,7 @@ async function setup(key = 'exa-fixture-key') {
         apiOrigin: 'https://retainer.test',
         runToken: token,
         deadline: job.deadline.toISOString(),
+        ...(model ? { model } : {}),
       },
       new AbortController().signal,
       transport,
@@ -218,6 +253,9 @@ async function setup(key = 'exa-fixture-key') {
     keys,
     id,
     exa,
+    failNext: (path: string) => {
+      failNext = path;
+    },
     apiBodies,
     drain,
     company,
@@ -237,20 +275,22 @@ describe('company enrichment through a fake Exa', () => {
     expect(h.exa.requests).toEqual([
       { path: '/websets/v0/teams/me', body: null, key: 'exa-fixture-key' },
     ]);
+    const before = messages().length;
     const acme = await h.company({ name: 'Acme', domain: 'https://www.acme.example/' });
-    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'applied' }]);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
     expect(h.exa.requests[1]).toEqual({
       path: '/search',
       key: 'exa-fixture-key',
       body: {
-        query: 'acme.example',
+        query: 'Acme acme.example',
         type: 'auto',
         category: 'company',
-        includeDomains: ['acme.example'],
-        numResults: 1,
+        numResults: 5,
         contents: { text: { maxCharacters: 4000 } },
       },
     });
+    // The one result on the domain settles it without a model call.
+    expect(messages()).toHaveLength(before);
     const filled = await h.fields(acme);
     expect(filled.employeeCount).toBe(12);
     // History labels the writes with the extension's name, not its installation ID.
@@ -280,7 +320,7 @@ describe('company enrichment through a fake Exa', () => {
     expect((await h.patch(blank, { name: 'Renamed' })).status).toBe(200);
     expect(await h.drain()).toEqual([]);
     expect((await h.patch(blank, { domain: 'later.example' })).status).toBe(200);
-    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'applied' }]);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
     expect((await h.fields(blank)).employeeCount).toBe(12);
   });
 
@@ -288,7 +328,7 @@ describe('company enrichment through a fake Exa', () => {
     const h = await setup();
     await h.drain();
     const set = await h.company({ name: 'Set', domain: 'set.example', employeeCount: 40 });
-    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'applied' }]);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
     expect((await h.fields(set)).employeeCount).toBe(40);
     const full = await h.company({
       name: 'Full',
@@ -303,21 +343,6 @@ describe('company enrichment through a fake Exa', () => {
     expect((await h.fields(full)).linkedinUrl).toBeNull();
   });
 
-  it('writes nothing when Exa returns another domain or a contradicting homepage', async () => {
-    const h = await setup();
-    await h.drain();
-    h.exa.search = () => Response.json(exaCompany('https://other.example/'));
-    const a = await h.company({ name: 'A', domain: 'a.example' });
-    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_match' }]);
-    h.exa.search = () =>
-      Response.json(
-        exaCompany('https://b.example/', { text: '## Company Details\n- Homepage: other.example' }),
-      );
-    const b = await h.company({ name: 'B', domain: 'b.example' });
-    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_match' }]);
-    for (const record of [a, b]) expect((await h.fields(record)).employeeCount).toBeUndefined();
-  });
-
   it('uses partial results and drops values it cannot read', async () => {
     const h = await setup();
     await h.drain();
@@ -330,7 +355,7 @@ describe('company enrichment through a fake Exa', () => {
         }),
       );
     const partial = await h.company({ name: 'Partial', domain: 'partial.example' });
-    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'applied' }]);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
     const filled = await h.fields(partial);
     expect(filled.employeeCount).toBeUndefined();
     expect(filled.linkedinUrl).toBeUndefined();
@@ -417,25 +442,246 @@ describe('company enrichment through a fake Exa', () => {
   });
 });
 
-describe('enrichment configure and backfill', () => {
-  it('checks the key and suggests compatible API-name destinations', async () => {
+describe('picking the company with the model (model calls spec 6.3-6.5)', () => {
+  /** Two results, neither settled by the shortcut: a redirect and another company. */
+  const twoResults = (
+    first: string,
+    firstHomepage: string,
+    second = 'https://acme-labs.example/',
+  ) =>
+    Response.json({
+      results: [
+        exaCompany(first, {
+          text: `## Company Details\n- Homepage: ${firstHomepage}\n- LinkedIn: linkedin.com/company/fixture-co`,
+        }).results[0],
+        exaCompany(second).results[0],
+      ],
+    });
+
+  it('applies a medium pick on the domain at 0.7, and holds it where the threshold is higher', async () => {
     const h = await setup();
     await h.drain();
+    h.exa.search = (domain) => twoResults('https://redirect.example/', domain);
+    upstream.respond(structured({ index: 0, certainty: 'medium' }));
+    const before = messages().length;
+    const acme = await h.company({ name: 'Acme', domain: 'acme.example' });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_model_medium' }]);
+    expect((await h.fields(acme)).employeeCount).toBe(12);
+    const [row] = await db.owner<{ confidence: number }[]>`
+      select a.confidence from field_assertions a join fields f on f.id=a.field_id
+      where a.record_id=${acme} and f.name='employeeCount'`;
+    expect(row?.confidence).toBeCloseTo(0.7);
+    const [sent] = messages().slice(before);
+    expect(sent?.body).toMatchObject({
+      model: 'claude-opus-5-5',
+      max_tokens: 4000,
+      fallbacks: 'default',
+      output_config: { effort: 'low' },
+    });
+    expect(sent?.headers['anthropic-beta']).toBe('server-side-fallback-2026-07-01');
+    expect(sent?.body.messages[0].content).toContain('<profiles>');
+
+    await db.owner`update workspaces set settings = settings || '{"confidenceThreshold":0.8}'::jsonb
+      where id=${h.workspace}`;
+    const held = await h.company({ name: 'Held', domain: 'held.example' });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_model_medium' }]);
+    expect((await h.fields(held)).employeeCount).toBeUndefined();
+    const pending = await db.owner<{ n: number }[]>`
+      select count(*)::int as n from field_assertions where record_id=${held} and status='pending_review'`;
+    expect(pending[0]?.n).toBeGreaterThan(0);
+  });
+
+  it('accepts a pick on another domain only at high with the same name', async () => {
+    const h = await setup();
+    await h.drain();
+    h.exa.search = () => twoResults('https://fixture.example/', 'fixture.example');
+    upstream.respond(structured({ index: 0, certainty: 'high' }));
+    const renamed = await h.company({ name: 'Fixture Co.', domain: 'old-fixture.example' });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_model_high' }]);
+    expect((await h.fields(renamed)).employeeCount).toBe(12);
+    const other = await h.company({ name: 'Someone Else', domain: 'else.example' });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_match_model' }]);
+    upstream.respond(structured({ index: 0, certainty: 'medium' }));
+    const medium = await h.company({ name: 'Fixture Co', domain: 'medium.example' });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_match_model' }]);
+    for (const record of [other, medium])
+      expect((await h.fields(record)).employeeCount).toBeUndefined();
+  });
+
+  it.each([
+    ['a refusal', structured(null, 'refusal'), 'no_match_model_refused'],
+    ['output cut off', structured({ index: 0 }, 'max_tokens'), 'no_match_model_output'],
+    ['no company', structured({ index: null, certainty: 'high' }), 'no_match_model'],
+  ])('writes nothing after %s', async (_case, respond, code) => {
+    const h = await setup();
+    await h.drain();
+    h.exa.search = (domain) => twoResults('https://redirect.example/', domain);
+    upstream.respond(respond);
+    const acme = await h.company({ name: 'Acme', domain: 'acme.example' });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code }]);
+    expect((await h.fields(acme)).employeeCount).toBeUndefined();
+  });
+
+  it('does not look a company up again when it only gets a name', async () => {
+    const h = await setup();
+    await h.drain();
+    h.exa.search = () => twoResults('https://fixture.example/', 'fixture.example');
+    upstream.respond(structured({ index: 0, certainty: 'high' }));
+    const unnamed = await h.company({ domain: 'old-fixture.example' });
+    // No name: a pick on another domain can't be accepted.
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_match_model' }]);
+    // The trigger watches the domain only (spec 6.7): the base name field can
+    // be deleted, and a trigger on a deleted field would stop all dispatch.
+    expect((await h.patch(unnamed, { name: 'Fixture Co' })).status).toBe(200);
+    expect(await h.drain()).toEqual([]);
+  });
+
+  it('backfills a company whose first values are still held for review', async () => {
+    const h = await setup();
+    await h.drain();
+    await db.owner`update workspaces set settings = settings || '{"confidenceThreshold":0.8}'::jsonb
+      where id=${h.workspace}`;
+    h.exa.search = (domain) => twoResults('https://redirect.example/', domain);
+    upstream.respond(structured({ index: 0, certainty: 'medium' }));
+    await h.company({ name: 'Held', domain: 'held.example' });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_model_medium' }]);
+    const before = h.exa.requests.length;
+    await h.queue.enqueue(h.workspace, h.id, {
+      functionId: ENRICHMENT.backfill,
+      input: {},
+      dedupeKey: randomUUID(),
+    });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'backfill_page' }]);
+    expect(
+      h.exa.requests
+        .slice(before)
+        .filter((r) => r.path === '/search')
+        .map((r) => r.body?.query),
+    ).toEqual(['Held held.example']);
+  });
+
+  it('sends no name when the Company label is not a text field', async () => {
+    const h = await setup();
+    await h.drain();
+    const changed = await h.app.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_field',
+            object: 'company',
+            field: { name: 'billingEmail', label: 'Billing email', type: 'emails' },
+          },
+          { op: 'update_object', object: 'company', labelField: 'billingEmail' },
+        ],
+      },
+    });
+    expect(changed.status).toBe(200);
+    h.exa.search = (domain) => Response.json(exaCompany(`https://${domain}/`));
+    await h.company({
+      name: 'Acme',
+      domain: 'acme.example',
+      billingEmail: 'billing@acme.example',
+    });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
+    expect(h.exa.requests.at(-1)?.body?.query).toBe('acme.example');
+    expect(JSON.stringify(h.exa.requests)).not.toContain('billing@');
+  });
+
+  it('ends without a match when the server has no model key', async () => {
+    const h = await setup('exa-fixture-key', { modelKey: false });
+    await h.drain();
+    h.exa.search = (domain) => twoResults('https://redirect.example/', domain);
+    const acme = await h.company({ name: 'Acme', domain: 'acme.example' });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_match_model_unavailable' }]);
+    expect((await h.fields(acme)).employeeCount).toBeUndefined();
+    // A result on the domain still matches without the model.
+    h.exa.search = (domain) => Response.json(exaCompany(`https://${domain}/`));
+    await h.company({ name: 'Direct', domain: 'direct.example' });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
+  });
+
+  it('asks the model again when the run retries after the model call', async () => {
+    const h = await setup();
+    await h.drain();
+    h.exa.search = (domain) => twoResults('https://redirect.example/', domain);
+    upstream.respond(structured({ index: 0, certainty: 'high' }));
+    const before = messages().length;
+    h.failNext('/runtime/mapped-writes');
+    const acme = await h.company({ name: 'Acme', domain: 'acme.example' });
+    expect(await h.drain()).toEqual([{ status: 'retry', code: 'api_unavailable' }]);
+    await db.owner`update extension_jobs set available_at=clock_timestamp() where installation_id=${h.id} and status='queued'`;
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_model_high' }]);
+    // Nothing is kept between attempts (spec 6.5), so nothing is left in KV.
+    expect(messages()).toHaveLength(before + 2);
+    expect((await h.fields(acme)).employeeCount).toBe(12);
+    expect(
+      await db.owner`select 1 from extension_kv where installation_id=${h.id} and key like 'pick:%'`,
+    ).toHaveLength(0);
+  });
+});
+
+describe('enrichment configure and backfill', () => {
+  const requestSuggestions = async (h: Awaited<ReturnType<typeof setup>>) => {
     expect(
       (await h.app.request(`/v1/extensions/${h.id}/configure`, { key: h.keys.admin, body: {} }))
         .status,
     ).toBe(202);
-    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'suggestions_ready' }]);
-    const result = await h.app.request(`/v1/extensions/${h.id}/suggestions`, { key: h.keys.admin });
-    expect(result.body.status).toBe('ready');
-    expect(result.body.mapping.employee_count).toMatchObject({
+    const results = await h.drain();
+    const saved = await h.app.request(`/v1/extensions/${h.id}/suggestions`, { key: h.keys.admin });
+    expect(saved.body.status).toBe('ready');
+    return { results, mapping: saved.body.mapping };
+  };
+
+  it('suggests the mapping with the model, from sampled companies and the current mapping', async () => {
+    const h = await setup();
+    await h.drain();
+    await h.company({ name: 'Sampled', domain: 'sampled.example', employeeCount: 340 });
+    await h.drain();
+    upstream.respond(
+      structured({
+        employee_count: {
+          action: 'existing',
+          field: 'employeeCount',
+          reason: 'It holds head counts.',
+        },
+        linkedin_url: { action: 'skip', field: null, reason: 'Not wanted.' },
+        headquarters: { action: 'existing', field: 'headquarters', reason: 'Same meaning.' },
+      }),
+    );
+    const before = messages().length;
+    const { results, mapping } = await requestSuggestions(h);
+    expect(results).toEqual([{ status: 'succeeded', code: 'suggestions_ready' }]);
+    expect(mapping.employee_count).toMatchObject({
+      action: 'existing',
+      field: 'employeeCount',
+      reason: 'It holds head counts.',
+    });
+    expect(mapping.linkedin_url).toMatchObject({ action: 'skip', reason: 'Not wanted.' });
+    const [sent] = messages().slice(before);
+    // Through the proxy: Retainer's key in place of the model token.
+    expect(sent?.headers['x-api-key']).toBe('sk-model-fixture');
+    expect(sent?.headers.authorization).toBeUndefined();
+    const prompt = JSON.parse(sent?.body.messages[0].content);
+    expect(
+      prompt.companyFields.find((f: { name: string }) => f.name === 'employeeCount').samples,
+    ).toContain(340);
+    expect(prompt.currentMapping.employee_count).toEqual({
       action: 'existing',
       field: 'employeeCount',
     });
-    expect(result.body.mapping.linkedin_url).toMatchObject({
-      action: 'existing',
-      field: 'linkedinUrl',
-    });
+    const usage = await db.owner<{ function_id: string; model: string }[]>`
+      select function_id,model from ai_usage where installation_id=${h.id}`;
+    expect(usage).toEqual([{ function_id: ENRICHMENT.configure, model: 'claude-opus-5-5' }]);
+  });
+
+  it('falls back to API-name suggestions when the server has no model key', async () => {
+    const h = await setup('exa-fixture-key', { modelKey: false });
+    await h.drain();
+    const { results, mapping } = await requestSuggestions(h);
+    expect(results).toEqual([{ status: 'succeeded', code: 'suggestions_ready_without_model' }]);
+    expect(mapping.employee_count).toMatchObject({ action: 'existing', field: 'employeeCount' });
+    expect(mapping.linkedin_url).toMatchObject({ action: 'existing', field: 'linkedinUrl' });
   });
 
   it('backfills only previously enriched companies and preserves filled values', async () => {
@@ -466,6 +712,6 @@ describe('enrichment configure and backfill', () => {
         .slice(before)
         .filter((r) => r.path === '/search')
         .map((r) => r.body?.query),
-    ).toEqual(['existing.example']);
+    ).toEqual(['Existing existing.example']);
   });
 });

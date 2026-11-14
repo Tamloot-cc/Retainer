@@ -76,3 +76,9 @@ export async function retryTransient<T>(run: () => Promise<T>): Promise<T> {
     throw transient(error);
   }
 }
+
+/** A provider's `Retry-After` in whole seconds, at most an hour, or `fallback` without one. */
+export function retryAfterSeconds(headers: Headers | undefined, fallback = 30): number {
+  const seconds = Number(headers?.get('retry-after'));
+  return Number.isFinite(seconds) && seconds > 0 ? Math.min(3600, Math.ceil(seconds)) : fallback;
+}

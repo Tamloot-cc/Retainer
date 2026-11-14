@@ -436,11 +436,11 @@ FRONTEND.md §5.9 describes the step flow; update it with these steps.
 The shipped company enrichment release adds these handlers:
 
 - **`configure`**: checks the Exa key with the same test call as `setup`, then
-  reads the schema. For each output, it suggests the Company field with the
-  exact expected API name and an accepted type; otherwise Create when the
-  output declares a field, or Skip. It saves a reason per output. Normal
-  suggestion resolution reports any remaining destination constraints. It
-  does not sample CRM records or call a model.
+  reads the schema. Without a model, for each output, it suggests the Company
+  field with the exact expected API name and an accepted type; otherwise
+  Create when the output declares a field, or Skip. It saves a reason per
+  output. Normal suggestion resolution reports any remaining destination
+  constraints. With a model, see below.
 - **`backfill`** (a `job` function, `read` and `write`, mapped writes): scans
   companies in pages of 20. A record is eligible when its current provenance
   contains an assertion by this installation. For each eligible record, it
@@ -455,12 +455,12 @@ The shipped company enrichment release adds these handlers:
   Changing mapping through the Field mapping tab does not itself run setup
   or queue backfill.
 
-Model-backed field selection depends on the model-calls
-platform, including its operator key and provider disclosure. This installation
-change does not ship or enable the model proxy. After that platform ships, the
-configure handler samples up to 20 companies and up to five values
-per candidate field, then asks a model to choose Existing, Create or Skip with
-reasons. That is specified in `extensions-model-calls.md` §6.1 and not shipped yet.
+Model-backed field selection shipped with the enrichment release of
+`extensions-model-calls.md` (§6.1): `configure` declares `uses: ['model']`,
+samples up to 20 recently updated companies and up to five values per
+compatible field, and asks a model to choose Existing, Create or Skip with
+reasons. Without a model, or when the call fails, it suggests by API name and
+type as described above, and the run's code is `suggestions_ready_without_model`.
 
 The Exa lookup in `enrich` is unchanged by this spec.
 

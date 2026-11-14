@@ -1,8 +1,9 @@
 # Model calls in extensions
 
 Status: accepted, 2026-11-14, and revised the same day after a review against
-the code (§12); PR 1 (the platform, §9) has shipped, and the hosted `model`
-function is live (§9, step 3).
+the code (§12). PR 1 (the platform, §9) shipped in #92, and the hosted
+`model` function is live (§9, step 3). PR 2 (the enrichment release) is
+built; §6.7 records what it chose where this spec was silent.
 First written 2026-11-13. Builds on the extension platform in
 [extensions.md](extensions.md) and the output mapping and enrichment bundle in
 [extensions-company-enrichment-implementation.md](extensions-company-enrichment-implementation.md)
@@ -534,14 +535,14 @@ on another model inside the same call. The proxy records the model that
 answered (§3.4). Haiku 5.5 has no server-side fallback, which the comparison
 in §6.6 has to count.
 
-**Retries.** A retry after the model call but before the write would call the
-model again, so the handler stores each pick in installation KV under
-`pick:<recordId>:<domain>` as `{ candidateUrl, certainty, at }`. A retry that
-finds a candidate at the same URL reuses it. KV has no expiry, so the handler
-ignores a pick older than 7 days and overwrites it with the next one; until
-then one small row per model-picked company stays. Erasure of the record
-deletes the key, as it does every key that names an erased record
-(`privacy/extension-erasure.ts:70`).
+**Retries.** Nothing is kept between attempts: a retry after the model call
+but before the write calls the model again. That needs a failure in between,
+such as a mapped write that fails or a lost response, so it's rare, and it
+costs one more pick (§6.6). A stored pick was dropped (§12): installation KV
+has a 1 MiB quota, no expiry and no delete for runs, so every way a run could
+end needed its own cleanup, and each one missed made the quota fill a little
+more. Revisit with a KV delete and TTL in the server if retries turn out to
+cost real money.
 
 New run codes: `matched_shortcut`, `matched_model_high`,
 `matched_model_medium`, `no_match_model`, `no_match_model_unavailable`,
@@ -567,6 +568,63 @@ through the same set: a company that matches today must still match.
 Picking from five candidates is a small task, so the first run compares
 `claude-opus-5-5` with `claude-haiku-5-5`, which costs about a fortieth as
 much, and the bundle keeps the cheaper one if accuracy holds.
+
+### 6.7 As built (PR 2)
+
+Choices the enrichment release made where §6 left them open:
+
+- **Trigger.** `enrich` still watches only the domain. The search and the
+  guard on another domain use the company's name, so a company created
+  without a name and named later isn't looked up again until its domain
+  changes. Watching the base name field too was tried and dropped: that field
+  isn't protected, a workspace can delete it once another field is the label,
+  and a trigger on a deleted field makes every dispatch pass fail with
+  `schema_binding_conflict` (`extension-runtime/queue.ts`), which would stop
+  enrichment in that workspace. Watching the name needs a server change that
+  lets a trigger skip a field that no longer exists.
+- **Which functions use the model.** `configure`, `enrich` and `backfill`
+  declare `uses: ['model']`; `setup` doesn't. Backfill runs the same lookup as
+  `enrich`, so it gets the same shortcut, model pick, guards and confidence.
+- **Timeouts and pages.** `configure` and `enrich` have 120 s, `backfill`
+  300 s with pages of 10 companies instead of 20, since each company may need a
+  search and a model call.
+- **Exa consent.** The search now sends the company's name with its domain,
+  so the `shareDomains` consent says so. A lookup asks for five results with
+  text, about $0.012 at Exa's list prices. The key check falls back to a
+  one-result search without contents.
+- **The company's name.** The record's label, used only when Company's label
+  field is a text field. A workspace may make an email, phone, link or number
+  the label, and that isn't a name to send to Exa or compare, so then the
+  search uses the domain alone and a pick on another domain can't be
+  accepted. The bundle can't name the base name field itself: the schema API
+  keeps universal IDs internal.
+- **"On the domain."** The shortcut keeps today's rule: the result's URL
+  normalizes to the domain and any `Homepage:` line agrees. For the guards, a
+  pick is on the domain when its `Homepage:` line, or its URL when the profile
+  has none, normalizes to the domain, so a redirected site whose profile names
+  the record's domain counts as on it.
+- **Name matching.** Lower case, accents and punctuation dropped (`S.A.` reads
+  as `SA`), `&` read as "and", and trailing legal suffixes removed (Inc, Ltd,
+  LLC, GmbH, SA, PLC and similar).
+- **Run codes.** A written match reports how it matched (`matched_shortcut`,
+  `matched_model_high`, `matched_model_medium`) in place of `applied`; a
+  skipped write still reports the mapped write's reason. No candidates is
+  `no_match`; `index: null`, a `low` pick or a pick the guards refuse is
+  `no_match_model`; an index that wasn't sent is `no_match_model_output`.
+  Configure without a usable model answer reports
+  `suggestions_ready_without_model`.
+- **Other model errors.** A 429 retries as `model_rate_limited`; a 5xx or a
+  lost connection as `model_unavailable`, both with Anthropic's `retry-after`
+  or 30 s. Any other 4xx (the proxy refused the request) fails the run as
+  `model_request_failed`, a bundle bug that a retry wouldn't fix.
+- **Backfill eligibility.** A company counts as enriched before when this
+  installation has a value on it, applied or held for review, so a company
+  whose first values wait for review still gets newly mapped outputs.
+- **Configure.** Samples are the 20 most recently updated companies; a value
+  longer than 500 characters as JSON isn't sampled. A model choice the schema
+  can't take (an incompatible or missing field, or Create for an output with
+  no suggested field) keeps the name-and-type suggestion for that output.
+  Reasons are cut to 500 characters.
 
 ## 7. Tests
 
@@ -607,8 +665,8 @@ much, and the bundle keeps the cheaper one if accuracy holds.
   `confidence` below 1 gets `422`.
 - **Layer check:** core modules importing `model/` fail `pnpm lint`.
 - **Enrichment (unit):** the shortcut makes no model call; every guard in
-  §6.3; confidence by certainty; each row of the table in §6.5; KV reuse on
-  retry, and a pick older than 7 days ignored; the configure function's
+  §6.3; confidence by certainty; each row of the table in §6.5; a retry
+  after the model call asks the model again; the configure function's
   suggestions for a fixture schema.
 
 ## 8. Hosted
@@ -761,3 +819,9 @@ users, so none of these keeps anything for old bundles or installations:
 - The proxy sets `Cache-Control: no-store` on its own responses. The mounts
   set it on Hono's context, which a handler that returns its own `Response`
   drops.
+
+2026-11-14, while building PR 2: the stored pick of §6.5 was dropped. Review
+of the PR found one KV leak after another (picks never cleared, then left by
+a lost write response in enrich, then in backfill), each a new exit path
+that needed its own cleanup, because runs can't delete a KV key and KV has
+no expiry. A retry now calls the model again instead.
