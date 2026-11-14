@@ -755,6 +755,7 @@ export {
 export { Property, PropertyEditor, PropertyList, Section } from './property.js';
 export { Sheet } from './sheet.js';
 export { activityIcon, objectIcon, Shell } from './shell.js';
+export { ItemCard, ItemCards, StepActions, StepFlow, StepHeader } from './steps.js';
 export function SignInFrame({
   subtitle = 'Sign in with your personal API key.',
   children,

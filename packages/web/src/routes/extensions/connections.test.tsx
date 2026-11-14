@@ -8,8 +8,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, WorkspaceContext } from '../api/client.js';
-import { MemberConnectionPanel } from './extension-connections.js';
+import { api, WorkspaceContext } from '../../api/client.js';
+import { MemberConnectionPanel } from './connections.js';
 
 const installation = { id: 'installation', state: 'active' } as ExtensionInstallation;
 const release = {
@@ -116,7 +116,7 @@ describe('member connection controls', () => {
     });
     const { user } = mount();
     await user.click(await screen.findByRole('button', { name: 'Connect account' }));
-    const dialog = screen.getByRole('dialog', { name: 'Connect your Tamloot account' });
+    const dialog = screen.getByRole('form', { name: 'Connect your Tamloot account' });
     expect(within(dialog).queryByLabelText(/Share meetings/)).toBeNull();
     expect(
       (within(dialog).getByLabelText('History days (required)') as HTMLInputElement).value,
@@ -170,7 +170,7 @@ describe('member connection controls', () => {
     await client.invalidateQueries({
       queryKey: ['workspace', 'extension-connections', 'installation'],
     });
-    const dialog = screen.getByRole('dialog', { name: 'Reconnect your Tamloot account' });
+    const dialog = screen.getByRole('form', { name: 'Reconnect your Tamloot account' });
     await user.click(within(dialog).getByRole('button', { name: 'Reconnect account' }));
     await waitFor(() =>
       expect(reconnect).toHaveBeenCalledWith('installation', 'own', {

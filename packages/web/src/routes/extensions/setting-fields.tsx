@@ -1,5 +1,5 @@
 import type { ExtensionInstallation, ExtensionManifest } from '@retainer/extension';
-import { Input, Label, Muted, SelectMenu } from '../ui/index.js';
+import { Input, Label, Muted, SelectMenu } from '../../ui/index.js';
 
 type Installation = ExtensionInstallation;
 type Release = { manifest: Pick<ExtensionManifest, 'name' | 'settings'> };

@@ -9,8 +9,8 @@ test('imports an agent draft, edits it, approves the reviewed mapping and remaps
 }) => {
   await signIn(page, r.url, r.keys.user);
   await page.getByRole('link', { name: 'Extensions', exact: true }).click();
-  await page.getByRole('button', { name: 'Set up', exact: true }).click();
-  let dialog = page.getByRole('dialog', { name: 'browser-enrichment setup' });
+  await page.getByRole('link', { name: 'Set up browser-enrichment', exact: true }).click();
+  const dialog = page.getByRole('main');
   await expect(
     dialog.getByText('Employees the provider finds, mostly from public profiles.'),
   ).toBeVisible();
@@ -41,10 +41,10 @@ test('imports an agent draft, edits it, approves the reviewed mapping and remaps
   await expect(dialog.getByText('Unknown change')).toHaveCount(0);
   await expect(dialog.getByText(/^Add field /)).toHaveCount(0);
   await expect(bindings.getByText('Headquarters → Address')).toBeVisible();
-  await expect(dialog.getByText(/attributed to an agent/)).toBeVisible();
+  await expect(dialog.getByText(/made by an agent/)).toBeVisible();
   expect((await r.request('/extensions', undefined, r.keys.user)).installations).toHaveLength(0);
   await dialog.getByRole('button', { name: 'Approve installation' }).click();
-  await expect(dialog).not.toBeVisible();
+  await expect(page).toHaveURL(/\/extensions\/[0-9a-f-]{36}$/);
 
   const [installed] = (await r.request('/extensions', undefined, r.keys.user)).installations;
   let detail = await r.request(`/extensions/${installed.id}`, undefined, r.keys.user);
@@ -52,12 +52,15 @@ test('imports an agent draft, edits it, approves the reviewed mapping and remaps
     ['employee_count', 'employeeCount'],
     ['headquarters', 'address'],
   ]);
+  await page.getByRole('button', { name: 'Field mapping', exact: true }).click();
   const summary = page.getByRole('region', { name: 'Approved field mapping' });
   await expect(summary.getByText('Headquarters → Address')).toBeVisible();
 
   // A later remap goes through its own review and keeps the installation's settings.
-  await summary.getByRole('button', { name: 'Edit mapping' }).click();
-  dialog = page.getByRole('dialog', { name: 'browser-enrichment mapping' });
+  await summary.getByRole('link', { name: 'Edit mapping' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Edit browser-enrichment mapping' }),
+  ).toBeVisible();
   await expect(
     dialog.getByText('Changing the mapping does not fill in existing companies.'),
   ).toBeVisible();
@@ -66,10 +69,11 @@ test('imports an agent draft, edits it, approves the reviewed mapping and remaps
   await dialog.getByRole('button', { name: 'Review mapping' }).click();
   await expect(dialog.getByText('Headquarters → skipped')).toBeVisible();
   await dialog.getByRole('button', { name: 'Approve mapping' }).click();
-  await expect(dialog).not.toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/extensions/${installed.id}$`));
   detail = await r.request(`/extensions/${installed.id}`, undefined, r.keys.user);
   expect(detail.mapping.revision).toBe(1);
   expect(detail.generation).toBe(installed.generation + 1);
+  await page.getByRole('button', { name: 'Field mapping', exact: true }).click();
   await expect(summary.getByText('Headquarters → skipped')).toBeVisible();
 });
 

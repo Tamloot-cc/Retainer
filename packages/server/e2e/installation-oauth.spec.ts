@@ -22,12 +22,9 @@ test('reviews workspace app OAuth in the browser and disconnects it from Extensi
   const workspace = (await created.json()) as { id: string; slug: string };
   const extensionsUrl = `${a.url}/app/w/${workspace.slug}/extensions`;
   await page.goto(extensionsUrl);
-  await page.getByRole('button', { name: 'Set up', exact: true }).click();
-  const setup = page.getByRole('dialog', { name: 'browser-workspace-app setup' });
-  await setup.getByRole('button', { name: 'Review installation' }).click();
-  await setup.getByRole('button', { name: 'Approve installation' }).click();
-  await expect(setup).not.toBeVisible();
-  await expect(page.getByText('Active · Version 1.0.0')).toBeVisible();
+  await page.getByRole('link', { name: 'Set up browser-workspace-app', exact: true }).click();
+  await page.getByRole('button', { name: 'Approve installation' }).click();
+  await expect(page.getByText('Active', { exact: true })).toBeVisible();
   await page.route('https://workspace-app.example/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<p>Workspace app</p>' }),
   );
@@ -76,8 +73,9 @@ test('reviews workspace app OAuth in the browser and disconnects it from Extensi
     actor: { type: 'integration' },
   });
   await page.goto(extensionsUrl);
+  await page.getByRole('link', { name: /^browser-workspace-app/ }).click();
   await page.getByRole('button', { name: 'App credentials', exact: true }).click();
-  const credentials = page.getByRole('dialog', { name: 'App credentials' });
+  const credentials = page.getByRole('main');
   await expect(credentials.getByRole('button', { name: 'Create installation key' })).toHaveCount(0);
   await credentials.getByRole('button', { name: 'Revoke connection', exact: true }).click();
   await expect(credentials.getByText('OAuth connection · Inactive')).toBeVisible();

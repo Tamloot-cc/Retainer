@@ -81,7 +81,7 @@ packages/web/
     auth/               key-mode sign-in screen
     fields/             one folder per field type (6), shared code in common.tsx
     provenance/         actor badges, sourced values, pending markers
-    routes/             the screens (5), grouped: records/, views/, events/, schema/, review/
+    routes/             the screens (5), grouped: records/, views/, events/, schema/, review/, extensions/
     ui/                 the only source of UI (8): shell, data grid, sheet, popovers
 ```
 
@@ -645,6 +645,30 @@ changes what is displayed, never what is sent. When on:
 - A **JSON** tab on record and event pages shows the REST response as
   returned (`?tab=json`; without developer view the address falls back to
   the first tab).
+
+### 5.9 Extensions — `/app/extensions`
+
+Every screen is a page; only the uninstall confirmation is a dialog.
+
+- **List** (`/extensions`): **Installed** cards (name, a status badge, an
+  "Update available" badge when the catalog has a newer release) open the
+  extension's page. **Available** cards hold the extensions not installed,
+  each with **Set up** for admins.
+- **Extension** (`/extensions/:id`): the status and version, notices for an
+  update, a missing runtime or the last error, and an actions menu
+  (Reconnect, Enable, Disable, Uninstall) beside **Upgrade to …**. Tabs
+  (`?tab=`): Overview (access, sync progress, where it runs), Connections
+  (for extensions each person connects, which open on this tab; a person's
+  connect form is inline), Field mapping, Settings (saved without a review;
+  credentials and account settings go through Reconnect), Runs, and App
+  credentials for standalone apps.
+- **Setup** (`/extensions/new/:registration`) and its changes
+  (`/extensions/:id/upgrade`, `/reconnect`, `/mapping`): numbered steps,
+  Connect (settings and secrets), Map fields, then Review and approve,
+  showing only the steps a release needs. Continuing from the last input step
+  stages secrets and asks the server for the preview; nothing is written until
+  Approve. Going back to a step drops the preview. Approving opens the
+  extension's page.
 
 ### Not in v1
 
