@@ -124,7 +124,9 @@ export async function extensionServices(
             )
               throw new Error('verifier runtime is unavailable');
           } else if (
-            !['job', 'install', 'uninstall', 'schedule', 'change'].includes(fn.trigger.kind)
+            !['job', 'configure', 'install', 'uninstall', 'schedule', 'change'].includes(
+              fn.trigger.kind,
+            )
           )
             throw new Error('trigger runtime is unavailable');
           const executable = registry.lookup(
