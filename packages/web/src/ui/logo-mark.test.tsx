@@ -3,7 +3,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Splash } from './index.js';
 import { CYCLE, LogoMark, type MoodState, moodReducer } from './logo-mark.js';
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 const at = (shown: MoodState['shown'], next: MoodState['next'] = null): MoodState => ({
   shown,
@@ -69,7 +72,7 @@ describe('changing mood', () => {
 });
 
 describe('logo-mark.css', () => {
-  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'logo-mark.css'), 'utf8');
+  const css = readFileSync(join(here, 'logo-mark.css'), 'utf8');
   it('has the keyframes and the rules for every mood the component waits on', () => {
     for (const [mood, { name }] of Object.entries(CYCLE)) {
       expect(css).toContain(`@keyframes ${name} {`);
@@ -141,5 +144,40 @@ describe('LogoMark', () => {
     expect(mark(container).getAttribute('aria-hidden')).toBe('true');
     render(<LogoMark mood="reading" label="Reading memory" />);
     expect(screen.getByRole('img', { name: 'Reading memory' })).toBeTruthy();
+  });
+});
+
+describe('the splash', () => {
+  it('turns from the angle it would have had since page load', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(CYCLE.thinking.ms * 3 + 500);
+    render(<Splash label="Checking session…" />);
+    const status = screen.getByRole('status');
+    expect(status.style.getPropertyValue('--splash-phase')).toBe('-500ms');
+    expect(screen.getByRole('img', { name: 'Checking session…' }).dataset.mood).toBe('thinking');
+  });
+
+  it('is drawn the same in index.html, before the scripts load', () => {
+    const html = readFileSync(join(here, '../../index.html'), 'utf8');
+    const page = document.createElement('div');
+    page.innerHTML = html.slice(html.indexOf('<div id="root">'), html.indexOf('<script>'));
+    const { container } = render(<Splash label="Loading Retainer" />);
+    // Every element of the mark and its attributes, ids aside (React makes its own).
+    const drawing = (root: ParentNode) =>
+      [
+        ...(root.querySelector('.retainer-mark')?.querySelectorAll('*') ?? []),
+        root.querySelector('.retainer-mark'),
+      ].map((e) => [
+        e?.tagName,
+        Object.fromEntries(
+          [...(e?.attributes ?? [])].map((a) => [
+            a.name,
+            a.value.replace(/retainer-[\w-]*?-(fade|ring)\b/g, '$1').replace(/\s|;$/g, ''),
+          ]),
+        ),
+      ]);
+    expect(drawing(page)).toEqual(drawing(container));
+    expect(drawing(page).length).toBeGreaterThan(10);
+    const style = page.querySelector<HTMLElement>('.retainer-mark')?.style;
+    expect(style?.getPropertyValue('--mark-cycle')).toBe(`${CYCLE.thinking.ms}ms`);
   });
 });

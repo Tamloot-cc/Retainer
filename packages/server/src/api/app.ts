@@ -176,21 +176,34 @@ export function createApp(deps: AppDeps) {
     // the app send only the origin as Referer: an OAuth page's address is
     // long, and API Gateway refuses headers over 10 KB, which cookies other
     // apps set on a parent domain can already come close to.
+    // Files under assets/ have a content hash in their names, so a browser
+    // can keep them for good. Everything else, index.html above all (served
+    // here for /app/ too), is checked on every load, so a new build's
+    // index.html, which names the new files, is seen at once.
+    const isAsset = (path: string) => path.startsWith('/app/assets/');
     app.use('/app/*', async (c, next) => {
       await next();
       c.header('Content-Security-Policy', "frame-ancestors 'none'");
       c.header('X-Frame-Options', 'DENY');
       c.header('Referrer-Policy', 'strict-origin');
+      if (c.res.status === 200)
+        c.header(
+          'Cache-Control',
+          isAsset(c.req.path) ? 'public, max-age=31536000, immutable' : 'no-cache',
+        );
     });
     app.get('/app', (c) => c.redirect('/app/'));
     app.use(
       '/app/*',
-      serveStatic({ root, rewriteRequestPath: (path) => path.replace(/^\/app/, '') }),
+      serveStatic({
+        root,
+        precompressed: true,
+        rewriteRequestPath: (path) => path.replace(/^\/app/, ''),
+      }),
     );
     app.get('/app/*', async (c, next) => {
-      if (c.req.path.startsWith('/app/assets/')) return next();
-      c.header('Cache-Control', 'no-cache');
-      return serveStatic({ path: resolve(root, 'index.html') })(c, next);
+      if (isAsset(c.req.path)) return next();
+      return serveStatic({ path: resolve(root, 'index.html'), precompressed: true })(c, next);
     });
   }
   return app;
