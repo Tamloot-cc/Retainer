@@ -80,6 +80,55 @@ export function exaSearchRequest(domain: string, name?: string | null) {
 export const ENRICHMENT_OUTPUTS = ['employee_count', 'linkedin_url', 'headquarters'] as const;
 export type EnrichmentOutput = (typeof ENRICHMENT_OUTPUTS)[number];
 
+/** How sure the model is of its pick (model calls spec 6.3). */
+export const certaintySchema = z.enum(['high', 'medium', 'low']);
+export type Certainty = z.infer<typeof certaintySchema>;
+
+/** The reviewed mapping: the domain lookup and the outputs a workspace binds to fields. */
+export const ENRICHMENT_MAPPING = {
+  objectId: BASE_OBJECT_IDS.company,
+  lookup: { fieldId: ENRICHMENT.domainField, type: 'links' as const },
+  outputs: [
+    {
+      key: 'employee_count',
+      label: 'Employee count',
+      description:
+        "Employees Exa finds for the company, mostly from public profiles. Often lower than the company's own size band.",
+      types: ['number' as const],
+      field: {
+        universalId: ENRICHMENT.employeeCountField,
+        name: 'employeeCount',
+        label: 'Employee Count',
+        type: 'number' as const,
+      },
+    },
+    {
+      key: 'linkedin_url',
+      label: 'LinkedIn URL',
+      description: "The company's LinkedIn page, as listed in Exa's company profile.",
+      types: ['links' as const],
+      field: {
+        universalId: ENRICHMENT.linkedinField,
+        name: 'linkedinUrl',
+        label: 'LinkedIn URL',
+        type: 'links' as const,
+      },
+    },
+    {
+      key: 'headquarters',
+      label: 'Headquarters',
+      description: "The headquarters city, postcode and country in Exa's company data.",
+      types: ['address' as const],
+      field: {
+        universalId: ENRICHMENT.headquartersField,
+        name: 'headquarters',
+        label: 'Headquarters',
+        type: 'address' as const,
+      },
+    },
+  ],
+};
+
 export function enrichmentManifest(build: {
   version?: string;
   packageDigest: string;
@@ -132,49 +181,7 @@ export function enrichmentManifest(build: {
     },
     schema: [],
     views: [],
-    mapping: {
-      objectId: BASE_OBJECT_IDS.company,
-      lookup: { fieldId: ENRICHMENT.domainField, type: 'links' },
-      outputs: [
-        {
-          key: 'employee_count',
-          label: 'Employee count',
-          description:
-            "Employees Exa finds for the company, mostly from public profiles. Often lower than the company's own size band.",
-          types: ['number'],
-          field: {
-            universalId: ENRICHMENT.employeeCountField,
-            name: 'employeeCount',
-            label: 'Employee Count',
-            type: 'number',
-          },
-        },
-        {
-          key: 'linkedin_url',
-          label: 'LinkedIn URL',
-          description: "The company's LinkedIn page, as listed in Exa's company profile.",
-          types: ['links'],
-          field: {
-            universalId: ENRICHMENT.linkedinField,
-            name: 'linkedinUrl',
-            label: 'LinkedIn URL',
-            type: 'links',
-          },
-        },
-        {
-          key: 'headquarters',
-          label: 'Headquarters',
-          description: "The headquarters city, postcode and country in Exa's company data.",
-          types: ['address'],
-          field: {
-            universalId: ENRICHMENT.headquartersField,
-            name: 'headquarters',
-            label: 'Headquarters',
-            type: 'address',
-          },
-        },
-      ],
-    },
+    mapping: ENRICHMENT_MAPPING,
     functions: [
       {
         universalId: ENRICHMENT.configure,

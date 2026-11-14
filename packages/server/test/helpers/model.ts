@@ -30,8 +30,16 @@ export type Upstream = {
 const sse = (res: ServerResponse, type: string, data: object) =>
   res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
 
-/** Answers like Messages: JSON, or a stream when the body asks for one. */
-export function answer(request: Received, res: ServerResponse, model = 'claude-opus-5-5') {
+/**
+ * Answers like Messages: JSON, or a stream when the body asks for one. `reply`
+ * sets a non-streamed answer's text (null for no content) and stop reason.
+ */
+export function answer(
+  request: Received,
+  res: ServerResponse,
+  model = 'claude-opus-5-5',
+  reply: { text: string | null; stopReason: string } = { text: 'hello', stopReason: 'end_turn' },
+) {
   const body = request.body ? (JSON.parse(request.body) as { stream?: boolean }) : {};
   const usage = { input_tokens: 12, output_tokens: 7, cache_read_input_tokens: 3 };
   res.setHeader('request-id', `req_${randomUUID()}`);
@@ -63,8 +71,9 @@ export function answer(request: Received, res: ServerResponse, model = 'claude-o
       type: 'message',
       role: 'assistant',
       model,
-      content: [{ type: 'text', text: 'hello' }],
-      stop_reason: 'end_turn',
+      content: reply.text === null ? [] : [{ type: 'text', text: reply.text }],
+      stop_reason: reply.stopReason,
+      stop_details: null,
       usage,
     }),
   );

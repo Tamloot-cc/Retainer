@@ -10,7 +10,7 @@ import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { fakeAnthropic, type Received, type Upstream } from '../helpers/model.js';
+import { answer, fakeAnthropic, type Received, type Upstream } from '../helpers/model.js';
 
 const db = useTestDatabase();
 let tokens: RunTokens, broker: SecretBroker, upstream: Upstream;
@@ -75,23 +75,13 @@ function exaCompany(
 }
 
 /** Answers a Messages request with structured output, as the model would. */
-function structured(output: unknown, stopReason = 'end_turn') {
-  return (_request: Received, res: ServerResponse) => {
-    res.writeHead(200, { 'content-type': 'application/json', 'request-id': `req_${randomUUID()}` });
-    res.end(
-      JSON.stringify({
-        id: 'msg_1',
-        type: 'message',
-        role: 'assistant',
-        model: 'claude-opus-5-5',
-        content: stopReason === 'refusal' ? [] : [{ type: 'text', text: JSON.stringify(output) }],
-        stop_reason: stopReason,
-        stop_details: null,
-        usage: { input_tokens: 40, output_tokens: 9 },
-      }),
-    );
-  };
-}
+const structured =
+  (output: unknown, stopReason = 'end_turn') =>
+  (request: Received, res: ServerResponse) =>
+    answer(request, res, 'claude-opus-5-5', {
+      text: stopReason === 'refusal' ? null : JSON.stringify(output),
+      stopReason,
+    });
 /** The Messages requests that reached the fake Anthropic API, as sent. */
 const messages = () =>
   upstream.received

@@ -8,9 +8,14 @@ import {
   isRetryLater,
 } from '@retainer/extension';
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
-import { normalizeDomain, type ObjectView } from '@retainer/shared';
+import { BASE_FIELD_IDS, normalizeDomain, type ObjectView } from '@retainer/shared';
 import { z } from 'zod';
-import { ENRICHMENT, enrichmentManifest } from './enrichment-contract.js';
+import {
+  type Certainty,
+  certaintySchema,
+  ENRICHMENT,
+  ENRICHMENT_MAPPING,
+} from './enrichment-contract.js';
 import {
   enrichmentModel,
   type ModelFailure,
@@ -22,7 +27,6 @@ import {
 import {
   acceptPick,
   type Candidate,
-  type Certainty,
   candidateValues,
   type EnrichmentValues,
   ExaError,
@@ -50,11 +54,11 @@ export const PICK_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const KV_KEY_MAX = 200;
 const storedPick = z.object({
   candidateUrl: z.string(),
-  certainty: z.enum(['high', 'medium', 'low']),
+  certainty: certaintySchema,
   at: z.iso.datetime({ offset: true }),
 });
 
-export type Found =
+type Found =
   | { status: 'match'; values: EnrichmentValues; confidence: number; code: string }
   | { status: 'no_match'; code: string };
 const noMatch = (failure?: ModelFailure): Found => ({
@@ -149,8 +153,14 @@ function mappedContext(
 }
 
 type MappingOutput = ExtensionMapping['outputs'][number];
+/** The lookup field's base name (`companyDomain`), never a destination. */
+const LOOKUP_BASE_FIELD = Object.entries(BASE_FIELD_IDS).find(
+  ([, id]) => id === ENRICHMENT_MAPPING.lookup.fieldId,
+)?.[0];
 /** Each company may need a search and a model call, so pages stay small. */
 const BACKFILL_PAGE = 10;
+/** Companies of a backfill page looked up at once, to stay well inside its 300 s. */
+const BACKFILL_CONCURRENCY = 3;
 const SAMPLE_COMPANIES = 20;
 const SAMPLES_PER_FIELD = 5;
 const SAMPLE_MAX_CHARACTERS = 500;
@@ -162,33 +172,27 @@ function compatibleFields(company: ObjectView | undefined, output: MappingOutput
     (f) =>
       !f.readOnly &&
       (output.types as readonly string[]).includes(f.type) &&
-      f.baseField !== 'companyDomain',
+      f.baseField !== LOOKUP_BASE_FIELD,
   );
 }
 
-type Choices = Record<string, ExtensionMappingChoice & { reason?: string }>;
-/** Today's suggestions without a model: the expected API name and a compatible type. */
-function byNameAndType(company: ObjectView | undefined, outputs: MappingOutput[]): Choices {
-  return Object.fromEntries(
-    outputs.map((output) => {
-      const field = compatibleFields(company, output).find((f) => f.name === output.field?.name);
-      return [
-        output.key,
-        field
-          ? {
-              action: 'existing' as const,
-              field: field.name,
-              reason: 'This field has the expected API name and a compatible type.',
-            }
-          : output.field
-            ? {
-                action: 'create' as const,
-                reason: 'Create the suggested field; no matching compatible API name exists.',
-              }
-            : { action: 'skip' as const, reason: 'No compatible destination was identified.' },
-      ];
-    }),
-  );
+type Choice = ExtensionMappingChoice & { reason?: string };
+type Choices = Record<string, Choice>;
+/** Today's suggestion without a model: the expected API name and a compatible type. */
+function byNameAndType(company: ObjectView | undefined, output: MappingOutput): Choice {
+  const field = compatibleFields(company, output).find((f) => f.name === output.field?.name);
+  if (field)
+    return {
+      action: 'existing',
+      field: field.name,
+      reason: 'This field has the expected API name and a compatible type.',
+    };
+  if (output.field)
+    return {
+      action: 'create',
+      reason: 'Create the suggested field; no matching compatible API name exists.',
+    };
+  return { action: 'skip', reason: 'No compatible destination was identified.' };
 }
 
 /**
@@ -204,7 +208,6 @@ async function suggestWithModel(
   company: ObjectView | undefined,
   outputs: MappingOutput[],
   current: ExtensionMappingView | null,
-  fallback: Choices,
   signal: AbortSignal,
 ): Promise<Choices | null> {
   if (!model) return null;
@@ -228,7 +231,7 @@ async function suggestWithModel(
           value !== '' &&
           JSON.stringify(value).length <= SAMPLE_MAX_CHARACTERS
         )
-          samples.set(name, [...list, value]);
+          samples.set(name, list.concat([value]));
       }
   }
   const fields: SuggestField[] = [...candidates.values()].map((f) => ({
@@ -267,22 +270,71 @@ async function suggestWithModel(
     outputs.map((output) => {
       const choice = answer.value[output.key];
       const reason = choice?.reason.trim().slice(0, REASON_MAX) || undefined;
-      const fits =
-        choice?.action === 'existing'
-          ? compatibleFields(company, output).some((f) => f.name === choice.field)
-          : choice?.action === 'create'
-            ? Boolean(output.field)
-            : choice?.action === 'skip';
-      if (!choice || !fits)
-        return [output.key, fallback[output.key] ?? { action: 'skip' as const }];
-      return [
-        output.key,
-        choice.action === 'existing'
-          ? { action: 'existing' as const, field: choice.field as string, reason }
-          : { action: choice.action, reason },
-      ];
+      const field = choice?.field;
+      if (
+        choice?.action === 'existing' &&
+        field &&
+        compatibleFields(company, output).some((f) => f.name === field)
+      )
+        return [output.key, { action: 'existing' as const, field, reason }];
+      if (choice?.action === 'skip' || (choice?.action === 'create' && output.field))
+        return [output.key, { action: choice.action, reason }];
+      return [output.key, byNameAndType(company, output)];
     }),
   );
+}
+
+/**
+ * Looks a company up and sends the values of its open outputs to the
+ * fill-only mapped write, which decides what is written. Returns the run code:
+ * how it matched when something was written, otherwise why not.
+ */
+async function fill(
+  run: Lookup,
+  mapping: ExtensionMappingView,
+  record: { id: string; label: string | null; fields: Record<string, unknown> },
+  domain: string,
+  open: ExtensionMappingView['outputs'],
+): Promise<string> {
+  const found = await lookUp(run, {
+    id: record.id,
+    name: record.label,
+    domain,
+    context: mappedContext(mapping, record),
+  });
+  if (found.status === 'no_match') return found.code;
+  const wanted = new Set(open.map((output) => output.output));
+  const values = Object.fromEntries(
+    Object.entries(found.values).filter(([output]) => wanted.has(output)),
+  );
+  if (!Object.keys(values).length) return 'no_usable_values';
+  const written = await run.sdk.extensionMappedWrite(run.installationId, {
+    recordId: record.id,
+    lookup: domain,
+    values,
+    ...(found.confidence < 1 ? { confidence: found.confidence } : {}),
+  });
+  return written.outcome === 'applied' ? found.code : (written.reason ?? 'skipped');
+}
+
+/**
+ * Runs `work` on each item, at most `limit` at a time. After a failure no
+ * more items start; the first error is thrown once the running ones settle.
+ */
+async function eachLimited<T>(items: T[], limit: number, work: (item: T) => Promise<void>) {
+  const queue = [...items];
+  let failed = false;
+  const results = await Promise.allSettled(
+    Array.from({ length: Math.min(limit, queue.length) }, async () => {
+      for (let item = queue.shift(); item !== undefined && !failed; item = queue.shift())
+        await work(item).catch((error) => {
+          failed = true;
+          throw error;
+        });
+    }),
+  );
+  const rejected = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+  if (rejected) throw rejected.reason;
 }
 
 /**
@@ -317,31 +369,20 @@ export async function executeEnrichment(
       await (await exa()).check();
       const schema = await sdk.schema();
       const company = schema.objects.find((o) => o.baseObject === 'company');
-      const contract = enrichmentManifest({
-        packageDigest: 'a'.repeat(64),
-        handlerDigest: 'b'.repeat(64),
-        serverRange: '>=0.1.0 <0.2.0',
-      });
-      const outputs = contract.mapping?.outputs ?? [];
-      const fallback = byNameAndType(company, outputs);
+      const outputs = ENRICHMENT_MAPPING.outputs;
       const reason = configureInput.safeParse(invocation.input).data?.reason;
       let suggested: Choices | null = null;
       try {
         const current = reason === 'install' ? null : ((await sdk.extension(id)).mapping ?? null);
-        suggested = await suggestWithModel(
-          sdk,
-          model(),
-          company,
-          outputs,
-          current,
-          fallback,
-          signal,
-        );
+        suggested = await suggestWithModel(sdk, model(), company, outputs, current, signal);
       } catch {
         // Any failure falls back to name-and-type suggestions (spec 6.1).
         if (signal.aborted) throw new Error('aborted');
       }
-      await sdk.saveExtensionSuggestions(id, { mapping: suggested ?? fallback });
+      const mapping =
+        suggested ??
+        Object.fromEntries(outputs.map((output) => [output.key, byNameAndType(company, output)]));
+      await sdk.saveExtensionSuggestions(id, { mapping });
       return done(suggested ? 'suggestions_ready' : 'suggestions_ready_without_model');
     }
     if (invocation.functionId === ENRICHMENT.backfill) {
@@ -358,42 +399,25 @@ export async function executeEnrichment(
       const mapping = (await sdk.extension(id)).mapping;
       if (mapping?.lookup?.status !== 'ok')
         return { status: 'failed', code: 'schema_binding_conflict' };
+      const lookupField = mapping.lookup.name;
       const run: Lookup = { sdk, installationId: id, exa: await exa(), model, signal };
-      for (const row of page.records) {
+      await eachLimited(page.records, BACKFILL_CONCURRENCY, async (row) => {
         let record: Awaited<ReturnType<typeof sdk.record>>;
         try {
           record = await sdk.record(row.id);
         } catch (error) {
-          if (error instanceof RetainerApiError && [404, 410].includes(error.status)) continue;
+          if (error instanceof RetainerApiError && [404, 410].includes(error.status)) return;
           throw error;
         }
-        if (record.id !== row.id) continue;
+        if (record.id !== row.id) return;
         if (!Object.values(record.provenance ?? {}).some((p) => p.assertion?.actor.id === id))
-          continue;
-        const domain = normalizeDomain(primaryUrl(record.fields[mapping.lookup.name]) ?? '');
+          return;
+        const domain = normalizeDomain(primaryUrl(record.fields[lookupField]) ?? '');
         const open = mapping.outputs.filter(
           (o) => o.status === 'ok' && o.field && !Object.hasOwn(record.fields, o.field.name),
         );
-        if (!domain || !open.length) continue;
-        const found = await lookUp(run, {
-          id: record.id,
-          name: record.label,
-          domain,
-          context: mappedContext(mapping, record),
-        });
-        if (found.status !== 'match') continue;
-        const wanted = new Set(open.map((o) => o.output));
-        const values = Object.fromEntries(
-          Object.entries(found.values).filter(([key]) => wanted.has(key)),
-        );
-        if (Object.keys(values).length)
-          await sdk.extensionMappedWrite(id, {
-            recordId: row.id,
-            lookup: domain,
-            values,
-            ...(found.confidence < 1 ? { confidence: found.confidence } : {}),
-          });
-      }
+        if (domain && open.length) await fill(run, mapping, record, domain, open);
+      });
       if (page.nextCursor)
         await sdk.extensionCheckpoint(id, {
           children: [
@@ -463,23 +487,15 @@ export async function executeEnrichment(
       (output) => output.field && !Object.hasOwn(record.fields, output.field.name),
     );
     if (!open.length) return done('nothing_to_fill');
-    const found = await lookUp(
-      { sdk, installationId: id, exa: await exa(), model, signal },
-      { id: record.id, name: record.label, domain, context: mappedContext(mapping, record) },
+    return done(
+      await fill(
+        { sdk, installationId: id, exa: await exa(), model, signal },
+        mapping,
+        record,
+        domain,
+        open,
+      ),
     );
-    if (found.status === 'no_match') return done(found.code);
-    const wanted = new Set(open.map((output) => output.output));
-    const values = Object.fromEntries(
-      Object.entries(found.values).filter(([output]) => wanted.has(output)),
-    );
-    if (!Object.keys(values).length) return done('no_usable_values');
-    const written = await sdk.extensionMappedWrite(id, {
-      recordId: change.recordId,
-      lookup: domain,
-      values,
-      ...(found.confidence < 1 ? { confidence: found.confidence } : {}),
-    });
-    return done(written.outcome === 'applied' ? found.code : (written.reason ?? 'skipped'));
   } catch (error) {
     if (error instanceof ExaError)
       return {

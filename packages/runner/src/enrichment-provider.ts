@@ -1,6 +1,7 @@
 import { normalizeDomain } from '@retainer/shared';
 import type { z } from 'zod';
 import {
+  type Certainty,
   type EnrichmentOutput,
   EXA_ORIGIN,
   exaCompanyEntity,
@@ -8,6 +9,7 @@ import {
   exaSearchResponse,
   exaTeam,
 } from './enrichment-contract.js';
+import { retryAfterSeconds } from './outcome.js';
 
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const TIMEOUT_MS = 15000;
@@ -24,7 +26,7 @@ export class ExaError extends Error {
 }
 
 export type EnrichmentValues = Partial<Record<EnrichmentOutput, unknown>>;
-export type ExaSearch = z.infer<typeof exaSearchResponse>;
+type ExaSearch = z.infer<typeof exaSearchResponse>;
 
 const LINKEDIN_LINE =
   /^- LinkedIn: (?:https?:\/\/)?(?:[a-z]{2,3}\.)?linkedin\.com\/company\/([A-Za-z0-9_%-]{1,100})\/?$/m;
@@ -71,7 +73,6 @@ export function companyCandidates(body: ExaSearch): Candidate[] {
       const name = entity.properties.name?.trim() || result.title?.trim() || null;
       return [
         {
-          index: 0,
           url: result.url,
           name,
           homepage: HOMEPAGE_LINE.exec(profile)?.[1] ?? null,
@@ -85,7 +86,7 @@ export function companyCandidates(body: ExaSearch): Candidate[] {
         },
       ];
     })
-    .map((candidate, index) => ({ ...candidate, index }));
+    .map((candidate, index) => ({ index, ...candidate }));
 }
 
 /** Its result is on the domain, and any `Homepage:` line in its profile agrees. */
@@ -106,7 +107,7 @@ export function shortcut(domain: string, candidates: Candidate[]): Candidate | u
  * Where the company says its site is: the profile's `Homepage:` line, or the
  * result's URL when the profile has none.
  */
-export const candidateDomain = (candidate: Candidate) =>
+const candidateDomain = (candidate: Candidate) =>
   normalizeDomain(candidate.homepage ?? candidate.url);
 
 const LEGAL_SUFFIXES = new Set([
@@ -155,7 +156,6 @@ export function normalizeCompanyName(name: string): string {
   return words.join(' ');
 }
 
-export type Certainty = 'high' | 'medium' | 'low';
 /**
  * Enrichment's own guards on a model pick (spec 6.3): a pick on the record's
  * domain is accepted at `high` or `medium`; one on another domain only at
@@ -217,11 +217,10 @@ export class ExaProvider {
       if (response.status === 402) throw new ExaError('provider_payment_required');
       if (response.status === 404) throw new ExaError('provider_not_found');
       if (response.status === 429 || response.status >= 500) {
-        const seconds = Number(response.headers.get('retry-after'));
         throw new ExaError(
           response.status === 429 ? 'provider_rate_limited' : 'provider_unavailable',
           true,
-          Number.isFinite(seconds) && seconds > 0 ? Math.min(3600, Math.ceil(seconds)) : 30,
+          retryAfterSeconds(response.headers),
         );
       }
       throw new ExaError('provider_invalid_request');
@@ -264,12 +263,8 @@ export class ExaProvider {
         (error.code !== 'provider_not_found' && error.code !== 'provider_unauthorized')
       )
         throw error;
-      await this.request('/search', exaSearchResponse, {
-        query: 'exa.ai',
-        type: 'auto',
-        category: 'company',
-        numResults: 1,
-      });
+      const { contents: _contents, ...search } = exaSearchRequest('exa.ai');
+      await this.request('/search', exaSearchResponse, { ...search, numResults: 1 });
     }
   }
 
