@@ -47,8 +47,10 @@ See `ARCHITECTURE.md` section 11 for the six test layers.
 - `records.data` is derived from `field_assertions`; write assertions, not data.
 - All schema changes go through the schema engine; never write to
   `object_types` or `fields` directly.
-- Retainer never calls a language model or embedding provider. Agents decide
-  what to write; the server validates, stores and retrieves.
+- Retainer's core (writes, conflict resolution, search, consolidation) never
+  calls a language model or embedding provider. Agents decide what to write;
+  the server validates, stores and retrieves. Extensions may call a model
+  through the model proxy (`docs/specs/extensions-model-calls.md`).
 - No embeddings or semantic search: search is Postgres full-text only.
 - Server modules import only from their own layer and those below it
   (`ARCHITECTURE.md` section 8); `pnpm lint` checks this.

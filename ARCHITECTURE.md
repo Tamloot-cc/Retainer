@@ -17,7 +17,7 @@ It combines two ideas:
   emails and anything else that happens). Every value records who wrote it
   and which event it came from.
 
-Retainer never calls a language model. Agents decide what to remember;
+Retainer's core never calls a language model. Agents decide what to remember;
 Retainer validates it, resolves conflicts, keeps its history and makes it
 searchable. Conversations can stay with the agent or be retained as authorized
 file attachments; transcript bytes never enter record JSON or search indexes.
@@ -994,7 +994,9 @@ One Docker image, started with a role: `api`, `worker`, `control` (accounts
 mode, 7.3) or `all`.
 Postgres is the only dependency, with the standard `pg_trgm`, `btree_gin`
 and `unaccent` extensions for search (5.1); the job queue runs on Postgres
-too. Retainer calls no language model and needs no model API key.
+too. The core calls no language model. A model API key
+(`RETAINER_MODEL_API_KEY`) is optional: it lets extensions call a model
+through the model proxy (docs/specs/extensions-model-calls.md).
 
 The same code also runs as AWS Lambda functions
 (`packages/server/src/lambda/`), which is how the hosted service runs; its
@@ -1146,13 +1148,18 @@ Not in the first release: inferring facts from other facts
 (`kind = inferred`). The schema keeps the `kind` column and premise links
 so it can be added without a migration.
 
-### 4.3 No language model inside Retainer
+### 4.3 No language model in Retainer's core
 
-Retainer never calls a language model or an embedding provider. Every
-judgment about what a conversation means is made by the agent, with the
-agent's own model. This keeps self-hosting free of model keys and LLM cost,
-keeps full conversations with the agent, and keeps Retainer's behavior
-deterministic and testable.
+Retainer's core (writes, conflict resolution, search, consolidation) never
+calls a language model or an embedding provider. Every judgment about what a
+conversation means is made by the agent, with the agent's own model. This keeps
+the core deterministic and testable, keeps full conversations with the agent,
+and keeps a self-hosted Retainer working without a model key.
+
+Extensions are the exception: their code may call a model, with Retainer's key,
+through the model proxy (docs/specs/extensions-model-calls.md). Without a key
+the proxy answers `503 model_unavailable`, and each extension works without a
+model.
 
 ---
 
@@ -1979,7 +1986,7 @@ official MCP TypeScript SDK, and Better Auth with its JWT, MCP and client
 metadata plugins for signing people in and for OAuth (accounts mode only, in the
 `accounts` module). `jose` verifies OAuth access tokens in the API, which does not
 import Better Auth. The job queue is Postgres itself (4.2), with
-no queue library. No LLM SDK.
+no queue library. No LLM SDK in the server: the model proxy forwards HTTP.
 The optional web package uses Vite, React 19, TanStack Router/Query, Tailwind
 CSS 4 and shadcn-style UI primitives. Static files are served by Hono at
 `/app` when `RETAINER_WEB_DIR` is set; the Docker image includes the build.
@@ -1997,8 +2004,10 @@ per-record conflicts.
 
 ## 10. Scope
 
-Not planned: embeddings and semantic search, and any language model inside
-Retainer (server-side extraction, generated summaries, an `ask` endpoint).
+Not planned: embeddings and semantic search, and any language model in
+Retainer's core (server-side extraction, generated summaries). Extensions may
+call a model through the model proxy, and a workspace agent that extensions
+hand tasks to is planned (docs/specs/extensions-model-calls.md §11).
 Search is Postgres full-text only. A BM25 backend may come later as an
 option (5.1).
 
@@ -2048,8 +2057,8 @@ run locally with `pnpm test:docker` and in a release, not on every push.
 A GitHub Actions workflow runs on every PR and on `main`: lint, build,
 typecheck, layers 1–4, then the browser tests, with Postgres as a service
 container. Pushing a `v*` tag runs the release workflow, which reruns CI
-before publishing (docs/releasing.md). Retainer calls no model, so CI needs
-no API keys.
+before publishing (docs/releasing.md). CI needs no API keys: tests fake the
+model provider at the HTTP boundary.
 
 PRs changing database migrations also run an advisory [migration compatibility
 check](docs/migration-compatibility.md): old server tests on the new schema, with

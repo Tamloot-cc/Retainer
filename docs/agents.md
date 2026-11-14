@@ -68,7 +68,7 @@ asked:
 After each turn, a Stop hook checks in the background whether the turn holds
 something the workspace should keep, by asking Claude Haiku through the
 person's own Claude Code sign-in. If it does, Claude wakes up and follows the
-`log_from_chat` guide. Retainer itself still calls no model. See
+`log_from_chat` guide. Retainer's core still calls no model. See
 [the plugin's README](../plugins/retainer/README.md) for what the hook skips
 and how to turn it off.
 

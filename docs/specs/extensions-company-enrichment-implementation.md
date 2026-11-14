@@ -362,7 +362,7 @@ Provider outcomes:
 
 The queue's bounded retry (`retry_exhausted`) still applies.
 
-The handler never logs or returns provider bodies, keys or domains. Only codes reach the run list. The job input stays `{ changePosition }`. Neither the runner nor Retainer calls a model.
+The handler never logs or returns provider bodies, keys or domains. Only codes reach the run list. The job input stays `{ changePosition }`. This lookup calls no model; the model-backed pick is specified in extensions-model-calls.md §6.
 
 Enrichment writes change only mapped fields. Those aren't watched, and the change collector records this installation in the cause chain, so they start no further lookup.
 

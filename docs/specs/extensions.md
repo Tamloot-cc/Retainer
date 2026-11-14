@@ -20,8 +20,10 @@ Build a first-party extension platform. Retainer owns installations, grants,
 triggers, durable jobs, schema and CRM provenance. Provider-specific functions
 run outside the API process and database network. Standalone products such as
 Tamloot and a forms builder run their own services and use the same installation
-and grant model through the public API. Retainer never invokes a language model;
-model-driven linking and extraction remain external agents.
+and grant model through the public API. Retainer's core never invokes a language model;
+extensions may call one through the model proxy
+([extensions-model-calls.md](extensions-model-calls.md)), and model-driven
+linking and extraction remain external agents.
 
 For example, Granola sends a notification, Retainer verifies and durably accepts
 it, and a worker invokes the installed Granola function. That function fetches
@@ -55,7 +57,7 @@ v1, not a claim that all primitives exist already.
 | SDK/runner MIT licensing is said to reproduce Twenty's license exception.   | Unsupported legal conclusion.                                                                                                                             | Keep package boundaries; make no equivalence claim. Third-party distribution policy is outside this spec.                              |
 
 The proposal's strongest choices remain: one installation per workspace/account,
-API-only writes, no model inside Retainer, deterministic ingestion, explicit
+API-only writes, no model in Retainer's core, deterministic ingestion, explicit
 workspace sharing, first-party distribution, and reuse of schema universal IDs.
 Do not reduce this to agents polling APIs or copy Twenty's entire UI/AI platform.
 

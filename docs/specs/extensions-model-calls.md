@@ -1,15 +1,15 @@
 # Model calls in extensions
 
-Status: proposed, 2026-11-13; revised 2026-11-14 (the proxy's shape, its
-hosted placement in §3.6, and the workspace agent in §11). Builds on the extension platform in
+Status: accepted, 2026-11-14; being built, nothing in it has shipped yet.
+First written 2026-11-13. Builds on the extension platform in
 [extensions.md](extensions.md) and the output mapping and enrichment bundle in
 [extensions-company-enrichment-implementation.md](extensions-company-enrichment-implementation.md)
-(the enrichment spec). Line references are to `main` at `059b7ff`.
+(the enrichment spec). Line references are to `main` at `77d06f1`.
 
 Extension code may call a language model, with Retainer's model key. The
 extension is responsible for the call: which model, the prompt, tools,
 structured output, effort, streaming, what workspace data goes in and what it
-does with the answer. The proposed platform adds two things:
+does with the answer. The platform adds two things:
 
 1. **A model proxy** (§3). Extension code uses the official Anthropic SDK as
    it would anywhere, through a client the extension SDK builds for it
@@ -22,20 +22,21 @@ does with the answer. The proposed platform adds two things:
 Suggesting a mapping before the schema is approved is no longer part of this
 spec: the `configure` function of
 [extensions-configure.md](extensions-configure.md) ships it as an ordinary
-read-only run after access approval. Once the separately proposed model
-platform ships, configure may call the model like other permitted functions.
-The draft runs first proposed here (§4) are replaced.
+read-only run after access approval, and may call the model like other
+functions (§6.1). The draft runs first proposed here (§4) are replaced.
 
 v1 is shaped for a later step: a Retainer workspace agent that extensions hand
 tasks to instead of writing their own agent code (§11). Nothing in v1 builds
 that agent, but the proxy, the client helper, the manifest field and the usage
 table are named and placed so it fits without changing existing extensions.
 
-Enrichment (§6) is the proposed first model-backed bundle. Its shipped
-configure handler checks the provider key and suggests mappings by API name
-and type, without sampling records or calling a model. Model-based mapping
-and search-result selection below remain future work. Once the model
-platform ships, other extensions may use it from their permitted functions.
+Enrichment (§6) is the first model-backed bundle: its `configure` suggests
+the mapping with the model, and its lookup uses the model to pick the right
+search result. Those are its choices, not platform rules. Other extensions may
+call the model from any function for any purpose.
+
+There are no users yet, so this change keeps no compatibility with existing
+releases: every bundle is rebuilt (§3.2).
 
 ## 1. Product rule change
 
@@ -46,7 +47,8 @@ extensions. The new rule:
 > deterministic and calls no model. Extension code may call a model. No
 > embeddings or semantic search: search stays Postgres full-text.
 
-Places that state the old rule, to update when step 1 of §9 lands:
+Updated in the commit that accepted this spec. The places that stated the old
+rule:
 
 - `CLAUDE.md:50`
 - `ARCHITECTURE.md:20`, `:997`, §4.3 (`:1149-1155`), `:1466`, `:2000`, `:2051`
@@ -57,8 +59,8 @@ Places that state the old rule, to update when step 1 of §9 lands:
 - `docs/specs/extensions-company-enrichment-implementation.md:365`
 - `docs/specs/accounts-and-access.md:53`
 - Code comments in `packages/server/src/worker/index.ts:7` and
-  `worker/consolidate.ts:7`, which stay true (the core calls no model) but
-  should say "the core".
+  `worker/consolidate.ts:7` stay true (the core calls no model). They were left
+  for the first code change of step 2, so this docs commit doesn't deploy.
 
 `docs/specs/schema-events-and-history.md:564` (the consolidator stays
 deterministic) is unchanged.
@@ -113,7 +115,10 @@ digests. The list is open for later capabilities (`agent`, `memberAgent`,
 upgrades.
 
 The claim copies the function's `uses` into its run token, next to its scopes,
-so the proxy can check it without the database (§3.6).
+so the proxy can check it without the database (§3.6). The token's claims
+schema (`extension-runtime/tokens.ts`) is strict; the API and coordinator ship
+together, and tokens issued before the deploy are refused once, so those runs
+retry.
 
 The install review says, in plain words: "This extension sends data from your
 workspace to Anthropic, which Retainer uses to process it." Approving the
@@ -135,8 +140,11 @@ const anthropic = modelClient(invocation);
 whose `baseURL` is `invocation.modelOrigin` when the invocation has one (the
 hosted `model` function, §3.6), otherwise
 `${invocation.apiOrigin}/v1/extensions/runtime/model`. `modelOrigin` is a new
-optional field of the protocol v1 invocation; runners that don't know it
-ignore it.
+optional field of the protocol v1 invocation (`invocationSchema`,
+`packages/extension/src/protocol.ts`). The schema is strict, so older runners
+reject it: every bundle is rebuilt and published with the new schema, and
+installations move to it by automatic upgrade, since nothing they approve
+changes. The coordinator sets `modelOrigin` on every hosted invocation.
 
 The SDK sends the run token as `x-api-key`. The proxy:
 
@@ -182,8 +190,8 @@ the longest handler deadline (300 s) plus a margin.
   the run list shows codes only, as today.
 - Nothing the model saw is stored in Retainer, so erasure has nothing new to
   remove. `ai_usage` holds no content.
-- Anthropic becomes a subprocessor of the hosted service. The privacy policy
-  must say so before the first model-backed release ships to hosted.
+- Anthropic becomes a subprocessor of the hosted service. Updating the
+  privacy policy is deferred.
 
 ### 3.4 Usage
 
@@ -196,8 +204,16 @@ The proxy reads `usage` from a non-streamed response, or from the stream's
 `message_start` and final `message_delta` events. A stream cut off before its
 final event records what it saw.
 
-Admins see the month's token use per extension on the installed view. The
-operator status page (extensions-lambda.md §3.5) adds the total per day.
+Admins see the month's token use on an extension's Overview tab when its
+release uses the model. The operator status page (extensions-lambda.md §3.5)
+adds the total per day.
+
+### 3.4.1 Request size
+
+A request body may be at most 6 MB, the Lambda function URL's limit; the
+self-hosted proxy applies the same limit. A larger one returns `413` with
+Anthropic's error shape (`request_too_large`). Large images or PDFs should be
+resized or split; the Files API isn't available (§3.2).
 
 ### 3.5 Layering
 
@@ -224,9 +240,25 @@ extension job functions:
   still current, so a token for a run that was fenced or cancelled keeps
   working for model calls until it expires, at most five minutes. That costs
   tokens, never data: the proxy can't read or write anything in Retainer.
-- **Usage.** It reports each call's usage to the `extensions` function, which
-  writes `ai_usage`, with a service credential only the `model` function holds.
-  A report that fails is retried; one lost for good under-counts that call.
+- **Usage.** After each response finishes, it reports the call's usage to
+  the `extensions` function, which writes `ai_usage`:
+
+  ```
+  POST /v1/extensions/internal/ai-usage
+  Authorization: Bearer <RETAINER_MODEL_USAGE_SECRET>
+  {
+    id, kind: 'model', workspaceId, installationId, registrationId,
+    releaseDigest, functionId, jobId, runId, model,
+    inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, at
+  }
+  ```
+
+  `id` is a UUID the proxy makes per request, and `ai_usage.id` is unique, so
+  a repeated report is a no-op (`200`). Workspace and run come from the
+  verified token, never from the extension. The secret is compared in constant
+  time; a wrong or missing one is `401`. The proxy tries three times with
+  backoff before its invocation ends; after that it logs the `id` and the
+  counts (no content), and that call goes uncounted.
 - **Streaming.** It answers through a Lambda function URL with response
   streaming, set as `modelOrigin` in each invocation. Its timeout covers 300 s
   plus a margin.
@@ -239,128 +271,12 @@ Self-hosted Compose serves the same module at
 `/v1/extensions/runtime/model/` in the server process, with the same token
 checks, and writes `ai_usage` directly.
 
-## 4. Draft runs
+## 4. Draft runs (replaced)
 
-> Replaced by [extensions-configure.md](extensions-configure.md): installation
-> in two steps, with a `configure` function that runs after the admin approves
-> access. The same applies to the enrichment draft in §6.1.
-
-Today every run belongs to an installation, and lifecycle functions can't read
-CRM data before activation (`extensions.md:459`). A draft run happens before
-the installation exists, while the admin fills in the install form, and its
-result fills that form. What the function does to produce it is up to the
-extension: read the workspace, call a model, call its provider, or none of
-these.
-
-### 4.1 Trigger
-
-A new trigger kind, `draft`. At most one function per release. Its `scopes`
-may include only read scopes and must be a subset of the release's scopes. It
-may declare `model: true`. It takes no `secrets`: provider keys are entered at
-install, after the draft.
-
-### 4.2 Request and lifecycle
-
-New table `extension_drafts`: ID, workspace, registration, release digest,
-schema version, installation (null on first install), requested by (user),
-status (`queued`, `running`, `succeeded`, `failed`), result JSON, error code,
-created at, expires at (1 hour after creation).
-
-1. **Request.** `POST /v1/extensions/drafts` with
-   `{ registrationId, version, installationId? }`. Human admin only, as
-   approval is. `installationId` is set when editing an installed extension.
-   Requesting a draft is the admin's consent to that one run reading the
-   workspace with the function's read scopes, and, if it declares
-   `model: true`, sending what it reads to Anthropic. The web app says so
-   (§4.5). Returns `202 { id }`. A second request for the same workspace,
-   release and schema version within the hour returns the existing one.
-2. **Run.** The worker claims queued drafts and invokes the function through
-   the existing `ExecutionDriver`, with a 60-second deadline and one retry
-   after a transient failure.
-3. **Read.** `GET /v1/extensions/drafts/:id` returns the status and, once
-   done, the validated result (§4.4). Expired rows are deleted by the existing
-   maintenance sweep.
-
-### 4.3 Invocation
-
-`invocationSchema` (`packages/extension/src/protocol.ts:6`) becomes a union.
-The existing shape is unchanged; the new one:
-
-```ts
-{
-  protocolVersion: 1,
-  kind: 'draft',
-  draftId: uuid,
-  releaseDigest, functionId, apiOrigin, deadline,
-  runToken: string,
-  input: {
-    schema: SchemaView,            // the workspace schema, as GET /v1/schema returns it
-    current?: {                    // when editing an installed extension
-      mapping?: Record<OutputKey, Choice>,
-      settings?: Record<string, unknown>,   // non-secret settings
-    },
-  }
-}
-```
-
-The run token binds the draft ID, workspace and release, and expires at the
-deadline. It grants the function's declared read scopes on the REST API and,
-with `model: true`, the model proxy. It can't write, and it can't read secrets
-or installation KV, since no installation exists yet. Hosted draft runs use the
-job Lambda; self-hosted ones use the launcher with the egress proxy, as jobs
-do.
-
-### 4.4 Result
-
-The function returns, alongside `status`:
-
-```ts
-draft: {
-  mapping?: Record<OutputKey, Choice & { reason?: string /* ≤ 200 chars */ }>,
-  settings?: Record<string, unknown>,       // non-secret settings only
-}
-```
-
-where `Choice` is the format from the enrichment spec §3.3 (`existing` with a
-field name, `create` or `skip`).
-
-The server checks the draft before storing it:
-
-- `mapping` goes through `resolveMapping` in review mode
-  (`packages/server/src/extensions/mapping.ts:60`). An output whose choice
-  fails becomes `skip`, with reason "Suggested field could not be used," and
-  missing outputs become `skip`.
-- `settings` are validated against the release's settings schema. Unknown or
-  invalid keys, and any secret setting, are dropped.
-
-So a stored draft always passes preview, though later schema changes can still
-make preview fail, as with any draft.
-
-### 4.5 Web
-
-The install and edit screens (enrichment spec §3.8) change like this:
-
-1. **Better defaults, always.** Before any draft, the mapping form starts
-   from a better default than today's `defaultChoices`
-   (`packages/web/src/routes/extension-mapping.tsx:65`), which offers only
-   "create" or "skip": an existing compatible field whose API name equals the
-   output key, or whose label equals the output label ignoring case, is chosen
-   as `existing`; otherwise `create` when there is a suggested field;
-   otherwise `skip`. This moves to `packages/shared`.
-2. **Draft request.** When the release declares a `draft` function, opening
-   the screen requests a draft. A line above the form reads "Preparing
-   suggestions…" and, under it, "To suggest settings, <extension> reads your
-   workspace" plus "and sends it to Anthropic" when the function declares
-   `model: true`. A **Don't suggest** link cancels the request before it runs.
-3. **Draft arrives.** Rows and settings the admin hasn't touched take the
-   draft's values. Each one shows a small "Suggested" label, with the reason
-   under mapping rows. Anything the admin already changed stays.
-4. **Draft fails.** The line reads "Suggestions aren't available right now,"
-   and the form keeps its defaults.
-5. **Suggest again** requests a new draft, for example after the admin adds a
-   field.
-6. Review, approval and Import draft are unchanged. A draft is never
-   committed without the admin.
+Draft runs were dropped for installation in two steps
+([extensions-configure.md](extensions-configure.md), shipped in #90 and #91).
+Mapping suggestions come from the release's `configure` function, an ordinary
+read-only run after access approval, which may call the model (§3.1, §6.1).
 
 ## 5. Mapped-write confidence
 
@@ -376,23 +292,19 @@ Enrichment's model use, as the first example. Its model is a constant in
 `enrichment-contract.ts`, starting with `claude-opus-5-5`; §6.6 says how it
 will be revisited.
 
-### 6.1 Draft: mapping suggestion
+### 6.1 Configure: mapping suggestion with the model
 
-> Replaced by [Extension installation in two steps](extensions-configure.md),
-> especially §8. This draft trigger and invocation are historical proposals;
-> use an ordinary read-only configure run after access approval. Model access
-> remains a separate prerequisite.
+Today's `configure` (configure spec §8) suggests by API name and type. With
+the model, it declares `uses: ['model']` and, after checking the Exa key:
 
-The `draft` function declares `read` and `model: true`.
-
-1. Sample up to 20 companies with `query_records`, preferring recently updated
-   ones, and keep up to 5 non-empty values per field whose type an output
-   accepts.
-2. Call the model with the three outputs (label, definition, accepted types),
-   the Company fields (name, label, type) with their sampled values, and the
-   current mapping when editing. Structured output: one entry per output with
-   `action`, optional `field` and `reason`. Effort `low`.
-3. Return the result as `draft.mapping`.
+1. Samples up to 20 companies, preferring recently updated ones, and keeps up
+   to 5 non-empty values per field whose type an output accepts
+   (`compatibleFields`).
+2. Calls the model with the outputs (label, definition, accepted types), the
+   Company fields (name, label, type) with their sampled values, and the
+   current mapping on an upgrade or a request. Structured output: one entry per
+   output with `action`, optional `field` and `reason`. Effort `low`.
+3. Saves the result through the suggestions endpoint (configure spec §2.2).
 
 Prompt guidance, in short:
 
@@ -401,10 +313,10 @@ Prompt guidance, in short:
   `size` holding 12, 340 and 5,000 probably is.
 - Prefer a clearly matching existing field over creating one, and `create`
   over a doubtful match.
-- When editing, keep current bindings unless they look wrong.
+- On an upgrade or a request, keep current bindings unless they look wrong.
 
-If the proxy returns `model_unavailable` or any error, the function returns
-`failed`, and the form keeps its defaults (§4.5).
+If the proxy returns `model_unavailable` or any error, `configure` falls back
+to today's name-and-type suggestions, so the admin always gets some.
 
 ### 6.2 Today's lookup
 
@@ -489,10 +401,12 @@ the cheaper one if accuracy holds.
   the HTTP boundary; the database is real.
 - **Hosted `model` function:** admission works with no database configured;
   usage reports carry the service credential and are refused without it; a
-  failed report is retried; `modelClient` uses `modelOrigin` when present and
-  the API path otherwise.
+  repeated report with the same `id` writes one row, including when sent
+  concurrently; a failed report is retried; a body over 6 MB returns `413`;
+  `modelClient` uses `modelOrigin` when present and the API path otherwise.
 - **Claims:** the run token carries the function's `uses`; a release that adds
-  `model` is held from automatic upgrade.
+  `model` is held from automatic upgrade; the invocation schema accepts
+  `modelOrigin`.
 - **Configure:** a `configure` run with `uses: ['model']` can call the proxy
   with its read-only token.
 - **Mapped-write confidence:** a value below the threshold is held as
@@ -505,15 +419,17 @@ the cheaper one if accuracy holds.
 ## 8. Hosted
 
 In `retainer-cloud`: the `model` function outside the VPC, its function URL
-with response streaming, `RETAINER_MODEL_API_KEY` on it alone, and the service
-credential it shares with the `extensions` function for usage reports. In this
-repo: the privacy policy update before the first model-backed release.
+with response streaming, `RETAINER_MODEL_API_KEY` on it alone,
+`RETAINER_MODEL_USAGE_SECRET` on it and on the `extensions` function, and the
+coordinator's `modelOrigin` setting. The privacy policy update is deferred.
 
 ## 9. Delivery sequence
 
-1. Docs: update the rule everywhere in §1. This spec moves to "accepted".
-2. Proxy: module, `ai_usage`, `uses` in the manifest and the run token,
-   `modelClient` and `modelOrigin`, layer rule.
+1. Docs: the rule updated everywhere in §1, and this spec accepted. Done.
+2. Proxy: module, `ai_usage` and its internal usage route, `uses` in the
+   manifest and the run token, `modelClient` and `modelOrigin`, the request
+   size limit, layer rule. Every bundle rebuilt with the new protocol schema.
+   The usage figure on the Overview tab (§3.4).
 3. Hosted `model` function (§3.6), with a staging check of streaming.
 4. Mapped-write `confidence` (§5).
 5. Enrichment release: `configure` suggests the mapping, and the new lookup;
@@ -525,6 +441,10 @@ repo: the privacy policy update before the first model-backed release.
 
 - **Spend limits.** None in v1. A per-workspace or per-plan limit can be
   checked against `ai_usage` when it's needed.
+- **Sharing the rate limit.** Every workspace uses one Anthropic key, so one
+  busy workspace can use up the rate limit and others get `429` (passed through;
+  extensions retry). If that happens in practice, add a per-workspace limit on
+  concurrent model requests in the proxy.
 - **The workspace agent** (§11).
 
 ## 11. Later: the workspace agent

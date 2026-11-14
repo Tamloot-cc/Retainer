@@ -49,8 +49,8 @@ not.
 
 **What does not change:** the workspace stays the security boundary. RLS stays
 keyed on `workspace_id`. Records get no organization column. A `Caller` still
-has exactly one workspace. Queries never cross workspaces. Retainer still calls
-no language model.
+has exactly one workspace. Queries never cross workspaces. Retainer's core still
+calls no language model.
 
 **What is open source.** If one team running Retainer on its own server would
 need something, it is open. If only someone selling Retainer as a service needs

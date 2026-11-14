@@ -14,7 +14,7 @@ the install form asks for. Installation becomes two approvals:
 
 1. **Approve access.** The admin approves what the extension may read and use:
    workspace read access and its declared installation secrets. Model access
-   remains a separate proposed capability (§8). The installation is
+   comes with the model platform, accepted and being built (§8). The installation is
    created in a new `configuring` state. Nothing is added to the schema, no
    trigger fires and nothing can be written.
 2. **Configure.** The release's `configure` function runs as an ordinary run
@@ -70,9 +70,9 @@ checked when the manifest is validated:
 - At most one `configure` function per release.
 - Its `scopes` must be `['read']`, and the release must include `read`.
   It cannot declare mapped writes or use connection-level secrets. Declared
-  installation secrets are allowed. Model access is deferred to the model-calls
-  proposal, which declares `uses: ['model']` (§3.1). That capability is not
-  supported by the shipped manifest yet.
+  installation secrets are allowed. Model access comes with the model-calls
+  spec, which declares `uses: ['model']` (its §3.1); the shipped manifest
+  doesn't support it yet.
 - Its timeout follows §9.1 (120 s default, 300 s maximum). The admin is waiting,
   so a bundle should aim for well under a minute.
 - A release with a `configure` function must declare at least one thing it can
@@ -455,12 +455,12 @@ The shipped company enrichment release adds these handlers:
   Changing mapping through the Field mapping tab does not itself run setup
   or queue backfill.
 
-Model-backed field selection depends on the separately proposed model-calls
+Model-backed field selection depends on the model-calls
 platform, including its operator key and provider disclosure. This installation
-change does not ship or enable the model proxy. After that platform ships, a
-future configure handler may sample up to 20 companies and up to five values
-per candidate field, then ask a model to choose Existing, Create or Skip with
-reasons. That sampling and model selection are deferred, not shipped behavior.
+change does not ship or enable the model proxy. After that platform ships, the
+configure handler samples up to 20 companies and up to five values
+per candidate field, then asks a model to choose Existing, Create or Skip with
+reasons. That is specified in `extensions-model-calls.md` §6.1 and not shipped yet.
 
 The Exa lookup in `enrich` is unchanged by this spec.
 
@@ -482,7 +482,8 @@ a cleared suggestion slot; the admin can request fresh suggestions afterward.
 - `extensions.md` §8: the child-job rule gains the `configure` exception
   (§2.3).
 - `extensions.md` §9.1: admission across releases (§5.4).
-- `extensions-model-calls.md` §4 and §6.1: replaced by this spec.
+- `extensions-model-calls.md` §4: replaced by this spec. Its §6.1 now
+  describes enrichment's model-backed `configure`.
 
 ## 10. Tests
 
@@ -536,7 +537,7 @@ database:
 - **Extension-initiated suggestions:** an extension noticing a new workspace
   field and suggesting it without a release or a request. The suggestions table
   already fits; only the trigger is missing. Later.
-- **Model access (proposed, not shipped):** the model-calls spec settles on
+- **Model access (accepted, being built):** the model-calls spec settles on
   the Messages proxy and `uses: ['model']` (`extensions-model-calls.md` §3.1).
 
 
@@ -554,7 +555,7 @@ checks both drivers, missing/mismatched executables and the signing-key gate.
 
 The configure lifecycle, target access approval and cancellation, runtime suggestion
 API, MCP status, web steps, expiry, and enrichment configure/backfill ship together.
-Model-backed field selection remains dependent on the separately proposed model
+Model-backed field selection remains dependent on the model
 platform; the shipped enrichment selector uses exact compatible API-name matches.
 
 Validation: build, TypeScript checks, lint/layer checks, the real-Postgres server

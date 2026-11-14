@@ -15,7 +15,7 @@ provenance, edit fields, and retract facts and events.
 
 - **Schema as data**: objects and fields are stored as rows, so a workspace,
   or an agent working in it, can add fields and objects at runtime.
-- **Agent-written memory**: Retainer never calls a language model. It
+- **Agent-written memory**: Retainer's core never calls a language model. It
   validates writes, resolves conflicts between agents and people, keeps
   history and makes it searchable.
 - **Self-hosted**: one Docker image and Postgres.

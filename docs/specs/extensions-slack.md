@@ -12,8 +12,9 @@ channels the bot was invited to into `conversation` events. It is read-only. It
 does not answer questions, post messages or unfurl links.
 
 Twenty's Slack app is mainly a conversational assistant: an agent that reads and
-writes the CRM from a mention. Retainer never calls a language model, so that
-part does not carry over. Agents that want to talk in Slack use Retainer through
+writes the CRM from a mention. Retainer has no assistant of its own yet (a
+workspace agent is planned, extensions-model-calls.md §11), so that part does
+not carry over. Agents that want to talk in Slack use Retainer through
 MCP from their own runtime.
 
 Slack is also the second real adapter after Granola, and it exercises the paths

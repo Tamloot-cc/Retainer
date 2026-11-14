@@ -6,7 +6,8 @@ Retainer is open-source memory for AI agents that work with customer
 relationships. Agents read conversations with their own models and write what
 matters: typed fields, plain-language facts and a log of events, each
 linked to who wrote it and where it came from. Retainer validates, stores,
-resolves conflicts and searches. It never calls a language model.
+resolves conflicts and searches. Its core never calls a language model;
+extensions may, through Retainer's model proxy.
 
 ## Guides
 
