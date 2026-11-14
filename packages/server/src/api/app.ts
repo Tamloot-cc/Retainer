@@ -186,11 +186,15 @@ export function createApp(deps: AppDeps) {
       c.header('Content-Security-Policy', "frame-ancestors 'none'");
       c.header('X-Frame-Options', 'DENY');
       c.header('Referrer-Policy', 'strict-origin');
-      if (c.res.status === 200)
-        c.header(
-          'Cache-Control',
-          isAsset(c.req.path) ? 'public, max-age=31536000, immutable' : 'no-cache',
-        );
+      if (c.res.status !== 200) return;
+      c.header(
+        'Cache-Control',
+        isAsset(c.req.path) ? 'public, max-age=31536000, immutable' : 'no-cache',
+      );
+      // The file sent depends on Accept-Encoding even when it is the plain one:
+      // without this, a shared cache could keep the plain copy for every browser.
+      if (!/accept-encoding/i.test(c.res.headers.get('Vary') ?? ''))
+        c.header('Vary', 'Accept-Encoding', { append: true });
     });
     app.get('/app', (c) => c.redirect('/app/'));
     app.use(

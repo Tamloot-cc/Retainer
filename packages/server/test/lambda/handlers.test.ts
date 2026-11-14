@@ -185,6 +185,7 @@ describe('API function', () => {
 
     const plain = await handler(httpEvent('GET', '/app/assets/main-abc123.js'), context);
     expect(plain.headers?.['content-encoding']).toBeUndefined();
+    expect(plain.headers?.vary).toBe('Accept-Encoding');
     expect(bodyOf(plain)).toBe(SCRIPT);
 
     const missing = await handler(httpEvent('GET', '/app/assets/gone-123.js'), context);
