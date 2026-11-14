@@ -586,6 +586,12 @@ Choices the enrichment release made where §6 left them open:
   so the `shareDomains` consent says so. A lookup asks for five results with
   text, about $0.012 at Exa's list prices. The key check falls back to a
   one-result search without contents.
+- **The company's name.** The record's label, used only when Company's label
+  field is a text field. A workspace may make an email, phone, link or number
+  the label, and that isn't a name to send to Exa or compare, so then the
+  search uses the domain alone and a pick on another domain can't be
+  accepted. The bundle can't name the base name field itself: the schema API
+  keeps universal IDs internal.
 - **"On the domain."** The shortcut keeps today's rule: the result's URL
   normalizes to the domain and any `Homepage:` line agrees. For the guards, a
   pick is on the domain when its `Homepage:` line, or its URL when the profile

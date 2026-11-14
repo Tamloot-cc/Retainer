@@ -560,6 +560,34 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     ).toEqual(['Held held.example']);
   });
 
+  it('sends no name when the Company label is not a text field', async () => {
+    const h = await setup();
+    await h.drain();
+    const changed = await h.app.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_field',
+            object: 'company',
+            field: { name: 'billingEmail', label: 'Billing email', type: 'emails' },
+          },
+          { op: 'update_object', object: 'company', labelField: 'billingEmail' },
+        ],
+      },
+    });
+    expect(changed.status).toBe(200);
+    h.exa.search = (domain) => Response.json(exaCompany(`https://${domain}/`));
+    await h.company({
+      name: 'Acme',
+      domain: 'acme.example',
+      billingEmail: 'billing@acme.example',
+    });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
+    expect(h.exa.requests.at(-1)?.body?.query).toBe('acme.example');
+    expect(JSON.stringify(h.exa.requests)).not.toContain('billing@');
+  });
+
   it('ends without a match when the server has no model key', async () => {
     const h = await setup('exa-fixture-key', { modelKey: false });
     await h.drain();

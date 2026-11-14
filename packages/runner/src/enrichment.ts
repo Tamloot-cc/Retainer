@@ -247,6 +247,16 @@ async function suggestWithModel(
 }
 
 /**
+ * The company's name, for the search and the name guard: its label, but only
+ * when Company's label field is a text field. A workspace may make an email,
+ * phone, link or number the label, and that is not a name to send to Exa.
+ */
+function companyName(company: ObjectView | undefined, record: { label: string | null }) {
+  const label = company?.fields.find((f) => f.name === company.labelField);
+  return label?.type === 'text' ? record.label : null;
+}
+
+/**
  * Looks a company up and sends the values of its open outputs to the
  * fill-only mapped write, which decides what is written. Returns the run code:
  * how it matched when something was written, otherwise why not.
@@ -254,12 +264,12 @@ async function suggestWithModel(
 async function fill(
   run: Lookup,
   mapping: ExtensionMappingView,
-  record: { id: string; label: string | null; fields: Record<string, unknown> },
+  record: { id: string; name: string | null; fields: Record<string, unknown> },
   domain: string,
   open: ExtensionMappingView['outputs'],
 ): Promise<string> {
   const found = await lookUp(run, {
-    name: record.label,
+    name: record.name,
     domain,
     context: mappedContext(mapping, record),
   });
@@ -382,7 +392,8 @@ export async function executeEnrichment(
         const open = mapping.outputs.filter(
           (o) => o.status === 'ok' && o.field && !Object.hasOwn(record.fields, o.field.name),
         );
-        if (domain && open.length) await fill(run, mapping, record, domain, open);
+        if (domain && open.length)
+          await fill(run, mapping, { ...record, name: companyName(company, record) }, domain, open);
       });
       if (page.nextCursor)
         await sdk.extensionCheckpoint(id, {
@@ -453,11 +464,12 @@ export async function executeEnrichment(
       (output) => output.field && !Object.hasOwn(record.fields, output.field.name),
     );
     if (!open.length) return done('nothing_to_fill');
+    const company = (await sdk.schema()).objects.find((o) => o.baseObject === 'company');
     return done(
       await fill(
         { sdk, installationId: id, exa: await exa(), model, signal },
         mapping,
-        record,
+        { ...record, name: companyName(company, record) },
         domain,
         open,
       ),
