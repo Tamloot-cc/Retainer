@@ -283,6 +283,24 @@ describe('forwarding', () => {
     expect(row).toMatchObject({ input_tokens: 4, output_tokens: 1, partial: true });
   });
 
+  it('does not reach Anthropic when the extension went away before the request was forwarded', async () => {
+    const before = upstream.received.length;
+    const gone = new AbortController();
+    gone.abort();
+    const response = await t.app.request(`${PROXY}/v1/messages`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': run.token,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(message),
+      signal: gone.signal,
+    });
+    expect(response.status).toBe(502);
+    expect(upstream.received.length).toBe(before);
+  });
+
   it('records each of several concurrent calls once', async () => {
     const before = (await rows()).length;
     const responses = await Promise.all(

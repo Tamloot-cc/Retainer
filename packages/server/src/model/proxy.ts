@@ -158,7 +158,9 @@ export function createModelProxy(options: ModelProxyOptions) {
       abort.abort();
       void finish(true);
     };
-    request.signal.addEventListener('abort', onClientAbort, { once: true });
+    // A disconnect during the checks above fired before this listener existed.
+    if (request.signal.aborted) onClientAbort();
+    else request.signal.addEventListener('abort', onClientAbort, { once: true });
     let response: Response;
     try {
       response = await fetcher(target, {
