@@ -117,7 +117,9 @@ the response back and records token counts in `ai_usage`, never content.
   model.
 - `RETAINER_MODEL_ORIGIN`: the proxy's base URL that runs receive, executor
   only. Defaults to the execution API origin plus
-  `/v1/extensions/runtime/model`, which the egress proxy already allows.
+  `/v1/extensions/runtime/model`, which the egress proxy already allows. An
+  override must be a public HTTPS URL: runs reach it through the egress
+  proxy, which refuses private addresses other than the API's.
 - `RETAINER_MODEL_UPSTREAM_ORIGIN`: where the proxy forwards requests.
   Defaults to `https://api.anthropic.com/`.
 - `RETAINER_MODEL_USAGE_SECRET`: hosted service only, set on the `model` and
