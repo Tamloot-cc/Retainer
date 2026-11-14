@@ -1,4 +1,9 @@
-import type { ExtensionMappingChoices, ExtensionMappingView } from '@retainer/extension';
+import type {
+  ExtensionInstallInput,
+  ExtensionMappingChoices,
+  ExtensionMappingView,
+  ExtensionSuggestions,
+} from '@retainer/extension';
 import { RetainerApiError } from '@retainer/sdk';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
@@ -112,7 +117,7 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
         ? 'waiting'
         : 'access',
   );
-  const [suggested, setSuggested] = useState<import('@retainer/extension').ExtensionSuggestions>();
+  const [suggested, setSuggested] = useState<ExtensionSuggestions>();
   const query = useQuery({
     queryKey: ['extension-suggestions', installation?.id, props.release.digest],
     queryFn: ({ signal }) => {
@@ -149,13 +154,7 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
     },
   });
   const approve = useMutation({
-    mutationFn: async ({
-      id,
-      input,
-    }: {
-      id: string;
-      input?: import('@retainer/extension').ExtensionInstallInput;
-    }) => {
+    mutationFn: async ({ id, input }: { id: string; input?: ExtensionInstallInput }) => {
       const current = await api.extension(id);
       setInstallation({
         ...current,
@@ -236,14 +235,11 @@ function BasicExtensionSetup({
   installation?: Installation;
   mode: SetupMode;
   accessOnly?: boolean;
-  suggestions?: import('@retainer/extension').ExtensionSuggestions;
+  suggestions?: ExtensionSuggestions;
   /** The approved mapping, for `mapping`. */
   mappingView?: ExtensionMappingView;
   onCancel: () => void;
-  onDone: (
-    installationId: string,
-    input?: import('@retainer/extension').ExtensionInstallInput,
-  ) => void;
+  onDone: (installationId: string, input?: ExtensionInstallInput) => void;
 }) {
   const { schema } = useWorkspace();
   const retained = installation?.state !== 'uninstalled' ? installation : undefined;

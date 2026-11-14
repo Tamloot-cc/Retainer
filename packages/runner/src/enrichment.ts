@@ -127,36 +127,26 @@ export async function executeEnrichment(
       const key = await sdk.extensionSecret(id, 'apiKey');
       await new ExaProvider(key.value, signal, transport).check();
       const input = invocation.input as { previousVersion?: string | null };
-      if (input.previousVersion) {
-        const current = (await sdk.extension(id)).mapping;
-        const previous = await sdk.extensionKv(id, 'mappedOutputs');
-        const keys = current?.outputs.filter((o) => o.action !== 'skip').map((o) => o.output) ?? [];
-        if (keys.some((key) => !(Array.isArray(previous?.value) && previous.value.includes(key))))
-          await sdk.extensionCheckpoint(id, {
-            children: [
-              {
-                functionId: ENRICHMENT.backfill,
-                input: {},
-                dedupeKey: `backfill:${invocation.runId}`,
-              },
-            ],
-          });
+      const mapping = (await sdk.extension(id)).mapping;
+      const previous = await sdk.extensionKv(id, 'mappedOutputs');
+      const keys = mapping?.outputs.filter((o) => o.action !== 'skip').map((o) => o.output) ?? [];
+      if (
+        input.previousVersion &&
+        keys.some((key) => !(Array.isArray(previous?.value) && previous.value.includes(key)))
+      )
         await sdk.extensionCheckpoint(id, {
-          children: [],
-          kv: { key: 'mappedOutputs', expectedRevision: previous?.revision ?? null, value: keys },
+          children: [
+            {
+              functionId: ENRICHMENT.backfill,
+              input: {},
+              dedupeKey: `backfill:${invocation.runId}`,
+            },
+          ],
         });
-      } else {
-        const mapping = (await sdk.extension(id)).mapping;
-        const previous = await sdk.extensionKv(id, 'mappedOutputs');
-        await sdk.extensionCheckpoint(id, {
-          children: [],
-          kv: {
-            key: 'mappedOutputs',
-            expectedRevision: previous?.revision ?? null,
-            value: mapping?.outputs.filter((o) => o.action !== 'skip').map((o) => o.output) ?? [],
-          },
-        });
-      }
+      await sdk.extensionCheckpoint(id, {
+        children: [],
+        kv: { key: 'mappedOutputs', expectedRevision: previous?.revision ?? null, value: keys },
+      });
       return { status: 'succeeded' };
     }
     if (invocation.functionId !== ENRICHMENT.enrich)

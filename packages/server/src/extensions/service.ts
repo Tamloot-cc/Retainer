@@ -5,6 +5,7 @@ import {
   type ExtensionManifest,
   type ExtensionMappingView,
   type ExtensionPreview,
+  functionSecrets,
   mappingChoicesSchema,
   newestReleases,
 } from '@retainer/extension';
@@ -1354,12 +1355,7 @@ export class Extensions {
           target.manifest.functions
             .filter((f) => f.trigger.kind === 'configure')
             .some((f) =>
-              (
-                f.secrets ??
-                Object.keys(target.manifest.settings).filter(
-                  (s) => target.manifest.settings[s]?.secret,
-                )
-              ).some((s) => !previous.settings[s]?.secret),
+              functionSecrets(target.manifest, f).some((s) => !previous.settings[s]?.secret),
             );
         if (increased)
           throw conflict('grant_required', 'approve target release access before configure');
@@ -1492,7 +1488,6 @@ export class Extensions {
         await tx`select id,kind,prefix,client_id,generation,scopes,created_at,revoked_at,pending from extension_credentials where installation_id=${id} order by created_at,id`;
       return {
         credentials: rows.map((r) => ({
-          ...(r.suggestions_status ? { suggestionsStatus: r.suggestions_status } : {}),
           id: r.id,
           kind: r.kind,
           prefix: r.prefix,
