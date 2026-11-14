@@ -12,8 +12,9 @@ export type ContributionRow = {
  * Universal IDs of this installation's contributions that were deleted before
  * the schema engine refused it: a deprecated or missing object or field it
  * owns, and any new field of such an object. Plans treat them as absent: they
- * are not recreated, views over them are skipped and triggers on them never
- * fire, so a deletion can't block upgrade or enable forever.
+ * are not recreated, views over them are skipped and a trigger on such an
+ * object never fires (a trigger skips any missing watched field), so a
+ * deletion can't block upgrade or enable forever.
  */
 export function retiredContributions(
   current: SchemaState,

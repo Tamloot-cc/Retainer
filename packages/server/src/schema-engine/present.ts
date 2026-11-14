@@ -1,7 +1,6 @@
 import {
-  BASE_EVENT_FIELD_IDS,
   BASE_EVENT_TYPE_IDS,
-  BASE_FIELD_IDS,
+  BASE_FIELD_IDS_BY_NAME,
   BASE_OBJECT_IDS,
   EVENT_COLUMNS,
   FIELD_TYPES,
@@ -28,10 +27,7 @@ const BASE_OBJECT_NAMES = new Map<string, BaseObject>(
   ]),
 );
 const BASE_FIELD_NAMES = new Map<string, BaseField>(
-  Object.entries({ ...BASE_FIELD_IDS, ...BASE_EVENT_FIELD_IDS }).map(([name, id]) => [
-    id,
-    name as BaseField,
-  ]),
+  Object.entries(BASE_FIELD_IDS_BY_NAME).map(([name, id]) => [id, name as BaseField]),
 );
 
 /** Field settings with universal IDs turned back into API names. */

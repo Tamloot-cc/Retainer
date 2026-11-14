@@ -234,7 +234,7 @@ role with no ordinary read grants. Generate migrations from Drizzle.
 | Contributions          | Installation, element kind, universal ID, actual object/field/view ID and last applied definition; unique managing installation per element. References to shared elements are bindings, not ownership.             |
 | Grants                 | Installation/grant generation, scopes, credential hash or OAuth consent/client reference, expiry and revocation. No plaintext bearer tokens.                                                                        |
 | Secrets/connections    | Encrypted value, key version, installation, provider, refresh revision and status. Separate from KV and settings responses.                                                                                         |
-| KV                     | Installation/key, bounded JSON value, revision for compare-and-set. 64 KiB/value, 1 MiB/installation default. No transcripts, credentials or arbitrary record copies.                                               |
+| KV                     | Installation/key, bounded JSON value (never `null`, 422; there is no delete), revision for compare-and-set. 64 KiB/value, 1 MiB/installation default. No transcripts, credentials or arbitrary record copies.       |
 | Jobs/attempts          | Workspace, installation/generation, release/function ID, input, dedupe key, causation, status, lease owner/fence/deadline, attempt, available time, outcome. Unique installation/generation/dedupe key.             |
 | Webhook receipts       | Route/account binding, delivery identity/digest, accepted time, job ID; unique binding/delivery ID. Payload retention bounded and erased with its source.                                                           |
 | Schedule state         | Installation/function, next due time, last scheduled occurrence; unique job key per scheduled UTC instant.                                                                                                          |
@@ -859,11 +859,16 @@ schema rows themselves (plus one search-text rewrite statement when the field
 was searchable). A change trigger on that type queues one job for it; a trigger
 scoped to fields queues it only when one of its fields is named. Its handler
 rescans the type's current records (last-contact queues its paged scan).
-This holds only while the trigger's own binding survives: a trigger whose own
-object or watched field was deleted cannot be matched, so its dispatcher stalls
-with `schema_binding_conflict` (degraded health, cursor not advanced) on every
-later change. An admin recovers by upgrading to a release that no longer binds
-the deleted element, or by disabling or uninstalling the installation.
+A watched field the workspace doesn't have, or deleted, is skipped: the
+trigger installs without it, keeps watching the fields that remain, and still
+fires on the operations that need no watched field, such as a create. A deleted field keeps
+its key, so the `schema` change that deleted it still names it. A trigger
+whose own object was deleted is different: it cannot be matched, so its
+dispatcher stalls with `schema_binding_conflict` (degraded health, cursor not
+advanced) on every later change, unless the object was the installation's own
+contribution, whose triggers never fire. An admin recovers by upgrading to a
+release that no longer binds the deleted object, or by disabling or
+uninstalling the installation.
 Deleting an event type still deletes each event through the event lifecycle,
 so those events also get their own `delete` changes.
 

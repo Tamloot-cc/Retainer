@@ -317,8 +317,9 @@ describe('company enrichment through a fake Exa', () => {
     const blank = await h.company({ name: 'No site yet' });
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_domain' }]);
     expect(h.exa.requests.filter((r) => r.path === '/search')).toEqual([]);
+    // A new name is looked up again, and still needs a domain.
     expect((await h.patch(blank, { name: 'Renamed' })).status).toBe(200);
-    expect(await h.drain()).toEqual([]);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_domain' }]);
     expect((await h.patch(blank, { domain: 'later.example' })).status).toBe(200);
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
     expect((await h.fields(blank)).employeeCount).toBe(12);
@@ -522,7 +523,7 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     expect((await h.fields(acme)).employeeCount).toBeUndefined();
   });
 
-  it('does not look a company up again when it only gets a name', async () => {
+  it('looks a company up again when it gets a name', async () => {
     const h = await setup();
     await h.drain();
     h.exa.search = () => twoResults('https://fixture.example/', 'fixture.example');
@@ -530,10 +531,44 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     const unnamed = await h.company({ domain: 'old-fixture.example' });
     // No name: a pick on another domain can't be accepted.
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_match_model' }]);
-    // The trigger watches the domain only (spec 6.7): the base name field can
-    // be deleted, and a trigger on a deleted field would stop all dispatch.
+    expect((await h.fields(unnamed)).employeeCount).toBeUndefined();
+    upstream.respond(structured({ index: 0, certainty: 'high' }));
     expect((await h.patch(unnamed, { name: 'Fixture Co' })).status).toBe(200);
-    expect(await h.drain()).toEqual([]);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_model_high' }]);
+    expect((await h.fields(unnamed)).employeeCount).toBe(12);
+    // Once filled, another new name stops before a search.
+    const searches = h.exa.requests.length;
+    expect((await h.patch(unnamed, { name: 'Fixture Company' })).status).toBe(200);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'nothing_to_fill' }]);
+    expect(h.exa.requests).toHaveLength(searches);
+  });
+
+  it('keeps watching the domain after the workspace deletes the name field', async () => {
+    const h = await setup();
+    await h.drain();
+    const changed = await h.app.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_field',
+            object: 'company',
+            field: { name: 'tradingName', label: 'Trading name', type: 'text' },
+          },
+          { op: 'update_object', object: 'company', labelField: 'tradingName' },
+          { op: 'delete_field', object: 'company', field: 'name' },
+        ],
+      },
+    });
+    expect(changed.status, JSON.stringify(changed.body)).toBe(200);
+    expect(changed.body.status).toBe('applied');
+    const acme = await h.company({ tradingName: 'Acme' });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_domain' }]);
+    expect((await h.patch(acme, { domain: 'acme.example' })).status).toBe(200);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
+    expect(h.exa.requests.at(-1)?.body?.query).toBe('Acme acme.example');
+    expect((await h.fields(acme)).employeeCount).toBe(12);
+    expect(await h.detail()).toMatchObject({ connectionHealth: 'ok', lastError: null });
   });
 
   it('backfills a company whose first values are still held for review', async () => {

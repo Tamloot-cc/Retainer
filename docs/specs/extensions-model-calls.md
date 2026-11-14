@@ -573,15 +573,16 @@ much, and the bundle keeps the cheaper one if accuracy holds.
 
 Choices the enrichment release made where §6 left them open:
 
-- **Trigger.** `enrich` still watches only the domain. The search and the
-  guard on another domain use the company's name, so a company created
-  without a name and named later isn't looked up again until its domain
-  changes. Watching the base name field too was tried and dropped: that field
-  isn't protected, a workspace can delete it once another field is the label,
-  and a trigger on a deleted field makes every dispatch pass fail with
-  `schema_binding_conflict` (`extension-runtime/queue.ts`), which would stop
-  enrichment in that workspace. Watching the name needs a server change that
-  lets a trigger skip a field that no longer exists.
+- **Trigger.** `enrich` watches the domain and the base name field, so a
+  company created without a name and named later, or renamed, is looked up
+  again; one whose mapped fields are all set stops at `nothing_to_fill`
+  without a search. The name field isn't protected: a workspace can delete it
+  once another field is the label. A change trigger skips a watched field the
+  workspace doesn't have, or deleted, and keeps watching the rest
+  (`extension-runtime/queue.ts`), so there `enrich` watches the domain alone.
+  PR 2 shipped with the domain only, because a trigger on a deleted field then
+  failed every dispatch pass with `schema_binding_conflict`; the follow-up
+  changed the server and added the name.
 - **Which functions use the model.** `configure`, `enrich` and `backfill`
   declare `uses: ['model']`; `setup` doesn't. Backfill runs the same lookup as
   `enrich`, so it gets the same shortcut, model pick, guards and confidence.
@@ -825,3 +826,10 @@ of the PR found one KV leak after another (picks never cleared, then left by
 a lost write response in enrich, then in backfill), each a new exit path
 that needed its own cleanup, because runs can't delete a KV key and KV has
 no expiry. A retry now calls the model again instead.
+
+2026-11-14, the follow-ups of PR 2 (§6.7): a change trigger skips a watched
+field that no longer exists instead of failing dispatch, and `enrich` watches
+the company's name too. A KV value of JSON `null` is a 422 `invalid_input`
+instead of a 500; it isn't a delete, since KV still has no delete. The rule
+for which fields a mapped output can target (`compatibleFields`) moved to
+`@retainer/shared`, used by the web app, the server and the bundle.

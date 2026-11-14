@@ -11,6 +11,12 @@ export const ENRICHMENT = {
   enrich: 'ab556674-d905-4839-8516-7b1ee7455c80',
   /** The base company website field; the lookup, never a destination. */
   domainField: 'bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641',
+  /**
+   * The base company name field, watched so a renamed company is looked up
+   * again. It isn't protected: where a workspace deleted it, the trigger
+   * watches the domain alone.
+   */
+  nameField: 'ba596fe8-a75f-4a88-9d80-ca22d51d7c72',
   /** The sales template's company employee count, so Create binds it where it exists. */
   employeeCountField: '0dc97bea-8bbe-4bd8-9713-0c6628049268',
   linkedinField: '4341a8ad-8c05-444e-98bb-3e357d5730a7',
@@ -147,7 +153,7 @@ export function enrichmentManifest(build: {
     name: 'company-enrichment',
     version: build.version ?? '1.0.0',
     description:
-      'Fill in empty company details from Exa company search when a company gets a website domain. A model picks the right search result and suggests which fields to fill. Each workspace chooses the fields; values a person or agent set are never replaced.',
+      'Fill in empty company details from Exa company search when a company gets a website domain or a new name. A model picks the right search result and suggests which fields to fill. Each workspace chooses the fields; values a person or agent set are never replaced.',
     packageDigest: build.packageDigest,
     serverRange: build.serverRange,
     runtimeVersion: 'node24',
@@ -228,13 +234,13 @@ export function enrichmentManifest(build: {
         universalId: ENRICHMENT.enrich,
         name: 'enrich',
         description:
-          'Look up a company by its name and domain when it is created or its domain changes, and fill its empty mapped fields.',
+          'Look up a company by its name and domain when it is created or its name or domain changes, and fill its empty mapped fields.',
         handlerDigest: build.handlerDigest,
         timeoutSeconds: 120,
         trigger: {
           kind: 'change',
           objectId: BASE_OBJECT_IDS.company,
-          fieldIds: [ENRICHMENT.domainField],
+          fieldIds: [ENRICHMENT.domainField, ENRICHMENT.nameField],
           related: false,
           operations: ['create', 'update'],
         },

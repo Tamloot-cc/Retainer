@@ -101,6 +101,32 @@ describe('signed run credentials and transactional admission', () => {
     expect(
       (await t.request(`/v1/extensions/${id}/runtime/kv/cursor`, { key: token })).body,
     ).toEqual({ value: 'page-2', revision: 1 });
+    // A JSON null is refused, with the whole checkpoint: its child isn't queued.
+    const jobs = () =>
+      db.owner`select count(*)::int as n from extension_jobs where installation_id=${id}`;
+    const before = await jobs();
+    const nulled = await t.request(`/v1/extensions/${id}/runtime/checkpoint`, {
+      key: token,
+      body: {
+        children: [{ functionId, input: { sourceId: 'child' }, dedupeKey: 'null-kv' }],
+        kv: { key: 'cursor', expectedRevision: 1, value: null },
+      },
+    });
+    expect(nulled.status).toBe(422);
+    expect(nulled.body.error.code).toBe('invalid_input');
+    expect(await jobs()).toEqual(before);
+    expect(
+      (await t.request(`/v1/extensions/${id}/runtime/kv/cursor`, { key: token })).body,
+    ).toEqual({ value: 'page-2', revision: 1 });
+    // A null inside a value is an ordinary JSON value.
+    expect(
+      (
+        await t.request(`/v1/extensions/${id}/runtime/checkpoint`, {
+          key: token,
+          body: { children: [], kv: { key: 'cursor', expectedRevision: 1, value: { next: null } } },
+        })
+      ).body.revision,
+    ).toBe(2);
     expect(
       (await t.request(`/v1/extensions/${randomUUID()}/runtime/kv/cursor`, { key: token })).status,
     ).toBe(404);

@@ -572,21 +572,25 @@ export class ExtensionQueue {
         const manifest = this.runnableRelease(installation);
         if (!manifest) return { queued: 0, blocked: 0 };
         const schema = await getSchema(tx, workspace);
-        const bound = (fn: (typeof manifest.functions)[number]) => {
-          if (fn.trigger.kind !== 'change') return false;
-          const object = schema.objectsByUniversalId.get(fn.trigger.objectId);
-          return (
-            object?.state.status === 'active' &&
-            !object.hidden &&
-            fn.trigger.fieldIds.every((fid) =>
-              object.activeFields.some((field) => field.universalId === fid),
-            )
-          );
-        };
-        let handlers = manifest.functions.filter((fn) => fn.trigger.kind === 'change');
-        // A trigger on a contribution the workspace deleted never fires, as
-        // the install plan promised; other unresolved bindings still fail.
-        if (handlers.some((fn) => !bound(fn))) {
+        // Each change trigger with its object, when that object is live, and
+        // the keys of its watched fields. A watched field this workspace
+        // doesn't have, or deleted, is skipped: the trigger keeps watching the
+        // fields that remain. A deleted field keeps its key, so the schema
+        // change that deleted it still names it.
+        let handlers = manifest.functions.flatMap((fn) => {
+          if (fn.trigger.kind !== 'change') return [];
+          const trigger = fn.trigger;
+          const found = schema.objectsByUniversalId.get(trigger.objectId);
+          const object = found?.state.status === 'active' && !found.hidden ? found : undefined;
+          const keys = (object?.state.fields ?? [])
+            .filter((field) => trigger.fieldIds.includes(field.universalId))
+            .map((field) => field.key);
+          return [{ functionId: fn.universalId, trigger, object, keys }];
+        });
+        // A trigger on an object the installation contributed and the
+        // workspace deleted never fires, as the install plan promised; any
+        // other unresolved object still fails.
+        if (handlers.some((h) => !h.object)) {
           const retired = retiredContributions(
             await loadSchemaState(tx, workspace),
             manifest,
@@ -594,12 +598,7 @@ export class ExtensionQueue {
               ContributionRow[]
             >`select kind,universal_id,element_id,definition from extension_contributions where installation_id=${id}`,
           );
-          handlers = handlers.filter(
-            (fn) =>
-              bound(fn) ||
-              fn.trigger.kind !== 'change' ||
-              ![fn.trigger.objectId, ...fn.trigger.fieldIds].some((rid) => retired.has(rid)),
-          );
+          handlers = handlers.filter((h) => h.object || !retired.has(h.trigger.objectId));
         }
         if (!handlers.length) return { queued: 0, blocked: 0 };
         const [checkpoint] = await tx<
@@ -659,30 +658,19 @@ export class ExtensionQueue {
           const counts = { queued: 0, blocked: 0, coalesced: 0, cycles: 0 };
           try {
             await tx.savepoint(async (sp) => {
-              for (const fn of handlers) {
-                if (fn.trigger.kind !== 'change') continue;
-                const object = schema.objectsByUniversalId.get(fn.trigger.objectId);
-                if (object?.state.status !== 'active' || object.hidden)
+              for (const { functionId, trigger, object, keys } of handlers) {
+                if (!object)
                   throw conflict(
                     'schema_binding_conflict',
                     'change trigger object binding is unavailable',
-                  );
-                const keys = fn.trigger.fieldIds.map(
-                  (id) => object.activeFields.find((field) => field.universalId === id)?.key,
-                );
-                if (keys.some((key) => key === undefined))
-                  throw conflict(
-                    'schema_binding_conflict',
-                    'change trigger field binding is unavailable',
                   );
                 // A field-scoped trigger reacts to updates, reviews and
                 // schema changes only when one of its fields is named. A
                 // trigger listing its operations fires only on those, and on
                 // an update only when a watched field changed.
                 const watched =
-                  !fn.trigger.fieldIds.length ||
-                  keys.some((key) => row.field_keys.includes(key as string));
-                const operations = fn.trigger.operations as readonly string[] | undefined;
+                  !trigger.fieldIds.length || keys.some((key) => row.field_keys.includes(key));
+                const operations = trigger.operations as readonly string[] | undefined;
                 const direct =
                   row.object_type_id === object.id &&
                   (operations
@@ -696,7 +684,7 @@ export class ExtensionQueue {
                 const linksAffected =
                   !['update', 'review'].includes(row.operation) || relationChanged;
                 const indirect =
-                  fn.trigger.related !== false &&
+                  trigger.related !== false &&
                   linksAffected &&
                   [
                     ...row.related_record_ids,
@@ -710,7 +698,7 @@ export class ExtensionQueue {
                   if (row.origin_installation_id !== id) counts.cycles++;
                   continue;
                 }
-                const accepted = await this.acceptChange(sp, installation, fn.universalId, row);
+                const accepted = await this.acceptChange(sp, installation, functionId, row);
                 counts[accepted]++;
               }
             });
@@ -1379,6 +1367,11 @@ export class ExtensionQueue {
         const kv = input.kv;
         if (!kv.key || kv.key.length > 200)
           throw new AppError(422, 'invalid_input', 'invalid KV key');
+        // A missing key reads as null, so a stored null would look absent.
+        // KV has no delete: revisions restart at 1 for a new key, so a deleted
+        // and recreated key would let a stale compare-and-set through.
+        if (kv.value === null || kv.value === undefined)
+          throw new AppError(422, 'invalid_input', 'a KV value cannot be null');
         const [previous] = await tx<
           { revision: number; bytes: number }[]
         >`select revision,octet_length(value::text) as bytes from extension_kv where installation_id=${installation.id} and connection_id is not distinct from ${installation.connection_id ?? null}::uuid and key=${kv.key}`;

@@ -84,6 +84,12 @@ export const BASE_EVENT_FIELD_IDS = {
 export type BaseEventTypeName = keyof typeof BASE_EVENT_TYPE_IDS;
 export type BaseEventFieldName = keyof typeof BASE_EVENT_FIELD_IDS;
 
+/** Every base field a `FieldView` can name as its `baseField`, by that name. */
+export const BASE_FIELD_IDS_BY_NAME: Record<BaseFieldName | BaseEventFieldName, string> = {
+  ...BASE_FIELD_IDS,
+  ...BASE_EVENT_FIELD_IDS,
+};
+
 /**
  * The hidden, protected event type of the notes `remember` creates for
  * facts that cite no source (6.4). Describe, queries, views, search and

@@ -8,7 +8,7 @@ import {
   isRetryLater,
 } from '@retainer/extension';
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
-import { BASE_FIELD_IDS, normalizeDomain, type ObjectView } from '@retainer/shared';
+import { compatibleFields, normalizeDomain, type ObjectView } from '@retainer/shared';
 import { z } from 'zod';
 import { ENRICHMENT, ENRICHMENT_MAPPING } from './enrichment-contract.js';
 import {
@@ -115,10 +115,6 @@ function mappedContext(
 }
 
 type MappingOutput = ExtensionMapping['outputs'][number];
-/** The lookup field's base name (`companyDomain`), never a destination. */
-const LOOKUP_BASE_FIELD = Object.entries(BASE_FIELD_IDS).find(
-  ([, id]) => id === ENRICHMENT_MAPPING.lookup.fieldId,
-)?.[0];
 /** Each company may need a search and a model call, so pages stay small. */
 const BACKFILL_PAGE = 10;
 /** Companies of a backfill page looked up at once, to stay well inside its 300 s. */
@@ -128,21 +124,15 @@ const SAMPLES_PER_FIELD = 5;
 const SAMPLE_MAX_CHARACTERS = 500;
 const REASON_MAX = 500;
 
-/** Writable Company fields of a type the output accepts, other than the lookup field. */
-function compatibleFields(company: ObjectView | undefined, output: MappingOutput) {
-  return (company?.fields ?? []).filter(
-    (f) =>
-      !f.readOnly &&
-      (output.types as readonly string[]).includes(f.type) &&
-      f.baseField !== LOOKUP_BASE_FIELD,
-  );
-}
+/** Company fields an output can be written to; never the domain it looks companies up by. */
+const fieldsFor = (company: ObjectView | undefined, output: MappingOutput) =>
+  compatibleFields(company?.fields ?? [], output, ENRICHMENT_MAPPING.lookup.fieldId);
 
 type Choice = ExtensionMappingChoice & { reason?: string };
 type Choices = Record<string, Choice>;
 /** Today's suggestion without a model: the expected API name and a compatible type. */
 function byNameAndType(company: ObjectView | undefined, output: MappingOutput): Choice {
-  const field = compatibleFields(company, output).find((f) => f.name === output.field?.name);
+  const field = fieldsFor(company, output).find((f) => f.name === output.field?.name);
   if (field)
     return {
       action: 'existing',
@@ -174,7 +164,7 @@ async function suggestWithModel(
 ): Promise<Choices | null> {
   if (!model) return null;
   const candidates = new Map(
-    outputs.flatMap((output) => compatibleFields(company, output)).map((f) => [f.name, f]),
+    outputs.flatMap((output) => fieldsFor(company, output)).map((f) => [f.name, f]),
   );
   const samples = new Map<string, unknown[]>();
   if (company && candidates.size) {
@@ -236,7 +226,7 @@ async function suggestWithModel(
       if (
         choice?.action === 'existing' &&
         field &&
-        compatibleFields(company, output).some((f) => f.name === field)
+        fieldsFor(company, output).some((f) => f.name === field)
       )
         return [output.key, { action: 'existing' as const, field, reason }];
       if (choice?.action === 'skip' || (choice?.action === 'create' && output.field))
