@@ -675,8 +675,11 @@ suggestions → Map fields → Review and turn on. The access review grants only
 reads and declared secrets; final turn-on applies schema, mapping and writes.
 Preparing suggestions supports Skip suggestions and Continue later. A configuring
 card says “Waiting for your review” and its detail page offers Continue setup.
-Suggested rows show a badge and reason. Reviewed upgrades prepare suggestions
-while the old release stays active; Field mapping offers Suggest mapping.
+Suggested rows show a badge and reason. Reviewed upgrades check for a saved
+valid target approval; otherwise they show Approve access even if access is
+unchanged. A valid approval resumes the run or completed suggestions, while
+expired staged credentials return to access review. The old release stays
+active throughout; Field mapping offers Suggest mapping.
 
 
 ### Not in v1

@@ -9,7 +9,7 @@ hosted placement in §3.6, and the workspace agent in §11). Builds on the exten
 Extension code may call a language model, with Retainer's model key. The
 extension is responsible for the call: which model, the prompt, tools,
 structured output, effort, streaming, what workspace data goes in and what it
-does with the answer. The platform adds three things and nothing else:
+does with the answer. The proposed platform adds two things:
 
 1. **A model proxy** (§3). Extension code uses the official Anthropic SDK as
    it would anywhere, through a client the extension SDK builds for it
@@ -21,19 +21,21 @@ does with the answer. The platform adds three things and nothing else:
 
 Suggesting a mapping before the schema is approved is no longer part of this
 spec: the `configure` function of
-[extensions-configure.md](extensions-configure.md) does it, and it may call
-the model like any other function. The draft runs first proposed here (§4)
-are replaced.
+[extensions-configure.md](extensions-configure.md) ships it as an ordinary
+read-only run after access approval. Once the separately proposed model
+platform ships, configure may call the model like other permitted functions.
+The draft runs first proposed here (§4) are replaced.
 
 v1 is shaped for a later step: a Retainer workspace agent that extensions hand
 tasks to instead of writing their own agent code (§11). Nothing in v1 builds
 that agent, but the proxy, the client helper, the manifest field and the usage
 table are named and placed so it fits without changing existing extensions.
 
-Enrichment (§6) is the first bundle to use the proxy: it suggests its mapping
-in `configure` and uses a model to pick the right search result. Those are its
-choices, not platform rules. Other extensions can call a model from any
-function for any purpose.
+Enrichment (§6) is the proposed first model-backed bundle. Its shipped
+configure handler checks the provider key and suggests mappings by API name
+and type, without sampling records or calling a model. Model-based mapping
+and search-result selection below remain future work. Once the model
+platform ships, other extensions may use it from their permitted functions.
 
 ## 1. Product rule change
 
