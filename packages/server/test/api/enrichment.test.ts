@@ -318,7 +318,7 @@ describe('company enrichment through a fake Exa', () => {
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_domain' }]);
     expect(h.exa.requests.filter((r) => r.path === '/search')).toEqual([]);
     expect((await h.patch(blank, { name: 'Renamed' })).status).toBe(200);
-    expect(await h.drain()).toEqual([]);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_domain' }]);
     expect((await h.patch(blank, { domain: 'later.example' })).status).toBe(200);
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
     expect((await h.fields(blank)).employeeCount).toBe(12);
@@ -520,6 +520,20 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     const acme = await h.company({ name: 'Acme', domain: 'acme.example' });
     expect(await h.drain()).toEqual([{ status: 'succeeded', code }]);
     expect((await h.fields(acme)).employeeCount).toBeUndefined();
+  });
+
+  it('looks the company up again when it gets a name', async () => {
+    const h = await setup();
+    await h.drain();
+    h.exa.search = () => twoResults('https://fixture.example/', 'fixture.example');
+    upstream.respond(structured({ index: 0, certainty: 'high' }));
+    const unnamed = await h.company({ domain: 'old-fixture.example' });
+    // No name: a pick on another domain can't be accepted.
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_match_model' }]);
+    expect((await h.patch(unnamed, { name: 'Fixture Co' })).status).toBe(200);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_model_high' }]);
+    expect((await h.fields(unnamed)).employeeCount).toBe(12);
+    expect(h.exa.requests.at(-1)?.body?.query).toBe('Fixture Co old-fixture.example');
   });
 
   it('ends without a match when the server has no model key', async () => {
