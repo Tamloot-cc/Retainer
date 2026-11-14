@@ -613,7 +613,11 @@ Choices the enrichment release made where §6 left them open:
   Storing and clearing are best-effort: a full quota, a concurrent run's
   write or an outage only costs a retry its reuse. A key longer than KV's 200
   characters (a very long domain) isn't stored. The 7-day limit still guards
-  a pick whose run never finished.
+  a pick whose run never finished. A retry that finds nothing left to fill
+  (the write committed but its response was lost) clears the pick too.
+- **Backfill eligibility.** A company counts as enriched before when this
+  installation has a value on it, applied or held for review, so a company
+  whose first values wait for review still gets newly mapped outputs.
 - **Configure.** Samples are the 20 most recently updated companies; a value
   longer than 500 characters as JSON isn't sampled. A model choice the schema
   can't take (an incompatible or missing field, or Create for an output with

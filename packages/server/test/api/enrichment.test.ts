@@ -184,14 +184,17 @@ async function setup(key = 'exa-fixture-key', options: { modelKey?: boolean } = 
     expect(target.origin).toBe('https://retainer.test');
     if (init?.body && !target.pathname.startsWith('/v1/extensions/runtime/model'))
       apiBodies.push(String(init.body));
-    if (failNext && target.pathname.endsWith(failNext)) {
+    if (failNext && target.pathname.endsWith(failNext.path)) {
+      const { after } = failNext;
       failNext = undefined;
+      // `after`: the request is served, and only its response is lost.
+      if (after) await app.inProcessFetch(url, init);
       return new Response('upstream outage', { status: 502 });
     }
     return app.inProcessFetch(url, init);
   };
   /** Answers the next Retainer API request whose path ends so with a 502 page. */
-  let failNext: string | undefined;
+  let failNext: { path: string; after: boolean } | undefined;
   async function execute(job: ClaimedJob) {
     const token = await tokens.issue(app.sql, job, manifest.universalId, job.scopes);
     const model = job.uses.includes('model')
@@ -253,8 +256,8 @@ async function setup(key = 'exa-fixture-key', options: { modelKey?: boolean } = 
     keys,
     id,
     exa,
-    failNext: (path: string) => {
-      failNext = path;
+    failNext: (path: string, after = false) => {
+      failNext = { path, after };
     },
     apiBodies,
     drain,
@@ -534,6 +537,46 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     // be deleted, and a trigger on a deleted field would stop all dispatch.
     expect((await h.patch(unnamed, { name: 'Fixture Co' })).status).toBe(200);
     expect(await h.drain()).toEqual([]);
+  });
+
+  it('clears the pick when the write committed but its response was lost', async () => {
+    const h = await setup();
+    await h.drain();
+    h.exa.search = (domain) => twoResults('https://redirect.example/', domain);
+    upstream.respond(structured({ index: 0, certainty: 'high' }));
+    h.failNext('/runtime/mapped-writes', true);
+    const acme = await h.company({ name: 'Acme', domain: 'acme.example' });
+    expect(await h.drain()).toEqual([{ status: 'retry', code: 'api_unavailable' }]);
+    expect((await h.fields(acme)).employeeCount).toBe(12);
+    await db.owner`update extension_jobs set available_at=clock_timestamp() where installation_id=${h.id} and status='queued'`;
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'nothing_to_fill' }]);
+    const [left] = await db.owner<{ value: unknown }[]>`
+      select value from extension_kv where installation_id=${h.id} and key=${`pick:${acme}:acme.example`}`;
+    expect(left?.value).toEqual({});
+  });
+
+  it('backfills a company whose first values are still held for review', async () => {
+    const h = await setup();
+    await h.drain();
+    await db.owner`update workspaces set settings = settings || '{"confidenceThreshold":0.8}'::jsonb
+      where id=${h.workspace}`;
+    h.exa.search = (domain) => twoResults('https://redirect.example/', domain);
+    upstream.respond(structured({ index: 0, certainty: 'medium' }));
+    await h.company({ name: 'Held', domain: 'held.example' });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_model_medium' }]);
+    const before = h.exa.requests.length;
+    await h.queue.enqueue(h.workspace, h.id, {
+      functionId: ENRICHMENT.backfill,
+      input: {},
+      dedupeKey: randomUUID(),
+    });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'backfill_page' }]);
+    expect(
+      h.exa.requests
+        .slice(before)
+        .filter((r) => r.path === '/search')
+        .map((r) => r.body?.query),
+    ).toEqual(['Held held.example']);
   });
 
   it('ends without a match when the server has no model key', async () => {
