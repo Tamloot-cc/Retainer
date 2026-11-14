@@ -5,6 +5,8 @@ import { z } from 'zod';
 /** Permanent identities of the company enrichment release (spec 4.1). */
 export const ENRICHMENT = {
   registration: '9796c2c7-46f3-4006-8f35-059d5ef3553e',
+  configure: 'a71658da-20db-4b37-9064-992ca0fd9fc0',
+  backfill: '4768a194-e37e-4e93-af76-f145e2ae3d83',
   setup: 'c3376603-255e-4adb-819f-e3aa173f3ff9',
   enrich: 'ab556674-d905-4839-8516-7b1ee7455c80',
   /** The base company website field; the lookup, never a destination. */
@@ -14,7 +16,12 @@ export const ENRICHMENT = {
   linkedinField: '4341a8ad-8c05-444e-98bb-3e357d5730a7',
   headquartersField: '770bf3de-d5df-48ac-95cb-16ec1c18c302',
 } as const;
-export const ENRICHMENT_FUNCTION_IDS: string[] = [ENRICHMENT.setup, ENRICHMENT.enrich];
+export const ENRICHMENT_FUNCTION_IDS: string[] = [
+  ENRICHMENT.configure,
+  ENRICHMENT.setup,
+  ENRICHMENT.enrich,
+  ENRICHMENT.backfill,
+];
 
 /** Exa's fixed API origin; no setting or input can change it. */
 export const EXA_ORIGIN = 'https://api.exa.ai';
@@ -156,6 +163,33 @@ export function enrichmentManifest(build: {
       ],
     },
     functions: [
+      {
+        universalId: ENRICHMENT.configure,
+        name: 'configure',
+        description: 'Check the Exa key and suggest compatible company fields.',
+        handlerDigest: build.handlerDigest,
+        timeoutSeconds: 60,
+        trigger: { kind: 'configure' },
+        inputSchema: { type: 'object', additionalProperties: false },
+        scopes: ['read'],
+        secrets: ['apiKey'],
+      },
+      {
+        universalId: ENRICHMENT.backfill,
+        name: 'backfill',
+        description: 'Fill newly mapped outputs on previously enriched companies, in pages.',
+        handlerDigest: build.handlerDigest,
+        timeoutSeconds: 120,
+        trigger: { kind: 'job' },
+        inputSchema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { cursor: { type: 'string', maxLength: 4096 } },
+        },
+        scopes: ['read', 'write'],
+        secrets: ['apiKey'],
+        mappedWrite: true,
+      },
       {
         universalId: ENRICHMENT.setup,
         name: 'setup',

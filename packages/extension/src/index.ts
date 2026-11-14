@@ -82,6 +82,7 @@ const inputSchema: z.ZodType<InputSchema> = z.lazy(() =>
   }),
 );
 const trigger = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('configure') }),
   z.strictObject({ kind: z.literal('install') }),
   z.strictObject({ kind: z.literal('uninstall') }),
   z.strictObject({ kind: z.literal('connect') }),
@@ -507,6 +508,27 @@ export function defineExtension(value: unknown): ExtensionManifest {
   if ((manifest.serverRange === undefined) === (manifest.serverVersions === undefined))
     throw new Error('unsupported_manifest: give exactly one of serverRange or serverVersions');
   if (manifest.serverRange !== undefined) parseServerRange(manifest.serverRange);
+  const configure = manifest.functions.filter((fn) => fn.trigger.kind === 'configure');
+  if (
+    configure.length > 1 ||
+    configure.some(
+      (fn) =>
+        fn.scopes?.length !== 1 ||
+        fn.scopes[0] !== 'read' ||
+        fn.mappedWrite ||
+        functionSecrets(manifest, fn).some(
+          (name) => manifest.settings[name]?.level === 'connection',
+        ),
+    )
+  )
+    throw new Error('unsupported_manifest: configure requires read-only installation access');
+  if (
+    configure.length &&
+    (!manifest.scopes.includes('read') ||
+      (!manifest.mapping &&
+        !Object.values(manifest.settings).some((s) => !s.secret && s.level !== 'connection')))
+  )
+    throw new Error('unsupported_manifest: configure needs mapping or non-secret settings');
   const ids = [
     manifest.universalId,
     ...manifest.functions.map((f) => f.universalId),
@@ -716,6 +738,10 @@ export function defineFunction(value: unknown) {
 export const defineView = (value: unknown) => viewSchema.parse(value);
 
 export type ExtensionInstallInput = {
+  /** Access-only preview/approval for a target release. */
+  accessOnly?: boolean;
+  /** Explicit final approval of a configuring installation. */
+  turnOn?: boolean;
   /** Set for an upgrade preview and commit. */
   installationId?: string;
   /** Explicitly review a new credential/account connection on the current release. */
@@ -769,11 +795,14 @@ export type ExtensionCredential = {
 };
 
 export type ExtensionInstallation = {
+  /** Latest configure run for the installed release, when there is one. */
+  suggestionsStatus?: 'queued' | 'running' | 'ready' | 'failed';
   id: string;
   registrationId: string;
   version: string;
   releaseDigest: string;
   state:
+    | 'configuring'
     | 'installing'
     | 'active'
     | 'setup_failed'
@@ -857,4 +886,13 @@ export type SourceTaskSchema = {
   status: 'ok' | 'degraded';
   fields: Record<string, { name: string; type: string }>;
   errors: { field: string; reason: string }[];
+};
+
+/** Suggestions never become approved settings or field bindings without human review. */
+export type ExtensionSuggestions = {
+  status: 'queued' | 'running' | 'ready' | 'failed';
+  code?: string;
+  mapping?: Record<string, ExtensionMappingChoice & { reason?: string }>;
+  settings?: Record<string, string | number | boolean>;
+  issues: Record<string, string>;
 };

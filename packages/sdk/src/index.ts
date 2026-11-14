@@ -976,6 +976,61 @@ export class RetainerClient {
   disableExtension(id: string) {
     return this.post<ExtensionInstallation>(`/v1/extensions/${encodeURIComponent(id)}/disable`);
   }
+  cancelExtensionSuggestions(id: string, version?: string) {
+    const query = version ? `?version=${encodeURIComponent(version)}` : '';
+    return this.send<{ cancelled: boolean }>(
+      'DELETE',
+      `/v1/extensions/${encodeURIComponent(id)}/suggestions${query}`,
+    );
+  }
+  configureExtension(id: string, version?: string) {
+    return this.post<{ id: string }>(`/v1/extensions/${encodeURIComponent(id)}/configure`, {
+      version,
+    });
+  }
+  extensionSuggestions(id: string, version?: string, signal?: AbortSignal) {
+    return this.get<import('@retainer/extension').ExtensionSuggestions>(
+      `/v1/extensions/${encodeURIComponent(id)}/suggestions`,
+      { version },
+      signal,
+    );
+  }
+  saveExtensionSuggestions(
+    id: string,
+    input: {
+      mapping?: Record<
+        string,
+        import('@retainer/extension').ExtensionMappingChoice & { reason?: string }
+      >;
+      settings?: Record<string, string | number | boolean>;
+    },
+  ) {
+    return this.send<{ saved: boolean }>(
+      'PUT',
+      `/v1/extensions/${encodeURIComponent(id)}/runtime/suggestions`,
+      input,
+    );
+  }
+  turnOnExtension(id: string, input: ExtensionInstallInput & { planDigest: string }, key: string) {
+    return this.post<ExtensionInstallation>(
+      `/v1/extensions/${encodeURIComponent(id)}/turn-on`,
+      input,
+      undefined,
+      key,
+    );
+  }
+  approveExtensionAccess(
+    id: string,
+    input: ExtensionInstallInput & { planDigest: string },
+    key: string,
+  ) {
+    return this.post<ExtensionInstallation>(
+      `/v1/extensions/${encodeURIComponent(id)}/access`,
+      input,
+      undefined,
+      key,
+    );
+  }
   uninstallExtension(id: string) {
     return this.post<ExtensionInstallation>(`/v1/extensions/${encodeURIComponent(id)}/uninstall`);
   }

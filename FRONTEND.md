@@ -670,6 +670,15 @@ Every screen is a page; only the uninstall confirmation is a dialog.
   Approve. Going back to a step drops the preview. Approving opens the
   extension's page.
 
+For releases with `configure`, setup uses Connect → Approve access → Preparing
+suggestions → Map fields → Review and turn on. The access review grants only
+reads and declared secrets; final turn-on applies schema, mapping and writes.
+Preparing suggestions supports Skip suggestions and Continue later. A configuring
+card says “Waiting for your review” and its detail page offers Continue setup.
+Suggested rows show a badge and reason. Reviewed upgrades prepare suggestions
+while the old release stays active; Field mapping offers Suggest mapping.
+
+
 ### Not in v1
 
 Creating or editing objects and fields in the UI, manual card order on

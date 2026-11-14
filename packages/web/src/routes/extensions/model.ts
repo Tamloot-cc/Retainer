@@ -72,6 +72,7 @@ export const installedRelease = (releases: Release[], installation: Installation
 export function upgradeFor(newest: Map<string, Release>, installation: Installation) {
   const candidate = newest.get(installation.registrationId);
   return candidate &&
+    installation.state !== 'configuring' &&
     !isGone(installation) &&
     compareVersions(candidate.manifest.version, installation.version) > 0
     ? candidate
@@ -85,6 +86,8 @@ export const runtimeMissing = (installation: Installation) =>
 
 /** The one status people see first: the state, or what needs them. */
 export function status(installation: Installation): { label: string; tone: Tone } {
+  if (installation.state === 'configuring')
+    return { label: 'Waiting for your review', tone: 'pending' };
   if (installation.state === 'setup_failed') return { label: 'Setup failed', tone: 'error' };
   if (installation.state === 'active' && (installation.lastError || runtimeMissing(installation)))
     return { label: 'Needs attention', tone: 'error' };
@@ -130,6 +133,7 @@ export const initialSettings = (
 /** Whether a workspace-level reconnect can change anything for this release. */
 export const canReconnect = (release: Release, installation: Installation) =>
   release.manifest.connection === 'workspace' &&
+  installation.state !== 'configuring' &&
   !isGone(installation) &&
   (!!release.manifest.source ||
     Object.values(release.manifest.settings).some((setting) => setting.reconnect));

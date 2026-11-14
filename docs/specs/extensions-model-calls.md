@@ -310,6 +310,11 @@ will be revisited.
 
 ### 6.1 Draft: mapping suggestion
 
+> Replaced by [Extension installation in two steps](extensions-configure.md),
+> especially §8. This draft trigger and invocation are historical proposals;
+> use an ordinary read-only configure run after access approval. Model access
+> remains a separate prerequisite.
+
 The `draft` function declares `read` and `model: true`.
 
 1. Sample up to 20 companies with `query_records`, preferring recently updated

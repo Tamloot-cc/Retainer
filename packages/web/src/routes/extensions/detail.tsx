@@ -175,6 +175,16 @@ function InstalledExtension({
       {...(manifest ? { description: manifest.description } : {})}
       actions={
         <>
+          {admin && installation.state === 'configuring' ? (
+            <Button variant="primary" asChild>
+              <Link
+                to="/extensions/new/$registration"
+                params={{ registration: installation.registrationId }}
+              >
+                Continue setup
+              </Link>
+            </Button>
+          ) : null}
           {admin && upgrade ? (
             <Button size="small" variant="primary" asChild>
               <Link to="/extensions/$id/upgrade" params={{ id: installation.id }}>
@@ -432,6 +442,13 @@ function MappingSummary({
   installation: Installation;
   admin: boolean;
 }) {
+  const navigate = useNavigate();
+  const suggest = useMutation({
+    mutationFn: async () => {
+      await api.configureExtension(installation.id);
+      void navigate({ to: '/extensions/$id/mapping', params: { id: installation.id } });
+    },
+  });
   const detail = useQuery({
     queryKey: detailKey(installation.id),
     queryFn: ({ signal }) => api.extension(installation.id, signal),
@@ -444,6 +461,7 @@ function MappingSummary({
   const broken = view.outputs.some((o) => o.status !== 'ok');
   return (
     <section aria-label="Approved field mapping" className="flex flex-col gap-3">
+      {suggest.error ? <Notice error>{suggest.error.message}</Notice> : null}
       <MappingBindings mapping={mapping} bindings={view.outputs} />
       {broken ? (
         <Notice>
@@ -453,6 +471,12 @@ function MappingSummary({
       ) : null}
       {admin ? (
         <Row>
+          {installation.state === 'active' &&
+          release.manifest.functions.some((fn) => fn.trigger.kind === 'configure') ? (
+            <Button disabled={suggest.isPending} onClick={() => suggest.mutate()}>
+              Suggest mapping
+            </Button>
+          ) : null}
           <Button asChild>
             <Link to="/extensions/$id/mapping" params={{ id: installation.id }}>
               Edit mapping

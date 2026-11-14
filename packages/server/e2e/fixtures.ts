@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -91,6 +91,34 @@ export const browserMappingManifest = manifestFixture({
     ],
   },
 });
+export const browserConfigureManifest = manifestFixture({
+  ...browserMappingManifest,
+  name: 'browser-configure',
+  version: '2.0.0',
+  functions: [
+    {
+      universalId: '46966046-f236-48de-826f-27dd9e94d266',
+      name: 'configure',
+      description: 'Suggest field mapping',
+      handlerDigest: 'b'.repeat(64),
+      trigger: { kind: 'configure' },
+      scopes: ['read'],
+      secrets: [],
+      timeoutSeconds: 120,
+      inputSchema: { type: 'object', additionalProperties: false },
+    },
+  ],
+});
+const browserMapping = browserMappingManifest.mapping;
+if (!browserMapping) throw new Error('mapping fixture needs a mapping');
+const browserConfigurePrevious = manifestFixture({
+  ...browserMappingManifest,
+  name: 'browser-configure',
+  mapping: {
+    ...browserMapping,
+    outputs: browserMapping.outputs.slice(0, 1),
+  },
+});
 export const browserMemberManifest = manifestFixture({
   universalId: 'd76ad98b-ac74-4fe5-82ac-0947165f8780',
   name: 'member-browser',
@@ -145,6 +173,8 @@ export const test = base.extend<
       /** Runs the consolidator once, which suggests merges. */
       consolidate: () => Promise<unknown>;
       activateMembers: () => Promise<void>;
+      finishConfigure: (setup?: boolean) => Promise<void>;
+      previousConfiguration: () => Promise<string>;
       sourceEvidence: () => Promise<{
         personId: string;
         previousEventId: string;
@@ -159,6 +189,7 @@ export const test = base.extend<
     sourceFixture: boolean;
     mappingFixture: boolean;
     memberFixture: boolean;
+    configureFixture: boolean;
   }
 >({
   extensionFixture: [false, { option: true, scope: 'worker' }],
@@ -166,6 +197,7 @@ export const test = base.extend<
   fileStorage: [false, { option: true, scope: 'worker' }],
   sourceFixture: [false, { option: true, scope: 'worker' }],
   mappingFixture: [false, { option: true, scope: 'worker' }],
+  configureFixture: [false, { option: true, scope: 'worker' }],
   memberFixture: [false, { option: true, scope: 'worker' }],
   retainer: async (
     {
@@ -176,6 +208,7 @@ export const test = base.extend<
       sourceFixture,
       mappingFixture,
       memberFixture,
+      configureFixture,
     },
     use,
   ) => {
@@ -247,15 +280,27 @@ export const test = base.extend<
       if (!a || typeof a === 'string') throw new Error('file address missing');
       storage = new LocalFileStorage(`http://127.0.0.1:${a.port}`, fileKey);
     }
-    const catalog = sourceFixture
-      ? new ExtensionCatalog([
-          { manifest: sourceManifest, actorCeiling: 'integration', runtimeEnabled: true },
-        ])
-      : memberFixture
+    const catalog = configureFixture
+      ? new ExtensionCatalog(
+          [browserConfigurePrevious, browserConfigureManifest].map((manifest) => ({
+            manifest,
+            actorCeiling: 'agent',
+            runtimeEnabled: true,
+          })),
+        )
+      : sourceFixture
         ? new ExtensionCatalog([
-            { manifest: browserMemberManifest, actorCeiling: 'integration', runtimeEnabled: true },
+            { manifest: sourceManifest, actorCeiling: 'integration', runtimeEnabled: true },
           ])
-        : undefined;
+        : memberFixture
+          ? new ExtensionCatalog([
+              {
+                manifest: browserMemberManifest,
+                actorCeiling: 'integration',
+                runtimeEnabled: true,
+              },
+            ])
+          : undefined;
     const secretSql = memberFixture
       ? createSql(dbUrl.toString(), { role: 'retainer_secret_broker' })
       : undefined;
@@ -265,7 +310,10 @@ export const test = base.extend<
           new SecretCipher('browser', new Map([['browser', randomBytes(32)]])),
         )
       : undefined;
-    const pair = sourceFixture || memberFixture ? await generateKeyPair('EdDSA') : undefined;
+    const pair =
+      sourceFixture || memberFixture || configureFixture
+        ? await generateKeyPair('EdDSA')
+        : undefined;
     const runTokens = pair
       ? new RunTokens({
           issuer: 'https://retainer.test',
@@ -325,6 +373,75 @@ export const test = base.extend<
       const result = await response.json();
       if (!response.ok) throw new Error(JSON.stringify(result));
       return result;
+    }
+    async function finishConfigure(setup = false) {
+      if (!catalog || !runTokens) throw new Error('configure fixture is not enabled');
+      const queue = new ExtensionQueue(sql, catalog.runtime);
+      if (setup) {
+        const [pending] =
+          await owner`select id from extension_jobs where workspace_id=${workspace.id} and status='queued' and trigger_kind='install' order by id desc limit 1`;
+        if (!pending) throw new Error('no install job');
+        const run = await queue.claim(workspace.id, pending.id, randomUUID());
+        if (!run) throw new Error('install claim failed');
+        await queue.complete(run, { status: 'succeeded' });
+        return;
+      }
+      const [pending] =
+        await owner`select id,installation_id from extension_jobs where status='queued' and trigger_kind='configure' order by id desc limit 1`;
+      if (!pending) throw new Error('no configure job');
+      const job = await queue.claim(workspace.id, pending.id, randomUUID());
+      if (!job) throw new Error('configure claim failed');
+      const token = await runTokens.issue(
+        sql,
+        job,
+        browserConfigureManifest.universalId,
+        job.scopes,
+      );
+      await request(
+        `/extensions/${job.installationId}/runtime/suggestions`,
+        {
+          mapping: {
+            employee_count: { action: 'create', reason: 'A dedicated count field.' },
+            headquarters: {
+              action: 'existing',
+              field: 'address',
+              reason: 'The existing company address.',
+            },
+          },
+        },
+        token,
+        'PUT',
+      );
+      await queue.complete(job, { status: 'succeeded' });
+    }
+    async function previousConfiguration() {
+      if (!catalog) throw new Error('configure fixture is not enabled');
+      const manifest = browserConfigurePrevious;
+      const input = {
+        registrationId: manifest.universalId,
+        version: manifest.version,
+        settings: {},
+        mapping: { employee_count: { action: 'create' } },
+      };
+      const preview = await request('/extensions/preview', input, user);
+      const response = await fetch(`${url}/v1/extensions`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${user}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': randomUUID(),
+        },
+        body: JSON.stringify({ ...input, planDigest: preview.planDigest }),
+      });
+      const installed = (await response.json()) as { id: string };
+      if (!response.ok) throw new Error(JSON.stringify(installed));
+      const [pending] =
+        await owner`select id from extension_jobs where installation_id=${installed.id} and trigger_kind='install'`;
+      const queue = new ExtensionQueue(sql, catalog.runtime);
+      const job = await queue.claim(workspace.id, pending?.id, randomUUID());
+      if (!job) throw new Error('install claim failed');
+      await queue.complete(job, { status: 'succeeded' });
+      return installed.id;
     }
     async function activateMembers() {
       if (!memberFixture || !catalog || !runTokens)
@@ -456,6 +573,8 @@ export const test = base.extend<
         consolidate: () => consolidateWorkspace(sql, workspace.id),
         sourceEvidence,
         activateMembers,
+        finishConfigure,
+        previousConfiguration,
       });
     } finally {
       await new Promise<void>((resolve, reject) => {

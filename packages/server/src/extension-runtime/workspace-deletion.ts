@@ -50,7 +50,8 @@ export async function uninstallForWorkspaceDeletion(
     if (!current || ['uninstalling', 'uninstalled'].includes(current.state)) continue;
     const resolution = catalog ? resolveRelease(catalog, current) : undefined;
     const next =
-      resolution?.available && resolution.manifest.execution === 'standalone'
+      current.state === 'configuring' ||
+      (resolution?.available && resolution.manifest.execution === 'standalone')
         ? 'uninstalled'
         : 'uninstalling';
     await cancelRuns(tx, current.id, current.generation + 1);
@@ -63,6 +64,13 @@ export async function uninstallForWorkspaceDeletion(
     for (const c of connections) await disconnectConnection(tx, workspace, c.id);
     await tx`update webhook_bindings set state='retired',updated_at=clock_timestamp() where installation_id=${current.id} and state<>'retired'`;
     await tx`select retainer_retire_extension_secrets(${current.id}::uuid)`;
+    await tx`delete from extension_suggestions where installation_id=${current.id}`;
+    await tx`delete from extension_access_approvals where installation_id=${current.id}`;
+    if (current.state === 'configuring') {
+      await tx`delete from extension_kv where installation_id=${current.id}`;
+      await tx`delete from extension_jobs where installation_id=${current.id}`;
+      await tx`select retainer_finish_extension_cleanup(${current.id}::uuid)`;
+    }
     moved++;
   }
   return moved;

@@ -687,3 +687,30 @@ describe('member connection manifests', () => {
     ).toThrow('cannot request secrets');
   });
 });
+
+describe('configure contract', () => {
+  const configure = () => ({
+    universalId: randomUUID(),
+    name: 'configure',
+    description: 'Suggest settings',
+    handlerDigest: 'b'.repeat(64),
+    trigger: { kind: 'configure' },
+    inputSchema: { type: 'object', additionalProperties: false },
+    scopes: ['read'],
+  });
+  it('accepts exactly one explicitly read-only configure function', () => {
+    expect(
+      defineExtension({ ...fixture(), functions: [configure()] }).functions[0]?.trigger.kind,
+    ).toBe('configure');
+    for (const functions of [
+      [configure(), configure()],
+      [{ ...configure(), scopes: undefined }],
+      [{ ...configure(), scopes: ['read', 'write'] }],
+      [{ ...configure(), mappedWrite: true }],
+    ])
+      expect(() => defineExtension({ ...fixture(), functions })).toThrow('configure');
+    expect(() => defineExtension({ ...fixture(), settings: {}, functions: [configure()] })).toThrow(
+      'configure',
+    );
+  });
+});

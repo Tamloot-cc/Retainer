@@ -12,6 +12,33 @@ import { idParam, limitParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 
 export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMode = true) {
+  app.get('/extensions/:id/suggestions', requireScope('read'), async (c) =>
+    c.json(await extensions.suggestions(c.get('caller'), idParam(c), c.req.query('version'))),
+  );
+  app.delete('/extensions/:id/suggestions', requireScope('admin'), async (c) =>
+    c.json(await extensions.cancelConfigure(c.get('caller'), idParam(c), c.req.query('version'))),
+  );
+  app.post('/extensions/:id/configure', requireScope('admin'), async (c) => {
+    const input = await readBody(c, z.strictObject({ version: z.string().optional() }));
+    return c.json(await extensions.configure(c.get('caller'), idParam(c), input.version), 202);
+  });
+  app.delete('/extensions/:id', requireScope('admin'), async (c) =>
+    c.json(await extensions.transition(c.get('caller'), idParam(c), 'uninstalled')),
+  );
+  for (const action of ['turn-on', 'access'] as const)
+    app.post(`/extensions/:id/${action}`, requireScope('admin'), async (c) => {
+      const id = idParam(c),
+        input = await readBody(c, commitInputSchema);
+      if (input.installationId !== id || (action === 'turn-on' ? !input.turnOn : !input.accessOnly))
+        throw new AppError(
+          400,
+          'invalid_request',
+          'review the matching plan for this installation',
+        );
+      return c.json(
+        await extensions.install(c.get('caller'), input, c.req.header('Idempotency-Key') ?? ''),
+      );
+    });
   app.get('/extensions/:id/connections', requireScope('read'), async (c) =>
     c.json(await extensions.connections.list(c.get('caller'), idParam(c))),
   );

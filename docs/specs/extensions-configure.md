@@ -1,6 +1,6 @@
 # Extension installation in two steps
 
-Status: proposed, 2026-11-14. Amends [extensions.md](extensions.md) §7
+Status: implementation, 2026-11-14. Amends [extensions.md](extensions.md) §7
 (installation lifecycle), §8 (what lifecycle functions may read) and §9.1
 (admission). Replaces the draft runs in
 [extensions-model-calls.md](extensions-model-calls.md) §4 and the enrichment
@@ -47,8 +47,9 @@ Considered:
 - **Code in the admin's browser.** Not sandboxed, acts as the admin, and would
   put model keys in the browser. Rejected.
 
-Two approvals reuse installations, jobs, run tokens, scopes, fencing and
-secrets unchanged. The admin grants read access explicitly before any code
+Two approvals reuse installations, jobs, run tokens, scopes and fencing.
+Secret-broker admission and worker discovery also gain the configure class;
+upgrade secrets remain staged until final approval. The admin grants read access explicitly before any code
 reads data, which is the consent model the draft run had to invent.
 
 ## 2. Manifest
@@ -113,11 +114,18 @@ PUT /v1/extensions/:id/runtime/suggestions
 - Whether a suggested field exists and fits is not checked here. The schema can
   change before the admin looks, so the suggestions are resolved against the
   current schema each time they are read (§6.2).
-- A later save from the same run replaces the earlier one. A save from a run
+- Suggestions become visible only after that run succeeds; failed or incomplete
+  results never prefill a form. Each retry clears the prior attempt's saved
+  values before executing again. The newest-run slot is assigned when enqueueing,
+  before the first save. A later save from the same run replaces the earlier one. A save from a run
   that is no longer the newest configure run for that installation and release
   returns `409 stale_suggestions`.
 
 ### 2.3 What `configure` may not do
+
+Configure must not create durable provider resources. Provider credentials may
+have broader authority than the Retainer token; release review must check that
+configure makes only repeatable read/test calls. Provider setup belongs to install.
 
 The run token carries `read` only, so record writes and mapped writes are
 refused as for any read-only function. In addition, for a `configure` run:
@@ -169,7 +177,7 @@ Preview and commit keep their endpoints (`POST /v1/extensions/preview`,
 For a release with `configure` and no installation:
 
 - The request carries settings and pending secret references, and no
-  `mapping`.
+  `mapping`. An explicit `accessOnly: true` selects the same plan for upgrades.
 - The preview shows the access only: the scopes, the actor, the secrets, model
   access and the sharing consent. It plans no schema operations. Its plan
   digest covers those.
@@ -213,8 +221,9 @@ an installation in `configuring`:
 POST /v1/extensions/:id/turn-on
 ```
 
-Same body as an upgrade commit (`commitInputSchema`), with the reviewed plan
-digest. The commit runs under the same locks as `commitPlan`
+Same body as an upgrade commit (`commitInputSchema`), with `turnOn: true` and
+the reviewed plan digest. Preview uses the existing preview endpoint with the
+same flag and installation ID; operation flags are covered by the digest. The commit runs under the same locks as `commitPlan`
 (`packages/server/src/extensions/service.ts:787`):
 
 - Applies the schema additions, views and mapping.
@@ -224,8 +233,10 @@ digest. The commit runs under the same locks as `commitPlan`
   and queues `install` with `previousVersion: null`.
 - Deletes the installation's suggestions.
 
-If the catalog gained a newer release while the installation waited, the admin
-can turn on that one instead; if it asks for more access, §5.2 applies first.
+**P1 — pin first-install consent.** Turn-on must use the release digest approved
+at the access step. A newer release requires cancelling and starting again.
+This keeps access, settings, secrets and executable code covered by the same
+consent; a catalog update cannot silently broaden it.
 
 ### 4.4 Cancel and expiry
 
@@ -283,6 +294,15 @@ that release read the secrets it declares (new required secrets come with this
 request as pending secret references) and is consumed by the upgrade commit.
 Until then, ordinary runs keep the installed release's grant.
 
+**P1 — isolate target credentials.** The approval retains pending-secret references
+and target settings; it never adopts or replaces active secrets. Only the admitted
+configure job can read those pending secrets. The broker independently rechecks
+job identity, fence, deadline, target approval and declared secret names while
+holding the admission locks. Final upgrade adopts them atomically. Expired pending
+references require restaging and a fresh access review. Target secrets cannot
+replace existing credentials through this flow; reconnect remains separate.
+The web flow may request explicit access approval even when the grant is unchanged.
+
 ### 5.4 Admission across releases
 
 Today a job runs only when its release digest is the installation's
@@ -292,6 +312,13 @@ Today a job runs only when its release digest is the installation's
 - the installation is `active`,
 - that digest is a release the admin is reviewing as an upgrade, and
 - its access is covered by the current grant or approved under §5.3.
+
+**P1 — enforce the exception throughout execution.** Discovery filters on the
+job's target digest, not just the installation's digest. Claim, token issuance,
+API admission, broker admission, lease renewal and completion all check the
+same target approval and generation. Configure failures do not degrade the
+active installation's health. Retrying an older configure job is refused: request
+new suggestions instead, preserving newest-run ownership.
 
 The token is bound to that digest and to `read`. Nothing else may run code from
 a release the installation hasn't adopted.
@@ -316,7 +343,8 @@ Through `packages/server/src/db/schema.ts` and `pnpm db:generate`:
   like the other extension tables. Deleted when that release is adopted, the
   review is cancelled, or the installation is uninstalled.
 - **`extension_access_approvals`**: `workspace_id`, `installation_id`,
-  `release_digest`, `scopes`, `actor`, `approved_by`, `approved_at`. Consumed
+  `release_digest`, `generation`, `settings_revision`, `scopes`, `actor`,
+  `secret_refs`, target `settings`, `approved_by`, `approved_at`. Consumed
   by the upgrade commit; deleted with the installation.
 
 ### 6.2 Endpoints
@@ -325,6 +353,7 @@ Through `packages/server/src/db/schema.ts` and `pnpm db:generate`:
 | ----------------------------------------------- | ------------------------- | -------------------------------------------------------- |
 | `POST /v1/extensions/preview`, `/v1/extensions` | as today                  | Access plan and commit for a release with `configure`    |
 | `POST /v1/extensions/:id/configure`             | human admin               | Queue `configure` (`{version?}`, default installed)      |
+| `DELETE /v1/extensions/:id/suggestions?version=` | human admin | Cancel a target review and revoke its configure approval |
 | `GET /v1/extensions/:id/suggestions?version=`   | `read`                    | Job status and suggestions, resolved against the schema  |
 | `POST /v1/extensions/:id/turn-on`               | human admin               | Review and turn on a `configuring` installation          |
 | `POST /v1/extensions/:id/access`                | human admin               | Approve more access before a reviewed upgrade            |
@@ -338,8 +367,8 @@ current schema, keyed by output, with the reasons the web app already
 translates (`REASONS`, `mapping.tsx:86`). A suggestion with an issue is shown
 with it, never dropped.
 
-MCP: `list_extensions` and `get_extension` show `configuring` and whether
-suggestions are ready. No new tools.
+MCP: `list_extensions` and `get_extension` show `configuring` and the installed
+release's latest `suggestionsStatus` (`queued`, `running`, `ready`, `failed`). No new tools.
 
 ## 7. Web app
 
@@ -368,7 +397,15 @@ FRONTEND.md §5.9 describes the step flow; update it with these steps.
 
 ## 8. Enrichment
 
-A new release of the company enrichment bundle adds:
+A new release of the company enrichment bundle adds the configure and backfill
+handlers below. Model-backed field selection depends on the separately proposed
+model-calls platform, including its operator key and provider disclosure. Until
+that ships, configure checks the Exa key and suggests exact compatible API-name
+matches, otherwise Create or Skip, with reasons. It sends no CRM samples to a model.
+This installation change does not ship or enable the separate model proxy.
+
+Once model access ships, the configure handler can replace that deterministic
+selection with the sampling strategy below without changing this lifecycle:
 
 - **`configure`**: reads the Exa key and makes the same test call as `setup`, so
   a wrong key shows before the review. Then samples up to 20 companies and,
@@ -382,6 +419,14 @@ A new release of the company enrichment bundle adds:
   installation's mapping has outputs the previous release didn't have.
 
 The Exa lookup in `enrich` is unchanged by this spec.
+
+### 8.1 Privacy of suggestions
+
+**P1 — erase copied CRM content.** Suggestions and explanations are untrusted
+extension output and may contain sampled record values. A workspace erasure clears
+all its saved suggestions and fences live runs through the existing privacy
+machinery. They are never treated as content-free telemetry. Runs cannot restore
+a cleared suggestion slot; the admin can request fresh suggestions afterward.
 
 ## 9. Rule changes in other docs
 
@@ -438,7 +483,7 @@ database:
 
 ## 12. Open questions
 
-- **Expiry:** 14 days for an unfinished install, or shorter?
+- **Expiry:** 14 days from access approval, renewed only by a new installation attempt.
 - **Long configure work:** v1 allows no child jobs (§2.3). If a bundle needs
   more than one run, allow children that keep `configure`'s restrictions.
 - **Extension-initiated suggestions:** an extension noticing a new workspace
@@ -446,3 +491,22 @@ database:
   already fits; only the trigger is missing. Later.
 - **Model key:** which option the model-calls spec settles on (proxy, full
   proxy, or the key as a platform secret) doesn't change this spec.
+
+
+## 13. Implementation verification
+
+P1 review changes: pin first-install consent to its exact digest; isolate staged
+upgrade secrets and target settings; enforce target-release admission throughout
+worker and broker execution; publish successful suggestions only; clear copied
+suggestions on erasure. No P0 finding.
+
+The configure lifecycle, target access approval and cancellation, runtime suggestion
+API, MCP status, web steps, expiry, and enrichment configure/backfill ship together.
+Model-backed field selection remains dependent on the separately proposed model
+platform; the shipped enrichment selector uses exact compatible API-name matches.
+
+Validation: build, TypeScript checks, lint/layer checks, the real-Postgres server
+suite (`vitest run --maxWorkers=4`), web unit tests, the full 74-test Playwright
+suite plus the on-request mapping scenario, and `pnpm test:docker` (sandbox,
+extension lifecycle and file storage). Tests use synthetic provider responses;
+no real Exa key or model request is part of validation.

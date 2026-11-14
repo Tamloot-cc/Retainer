@@ -46,3 +46,25 @@ consent, SDK usage, credential rotation and source-write boundaries.
 
 See `docs/specs/extensions.md` for the full acceptance specification and
 `docs/specs/extensions-implementation.md` for outstanding delivery phases.
+
+## Configure before turn-on
+
+A hosted release may declare one `{ kind: 'configure' }` function with explicit
+`scopes: ['read']` and a mapping or non-secret settings to suggest. A human first
+approves read access and declared secrets. Retainer queues configure while the
+installation is `configuring`; the final human approval applies schema, mapping
+and write access and queues install.
+
+Configure receives server-defined input:
+`{ reason: 'install' | 'upgrade' | 'requested', previousVersion, newOutputs }`.
+Use `RetainerClient.saveExtensionSuggestions(installationId, { mapping, settings })`
+to save a partial suggestion. Mapping choices use current API field names and may
+include a short `reason`. Suggestions are visible only after success, are checked
+against the current schema, and never apply without human review. Each retry
+starts with empty suggestions. Configure may read KV, but cannot write it, enqueue
+children, write records, attest sources, register webhooks or write secrets.
+Provider calls must not create durable resources; setup belongs to install.
+
+Reviewed upgrades run target code with a separate release-pinned access approval;
+the installed release keeps its code, grant and credentials until final approval.
+See [the lifecycle contract](../../docs/specs/extensions-configure.md).

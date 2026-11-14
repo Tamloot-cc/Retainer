@@ -13,6 +13,7 @@ export async function failInstallation(
   },
   code: string,
 ) {
+  if (job.trigger_kind === 'configure') return;
   if (
     job.generation !== installation.generation ||
     job.release_digest !== installation.release_digest
