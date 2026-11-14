@@ -287,6 +287,12 @@ The lookup value is the field's `primary.url`. Additional links are ignored.
 
 ### 4.3 Exa lookup
 
+> Replaced in the enrichment release of the model calls spec
+> ([extensions-model-calls.md](extensions-model-calls.md) §6.3): the search
+> now asks for up to five companies by name and domain across all domains,
+> today's match rule became a shortcut, and a model picks among the rest. The
+> value mapping below is unchanged.
+
 Exa documents its API in the OpenAPI spec at `https://exa.ai/docs/exa-spec.yaml` (also `exa-labs/openapi-spec` on GitHub). The bundle uses one endpoint for lookups and one for the credential check. It sends the key as `x-api-key`, and its base is the fixed origin `https://api.exa.ai`.
 
 **Lookup.** `POST /search` with:

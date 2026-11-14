@@ -26,11 +26,19 @@ export const ENRICHMENT_FUNCTION_IDS: string[] = [
 /** Exa's fixed API origin; no setting or input can change it. */
 export const EXA_ORIGIN = 'https://api.exa.ai';
 
+/**
+ * The model enrichment calls, for mapping suggestions and for picking the
+ * search result (model calls spec 6.6). Revisit it against the domain set
+ * before changing it, including `claude-haiku-5-5`.
+ */
+export const ENRICHMENT_MODEL = 'claude-opus-5-5';
+
 const text = (max: number) => z.string().max(max).nullable().optional();
 /** The fields of Exa's `SearchCompanyEntityOutput` this adapter reads; all nullable. */
 export const exaCompanyEntity = z.object({
   type: z.literal('company'),
   properties: z.object({
+    name: text(500),
     workforce: z.object({ total: z.number().nullable() }).nullable().optional(),
     headquarters: z
       .object({ city: text(200), postalCode: text(40), country: text(200) })
@@ -44,6 +52,7 @@ export const exaSearchResponse = z.object({
     .array(
       z.object({
         url: z.string().max(2048),
+        title: text(1000),
         text: z.string().max(100000).nullable().optional(),
         entities: z.array(z.unknown()).max(20).nullable().optional(),
       }),
@@ -52,14 +61,18 @@ export const exaSearchResponse = z.object({
 });
 export const exaTeam = z.object({ id: z.string().max(200) });
 
-/** The search request for one domain (spec 4.3). */
-export function exaSearchRequest(domain: string) {
+/**
+ * The search for one company (model calls spec 6.3): its name and domain, or
+ * the domain alone, across all domains, so a company whose site redirects or
+ * whose profile lives under another domain is still found.
+ */
+export function exaSearchRequest(domain: string, name?: string | null) {
+  const label = name?.trim().replace(/\s+/g, ' ').slice(0, 200);
   return {
-    query: domain,
+    query: label ? `${label} ${domain}` : domain,
     type: 'auto',
     category: 'company',
-    includeDomains: [domain],
-    numResults: 1,
+    numResults: 5,
     contents: { text: { maxCharacters: 4000 } },
   };
 }
@@ -85,7 +98,7 @@ export function enrichmentManifest(build: {
     name: 'company-enrichment',
     version: build.version ?? '1.0.0',
     description:
-      'Fill in empty company details from Exa company search when a company gets a website domain. Each workspace chooses the fields; values a person or agent set are never replaced.',
+      'Fill in empty company details from Exa company search when a company gets a website domain. A model picks the right search result and suggests which fields to fill. Each workspace chooses the fields; values a person or agent set are never replaced.',
     packageDigest: build.packageDigest,
     serverRange: build.serverRange,
     runtimeVersion: 'node24',
@@ -103,18 +116,18 @@ export function enrichmentManifest(build: {
         required: true,
         secret: true,
         reconnect: true,
-        description: 'Each lookup is one Exa search, about $0.008, billed to this key.',
+        description: 'Each lookup is one Exa search for up to five companies, billed to this key.',
       },
       shareDomains: {
         type: 'boolean',
-        label: 'Send company domains to Exa to look up company details',
+        label: 'Send company names and domains to Exa to look up company details',
         required: true,
         consent: true,
         default: false,
         reconnect: true,
         secret: false,
         description:
-          'Only the website domain is sent, never record data. Exa keeps queries unless your Exa team has Zero Data Retention, which Exa offers on its Enterprise plan.',
+          "Only the company's name and website domain are sent, never other record data. Exa keeps queries unless your Exa team has Zero Data Retention, which Exa offers on its Enterprise plan.",
       },
     },
     schema: [],
@@ -166,20 +179,22 @@ export function enrichmentManifest(build: {
       {
         universalId: ENRICHMENT.configure,
         name: 'configure',
-        description: 'Check the Exa key and suggest compatible company fields.',
+        description:
+          'Check the Exa key and suggest company fields, using a model and a sample of companies.',
         handlerDigest: build.handlerDigest,
-        timeoutSeconds: 60,
+        timeoutSeconds: 120,
         trigger: { kind: 'configure' },
         inputSchema: { type: 'object', additionalProperties: false },
         scopes: ['read'],
         secrets: ['apiKey'],
+        uses: ['model'],
       },
       {
         universalId: ENRICHMENT.backfill,
         name: 'backfill',
         description: 'Fill newly mapped outputs on previously enriched companies, in pages.',
         handlerDigest: build.handlerDigest,
-        timeoutSeconds: 120,
+        timeoutSeconds: 300,
         trigger: { kind: 'job' },
         inputSchema: {
           type: 'object',
@@ -189,6 +204,7 @@ export function enrichmentManifest(build: {
         scopes: ['read', 'write'],
         secrets: ['apiKey'],
         mappedWrite: true,
+        uses: ['model'],
       },
       {
         universalId: ENRICHMENT.setup,
@@ -205,9 +221,9 @@ export function enrichmentManifest(build: {
         universalId: ENRICHMENT.enrich,
         name: 'enrich',
         description:
-          'Look up a company by its domain when it is created or its domain changes, and fill its empty mapped fields.',
+          'Look up a company by its name and domain when it is created or its domain changes, and fill its empty mapped fields.',
         handlerDigest: build.handlerDigest,
-        timeoutSeconds: 60,
+        timeoutSeconds: 120,
         trigger: {
           kind: 'change',
           objectId: BASE_OBJECT_IDS.company,
@@ -219,6 +235,7 @@ export function enrichmentManifest(build: {
         secrets: ['apiKey'],
         scopes: ['read', 'write'],
         mappedWrite: true,
+        uses: ['model'],
       },
     ],
   });

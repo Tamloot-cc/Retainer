@@ -12,6 +12,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "@retainer/extension": "workspace:*",
     "@retainer/sdk": "workspace:*",
     "@retainer/shared": "workspace:*",

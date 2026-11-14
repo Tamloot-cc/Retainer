@@ -1,7 +1,8 @@
 # Model calls in extensions
 
 Status: accepted, 2026-11-14, and revised the same day after a review against
-the code (§12); PR 1 (the platform, §9) is built, nothing in it has shipped yet.
+the code (§12). PR 1 (the platform, §9) shipped in #92. PR 2 (the enrichment
+release) is built; §6.7 records what it chose where this spec was silent.
 First written 2026-11-13. Builds on the extension platform in
 [extensions.md](extensions.md) and the output mapping and enrichment bundle in
 [extensions-company-enrichment-implementation.md](extensions-company-enrichment-implementation.md)
@@ -561,6 +562,49 @@ through the same set: a company that matches today must still match.
 Picking from five candidates is a small task, so the first run compares
 `claude-opus-5-5` with `claude-haiku-5-5`, which costs about a fortieth as
 much, and the bundle keeps the cheaper one if accuracy holds.
+
+### 6.7 As built (PR 2)
+
+Choices the enrichment release made where §6 left them open:
+
+- **Which functions use the model.** `configure`, `enrich` and `backfill`
+  declare `uses: ['model']`; `setup` doesn't. Backfill runs the same lookup as
+  `enrich`, so it gets the same shortcut, model pick, guards and confidence.
+- **Timeouts and pages.** `configure` and `enrich` have 120 s, `backfill`
+  300 s with pages of 10 companies instead of 20, since each company may need a
+  search and a model call.
+- **Exa consent.** The search now sends the company's name with its domain,
+  so the `shareDomains` consent says so. A lookup asks for five results with
+  text, about $0.012 at Exa's list prices. The key check falls back to a
+  one-result search without contents.
+- **"On the domain."** The shortcut keeps today's rule: the result's URL
+  normalizes to the domain and any `Homepage:` line agrees. For the guards, a
+  pick is on the domain when its `Homepage:` line, or its URL when the profile
+  has none, normalizes to the domain, so a redirected site whose profile names
+  the record's domain counts as on it.
+- **Name matching.** Lower case, accents and punctuation dropped (`S.A.` reads
+  as `SA`), `&` read as "and", and trailing legal suffixes removed (Inc, Ltd,
+  LLC, GmbH, SA, PLC and similar).
+- **Run codes.** A written match reports how it matched (`matched_shortcut`,
+  `matched_model_high`, `matched_model_medium`) in place of `applied`; a
+  skipped write still reports the mapped write's reason. No candidates is
+  `no_match`; `index: null`, a `low` pick or a pick the guards refuse is
+  `no_match_model`; an index that wasn't sent is `no_match_model_output`.
+  Configure without a usable model answer reports
+  `suggestions_ready_without_model`.
+- **Other model errors.** A 429 retries as `model_rate_limited`; a 5xx or a
+  lost connection as `model_unavailable`, both with Anthropic's `retry-after`
+  or 30 s. Any other 4xx (the proxy refused the request) fails the run as
+  `model_request_failed`, a bundle bug that a retry wouldn't fix.
+- **Stored picks.** Every pick with an index the model was sent is stored,
+  whatever the guards then decide; a key longer than KV's 200 characters
+  (a very long domain) isn't stored, and that lookup just isn't reused. A
+  concurrent run that stored its own pick first is not an error.
+- **Configure.** Samples are the 20 most recently updated companies; a value
+  longer than 500 characters as JSON isn't sampled. A model choice the schema
+  can't take (an incompatible or missing field, or Create for an output with
+  no suggested field) keeps the name-and-type suggestion for that output.
+  Reasons are cut to 500 characters.
 
 ## 7. Tests
 
