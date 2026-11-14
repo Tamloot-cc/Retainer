@@ -596,10 +596,15 @@ Choices the enrichment release made where §6 left them open:
   lost connection as `model_unavailable`, both with Anthropic's `retry-after`
   or 30 s. Any other 4xx (the proxy refused the request) fails the run as
   `model_request_failed`, a bundle bug that a retry wouldn't fix.
-- **Stored picks.** Every pick with an index the model was sent is stored,
-  whatever the guards then decide; a key longer than KV's 200 characters
-  (a very long domain) isn't stored, and that lookup just isn't reused. A
-  concurrent run that stored its own pick first is not an error.
+- **Stored picks.** Only a pick the guards accept is stored: a refused one
+  ends the run, so no retry reads it. Once the mapped write returns (or there
+  are no usable values), the run clears the pick to `{}`, since installation
+  KV is capped at 1 MiB and runs can't delete a key; otherwise picks would
+  fill it and every later model lookup would fail with `quota_exceeded`.
+  Storing and clearing are best-effort: a full quota, a concurrent run's
+  write or an outage only costs a retry its reuse. A key longer than KV's 200
+  characters (a very long domain) isn't stored. The 7-day limit still guards
+  a pick whose run never finished.
 - **Configure.** Samples are the 20 most recently updated companies; a value
   longer than 500 characters as JSON isn't sampled. A model choice the schema
   can't take (an incompatible or missing field, or Create for an output with

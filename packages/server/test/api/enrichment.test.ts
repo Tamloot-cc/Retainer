@@ -535,7 +535,7 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
   });
 
-  it('reuses the stored pick when the run retries after the model call, and erasure removes it', async () => {
+  it('reuses the stored pick when the run retries after the model call, clears it once written, and erasure removes it', async () => {
     const h = await setup();
     await h.drain();
     h.exa.search = (domain) => twoResults('https://redirect.example/', domain);
@@ -555,6 +555,10 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_model_high' }]);
     expect(messages()).toHaveLength(before + 1);
     expect((await h.fields(acme)).employeeCount).toBe(12);
+    // Written, so the pick is cleared and takes no room in the KV quota.
+    const [cleared] = await db.owner<{ value: unknown }[]>`
+      select value from extension_kv where installation_id=${h.id} and key=${key}`;
+    expect(cleared?.value).toEqual({});
     expect(
       (await h.app.request(`/v1/records/${acme}/forget`, { key: h.keys.admin, method: 'POST' }))
         .status,

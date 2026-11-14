@@ -220,6 +220,7 @@ const message = (output: unknown, stop_reason = 'end_turn') =>
 function fakes(
   results: unknown[],
   answer: Answer = () => message({ index: 0, certainty: 'high' }),
+  kvQuota = Number.POSITIVE_INFINITY,
 ) {
   const kv = new Map<string, { value: unknown; revision: number }>();
   const calls = { exa: [] as Record<string, unknown>[], model: [] as Record<string, unknown>[] };
@@ -237,6 +238,8 @@ function fakes(
     const kvPath = /\/runtime\/kv\/(.+)$/.exec(target.pathname);
     if (kvPath) return json(kv.get(decodeURIComponent(kvPath[1] ?? '')) ?? null);
     if (target.pathname.endsWith('/runtime/checkpoint')) {
+      if (kv.size >= kvQuota)
+        return json({ error: { code: 'quota_exceeded', message: 'quota' } }, 429);
       const prior = kv.get(body.kv.key);
       if ((prior?.revision ?? null) !== body.kv.expectedRevision)
         return json({ error: { code: 'revision_conflict', message: 'conflict' } }, 409);
@@ -407,6 +410,29 @@ describe('the lookup (spec 6.3-6.5)', () => {
     await lookUp(f.run, f.record);
     expect(f.calls.model).toHaveLength(2);
     expect(f.kv.get('pick:record-1:acme.example')?.revision).toBe(2);
+  });
+
+  it('stores only a pick the guards accept, and says where for the write to clear it', async () => {
+    const refused = fakes([result('https://acme.example.org/')], () =>
+      message({ index: 0, certainty: 'medium' }),
+    );
+    expect(await lookUp(refused.run, refused.record)).toEqual({
+      status: 'no_match',
+      code: 'no_match_model',
+    });
+    expect(refused.kv.size).toBe(0);
+    const accepted = fakes([result('https://acme.example.org/')]);
+    expect(await lookUp(accepted.run, accepted.record)).toMatchObject({
+      stored: { key: 'pick:record-1:acme.example', revision: 1 },
+    });
+  });
+
+  it('still matches when KV is full, without storing the pick', async () => {
+    const f = fakes([result('https://acme.example.org/')], undefined, 0);
+    const found = await lookUp(f.run, f.record);
+    expect(found).toMatchObject({ status: 'match', code: 'matched_model_high' });
+    expect(found).not.toHaveProperty('stored');
+    expect(f.kv.size).toBe(0);
   });
 
   it('calls the model again when the stored pick is not among the candidates', async () => {

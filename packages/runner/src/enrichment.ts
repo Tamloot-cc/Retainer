@@ -59,7 +59,14 @@ const storedPick = z.object({
 });
 
 type Found =
-  | { status: 'match'; values: EnrichmentValues; confidence: number; code: string }
+  | {
+      status: 'match';
+      values: EnrichmentValues;
+      confidence: number;
+      code: string;
+      /** The KV entry holding this pick, to clear once the write is done. */
+      stored?: { key: string; revision: number };
+    }
   | { status: 'no_match'; code: string };
 const noMatch = (failure?: ModelFailure): Found => ({
   status: 'no_match',
@@ -75,10 +82,34 @@ type Lookup = {
 };
 
 /**
+ * Writes a stored pick, or clears it with `{}`. Best-effort: the pick only saves a retry a
+ * model call, so a full KV quota, a concurrent run's write or an outage never
+ * fails the lookup. Returns the new revision, if the write went through.
+ */
+async function storePick(
+  run: Lookup,
+  key: string,
+  expectedRevision: number | null,
+  value: z.infer<typeof storedPick> | Record<string, never>,
+): Promise<number | undefined> {
+  try {
+    const result = await run.sdk.extensionCheckpoint(run.installationId, {
+      children: [],
+      kv: { key, expectedRevision, value },
+    });
+    return result.revision;
+  } catch (error) {
+    if (run.signal.aborted) throw error;
+    return undefined;
+  }
+}
+
+/**
  * The lookup (model calls spec 6.3): search by name and domain, accept the one
  * candidate on the domain without a model call, or else let the model pick
- * one and check the pick. A pick is kept in installation KV so a retry after
- * it doesn't call the model again.
+ * one and check the pick. An accepted pick is kept in installation KV until
+ * its write is done (`fill` clears it), so a retry in between reuses it
+ * instead of calling the model again.
  */
 export async function lookUp(
   run: Lookup,
@@ -99,6 +130,7 @@ export async function lookUp(
   const stored = keep ? await run.sdk.extensionKv(run.installationId, key) : null;
   const previous = storedPick.safeParse(stored?.value);
   let pick: { candidate: Candidate; certainty: Certainty } | undefined;
+  let revision = stored?.revision;
   if (previous.success && Date.now() - Date.parse(previous.data.at) < PICK_TTL_MS) {
     const candidate = candidates.find((c) => c.url === previous.data.candidateUrl);
     if (candidate) pick = { candidate, certainty: previous.data.certainty };
@@ -110,31 +142,22 @@ export async function lookUp(
     const candidate = candidates.find((c) => c.index === answer.value.index);
     if (!candidate) return noMatch('output');
     pick = { candidate, certainty: answer.value.certainty };
-    if (keep)
-      await run.sdk
-        .extensionCheckpoint(run.installationId, {
-          children: [],
-          kv: {
-            key,
-            expectedRevision: stored?.revision ?? null,
-            value: {
-              candidateUrl: candidate.url,
-              certainty: pick.certainty,
-              at: new Date().toISOString(),
-            },
-          },
+    // A refused pick ends the run, so nothing would read it again.
+    if (!acceptPick(pick, record)) return noMatch();
+    revision = keep
+      ? await storePick(run, key, stored?.revision ?? null, {
+          candidateUrl: candidate.url,
+          certainty: pick.certainty,
+          at: new Date().toISOString(),
         })
-        .catch((error) => {
-          // A concurrent run stored its own pick; this one still stands.
-          if (!(error instanceof RetainerApiError && error.status === 409)) throw error;
-        });
-  }
-  if (!acceptPick(pick, record)) return noMatch();
+      : undefined;
+  } else if (!acceptPick(pick, record)) return noMatch();
   return {
     status: 'match',
     values: candidateValues(pick.candidate),
     confidence: pick.certainty === 'high' ? 1 : MEDIUM_CONFIDENCE,
     code: `matched_model_${pick.certainty}`,
+    ...(revision !== undefined ? { stored: { key, revision } } : {}),
   };
 }
 
@@ -303,17 +326,26 @@ async function fill(
     context: mappedContext(mapping, record),
   });
   if (found.status === 'no_match') return found.code;
+  // Once the write is done, a retry no longer needs the pick: free its room in KV.
+  const release = async () => {
+    // KV has no delete for runs, and refuses a JSON null; an empty object is 2 bytes.
+    if (found.stored) await storePick(run, found.stored.key, found.stored.revision, {});
+  };
   const wanted = new Set(open.map((output) => output.output));
   const values = Object.fromEntries(
     Object.entries(found.values).filter(([output]) => wanted.has(output)),
   );
-  if (!Object.keys(values).length) return 'no_usable_values';
+  if (!Object.keys(values).length) {
+    await release();
+    return 'no_usable_values';
+  }
   const written = await run.sdk.extensionMappedWrite(run.installationId, {
     recordId: record.id,
     lookup: domain,
     values,
     ...(found.confidence < 1 ? { confidence: found.confidence } : {}),
   });
+  await release();
   return written.outcome === 'applied' ? found.code : (written.reason ?? 'skipped');
 }
 
