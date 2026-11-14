@@ -39,71 +39,97 @@ describe('operator runtime configuration and dedicated key-mode control', () => 
       await services.close();
     }
   });
-  it('activates only reviewed hosted releases whose complete immutable executable map matches', async () => {
-    const { publicKey } = generateKeyPairSync('ed25519');
-    const functionId = crypto.randomUUID();
-    const manifest = extensionFixture({
-      functions: [
-        {
-          universalId: functionId,
-          name: 'job',
-          description: 'Fixture',
-          handlerDigest: 'b'.repeat(64),
-          timeoutSeconds: 120,
-          trigger: { kind: 'job' },
-          inputSchema: { type: 'object', additionalProperties: false },
+  it.each([
+    { kind: 'job', driver: 'launcher' },
+    { kind: 'configure', driver: 'launcher' },
+    { kind: 'job', driver: 'lambda' },
+    { kind: 'configure', driver: 'lambda' },
+  ] as const)(
+    'activates $kind with $driver only when its complete immutable executable map matches',
+    async ({ kind, driver }) => {
+      const { publicKey } = generateKeyPairSync('ed25519');
+      const functionId = crypto.randomUUID();
+      const manifest = extensionFixture({
+        settings: {
+          enabled: {
+            type: 'boolean',
+            label: 'Enabled',
+            secret: false,
+            required: false,
+            reconnect: false,
+          },
         },
-      ],
-    });
-    const release = new ExtensionCatalog([
-      { manifest, actorCeiling: 'integration', runtimeEnabled: true },
-    ]).list()[0];
-    if (!release) throw new Error('release missing');
-    const base = {
-      DATABASE_URL: db.url,
-      RETAINER_EXTENSION_ISSUER: 'https://retainer.test',
-      RETAINER_EXTENSION_RUN_PUBLIC_KEY: JSON.stringify(publicKey.export({ format: 'jwk' })),
-      RETAINER_EXTENSION_CATALOG: JSON.stringify([release].map(({ digest: _digest, ...r }) => r)),
-    };
-    const executable = {
-      registrationId: manifest.universalId,
-      releaseDigest: release.digest,
-      functionId,
-      handlerDigest: 'b'.repeat(64),
-      packageDigest: manifest.packageDigest,
-      runtimeVersion: 'node24',
-      driverTarget: 'fixture',
-    };
-    await expect(
-      extensionServices(loadConfig({ ...base, RETAINER_EXTENSION_EXECUTABLES: '[]' })),
-    ).rejects.toThrow('configuration');
-    await expect(
-      extensionServices(
-        loadConfig({
-          ...base,
-          RETAINER_EXTENSION_EXECUTABLES: JSON.stringify([
-            { ...executable, handlerDigest: 'c'.repeat(64) },
-          ]),
-        }),
-      ),
-    ).rejects.toThrow('configuration');
-    const ready = await extensionServices(
-      loadConfig({ ...base, RETAINER_EXTENSION_EXECUTABLES: JSON.stringify([executable]) }),
-    );
-    try {
-      expect([...ready.activationReady]).toEqual([release.digest]);
-    } finally {
-      await ready.close();
-    }
-    const inert = await extensionServices(
-      loadConfig({ ...base, RETAINER_EXTENSION_RUN_PUBLIC_KEY: '' }),
-    );
-    try {
-      expect(inert.activationReady.size).toBe(0);
-    } finally {
-      await inert.close();
-    }
-  });
+        functions: [
+          {
+            universalId: functionId,
+            name: 'job',
+            description: 'Fixture',
+            handlerDigest: 'b'.repeat(64),
+            timeoutSeconds: 120,
+            trigger: { kind },
+            scopes: ['read'],
+            inputSchema: { type: 'object', additionalProperties: false },
+          },
+        ],
+      });
+      const release = new ExtensionCatalog([
+        { manifest, actorCeiling: 'integration', runtimeEnabled: true },
+      ]).list()[0];
+      if (!release) throw new Error('release missing');
+      const base = {
+        DATABASE_URL: db.url,
+        RETAINER_EXTENSION_DRIVER: driver,
+        RETAINER_EXTENSION_LAMBDA_PREFIX:
+          driver === 'lambda'
+            ? 'arn:aws:lambda:eu-central-1:123456789012:function:retainer-ext-'
+            : undefined,
+        RETAINER_EXTENSION_ISSUER: 'https://retainer.test',
+        RETAINER_EXTENSION_RUN_PUBLIC_KEY: JSON.stringify(publicKey.export({ format: 'jwk' })),
+        RETAINER_EXTENSION_CATALOG: JSON.stringify([release].map(({ digest: _digest, ...r }) => r)),
+      };
+      const executable = {
+        registrationId: manifest.universalId,
+        releaseDigest: release.digest,
+        functionId,
+        handlerDigest: 'b'.repeat(64),
+        packageDigest: manifest.packageDigest,
+        runtimeVersion: 'node24',
+        driverTarget:
+          driver === 'lambda'
+            ? 'arn:aws:lambda:eu-central-1:123456789012:function:retainer-ext-fixture:42'
+            : 'fixture',
+      };
+      await expect(
+        extensionServices(loadConfig({ ...base, RETAINER_EXTENSION_EXECUTABLES: '[]' })),
+      ).rejects.toThrow('configuration');
+      await expect(
+        extensionServices(
+          loadConfig({
+            ...base,
+            RETAINER_EXTENSION_EXECUTABLES: JSON.stringify([
+              { ...executable, handlerDigest: 'c'.repeat(64) },
+            ]),
+          }),
+        ),
+      ).rejects.toThrow('configuration');
+      const ready = await extensionServices(
+        loadConfig({ ...base, RETAINER_EXTENSION_EXECUTABLES: JSON.stringify([executable]) }),
+      );
+      try {
+        expect([...ready.activationReady]).toEqual([release.digest]);
+      } finally {
+        await ready.close();
+      }
+      const inert = await extensionServices(
+        loadConfig({ ...base, RETAINER_EXTENSION_RUN_PUBLIC_KEY: '' }),
+      );
+      try {
+        expect(inert.activationReady.size).toBe(0);
+      } finally {
+        await inert.close();
+      }
+    },
+  );
   it('serves preview/install and broker staging without accounts mode or sign-in control', async () => {
     const config = loadConfig({
       DATABASE_URL: db.url,
