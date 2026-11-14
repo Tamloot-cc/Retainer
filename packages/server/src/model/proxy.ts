@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { bearerToken } from '../auth/middleware.js';
-import type { ModelClaims, RunTokens } from '../extension-runtime/tokens.js';
+import type { ModelClaims, RunTokens, VerifiedModelToken } from '../extension-runtime/tokens.js';
 import { readCapped } from '../http/request.js';
 import { allowedPath, refusedBeta, refusedBody } from './allowlist.js';
 import { UsageMeter, type UsageReport } from './usage.js';
@@ -79,7 +79,7 @@ export function createModelProxy(options: ModelProxyOptions) {
     // bearer token; either carries the model token. Neither is forwarded.
     const token =
       request.headers.get('x-api-key') ?? bearerToken(request.headers.get('authorization')) ?? '';
-    let claims: ModelClaims;
+    let claims: VerifiedModelToken;
     try {
       claims = await options.tokens.verifyModel(token);
     } catch {
@@ -124,7 +124,15 @@ export function createModelProxy(options: ModelProxyOptions) {
     target.search = url.search;
     // Aborted when the extension goes away, so generation stops being billed.
     const abort = new AbortController();
-    const timeout = setTimeout(() => abort.abort(), options.timeoutMs ?? UPSTREAM_TIMEOUT_MS);
+    // Never past the token's expiry, which is at or before the run's deadline:
+    // after it the run is over and nothing is waiting for the answer.
+    const timeout = setTimeout(
+      () => abort.abort(),
+      Math.max(
+        0,
+        Math.min(options.timeoutMs ?? UPSTREAM_TIMEOUT_MS, claims.expiresAt * 1000 - Date.now()),
+      ),
+    );
     // Successful Messages responses are metered; errors, token counts and
     // model lists pass through unchanged, and a rejected request records nothing.
     let meter: UsageMeter | undefined;

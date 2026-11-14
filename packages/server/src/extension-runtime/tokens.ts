@@ -50,6 +50,8 @@ const modelClaims = z.strictObject({
 });
 /** Who a model call is for, taken from its token and never from the request. */
 export type ModelClaims = z.infer<typeof modelClaims>;
+/** A verified model token: its claims, and when it expires (seconds since the epoch). */
+export type VerifiedModelToken = ModelClaims & { expiresAt: number };
 
 /** The run verification key's JWK shape; the private key extends it with `d`. */
 export const runPublicJwkSchema = z.strictObject({
@@ -162,7 +164,7 @@ export class RunTokens {
    * expires (spec 3.6). `graceSeconds` lets a usage report follow a response
    * that outlasted its token.
    */
-  async verifyModel(token: string, graceSeconds = 0): Promise<ModelClaims> {
+  async verifyModel(token: string, graceSeconds = 0): Promise<VerifiedModelToken> {
     try {
       if (!isModelToken(token)) throw new Error('wrong credential type');
       const { payload, protectedHeader } = await jwtVerify(
@@ -185,7 +187,7 @@ export class RunTokens {
         payload.exp - payload.iat > 300
       )
         throw new Error('invalid model token header or lifetime');
-      return modelClaims.parse(payload.model);
+      return { ...modelClaims.parse(payload.model), expiresAt: payload.exp };
     } catch {
       throw new AppError(401, 'unauthorized', 'model credential is invalid or expired');
     }

@@ -263,6 +263,26 @@ describe('forwarding', () => {
     expect(row).toMatchObject({ input_tokens: 9, output_tokens: 1, partial: true });
   });
 
+  it("stops the request to Anthropic when the model token expires, not at the proxy's longest timeout", async () => {
+    upstream.respond((_request, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'request-id': 'req_expired' });
+      res.write(
+        `event: message_start\ndata: ${JSON.stringify({ type: 'message_start', message: { model: 'claude-opus-5-5', usage: { input_tokens: 4, output_tokens: 1 } } })}\n\n`,
+      );
+      // Never ends on its own.
+    });
+    const now = Math.floor(Date.now() / 1000);
+    const token = await sign(run.claims, now - 10, now + 2);
+    const aborted = upstream.aborted();
+    const started = Date.now();
+    const response = await call({ ...message, stream: true }, { token });
+    await response.text().catch(() => undefined);
+    await aborted;
+    expect(Date.now() - started).toBeLessThan(10_000);
+    const row = (await rows()).find((r) => r.provider_request_id === 'req_expired');
+    expect(row).toMatchObject({ input_tokens: 4, output_tokens: 1, partial: true });
+  });
+
   it('records each of several concurrent calls once', async () => {
     const before = (await rows()).length;
     const responses = await Promise.all(

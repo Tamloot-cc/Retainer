@@ -217,7 +217,8 @@ what it saw as partial (§3.4). §3.6 says where the hosted function may not be
 able to.
 
 A request may run until the run's deadline. The proxy's own timeout covers
-the longest handler deadline (300 s) plus a margin.
+the longest handler deadline (300 s) plus a margin, and never runs past the
+model token's expiry, which is at or before that deadline.
 
 ### 3.2.1 Allowed requests
 

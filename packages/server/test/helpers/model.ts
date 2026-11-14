@@ -114,7 +114,12 @@ export async function testRunTokens() {
     verificationKey: keys.publicKey,
   });
   /** A model token with chosen times, for expiry tests. */
-  const sign = (claims: ModelClaims, iat: number, exp: number, key = keys.privateKey) =>
+  const sign = (
+    { expiresAt: _, ...claims }: ModelClaims & { expiresAt?: number },
+    iat: number,
+    exp: number,
+    key = keys.privateKey,
+  ) =>
     new SignJWT({ model: claims })
       .setProtectedHeader({ alg: 'EdDSA', typ: 'retainer-model+jwt', kid: 'test' })
       .setIssuer('https://retainer.test')
