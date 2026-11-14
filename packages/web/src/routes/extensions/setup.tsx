@@ -1,8 +1,9 @@
-import type {
-  ExtensionInstallInput,
-  ExtensionMappingChoices,
-  ExtensionMappingView,
-  ExtensionSuggestions,
+import {
+  type ExtensionInstallInput,
+  type ExtensionMappingChoices,
+  type ExtensionMappingView,
+  type ExtensionSuggestions,
+  releaseUses,
 } from '@retainer/extension';
 import { RetainerApiError } from '@retainer/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -311,7 +312,8 @@ function BasicExtensionSetup({
   const grantIncrease =
     !!retained &&
     ((release.manifest.requestedActor === 'integration' && retained.grantedActor === 'agent') ||
-      release.manifest.scopes.some((scope) => !retained.grantedScopes.includes(scope)));
+      release.manifest.scopes.some((scope) => !retained.grantedScopes.includes(scope)) ||
+      releaseUses(release.manifest).some((use) => !retained.grantedUses.includes(use)));
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [draftInstallationId, setDraftInstallationId] = useState(installation?.id);
   const [references, setReferences] = useState<Record<string, string>>({});
@@ -588,6 +590,11 @@ function Form({ onSubmit, children }: { onSubmit: () => void; children: ReactNod
   );
 }
 
+/** "read and write as an agent", plus model use when granted. */
+function grantSummary(grants: { actor: string; scopes: string[]; uses: string[] }) {
+  return `${grants.scopes.join(' and ')}${grants.uses.includes('model') ? ' with model use' : ''} as an ${grants.actor}`;
+}
+
 /** What approving will do: access, schema changes, field mapping, saved views and warnings. */
 function Review({ plan, release }: { plan: Plan; release: Release }) {
   const { schema } = useWorkspace();
@@ -598,12 +605,13 @@ function Review({ plan, release }: { plan: Plan; release: Release }) {
     <Stack>
       <Panel title="Access">
         <Stack>
-          <p className="text-sm">{accessText(preview.grants.scopes, preview.grants.actor)}</p>
+          <p className="text-sm">
+            {accessText(preview.grants.scopes, preview.grants.actor, preview.grants.uses)}
+          </p>
           {preview.previousGrants ? (
             <Notice>
-              This approval changes access from {preview.previousGrants.scopes.join(' and ')} as an{' '}
-              {preview.previousGrants.actor} to {preview.grants.scopes.join(' and ')} as an{' '}
-              {preview.grants.actor}.
+              This approval changes access from {grantSummary(preview.previousGrants)} to{' '}
+              {grantSummary(preview.grants)}.
             </Notice>
           ) : null}
           <Muted>

@@ -358,6 +358,51 @@ describe('extension pages and human approval', () => {
     await vi.waitFor(() => expect(upgrade).toHaveBeenCalledTimes(1));
   });
 
+  it('treats an upgrade that adds model use as more access, and shows model use on the approval', async () => {
+    const pick = {
+      universalId: '5e0c5a6f-1b2d-4c3e-8f4a-5b6c7d8e9f01',
+      name: 'pick',
+      description: 'Picks a value',
+      handlerDigest: 'c'.repeat(64),
+      trigger: { kind: 'job' as const },
+      timeoutSeconds: 120,
+      uses: ['model' as const],
+    };
+    const upgraded = {
+      ...release,
+      manifest: { ...release.manifest, version: '1.1.0', functions: [pick] },
+    } as Release;
+    const current: typeof installation = {
+      ...installation,
+      grantedActor: 'integration',
+      grantedScopes: ['read', 'write'],
+    };
+    const plan = vi.spyOn(api, 'previewExtension').mockResolvedValue({
+      ...preview,
+      grants: { ...preview.grants, uses: ['model'] },
+      previousGrants: { actor: 'integration', scopes: ['read', 'write'], uses: [] },
+    });
+    vi.spyOn(api, 'upgradeExtension').mockResolvedValue({ ...current, version: '1.1.0' });
+    mount(
+      <ExtensionSetup
+        release={upgraded}
+        installation={current}
+        mode="upgrade"
+        onCancel={() => {}}
+        onDone={() => {}}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Review upgrade' }));
+    expect(
+      await screen.findByText(
+        /changes access from read and write as an integration to read and write with model use as an integration/,
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(/sends data from your workspace to Anthropic/)).toBeTruthy();
+    expect(plan.mock.calls[0]?.[0]).toMatchObject({ grantChange: true });
+    expect(screen.getByRole('button', { name: 'Approve access and upgrade' })).toBeTruthy();
+  });
+
   it('stages secrets separately, shows the approval, and sends opaque references with a durable retry key', async () => {
     const stage = vi.spyOn(api, 'stageExtensionSecret').mockResolvedValue({
       pendingSecretId: 'opaque-reference',
