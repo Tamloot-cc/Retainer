@@ -14,7 +14,7 @@ does with the answer. The platform adds three things and nothing else:
    it would anywhere, pointed at the proxy. The proxy swaps the run token for
    Retainer's key, forwards the request unchanged and records usage. The key
    never reaches extension code.
-2. **Draft runs** (§4). A function can run before installation, when the
+2. **Draft runs** (§4, replaced by [extensions-configure.md](extensions-configure.md)). A function can run before installation, when the
    admin opens the install screen, and return a draft of the install form:
    the output mapping and settings. Today every run needs an installation.
 3. **Mapped-write confidence** (§5), so a write can say it is less certain and
@@ -172,6 +172,10 @@ layer list in `ARCHITECTURE.md` §8 and `scripts/check-layers.mjs`. Core modules
 it, and the layer check enforces that.
 
 ## 4. Draft runs
+
+> Replaced by [extensions-configure.md](extensions-configure.md): installation
+> in two steps, with a `configure` function that runs after the admin approves
+> access. The same applies to the enrichment draft in §6.1.
 
 Today every run belongs to an installation, and lifecycle functions can't read
 CRM data before activation (`extensions.md:459`). A draft run happens before
