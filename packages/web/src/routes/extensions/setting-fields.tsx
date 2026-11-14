@@ -1,11 +1,10 @@
 import type { ExtensionInstallation, ExtensionManifest } from '@retainer/extension';
-import { Input, Label, Muted, SelectMenu } from '../ui/index.js';
+import { Input, Label, Muted, SelectMenu } from '../../ui/index.js';
+import { stateLabel } from './model.js';
 
 type Installation = ExtensionInstallation;
 type Release = { manifest: Pick<ExtensionManifest, 'name' | 'settings'> };
 type Settings = Installation['settings'];
-const stateLabel = (value: string) =>
-  value.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
 
 export function SettingFields({
   release,

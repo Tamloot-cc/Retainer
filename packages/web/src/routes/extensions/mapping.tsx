@@ -19,7 +19,7 @@ import {
   SelectMenu,
   Stack,
   Textarea,
-} from '../ui/index.js';
+} from '../../ui/index.js';
 
 type Mapping = NonNullable<ExtensionManifest['mapping']>;
 type Output = Mapping['outputs'][number];

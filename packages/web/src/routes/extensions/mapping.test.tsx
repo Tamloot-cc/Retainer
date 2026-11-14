@@ -4,12 +4,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, WorkspaceContext } from '../api/client.js';
-import { compatibleFields, importDraft } from './extension-mapping.js';
-import { ExtensionSettings, ExtensionsPage } from './extensions.js';
+import { api, WorkspaceContext } from '../../api/client.js';
+import { ExtensionPage } from './detail.js';
+import { compatibleFields, importDraft } from './mapping.js';
+import { ExtensionSetup } from './setup.js';
+import { router } from './test-router.js';
+
+vi.mock('@tanstack/react-router', async (original) =>
+  (await import('./test-router.js')).mockRouter(original),
+);
 
 type Release = Awaited<ReturnType<typeof api.extensionCatalog>>['releases'][number];
-type Installation = NonNullable<React.ComponentProps<typeof ExtensionSettings>['installation']>;
+type Installation = NonNullable<React.ComponentProps<typeof ExtensionSetup>['installation']>;
 const COMPANY = '1f24f94d-6bc5-4955-b6ab-ac946e2b140a';
 
 const field = (name: string, label: string, type: FieldView['type']): FieldView => ({
@@ -160,7 +166,10 @@ async function choose(output: string, option: string) {
   await userEvent.click(screen.getByRole('button', { name: new RegExp(`^${output} destination`) }));
   await userEvent.click(screen.getByRole('option', { name: option }));
 }
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  router.reset();
+});
 
 describe('compatible fields', () => {
   it('never offers the field the extension looks companies up by', () => {
@@ -213,11 +222,13 @@ describe('importDraft', () => {
   });
 });
 
-describe('mapping review in the setup dialog', () => {
+describe('mapping review in the setup page', () => {
   it('offers compatible fields, sends the choices and shows the resolved bindings before approval', async () => {
     const plan = vi.spyOn(api, 'previewExtension').mockResolvedValue(preview);
     const install = vi.spyOn(api, 'installExtension').mockResolvedValue(installation);
-    mount(<ExtensionSettings release={release} onClose={() => {}} onSaved={() => {}} />);
+    mount(
+      <ExtensionSetup release={release} mode="install" onCancel={() => {}} onDone={() => {}} />,
+    );
     expect(screen.getByText('Employees Exa finds, mostly from public profiles.')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: /^Employee count destination/ }));
     const options = screen.getAllByRole('option').map((o) => o.textContent);
@@ -242,7 +253,9 @@ describe('mapping review in the setup dialog', () => {
 
   it('imports a draft into editable rows and keeps unknown fields visible', async () => {
     const plan = vi.spyOn(api, 'previewExtension').mockResolvedValue(preview);
-    mount(<ExtensionSettings release={release} onClose={() => {}} onSaved={() => {}} />);
+    mount(
+      <ExtensionSetup release={release} mode="install" onCancel={() => {}} onDone={() => {}} />,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Import draft' }));
     const dialog = screen.getByRole('dialog', { name: 'Import a mapping draft' });
     fireEvent.change(within(dialog).getByLabelText('Draft'), {
@@ -272,7 +285,9 @@ describe('mapping review in the setup dialog', () => {
   });
 
   it('shows an invalid JSON draft without changing the rows', async () => {
-    mount(<ExtensionSettings release={release} onClose={() => {}} onSaved={() => {}} />);
+    mount(
+      <ExtensionSetup release={release} mode="install" onCancel={() => {}} onDone={() => {}} />,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Import draft' }));
     const dialog = screen.getByRole('dialog', { name: 'Import a mapping draft' });
     fireEvent.change(within(dialog).getByLabelText('Draft'), { target: { value: '{' } });
@@ -286,7 +301,9 @@ describe('mapping review in the setup dialog', () => {
         outputs: [{ output: 'employee_count', reason: 'duplicate_destination' }],
       }),
     );
-    mount(<ExtensionSettings release={release} onClose={() => {}} onSaved={() => {}} />);
+    mount(
+      <ExtensionSetup release={release} mode="install" onCancel={() => {}} onDone={() => {}} />,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Review installation' }));
     expect(await screen.findByText('Another output already writes to that field.')).toBeTruthy();
   });
@@ -312,7 +329,7 @@ describe('approved mappings on an installation', () => {
       },
     ],
   };
-  it('shows a deleted target by its last label and opens the mapping editor', async () => {
+  it('shows a deleted target by its last label and links to the mapping editor', async () => {
     vi.spyOn(api, 'extensionCatalog').mockResolvedValue({ releases: [release] });
     vi.spyOn(api, 'extensions').mockResolvedValue({ installations: [installation] });
     vi.spyOn(api, 'extension').mockResolvedValue({
@@ -320,16 +337,16 @@ describe('approved mappings on an installation', () => {
       contributions: [],
       mapping: view,
     });
-    mount(<ExtensionsPage />);
+    router.params = { id: installation.id };
+    router.search = { tab: 'mapping' };
+    mount(<ExtensionPage />);
     const summary = await screen.findByRole('region', { name: 'Approved field mapping' });
     expect(within(summary).getByText('Headquarters → Office')).toBeTruthy();
     expect(within(summary).getByText('Field deleted')).toBeTruthy();
     expect(within(summary).getByText(/is not written until you remap or skip it/)).toBeTruthy();
-    await userEvent.click(within(summary).getByRole('button', { name: 'Edit mapping' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Company Enrichment mapping' });
-    expect(
-      within(dialog).getByText('Changing the mapping does not fill in existing companies.'),
-    ).toBeTruthy();
+    expect(within(summary).getByRole('link', { name: 'Edit mapping' }).getAttribute('href')).toBe(
+      '/extensions/installation/mapping',
+    );
   });
 
   it('reviews a mapping change against the installed release and commits it on its own route', async () => {
@@ -340,14 +357,18 @@ describe('approved mappings on an installation', () => {
     const settings = vi.spyOn(api, 'updateExtensionSettings');
     const onSaved = vi.fn();
     mount(
-      <ExtensionSettings
+      <ExtensionSetup
         release={release}
         installation={installation}
+        mode="mapping"
         mappingView={view}
-        onClose={() => {}}
-        onSaved={onSaved}
+        onCancel={() => {}}
+        onDone={onSaved}
       />,
     );
+    expect(
+      screen.getByText('Changing the mapping does not fill in existing companies.'),
+    ).toBeTruthy();
     expect(screen.getByRole('button', { name: /^Employee count destination/ }).textContent).toBe(
       'Team Size',
     );

@@ -5,13 +5,13 @@ import type {
 } from '@retainer/extension';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api, useWorkspace } from '../api/client.js';
-import { Button, Dialog, Muted, Notice, Row, Stack } from '../ui/index.js';
-import { SettingFields } from './extension-setting-fields.js';
-import { QueryError } from './state.js';
+import { api, useWorkspace } from '../../api/client.js';
+import { Button, Muted, Notice, Panel, Row, Stack } from '../../ui/index.js';
+import { QueryError } from '../state.js';
+import { stateLabel as label } from './model.js';
+import { SettingFields } from './setting-fields.js';
 
 type Release = { manifest: Pick<ExtensionManifest, 'name' | 'settings'> };
-const label = (value: string) => value.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
 const date = (value: string | null) =>
   value ? new Date(value).toLocaleString() : 'No completed scan yet';
 function connectionError(code: string) {
@@ -121,6 +121,15 @@ export function MemberConnectionPanel({
           pending or failed imports.
         </Muted>
       </section>
+      {form ? (
+        <ConnectionForm
+          installation={installation}
+          release={release}
+          connection={form.connection}
+          onClose={() => setForm(null)}
+          onSaved={refresh}
+        />
+      ) : null}
       {admin && connections.data?.connections.length ? (
         <section aria-label="Member connections">
           <h3 className="mb-2 font-medium">Member connections</h3>
@@ -171,15 +180,6 @@ export function MemberConnectionPanel({
             </table>
           </div>
         </section>
-      ) : null}
-      {form ? (
-        <ConnectionForm
-          installation={installation}
-          release={release}
-          connection={form.connection}
-          onClose={() => setForm(null)}
-          onSaved={refresh}
-        />
       ) : null}
     </Stack>
   );
@@ -242,15 +242,11 @@ function ConnectionForm({
       onClose();
     },
   });
+  const title = `${connection ? 'Reconnect' : 'Connect'} your ${label(release.manifest.name)} account`;
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !save.isPending) onClose();
-      }}
-      title={`${connection ? 'Reconnect' : 'Connect'} your ${label(release.manifest.name)} account`}
-    >
+    <Panel title={title}>
       <form
+        aria-label={title}
         onSubmit={(event) => {
           event.preventDefault();
           save.mutate();
@@ -258,7 +254,7 @@ function ConnectionForm({
       >
         <Stack>
           <Muted>Data synced from this account is shared with the workspace.</Muted>
-          {save.error ? <Notice>{save.error.message}</Notice> : null}
+          {save.error ? <Notice error>{save.error.message}</Notice> : null}
           <SettingFields
             release={release}
             values={values}
@@ -271,7 +267,7 @@ function ConnectionForm({
             onSecret={(key, value) => setSecrets((previous) => ({ ...previous, [key]: value }))}
           />
           <Row>
-            <Button type="submit" disabled={save.isPending}>
+            <Button type="submit" variant="primary" disabled={save.isPending}>
               {save.isPending
                 ? 'Connecting…'
                 : connection
@@ -284,6 +280,6 @@ function ConnectionForm({
           </Row>
         </Stack>
       </form>
-    </Dialog>
+    </Panel>
   );
 }

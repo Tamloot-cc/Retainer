@@ -268,7 +268,44 @@ const routeTree = rootRoute.addChildren([
   createRoute({
     getParentRoute: () => rootRoute,
     path: '/extensions',
-    component: lazyRouteComponent(() => import('./routes/extensions.js'), 'ExtensionsPage'),
+    component: lazyRouteComponent(() => import('./routes/extensions/list.js'), 'ExtensionsPage'),
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/extensions/new/$registration',
+    component: lazyRouteComponent(
+      () => import('./routes/extensions/setup.js'),
+      'ExtensionInstallPage',
+    ),
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/extensions/$id',
+    component: lazyRouteComponent(() => import('./routes/extensions/detail.js'), 'ExtensionPage'),
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/extensions/$id/upgrade',
+    component: lazyRouteComponent(
+      () => import('./routes/extensions/setup.js'),
+      'ExtensionUpgradePage',
+    ),
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/extensions/$id/reconnect',
+    component: lazyRouteComponent(
+      () => import('./routes/extensions/setup.js'),
+      'ExtensionReconnectPage',
+    ),
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/extensions/$id/mapping',
+    component: lazyRouteComponent(
+      () => import('./routes/extensions/setup.js'),
+      'ExtensionMappingPage',
+    ),
   }),
   createRoute({
     getParentRoute: () => rootRoute,
