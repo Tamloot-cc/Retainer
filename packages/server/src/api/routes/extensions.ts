@@ -149,6 +149,9 @@ export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMo
   app.get('/extensions/:id', requireScope('read'), async (c) =>
     c.json(await extensions.get(c.get('caller'), idParam(c))),
   );
+  app.get('/extensions/:id/usage', requireScope('read'), async (c) =>
+    c.json(await extensions.usage(c.get('caller'), idParam(c))),
+  );
   app.get('/extensions/:id/runs', requireScope('read'), async (c) =>
     c.json(
       await extensions.runs(

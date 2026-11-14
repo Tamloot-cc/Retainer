@@ -4,7 +4,7 @@ import { type Config, EXECUTOR_ROLE, ownerDatabaseUrl, SECRET_BROKER_ROLE } from
 import { createSql, type Sql } from '../db/client.js';
 import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../extension-runtime/secrets.js';
-import { RunTokens } from '../extension-runtime/tokens.js';
+import { importRunPublicKey, RunTokens, runPublicJwkSchema } from '../extension-runtime/tokens.js';
 import { parseExtensionCatalog } from '../extensions/catalog.js';
 import { Extensions } from '../extensions/service.js';
 import { createFileStorage } from '../file-storage/configuration.js';
@@ -34,22 +34,15 @@ export async function extensionServices(
       ? config.RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX
       : config.RETAINER_EXTENSION_VERIFIER_ORIGIN;
     const catalog = parseExtensionCatalog(config.RETAINER_EXTENSION_CATALOG);
-    const jwk = z.strictObject({
-      kty: z.literal('OKP'),
-      crv: z.literal('Ed25519'),
-      x: z.string().regex(/^[a-zA-Z0-9_-]{43}$/),
-      alg: z.literal('EdDSA').optional(),
-      use: z.literal('sig').optional(),
-      kid: z.string().optional(),
-    });
     let tokens: RunTokens | undefined;
     if (config.RETAINER_EXTENSION_RUN_PUBLIC_KEY) {
-      const publicJwk = jwk.parse(JSON.parse(config.RETAINER_EXTENSION_RUN_PUBLIC_KEY));
-      const verificationKey = await importJWK(publicJwk, 'EdDSA');
-      if (verificationKey instanceof Uint8Array) throw new Error('asymmetric run keys required');
+      const publicJwk = runPublicJwkSchema.parse(
+        JSON.parse(config.RETAINER_EXTENSION_RUN_PUBLIC_KEY),
+      );
+      const verificationKey = await importRunPublicKey(config.RETAINER_EXTENSION_RUN_PUBLIC_KEY);
       let signingKey: CryptoKey | undefined;
       if (options.workerSql && config.RETAINER_EXTENSION_RUN_PRIVATE_KEY) {
-        const privateJwk = jwk
+        const privateJwk = runPublicJwkSchema
           .extend({ d: z.string().regex(/^[a-zA-Z0-9_-]{43}$/) })
           .parse(JSON.parse(config.RETAINER_EXTENSION_RUN_PRIVATE_KEY));
         if (privateJwk.x !== publicJwk.x) throw new Error('run key pair differs');
@@ -230,6 +223,7 @@ export async function extensionServices(
             ),
         ...(lambda ? { concurrency: config.RETAINER_EXECUTOR_CONCURRENCY } : {}),
         apiOrigin,
+        ...(config.RETAINER_MODEL_ORIGIN ? { modelOrigin: config.RETAINER_MODEL_ORIGIN } : {}),
         owner: `executor-${crypto.randomUUID()}`,
         activation: activationReady,
         // Automatic upgrades run where the deployed releases are known.

@@ -35,7 +35,7 @@ export const CONTROL_ROLE = 'retainer_control';
 export const SECRET_BROKER_ROLE = 'retainer_secret_broker';
 export const EXECUTOR_ROLE = 'retainer_executor';
 
-const emptyToUndefined = (value: unknown) => (value === '' ? undefined : value);
+export const emptyToUndefined = (value: unknown) => (value === '' ? undefined : value);
 
 /** The decoded password of a database URL. */
 export const passwordOf = (url: string) => decodeURIComponent(new URL(url).password);
@@ -153,6 +153,33 @@ const configSchema = z
       publicOriginSchema.optional(),
     ),
     RETAINER_VERIFIER_TOKEN: z.preprocess(emptyToUndefined, z.string().min(32).optional()),
+    /**
+     * Retainer's Anthropic key for extension model calls (model calls spec
+     * 2). Only the model proxy reads it; without it the proxy answers
+     * `503 model_unavailable`. On the hosted service only the `model`
+     * function has it.
+     */
+    RETAINER_MODEL_API_KEY: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+    /**
+     * Shows that a usage report came from the hosted `model` function (spec
+     * 3.6). Set on it and on the `extensions` function; unset, the report
+     * route is not mounted.
+     */
+    RETAINER_MODEL_USAGE_SECRET: z.preprocess(
+      emptyToUndefined,
+      z.string().min(32, 'use at least 32 characters').optional(),
+    ),
+    /**
+     * The model proxy's base URL that runs receive as `model.origin`: the
+     * hosted `model` function's URL. Defaults to the execution API origin
+     * plus `/v1/extensions/runtime/model`, the self-hosted proxy.
+     */
+    RETAINER_MODEL_ORIGIN: z.preprocess(emptyToUndefined, z.url().optional()),
+    /** Where the proxy forwards model requests; Anthropic's API unless a test fakes it. */
+    RETAINER_MODEL_UPSTREAM_ORIGIN: z.preprocess(
+      emptyToUndefined,
+      publicOriginSchema.default('https://api.anthropic.com/'),
+    ),
     RETAINER_WEBHOOK_RATE_LIMIT: z.coerce.number().int().min(1).max(10000).default(100),
     /** New change-trigger jobs per installation per minute; the excess waits (extensions §9.4). */
     RETAINER_TRIGGER_ENQUEUES_PER_MINUTE: z.coerce.number().int().min(1).max(100000).default(500),

@@ -16,6 +16,7 @@ import type { FileStorage } from '../file-storage/contract.js';
 import { type RateLimit, rateLimit } from '../http/rate-limit.js';
 import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
 import { mcpRoute } from '../mcp/route.js';
+import { mountModelRoutes } from '../model/mount.js';
 import { Sources } from '../sources/service.js';
 import { VERSION } from '../version.js';
 import type { Webhooks } from '../webhooks/service.js';
@@ -56,6 +57,13 @@ export type AppDeps = {
   rateLimit?: RateLimit;
   /** The caller's address, for the webhook ingress limiter; never read from a client header. */
   clientIp?: (c: Context<AppEnv>) => string | undefined;
+  /**
+   * Serve the model proxy in this process (self-hosted; model calls spec 3.6).
+   * The hosted service runs it as its own `model` function instead.
+   */
+  model?: { apiKey: string | undefined; upstream: string };
+  /** RETAINER_MODEL_USAGE_SECRET: mounts the hosted `model` function's usage report. */
+  modelUsageSecret?: string | undefined;
 };
 
 export function createApp(deps: AppDeps) {
@@ -78,6 +86,7 @@ export function createApp(deps: AppDeps) {
   });
 
   webhookIngress(app, deps.webhooks, deps.clientIp);
+  mountModelRoutes(app, deps);
   if (!deps.accountsSecret) sessionRoutes(app, deps.sql, publicOrigin);
   const v1 = new Hono<AppEnv>();
   const limit = rateLimit(deps.sql, deps.rateLimit ?? { limit: 0 });

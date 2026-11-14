@@ -771,6 +771,20 @@
       "when": 1794651096608,
       "tag": "0109_extension_configure_capabilities",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1794667419141,
+      "tag": "0110_model_calls",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1794667420186,
+      "tag": "0111_model_calls_grants",
+      "breakpoints": true
     }
   ]
 }

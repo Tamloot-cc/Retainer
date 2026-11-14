@@ -235,7 +235,7 @@ describe('reviewed output mappings', () => {
       },
     ]);
     expect(plan.body.operations).toHaveLength(2);
-    expect(plan.body.grants).toEqual({ actor: 'agent', scopes: ['read', 'write'] });
+    expect(plan.body.grants).toEqual({ actor: 'agent', scopes: ['read', 'write'], uses: [] });
     expect(plan.body.warnings).toContain(
       'The mapping applies to records created or changed from now on. Existing records are not filled in.',
     );

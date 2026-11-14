@@ -5,7 +5,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, normalize, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+// A test points the check at a fixture tree (scripts/test-check-layers.mjs).
+const ROOT = process.env.RETAINER_LAYER_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER = join(ROOT, 'packages/server/src');
 const MIT_PACKAGES = readdirSync(join(ROOT, 'packages')).filter(
   (dir) =>
@@ -44,6 +45,7 @@ const LAYERS = [
       'operator',
       'accounts',
       'egress',
+      'model',
       'launcher',
       'extension-control',
       'webhooks',
@@ -55,6 +57,12 @@ const LAYERS = [
 const MAY_SHARE_A_CYCLE = 'core';
 /** The only files that load the accounts module, and with it Better Auth. */
 const ACCOUNTS_ENTRIES = ['packages/server/src/index.ts', 'packages/server/src/lambda/control.ts'];
+/**
+ * The model proxy serves extension runs only (model calls spec 3.5): the
+ * modules that mount it, report on it or start it. Retainer's core never calls
+ * a model, so nothing else may import it.
+ */
+const MODEL_IMPORTERS = ['api', 'extension-control', 'operator', 'lambda'];
 
 const layerOf = new Map(LAYERS.flatMap(([, modules], i) => modules.map((m) => [m, i])));
 const layerName = (module) => LAYERS[layerOf.get(module)][0];
@@ -156,6 +164,9 @@ for (const file of sourceFiles(SERVER)) {
     // control function reach the accounts module.
     if (to === 'accounts' && from !== 'accounts' && !ACCOUNTS_ENTRIES.includes(name)) {
       problems.push(`${name}: only ${ACCOUNTS_ENTRIES.join(' and ')} may import accounts`);
+    }
+    if (to === 'model' && from !== 'model' && !MODEL_IMPORTERS.includes(from)) {
+      problems.push(`${name}: only ${MODEL_IMPORTERS.join(', ')} may import model`);
     }
     if (to === from) continue;
     if (layerOf.get(to) > layerOf.get(from)) {

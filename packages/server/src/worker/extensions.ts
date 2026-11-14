@@ -8,7 +8,7 @@ import { z } from 'zod';
 import type { Sql } from '../db/client.js';
 import { AppError } from '../errors.js';
 import { type ClaimedJob, ExtensionQueue } from '../extension-runtime/queue.js';
-import type { RunTokens } from '../extension-runtime/tokens.js';
+import { MODEL_PROXY_PATH, type RunTokens } from '../extension-runtime/tokens.js';
 import type { ExtensionCatalog } from '../extensions/catalog.js';
 import type { Extensions } from '../extensions/service.js';
 
@@ -76,6 +76,11 @@ export class ExtensionExecutor {
       tokens: RunTokens;
       driver: ExecutionDriver;
       apiOrigin: string;
+      /**
+       * The model proxy's base URL a run with `model` receives (model calls
+       * spec 3.2). Defaults to the self-hosted route under the API origin.
+       */
+      modelOrigin?: string;
       owner: string;
       concurrency?: number;
       /** Release digests with a deployed executable (extensionServices' activationReady). */
@@ -140,12 +145,15 @@ export class ExtensionExecutor {
           'incompatible_runtime',
           'executable metadata differs from pinned release',
         );
-      const runToken = await this.options.tokens.issue(
-        this.options.sql,
-        job,
-        job.registrationId,
-        job.scopes,
-      );
+      const apiOrigin = new URL(this.options.apiOrigin).origin;
+      // Only a run whose function declares `model` and whose grant includes it.
+      const [runToken, modelToken] = await Promise.all([
+        this.options.tokens.issue(this.options.sql, job, job.registrationId, job.scopes),
+        job.uses.includes('model') ? this.options.tokens.issueModel(job) : undefined,
+      ]);
+      const model = modelToken
+        ? { origin: this.options.modelOrigin ?? apiOrigin + MODEL_PROXY_PATH, token: modelToken }
+        : undefined;
       const invocation = decodeInvocation(
         JSON.stringify({
           protocolVersion: 1,
@@ -155,9 +163,10 @@ export class ExtensionExecutor {
           releaseDigest: job.releaseDigest,
           functionId: job.functionId,
           input: job.input,
-          apiOrigin: new URL(this.options.apiOrigin).origin,
+          apiOrigin,
           runToken,
           deadline: job.deadline.toISOString(),
+          ...(model ? { model } : {}),
         }),
       );
       // The handler budget ends at job.deadline; the lease's grace lets the timeout be recorded.

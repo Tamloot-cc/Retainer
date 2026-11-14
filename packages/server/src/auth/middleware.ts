@@ -19,6 +19,9 @@ import { looksLikeJwt, lookupOAuthToken, type OAuthSettings } from './oauth-toke
 import { lookupKey, requireWebHeader, SESSION_COOKIE } from './session.js';
 
 const BEARER = /^Bearer\s+(\S+)$/i;
+/** The token of an `Authorization: Bearer` header, or undefined. */
+export const bearerToken = (header: string | null | undefined) =>
+  header ? BEARER.exec(header)?.[1] : undefined;
 /** A standalone app names the change cursor it is reacting to (extensions spec §9.4). */
 export const CAUSED_BY_HEADER = 'Retainer-Caused-By';
 

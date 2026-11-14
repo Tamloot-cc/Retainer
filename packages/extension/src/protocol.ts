@@ -14,6 +14,12 @@ export const invocationSchema = z.strictObject({
   apiOrigin: z.url(),
   runToken: z.string().min(1).max(8192),
   deadline: z.iso.datetime(),
+  /**
+   * Present only when the function declares `uses: ['model']` and the
+   * installation's grant includes it: the model proxy's base URL and a token
+   * that opens model calls and nothing else (model calls spec 3.2).
+   */
+  model: z.strictObject({ origin: z.url(), token: z.string().min(1).max(8192) }).optional(),
 });
 export const executionResultSchema = z.strictObject({
   status: z.enum(['succeeded', 'retry', 'failed']),

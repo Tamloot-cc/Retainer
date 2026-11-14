@@ -3,6 +3,32 @@ import type { Context } from 'hono';
 import { z } from 'zod';
 import { AppError, profileNotSupported } from '../errors.js';
 
+/** Reads a body of at most `maxBytes`, or undefined (and the rest cancelled) when it is larger. */
+export async function readCapped(
+  body: ReadableStream<Uint8Array> | null,
+  maxBytes: number,
+): Promise<Uint8Array | undefined> {
+  if (!body) return new Uint8Array();
+  const reader = body.getReader(),
+    chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) break;
+      bytes += next.value.byteLength;
+      if (bytes > maxBytes) {
+        await reader.cancel().catch(() => {});
+        return undefined;
+      }
+      chunks.push(next.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks);
+}
+
 /** Parses a JSON body with a schema; malformed JSON and invalid shapes are 400s. */
 export async function readBody<T extends z.ZodType>(
   c: Context,
@@ -13,28 +39,14 @@ export async function readBody<T extends z.ZodType>(
   try {
     let text: string;
     if (maxBytes && c.req.raw.body) {
-      const reader = c.req.raw.body.getReader(),
-        chunks: Uint8Array[] = [];
-      let bytes = 0;
-      try {
-        while (true) {
-          const next = await reader.read();
-          if (next.done) break;
-          bytes += next.value.byteLength;
-          if (bytes > maxBytes) {
-            await reader.cancel();
-            throw new AppError(
-              413,
-              'quota_exceeded',
-              'request body exceeds the source transport limit',
-            );
-          }
-          chunks.push(next.value);
-        }
-      } finally {
-        reader.releaseLock();
-      }
-      text = Buffer.concat(chunks).toString('utf8');
+      const bytes = await readCapped(c.req.raw.body, maxBytes);
+      if (!bytes)
+        throw new AppError(
+          413,
+          'quota_exceeded',
+          'request body exceeds the source transport limit',
+        );
+      text = Buffer.from(bytes).toString('utf8');
     } else text = await c.req.text();
     body = text.trim() === '' ? {} : JSON.parse(text);
   } catch (error) {

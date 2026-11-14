@@ -4,6 +4,7 @@ import type { Sql } from '../db/client.js';
 import { listOrganizations } from '../db/organizations.js';
 import { listWorkspaces } from '../db/workspaces.js';
 import { AppError } from '../errors.js';
+import { dailyUsage } from '../model/usage.js';
 import { TEMPLATE_NAMES } from '../templates/index.js';
 import { purgeAfter, purgeDeletedWorkspaces, restoreWorkspace } from '../workspaces/deletion.js';
 import {
@@ -35,6 +36,9 @@ API keys
   retainer key create --workspace <slug|id> --name <name> --actor <type:id> --scopes <list>
   retainer key list --workspace <slug|id>
   retainer key revoke <key-id>
+
+Model calls
+  retainer model usage [--days <n>]        Tokens per day across workspaces (default 30 days)
 
 Options
   --json    Print machine-readable JSON
@@ -251,6 +255,25 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         print(`Revoked key ${revoked.id}`, revoked);
         return 0;
       }
+      case 'model usage': {
+        const days = values.days === undefined ? 30 : Number(values.days);
+        if (!Number.isInteger(days) || days < 1 || days > 366)
+          throw new AppError(400, 'invalid_request', '--days must be a whole number from 1 to 366');
+        const rows = await dailyUsage(io.sql, days);
+        print(
+          rows.length === 0
+            ? 'No model calls in this period.'
+            : [
+                'day\tkind\trequests\tinput\toutput\tcache read\tcache write',
+                ...rows.map(
+                  (r) =>
+                    `${r.day}\t${r.kind}\t${r.requests}\t${r.inputTokens}\t${r.outputTokens}\t${r.cacheReadTokens}\t${r.cacheWriteTokens}`,
+                ),
+              ].join('\n'),
+          rows,
+        );
+        return 0;
+      }
       default:
         io.err(`Unknown command: retainer ${positionals.join(' ')}`);
         io.err(USAGE);
@@ -297,6 +320,7 @@ function parse(argv: string[]) {
       id: { type: 'string' },
       workspaces: { type: 'string' },
       members: { type: 'string' },
+      days: { type: 'string' },
       json: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },

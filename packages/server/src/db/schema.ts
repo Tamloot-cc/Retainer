@@ -1460,6 +1460,8 @@ export const extensionInstallations = pgTable(
     grantGeneration: integer('grant_generation').notNull().default(1),
     grantedActor: text('granted_actor').notNull(),
     grantedScopes: jsonb('granted_scopes').notNull(),
+    /** Platform capabilities an admin approved, such as `model` (model calls spec 3.1). */
+    grantedUses: jsonb('granted_uses').$type<string[]>().notNull().default([]),
     settings: jsonb('settings').notNull().default({}),
     settingsRevision: integer('settings_revision').notNull().default(1),
     /**
@@ -2648,6 +2650,8 @@ export const extensionAccessApprovals = pgTable(
     generation: integer('generation').notNull(),
     settingsRevision: integer('settings_revision').notNull(),
     scopes: jsonb('scopes').notNull(),
+    /** The release's uses, granted with its access (model calls spec 3.1). */
+    uses: jsonb('uses').$type<string[]>().notNull().default([]),
     actor: text('actor').notNull(),
     secretRefs: jsonb('secret_refs').notNull().default({}),
     settings: jsonb('settings').notNull().default({}),
@@ -2661,6 +2665,55 @@ export const extensionAccessApprovals = pgTable(
       foreignColumns: [extensionInstallations.workspaceId, extensionInstallations.id],
     }).onDelete('cascade'),
     pgPolicy('extension_access_approvals_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+/**
+ * One row per model request Anthropic answered through the model proxy (model
+ * calls spec 3.4). Counts only, never content. Every ID comes from the model
+ * token, never from the extension. No foreign key to the installation, so a
+ * month's use survives an uninstall and reinstall; rows go with the workspace.
+ */
+export const aiUsage = pgTable(
+  'ai_usage',
+  {
+    /** Made by the proxy per request (a UUIDv7); a repeated report is a no-op. */
+    id: id(),
+    workspaceId: workspaceId(),
+    kind: text('kind').notNull(),
+    installationId: uuid('installation_id').notNull(),
+    registrationId: uuid('registration_id').notNull(),
+    releaseDigest: text('release_digest').notNull(),
+    functionId: uuid('function_id').notNull(),
+    jobId: uuid('job_id').notNull(),
+    attempt: integer('attempt').notNull(),
+    /** The model named in the response, which can differ from the one requested. */
+    model: text('model').notNull(),
+    inputTokens: bigint('input_tokens', { mode: 'number' }).notNull(),
+    outputTokens: bigint('output_tokens', { mode: 'number' }).notNull(),
+    cacheReadTokens: bigint('cache_read_tokens', { mode: 'number' }).notNull(),
+    cacheWriteTokens: bigint('cache_write_tokens', { mode: 'number' }).notNull(),
+    /** The response's whole usage object: counts and short labels a price needs. */
+    usage: jsonb('usage').notNull(),
+    providerRequestId: text('provider_request_id'),
+    /** The stream ended before its final event, so the output count is too low. */
+    partial: boolean('partial').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('ai_usage_installation_idx').on(t.workspaceId, t.installationId, t.createdAt),
+    index('ai_usage_created_idx').on(t.createdAt),
+    check('ai_usage_kind', sql`${t.kind} in ('model', 'agent')`),
+    check(
+      'ai_usage_tokens',
+      sql`${t.inputTokens} >= 0 and ${t.outputTokens} >= 0 and ${t.cacheReadTokens} >= 0 and ${t.cacheWriteTokens} >= 0`,
+    ),
+    pgPolicy('ai_usage_workspace', {
       for: 'all',
       to: 'retainer_app',
       using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,

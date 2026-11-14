@@ -6,8 +6,10 @@ import {
   type ExtensionMappingView,
   type ExtensionPreview,
   functionSecrets,
+  MODEL_USE_NOTICE,
   mappingChoicesSchema,
   newestReleases,
+  releaseUses,
 } from '@retainer/extension';
 import { HIDDEN_TYPE_IDS } from '@retainer/shared';
 import { z } from 'zod';
@@ -56,6 +58,7 @@ import {
 } from './contributions.js';
 import { bindingStatus, EMPTY_MAPPING, resolveMapping, type StoredMapping } from './mapping.js';
 import { getSuggestions } from './suggestions.js';
+import { installationMonthUsage } from './usage.js';
 
 export const installInputSchema = z.strictObject({
   accessOnly: z.boolean().optional(),
@@ -100,6 +103,7 @@ type Row = {
   settings: ExtensionInstallation['settings'];
   granted_actor: ExtensionInstallation['grantedActor'];
   granted_scopes: ExtensionInstallation['grantedScopes'];
+  granted_uses: ExtensionInstallation['grantedUses'];
   secret_names?: string[];
   connection_health: 'ok' | 'needs_reconnect' | 'degraded';
   last_error: string | null;
@@ -195,6 +199,7 @@ function present(
     settings: r.settings,
     grantedActor: r.granted_actor,
     grantedScopes: r.granted_scopes,
+    grantedUses: r.granted_uses,
     createdBy: r.created_by,
   };
 }
@@ -312,6 +317,17 @@ export class Extensions {
     });
   }
 
+  /** The installation's model use this month, for its Overview tab (model calls spec 3.4). */
+  async usage(caller: Caller, id: string) {
+    scope(caller, 'read');
+    if (caller.run || caller.installation) throw notFound('extension installation');
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      const [row] = await tx`select 1 from extension_installations where id=${id}`;
+      if (!row) throw notFound('extension installation');
+      return { model: await installationMonthUsage(tx, id) };
+    });
+  }
+
   async runs(caller: Caller, id: string, limit = 50, cursor?: string, connectionId?: string) {
     scope(caller, 'read');
     if (
@@ -373,6 +389,7 @@ export class Extensions {
   private async plan(tx: Tx, caller: Caller, input: ExtensionInstallInput) {
     const release = this.catalog.get(input.registrationId, input.version);
     const manifest = release.manifest;
+    const uses = releaseUses(manifest);
     if (Buffer.byteLength(JSON.stringify(input.settings)) > 65536)
       throw new AppError(413, 'quota_exceeded', 'settings exceed 64 KiB');
     for (const [key, value] of Object.entries(input.settings)) {
@@ -544,7 +561,8 @@ export class Extensions {
     if (
       existing &&
       ((manifest.requestedActor === 'integration' && existing.granted_actor === 'agent') ||
-        manifest.scopes.some((scope) => !existing.granted_scopes.includes(scope))) &&
+        manifest.scopes.some((scope) => !existing.granted_scopes.includes(scope)) ||
+        uses.some((use) => !existing.granted_uses.includes(use))) &&
       !input.grantChange &&
       !input.turnOn &&
       !input.accessOnly &&
@@ -583,15 +601,17 @@ export class Extensions {
           settings: input.settings,
           refs,
           draftId,
+          uses,
         }),
         schemaVersion: workspace.schema_version,
         generation: existing?.generation ?? 0,
         releaseDigest: release.digest,
         operations: [],
         views: [],
-        grants: { actor: manifest.requestedActor, scopes: ['read'] },
+        grants: { actor: manifest.requestedActor, scopes: ['read'], uses },
         warnings: [
           'Approving lets this extension read workspace records and use its declared secrets before turn-on. No schema changes or writes are approved.',
+          ...(uses.includes('model') ? [MODEL_USE_NOTICE] : []),
         ],
       };
       return {
@@ -786,8 +806,13 @@ export class Extensions {
         // Whether a contributed view was edited decides how it is applied.
         views: [...viewActions],
         currentGrants: existing
-          ? { actor: existing.granted_actor, scopes: existing.granted_scopes }
+          ? {
+              actor: existing.granted_actor,
+              scopes: existing.granted_scopes,
+              uses: existing.granted_uses,
+            }
           : null,
+        uses,
       }),
       schemaVersion: workspace.schema_version,
       generation,
@@ -800,15 +825,33 @@ export class Extensions {
           name: view.name,
           action: viewActions.get(view.universalId) ?? 'retain',
         })),
-      grants: { actor: manifest.requestedActor, scopes: manifest.scopes },
+      grants: {
+        actor: manifest.requestedActor,
+        scopes: manifest.scopes,
+        uses,
+      },
       ...(existing && input.grantChange
-        ? { previousGrants: { actor: existing.granted_actor, scopes: existing.granted_scopes } }
+        ? {
+            previousGrants: {
+              actor: existing.granted_actor,
+              scopes: existing.granted_scopes,
+              uses: existing.granted_uses,
+            },
+          }
         : {}),
       ...(manifest.mapping ? { mapping: mapped.bindings } : {}),
       warnings: [
         ...skippedViews.map(
           (view) => `View ${view.name} is skipped: its object or fields were deleted.`,
         ),
+        // Shown wherever model use is newly granted: a release without
+        // configure grants it here, in its single approval.
+        ...(uses.includes('model') &&
+        (!existing ||
+          ['configuring', 'uninstalled'].includes(existing.state) ||
+          !existing.granted_uses.includes('model'))
+          ? [MODEL_USE_NOTICE]
+          : []),
         ...notices,
         ...viewNotices,
         ...(manifest.mapping && (fresh || input.mappingChange)
@@ -968,13 +1011,13 @@ export class Extensions {
         previous.manifest.execution !== manifest.execution ||
         previous.manifest.oauthClientId !== manifest.oauthClientId);
     const [row] = await tx<Row[]>`insert into extension_installations
-      (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, settings, created_by, state, setup_kind, mapping)
+      (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, granted_uses, settings, created_by, state, setup_kind, mapping)
       values (${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId}, ${manifest.universalId}, ${manifest.version}, ${plan.release.digest},
-        ${manifest.requestedActor}, ${tx.json(manifest.scopes)}, ${tx.json(input.settings)}, ${tx.json(caller.actor)}, ${state}, ${setupKind},
+        ${manifest.requestedActor}, ${tx.json(manifest.scopes)}, ${tx.json(releaseUses(manifest))}, ${tx.json(input.settings)}, ${tx.json(caller.actor)}, ${state}, ${setupKind},
         ${tx.json(jsonValue(plan.mapped.stored))})
       on conflict (workspace_id, registration_id) do update set state = excluded.state,setup_kind=excluded.setup_kind,
         last_error=null,connection_health='needs_reconnect',activated_at=null,cleanup_deadline=null,
-        version = excluded.version, release_digest = excluded.release_digest,granted_scopes=excluded.granted_scopes,granted_actor=excluded.granted_actor,
+        version = excluded.version, release_digest = excluded.release_digest,granted_scopes=excluded.granted_scopes,granted_uses=excluded.granted_uses,granted_actor=excluded.granted_actor,
         generation = extension_installations.generation + 1, settings = excluded.settings,
         grant_generation = extension_installations.grant_generation + ${regrant ? 1 : 0},
         settings_revision = extension_installations.settings_revision + 1, mapping = excluded.mapping,
@@ -1305,21 +1348,21 @@ export class Extensions {
     let row = plan.existing;
     if (row?.state === 'active') {
       await this.clearConfigure(tx, row.id, plan.release.digest);
-      await tx`insert into extension_access_approvals(workspace_id,installation_id,release_digest,generation,settings_revision,scopes,actor,secret_refs,settings,approved_by)
+      await tx`insert into extension_access_approvals(workspace_id,installation_id,release_digest,generation,settings_revision,scopes,uses,actor,secret_refs,settings,approved_by)
         values(${caller.workspaceId},${row.id},${plan.release.digest},${row.generation},${row.settings_revision},${tx.json(manifest.scopes)},
-          ${manifest.requestedActor},${tx.json(plan.refs)},${tx.json(input.settings)},${tx.json(caller.actor)})
+          ${tx.json(releaseUses(manifest))},${manifest.requestedActor},${tx.json(plan.refs)},${tx.json(input.settings)},${tx.json(caller.actor)})
         on conflict(workspace_id,installation_id,release_digest) do update set generation=excluded.generation,
-          settings_revision=excluded.settings_revision,scopes=excluded.scopes,actor=excluded.actor,secret_refs=excluded.secret_refs,
+          settings_revision=excluded.settings_revision,scopes=excluded.scopes,uses=excluded.uses,actor=excluded.actor,secret_refs=excluded.secret_refs,
           settings=excluded.settings,approved_by=excluded.approved_by,approved_at=now()`;
     } else {
       if (row) await cancelRuns(tx, row.id);
       const [created] = await tx<
         Row[]
-      >`insert into extension_installations(id,workspace_id,registration_id,version,release_digest,granted_actor,granted_scopes,settings,created_by,state)
+      >`insert into extension_installations(id,workspace_id,registration_id,version,release_digest,granted_actor,granted_scopes,granted_uses,settings,created_by,state)
         values(${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId},${manifest.universalId},${manifest.version},${plan.release.digest},
-          ${manifest.requestedActor},${tx.json(['read'])},${tx.json(input.settings)},${tx.json(caller.actor)},'configuring')
+          ${manifest.requestedActor},${tx.json(['read'])},${tx.json(releaseUses(manifest))},${tx.json(input.settings)},${tx.json(caller.actor)},'configuring')
         on conflict(workspace_id,registration_id) do update set version=excluded.version,release_digest=excluded.release_digest,
-          granted_actor=excluded.granted_actor,granted_scopes=excluded.granted_scopes,settings=excluded.settings,state='configuring',
+          granted_actor=excluded.granted_actor,granted_scopes=excluded.granted_scopes,granted_uses=excluded.granted_uses,settings=excluded.settings,state='configuring',
           created_by=excluded.created_by,generation=extension_installations.generation+1,settings_revision=extension_installations.settings_revision+1,
           last_error=null,activated_at=null,cleanup_deadline=null,created_at=now(),updated_at=now() returning *`;
       if (!created) throw new Error('installation insert returned no row');
@@ -1352,6 +1395,7 @@ export class Extensions {
         const increased =
           target.manifest.requestedActor !== row.granted_actor ||
           target.manifest.scopes.some((s) => !row.granted_scopes.includes(s)) ||
+          releaseUses(target.manifest).some((use) => !row.granted_uses.includes(use)) ||
           target.manifest.functions
             .filter((f) => f.trigger.kind === 'configure')
             .some((f) =>
@@ -1359,9 +1403,9 @@ export class Extensions {
             );
         if (increased)
           throw conflict('grant_required', 'approve target release access before configure');
-        await tx`insert into extension_access_approvals(workspace_id,installation_id,release_digest,generation,settings_revision,scopes,actor,settings,approved_by)
+        await tx`insert into extension_access_approvals(workspace_id,installation_id,release_digest,generation,settings_revision,scopes,uses,actor,settings,approved_by)
           values(${caller.workspaceId},${row.id},${target.digest},${row.generation},${row.settings_revision},${tx.json(target.manifest.scopes)},
-            ${target.manifest.requestedActor},${tx.json(row.settings)},${tx.json(caller.actor)})
+            ${tx.json(releaseUses(target.manifest))},${target.manifest.requestedActor},${tx.json(row.settings)},${tx.json(caller.actor)})
           on conflict do nothing`;
       }
     }

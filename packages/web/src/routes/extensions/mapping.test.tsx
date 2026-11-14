@@ -108,7 +108,7 @@ const preview: Awaited<ReturnType<typeof api.previewExtension>> = {
   releaseDigest: release.digest,
   operations: [],
   views: [],
-  grants: { actor: 'agent', scopes: ['read', 'write'] },
+  grants: { actor: 'agent', scopes: ['read', 'write'], uses: [] },
   warnings: [],
   mapping: [
     {
@@ -140,6 +140,7 @@ const installation: Installation = {
   secrets: {},
   grantedActor: 'agent',
   grantedScopes: ['read', 'write'],
+  grantedUses: [],
   createdBy: { type: 'user', id: 'admin' },
 };
 function mount(element: React.ReactNode) {

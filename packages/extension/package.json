@@ -35,6 +35,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "@retainer/shared": "workspace:*",
     "zod": "^4.6.7"
   }

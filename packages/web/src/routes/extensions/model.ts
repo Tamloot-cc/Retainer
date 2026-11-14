@@ -1,4 +1,4 @@
-import { compareVersions, newestReleases } from '@retainer/extension';
+import { compareVersions, MODEL_USE_NOTICE, newestReleases } from '@retainer/extension';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { api, useWorkspace } from '../../api/client.js';
@@ -139,5 +139,11 @@ export const canReconnect = (release: Release, installation: Installation) =>
     Object.values(release.manifest.settings).some((setting) => setting.reconnect));
 
 /** What the extension may do, in plain words. */
-export const accessText = (scopes: readonly string[], actor: string) =>
-  `It can ${scopes.join(' and ')} workspace CRM data. Its changes are recorded as made by an ${actor}.`;
+export const accessText = (
+  scopes: readonly string[],
+  actor: string,
+  uses: readonly string[] = [],
+) =>
+  `It can ${scopes.join(' and ')} workspace CRM data. Its changes are recorded as made by an ${actor}.${
+    uses.includes('model') ? ` ${MODEL_USE_NOTICE.replace('This extension', 'It')}` : ''
+  }`;

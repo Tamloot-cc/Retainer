@@ -337,9 +337,18 @@ function Overview({
     <Stack>
       <Section title="Access">
         <p className="text-sm">
-          {accessText(installation.grantedScopes, installation.grantedActor)}
+          {accessText(
+            installation.grantedScopes,
+            installation.grantedActor,
+            installation.grantedUses,
+          )}
         </p>
       </Section>
+      {installation.grantedUses.includes('model') ? (
+        <Section title="Model use this month">
+          <ModelUsage installationId={installation.id} />
+        </Section>
+      ) : null}
       {release?.manifest.source && release.manifest.connection === 'workspace' ? (
         <Section title="Sync">
           <SourceSyncStatus installationId={installation.id} />
@@ -357,6 +366,26 @@ function Overview({
         )}
       </Section>
     </Stack>
+  );
+}
+
+/** Tokens the extension's model calls used this calendar month. */
+function ModelUsage({ installationId }: { installationId: string }) {
+  const usage = useQuery({
+    queryKey: [...queryKey, 'usage', installationId],
+    queryFn: ({ signal }) => api.extensionUsage(installationId, signal),
+  });
+  if (usage.error) return <QueryError error={usage.error} retry={() => void usage.refetch()} />;
+  if (!usage.data) return <Muted>Loading model use…</Muted>;
+  const model = usage.data.model;
+  if (!model.requests) return <Muted>No model calls yet this month.</Muted>;
+  const number = new Intl.NumberFormat();
+  return (
+    <p className="text-sm">
+      {number.format(model.requests)} {model.requests === 1 ? 'call' : 'calls'}:{' '}
+      {number.format(model.inputTokens + model.cacheReadTokens + model.cacheWriteTokens)} input
+      tokens and {number.format(model.outputTokens)} output tokens.
+    </p>
   );
 }
 
