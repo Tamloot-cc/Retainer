@@ -71,6 +71,9 @@ const message = {
   max_tokens: 100,
   messages: [{ role: 'user', content: 'Which company is acme.test?' }],
 };
+type AnthropicError = { type: string; message: string };
+const errorOf = async (response: Response) =>
+  ((await response.json()) as { error: AnthropicError }).error;
 const call = (
   body: unknown = message,
   options: {
@@ -80,7 +83,7 @@ const call = (
     method?: string;
     raw?: string;
   } = {},
-) =>
+): Promise<Response> | Response =>
   t.app.request(`${PROXY}${options.path ?? '/v1/messages'}`, {
     method: options.method ?? 'POST',
     headers: {
@@ -137,7 +140,7 @@ describe('admission', () => {
       body: JSON.stringify(message),
     });
     expect(response.status).toBe(503);
-    expect((await response.json()).error.type).toBe('model_unavailable');
+    expect((await errorOf(response)).type).toBe('model_unavailable');
   });
 });
 
@@ -187,7 +190,7 @@ describe('forwarding', () => {
     upstream.respond((request, res) => answer(request, res, 'claude-sonnet-5-5'));
     const before = (await rows()).length;
     const response = await call();
-    const body = await response.json();
+    const body = (await response.json()) as { content: { text: string }[] };
     const recorded = await rows();
     expect(recorded.length).toBe(before + 1);
     const row = recorded.at(-1) as Record<string, unknown>;
@@ -209,7 +212,7 @@ describe('forwarding', () => {
       provider_request_id: response.headers.get('request-id'),
       partial: false,
     });
-    expect(body.content[0].text).toBe('hello');
+    expect(body.content[0]?.text).toBe('hello');
     expect(JSON.stringify(row)).not.toContain('hello');
     expect(JSON.stringify(row)).not.toContain('acme.test');
   });
@@ -289,7 +292,7 @@ describe('forwarding', () => {
     const response = await call();
     expect(response.status).toBe(429);
     expect(response.headers.get('retry-after')).toBe('7');
-    expect((await response.json()).error.type).toBe('rate_limit_error');
+    expect((await errorOf(response)).type).toBe('rate_limit_error');
     expect((await rows()).length).toBe(before);
   });
 
@@ -322,7 +325,7 @@ describe('allowed requests (spec 3.2.1)', () => {
     ] as const) {
       const response = await call(message, { path, method });
       expect(response.status).toBe(404);
-      expect((await response.json()).error.type).toBe('not_found_error');
+      expect((await errorOf(response)).type).toBe('not_found_error');
     }
     expect(upstream.received.length).toBe(before);
   });
@@ -333,7 +336,7 @@ describe('allowed requests (spec 3.2.1)', () => {
       for (const field of ['container', 'thread', 'diagnostics', 'brand_new_field']) {
         const response = await call({ ...message, [field]: 'x' }, { path });
         expect(response.status).toBe(400);
-        expect((await response.json()).error).toMatchObject({
+        expect(await errorOf(response)).toMatchObject({
           type: 'invalid_request_error',
           message: expect.stringContaining(field),
         });
@@ -352,7 +355,7 @@ describe('allowed requests (spec 3.2.1)', () => {
       for (const beta of ['files-api-2025-04-14', 'compact-2026-01-12,files-api-2025-04-14']) {
         const response = await call(message, { path, headers: { 'anthropic-beta': beta } });
         expect(response.status).toBe(400);
-        expect((await response.json()).error.message).toContain('files-api-2025-04-14');
+        expect((await errorOf(response)).message).toContain('files-api-2025-04-14');
       }
     }
     expect(upstream.received.length).toBe(before);
@@ -361,7 +364,7 @@ describe('allowed requests (spec 3.2.1)', () => {
   it('refuses a body over 6 MB with 413', async () => {
     const response = await call(undefined, { raw: 'x'.repeat(MAX_REQUEST_BYTES + 1) });
     expect(response.status).toBe(413);
-    expect((await response.json()).error.type).toBe('request_too_large');
+    expect((await errorOf(response)).type).toBe('request_too_large');
   });
 });
 

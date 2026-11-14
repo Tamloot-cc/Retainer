@@ -6,6 +6,7 @@ import {
   type ExtensionMappingView,
   type ExtensionPreview,
   functionSecrets,
+  MODEL_USE_NOTICE,
   mappingChoicesSchema,
   newestReleases,
   releaseUses,
@@ -88,9 +89,6 @@ function scope(caller: Caller, required: 'read' | 'schema:write') {
 const conflict = (code: string, message: string) => new AppError(409, code, message);
 const sameScopes = (a: readonly string[], b: readonly string[]) =>
   a.length === b.length && a.every((scope) => b.includes(scope));
-/** What approving `model` means, shown with the access it is granted with (model calls spec 3.1). */
-export const MODEL_USE_NOTICE =
-  'This extension sends data from your workspace to Anthropic, which Retainer uses to process it.';
 
 type Row = {
   suggestions_status?: ExtensionInstallation['suggestionsStatus'];
@@ -201,7 +199,7 @@ function present(
     settings: r.settings,
     grantedActor: r.granted_actor,
     grantedScopes: r.granted_scopes,
-    grantedUses: r.granted_uses ?? [],
+    grantedUses: r.granted_uses,
     createdBy: r.created_by,
   };
 }
@@ -391,6 +389,7 @@ export class Extensions {
   private async plan(tx: Tx, caller: Caller, input: ExtensionInstallInput) {
     const release = this.catalog.get(input.registrationId, input.version);
     const manifest = release.manifest;
+    const uses = releaseUses(manifest);
     if (Buffer.byteLength(JSON.stringify(input.settings)) > 65536)
       throw new AppError(413, 'quota_exceeded', 'settings exceed 64 KiB');
     for (const [key, value] of Object.entries(input.settings)) {
@@ -563,7 +562,7 @@ export class Extensions {
       existing &&
       ((manifest.requestedActor === 'integration' && existing.granted_actor === 'agent') ||
         manifest.scopes.some((scope) => !existing.granted_scopes.includes(scope)) ||
-        releaseUses(manifest).some((use) => !existing.granted_uses.includes(use))) &&
+        uses.some((use) => !existing.granted_uses.includes(use))) &&
       !input.grantChange &&
       !input.turnOn &&
       !input.accessOnly &&
@@ -602,17 +601,17 @@ export class Extensions {
           settings: input.settings,
           refs,
           draftId,
-          uses: releaseUses(manifest),
+          uses,
         }),
         schemaVersion: workspace.schema_version,
         generation: existing?.generation ?? 0,
         releaseDigest: release.digest,
         operations: [],
         views: [],
-        grants: { actor: manifest.requestedActor, scopes: ['read'], uses: releaseUses(manifest) },
+        grants: { actor: manifest.requestedActor, scopes: ['read'], uses },
         warnings: [
           'Approving lets this extension read workspace records and use its declared secrets before turn-on. No schema changes or writes are approved.',
-          ...(releaseUses(manifest).includes('model') ? [MODEL_USE_NOTICE] : []),
+          ...(uses.includes('model') ? [MODEL_USE_NOTICE] : []),
         ],
       };
       return {
@@ -813,7 +812,7 @@ export class Extensions {
               uses: existing.granted_uses,
             }
           : null,
-        uses: releaseUses(manifest),
+        uses,
       }),
       schemaVersion: workspace.schema_version,
       generation,
@@ -829,7 +828,7 @@ export class Extensions {
       grants: {
         actor: manifest.requestedActor,
         scopes: manifest.scopes,
-        uses: releaseUses(manifest),
+        uses,
       },
       ...(existing && input.grantChange
         ? {
@@ -847,7 +846,7 @@ export class Extensions {
         ),
         // Shown wherever model use is newly granted: a release without
         // configure grants it here, in its single approval.
-        ...(releaseUses(manifest).includes('model') &&
+        ...(uses.includes('model') &&
         (!existing ||
           ['configuring', 'uninstalled'].includes(existing.state) ||
           !existing.granted_uses.includes('model'))

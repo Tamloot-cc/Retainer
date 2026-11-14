@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { streamHandle } from 'hono/aws-lambda';
 import { z } from 'zod';
-import { publicOriginSchema } from '../config.js';
+import { emptyToUndefined as empty, publicOriginSchema } from '../config.js';
 import { importRunPublicKey, RunTokens } from '../extension-runtime/tokens.js';
 import { LOG_LEVELS, setLogLevel } from '../log.js';
 import { createModelProxy, type RecordUsage } from '../model/proxy.js';
@@ -14,7 +14,6 @@ import { reportUsage } from '../model/routes.js';
  * admits model tokens by signature alone, with no database, and reports each
  * call's usage to the `extensions` function, which writes `ai_usage`.
  */
-const empty = (value: unknown) => (value === '' ? undefined : value);
 const modelConfigSchema = z.object({
   RETAINER_MODEL_API_KEY: z.string().min(1, 'the model function needs RETAINER_MODEL_API_KEY'),
   RETAINER_MODEL_USAGE_SECRET: z.string().min(32),

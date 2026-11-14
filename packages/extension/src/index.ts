@@ -17,6 +17,9 @@ import { z } from 'zod';
 /** Capabilities a function may declare in `uses`; open for later ones (model calls spec 11). */
 export const EXTENSION_USES = ['model'] as const;
 export type ExtensionUse = (typeof EXTENSION_USES)[number];
+/** What approving `model` means, in plain words, wherever access is shown (model calls spec 3.1). */
+export const MODEL_USE_NOTICE =
+  'This extension sends data from your workspace to Anthropic, which Retainer uses to process it.';
 
 const uuid = z.uuid();
 const name = z.string().regex(/^[a-z][a-zA-Z0-9-]{0,99}$/);
@@ -154,7 +157,7 @@ export const functionSchema = z.strictObject({
    * with the release and approved with its access; a run gets one only when
    * its function declares it and the installation's grant includes it.
    */
-  uses: z.array(z.enum(EXTENSION_USES)).min(1).max(EXTENSION_USES.length).optional(),
+  uses: z.array(z.enum(EXTENSION_USES)).min(1).optional(),
 });
 /** Field types a mapped output can target: scalar values only in v1. */
 export const MAPPABLE_FIELD_TYPES = FIELD_TYPES.filter(

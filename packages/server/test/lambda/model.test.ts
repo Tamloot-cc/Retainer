@@ -62,12 +62,14 @@ const post = (
   app: { request: (url: string, init: RequestInit) => Promise<Response> | Response },
   body: string,
   key = token,
-) =>
-  app.request('https://model.lambda-url.test/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': key, 'content-type': 'application/json' },
-    body,
-  });
+): Promise<Response> =>
+  Promise.resolve(
+    app.request('https://model.lambda-url.test/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': key, 'content-type': 'application/json' },
+      body,
+    }),
+  );
 const message = JSON.stringify({ model: 'claude-opus-5-5', max_tokens: 10, messages: [] });
 
 describe('the hosted model function', () => {
@@ -102,7 +104,9 @@ describe('the hosted model function', () => {
     const app = await createModelApp(env, { record: async () => {} });
     const response = await post(app, 'x'.repeat(MAX_REQUEST_BYTES + 1));
     expect(response.status).toBe(413);
-    expect((await response.json()).error.type).toBe('request_too_large');
+    expect(((await response.json()) as { error: { type: string } }).error.type).toBe(
+      'request_too_large',
+    );
   });
 });
 

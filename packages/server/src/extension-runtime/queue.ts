@@ -887,16 +887,25 @@ export class ExtensionQueue {
       last_error=${standalone ? null : 'cleanup_unavailable'},updated_at=now() where id=${installation.id}`;
   }
 
-  private async jobReleaseAllowed(tx: Tx, installation: Installation, job: Job) {
-    if (job.release_digest === installation.release_digest) return true;
+  /**
+   * The capabilities a job's release is granted, or null when the job may not
+   * run that release. A configure job pinned to an upgrade's target release
+   * runs with that release's current access approval (model calls spec 3.1).
+   */
+  private async jobReleaseUses(
+    tx: Tx,
+    installation: Installation,
+    job: Job,
+  ): Promise<ExtensionUse[] | null> {
+    if (job.release_digest === installation.release_digest) return installation.granted_uses;
     if (job.trigger_kind !== 'configure' || installation.state !== 'active' || job.connection_id)
-      return false;
-    const [approval] =
-      await tx`select 1 from extension_access_approvals a join extension_installations i
+      return null;
+    const [approval] = await tx<{ uses: ExtensionUse[] }[]>`
+      select a.uses from extension_access_approvals a join extension_installations i
       on i.id=a.installation_id and i.workspace_id=a.workspace_id
       where a.installation_id=${installation.id} and a.release_digest=${job.release_digest}
       and a.generation=i.generation and a.settings_revision=i.settings_revision`;
-    return !!approval;
+    return approval?.uses ?? null;
   }
 
   /** Under the installation lock; the suggestions slot fences saves from older runs. */
@@ -950,10 +959,11 @@ export class ExtensionQueue {
       const [job] = await tx<Job[]>`select * from extension_jobs where id=${id}
         and ((status='queued' and available_at<=now()) or (status='running' and lease_until<=clock_timestamp())) for update skip locked`;
       if (!job) return null;
-      if (
-        job.generation !== installation.generation ||
-        !(await this.jobReleaseAllowed(tx, installation, job))
-      ) {
+      const granted =
+        job.generation === installation.generation
+          ? await this.jobReleaseUses(tx, installation, job)
+          : null;
+      if (!granted) {
         await tx`update extension_jobs set status='cancelled',code='installation_disabled',lease_until=null where id=${id}`;
         await tx`update extension_attempts set status='cancelled',code='installation_disabled',finished_at=now()
           where job_id=${id} and finished_at is null`;
@@ -1027,16 +1037,6 @@ export class ExtensionQueue {
             ? functionScopes(manifest, fn).filter((s) => installation.granted_scopes.includes(s))
             : installation.granted_scopes;
       const secrets = fn ? functionSecrets(manifest, fn) : [];
-      // A configure run pinned to an upgrade's target release has that
-      // release's approved uses; every other run the installation's grant.
-      let granted = installation.granted_uses ?? [];
-      if (job.release_digest !== installation.release_digest) {
-        const [approval] = await tx<{ uses: ExtensionUse[] }[]>`
-          select uses from extension_access_approvals where installation_id=${installation.id}
-          and release_digest=${job.release_digest} and generation=${installation.generation}
-          and settings_revision=(select settings_revision from extension_installations where id=${installation.id})`;
-        granted = approval?.uses ?? [];
-      }
       const uses = fn ? functionUses(fn).filter((use) => granted.includes(use)) : [];
       if (!scopes.length) {
         await tx`update extension_jobs set status='failed',code='forbidden',lease_owner=null,lease_until=null,run_until=null where id=${id}`;
@@ -1116,7 +1116,7 @@ export class ExtensionQueue {
       >`select * from extension_jobs where id=${lease.jobId} and installation_id=${lease.installationId}
         and status='running' and lease_owner=${lease.owner} and fence=${lease.fence}::bigint
         and generation=${installation.generation} and lease_until>clock_timestamp() and run_until>clock_timestamp() for update`;
-      if (!job || !(await this.jobReleaseAllowed(tx, installation, job))) throw expired();
+      if (!job || !(await this.jobReleaseUses(tx, installation, job))) throw expired();
       if (
         (job.connection_id ?? null) !== (lease.connectionId ?? null) ||
         (job.connection_generation ?? null) !== (lease.connectionGeneration ?? null)
@@ -1517,7 +1517,7 @@ export class ExtensionQueue {
         throw conflict('connection_required', 'reconnect this member connection to restart setup');
       if (
         job.generation !== installation.generation ||
-        !(await this.jobReleaseAllowed(tx, installation, job))
+        !(await this.jobReleaseUses(tx, installation, job))
       )
         throw unavailable();
       if (job.trigger_kind === 'configure')

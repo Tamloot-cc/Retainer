@@ -344,7 +344,7 @@ function Overview({
           )}
         </p>
       </Section>
-      {release?.manifest.functions.some((fn) => fn.uses?.includes('model')) ? (
+      {installation.grantedUses.includes('model') ? (
         <Section title="Model use this month">
           <ModelUsage installationId={installation.id} />
         </Section>

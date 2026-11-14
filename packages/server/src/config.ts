@@ -35,7 +35,7 @@ export const CONTROL_ROLE = 'retainer_control';
 export const SECRET_BROKER_ROLE = 'retainer_secret_broker';
 export const EXECUTOR_ROLE = 'retainer_executor';
 
-const emptyToUndefined = (value: unknown) => (value === '' ? undefined : value);
+export const emptyToUndefined = (value: unknown) => (value === '' ? undefined : value);
 
 /** The decoded password of a database URL. */
 export const passwordOf = (url: string) => decodeURIComponent(new URL(url).password);

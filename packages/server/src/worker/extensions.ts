@@ -8,7 +8,7 @@ import { z } from 'zod';
 import type { Sql } from '../db/client.js';
 import { AppError } from '../errors.js';
 import { type ClaimedJob, ExtensionQueue } from '../extension-runtime/queue.js';
-import type { RunTokens } from '../extension-runtime/tokens.js';
+import { MODEL_PROXY_PATH, type RunTokens } from '../extension-runtime/tokens.js';
 import type { ExtensionCatalog } from '../extensions/catalog.js';
 import type { Extensions } from '../extensions/service.js';
 
@@ -145,20 +145,14 @@ export class ExtensionExecutor {
           'incompatible_runtime',
           'executable metadata differs from pinned release',
         );
-      const runToken = await this.options.tokens.issue(
-        this.options.sql,
-        job,
-        job.registrationId,
-        job.scopes,
-      );
+      const apiOrigin = new URL(this.options.apiOrigin).origin;
       // Only a run whose function declares `model` and whose grant includes it.
-      const model = job.uses.includes('model')
-        ? {
-            origin:
-              this.options.modelOrigin ??
-              `${new URL(this.options.apiOrigin).origin}/v1/extensions/runtime/model`,
-            token: await this.options.tokens.issueModel(job),
-          }
+      const [runToken, modelToken] = await Promise.all([
+        this.options.tokens.issue(this.options.sql, job, job.registrationId, job.scopes),
+        job.uses.includes('model') ? this.options.tokens.issueModel(job) : undefined,
+      ]);
+      const model = modelToken
+        ? { origin: this.options.modelOrigin ?? apiOrigin + MODEL_PROXY_PATH, token: modelToken }
         : undefined;
       const invocation = decodeInvocation(
         JSON.stringify({
@@ -169,7 +163,7 @@ export class ExtensionExecutor {
           releaseDigest: job.releaseDigest,
           functionId: job.functionId,
           input: job.input,
-          apiOrigin: new URL(this.options.apiOrigin).origin,
+          apiOrigin,
           runToken,
           deadline: job.deadline.toISOString(),
           ...(model ? { model } : {}),

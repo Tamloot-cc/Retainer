@@ -27,6 +27,8 @@ const MAX_JSON_BYTES = 16 * 1024 * 1024;
 const count = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
 
+const METERED_EVENTS = new Set(['message_start', 'message_delta', 'message_stop']);
+
 /**
  * Reads usage from a Messages response as it passes through: a JSON body, or
  * the stream's `message_start` and final `message_delta` events. The bytes go
@@ -81,8 +83,15 @@ export class UsageMeter {
       if (!match) return;
       const event = this.buffer.slice(0, match.index);
       this.buffer = this.buffer.slice(match.index + match[0].length);
-      const data = event
-        .split(/\r?\n/)
+      const lines = event.split(/\r?\n/);
+      // Most events are content deltas; only these three carry usage, so the
+      // rest are skipped without parsing their JSON.
+      const name = lines
+        .find((line) => line.startsWith('event:'))
+        ?.slice(6)
+        .trim();
+      if (name !== undefined && !METERED_EVENTS.has(name)) continue;
+      const data = lines
         .filter((line) => line.startsWith('data:'))
         .map((line) => line.slice(5).trimStart())
         .join('\n');

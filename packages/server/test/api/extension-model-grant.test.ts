@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import type { ExtensionManifest, Invocation } from '@retainer/extension';
+import { type ExtensionManifest, type Invocation, MODEL_USE_NOTICE } from '@retainer/extension';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import type { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
-import { MODEL_USE_NOTICE } from '../../src/extensions/service.js';
 import { ExecutionRegistry, ExtensionExecutor } from '../../src/worker/extensions.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';

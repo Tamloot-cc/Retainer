@@ -34,6 +34,8 @@ export const isRunToken = (token: string) => token.startsWith(prefix);
  * has its own audience, so the API refuses it and the proxy refuses a run token.
  */
 const modelAudience = 'retainer:extension-model';
+/** Where the self-hosted server serves the model proxy, under the API origin (spec 3.6). */
+export const MODEL_PROXY_PATH = '/v1/extensions/runtime/model';
 const modelPrefix = 'rt_model_';
 export const isModelToken = (token: string) => token.startsWith(modelPrefix);
 const modelClaims = z.strictObject({
@@ -49,7 +51,8 @@ const modelClaims = z.strictObject({
 /** Who a model call is for, taken from its token and never from the request. */
 export type ModelClaims = z.infer<typeof modelClaims>;
 
-const publicJwk = z.strictObject({
+/** The run verification key's JWK shape; the private key extends it with `d`. */
+export const runPublicJwkSchema = z.strictObject({
   kty: z.literal('OKP'),
   crv: z.literal('Ed25519'),
   x: z.string().regex(/^[a-zA-Z0-9_-]{43}$/),
@@ -59,7 +62,7 @@ const publicJwk = z.strictObject({
 });
 /** The run verification key from `RETAINER_EXTENSION_RUN_PUBLIC_KEY`. */
 export async function importRunPublicKey(json: string): Promise<CryptoKey> {
-  const key = await importJWK(publicJwk.parse(JSON.parse(json)), 'EdDSA');
+  const key = await importJWK(runPublicJwkSchema.parse(JSON.parse(json)), 'EdDSA');
   if (key instanceof Uint8Array) throw new Error('asymmetric run keys required');
   return key;
 }
@@ -121,7 +124,7 @@ export class RunTokens {
    * grant includes it (claim computed `job.uses`). Same key and lifetime as
    * the run token; no database check, since it opens nothing in Retainer.
    */
-  async issueModel(job: ClaimedJob, kind: ModelClaims['kind'] = 'model') {
+  async issueModel(job: ClaimedJob) {
     if (job.system) throw new Error('system lifecycle jobs have no run credentials');
     const key = this.options.signingKey;
     if (!key) throw new Error('run signing key is unavailable');
@@ -134,7 +137,7 @@ export class RunTokens {
     if (expiry <= Math.floor(Date.now() / 1000))
       throw new AppError(409, 'lease_expired', 'run deadline passed');
     const claims: ModelClaims = {
-      kind,
+      kind: 'model',
       workspaceId: job.workspaceId,
       installationId: job.installationId,
       registrationId: job.registrationId,

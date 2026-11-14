@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto';
+import { bearerToken } from '../auth/middleware.js';
 import type { ModelClaims, RunTokens } from '../extension-runtime/tokens.js';
+import { readCapped } from '../http/request.js';
 import { allowedPath, refusedBeta, refusedBody } from './allowlist.js';
 import { UsageMeter, type UsageReport } from './usage.js';
 
@@ -59,33 +61,6 @@ export function anthropicError(status: number, type: string, message: string): R
   });
 }
 
-/** Reads at most `limit` bytes, or undefined when the body is larger. */
-async function readLimited(request: Request, limit: number): Promise<Uint8Array | undefined> {
-  const declared = Number(request.headers.get('content-length'));
-  if (Number.isFinite(declared) && declared > limit) return undefined;
-  if (!request.body) return new Uint8Array();
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > limit) {
-      await reader.cancel().catch(() => {});
-      return undefined;
-    }
-    chunks.push(value);
-  }
-  const body = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return body;
-}
-
 export function createModelProxy(options: ModelProxyOptions) {
   const fetcher = options.fetch ?? fetch;
   const upstream = new URL(options.upstream);
@@ -102,10 +77,8 @@ export function createModelProxy(options: ModelProxyOptions) {
       );
     // The SDK sends its key as `x-api-key` or, in newer versions, as a
     // bearer token; either carries the model token. Neither is forwarded.
-    const bearer = request.headers.get('authorization');
     const token =
-      request.headers.get('x-api-key') ??
-      (bearer?.startsWith('Bearer ') ? bearer.slice('Bearer '.length) : '');
+      request.headers.get('x-api-key') ?? bearerToken(request.headers.get('authorization')) ?? '';
     let claims: ModelClaims;
     try {
       claims = await options.tokens.verifyModel(token);
@@ -124,7 +97,11 @@ export function createModelProxy(options: ModelProxyOptions) {
     let body: Uint8Array | undefined;
     let streamed = false;
     if (request.method === 'POST') {
-      body = await readLimited(request, MAX_REQUEST_BYTES);
+      const declared = Number(request.headers.get('content-length'));
+      body =
+        Number.isFinite(declared) && declared > MAX_REQUEST_BYTES
+          ? undefined
+          : await readCapped(request.body, MAX_REQUEST_BYTES);
       if (!body)
         return anthropicError(413, 'request_too_large', 'the request body is larger than 6 MB');
       let parsed: unknown;
@@ -147,9 +124,33 @@ export function createModelProxy(options: ModelProxyOptions) {
     target.search = url.search;
     // Aborted when the extension goes away, so generation stops being billed.
     const abort = new AbortController();
-    const onClientAbort = () => abort.abort();
-    request.signal.addEventListener('abort', onClientAbort, { once: true });
     const timeout = setTimeout(() => abort.abort(), options.timeoutMs ?? UPSTREAM_TIMEOUT_MS);
+    // Successful Messages responses are metered; errors, token counts and
+    // model lists pass through unchanged, and a rejected request records nothing.
+    let meter: UsageMeter | undefined;
+    let providerRequestId: string | null = null;
+    let finished: Promise<void> | undefined;
+    // Once, before the stream to the extension closes, so a hosted invocation
+    // can't end with its report still pending.
+    const finish = (cut: boolean) => {
+      finished ??= (async () => {
+        clearTimeout(timeout);
+        request.signal.removeEventListener('abort', onClientAbort);
+        const report = meter?.report(uuidv7(), providerRequestId, cut);
+        if (!report) return;
+        try {
+          await options.record(token, claims, report);
+        } catch {
+          // The recorder retries and logs on its own; the response is unaffected.
+        }
+      })();
+      return finished;
+    };
+    const onClientAbort = () => {
+      abort.abort();
+      void finish(true);
+    };
+    request.signal.addEventListener('abort', onClientAbort, { once: true });
     let response: Response;
     try {
       response = await fetcher(target, {
@@ -160,8 +161,7 @@ export function createModelProxy(options: ModelProxyOptions) {
         redirect: 'error',
       });
     } catch {
-      clearTimeout(timeout);
-      request.signal.removeEventListener('abort', onClientAbort);
+      await finish(true);
       return anthropicError(502, 'api_error', 'the model provider could not be reached');
     }
     const outgoing = new Headers();
@@ -169,67 +169,15 @@ export function createModelProxy(options: ModelProxyOptions) {
       const value = response.headers.get(name);
       if (value !== null) outgoing.set(name, value);
     }
-    const metered =
-      request.method === 'POST' && path === '/v1/messages' && response.ok && !!response.body;
-    if (!metered || !response.body) {
-      // Errors, token counts and model lists pass through unchanged; a request
-      // Anthropic rejects records nothing.
-      const passed = response.body;
-      const done = () => {
-        clearTimeout(timeout);
-        request.signal.removeEventListener('abort', onClientAbort);
-      };
-      if (!passed) {
-        done();
-        return new Response(null, { status: response.status, headers: outgoing });
-      }
-      const reader = passed.getReader();
-      return new Response(
-        new ReadableStream<Uint8Array>({
-          async pull(controller) {
-            try {
-              const { done: end, value } = await reader.read();
-              if (end) {
-                done();
-                controller.close();
-              } else controller.enqueue(value);
-            } catch (error) {
-              done();
-              controller.error(error);
-            }
-          },
-          cancel() {
-            abort.abort();
-            done();
-          },
-        }),
-        { status: response.status, headers: outgoing },
-      );
+    if (!response.body) {
+      await finish(false);
+      return new Response(null, { status: response.status, headers: outgoing });
     }
-
-    const id = uuidv7();
-    const meter = new UsageMeter(streamed);
-    const providerRequestId = response.headers.get('request-id');
-    let finished: Promise<void> | undefined;
-    // Records once, before the stream to the extension closes, so a hosted
-    // invocation can't end with its report still pending.
-    const finish = (cut: boolean) => {
-      finished ??= (async () => {
-        clearTimeout(timeout);
-        request.signal.removeEventListener('abort', onClientAbort);
-        const report = meter.report(id, providerRequestId, cut);
-        if (!report) return;
-        try {
-          await options.record(token, claims, report);
-        } catch {
-          // The recorder retries and logs on its own; the response is unaffected.
-        }
-      })();
-      return finished;
-    };
+    if (request.method === 'POST' && path === '/v1/messages' && response.ok) {
+      meter = new UsageMeter(streamed);
+      providerRequestId = response.headers.get('request-id');
+    }
     const reader = response.body.getReader();
-    const onAbortRecord = () => void finish(true);
-    request.signal.addEventListener('abort', onAbortRecord, { once: true });
     return new Response(
       new ReadableStream<Uint8Array>({
         async pull(controller) {
@@ -242,12 +190,12 @@ export function createModelProxy(options: ModelProxyOptions) {
             return;
           }
           if (chunk.done) {
-            meter.end();
+            meter?.end();
             await finish(false);
             controller.close();
             return;
           }
-          meter.push(chunk.value);
+          meter?.push(chunk.value);
           controller.enqueue(chunk.value);
         },
         async cancel() {

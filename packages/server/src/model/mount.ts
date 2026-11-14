@@ -19,7 +19,7 @@ export function mountModelRoutes(
     modelUsageSecret?: string | undefined;
   },
 ) {
-  const tokens = deps.runTokens;
+  const { runTokens: tokens } = deps;
   if (!tokens) return;
   if (deps.modelUsageSecret)
     usageReportRoute(app, { sql: deps.sql, tokens, secret: deps.modelUsageSecret });

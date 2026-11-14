@@ -1,4 +1,4 @@
-import { compareVersions, newestReleases } from '@retainer/extension';
+import { compareVersions, MODEL_USE_NOTICE, newestReleases } from '@retainer/extension';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { api, useWorkspace } from '../../api/client.js';
@@ -145,7 +145,5 @@ export const accessText = (
   uses: readonly string[] = [],
 ) =>
   `It can ${scopes.join(' and ')} workspace CRM data. Its changes are recorded as made by an ${actor}.${
-    uses.includes('model')
-      ? ' It sends data from your workspace to Anthropic, which Retainer uses to process it.'
-      : ''
+    uses.includes('model') ? ` ${MODEL_USE_NOTICE.replace('This extension', 'It')}` : ''
   }`;

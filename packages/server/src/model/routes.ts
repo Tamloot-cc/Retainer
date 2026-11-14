@@ -1,16 +1,16 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { Hono } from 'hono';
 import { z } from 'zod';
+import { bearerToken } from '../auth/middleware.js';
 import type { Sql } from '../db/client.js';
 import { AppError } from '../errors.js';
-import type { RunTokens } from '../extension-runtime/tokens.js';
+import { MODEL_PROXY_PATH, type ModelClaims, type RunTokens } from '../extension-runtime/tokens.js';
 import { type AppEnv, errorResponse } from '../http/response.js';
 import { log } from '../log.js';
 import type { RecordUsage } from './proxy.js';
 import { recordUsage, type UsageReport, usageReportSchema } from './usage.js';
 
-/** Where the self-hosted server serves the proxy (model calls spec 3.6). */
-export const MODEL_PROXY_PATH = '/v1/extensions/runtime/model';
+export { MODEL_PROXY_PATH };
 /** Where the hosted `model` function reports usage to the `extensions` function. */
 export const USAGE_REPORT_PATH = '/v1/extensions/internal/ai-usage';
 /** A report may follow a response that outlasted its token by this much. */
@@ -55,9 +55,7 @@ export function usageReportRoute(
 ) {
   app.post(USAGE_REPORT_PATH, async (c) => {
     c.header('Cache-Control', 'no-store');
-    const header = c.req.header('authorization') ?? '';
-    const sent = header.startsWith('Bearer ') ? header.slice(7) : '';
-    if (!sameSecret(sent, deps.secret))
+    if (!sameSecret(bearerToken(c.req.header('authorization')) ?? '', deps.secret))
       return errorResponse(c, new AppError(401, 'unauthorized', 'usage report is not authorized'));
     let body: unknown;
     try {
@@ -69,7 +67,7 @@ export function usageReportRoute(
     if (!parsed.success)
       return errorResponse(c, new AppError(400, 'invalid_request', 'invalid usage report'));
     const { token, ...report } = parsed.data;
-    let claims: Awaited<ReturnType<RunTokens['verifyModel']>>;
+    let claims: ModelClaims;
     try {
       claims = await deps.tokens.verifyModel(token, USAGE_TOKEN_GRACE_SECONDS);
     } catch {

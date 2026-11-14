@@ -143,14 +143,19 @@ export async function mappedWrite(
       // A held value isn't in records.data, so fill-only alone would see the
       // field as empty and add a second pending assertion. Under the record
       // lock, so concurrent runs see each other's.
+      const empty = [...targets.values()]
+        .filter((field) => !Object.hasOwn(record.data, field.key))
+        .map((field) => field.id as string);
       const held = new Set(
-        (
-          await tx<{ field_id: string }[]>`
-            select distinct field_id from field_assertions
-            where record_id = ${record.id} and status = 'pending_review'
-              and field_id = any(${[...targets.values()].map((f) => f.id as string)}::uuid[])
-              and actor->>'type' = ${caller.actor.type} and actor->>'id' = ${run.installationId}`
-        ).map((row) => row.field_id),
+        empty.length
+          ? (
+              await tx<{ field_id: string }[]>`
+                select distinct field_id from field_assertions
+                where record_id = ${record.id} and status = 'pending_review'
+                  and field_id = any(${empty}::uuid[])
+                  and actor->>'type' = ${caller.actor.type} and actor->>'id' = ${run.installationId}`
+            ).map((row) => row.field_id)
+          : [],
       );
       for (const [key, field] of targets) {
         const value = input.values[key];
