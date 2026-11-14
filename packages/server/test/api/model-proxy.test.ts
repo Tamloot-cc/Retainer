@@ -117,6 +117,7 @@ describe('admission', () => {
     ]) {
       const response = await call(message, { token });
       expect(response.status).toBe(401);
+      expect(response.headers.get('cache-control')).toBe('no-store');
       expect(await response.json()).toEqual({
         type: 'error',
         error: { type: 'authentication_error', message: expect.any(String) },
@@ -237,6 +238,7 @@ describe('forwarding', () => {
     });
     const response = await call({ ...message, stream: true });
     expect(response.headers.get('content-type')).toBe('text/event-stream');
+    expect(response.headers.get('cache-control')).toBe('no-store');
     const reader = (response.body as ReadableStream<Uint8Array>).getReader();
     // The first event arrives while Anthropic is still generating.
     const first = await reader.read();

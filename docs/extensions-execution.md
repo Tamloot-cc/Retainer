@@ -111,6 +111,11 @@ base URL; the bundle builds its client with `modelClient(invocation)`. The proxy
 checks the token and the request, swaps in Retainer's Anthropic key, streams
 the response back and records token counts in `ai_usage`, never content.
 
+If the extension goes away mid-response, the self-hosted proxy aborts its
+request to Anthropic and records what it saw as `partial`. The hosted `model`
+function isn't told about the disconnect: the call runs to its end, billed and
+recorded whole, and stops at the model token's expiry at the latest.
+
 - `RETAINER_MODEL_API_KEY`: the Anthropic key, set on the API service that
   serves `/v1/extensions/runtime/model`. Without it the proxy answers
   `503 model_unavailable`, and each extension decides what to do without a

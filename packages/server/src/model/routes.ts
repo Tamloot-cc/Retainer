@@ -25,10 +25,7 @@ export function modelProxyRoute(
   proxy: (request: Request, path: string) => Promise<Response>,
   prefix = MODEL_PROXY_PATH,
 ) {
-  app.all(`${prefix}/*`, (c) => {
-    c.header('Cache-Control', 'no-store');
-    return proxy(c.req.raw, c.req.path.slice(prefix.length));
-  });
+  app.all(`${prefix}/*`, (c) => proxy(c.req.raw, c.req.path.slice(prefix.length)));
 }
 
 /** What a lost report logs: its ID and counts, never content or the token. */
