@@ -109,14 +109,34 @@ async function setup(key = 'exa-fixture-key') {
       headquarters: { action: 'create' },
     },
   };
-  const preview = await app.request('/v1/extensions/preview', { key: keys.admin, body: input });
-  expect(preview.status).toBe(200);
-  const installed = await app.request('/v1/extensions', {
+  const { mapping: _mapping, ...access } = input;
+  const accessPreview = await app.request('/v1/extensions/preview', {
     key: keys.admin,
-    body: { ...input, planDigest: preview.body.planDigest },
+    body: access,
+  });
+  const configuring = await app.request('/v1/extensions', {
+    key: keys.admin,
+    body: { ...access, planDigest: accessPreview.body.planDigest },
     headers: { 'Idempotency-Key': randomUUID() },
   });
-  expect(installed.status).toBe(201);
+  expect(configuring.status).toBe(201);
+  const finalInput = {
+    ...input,
+    secretRefs: undefined,
+    installationId: configuring.body.id,
+    turnOn: true,
+  };
+  const preview = await app.request('/v1/extensions/preview', {
+    key: keys.admin,
+    body: finalInput,
+  });
+  expect(preview.status).toBe(200);
+  const installed = await app.request(`/v1/extensions/${configuring.body.id}/turn-on`, {
+    key: keys.admin,
+    body: { ...finalInput, planDigest: preview.body.planDigest },
+    headers: { 'Idempotency-Key': randomUUID() },
+  });
+  expect(installed.status).toBe(200);
   const id = installed.body.id as string;
   const queue = new ExtensionQueue(app.sql, catalog.runtime);
 
@@ -193,7 +213,20 @@ async function setup(key = 'exa-fixture-key') {
   const fields = async (record: string) =>
     (await app.request(`/v1/records/${record}`, { key: keys.admin })).body.fields;
   const detail = async () => (await app.request(`/v1/extensions/${id}`, { key: keys.admin })).body;
-  return { app, keys, id, exa, apiBodies, drain, company, patch, fields, detail };
+  return {
+    app,
+    keys,
+    id,
+    exa,
+    apiBodies,
+    drain,
+    company,
+    patch,
+    fields,
+    detail,
+    queue,
+    workspace: workspace.id,
+  };
 }
 
 describe('company enrichment through a fake Exa', () => {
@@ -381,5 +414,58 @@ describe('company enrichment through a fake Exa', () => {
     expect(await h.drain()).toEqual([{ status: 'failed', code: 'schema_binding_conflict' }]);
     expect(h.exa.requests).toHaveLength(before);
     expect((await h.fields(acme)).employeeCount).toBeUndefined();
+  });
+});
+
+describe('enrichment configure and backfill', () => {
+  it('checks the key and suggests compatible API-name destinations', async () => {
+    const h = await setup();
+    await h.drain();
+    expect(
+      (await h.app.request(`/v1/extensions/${h.id}/configure`, { key: h.keys.admin, body: {} }))
+        .status,
+    ).toBe(202);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'suggestions_ready' }]);
+    const result = await h.app.request(`/v1/extensions/${h.id}/suggestions`, { key: h.keys.admin });
+    expect(result.body.status).toBe('ready');
+    expect(result.body.mapping.employee_count).toMatchObject({
+      action: 'existing',
+      field: 'employeeCount',
+    });
+    expect(result.body.mapping.linkedin_url).toMatchObject({
+      action: 'existing',
+      field: 'linkedinUrl',
+    });
+  });
+
+  it('backfills only previously enriched companies and preserves filled values', async () => {
+    const h = await setup();
+    await h.drain();
+    h.exa.search = (domain) => Response.json(exaCompany(`https://${domain}`, { hq: null }));
+    const company = await h.company({ name: 'Existing', domain: 'https://existing.example' });
+    await h.drain();
+    h.exa.search = () => Response.json({ results: [] });
+    const unmatched = await h.company({ name: 'Unmatched', domain: 'https://unmatched.example' });
+    await h.drain();
+    const before = h.exa.requests.length;
+    h.exa.search = (domain) =>
+      Response.json(
+        exaCompany(`https://${domain}`, { total: 999, hq: { city: 'Austin', country: 'US' } }),
+      );
+    await h.queue.enqueue(h.workspace, h.id, {
+      functionId: ENRICHMENT.backfill,
+      input: {},
+      dedupeKey: randomUUID(),
+    });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'backfill_page' }]);
+    expect((await h.fields(company)).employeeCount).toBe(12);
+    expect((await h.fields(company)).headquarters.city).toBe('Austin');
+    expect((await h.fields(unmatched)).employeeCount).toBeUndefined();
+    expect(
+      h.exa.requests
+        .slice(before)
+        .filter((r) => r.path === '/search')
+        .map((r) => r.body?.query),
+    ).toEqual(['existing.example']);
   });
 });

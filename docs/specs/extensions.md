@@ -280,7 +280,15 @@ an extension lifecycle rule, not a change to general additive schema behavior.
    subscription key, discover/reuse prior subscriptions after timeouts, and record
    cleanup work. Never assume retry means the provider did nothing.
 
-States: `installing`, `active`, `setup_failed`, `disabled`, `upgrading`,
+Releases declaring `configure` first use the access-only approval and
+`configuring` state in [extensions-configure.md](extensions-configure.md). No new
+schema, mapping, write grant or triggers are applied until an explicit turn-on.
+Configure runs can read CRM with approved read access and declared secrets, but
+cannot mutate runtime state or enqueue children. The same read-only run can
+prepare a reviewed upgrade using release-pinned access approval; ordinary runs
+keep the active release and grant.
+
+States: `configuring`, `installing`, `active`, `setup_failed`, `disabled`, `upgrading`,
 `uninstalling`, `uninstalled`. Connection health (`ok`, `needs_reconnect`,
 `degraded`) is separate; transient failures do not repeatedly reinstall schema.
 
@@ -444,7 +452,8 @@ Effective scopes are the intersection of registration ceiling, approved install,
 function needs and credential. The claim computes the function's share (its
 declared `scopes` within the installed grant) and the run token carries at most
 that, so a read-only function cannot write with its own token. Function scopes
-do not limit enqueueing: a read-only function may checkpoint a child `job` of
+do not limit enqueueing, except `configure`, which cannot enqueue children or
+write KV: another read-only function may checkpoint a child `job` of
 another function in the same release, which then runs with that function's own
 scopes and secrets. Both are reviewed code from one release. The token also binds the
 claimed job's function ID, and admission matches it against the job row, so a
@@ -456,7 +465,8 @@ connections) require explicit installation-bound capabilities. All writes still
 use assertions and existing precedence. Never accept Actor, workspace, generation
 or causation overrides from payloads.
 
-Lifecycle functions can read their own non-secret installation settings, secret-presence flags and redacted run metadata. They cannot read CRM records before activation or during cleanup.
+Lifecycle functions can read their own non-secret installation settings, secret-presence flags and redacted run metadata. They cannot read CRM records before activation or during cleanup, except for
+`configure`, after explicit read-access approval (extensions-configure.md).
 
 A run has no `Caller.person` and cannot read personal memory. V1 permissions are
 workspace-wide within the existing scopes; install UI must say so. A mapping or

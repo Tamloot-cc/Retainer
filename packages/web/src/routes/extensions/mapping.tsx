@@ -169,11 +169,13 @@ export function MappingFields({
   issues,
   onChange,
   onImport,
+  suggestions,
 }: {
   mapping: Mapping;
   object: ObjectView;
   choices: ExtensionMappingChoices;
   issues: MappingIssues;
+  suggestions?: Record<string, ExtensionMappingChoice & { reason?: string }>;
   onChange: (key: string, choice: ExtensionMappingChoice) => void;
   onImport: (choices: ExtensionMappingChoices, issues: MappingIssues) => void;
 }) {
@@ -211,6 +213,10 @@ export function MappingFields({
         return (
           <Label key={output.key}>
             {output.label}
+            {suggestions?.[output.key] ? <Badge>Suggested</Badge> : null}
+            {suggestions?.[output.key]?.reason ? (
+              <Muted small>{suggestions[output.key]?.reason}</Muted>
+            ) : null}
             <Muted small>{output.description}</Muted>
             <SelectMenu
               label={`${output.label} destination`}

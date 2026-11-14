@@ -21,6 +21,8 @@ export async function eraseExtensionState(
   >`select id,registration_id from extension_installations where workspace_id=${workspace} order by registration_id,id`;
   for (const installation of installations)
     await lockExtension(tx, workspace, installation.registration_id);
+  // Suggestions may contain arbitrary copied CRM values or explanations. Erasure clears all of them.
+  await tx`delete from extension_suggestions where workspace_id=${workspace}`;
   const changes = await tx<
     { position: string }[]
   >`select position::text from record_changes where record_id=any(${records}::uuid[]) or related_record_ids ?| ${records}::text[]`;

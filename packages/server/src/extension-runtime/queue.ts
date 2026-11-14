@@ -121,20 +121,22 @@ export type QueueLimits = { queued: number; kvBytes: number; changesPerMinute?: 
 const unavailable = () =>
   new AppError(409, 'installation_disabled', 'installation is disabled or its generation changed');
 const runnable = (i: Installation, kind: string) =>
-  i.connection_id
-    ? kind === 'connect'
-      ? i.state === 'active' && i.connection_state === 'connecting'
-      : kind === 'disconnect'
-        ? i.connection_state === 'disconnected' &&
-          i.connection_cleanup_live === true &&
-          i.state !== 'uninstalled' &&
-          (i.state !== 'uninstalling' || i.cleanup_live === true)
-        : i.state === 'active' && i.connection_state === 'active'
-    : kind === 'install'
-      ? ['installing', 'upgrading'].includes(i.state)
-      : kind === 'uninstall'
-        ? i.state === 'uninstalling' && i.cleanup_live === true
-        : i.state === 'active';
+  kind === 'configure'
+    ? !i.connection_id && ['configuring', 'active'].includes(i.state)
+    : i.connection_id
+      ? kind === 'connect'
+        ? i.state === 'active' && i.connection_state === 'connecting'
+        : kind === 'disconnect'
+          ? i.connection_state === 'disconnected' &&
+            i.connection_cleanup_live === true &&
+            i.state !== 'uninstalled' &&
+            (i.state !== 'uninstalling' || i.cleanup_live === true)
+          : i.state === 'active' && i.connection_state === 'active'
+      : kind === 'install'
+        ? ['installing', 'upgrading'].includes(i.state)
+        : kind === 'uninstall'
+          ? i.state === 'uninstalling' && i.cleanup_live === true
+          : i.state === 'active';
 const expired = () => new AppError(409, 'lease_expired', 'run lease expired or was replaced');
 const conflict = (code: string, message: string) => new AppError(409, code, message);
 
@@ -278,6 +280,7 @@ export class ExtensionQueue {
     input: Enqueue,
     cause: string[],
     kind:
+      | 'configure'
       | 'job'
       | 'schedule'
       | 'install'
@@ -305,7 +308,7 @@ export class ExtensionQueue {
     if (
       manifest.connection === 'member' &&
       !installation.connection_id &&
-      !['install', 'uninstall'].includes(kind)
+      !['configure', 'install', 'uninstall'].includes(kind)
     )
       throw new AppError(
         422,
@@ -322,7 +325,7 @@ export class ExtensionQueue {
         kind as 'install' | 'uninstall' | 'connect' | 'disconnect',
         input.input,
       );
-    else if (fn) validateInput(fn.inputSchema, input.input);
+    else if (fn && kind !== 'configure') validateInput(fn.inputSchema, input.input);
     let sourceItemId: string | null = null;
     if (manifest.source?.syncFunctionIds.includes(input.functionId)) {
       sourceItemId = z.uuid().parse((input.input as { sourceItemId?: unknown }).sourceItemId);
@@ -798,6 +801,19 @@ export class ExtensionQueue {
             false,
           );
           generation = installation.generation;
+          if (installation.state === 'configuring') {
+            const [due] =
+              await tx`select 1 from extension_installations where id=${installation.id} and created_at<=now()-interval '14 days'`;
+            if (!due) return;
+            await cancelRuns(tx, installation.id);
+            await tx`update extension_installations set state='uninstalled',generation=generation+1,updated_at=now() where id=${installation.id}`;
+            await tx`delete from extension_suggestions where installation_id=${installation.id}`;
+            await tx`delete from extension_access_approvals where installation_id=${installation.id}`;
+            await tx`delete from extension_kv where installation_id=${installation.id}`;
+            await tx`delete from extension_jobs where installation_id=${installation.id}`;
+            await tx`select retainer_finish_extension_cleanup(${installation.id}::uuid)`;
+            return;
+          }
           if (installation.state !== 'uninstalling') return;
           const [expired] =
             await tx`select 1 where ${installation.cleanup_deadline}::timestamptz<=clock_timestamp()`;
@@ -867,6 +883,58 @@ export class ExtensionQueue {
       last_error=${standalone ? null : 'cleanup_unavailable'},updated_at=now() where id=${installation.id}`;
   }
 
+  private async jobReleaseAllowed(tx: Tx, installation: Installation, job: Job) {
+    if (job.release_digest === installation.release_digest) return true;
+    if (job.trigger_kind !== 'configure' || installation.state !== 'active' || job.connection_id)
+      return false;
+    const [approval] =
+      await tx`select 1 from extension_access_approvals a join extension_installations i
+      on i.id=a.installation_id and i.workspace_id=a.workspace_id
+      where a.installation_id=${installation.id} and a.release_digest=${job.release_digest}
+      and a.generation=i.generation and a.settings_revision=i.settings_revision`;
+    return !!approval;
+  }
+
+  /** Under the installation lock; the suggestions slot fences saves from older runs. */
+  async enqueueConfigure(tx: Tx, workspace: string, id: string, digest: string, input: unknown) {
+    const installation = await this.installation(tx, workspace, id, false);
+    const [pending] = await tx`select id from extension_jobs
+      where installation_id=${id} and release_digest=${digest} and generation=${installation.generation}
+      and trigger_kind='configure' and status in ('queued','running') order by id desc limit 1`;
+    if (pending) {
+      // Erasure may have cleared a slot while leaving durable work queued.
+      // Only an explicit new request restores it; never create competing work.
+      await tx`insert into extension_suggestions(workspace_id,installation_id,release_digest,job_id,reason)
+        values(${workspace},${id},${digest},${pending.id},${String((input as { reason: string }).reason)})
+        on conflict(workspace_id,installation_id,release_digest) do nothing`;
+      return { id: String(pending.id) };
+    }
+    const pin = this.catalog.releases.find(
+      (r) => r.registration_id === installation.registration_id && r.release_digest === digest,
+    );
+    if (!pin) throw unavailable();
+    const target = { ...installation, version: pin.version, release_digest: digest };
+    const manifest = this.manifest(target);
+    const fn = manifest.functions.find((fn) => fn.trigger.kind === 'configure');
+    if (!fn) throw new AppError(422, 'invalid_input', 'release has no configure function');
+    const jobId = await this.insert(
+      tx,
+      target,
+      {
+        functionId: fn.universalId,
+        input,
+        dedupeKey: `configure:${digest}:${crypto.randomUUID()}`,
+      },
+      [],
+      'configure',
+    );
+    await tx`insert into extension_suggestions(workspace_id,installation_id,release_digest,job_id,reason)
+      values(${workspace},${id},${digest},${jobId},${String((input as { reason: string }).reason)})
+      on conflict(workspace_id,installation_id,release_digest) do update set job_id=excluded.job_id,
+      reason=excluded.reason,mapping=null,settings=null,created_at=now()`;
+    return { id: jobId };
+  }
+
   async claim(workspace: string, id: string, owner: string): Promise<ClaimedJob | null> {
     if (!owner || owner.length > 200) throw new Error('invalid lease owner');
     return inWorkspace(this.sql, workspace, async (tx) => {
@@ -880,7 +948,7 @@ export class ExtensionQueue {
       if (!job) return null;
       if (
         job.generation !== installation.generation ||
-        job.release_digest !== installation.release_digest
+        !(await this.jobReleaseAllowed(tx, installation, job))
       ) {
         await tx`update extension_jobs set status='cancelled',code='installation_disabled',lease_until=null where id=${id}`;
         await tx`update extension_attempts set status='cancelled',code='installation_disabled',finished_at=now()
@@ -918,12 +986,19 @@ export class ExtensionQueue {
         await this.finishLifecycle(tx, installation, job, 'failed', 'retry_exhausted');
         return null;
       }
-      const manifest = this.runnableRelease(installation);
+      const pin = this.catalog.releases.find(
+        (r) =>
+          r.registration_id === installation.registration_id &&
+          r.release_digest === job.release_digest,
+      );
+      if (!pin) return null;
+      const target = { ...installation, version: pin.version, release_digest: job.release_digest };
+      const manifest = this.runnableRelease(target);
       if (!manifest) return null;
       if (
         manifest.connection === 'member' &&
         !job.connection_id &&
-        !['install', 'uninstall'].includes(job.trigger_kind)
+        !['configure', 'install', 'uninstall'].includes(job.trigger_kind)
       ) {
         await tx`update extension_jobs set status='failed',code='connection_required' where id=${id}`;
         return null;
@@ -941,9 +1016,12 @@ export class ExtensionQueue {
       const timeout = fn?.timeoutSeconds ?? 30;
       // Spec 8: the run gets the intersection of the grant and the function's needs,
       // and only the secrets its function declares.
-      const scopes = fn
-        ? functionScopes(manifest, fn).filter((s) => installation.granted_scopes.includes(s))
-        : installation.granted_scopes;
+      const scopes =
+        job.trigger_kind === 'configure'
+          ? ['read' as const]
+          : fn
+            ? functionScopes(manifest, fn).filter((s) => installation.granted_scopes.includes(s))
+            : installation.granted_scopes;
       const secrets = fn ? functionSecrets(manifest, fn) : [];
       if (!scopes.length) {
         await tx`update extension_jobs set status='failed',code='forbidden',lease_owner=null,lease_until=null,run_until=null where id=${id}`;
@@ -968,6 +1046,8 @@ export class ExtensionQueue {
         fence=fence+1,lease_until=clock_timestamp()+least(60,${timeout + RUN_GRACE_SECONDS})*interval '1 second',run_until=clock_timestamp()+${timeout + RUN_GRACE_SECONDS}*interval '1 second',attempt=attempt+1,cycle_attempt=cycle_attempt+1,updated_at=now()
         where id=${id} returning *,run_until-${RUN_GRACE_SECONDS}*interval '1 second' as handler_deadline`;
       if (!claimed) throw new Error('claim returned no row');
+      if (job.trigger_kind === 'configure')
+        await tx`update extension_suggestions set mapping=null,settings=null where job_id=${id}`;
       await tx`insert into extension_attempts(workspace_id,job_id,attempt,fence,status)
         values(${workspace},${id},${claimed.attempt},${claimed.fence},'running')`;
       await tx`update extension_installations set last_claimed_at=clock_timestamp() where id=${installation.id}`;
@@ -1009,7 +1089,9 @@ export class ExtensionQueue {
         !exclusive,
       );
       if (
-        !['active', 'installing', 'upgrading', 'uninstalling'].includes(installation.state) &&
+        !['configuring', 'active', 'installing', 'upgrading', 'uninstalling'].includes(
+          installation.state,
+        ) &&
         !(['disabled', 'uninstalled'].includes(installation.state) && lease.connectionId)
       )
         throw unavailable();
@@ -1017,8 +1099,8 @@ export class ExtensionQueue {
         Job[]
       >`select * from extension_jobs where id=${lease.jobId} and installation_id=${lease.installationId}
         and status='running' and lease_owner=${lease.owner} and fence=${lease.fence}::bigint
-        and generation=${installation.generation} and release_digest=${installation.release_digest} and lease_until>clock_timestamp() and run_until>clock_timestamp() for update`;
-      if (!job) throw expired();
+        and generation=${installation.generation} and lease_until>clock_timestamp() and run_until>clock_timestamp() for update`;
+      if (!job || !(await this.jobReleaseAllowed(tx, installation, job))) throw expired();
       if (
         (job.connection_id ?? null) !== (lease.connectionId ?? null) ||
         (job.connection_generation ?? null) !== (lease.connectionGeneration ?? null)
@@ -1081,6 +1163,7 @@ export class ExtensionQueue {
         await tx`update extension_connections set health='ok',last_error=null where id=${job.connection_id}`;
       return false;
     }
+    if (job.trigger_kind === 'configure') return false;
     if (status === 'failed') {
       await failInstallation(
         tx,
@@ -1090,7 +1173,7 @@ export class ExtensionQueue {
       );
       return false;
     }
-    if (!['install', 'uninstall'].includes(job.trigger_kind)) {
+    if (!['configure', 'install', 'uninstall'].includes(job.trigger_kind)) {
       if (status === 'succeeded') {
         const [failed] =
           await tx`select id from extension_jobs where installation_id=${installation.id} and generation=${installation.generation} and status='failed' limit 1`;
@@ -1251,6 +1334,15 @@ export class ExtensionQueue {
     if (input.children.length > 1000)
       throw new AppError(413, 'quota_exceeded', 'checkpoint has too many child jobs');
     return this.withLease(lease, async (tx, installation, job) => {
+      if (
+        job.trigger_kind === 'configure' &&
+        (input.children.length || input.kv || input.scanComplete)
+      )
+        throw new AppError(
+          403,
+          'forbidden',
+          'configure cannot modify runtime state or create child jobs',
+        );
       if (['uninstall', 'disconnect'].includes(job.trigger_kind))
         throw new AppError(403, 'forbidden', 'cleanup runs cannot modify runtime state');
       const ids = [];
@@ -1409,9 +1501,14 @@ export class ExtensionQueue {
         throw conflict('connection_required', 'reconnect this member connection to restart setup');
       if (
         job.generation !== installation.generation ||
-        job.release_digest !== installation.release_digest
+        !(await this.jobReleaseAllowed(tx, installation, job))
       )
         throw unavailable();
+      if (job.trigger_kind === 'configure')
+        throw conflict(
+          'configure_again',
+          'request fresh suggestions instead of retrying an older configure run',
+        );
       if (job.status !== 'failed')
         throw conflict('run_not_failed', 'only failed runs can be retried');
       const fn = this.manifest(installation).functions.find(

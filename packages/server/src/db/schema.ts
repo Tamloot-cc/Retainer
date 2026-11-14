@@ -1488,7 +1488,7 @@ export const extensionInstallations = pgTable(
       .where(sql`${t.state} = 'active'`),
     check(
       'extension_installations_state',
-      sql`${t.state} in ('installing', 'active', 'setup_failed', 'disabled', 'upgrading', 'uninstalling', 'uninstalled')`,
+      sql`${t.state} in ('configuring', 'installing', 'active', 'setup_failed', 'disabled', 'upgrading', 'uninstalling', 'uninstalled')`,
     ),
     check('extension_installations_actor', sql`${t.grantedActor} in ('agent', 'integration')`),
     check('extension_installations_generation', sql`${t.generation} > 0`),
@@ -2606,6 +2606,65 @@ export const webhookRequestCounts = pgTable(
       to: 'retainer_app',
       using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
       withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+// The newest configure job owns the suggestion slot, even before its first save.
+export const extensionSuggestions = pgTable(
+  'extension_suggestions',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    releaseDigest: text('release_digest').notNull(),
+    jobId: uuid('job_id').notNull(),
+    reason: text('reason').notNull(),
+    mapping: jsonb('mapping'),
+    settings: jsonb('settings'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId, t.releaseDigest] }),
+    foreignKey({
+      columns: [t.workspaceId, t.installationId],
+      foreignColumns: [extensionInstallations.workspaceId, extensionInstallations.id],
+    }).onDelete('cascade'),
+    pgPolicy('extension_suggestions_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+// A target-release review cannot alter the active release's grant or credentials.
+export const extensionAccessApprovals = pgTable(
+  'extension_access_approvals',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    releaseDigest: text('release_digest').notNull(),
+    generation: integer('generation').notNull(),
+    settingsRevision: integer('settings_revision').notNull(),
+    scopes: jsonb('scopes').notNull(),
+    actor: text('actor').notNull(),
+    secretRefs: jsonb('secret_refs').notNull().default({}),
+    settings: jsonb('settings').notNull().default({}),
+    approvedBy: jsonb('approved_by').$type<Actor>().notNull(),
+    approvedAt: timestamptz('approved_at').notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.installationId, t.releaseDigest] }),
+    foreignKey({
+      columns: [t.workspaceId, t.installationId],
+      foreignColumns: [extensionInstallations.workspaceId, extensionInstallations.id],
+    }).onDelete('cascade'),
+    pgPolicy('extension_access_approvals_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
     }),
   ],
 ).enableRLS();

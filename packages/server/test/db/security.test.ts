@@ -331,6 +331,7 @@ describe('SECURITY DEFINER functions', () => {
     retainer_adopt_member_secret: RUNTIME_ROLE,
     retainer_retire_member_secrets: RUNTIME_ROLE,
     retainer_admit_secret_run: 'retainer_secret_broker',
+    retainer_configure_secret_reference: 'retainer_secret_broker',
     retainer_admit_webhook: 'retainer_secret_broker',
     retainer_webhook_candidate: RUNTIME_ROLE,
     retainer_erase_private_derivatives: RUNTIME_ROLE,

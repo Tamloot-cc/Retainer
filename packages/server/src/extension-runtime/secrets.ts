@@ -170,10 +170,18 @@ export class SecretBroker {
   async readRuntime(identity: SecretIdentity, run: RunBinding) {
     return inWorkspace(this.sql, identity.workspaceId, async (tx) => {
       await this.admit(tx, identity, run, false);
-      const [row] = await tx<
+      // Target-review material remains staged: ordinary runs never read it.
+      const [pending] = await tx<{ envelope: unknown; revision: number }[]>`
+        select envelope,1 as revision from extension_pending_secrets
+        where id=retainer_configure_secret_reference(${run.jobId}::uuid,${identity.name})
+        and draft_installation_id=${identity.installationId} and name=${identity.name}
+        and consumed_at is null and expires_at>clock_timestamp()`;
+      const [stored] = await tx<
         { envelope: unknown; revision: number }[]
       >`select envelope,revision from extension_secrets
-        where installation_id=${identity.installationId} and connection_id is not distinct from ${identity.connectionId ?? null}::uuid and name=${identity.name} and (delete_after is null or delete_after>clock_timestamp())`;
+        where installation_id=${identity.installationId} and connection_id is not distinct from ${identity.connectionId ?? null}::uuid
+        and name=${identity.name} and (delete_after is null or delete_after>clock_timestamp())`;
+      const row = pending ?? stored;
       if (!row)
         throw new AppError(
           409,

@@ -1,6 +1,11 @@
-import type { ExtensionMappingChoices, ExtensionMappingView } from '@retainer/extension';
+import type {
+  ExtensionInstallInput,
+  ExtensionMappingChoices,
+  ExtensionMappingView,
+  ExtensionSuggestions,
+} from '@retainer/extension';
 import { RetainerApiError } from '@retainer/sdk';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
@@ -96,22 +101,171 @@ const STEP_LABELS: Record<Step, string> = {
  * or runs, as steps on a page: its settings, where its values go, then what
  * it will be allowed to do and change, which a person approves.
  */
-export function ExtensionSetup({
+export function ExtensionSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
+  const configure = props.release.manifest.functions.some((fn) => fn.trigger.kind === 'configure');
+  if (!configure || props.mode === 'reconnect') return <BasicExtensionSetup {...props} />;
+  return <ConfigureSetup {...props} />;
+}
+
+function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
+  const client = useQueryClient();
+  const refresh = useRefreshExtensions();
+  const [installation, setInstallation] = useState(props.installation);
+  const [phase, setPhase] = useState<'checking' | 'access' | 'waiting' | 'review'>(
+    props.mode === 'upgrade' && props.installation
+      ? 'checking'
+      : props.mode === 'mapping' || props.installation?.state === 'configuring'
+        ? 'waiting'
+        : 'access',
+  );
+  const [providedSecrets, setProvidedSecrets] = useState<string[]>([]);
+  const [suggested, setSuggested] = useState<ExtensionSuggestions>();
+  const query = useQuery({
+    queryKey: ['extension-suggestions', installation?.id, props.release.digest],
+    queryFn: ({ signal }) => {
+      if (!installation) throw new Error('Installation is required');
+      return api.extensionSuggestions(installation.id, props.release.manifest.version, signal);
+    },
+    enabled: ['checking', 'waiting'].includes(phase) && !!installation,
+    refetchInterval: phase === 'waiting' ? 1000 : false,
+  });
+  useEffect(() => {
+    if (!query.data) return;
+    if (phase === 'checking') {
+      if (query.isFetching) return;
+      if (!query.data.access) {
+        setPhase('access');
+        return;
+      }
+      const approvedSettings = query.data.access.settings;
+      setInstallation((current) =>
+        current ? { ...current, settings: approvedSettings } : current,
+      );
+      setProvidedSecrets(query.data.access.secrets);
+      if (['ready', 'failed'].includes(query.data.status)) {
+        setSuggested(query.data);
+        setPhase('review');
+      } else setPhase('waiting');
+    } else if (
+      phase === 'waiting' &&
+      !query.isFetching &&
+      ['ready', 'failed'].includes(query.data.status)
+    ) {
+      if (query.data.access) setProvidedSecrets(query.data.access.secrets);
+      setSuggested(query.data);
+      setPhase('review');
+    }
+  }, [phase, query.data, query.isFetching]);
+  const cancel = useMutation({
+    mutationFn: async () => {
+      if (installation?.state === 'active')
+        await api.cancelExtensionSuggestions(installation.id, props.release.manifest.version);
+      if (installation?.state === 'configuring') {
+        await api.uninstallExtension(installation.id);
+        await refresh();
+      }
+      props.onCancel();
+    },
+  });
+  const again = useMutation({
+    mutationFn: async () => {
+      if (!installation) return;
+      await api.configureExtension(installation.id, props.release.manifest.version);
+      setSuggested(undefined);
+      await query.refetch();
+      setPhase('waiting');
+    },
+  });
+  const approve = useMutation({
+    mutationFn: async ({ id, input }: { id: string; input?: ExtensionInstallInput }) => {
+      const current = await api.extension(id);
+      setInstallation({ ...current, settings: input?.settings ?? current.settings });
+      setProvidedSecrets(Object.keys(input?.secretRefs ?? {}));
+      const review = await api.extensionSuggestions(id, props.release.manifest.version);
+      client.setQueryData(['extension-suggestions', id, props.release.digest], review);
+      await refresh();
+      setPhase('waiting');
+    },
+  });
+  if (phase === 'access')
+    return (
+      <Stack>
+        <Notice>
+          Approve workspace read access and use of the declared secrets to prepare configuration
+          suggestions. Write access and schema changes need a second approval.
+        </Notice>
+        {approve.error ? <Notice error>{approve.error.message}</Notice> : null}
+        <BasicExtensionSetup
+          {...props}
+          accessOnly
+          onCancel={() => cancel.mutate()}
+          onDone={(id, input) => approve.mutate({ id, ...(input ? { input } : {}) })}
+        />
+      </Stack>
+    );
+  if (phase === 'waiting' || phase === 'checking')
+    return (
+      <Stack>
+        <Loading>Preparing suggestions…</Loading>
+        {query.error ? <Notice error>{query.error.message}</Notice> : null}
+        <Row>
+          <Button onClick={() => setPhase('review')}>Skip suggestions</Button>
+          <Button onClick={props.onCancel}>Continue later</Button>
+        </Row>
+      </Stack>
+    );
+  return (
+    <Stack>
+      {suggested?.status === 'failed' ? (
+        <Notice>
+          Suggestions aren't available: {suggested.code ?? 'run_failed'}. You can fill in the form
+          by hand.
+        </Notice>
+      ) : null}
+      {again.error ? <Notice error>{again.error.message}</Notice> : null}
+      {cancel.error ? <Notice error>{cancel.error.message}</Notice> : null}
+      {installation ? (
+        <Button disabled={again.isPending} onClick={() => again.mutate()}>
+          {props.mode === 'mapping' ? 'Suggest mapping' : 'Suggest again'}
+        </Button>
+      ) : null}
+      {props.mode === 'upgrade' ? (
+        <Button onClick={() => setPhase('access')}>Review access again</Button>
+      ) : null}
+      <BasicExtensionSetup
+        providedSecrets={providedSecrets}
+        key={suggested ? JSON.stringify(suggested) : 'manual'}
+        {...props}
+        onCancel={() => cancel.mutate()}
+        {...(installation ? { installation } : {})}
+        {...(suggested ? { suggestions: suggested } : {})}
+      />
+    </Stack>
+  );
+}
+
+function BasicExtensionSetup({
   release,
   installation,
   mode,
   mappingView,
   onCancel,
   onDone,
+  accessOnly = false,
+  suggestions,
+  providedSecrets = [],
 }: {
   release: Release;
   /** The installation to change, or for `install` an uninstalled one to set up again. */
   installation?: Installation;
   mode: SetupMode;
+  accessOnly?: boolean;
+  providedSecrets?: string[];
+  suggestions?: ExtensionSuggestions;
   /** The approved mapping, for `mapping`. */
   mappingView?: ExtensionMappingView;
   onCancel: () => void;
-  onDone: (installationId: string) => void;
+  onDone: (installationId: string, input?: ExtensionInstallInput) => void;
 }) {
   const { schema } = useWorkspace();
   const retained = installation?.state !== 'uninstalled' ? installation : undefined;
@@ -121,7 +275,11 @@ export function ExtensionSetup({
   const mapping = release.manifest.mapping;
   const mapped = mapping ? mappingObject(schema.objects, mapping) : undefined;
   // A first install reviews the mapping; an upgrade carries the approved one over.
-  const showMapping = !!mapping && (editMapping || (mode === 'install' && !retained));
+  const turnOn = retained?.state === 'configuring' && !accessOnly;
+  const showMapping =
+    !accessOnly &&
+    !!mapping &&
+    (editMapping || upgrade || (mode === 'install' && (!retained || turnOn)));
   const hasSettings =
     !editMapping && (hasInstallationSettings(release) || (reconnect && !!release.manifest.source));
   const steps: Step[] = [
@@ -131,11 +289,24 @@ export function ExtensionSetup({
   ];
   const [step, setStep] = useState(0);
   const current = steps[step] ?? 'review';
-  const [choices, setChoices] = useState<ExtensionMappingChoices>(() =>
-    mapping ? (mappingView ? choicesFromView(mapping, mappingView) : defaultChoices(mapping)) : {},
-  );
-  const [issues, setIssues] = useState<MappingIssues>({});
-  const [values, setValues] = useState<Settings>(() => initialSettings(release, installation));
+  const [choices, setChoices] = useState<ExtensionMappingChoices>(() => ({
+    ...(mapping
+      ? mappingView
+        ? choicesFromView(mapping, mappingView)
+        : defaultChoices(mapping)
+      : {}),
+    ...Object.fromEntries(
+      Object.entries(suggestions?.mapping ?? {}).map(([key, { reason: _reason, ...choice }]) => [
+        key,
+        choice,
+      ]),
+    ),
+  }));
+  const [issues, setIssues] = useState<MappingIssues>(suggestions?.issues ?? {});
+  const [values, setValues] = useState<Settings>(() => ({
+    ...initialSettings(release, installation),
+    ...suggestions?.settings,
+  }));
   const [replaceSourceAccount, setReplaceSourceAccount] = useState(false);
   const grantIncrease =
     !!retained &&
@@ -165,6 +336,8 @@ export function ExtensionSetup({
         setSecrets((previous) => ({ ...previous, [name]: '' }));
       }
       const input = {
+        ...(accessOnly ? { accessOnly: true } : {}),
+        ...(turnOn ? { turnOn: true } : {}),
         ...(retained ? { installationId: retained.id } : {}),
         registrationId: release.manifest.universalId,
         version: release.manifest.version,
@@ -192,13 +365,20 @@ export function ExtensionSetup({
   const save = useMutation({
     mutationFn: async () => {
       if (!plan) throw new Error('Review the changes before approval.');
-      const input = { ...plan.input, planDigest: plan.preview.planDigest };
+      const input = {
+        ...(accessOnly ? { accessOnly: true } : {}),
+        ...(turnOn ? { turnOn: true } : {}),
+        ...plan.input,
+        planDigest: plan.preview.planDigest,
+      };
+      if (accessOnly && retained) return api.approveExtensionAccess(retained.id, input, plan.key);
+      if (turnOn && retained) return api.turnOnExtension(retained.id, input, plan.key);
       if (editMapping && retained) return api.changeExtensionMapping(retained.id, input, plan.key);
       if (reconnect && retained) return api.reconnectExtension(retained.id, input, plan.key);
       if (upgrade && retained) return api.upgradeExtension(retained.id, input, plan.key);
       return api.installExtension(input, plan.key);
     },
-    onSuccess: (result) => onDone(result.id),
+    onSuccess: (result) => (accessOnly ? onDone(result.id, plan?.input) : onDone(result.id)),
   });
   // With nothing to fill in, the flow opens on the review: prepare it once.
   const started = useRef(false);
@@ -265,7 +445,9 @@ export function ExtensionSetup({
             secrets={secrets}
             {...(retained ? { existing: retained } : {})}
             references={references}
-            allowConnectionEdit={reconnect}
+            allowConnectionEdit={reconnect || retained?.state === 'configuring'}
+            allowNewCredentials={accessOnly || upgrade}
+            providedSecrets={providedSecrets}
             onChange={(key, value) => setValues((v) => ({ ...v, [key]: value }))}
             onSecret={(key, value) => {
               setSecrets((v) => ({ ...v, [key]: value }));
@@ -304,6 +486,7 @@ export function ExtensionSetup({
               object={mapped}
               choices={choices}
               issues={issues}
+              suggestions={suggestions?.mapping}
               onChange={(key, choice) => {
                 setChoices((c) => ({ ...c, [key]: choice }));
                 setIssues(({ [key]: _, ...rest }) => rest);
@@ -332,8 +515,10 @@ export function ExtensionSetup({
     body = (
       <Stack>
         <StepHeader title="Review and approve">
-          Nothing changes until you approve. Check what {name} will be allowed to do and what it
-          adds to this workspace.
+          {accessOnly
+            ? 'Approve read access so this extension can prepare suggestions. '
+            : 'Nothing changes until you approve. '}
+          Check what {name} will be allowed to do and what it adds to this workspace.
         </StepHeader>
         {plan ? (
           <Review plan={plan} release={release} />
@@ -358,11 +543,15 @@ export function ExtensionSetup({
                   ? 'Approve reconnect'
                   : editMapping
                     ? 'Approve mapping'
-                    : grantIncrease
-                      ? 'Approve access and upgrade'
-                      : upgrade
-                        ? 'Approve upgrade'
-                        : 'Approve installation'}
+                    : accessOnly
+                      ? 'Approve access'
+                      : turnOn
+                        ? 'Review and turn on'
+                        : grantIncrease
+                          ? 'Approve access and upgrade'
+                          : upgrade
+                            ? 'Approve upgrade'
+                            : 'Approve installation'}
             </Button>
           ) : !review.isPending ? (
             <Button variant="primary" onClick={() => review.mutate()}>
@@ -495,8 +684,11 @@ export function ExtensionInstallPage() {
         <Loading>Loading extension…</Loading>
       </SetupPage>
     );
-  const release = data.newest.get(registration);
   const existing = data.installed.find((i) => i.registrationId === registration);
+  const release =
+    existing?.state === 'configuring'
+      ? installedRelease(data.releases, existing)
+      : data.newest.get(registration);
   if (!release)
     return (
       <SetupPage title="Set up an extension">
@@ -512,7 +704,7 @@ export function ExtensionInstallPage() {
         <Notice>A workspace admin can set up this extension.</Notice>
       </SetupPage>
     );
-  if (existing && existing.state !== 'uninstalled')
+  if (existing && !['configuring', 'uninstalled'].includes(existing.state))
     return (
       <SetupPage title={TITLES.install(release.manifest.name)}>
         <Notice>
@@ -550,7 +742,7 @@ function ChangePage({ mode }: { mode: Exclude<SetupMode, 'install'> }) {
   const detail = useQuery({
     queryKey: detailKey(id),
     queryFn: ({ signal }) => api.extension(id, signal),
-    enabled: mode === 'mapping',
+    enabled: mode === 'mapping' || mode === 'upgrade',
   });
   const installation = data?.installed.find((i) => i.id === id);
   const name = installation
@@ -570,7 +762,7 @@ function ChangePage({ mode }: { mode: Exclude<SetupMode, 'install'> }) {
         />
       </SetupPage>
     );
-  if (!data || (mode === 'mapping' && !detail.data))
+  if (!data || (['mapping', 'upgrade'].includes(mode) && !detail.data))
     return (
       <SetupPage title={title}>
         <Loading>Loading extension…</Loading>

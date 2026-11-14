@@ -28,11 +28,7 @@ export async function admitRun(
       i.generation,i.state,i.release_digest,i.granted_actor,i.granted_scopes
     from extension_installations i join workspaces w on w.id=i.workspace_id
     where i.id=${run.installationId} and i.registration_id=${run.registrationId}`;
-  if (
-    !installation ||
-    installation.generation !== run.generation ||
-    installation.release_digest !== run.releaseDigest
-  )
+  if (!installation || installation.generation !== run.generation)
     throw new AppError(
       409,
       'installation_disabled',
@@ -57,8 +53,23 @@ export async function admitRun(
     : [];
   if (run.connectionId && (!connection || connection.generation !== run.connectionGeneration))
     throw new AppError(409, 'connection_disconnected', 'connection was disconnected or replaced');
+  const configure =
+    job.trigger_kind === 'configure' &&
+    !connection &&
+    ['configuring', 'active'].includes(installation.state);
+  if (configure && installation.release_digest !== run.releaseDigest) {
+    const [approval] =
+      await tx`select 1 from extension_access_approvals where installation_id=${run.installationId}
+      and release_digest=${run.releaseDigest} and generation=${run.generation}
+      and settings_revision=(select settings_revision from extension_installations where id=${run.installationId})`;
+    if (!approval)
+      throw new AppError(409, 'installation_disabled', 'target access approval expired');
+  } else if (installation.release_digest !== run.releaseDigest)
+    throw new AppError(409, 'installation_disabled', 'release changed');
+  if (configure && (write || run.scopes.length !== 1 || run.scopes[0] !== 'read'))
+    throw new AppError(403, 'forbidden', 'configure is read only');
   const ordinary =
-    !['install', 'uninstall', 'connect', 'disconnect'].includes(job.trigger_kind) &&
+    !['configure', 'install', 'uninstall', 'connect', 'disconnect'].includes(job.trigger_kind) &&
     installation.state === 'active' &&
     (!connection || connection.state === 'active');
   const setup = connection
@@ -78,9 +89,9 @@ export async function admitRun(
   // A workspace being deleted runs only its extensions' cleanup (extensions spec 7).
   if (installation.deleting && !cleanup)
     throw new AppError(409, 'installation_disabled', 'the workspace is being deleted');
-  if (!ordinary && !(purpose !== 'crm' && (setup || cleanup)))
+  if (!ordinary && !configure && !(purpose !== 'crm' && (setup || cleanup)))
     throw new AppError(409, 'installation_disabled', 'this lifecycle run cannot access CRM data');
-  if (run.scopes.some((scope) => !installation.granted_scopes.includes(scope)))
+  if (!configure && run.scopes.some((scope) => !installation.granted_scopes.includes(scope)))
     throw new AppError(403, 'forbidden', 'run scopes exceed the current installation grant');
   if (write && !run.scopes.includes('write'))
     throw new AppError(403, 'forbidden', 'run credential requires write scope');

@@ -10,6 +10,7 @@ import { ExtensionQueue, type Lease } from '../../extension-runtime/queue.js';
 import type { SecretBroker } from '../../extension-runtime/secrets.js';
 import type { ExtensionCatalog } from '../../extensions/catalog.js';
 import { mappedWrite, mappedWriteSchema } from '../../extensions/mapped-write.js';
+import { saveSuggestions, suggestionsSchema } from '../../extensions/suggestions.js';
 import { idParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 
@@ -50,12 +51,13 @@ export function runtimeRoutes(
     return inWorkspace(sql, caller.workspaceId, async (tx) => {
       await lockSchemaShared(tx, caller.workspaceId);
       await admitRun(tx, caller.workspaceId, run, false, 'runtime');
-      const [installation] = await tx<
-        { version: string }[]
-      >`select version from extension_installations where id=${run.installationId}`;
-      if (!installation) throw notFound('extension installation');
-      const release = catalog.get(run.registrationId, installation.version),
-        definition = release.manifest.settings[name],
+      const release = catalog
+        .list()
+        .find(
+          (r) => r.digest === run.releaseDigest && r.manifest.universalId === run.registrationId,
+        );
+      if (!release) throw notFound('extension release');
+      const definition = release.manifest.settings[name],
         fn = release.manifest.functions.find((f) => f.universalId === run.functionId);
       // A run reaches only the secrets its own function declares (spec 8).
       if (
@@ -65,7 +67,7 @@ export function runtimeRoutes(
         !functionSecrets(release.manifest, fn).includes(name)
       )
         throw notFound('connection secret');
-      if (writing && !definition.generated)
+      if (writing && (fn.trigger.kind === 'configure' || !definition.generated))
         throw new AppError(403, 'forbidden', 'runs can write only declared generated secrets');
       return {
         workspaceId: caller.workspaceId,
@@ -76,6 +78,17 @@ export function runtimeRoutes(
       };
     });
   };
+  app.put('/extensions/:id/runtime/suggestions', async (c) => {
+    let input: z.infer<typeof suggestionsSchema>;
+    try {
+      input = await readBody(c, suggestionsSchema, 65536);
+    } catch (error) {
+      if (error instanceof AppError && ['invalid_request', 'quota_exceeded'].includes(error.code))
+        throw new AppError(400, 'invalid_suggestions', 'invalid suggestions', error.details);
+      throw error;
+    }
+    return c.json(await saveSuggestions(sql, catalog, c.get('caller'), input));
+  });
   app.get('/extensions/:id/runtime/secrets/:name', async (c) => {
     if (!broker) throw new AppError(503, 'connection_required', 'secret broker is not configured');
     const caller = c.get('caller');

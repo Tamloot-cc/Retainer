@@ -2,7 +2,7 @@ import { type ExecutionResult, type Invocation, isRetryLater } from '@retainer/e
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
 import { normalizeDomain } from '@retainer/shared';
 import { z } from 'zod';
-import { ENRICHMENT } from './enrichment-contract.js';
+import { ENRICHMENT, enrichmentManifest } from './enrichment-contract.js';
 import { ExaError, ExaProvider } from './enrichment-provider.js';
 import { apiFetch, transient } from './outcome.js';
 
@@ -36,9 +36,117 @@ export async function executeEnrichment(
   });
   const id = invocation.installationId;
   try {
+    if (invocation.functionId === ENRICHMENT.configure) {
+      const key = await sdk.extensionSecret(id, 'apiKey');
+      await new ExaProvider(key.value, signal, transport).check();
+      const schema = await sdk.schema();
+      const company = schema.objects.find((o) => o.baseObject === 'company');
+      const contract = enrichmentManifest({
+        packageDigest: 'a'.repeat(64),
+        handlerDigest: 'b'.repeat(64),
+        serverRange: '>=0.1.0 <0.2.0',
+      });
+      const mapping = Object.fromEntries(
+        (contract.mapping?.outputs ?? []).map((output) => {
+          const field = company?.fields.find(
+            (f) => f.name === output.field?.name && output.types.some((type) => type === f.type),
+          );
+          return [
+            output.key,
+            field
+              ? {
+                  action: 'existing' as const,
+                  field: field.name,
+                  reason: 'This field has the expected API name and a compatible type.',
+                }
+              : output.field
+                ? {
+                    action: 'create' as const,
+                    reason: 'Create the suggested field; no matching compatible API name exists.',
+                  }
+                : { action: 'skip' as const, reason: 'No compatible destination was identified.' },
+          ];
+        }),
+      );
+      await sdk.saveExtensionSuggestions(id, { mapping });
+      return done('suggestions_ready');
+    }
+    if (invocation.functionId === ENRICHMENT.backfill) {
+      const input = z
+        .strictObject({ cursor: z.string().max(4096).optional() })
+        .parse(invocation.input);
+      const schema = await sdk.schema();
+      const company = schema.objects.find((o) => o.baseObject === 'company');
+      if (!company) return done('not_applicable');
+      const page = await sdk.queryRecords(company.nameSingular, {
+        limit: 20,
+        ...(input.cursor ? { cursor: input.cursor } : {}),
+      });
+      const mapping = (await sdk.extension(id)).mapping;
+      if (mapping?.lookup?.status !== 'ok')
+        return { status: 'failed', code: 'schema_binding_conflict' };
+      const key = await sdk.extensionSecret(id, 'apiKey');
+      for (const row of page.records) {
+        let record: Awaited<ReturnType<typeof sdk.record>>;
+        try {
+          record = await sdk.record(row.id);
+        } catch (error) {
+          if (error instanceof RetainerApiError && [404, 410].includes(error.status)) continue;
+          throw error;
+        }
+        if (record.id !== row.id) continue;
+        if (!Object.values(record.provenance ?? {}).some((p) => p.assertion?.actor.id === id))
+          continue;
+        const domain = normalizeDomain(primaryUrl(record.fields[mapping.lookup.name]) ?? '');
+        const open = mapping.outputs.filter(
+          (o) => o.status === 'ok' && o.field && !Object.hasOwn(record.fields, o.field.name),
+        );
+        if (!domain || !open.length) continue;
+        const found = await new ExaProvider(key.value, signal, transport).lookup(domain);
+        if (found.status !== 'match') continue;
+        const wanted = new Set(open.map((o) => o.output));
+        const values = Object.fromEntries(
+          Object.entries(found.values).filter(([key]) => wanted.has(key)),
+        );
+        if (Object.keys(values).length)
+          await sdk.extensionMappedWrite(id, { recordId: row.id, lookup: domain, values });
+      }
+      if (page.nextCursor)
+        await sdk.extensionCheckpoint(id, {
+          children: [
+            {
+              functionId: ENRICHMENT.backfill,
+              input: { cursor: page.nextCursor },
+              dedupeKey: `backfill:${invocation.runId}`,
+            },
+          ],
+        });
+      return done('backfill_page');
+    }
     if (invocation.functionId === ENRICHMENT.setup) {
       const key = await sdk.extensionSecret(id, 'apiKey');
       await new ExaProvider(key.value, signal, transport).check();
+      const input = invocation.input as { previousVersion?: string | null };
+      const mapping = (await sdk.extension(id)).mapping;
+      const previous = await sdk.extensionKv(id, 'mappedOutputs');
+      const keys = mapping?.outputs.filter((o) => o.action !== 'skip').map((o) => o.output) ?? [];
+      if (
+        input.previousVersion &&
+        keys.some((key) => !(Array.isArray(previous?.value) && previous.value.includes(key)))
+      )
+        await sdk.extensionCheckpoint(id, {
+          children: [
+            {
+              functionId: ENRICHMENT.backfill,
+              input: {},
+              dedupeKey: `backfill:${invocation.runId}`,
+            },
+          ],
+        });
+      await sdk.extensionCheckpoint(id, {
+        children: [],
+        kv: { key: 'mappedOutputs', expectedRevision: previous?.revision ?? null, value: keys },
+      });
       return { status: 'succeeded' };
     }
     if (invocation.functionId !== ENRICHMENT.enrich)
