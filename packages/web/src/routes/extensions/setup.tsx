@@ -33,7 +33,10 @@ import {
 } from './mapping.js';
 import {
   accessText,
+  detailKey,
+  hasInstallationSettings,
   type Installation,
+  initialSettings,
   installedRelease,
   type Release,
   upgradeFor,
@@ -47,7 +50,7 @@ type Preview = Awaited<ReturnType<typeof api.previewExtension>>;
 type Plan = { preview: Preview; input: Parameters<typeof api.previewExtension>[0]; key: string };
 type DiffOp = { kind: string; [key: string]: unknown };
 /** What the flow does: a first install (or a reinstall), or a change to an installed extension. */
-export type SetupMode = 'install' | 'upgrade' | 'reconnect' | 'mapping';
+type SetupMode = 'install' | 'upgrade' | 'reconnect' | 'mapping';
 type Step = 'settings' | 'mapping' | 'review';
 
 /**
@@ -120,11 +123,7 @@ export function ExtensionSetup({
   // A first install reviews the mapping; an upgrade carries the approved one over.
   const showMapping = !!mapping && (editMapping || (mode === 'install' && !retained));
   const hasSettings =
-    !editMapping &&
-    (Object.values(release.manifest.settings).some(
-      (d) => !d.generated && (d.level ?? 'installation') === 'installation',
-    ) ||
-      (reconnect && !!release.manifest.source));
+    !editMapping && (hasInstallationSettings(release) || (reconnect && !!release.manifest.source));
   const steps: Step[] = [
     ...(hasSettings ? (['settings'] as const) : []),
     ...(showMapping ? (['mapping'] as const) : []),
@@ -136,19 +135,7 @@ export function ExtensionSetup({
     mapping ? (mappingView ? choicesFromView(mapping, mappingView) : defaultChoices(mapping)) : {},
   );
   const [issues, setIssues] = useState<MappingIssues>({});
-  const [values, setValues] = useState<Settings>(() => ({
-    ...Object.fromEntries(
-      Object.entries(release.manifest.settings)
-        .filter(
-          ([, def]) =>
-            def.level !== 'connection' &&
-            !def.secret &&
-            (def.default !== undefined || def.type === 'boolean'),
-        )
-        .map(([key, def]) => [key, def.default ?? false]),
-    ),
-    ...installation?.settings,
-  }));
+  const [values, setValues] = useState<Settings>(() => initialSettings(release, installation));
   const [replaceSourceAccount, setReplaceSourceAccount] = useState(false);
   const grantIncrease =
     !!retained &&
@@ -561,7 +548,7 @@ function ChangePage({ mode }: { mode: Exclude<SetupMode, 'install'> }) {
   const { data, error, retry } = useExtensions();
   const refresh = useRefreshExtensions();
   const detail = useQuery({
-    queryKey: ['extensions', 'detail', id],
+    queryKey: detailKey(id),
     queryFn: ({ signal }) => api.extension(id, signal),
     enabled: mode === 'mapping',
   });

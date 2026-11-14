@@ -1,5 +1,6 @@
 import { compareVersions, newestReleases } from '@retainer/extension';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { api, useWorkspace } from '../../api/client.js';
 import type { Tone } from '../../ui/index.js';
 
@@ -27,14 +28,17 @@ export function useExtensions() {
       q.state.data?.installations.some((i) => BUSY.includes(i.state)) ? 3000 : false,
   });
   const error = catalog.error ?? installations.error;
-  const data =
-    catalog.data && installations.data
-      ? {
-          releases: catalog.data.releases,
-          installed: installations.data.installations,
-          newest: newestReleases(catalog.data.releases),
-        }
-      : undefined;
+  const data = useMemo(
+    () =>
+      catalog.data && installations.data
+        ? {
+            releases: catalog.data.releases,
+            installed: installations.data.installations,
+            newest: newestReleases(catalog.data.releases),
+          }
+        : undefined,
+    [catalog.data, installations.data],
+  );
   return {
     data,
     error,
@@ -77,7 +81,7 @@ export function upgradeFor(newest: Map<string, Release>, installation: Installat
 /** Whether the runtime that runs this extension is missing while it should be running. */
 export const runtimeMissing = (installation: Installation) =>
   installation.runtimeAvailability?.state === 'unavailable' &&
-  ['active', 'installing', 'upgrading', 'uninstalling'].includes(installation.state);
+  ['active', ...BUSY].includes(installation.state);
 
 /** The one status people see first: the state, or what needs them. */
 export function status(installation: Installation): { label: string; tone: Tone } {
@@ -95,6 +99,33 @@ export const errorText = (code: string) =>
   code === 'cursor_expired'
     ? 'Change history expired. This extension needs a catch-up scan before triggers can resume.'
     : `Needs attention: ${code.replaceAll('_', ' ')}`;
+
+/** One installation's detail read, which carries its approved mapping. */
+export const detailKey = (id: string) => [...queryKey, 'detail', id];
+
+/** Whether the release has settings a person fills in for the whole workspace. */
+export const hasInstallationSettings = (release: Release) =>
+  Object.values(release.manifest.settings).some(
+    (d) => !d.generated && (d.level ?? 'installation') === 'installation',
+  );
+
+/** Settings to start a form from: the release's defaults, then what the installation has. */
+export const initialSettings = (
+  release: Release,
+  installation?: Installation,
+): Installation['settings'] => ({
+  ...Object.fromEntries(
+    Object.entries(release.manifest.settings)
+      .filter(
+        ([, def]) =>
+          def.level !== 'connection' &&
+          !def.secret &&
+          (def.default !== undefined || def.type === 'boolean'),
+      )
+      .map(([key, def]) => [key, def.default ?? false]),
+  ),
+  ...installation?.settings,
+});
 
 /** Whether a workspace-level reconnect can change anything for this release. */
 export const canReconnect = (release: Release, installation: Installation) =>

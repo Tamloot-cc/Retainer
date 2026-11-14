@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { Check, ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from './core.js';
+import { Section } from './property.js';
 
 /**
  * The steps of a flow that takes a page, such as setting up an extension:
@@ -70,11 +71,11 @@ export function StepFlow({
 }
 
 /** The heading and plain-words introduction of the current step. */
-export function StepHeader({ title, children }: { title: string; children?: ReactNode }) {
+export function StepHeader({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
       <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-      {children ? <p className="mt-1 text-sm text-muted-foreground">{children}</p> : null}
+      <p className="mt-1 text-sm text-muted-foreground">{children}</p>
     </div>
   );
 }
@@ -159,9 +160,10 @@ export function ItemCards({
   children: ReactNode;
 }) {
   return (
-    <section aria-label={label} className="flex flex-col gap-2">
-      <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</h2>
-      <ul className={cn('grid gap-2', columns === 2 && 'sm:grid-cols-2')}>{children}</ul>
-    </section>
+    <Section title={label}>
+      <ul aria-label={label} className={cn('grid gap-2', columns === 2 && 'sm:grid-cols-2')}>
+        {children}
+      </ul>
+    </Section>
   );
 }

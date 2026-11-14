@@ -8,10 +8,10 @@ import { useState } from 'react';
 import { api, useWorkspace } from '../../api/client.js';
 import { Button, Muted, Notice, Panel, Row, Stack } from '../../ui/index.js';
 import { QueryError } from '../state.js';
+import { stateLabel as label } from './model.js';
 import { SettingFields } from './setting-fields.js';
 
 type Release = { manifest: Pick<ExtensionManifest, 'name' | 'settings'> };
-const label = (value: string) => value.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
 const date = (value: string | null) =>
   value ? new Date(value).toLocaleString() : 'No completed scan yet';
 function connectionError(code: string) {

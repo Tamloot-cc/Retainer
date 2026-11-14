@@ -30,8 +30,11 @@ import { MappingBindings } from './mapping.js';
 import {
   accessText,
   canReconnect,
+  detailKey,
   errorText,
+  hasInstallationSettings,
   type Installation,
+  initialSettings,
   installedRelease,
   isGone,
   queryKey,
@@ -364,19 +367,7 @@ function SettingsForm({
   onSaved: (revision: number) => Promise<unknown>;
   onDismiss: () => void;
 }) {
-  const [values, setValues] = useState<Settings>(() => ({
-    ...Object.fromEntries(
-      Object.entries(release.manifest.settings)
-        .filter(
-          ([, def]) =>
-            def.level !== 'connection' &&
-            !def.secret &&
-            (def.default !== undefined || def.type === 'boolean'),
-        )
-        .map(([key, def]) => [key, def.default ?? false]),
-    ),
-    ...installation.settings,
-  }));
+  const [values, setValues] = useState<Settings>(() => initialSettings(release, installation));
   const save = useMutation({
     mutationFn: () =>
       api.updateExtensionSettings(installation.id, {
@@ -385,10 +376,8 @@ function SettingsForm({
       }),
     onSuccess: (updated) => onSaved(updated.settingsRevision),
   });
-  const fields = Object.values(release.manifest.settings).some(
-    (d) => !d.generated && (d.level ?? 'installation') === 'installation',
-  );
-  if (!fields) return <Empty quiet title="This extension has no settings" />;
+  if (!hasInstallationSettings(release))
+    return <Empty quiet title="This extension has no settings" />;
   return (
     <form
       className="flex max-w-2xl flex-col gap-4"
@@ -444,7 +433,7 @@ function MappingSummary({
   admin: boolean;
 }) {
   const detail = useQuery({
-    queryKey: [...queryKey, 'detail', installation.id, installation.generation],
+    queryKey: detailKey(installation.id),
     queryFn: ({ signal }) => api.extension(installation.id, signal),
   });
   const mapping = release.manifest.mapping;
@@ -531,7 +520,7 @@ function RunList({
                 {stateLabel(run.status)}
               </Badge>
               <span className="text-sm">Attempt {run.attempt}</span>
-              {run.code ? <Muted small>{run.code.replaceAll('_', ' ')}</Muted> : null}
+              {run.code ? <Muted small>{stateLabel(run.code)}</Muted> : null}
               <span className="ml-auto flex items-center gap-2">
                 <Muted small>{new Date(run.createdAt).toLocaleString()}</Muted>
                 {admin && run.status === 'failed' ? (
