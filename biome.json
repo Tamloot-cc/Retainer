@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/.agents", "!**/.claude", "!**/drizzle/meta"]
+    "includes": ["**", "!**/.agents", "!**/.claude", "!**/drizzle/meta", "!**/*.md"]
   },
   "formatter": {
     "indentStyle": "space",
