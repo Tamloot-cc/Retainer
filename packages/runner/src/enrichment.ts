@@ -10,12 +10,7 @@ import {
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
 import { BASE_FIELD_IDS, normalizeDomain, type ObjectView } from '@retainer/shared';
 import { z } from 'zod';
-import {
-  type Certainty,
-  certaintySchema,
-  ENRICHMENT,
-  ENRICHMENT_MAPPING,
-} from './enrichment-contract.js';
+import { ENRICHMENT, ENRICHMENT_MAPPING } from './enrichment-contract.js';
 import {
   enrichmentModel,
   type ModelFailure,
@@ -26,7 +21,6 @@ import {
 } from './enrichment-model.js';
 import {
   acceptPick,
-  type Candidate,
   candidateValues,
   type EnrichmentValues,
   ExaError,
@@ -49,14 +43,6 @@ function primaryUrl(value: unknown): string | null {
 
 /** Confidence of a `medium` pick; the workspace's review threshold may hold it (spec 6.4). */
 export const MEDIUM_CONFIDENCE = 0.7;
-/** A stored pick older than this is ignored and overwritten (spec 6.5). */
-export const PICK_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const KV_KEY_MAX = 200;
-const storedPick = z.object({
-  candidateUrl: z.string(),
-  certainty: certaintySchema,
-  at: z.iso.datetime({ offset: true }),
-});
 
 type Found =
   | {
@@ -64,8 +50,6 @@ type Found =
       values: EnrichmentValues;
       confidence: number;
       code: string;
-      /** The KV entry holding this pick, to clear once the write is done. */
-      stored?: { key: string; revision: number };
     }
   | { status: 'no_match'; code: string };
 const noMatch = (failure?: ModelFailure): Found => ({
@@ -81,62 +65,15 @@ type Lookup = {
   signal: AbortSignal;
 };
 
-type KvAccess = Pick<Lookup, 'sdk' | 'installationId' | 'signal'>;
-/** The KV key of a record's pick, or null when the domain makes it too long. */
-const pickKey = (recordId: string, domain: string) => {
-  const key = `pick:${recordId}:${domain}`;
-  return key.length <= KV_KEY_MAX ? key : null;
-};
-
-/**
- * Clears a pick left behind when a write committed but its response was lost:
- * the retry finds nothing to fill and never reaches `fill`. Best-effort.
- */
-async function releaseLeftoverPick(run: KvAccess, recordId: string, domain: string) {
-  const key = pickKey(recordId, domain);
-  if (!key) return;
-  try {
-    const stored = await run.sdk.extensionKv(run.installationId, key);
-    if (stored && storedPick.safeParse(stored.value).success)
-      await storePick(run, key, stored.revision, {});
-  } catch (error) {
-    if (run.signal.aborted) throw error;
-  }
-}
-
-/**
- * Writes a stored pick, or clears it with `{}`. Best-effort: the pick only saves a retry a
- * model call, so a full KV quota, a concurrent run's write or an outage never
- * fails the lookup. Returns the new revision, if the write went through.
- */
-async function storePick(
-  run: KvAccess,
-  key: string,
-  expectedRevision: number | null,
-  value: z.infer<typeof storedPick> | Record<string, never>,
-): Promise<number | undefined> {
-  try {
-    const result = await run.sdk.extensionCheckpoint(run.installationId, {
-      children: [],
-      kv: { key, expectedRevision, value },
-    });
-    return result.revision;
-  } catch (error) {
-    if (run.signal.aborted) throw error;
-    return undefined;
-  }
-}
-
 /**
  * The lookup (model calls spec 6.3): search by name and domain, accept the one
  * candidate on the domain without a model call, or else let the model pick
- * one and check the pick. An accepted pick is kept in installation KV until
- * its write is done (`fill` clears it), so a retry in between reuses it
- * instead of calling the model again.
+ * one and check the pick. Nothing is kept between attempts: a retry after the
+ * model call calls it again (spec 6.5).
  */
 export async function lookUp(
   run: Lookup,
-  record: { id: string; name: string | null; domain: string; context: Record<string, unknown> },
+  record: { name: string | null; domain: string; context: Record<string, unknown> },
 ): Promise<Found> {
   const candidates = await run.exa.search(record.domain, record.name);
   if (!candidates.length) return { status: 'no_match', code: 'no_match' };
@@ -148,38 +85,18 @@ export async function lookUp(
       confidence: 1,
       code: 'matched_shortcut',
     };
-  const key = pickKey(record.id, record.domain);
-  const stored = key ? await run.sdk.extensionKv(run.installationId, key) : null;
-  const previous = storedPick.safeParse(stored?.value);
-  let pick: { candidate: Candidate; certainty: Certainty } | undefined;
-  let revision = stored?.revision;
-  if (previous.success && Date.now() - Date.parse(previous.data.at) < PICK_TTL_MS) {
-    const candidate = candidates.find((c) => c.url === previous.data.candidateUrl);
-    if (candidate) pick = { candidate, certainty: previous.data.certainty };
-  }
-  if (!pick) {
-    const answer = await pickCandidate(run.model(), record, candidates, run.signal);
-    if (answer.status !== 'ok') return noMatch(answer.status);
-    if (answer.value.index === null) return noMatch();
-    const candidate = candidates.find((c) => c.index === answer.value.index);
-    if (!candidate) return noMatch('output');
-    pick = { candidate, certainty: answer.value.certainty };
-    // A refused pick ends the run, so nothing would read it again.
-    if (!acceptPick(pick, record)) return noMatch();
-    revision = key
-      ? await storePick(run, key, stored?.revision ?? null, {
-          candidateUrl: candidate.url,
-          certainty: pick.certainty,
-          at: new Date().toISOString(),
-        })
-      : undefined;
-  } else if (!acceptPick(pick, record)) return noMatch();
+  const answer = await pickCandidate(run.model(), record, candidates, run.signal);
+  if (answer.status !== 'ok') return noMatch(answer.status);
+  if (answer.value.index === null) return noMatch();
+  const candidate = candidates.find((c) => c.index === answer.value.index);
+  if (!candidate) return noMatch('output');
+  const pick = { candidate, certainty: answer.value.certainty };
+  if (!acceptPick(pick, record)) return noMatch();
   return {
     status: 'match',
-    values: candidateValues(pick.candidate),
+    values: candidateValues(candidate),
     confidence: pick.certainty === 'high' ? 1 : MEDIUM_CONFIDENCE,
     code: `matched_model_${pick.certainty}`,
-    ...(key && revision !== undefined ? { stored: { key, revision } } : {}),
   };
 }
 
@@ -342,32 +259,22 @@ async function fill(
   open: ExtensionMappingView['outputs'],
 ): Promise<string> {
   const found = await lookUp(run, {
-    id: record.id,
     name: record.label,
     domain,
     context: mappedContext(mapping, record),
   });
   if (found.status === 'no_match') return found.code;
-  // Once the write is done, a retry no longer needs the pick: free its room in KV.
-  const release = async () => {
-    // KV has no delete for runs, and refuses a JSON null; an empty object is 2 bytes.
-    if (found.stored) await storePick(run, found.stored.key, found.stored.revision, {});
-  };
   const wanted = new Set(open.map((output) => output.output));
   const values = Object.fromEntries(
     Object.entries(found.values).filter(([output]) => wanted.has(output)),
   );
-  if (!Object.keys(values).length) {
-    await release();
-    return 'no_usable_values';
-  }
+  if (!Object.keys(values).length) return 'no_usable_values';
   const written = await run.sdk.extensionMappedWrite(run.installationId, {
     recordId: record.id,
     lookup: domain,
     values,
     ...(found.confidence < 1 ? { confidence: found.confidence } : {}),
   });
-  await release();
   return written.outcome === 'applied' ? found.code : (written.reason ?? 'skipped');
 }
 
@@ -475,10 +382,7 @@ export async function executeEnrichment(
         const open = mapping.outputs.filter(
           (o) => o.status === 'ok' && o.field && !Object.hasOwn(record.fields, o.field.name),
         );
-        if (!domain) return;
-        if (open.length) await fill(run, mapping, record, domain, open);
-        // As in enrich: a retry after a lost write response finds nothing open.
-        else await releaseLeftoverPick(run, record.id, domain);
+        if (domain && open.length) await fill(run, mapping, record, domain, open);
       });
       if (page.nextCursor)
         await sdk.extensionCheckpoint(id, {
@@ -548,10 +452,7 @@ export async function executeEnrichment(
     const open = bound.filter(
       (output) => output.field && !Object.hasOwn(record.fields, output.field.name),
     );
-    if (!open.length) {
-      await releaseLeftoverPick({ sdk, installationId: id, signal }, record.id, domain);
-      return done('nothing_to_fill');
-    }
+    if (!open.length) return done('nothing_to_fill');
     return done(
       await fill(
         { sdk, installationId: id, exa: await exa(), model, signal },

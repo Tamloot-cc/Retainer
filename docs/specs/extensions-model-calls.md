@@ -529,14 +529,14 @@ on another model inside the same call. The proxy records the model that
 answered (§3.4). Haiku 5.5 has no server-side fallback, which the comparison
 in §6.6 has to count.
 
-**Retries.** A retry after the model call but before the write would call the
-model again, so the handler stores each pick in installation KV under
-`pick:<recordId>:<domain>` as `{ candidateUrl, certainty, at }`. A retry that
-finds a candidate at the same URL reuses it. KV has no expiry, so the handler
-ignores a pick older than 7 days and overwrites it with the next one; until
-then one small row per model-picked company stays. Erasure of the record
-deletes the key, as it does every key that names an erased record
-(`privacy/extension-erasure.ts:70`).
+**Retries.** Nothing is kept between attempts: a retry after the model call
+but before the write calls the model again. That needs a failure in between,
+such as a mapped write that fails or a lost response, so it's rare, and it
+costs one more pick (§6.6). A stored pick was dropped (§12): installation KV
+has a 1 MiB quota, no expiry and no delete for runs, so every way a run could
+end needed its own cleanup, and each one missed made the quota fill a little
+more. Revisit with a KV delete and TTL in the server if retries turn out to
+cost real money.
 
 New run codes: `matched_shortcut`, `matched_model_high`,
 `matched_model_medium`, `no_match_model`, `no_match_model_unavailable`,
@@ -605,16 +605,6 @@ Choices the enrichment release made where §6 left them open:
   lost connection as `model_unavailable`, both with Anthropic's `retry-after`
   or 30 s. Any other 4xx (the proxy refused the request) fails the run as
   `model_request_failed`, a bundle bug that a retry wouldn't fix.
-- **Stored picks.** Only a pick the guards accept is stored: a refused one
-  ends the run, so no retry reads it. Once the mapped write returns (or there
-  are no usable values), the run clears the pick to `{}`, since installation
-  KV is capped at 1 MiB and runs can't delete a key; otherwise picks would
-  fill it and every later model lookup would fail with `quota_exceeded`.
-  Storing and clearing are best-effort: a full quota, a concurrent run's
-  write or an outage only costs a retry its reuse. A key longer than KV's 200
-  characters (a very long domain) isn't stored. The 7-day limit still guards
-  a pick whose run never finished. A retry that finds nothing left to fill
-  (the write committed but its response was lost) clears the pick too.
 - **Backfill eligibility.** A company counts as enriched before when this
   installation has a value on it, applied or held for review, so a company
   whose first values wait for review still gets newly mapped outputs.
@@ -663,8 +653,8 @@ Choices the enrichment release made where §6 left them open:
   `confidence` below 1 gets `422`.
 - **Layer check:** core modules importing `model/` fail `pnpm lint`.
 - **Enrichment (unit):** the shortcut makes no model call; every guard in
-  §6.3; confidence by certainty; each row of the table in §6.5; KV reuse on
-  retry, and a pick older than 7 days ignored; the configure function's
+  §6.3; confidence by certainty; each row of the table in §6.5; a retry
+  after the model call asks the model again; the configure function's
   suggestions for a fixture schema.
 
 ## 8. Hosted
@@ -806,3 +796,9 @@ users, so none of these keeps anything for old bundles or installations:
   set that measures the shortcut and guards today's matches (§6.6).
 - The delivery sequence became two pull requests, with the hosted change
   between them (§9).
+
+2026-11-14, while building PR 2: the stored pick of §6.5 was dropped. Review
+of the PR found one KV leak after another (picks never cleared, then left by
+a lost write response in enrich, then in backfill), each a new exit path
+that needed its own cleanup, because runs can't delete a KV key and KV has
+no expiry. A retry now calls the model again instead.

@@ -184,17 +184,14 @@ async function setup(key = 'exa-fixture-key', options: { modelKey?: boolean } = 
     expect(target.origin).toBe('https://retainer.test');
     if (init?.body && !target.pathname.startsWith('/v1/extensions/runtime/model'))
       apiBodies.push(String(init.body));
-    if (failNext && target.pathname.endsWith(failNext.path)) {
-      const { after } = failNext;
+    if (failNext && target.pathname.endsWith(failNext)) {
       failNext = undefined;
-      // `after`: the request is served, and only its response is lost.
-      if (after) await app.inProcessFetch(url, init);
       return new Response('upstream outage', { status: 502 });
     }
     return app.inProcessFetch(url, init);
   };
   /** Answers the next Retainer API request whose path ends so with a 502 page. */
-  let failNext: { path: string; after: boolean } | undefined;
+  let failNext: string | undefined;
   async function execute(job: ClaimedJob) {
     const token = await tokens.issue(app.sql, job, manifest.universalId, job.scopes);
     const model = job.uses.includes('model')
@@ -256,8 +253,8 @@ async function setup(key = 'exa-fixture-key', options: { modelKey?: boolean } = 
     keys,
     id,
     exa,
-    failNext: (path: string, after = false) => {
-      failNext = { path, after };
+    failNext: (path: string) => {
+      failNext = path;
     },
     apiBodies,
     drain,
@@ -539,46 +536,6 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     expect(await h.drain()).toEqual([]);
   });
 
-  it('clears the pick when the write committed but its response was lost', async () => {
-    const h = await setup();
-    await h.drain();
-    h.exa.search = (domain) => twoResults('https://redirect.example/', domain);
-    upstream.respond(structured({ index: 0, certainty: 'high' }));
-    h.failNext('/runtime/mapped-writes', true);
-    const acme = await h.company({ name: 'Acme', domain: 'acme.example' });
-    expect(await h.drain()).toEqual([{ status: 'retry', code: 'api_unavailable' }]);
-    expect((await h.fields(acme)).employeeCount).toBe(12);
-    await db.owner`update extension_jobs set available_at=clock_timestamp() where installation_id=${h.id} and status='queued'`;
-    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'nothing_to_fill' }]);
-    const [left] = await db.owner<{ value: unknown }[]>`
-      select value from extension_kv where installation_id=${h.id} and key=${`pick:${acme}:acme.example`}`;
-    expect(left?.value).toEqual({});
-  });
-
-  it('clears the pick when a backfill write committed but its response was lost', async () => {
-    const h = await setup();
-    await h.drain();
-    // Enriched first with headquarters only, so the backfill has outputs to fill.
-    h.exa.search = (domain) => Response.json(exaCompany(`https://${domain}/`, { total: null }));
-    const acme = await h.company({ name: 'Acme', domain: 'acme.example' });
-    await h.drain();
-    h.exa.search = (domain) => twoResults('https://redirect.example/', domain);
-    upstream.respond(structured({ index: 0, certainty: 'high' }));
-    h.failNext('/runtime/mapped-writes', true);
-    await h.queue.enqueue(h.workspace, h.id, {
-      functionId: ENRICHMENT.backfill,
-      input: {},
-      dedupeKey: randomUUID(),
-    });
-    expect(await h.drain()).toEqual([{ status: 'retry', code: 'api_unavailable' }]);
-    expect((await h.fields(acme)).employeeCount).toBe(12);
-    await db.owner`update extension_jobs set available_at=clock_timestamp() where installation_id=${h.id} and status='queued'`;
-    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'backfill_page' }]);
-    const [left] = await db.owner<{ value: unknown }[]>`
-      select value from extension_kv where installation_id=${h.id} and key=${`pick:${acme}:acme.example`}`;
-    expect(left?.value).toEqual({});
-  });
-
   it('backfills a company whose first values are still held for review', async () => {
     const h = await setup();
     await h.drain();
@@ -616,7 +573,7 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
   });
 
-  it('reuses the stored pick when the run retries after the model call, clears it once written, and erasure removes it', async () => {
+  it('asks the model again when the run retries after the model call', async () => {
     const h = await setup();
     await h.drain();
     h.exa.search = (domain) => twoResults('https://redirect.example/', domain);
@@ -625,27 +582,13 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     h.failNext('/runtime/mapped-writes');
     const acme = await h.company({ name: 'Acme', domain: 'acme.example' });
     expect(await h.drain()).toEqual([{ status: 'retry', code: 'api_unavailable' }]);
-    const key = `pick:${acme}:acme.example`;
-    const [stored] = await db.owner<{ value: Record<string, unknown> }[]>`
-      select value from extension_kv where installation_id=${h.id} and key=${key}`;
-    expect(stored?.value).toMatchObject({
-      candidateUrl: 'https://redirect.example/',
-      certainty: 'high',
-    });
     await db.owner`update extension_jobs set available_at=clock_timestamp() where installation_id=${h.id} and status='queued'`;
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_model_high' }]);
-    expect(messages()).toHaveLength(before + 1);
+    // Nothing is kept between attempts (spec 6.5), so nothing is left in KV.
+    expect(messages()).toHaveLength(before + 2);
     expect((await h.fields(acme)).employeeCount).toBe(12);
-    // Written, so the pick is cleared and takes no room in the KV quota.
-    const [cleared] = await db.owner<{ value: unknown }[]>`
-      select value from extension_kv where installation_id=${h.id} and key=${key}`;
-    expect(cleared?.value).toEqual({});
     expect(
-      (await h.app.request(`/v1/records/${acme}/forget`, { key: h.keys.admin, method: 'POST' }))
-        .status,
-    ).toBe(200);
-    expect(
-      await db.owner`select 1 from extension_kv where installation_id=${h.id} and key=${key}`,
+      await db.owner`select 1 from extension_kv where installation_id=${h.id} and key like 'pick:%'`,
     ).toHaveLength(0);
   });
 });

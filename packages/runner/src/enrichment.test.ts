@@ -2,7 +2,7 @@ import type { Invocation } from '@retainer/extension';
 import { RetainerClient } from '@retainer/sdk';
 import { BASE_OBJECT_IDS } from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
-import { executeEnrichment, lookUp, MEDIUM_CONFIDENCE, PICK_TTL_MS } from './enrichment.js';
+import { executeEnrichment, lookUp, MEDIUM_CONFIDENCE } from './enrichment.js';
 import {
   ENRICHMENT,
   ENRICHMENT_MODEL,
@@ -216,13 +216,11 @@ const message = (output: unknown, stop_reason = 'end_turn') =>
     usage: { input_tokens: 10, output_tokens: 5 },
   });
 
-/** A run against fakes: Exa, the model proxy and the Retainer API's KV. */
+/** A run against fakes: Exa and the model proxy. The lookup never calls Retainer's API. */
 function fakes(
   results: unknown[],
   answer: Answer = () => message({ index: 0, certainty: 'high' }),
-  kvQuota = Number.POSITIVE_INFINITY,
 ) {
-  const kv = new Map<string, { value: unknown; revision: number }>();
   const calls = { exa: [] as Record<string, unknown>[], model: [] as Record<string, unknown>[] };
   const transport: typeof fetch = async (url, init) => {
     const target = new URL(String(url));
@@ -234,18 +232,6 @@ function fakes(
     if (target.origin === 'https://model.test') {
       calls.model.push({ ...body, headers: Object.fromEntries(new Headers(init?.headers)) });
       return answer({ body });
-    }
-    const kvPath = /\/runtime\/kv\/(.+)$/.exec(target.pathname);
-    if (kvPath) return json(kv.get(decodeURIComponent(kvPath[1] ?? '')) ?? null);
-    if (target.pathname.endsWith('/runtime/checkpoint')) {
-      if (kv.size >= kvQuota)
-        return json({ error: { code: 'quota_exceeded', message: 'quota' } }, 429);
-      const prior = kv.get(body.kv.key);
-      if ((prior?.revision ?? null) !== body.kv.expectedRevision)
-        return json({ error: { code: 'revision_conflict', message: 'conflict' } }, 409);
-      const revision = (prior?.revision ?? 0) + 1;
-      kv.set(body.kv.key, { value: body.kv.value, revision });
-      return json({ ids: [], revision });
     }
     throw new Error(`unexpected request ${target}`);
   };
@@ -267,12 +253,11 @@ function fakes(
     signal,
   };
   const record = {
-    id: 'record-1',
     name: 'Acme',
     domain: 'acme.example',
     context: { employee_count: 40 },
   };
-  return { kv, calls, run, record };
+  return { calls, run, record };
 }
 
 describe('the lookup (spec 6.3-6.5)', () => {
@@ -388,65 +373,11 @@ describe('the lookup (spec 6.3-6.5)', () => {
     });
   });
 
-  it('reuses a stored pick on a retry, and ignores one older than seven days', async () => {
+  it('keeps nothing between attempts: a second lookup asks the model again', async () => {
     const f = fakes([result('https://acme.example.org/')]);
     await lookUp(f.run, f.record);
-    expect(f.calls.model).toHaveLength(1);
-    const stored = f.kv.get('pick:record-1:acme.example');
-    expect(stored?.value).toMatchObject({
-      candidateUrl: 'https://acme.example.org/',
-      certainty: 'high',
-    });
-    expect(await lookUp(f.run, f.record)).toMatchObject({ code: 'matched_model_high' });
-    expect(f.calls.model).toHaveLength(1);
-    f.kv.set('pick:record-1:acme.example', {
-      revision: stored?.revision ?? 1,
-      value: {
-        candidateUrl: 'https://acme.example.org/',
-        certainty: 'high',
-        at: new Date(Date.now() - PICK_TTL_MS - 1000).toISOString(),
-      },
-    });
     await lookUp(f.run, f.record);
     expect(f.calls.model).toHaveLength(2);
-    expect(f.kv.get('pick:record-1:acme.example')?.revision).toBe(2);
-  });
-
-  it('stores only a pick the guards accept, and says where for the write to clear it', async () => {
-    const refused = fakes([result('https://acme.example.org/')], () =>
-      message({ index: 0, certainty: 'medium' }),
-    );
-    expect(await lookUp(refused.run, refused.record)).toEqual({
-      status: 'no_match',
-      code: 'no_match_model',
-    });
-    expect(refused.kv.size).toBe(0);
-    const accepted = fakes([result('https://acme.example.org/')]);
-    expect(await lookUp(accepted.run, accepted.record)).toMatchObject({
-      stored: { key: 'pick:record-1:acme.example', revision: 1 },
-    });
-  });
-
-  it('still matches when KV is full, without storing the pick', async () => {
-    const f = fakes([result('https://acme.example.org/')], undefined, 0);
-    const found = await lookUp(f.run, f.record);
-    expect(found).toMatchObject({ status: 'match', code: 'matched_model_high' });
-    expect(found).not.toHaveProperty('stored');
-    expect(f.kv.size).toBe(0);
-  });
-
-  it('calls the model again when the stored pick is not among the candidates', async () => {
-    const f = fakes([result('https://acme.example.org/')]);
-    f.kv.set('pick:record-1:acme.example', {
-      revision: 1,
-      value: {
-        candidateUrl: 'https://gone.example/',
-        certainty: 'high',
-        at: new Date().toISOString(),
-      },
-    });
-    await lookUp(f.run, f.record);
-    expect(f.calls.model).toHaveLength(1);
   });
 });
 
