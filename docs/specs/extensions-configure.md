@@ -64,8 +64,8 @@ added to the trigger union (`packages/extension/src/index.ts:84`). Rules,
 checked when the manifest is validated:
 
 - At most one `configure` function per release.
-- Its `scopes` must be `['read']`. It may declare `secrets` and model access
-  (model-calls spec §3.1).
+- Its `scopes` must be `['read']`. It may declare `secrets` and
+  `uses: ['model']` (model-calls spec §3.1).
 - Its timeout follows §9.1 (120 s default, 300 s maximum). The admin is waiting,
   so a bundle should aim for well under a minute.
 - A release with a `configure` function must declare at least one thing it can
@@ -496,8 +496,8 @@ database:
 - **Extension-initiated suggestions:** an extension noticing a new workspace
   field and suggesting it without a release or a request. The suggestions table
   already fits; only the trigger is missing. Later.
-- **Model key:** which option the model-calls spec settles on (proxy, full
-  proxy, or the key as a platform secret) doesn't change this spec.
+- **Model access:** settled in the model-calls spec: the Messages proxy, and
+  a function declares `uses: ['model']` (`extensions-model-calls.md` §3.1).
 
 
 ## 13. Implementation verification

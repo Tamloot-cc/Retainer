@@ -1,6 +1,7 @@
 # Model calls in extensions
 
-Status: proposed, 2026-11-13. Builds on the extension platform in
+Status: proposed, 2026-11-13; revised 2026-11-14 (the proxy's shape, its
+hosted placement in §3.6, and the workspace agent in §11). Builds on the extension platform in
 [extensions.md](extensions.md) and the output mapping and enrichment bundle in
 [extensions-company-enrichment-implementation.md](extensions-company-enrichment-implementation.md)
 (the enrichment spec). Line references are to `main` at `059b7ff`.
@@ -11,17 +12,26 @@ structured output, effort, streaming, what workspace data goes in and what it
 does with the answer. The platform adds three things and nothing else:
 
 1. **A model proxy** (§3). Extension code uses the official Anthropic SDK as
-   it would anywhere, pointed at the proxy. The proxy swaps the run token for
-   Retainer's key, forwards the request unchanged and records usage. The key
-   never reaches extension code.
-2. **Draft runs** (§4, replaced by [extensions-configure.md](extensions-configure.md)). A function can run before installation, when the
-   admin opens the install screen, and return a draft of the install form:
-   the output mapping and settings. Today every run needs an installation.
-3. **Mapped-write confidence** (§5), so a write can say it is less certain and
+   it would anywhere, through a client the extension SDK builds for it
+   (`modelClient`). The proxy swaps the run token for Retainer's key,
+   forwards the request unchanged and records usage. The key never reaches
+   extension code.
+2. **Mapped-write confidence** (§5), so a write can say it is less certain and
    the workspace's review threshold can hold it.
 
-Enrichment (§6) is the first bundle to use them: it suggests its mapping in a
-draft run and uses a model to pick the right search result. Those are its
+Suggesting a mapping before the schema is approved is no longer part of this
+spec: the `configure` function of
+[extensions-configure.md](extensions-configure.md) does it, and it may call
+the model like any other function. The draft runs first proposed here (§4)
+are replaced.
+
+v1 is shaped for a later step: a Retainer workspace agent that extensions hand
+tasks to instead of writing their own agent code (§11). Nothing in v1 builds
+that agent, but the proxy, the client helper, the manifest field and the usage
+table are named and placed so it fits without changing existing extensions.
+
+Enrichment (§6) is the first bundle to use the proxy: it suggests its mapping
+in `configure` and uses a model to pick the right search result. Those are its
 choices, not platform rules. Other extensions can call a model from any
 function for any purpose.
 
@@ -58,7 +68,7 @@ deterministic) is unchanged.
   are reviewed first-party code; the release review is where a call's
   purpose is checked.
 - **Where the key lives.** In the server only: `RETAINER_MODEL_API_KEY`. On
-  the hosted service it's set in the `retainer-cloud` production environment.
+  the hosted service only the `model` function holds it (§3.6).
   A key inside a runner Lambda or container would reach every bundle that
   runs there, and usage couldn't be attributed to a workspace reliably.
 - **Provider.** Retainer's key is an Anthropic key, so the proxy speaks the
@@ -66,8 +76,16 @@ deterministic) is unchanged.
   use it with a key the admin enters as an extension secret, as Exa's key is
   today; the proxy isn't involved.
 - **SDK.** Bundles call the proxy with the official TypeScript SDK,
-  `@anthropic-ai/sdk`, in `packages/runner`. The server needs no model SDK:
-  it forwards HTTP.
+  `@anthropic-ai/sdk`, through `modelClient(invocation)` from
+  `@retainer/extension` (§3.2). Bundles never write the proxy's URL, so what
+  sits behind it can change without a new release. The server needs no model
+  SDK: it forwards HTTP.
+- **Authority from the run.** Anything Retainer runs on behalf of a run acts
+  with that run's access and is recorded as the extension. The proxy runs no
+  tools, so in v1 this costs nothing; it is the rule the workspace agent
+  (§11) must follow.
+- **Anthropic API, not Bedrock.** The hosted service uses Anthropic's API with
+  Retainer's key, as self-hosting does.
 - **Self-hosting.** The operator may set `RETAINER_MODEL_API_KEY` with their
   own key. Without it, the proxy returns `503 model_unavailable`, and each
   extension decides what to do without a model. Enrichment falls back to its
@@ -79,10 +97,21 @@ deterministic) is unchanged.
 
 ### 3.1 Manifest
 
-A function declares `model: true`. Like `mappedWrite` and `secrets`, the flag
-is part of the reviewed release digest. Any function kind may declare it except
-webhook verifiers, which have no network. Releases without the flag keep their
-digests.
+A function declares what platform capabilities it uses:
+
+```ts
+uses: ['model']
+```
+
+Like `mappedWrite` and `secrets`, the list is part of the reviewed release
+digest. Any function kind may declare `model`, `configure` included, except
+webhook verifiers, which have no network. Releases without the field keep their
+digests. The list is open for later capabilities (`agent`, `memberAgent`,
+§11); adding one to a release is an access change and holds automatic
+upgrades.
+
+The claim copies the function's `uses` into its run token, next to its scopes,
+so the proxy can check it without the database (§3.6).
 
 The install review says, in plain words: "This extension sends data from your
 workspace to Anthropic, which Retainer uses to process it." Approving the
@@ -91,21 +120,27 @@ be sent.
 
 ### 3.2 Endpoint
 
-The proxy is mounted at `/v1/extensions/runtime/model/` and mirrors the
-Anthropic API paths under it. A bundle creates its client like this:
+The proxy mirrors the Anthropic API paths under its base URL. A bundle gets
+its client from the extension SDK:
 
 ```ts
-const anthropic = new Anthropic({
-  baseURL: `${invocation.apiOrigin}/v1/extensions/runtime/model`,
-  apiKey: invocation.runToken,
-});
+import { modelClient } from '@retainer/extension';
+
+const anthropic = modelClient(invocation);
 ```
+
+`modelClient` returns an `Anthropic` client whose `apiKey` is the run token and
+whose `baseURL` is `invocation.modelOrigin` when the invocation has one (the
+hosted `model` function, §3.6), otherwise
+`${invocation.apiOrigin}/v1/extensions/runtime/model`. `modelOrigin` is a new
+optional field of the protocol v1 invocation; runners that don't know it
+ignore it.
 
 The SDK sends the run token as `x-api-key`. The proxy:
 
-1. Admits the token as the existing `admitRun` does
-   (`extension-runtime/admission.ts`), or as a draft-run token (§4), and
-   checks that the function declares `model: true`.
+1. Verifies the token: signature with the run public key, audience, expiry,
+   and that its `uses` includes `model`. It doesn't ask the database whether
+   the run is still current (§3.6).
 2. Replaces `x-api-key` with Retainer's key and forwards the request with its
    body and `anthropic-version`/`anthropic-beta` headers unchanged.
 3. Streams the response back as it arrives, including server-sent events.
@@ -130,31 +165,30 @@ its usual typed errors:
 | ---------------------------- | ----------------------------- |
 | No key configured            | `503`, `model_unavailable`    |
 | Token not admitted           | `401`, `authentication_error` |
-| Function lacks `model: true` | `403`, `permission_error`     |
+| Token lacks `uses: model`    | `403`, `permission_error`     |
 | Path or stored state refused | `404` or `400`, as above      |
 
 Provider errors (429, 5xx, refusals in the response) pass through unchanged.
 The extension handles them, for example by throwing `RetryLater` on a 429.
 
-A request may run until the run's deadline. On the hosted service the API
-runs on Lambda, so the proxy route needs response streaming and a timeout at
-least as long as the longest handler deadline; step 2 of §9 checks this in
-staging.
+A request may run until the run's deadline. The proxy's own timeout covers
+the longest handler deadline (300 s) plus a margin.
 
 ### 3.3 Privacy
 
 - The proxy never logs request or response bodies, and neither do handlers:
   the run list shows codes only, as today.
 - Nothing the model saw is stored in Retainer, so erasure has nothing new to
-  remove. `model_usage` holds no content.
+  remove. `ai_usage` holds no content.
 - Anthropic becomes a subprocessor of the hosted service. The privacy policy
   must say so before the first model-backed release ships to hosted.
 
 ### 3.4 Usage
 
-New table `model_usage`: workspace, installation (null for draft runs),
-registration, function ID, run or draft ID, model, input, output, cache-read
-and cache-write tokens, created at. No content.
+New table `ai_usage`: `kind` (`model` in v1; `agent` later, §11), workspace,
+installation, registration, release digest, function ID, run ID, model, input,
+output, cache-read and cache-write tokens, created at. No content. One table
+for both kinds, so spend limits later read one place.
 
 The proxy reads `usage` from a non-streamed response, or from the stream's
 `message_start` and final `message_delta` events. A stream cut off before its
@@ -169,7 +203,39 @@ The proxy is a new server module, `packages/server/src/model/`, at the same
 layer as `egress`, and is called only from `extension-runtime`. It joins the
 layer list in `ARCHITECTURE.md` §8 and `scripts/check-layers.mjs`. Core modules
 (`records`, `schema-engine`, `retrieval`, `worker/consolidate`) must not import
-it, and the layer check enforces that.
+it, and the layer check enforces that. The hosted entry point is
+`packages/server/src/lambda/model.ts`.
+
+### 3.6 Hosted placement
+
+On the hosted service the proxy can't live in the `api` function: `api` runs in
+the database VPC's private subnets, which have no route to the internet
+(`retainer-cloud` `infra/aws/network.tf`), so it can't reach Anthropic. Only
+`control` has a way out, through a NAT gateway, for sign-in.
+
+The proxy runs as its own Lambda function, **`model`**, outside the VPC, like
+extension job functions:
+
+- **Admission without the database.** It verifies the run token's signature
+  with the run public key (`RETAINER_EXTENSION_RUN_PUBLIC_KEY`), its audience
+  and expiry, and the `uses` claim (§3.1). It doesn't check that the run is
+  still current, so a token for a run that was fenced or cancelled keeps
+  working for model calls until it expires, at most five minutes. That costs
+  tokens, never data: the proxy can't read or write anything in Retainer.
+- **Usage.** It reports each call's usage to the `extensions` function, which
+  writes `ai_usage`, with a service credential only the `model` function holds.
+  A report that fails is retried; one lost for good under-counts that call.
+- **Streaming.** It answers through a Lambda function URL with response
+  streaming, set as `modelOrigin` in each invocation. Its timeout covers 300 s
+  plus a margin.
+- **The key.** `RETAINER_MODEL_API_KEY` is set on this function only (and moves
+  to Secrets Manager with the others, `retainer-cloud` issue #19).
+- **Traffic.** Model requests leave Lambda directly, not through the NAT
+  gateway, so they add no NAT data charges.
+
+Self-hosted Compose serves the same module at
+`/v1/extensions/runtime/model/` in the server process, with the same token
+checks, and writes `ai_usage` directly.
 
 ## 4. Draft runs
 
@@ -412,46 +478,99 @@ the cheaper one if accuracy holds.
 
 ## 7. Tests
 
-- **Proxy (integration, real Postgres):** admission refuses functions without
-  `model: true` and expired or foreign tokens; the key never appears in a
-  response or log; bodies and beta headers pass through unchanged; streamed
-  responses stream; refused paths and stored-state requests are refused;
-  usage is recorded for plain and streamed responses, including concurrent
-  calls; `model_usage` has no content. Anthropic is faked at the HTTP
-  boundary; the database is real.
-- **Draft runs:** the token reads with the declared scopes only, can't write
-  or read secrets or KV, and stops at the deadline; `defineExtension` rejects
-  a `draft` function with a write scope or secrets; invalid mapping choices
-  become `skip` and invalid settings are dropped; a duplicate request returns
-  the same draft; expiry deletes rows.
+- **Proxy (integration, real Postgres):** it refuses tokens without
+  `uses: model`, with a bad signature or audience, or expired; the key never
+  appears in a response or log; bodies and beta headers pass through
+  unchanged; streamed responses stream; refused paths and stored-state
+  requests are refused; usage is recorded for plain and streamed responses,
+  including concurrent calls; `ai_usage` has no content. Anthropic is faked at
+  the HTTP boundary; the database is real.
+- **Hosted `model` function:** admission works with no database configured;
+  usage reports carry the service credential and are refused without it; a
+  failed report is retried; `modelClient` uses `modelOrigin` when present and
+  the API path otherwise.
+- **Claims:** the run token carries the function's `uses`; a release that adds
+  `model` is held from automatic upgrade.
+- **Configure:** a `configure` run with `uses: ['model']` can call the proxy
+  with its read-only token.
 - **Mapped-write confidence:** a value below the threshold is held as
   `pending_review`; fill-only still holds.
 - **Layer check:** core modules importing `model/` fail `pnpm lint`.
 - **Enrichment (unit):** the shortcut makes no model call; every guard in
-  §6.3; confidence by certainty; fallbacks; KV reuse on retry; the draft
-  function's output for a fixture schema.
-- **Web (`pnpm test:web`):** the draft fills untouched rows only; failure
-  keeps the defaults; Don't suggest; Suggest again.
+  §6.3; confidence by certainty; fallbacks; KV reuse on retry; the configure
+  function's suggestions for a fixture schema.
 
 ## 8. Hosted
 
-`RETAINER_MODEL_API_KEY` in the `retainer-cloud` production environment, the
-proxy route's streaming and timeout settings on the API Lambda, and the
-privacy policy update before the first model-backed release.
+In `retainer-cloud`: the `model` function outside the VPC, its function URL
+with response streaming, `RETAINER_MODEL_API_KEY` on it alone, and the service
+credential it shares with the `extensions` function for usage reports. In this
+repo: the privacy policy update before the first model-backed release.
 
 ## 9. Delivery sequence
 
 1. Docs: update the rule everywhere in §1. This spec moves to "accepted".
-2. Proxy: module, route, `model_usage`, manifest flag, layer rule; staging
-   check of streaming on the hosted API.
-3. Mapped-write `confidence` (§5).
-4. Draft runs: table, endpoints, invocation union, worker dispatch.
-5. Web: better defaults in `shared`, then the draft flow.
-6. Enrichment release with its draft function and the new lookup; staging
-   with a real Exa key and the model key, plus the domain set in §6.6.
-7. Hosted rollout (§8).
+2. Proxy: module, `ai_usage`, `uses` in the manifest and the run token,
+   `modelClient` and `modelOrigin`, layer rule.
+3. Hosted `model` function (§3.6), with a staging check of streaming.
+4. Mapped-write `confidence` (§5).
+5. Enrichment release: `configure` suggests the mapping, and the new lookup;
+   staging with a real Exa key and the model key, plus the domain set in §6.6.
+   (Installation in two steps itself shipped in #90 and #91.)
+6. Hosted rollout (§8).
 
 ## 10. Later
 
 - **Spend limits.** None in v1. A per-workspace or per-plan limit can be
-  checked against `model_usage` when it's needed.
+  checked against `ai_usage` when it's needed.
+- **The workspace agent** (§11).
+
+## 11. Later: the workspace agent
+
+Retainer will have its own agent: a harness with a system prompt, model choice,
+Retainer's tools, and the connections people make (Gmail, calendar), with
+Retainer itself as its memory. Extensions will then hand it tasks instead of
+writing their own agent code. This section records what's decided so v1 doesn't
+work against it; the agent gets its own spec when it's built.
+
+Decided:
+
+- **Harness: Mastra**, used as a library. Only its Apache-2.0 core: agents,
+  tools, workflows and the MCP client for connections. No code from `ee/`
+  folders, which needs a paid license in production (RBAC, fine-grained
+  authorization, Agent Builder, Studio sign-in with a third-party provider);
+  Retainer has its own sign-in, permissions and run access. Mastra's own
+  memory and storage aren't used: Retainer is the memory, and step state is
+  saved through Retainer's API.
+- **No Anthropic Managed Agents, no Bedrock AgentCore, no Lambda durable
+  functions.** Self-hosting must run the same code.
+- **Model: the Anthropic API** with Retainer's key, through the `model`
+  function, so the key stays in one place and agent usage lands in `ai_usage`
+  with `kind: 'agent'`.
+- **Where it runs: a new `agent` Lambda function outside the database VPC**, like
+  extension functions; the worker container on self-hosted Compose. It reaches
+  jobs and records only through Retainer's API, with a task token. Chosen over
+  running it inside the VPC behind `control`'s NAT gateway: the API enforces the
+  run's access instead of our code having to, and a function that reads outside
+  content (email, web pages) has no path to the database. Given up: control over
+  where the agent sends data, since outbound connections from outside the VPC
+  can't be restricted or logged.
+- **Tasks as jobs.** Each agent task runs as a series of short jobs on the
+  Postgres queue, saving state after each model turn or tool call, so no step
+  nears Lambda's limit. An extension starts a task and its run ends; when the
+  task finishes, a child job resumes the extension with the answer.
+
+Rules it must follow:
+
+1. **Harness from the agent, authority from the run.** The agent brings its
+   prompt, tools and connections; its Retainer actions use the run's access
+   (read-only in `configure`) and are recorded as the extension.
+2. **Workspace agent or member agent.** A workspace agent fits the
+   installation's access approval (`uses: ['agent']`). A person's agent, with
+   their Gmail, follows the member connection model: each person connects
+   theirs, with consent (`uses: ['memberAgent']`).
+3. **Tasks are asynchronous**, so the 300 s run limit doesn't apply to agent
+   work.
+
+What v1 already provides for it: `modelClient` (an `agentClient` joins it), the
+open `uses` list, `ai_usage` with `kind`, and the authority rule (§2).
