@@ -190,8 +190,6 @@ the longest handler deadline (300 s) plus a margin.
   the run list shows codes only, as today.
 - Nothing the model saw is stored in Retainer, so erasure has nothing new to
   remove. `ai_usage` holds no content.
-- Anthropic becomes a subprocessor of the hosted service. Updating the
-  privacy policy is deferred.
 
 ### 3.4 Usage
 
@@ -421,7 +419,7 @@ the cheaper one if accuracy holds.
 In `retainer-cloud`: the `model` function outside the VPC, its function URL
 with response streaming, `RETAINER_MODEL_API_KEY` on it alone,
 `RETAINER_MODEL_USAGE_SECRET` on it and on the `extensions` function, and the
-coordinator's `modelOrigin` setting. The privacy policy update is deferred.
+coordinator's `modelOrigin` setting.
 
 ## 9. Delivery sequence
 
