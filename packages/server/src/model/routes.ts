@@ -31,11 +31,30 @@ export function modelProxyRoute(
   });
 }
 
-/** The self-hosted proxy writes `ai_usage` directly. */
+/** What a lost report logs: its ID and counts, never content or the token. */
+const logLost = (report: UsageReport) =>
+  log.error(
+    `Model usage report ${report.id} failed: model ${report.model}, input ${report.inputTokens}, output ${report.outputTokens}, cache read ${report.cacheReadTokens}, cache write ${report.cacheWriteTokens}, partial ${report.partial}.`,
+  );
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The self-hosted proxy writes `ai_usage` directly: three tries with backoff,
+ * since the insert ignores a repeated ID, then it logs like `reportUsage`.
+ */
 export const recordDirectly =
-  (sql: Sql): RecordUsage =>
-  (_token, claims, report) =>
-    recordUsage(sql, claims, report);
+  (sql: Sql, backoffMs = 250): RecordUsage =>
+  async (_token, claims, report) => {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await recordUsage(sql, claims, report);
+        return;
+      } catch {
+        if (attempt < 3) await pause(backoffMs * 4 ** (attempt - 1));
+      }
+    }
+    logLost(report);
+  };
 
 const sameSecret = (sent: string, secret: string) => {
   const a = Buffer.from(sent);
@@ -116,11 +135,8 @@ export function reportUsage(options: {
       } catch {
         // Network failure: retried.
       }
-      if (attempt < 3)
-        await new Promise((resolve) => setTimeout(resolve, backoff * 4 ** (attempt - 1)));
+      if (attempt < 3) await pause(backoff * 4 ** (attempt - 1));
     }
-    log.error(
-      `Model usage report ${report.id} failed: model ${report.model}, input ${report.inputTokens}, output ${report.outputTokens}, cache read ${report.cacheReadTokens}, cache write ${report.cacheWriteTokens}, partial ${report.partial}.`,
-    );
+    logLost(report);
   };
 }

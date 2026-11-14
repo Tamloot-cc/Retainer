@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
+import postgres from 'postgres';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ModelClaims, RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { MAX_REQUEST_BYTES } from '../../src/model/proxy.js';
+import { recordDirectly } from '../../src/model/routes.js';
 import { runCli } from '../../src/operator/commands.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
@@ -445,6 +447,36 @@ describe('the official SDK', () => {
         container: 'container_1',
       } as never),
     ).rejects.toBeInstanceOf(Anthropic.BadRequestError);
+  });
+});
+
+describe('the self-hosted recorder', () => {
+  it('retries a failed insert, then logs the ID and counts, no content', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Nothing listens on port 1: every insert fails to connect.
+    const down = postgres('postgres://retainer@127.0.0.1:1/retainer', {
+      connect_timeout: 1,
+      max: 1,
+    });
+    const report = {
+      id: randomUUID(),
+      model: 'claude-opus-5-5',
+      providerRequestId: 'req_lost',
+      partial: false,
+      inputTokens: 5,
+      outputTokens: 6,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      usage: { input_tokens: 5, output_tokens: 6 },
+      at: new Date().toISOString(),
+    };
+    await recordDirectly(down, 1)(run.token, run.claims, report);
+    await down.end({ timeout: 0 });
+    const logged = JSON.stringify(error.mock.calls);
+    expect(logged).toContain(report.id);
+    expect(logged).toContain('input 5, output 6');
+    expect(logged).not.toContain(run.token);
+    error.mockRestore();
   });
 });
 

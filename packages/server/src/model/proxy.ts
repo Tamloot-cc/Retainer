@@ -149,7 +149,7 @@ export function createModelProxy(options: ModelProxyOptions) {
         try {
           await options.record(token, claims, report);
         } catch {
-          // The recorder retries and logs on its own; the response is unaffected.
+          // Both recorders retry and log what they lose; the response is unaffected.
         }
       })();
       return finished;
