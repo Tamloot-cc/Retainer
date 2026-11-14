@@ -55,12 +55,15 @@ turns back by the same amount, so it travels the circle without rotating.
 | --------- | -------------------------------------------------------------------------------------- | ----- |
 | idle      | Nearly still; the square drifts out of the gap and back                                | 3.2 s |
 | listening | The whole mark breathes in, to 106%                                                    | 1.6 s |
-| thinking  | A steady spin. Also the loading indicator                                              | 1.4 s |
+| thinking  | A steady spin                                                                        | 1.4 s |
 | reading   | The gap scans back and forth, pausing at each end                                      | 2.4 s |
 | saving    | The square shrinks into the ring, the ring takes it in, a new one comes out of the gap | 2.2 s |
-| working   | One eased turn, then a beat at rest                                                    | 1.6 s |
+| working   | One eased turn, then a beat at rest. Also the loading indicator                        | 1.6 s |
 | done      | Plays once: a quick turn and a pop of the square, then idle                            | 0.9 s |
 | error     | Plays once: the square shakes in the gap, then idle                                    | 0.6 s |
+
+Loading uses the original working motion (variant A): a 1.12-second eased
+turn followed by a 0.48-second pause, with `cubic-bezier(0.65, 0, 0.35, 1)`.
 
 ## 4. Changing mood
 
@@ -90,8 +93,9 @@ the only signal.
 - It is decorative unless given a `label`. Next to a status text, leave the
   label out; the text is the accessible name.
 - `Loading` (in `ui/index.tsx`) is the page-level loading state: the mark
-  thinking at 32 px beside a sentence, inside `role="status"`. The app uses it
-  for "Checking session…" and "Loading workspace…". Lists keep their
+  working (turn, then pause) at 32 px beside a sentence, inside `role="status"`.
+  Startup uses `Splash` at 40 px, with the same animation and phase preserved
+  from the HTML splash through React. Lists keep their
   placeholder rows (`EntryLoading`), which show the shape of what is coming.
 
 ## 7. Open questions

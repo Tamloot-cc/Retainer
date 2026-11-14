@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Splash } from './index.js';
+import { Loading, Splash } from './index.js';
 import { CYCLE, LogoMark, type MoodState, moodReducer } from './logo-mark.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -147,13 +147,21 @@ describe('LogoMark', () => {
   });
 });
 
+describe('loading indicators', () => {
+  it('uses the turn-and-pause mood for inline loading', () => {
+    const { container } = render(<Loading>Loading records…</Loading>);
+    expect(mood(mark(container))).toBe('working');
+    expect(screen.getByRole('status').textContent).toBe('Loading records…');
+  });
+});
+
 describe('the splash', () => {
   it('turns from the angle it would have had since page load', () => {
-    vi.spyOn(performance, 'now').mockReturnValue(CYCLE.thinking.ms * 3 + 500);
+    vi.spyOn(performance, 'now').mockReturnValue(CYCLE.working.ms * 3 + 500);
     render(<Splash label="Checking session…" />);
     const status = screen.getByRole('status');
     expect(status.style.getPropertyValue('--splash-phase')).toBe('-500ms');
-    expect(screen.getByRole('img', { name: 'Checking session…' }).dataset.mood).toBe('thinking');
+    expect(screen.getByRole('img', { name: 'Checking session…' }).dataset.mood).toBe('working');
   });
 
   it('is drawn the same in index.html, before the scripts load', () => {
@@ -178,6 +186,6 @@ describe('the splash', () => {
     expect(drawing(page)).toEqual(drawing(container));
     expect(drawing(page).length).toBeGreaterThan(10);
     const style = page.querySelector<HTMLElement>('.retainer-mark')?.style;
-    expect(style?.getPropertyValue('--mark-cycle')).toBe(`${CYCLE.thinking.ms}ms`);
+    expect(style?.getPropertyValue('--mark-cycle')).toBe(`${CYCLE.working.ms}ms`);
   });
 });

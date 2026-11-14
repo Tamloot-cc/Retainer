@@ -209,7 +209,7 @@ export function Notice({
 export function Loading({ children }: { children: ReactNode }) {
   return (
     <div role="status" className="flex items-center gap-3 text-sm text-muted-foreground">
-      <LogoMark mood="thinking" size={32} />
+      <LogoMark mood="working" size={32} />
       <span>{children}</span>
     </div>
   );
@@ -220,14 +220,14 @@ export function Loading({ children }: { children: ReactNode }) {
  * step with the one before, so the wait reads as one motion.
  */
 export function Splash({ label }: { label: string }) {
-  const [phase] = useState(() => `${-(performance.now() % CYCLE.thinking.ms)}ms`);
+  const [phase] = useState(() => `${-(performance.now() % CYCLE.working.ms)}ms`);
   return (
     <div
       role="status"
       className="retainer-splash"
       style={{ '--splash-phase': phase } as CSSProperties}
     >
-      <LogoMark mood="thinking" size={40} label={label} />
+      <LogoMark mood="working" size={40} label={label} />
     </div>
   );
 }

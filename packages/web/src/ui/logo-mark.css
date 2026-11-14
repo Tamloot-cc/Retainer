@@ -66,6 +66,12 @@
 
 /* Moods. Animations exist only when motion is welcome; otherwise each mood is a still pose. */
 @media (prefers-reduced-motion: no-preference) {
+  /* Give looping loaders their own compositor layer so the moving SVG does not
+     share the full-page splash's paint surface. */
+  .retainer-mark:is([data-mood="thinking"], [data-mood="working"]) {
+    will-change: transform;
+  }
+
   /* idle: nearly still; the square drifts out of the gap and back. */
   .retainer-mark[data-mood="idle"] .mark-move {
     animation: retainer-mark-drift var(--mark-cycle) ease-in-out infinite;
@@ -76,7 +82,7 @@
     animation: retainer-mark-breathe var(--mark-cycle) ease-in-out infinite;
   }
 
-  /* thinking: a steady spin with the square upright. Also the loading indicator. */
+  /* thinking: a steady spin with the square upright. */
   .retainer-mark[data-mood="thinking"] :is(.mark-turn, .mark-upright) {
     animation: retainer-mark-spin var(--mark-cycle) linear infinite;
   }
@@ -97,7 +103,7 @@
     animation: retainer-mark-gulp var(--mark-cycle) ease-out infinite;
   }
 
-  /* working: one eased turn, then a beat at rest. */
+  /* working: one eased turn, then a beat at rest. Also the loading indicator. */
   .retainer-mark[data-mood="working"] :is(.mark-turn, .mark-upright) {
     animation: retainer-mark-step var(--mark-cycle) cubic-bezier(0.65, 0, 0.35, 1) infinite;
   }
