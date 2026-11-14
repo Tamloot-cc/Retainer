@@ -105,6 +105,11 @@ const trigger = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('change'),
     objectId: uuid,
+    /**
+     * The fields whose changes fire an update, by universal ID; empty means
+     * every field. A field the workspace doesn't have, or deleted, is skipped
+     * and the trigger keeps watching the rest.
+     */
     fieldIds: z.array(uuid).max(200),
     /**
      * Whether a change to a related record (a link to or from it, or a merge

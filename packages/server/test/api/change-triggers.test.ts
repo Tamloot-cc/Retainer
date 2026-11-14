@@ -348,6 +348,68 @@ describe('transactional change dispatch with real Postgres', () => {
     expect(deleted.status).toBeLessThan(300);
     expect(await dispatch()).toEqual([0, 1]);
   });
+  it('skips a watched field that is missing or deleted and keeps watching the rest', async () => {
+    const name = '5c672ecf-9048-42c2-9213-0a6078980071',
+      never = randomUUID();
+    // A field this workspace never had doesn't block the install.
+    const h = await setup(1, 0, (jobTitle) => [
+      { objectId: BASE_OBJECT_IDS.person, fieldIds: [jobTitle, name, never] },
+    ]);
+    const id = h.ids[0] as string;
+    const fired = async () => {
+      const result = await h.queue.dispatchChanges(h.workspace.id, id);
+      return result.queued + (result.coalesced ?? 0);
+    };
+    const person = await h.person('Before');
+    expect(await fired()).toBe(1);
+    await h.edit(h.keys.admin, person, 'Engineer');
+    expect(await fired()).toBe(1);
+    const schema = async (operations: unknown[]) => {
+      const changed = await h.app.request('/v1/schema/changes', {
+        key: h.keys.admin,
+        body: { operations },
+      });
+      expect(changed.status, JSON.stringify(changed.body)).toBe(200);
+      expect(changed.body.status).toBe('applied');
+    };
+    // Deleting a watched field fires once: its deletion names the field.
+    await schema([{ op: 'delete_field', object: 'person', field: 'jobTitle' }]);
+    expect(await fired()).toBe(1);
+    const patch = async (values: Record<string, unknown>) =>
+      expect(
+        (
+          await h.app.request(`/v1/records/${person}`, {
+            key: h.keys.admin,
+            method: 'PATCH',
+            body: { values },
+          })
+        ).status,
+      ).toBe(200);
+    await patch({ name: 'After' });
+    expect(await fired()).toBe(1);
+    await patch({ address: { city: 'Haifa' } });
+    expect(await fired()).toBe(0);
+    // With every watched field gone, a creation still fires; updates don't.
+    await schema([
+      {
+        op: 'create_field',
+        object: 'person',
+        field: { name: 'displayName', label: 'Display name', type: 'text' },
+      },
+      { op: 'update_object', object: 'person', labelField: 'displayName' },
+      { op: 'delete_field', object: 'person', field: 'name' },
+    ]);
+    expect(await fired()).toBe(1);
+    await patch({ displayName: 'Later' });
+    expect(await fired()).toBe(0);
+    const created = await h.app.request('/v1/objects/person/records', {
+      key: h.keys.admin,
+      body: { values: { displayName: 'New' } },
+    });
+    expect(created.status).toBe(201);
+    expect(await fired()).toBe(1);
+    expect(await h.health(id)).toEqual({ connectionHealth: 'ok', lastError: null });
+  });
   it('keeps UUID/key watches through a rename and ignores an unrelated effective field change', async () => {
     const h = await setup(),
       id = h.ids[0];

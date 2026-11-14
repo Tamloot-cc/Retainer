@@ -3,6 +3,7 @@ export * from './api.js';
 export * from './changes.js';
 export * from './domain.js';
 export * from './field-types.js';
+export * from './mapping.js';
 export * from './roles.js';
 export * from './schema.js';
 export * from './sign-in.js';

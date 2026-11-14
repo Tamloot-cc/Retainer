@@ -865,12 +865,17 @@ export class RetainerClient {
       fields: Record<string, 'applied' | 'populated' | 'cleared' | 'pending_review'>;
     }>(`/v1/extensions/${encodeURIComponent(installationId)}/runtime/mapped-writes`, input);
   }
+  /**
+   * Queue child jobs and compare-and-set one KV value, all or nothing. A KV
+   * value can't be JSON `null` (422 `invalid_input`): a missing key reads as
+   * null, and KV has no delete.
+   */
   extensionCheckpoint(
     id: string,
     input: {
       children: { functionId: string; input: unknown; dedupeKey: string }[];
       scanComplete?: { scanId: string; through: string };
-      kv?: { key: string; expectedRevision: number | null; value: unknown };
+      kv?: { key: string; expectedRevision: number | null; value: NonNullable<unknown> };
     },
   ) {
     return this.post<{ ids: string[]; revision?: number }>(

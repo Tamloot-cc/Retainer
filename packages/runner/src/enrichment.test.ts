@@ -577,7 +577,7 @@ describe('enrichment manifest', () => {
       mappedWrite: true,
       secrets: ['apiKey'],
       trigger: {
-        fieldIds: [ENRICHMENT.domainField],
+        fieldIds: [ENRICHMENT.domainField, ENRICHMENT.nameField],
         related: false,
         operations: ['create', 'update'],
       },

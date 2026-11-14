@@ -3,6 +3,7 @@ import type {
   ExtensionMappingBinding,
   ExtensionMappingChoices,
 } from '@retainer/extension';
+import { mappingFieldIssue } from '@retainer/shared';
 import { AppError } from '../errors.js';
 import type { ContributionRow } from '../extension-runtime/retired.js';
 import type { FieldState, ObjectState, SchemaState } from '../schema/types.js';
@@ -46,8 +47,7 @@ export function bindingStatus(
   const field = object?.fields.find((f) => f.universalId === fieldUniversalId);
   if (!field || field.status !== 'active')
     return { status: 'missing', ...(field ? { field } : {}) };
-  if (!(output.types as readonly string[]).includes(field.type))
-    return { status: 'incompatible', field };
+  if (mappingFieldIssue(field, output)) return { status: 'incompatible', field };
   return { status: 'ok', field };
 }
 
@@ -184,12 +184,9 @@ function review(
         continue;
       }
     }
-    if (target.universalId === mapping.lookup?.fieldId) {
-      issues.push({ output: output.key, reason: 'lookup_field' });
-      continue;
-    }
-    if (!(output.types as readonly string[]).includes(target.type)) {
-      issues.push({ output: output.key, reason: 'incompatible_type' });
+    const issue = mappingFieldIssue(target, output, mapping.lookup?.fieldId);
+    if (issue) {
+      issues.push({ output: output.key, reason: issue });
       continue;
     }
     if (destinations.has(target.universalId)) {

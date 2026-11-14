@@ -750,16 +750,14 @@ export class Extensions {
           `view ${view.universalId} has unresolved schema identities`,
         );
     }
+    // A change trigger needs its object. A watched field this workspace
+    // doesn't have, or deleted, is skipped when changes are dispatched.
     for (const fn of manifest.functions) {
       if (fn.trigger.kind !== 'change') continue;
       const trigger = fn.trigger;
-      const object = planned.desired.objects.find((o) => o.universalId === trigger.objectId);
       if (
         !retired.has(trigger.objectId) &&
-        (!object ||
-          trigger.fieldIds.some(
-            (id) => !retired.has(id) && !object.fields.some((f) => f.universalId === id),
-          ))
+        !planned.desired.objects.some((o) => o.universalId === trigger.objectId)
       )
         throw conflict(
           'schema_binding_conflict',

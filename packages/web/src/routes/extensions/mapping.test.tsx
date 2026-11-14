@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, WorkspaceContext } from '../../api/client.js';
 import { ExtensionPage } from './detail.js';
-import { compatibleFields, importDraft } from './mapping.js';
+import { importDraft } from './mapping.js';
 import { ExtensionSetup } from './setup.js';
 import { router } from './test-router.js';
 
@@ -170,23 +170,6 @@ async function choose(output: string, option: string) {
 afterEach(() => {
   vi.restoreAllMocks();
   router.reset();
-});
-
-describe('compatible fields', () => {
-  it('never offers the field the extension looks companies up by', () => {
-    const mapping = release.manifest.mapping;
-    if (!mapping) throw new Error('fixture needs a mapping');
-    const links = {
-      key: 'linkedin_url',
-      label: 'LinkedIn URL',
-      description: 'The company LinkedIn page.',
-      types: ['links' as const],
-    };
-    expect(compatibleFields(company, links, mapping.lookup).map((f) => f.name)).toEqual([
-      'profile',
-    ]);
-    expect(compatibleFields(company, links).map((f) => f.name)).toEqual(['domain', 'profile']);
-  });
 });
 
 describe('importDraft', () => {
