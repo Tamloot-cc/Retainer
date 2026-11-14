@@ -63,7 +63,7 @@ rule:
 - `docs/specs/accounts-and-access.md:53`
 - Code comments in `packages/server/src/worker/index.ts:7` and
   `worker/consolidate.ts:7` stay true (the core calls no model). They were left
-  for the first code change of step 2, so this docs commit doesn't deploy.
+  for PR 1 (§9), so this docs commit doesn't deploy.
 
 `docs/specs/schema-events-and-history.md:564` (the consolidator stays
 deterministic) is unchanged.
@@ -611,19 +611,37 @@ in the Console.
 
 ## 9. Delivery sequence
 
-1. Docs: the rule updated everywhere in §1, and this spec accepted. Done.
-2. Proxy: the module with its allow-lists, `ai_usage` and its internal usage
-   route, `uses` in the manifest, `granted_uses` and the access preview, the
-   model token, `modelClient` and the invocation's `model` field, the request
-   size limit, the layer rule. Every bundle rebuilt with the new protocol
-   schema. The usage figure on the Overview tab (§3.4).
-3. Hosted `model` function (§3.6), with a staging check of streaming and of
-   what the function sees when its caller disconnects.
-4. Mapped-write `confidence` with its three rules (§5).
-5. Enrichment release: `configure` suggests the mapping, and the new lookup;
-   staging with a real Exa key and the model key, plus the domain set in §6.6.
-   (Installation in two steps itself shipped in #90 and #91.)
-6. Hosted rollout (§8).
+Two pull requests in this repo, with the hosted change between them.
+
+1. **Docs.** The rule updated everywhere in §1, and this spec accepted. Done.
+2. **PR 1: the platform.** One change: an extension can call the model.
+   - The proxy module with its allow-lists, the request size limit and the
+     layer rule.
+   - `ai_usage`, its internal usage route, and the usage figure on the
+     Overview tab (§3.4).
+   - `uses` in the manifest, `granted_uses` and the access preview.
+   - The model token, `modelClient` and the invocation's `model` field. Every
+     bundle rebuilt with the new protocol schema.
+   - The hosted entry point, `lambda/model.ts` (§3.6).
+   - Mapped-write `confidence` with its three rules (§5).
+
+   Nothing calls the model when it merges, because no release declares
+   `uses: ['model']` yet, so it is safe to deploy on its own.
+3. **Hosted, in `retainer-cloud`** (§8). The `model` function and its
+   settings live in the private repo, so they are a separate change there. If
+   deploying PR 1 needs the function to exist, this lands first. Then a
+   staging check of streaming and of what the function sees when its caller
+   disconnects; a fix it calls for in the proxy is a small follow-up before
+   PR 2.
+4. **PR 2: the enrichment release.** `configure` suggests the mapping, and
+   the new lookup; staging with a real Exa key and the model key, plus the
+   domain set in §6.6. (Installation in two steps itself shipped in #90 and
+   #91.)
+
+PR 1 holds everything generic, mapped-write confidence included, so PR 2
+changes the enrichment bundle and nothing in the server. They stay two
+because PR 2 is tested against the deployed proxy with real keys, and the
+staging check in step 3 may still change the proxy.
 
 ## 10. Later
 
@@ -711,3 +729,5 @@ users, so none of these keeps anything for old bundles or installations:
 - Enrichment: separate codes for each model failure, the refusal fallback, a
   `max_tokens` with room for thinking, KV without expiry (§6.5), and a domain
   set that measures the shortcut and guards today's matches (§6.6).
+- The delivery sequence became two pull requests, with the hosted change
+  between them (§9).
