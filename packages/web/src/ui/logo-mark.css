@@ -255,3 +255,17 @@
     transform: scale(0.75);
   }
 }
+
+/* The app starting (Splash, and the same markup in index.html): the mark turning
+   in the middle of the page. --splash-phase starts every splash at the angle it
+   would have had from page load, so swapping one for the next never jumps. */
+.retainer-splash {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.retainer-splash .retainer-mark :is(.mark-turn, .mark-upright) {
+  animation-delay: var(--splash-phase, 0ms);
+}

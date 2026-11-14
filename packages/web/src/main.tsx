@@ -43,7 +43,7 @@ import { CommandPalette } from './routes/command.js';
 import { DeveloperContext, readDeveloperView, writeDeveloperView } from './routes/developer.js';
 import type { ViewSearch } from './routes/state.js';
 import { QueryError, ReportContext, sortObjects } from './routes/state.js';
-import { Button, Loading, Notice, Page, Shell } from './ui/index.js';
+import { Button, Notice, Page, Shell, Splash } from './ui/index.js';
 import './style.css';
 
 const LazyNewWorkspace = lazy(() =>
@@ -108,14 +108,11 @@ function Layout() {
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, []);
+  if (!schema.data && !schema.error) return <Splash label="Loading workspace…" />;
   if (!schema.data)
     return (
       <Page title="Retainer">
-        {schema.error ? (
-          <QueryError error={schema.error} retry={() => void schema.refetch()} />
-        ) : (
-          <Loading>Loading workspace…</Loading>
-        )}
+        <QueryError error={schema.error} retry={() => void schema.refetch()} />
         <Button onClick={signOut}>Sign out</Button>
       </Page>
     );
@@ -322,6 +319,11 @@ const router = createRouter({
   routeTree,
   basepath: workspaceSlug ? `/app/w/${workspaceSlug}` : '/app',
 });
+// Fetch the first page's code now, alongside the session and workspace
+// requests, rather than after them. A failure here only means the router
+// fetches it again when the page renders.
+for (const route of router.getMatchedRoutes(router.latestLocation.pathname)[0])
+  void router.loadRouteChunk(route)?.catch(() => {});
 declare module '@tanstack/react-router' {
   interface Register {
     router: typeof router;
@@ -393,12 +395,7 @@ function KeyApp() {
       })
       .catch((e) => setError(e.message));
   };
-  if (loading)
-    return (
-      <Page title="Retainer">
-        <Loading>Checking session…</Loading>
-      </Page>
-    );
+  if (loading) return <Splash label="Checking session…" />;
   return (
     <>
       {error ? <Notice error>{error}</Notice> : null}
@@ -449,10 +446,11 @@ function AccountWorkspaceApp({ state }: { state: AccountState }) {
     };
   }, []);
   if (lost) return <LazyNoAccess account={state.account} />;
+  if (!session && !error) return <Splash label={`Opening ${state.workspace.name}…`} />;
   if (!session)
     return (
       <Page title="Retainer">
-        {error ? <Notice error>{error}</Notice> : <Notice>Opening {state.workspace.name}…</Notice>}
+        <Notice error>{error}</Notice>
       </Page>
     );
   return (
@@ -550,11 +548,7 @@ function App() {
         ),
     );
   }, []);
-  const loading = (
-    <Page title="Retainer">
-      <Notice>Checking session…</Notice>
-    </Page>
-  );
+  const loading = <Splash label="Checking session…" />;
   if (boot.mode === 'loading') return loading;
   if (boot.mode === 'key') return <KeyApp />;
   if (boot.mode === 'error')

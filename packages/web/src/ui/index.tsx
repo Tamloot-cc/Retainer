@@ -5,6 +5,7 @@ import { cva } from 'class-variance-authority';
 import { ArrowUpRight, ChevronRight, Inbox, Info, Menu, X } from 'lucide-react';
 import {
   type ComponentProps,
+  type CSSProperties,
   type HTMLAttributes,
   type InputHTMLAttributes,
   lazy,
@@ -14,11 +15,12 @@ import {
   useImperativeHandle,
   useLayoutEffect,
   useRef,
+  useState,
 } from 'react';
 import { BrandMark } from './brand.js';
 import { Badge, cn, isPlainClick, NavigationContext, ROW_STATE } from './core.js';
 import { ApiName } from './layout.js';
-import { LogoMark } from './logo-mark.js';
+import { CYCLE, LogoMark } from './logo-mark.js';
 import { Tooltip } from './tooltip.js';
 
 // Adapted from shadcn/ui Button (MIT); see THIRD_PARTY.md.
@@ -209,6 +211,23 @@ export function Loading({ children }: { children: ReactNode }) {
     <div role="status" className="flex items-center gap-3 text-sm text-muted-foreground">
       <LogoMark mood="thinking" size={32} />
       <span>{children}</span>
+    </div>
+  );
+}
+/**
+ * The app starting: only the mark, turning in the middle of the page.
+ * index.html shows the same before the scripts load, and each splash turns in
+ * step with the one before, so the wait reads as one motion.
+ */
+export function Splash({ label }: { label: string }) {
+  const [phase] = useState(() => `${-(performance.now() % CYCLE.thinking.ms)}ms`);
+  return (
+    <div
+      role="status"
+      className="retainer-splash"
+      style={{ '--splash-phase': phase } as CSSProperties}
+    >
+      <LogoMark mood="thinking" size={40} label={label} />
     </div>
   );
 }

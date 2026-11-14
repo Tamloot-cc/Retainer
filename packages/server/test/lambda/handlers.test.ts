@@ -1,6 +1,7 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { brotliCompressSync, brotliDecompressSync } from 'node:zlib';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, inject, it, vi } from 'vitest';
 import { createApiKey } from '../../src/auth/keys.js';
@@ -81,6 +82,8 @@ describe('control function', () => {
   });
 });
 
+const SCRIPT = `console.log(${JSON.stringify('Retainer '.repeat(200))});`;
+
 describe('API function', () => {
   let webDir: string;
   let handler: ReturnType<typeof createApiHandler>;
@@ -89,6 +92,9 @@ describe('API function', () => {
   beforeAll(async () => {
     webDir = await mkdtemp(join(tmpdir(), 'retainer-web-'));
     await writeFile(join(webDir, 'index.html'), '<!doctype html><title>Retainer</title>');
+    await mkdir(join(webDir, 'assets'));
+    await writeFile(join(webDir, 'assets', 'main-abc123.js'), SCRIPT);
+    await writeFile(join(webDir, 'assets', 'main-abc123.js.br'), brotliCompressSync(SCRIPT));
     handler = createApiHandler(
       { ...config(), RETAINER_WEB_DIR: webDir },
       db.connect({ role: RUNTIME_ROLE, max: 2 }),
@@ -155,6 +161,36 @@ describe('API function', () => {
     const res = await handler(httpEvent('GET', '/app/records/person'), context);
     expect(res.statusCode).toBe(200);
     expect(bodyOf(res)).toContain('<title>Retainer</title>');
+    expect(res.headers?.['cache-control']).toBe('no-cache');
+    const root = await handler(httpEvent('GET', '/app/'), context);
+    expect(root.statusCode).toBe(200);
+    expect(root.headers?.['cache-control']).toBe('no-cache');
+  });
+
+  it('serves hashed assets compressed, cached for good', async () => {
+    const res = await handler(
+      httpEvent('GET', '/app/assets/main-abc123.js', {
+        headers: { 'accept-encoding': 'gzip, deflate, br, zstd' },
+      }),
+      context,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.headers).toMatchObject({
+      'content-encoding': 'br',
+      vary: 'Accept-Encoding',
+      'cache-control': 'public, max-age=31536000, immutable',
+    });
+    expect(res.isBase64Encoded).toBe(true);
+    expect(brotliDecompressSync(Buffer.from(res.body ?? '', 'base64')).toString()).toBe(SCRIPT);
+
+    const plain = await handler(httpEvent('GET', '/app/assets/main-abc123.js'), context);
+    expect(plain.headers?.['content-encoding']).toBeUndefined();
+    expect(plain.headers?.vary).toBe('Accept-Encoding');
+    expect(bodyOf(plain)).toBe(SCRIPT);
+
+    const missing = await handler(httpEvent('GET', '/app/assets/gone-123.js'), context);
+    expect(missing.statusCode).toBe(404);
+    expect(missing.headers?.['cache-control']).toBeUndefined();
   });
 });
 
