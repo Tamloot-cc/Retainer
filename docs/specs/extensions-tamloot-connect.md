@@ -1002,15 +1002,17 @@ API Gateway with Retainer's staging client, not a fixture.
    Retainer. If not: Tamloot serializes its release per member and client;
    nothing changes in Retainer.
 10. **Release racing an unexchanged code.** One workspace releases the
-    member's last session while another holds an approved code, both one
-    after the other and at the same moment. Tamloot (PR #2410, `24e412526`)
-    treats a session as live only while the member's approval is not
-    revoked, so a session made under a revoked approval can never read,
-    whatever the token endpoint does with the exchange. Check, in both
-    orders: the exchange either fails, or its first read answers `401
-    access_revoked`, its refresh fails, and the connection becomes "Needs
-    reconnect" by the ordinary `401` rule (§5.8). No Retainer change. If a
-    read succeeds, it is a Tamloot blocker.
+    member's last session while another holds an approved code it has not
+    exchanged, one after the other and at the same moment. Tamloot (PR
+    #2410, `24e412526`, its §13 item 7) treats a session as live only while
+    the member's approval is not revoked, so a session made under a revoked
+    approval can never read. Valid outcomes: released first, the exchange
+    fails and the connect is `setup_failed`; concurrent, either the approval
+    is revoked and the new session's first read answers `401`, its refresh
+    fails and the connection becomes "Needs reconnect" by the ordinary rule
+    (§5.8), or the new session existed first, the approval stays and the
+    connection works. No Retainer change. A read under a revoked approval is
+    a Tamloot blocker.
 11. **Load and isolation.** Several connections of one member, polling at
     the normal rate, stay inside the shared API throttle, and their sessions
     stay separate. If not: poll OAuth connections less often.
