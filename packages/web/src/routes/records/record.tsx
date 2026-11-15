@@ -27,6 +27,7 @@ export function RecordPage() {
   return (
     <Page
       eyebrow={classLabel(objectByName(schema, r.object)) ?? r.object}
+      eyebrowLink={{ to: '/o/$object', params: { object: r.object } }}
       title={recordTitle(r)}
       icon={<ObjectIcon name={r.object} objectClass={object?.class} />}
       avatar={

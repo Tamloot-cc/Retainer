@@ -391,6 +391,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
     <Page
       layout="fill"
       eyebrow={isEvent ? 'Activity' : 'Records'}
+      eyebrowLink={isEvent ? { to: '/activity' } : undefined}
       title={object.labelPlural}
       icon={<ObjectIcon name={object.nameSingular} objectClass={object.class} />}
       apiName={apiName(object.nameSingular)}

@@ -1,6 +1,6 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Slot } from '@radix-ui/react-slot';
-import { Link } from '@tanstack/react-router';
+import { Link, type LinkProps } from '@tanstack/react-router';
 import { cva } from 'class-variance-authority';
 import { ArrowUpRight, ChevronRight, Inbox, Info, Menu, X } from 'lucide-react';
 import {
@@ -265,6 +265,9 @@ export function FormField({
   );
 }
 
+const CRUMB =
+  'hidden max-w-48 truncate text-muted-foreground first-letter:uppercase sm:inline-block';
+
 /**
  * A screen: a slim top bar with breadcrumb and actions, then the content.
  * `layout="fill"` gives the content the rest of the viewport with no padding,
@@ -272,6 +275,7 @@ export function FormField({
  */
 export function Page({
   eyebrow,
+  eyebrowLink,
   title,
   icon,
   avatar,
@@ -282,6 +286,8 @@ export function Page({
   children,
 }: {
   eyebrow?: string;
+  /** Where the eyebrow crumb leads; without it the crumb is plain text. */
+  eyebrowLink?: LinkProps;
   title: string;
   icon?: ReactNode;
   avatar?: ReactNode;
@@ -314,9 +320,19 @@ export function Page({
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
           {eyebrow ? (
             <>
-              <span className="hidden max-w-48 truncate text-muted-foreground first-letter:uppercase sm:inline-block">
-                {eyebrow}
-              </span>
+              {eyebrowLink ? (
+                <Link
+                  {...eyebrowLink}
+                  className={cn(
+                    CRUMB,
+                    'rounded-sm hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  )}
+                >
+                  {eyebrow}
+                </Link>
+              ) : (
+                <span className={CRUMB}>{eyebrow}</span>
+              )}
               <ChevronRight
                 size={14}
                 aria-hidden

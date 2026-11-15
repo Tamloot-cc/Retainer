@@ -53,25 +53,28 @@ type Settings = Installation['settings'];
 type Tab = 'overview' | 'connections' | 'mapping' | 'settings' | 'runs' | 'credentials';
 
 /** `/extensions/:id`: one installed extension, its state up top and the rest in tabs. */
+/** Every extension page's breadcrumb leads back to the list. */
+const CRUMB = { eyebrow: 'Extensions', eyebrowLink: { to: '/extensions' } } as const;
+
 export function ExtensionPage() {
   const { id } = useParams({ strict: false }) as { id: string };
   const { data, error, retry } = useExtensions();
   if (error)
     return (
-      <Page eyebrow="Extensions" title="Extension">
+      <Page {...CRUMB} title="Extension">
         <QueryError error={error} retry={retry} />
       </Page>
     );
   if (!data)
     return (
-      <Page eyebrow="Extensions" title="Extension">
+      <Page {...CRUMB} title="Extension">
         <Loading>Loading extension…</Loading>
       </Page>
     );
   const installation = data.installed.find((i) => i.id === id);
   if (!installation)
     return (
-      <Page eyebrow="Extensions" title="Extension">
+      <Page {...CRUMB} title="Extension">
         <Empty
           title="Extension not found"
           description="It is not installed in this workspace, or the address is wrong."
@@ -171,7 +174,7 @@ function InstalledExtension({
   const showMenu = reconnect || canEnable || canDisable || (admin && !gone);
   return (
     <Page
-      eyebrow="Extensions"
+      {...CRUMB}
       title={name}
       avatar={
         <IdentityTag identity={installation.registrationId}>

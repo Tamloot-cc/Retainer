@@ -661,6 +661,7 @@ function SetupPage({ title, children }: { title: string; children: ReactNode }) 
   return (
     <Page
       eyebrow="Extensions"
+      eyebrowLink={{ to: '/extensions' }}
       title={title}
       actions={
         <Button variant="ghost" size="small" asChild>
