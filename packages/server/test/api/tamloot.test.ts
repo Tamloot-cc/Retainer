@@ -275,6 +275,12 @@ describe('Tamloot bundle through real API and Postgres with provider HTTP fixtur
     const tasks =
       await db.owner`select t.*,r.created_by from source_tasks t join records r on r.id=t.record_id where t.installation_id=${h.id} order by external_id`;
     expect(tasks).toHaveLength(2);
+    const [idField] =
+      await db.owner`select key from fields where workspace_id=${h.workspace} and universal_id=${TAMLOOT.taskIdField}`;
+    const shown =
+      await db.owner`select r.data->>${idField!.key} as value from source_tasks t join records r on r.id=t.record_id where t.installation_id=${h.id} order by t.external_id`;
+    // The field shows the provider's own task ID, not an internal account-scoped key.
+    expect(shown.map((r) => r.value)).toEqual(tasks.map((t) => t.external_id));
     expect(tasks[0]!.created_by).toMatchObject({
       type: 'integration',
       id: h.id,

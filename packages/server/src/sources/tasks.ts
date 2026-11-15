@@ -216,7 +216,9 @@ export async function reconcileTasks(
       continue;
     }
     if (!(await budget())) break;
-    const identityValue = JSON.stringify([account.account_id, task.externalId]);
+    // People read this field, so it holds the provider's task ID as is. source_tasks keys the
+    // binding by account; a clash across accounts fails below as source_task_conflict.
+    const identityValue = task.externalId;
     const values = prepareValues(
       object,
       {
