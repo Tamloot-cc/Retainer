@@ -240,11 +240,9 @@ Steps, in `MemberConnections` (new method `authorize`), following `stage`:
    `409 credential_mismatch`) and `expectedGeneration` matches (else
    `409 stale_plan`). For a reconnect, a `{ keep: 'current' }` cleanup of
    this connection that is **running** refuses the start with
-   `409 cleanup_running`, and one that is **queued** is cancelled in this
-   transaction (§4.7). The web app shows "Retainer is finishing an earlier
-   attempt. Try again in a moment." Claiming a job takes the same queue
-   lock, so a cleanup can never start giving sessions up after a reconnect
-   has begun.
+   `409 cleanup_running`; the web app shows "Retainer is finishing an
+   earlier attempt. Try again in a moment." One that is **queued** is left
+   queued and deferred while this request is open (§4.7).
 3. Create the verifier (32 random bytes, base64url; the challenge is its
    base64url SHA-256) and the state:
    `v1.<workspaceId>.<installationId>.<nonce>`, where the nonce is 32 random
@@ -416,12 +414,23 @@ leaves `active`, so the platform runs the hook for them, with input
     the full hook on a disconnected connection.
 - **Never beside a reconnect.** It takes the connection's one running slot
   (`extension_jobs_one_running_connection_uq`). Starting a reconnect
-  (§4.4) is refused while it runs and cancels it while it is queued, under
-  the queue lock that claiming also takes, so it can never give up the
-  session a reconnect's new code depends on. The reconnect's own `connect`
-  gives the same sessions up in step 7, after its new session is promoted
-  (§5.5), or the cleanup queued when it fails does. A disconnect cancels it
-  and queues the full hook.
+  (§4.4) is refused while it runs. While the connection has an unconsumed,
+  unexpired `extension_authorizations` row, `retainer_extension_jobs_due`
+  does not claim it: the check runs under the queue lock that starting an
+  authorization also takes, so it can never give up the session a
+  reconnect's new code depends on. Starting the browser handshake changes
+  nothing else; the job stays queued with its original 24-hour deadline,
+  which is not extended.
+  - The member completes: completion bumps the generation, so the job is
+    cancelled at claim. The reconnect's `connect` gives the same sessions
+    up in step 7, after promotion (§5.5), or the cleanup queued when it
+    fails does.
+  - The member declines, closes Tamloot, or lets the request expire: the
+    request is deleted or expires, and the next claim runs the job as
+    before, inside its original deadline.
+  - The deadline passes during the handshake: the job ends at its deadline
+    like any other cleanup, and §4.7's incident and notice follow.
+  - A disconnect cancels it and queues the full hook.
 - **Changes nothing about the connection.** It never releases `current`
   (after a rejected reconnect, that is the member's previous session). It
   writes no secret, so entries it released stay in the store until a later
@@ -459,8 +468,10 @@ reporting them; the server's dedupe makes that safe. Dropping the oldest of
 32 recorded IDs can at worst show one old incident again, never hide a new
 one.
 
-A cleanup job cancelled by a reconnect or a disconnect sets nothing: the run
-that replaced it reads the same store and reports the same IDs. The member
+A cleanup job cancelled by a completed reconnect or a disconnect sets
+nothing: the run that replaced it reads the same store and reports the same
+IDs. Starting a browser handshake alone replaces nothing; it only defers the
+job. The member
 sees a notice whenever `release_incomplete_at` is later than
 `release_notice_dismissed_at` (or nothing was dismissed). A dismissal hides
 what was reported before it. The same incident reported again after a
@@ -1118,10 +1129,19 @@ Real Postgres, a fresh database per file, no mocked database.
     notice shows.
   - **Reconnect versus a running cleanup:** with a `{ keep: 'current' }`
     hook running, starting a reconnect answers `409 cleanup_running` and
-    the hook finishes; with it queued, the start cancels it and no
-    `DELETE /v1/access` is made before the new session is promoted. Run
-    both concurrently: no order lets the hook release a session after the
-    start has committed. **The same incident
+    the hook finishes. With it queued, the start leaves it queued, it is not
+    claimed while the request is open, and no `DELETE /v1/access` is made
+    before the new session is promoted. Run the start and a claim
+    concurrently: no order lets the hook release a session after the start
+    has committed.
+  - **Handshake abandoned:** the member declines, closes Tamloot, or the
+    request expires. The deferred hook is claimed and runs, and its
+    deadline is still 24 hours from when it was queued.
+  - **Deadline during the handshake:** the request stays open past the
+    hook's deadline. The hook ends at its deadline and records its
+    incident, and the notice shows.
+  - **Handshake completed:** the generation bump cancels the deferred hook,
+    and the reconnect's step 7 gives the sessions up. **The same incident
     after a dismissal** stays hidden. **A later, different incident** shows
     the notice again.
 - **Completion and the state (API):** completion with the workspace named in
