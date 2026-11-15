@@ -17,20 +17,18 @@ import { type RateLimit, rateLimit } from '../http/rate-limit.js';
 import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
 import { mcpRoute } from '../mcp/route.js';
 import { mountModelRoutes } from '../model/mount.js';
-import { Sources } from '../sources/service.js';
 import { VERSION } from '../version.js';
 import type { Webhooks } from '../webhooks/service.js';
 import { changeRoutes } from './routes/changes.js';
 import { commentRoutes } from './routes/comments.js';
+import { extensionDataRoutes } from './routes/extension-data.js';
 import { runtimeRoutes } from './routes/extension-runtime.js';
 import { extensionRoutes } from './routes/extensions.js';
 import { fileRoutes } from './routes/files.js';
-import { lastContactRoutes } from './routes/last-contact.js';
 import { memoryRoutes } from './routes/memory.js';
 import { recordRoutes } from './routes/records.js';
 import { retrievalRoutes } from './routes/retrieval.js';
 import { schemaRoutes } from './routes/schema.js';
-import { sourceRoutes } from './routes/sources.js';
 import { templateRoutes } from './routes/templates.js';
 import { viewRoutes } from './routes/views.js';
 import { webReadRoutes } from './routes/web-read.js';
@@ -120,18 +118,9 @@ export function createApp(deps: AppDeps) {
   );
   extensionRoutes(v1, extensions, !deps.accountsSecret);
   runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets);
-  lastContactRoutes(v1, deps.sql, extensions.catalog);
+  extensionDataRoutes(v1, deps.sql, extensions.catalog);
   webhookRuntime(v1, deps.webhooks);
   fileRoutes(v1, deps.sql, deps.fileStorage, deps.fileQuota);
-  sourceRoutes(
-    v1,
-    new Sources(deps.sql, (registration, version, digest) => {
-      const release = extensions.catalog.get(registration, version);
-      if (release.digest !== digest)
-        throw new AppError(409, 'incompatible_runtime', 'source release changed');
-      return release.manifest;
-    }),
-  );
   app.route('/v1', v1);
 
   // Accounts mode: apps connect to /mcp over OAuth as well as with API keys
