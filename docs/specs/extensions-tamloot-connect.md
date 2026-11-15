@@ -810,9 +810,11 @@ The token helper returns the status and the native `error` and `error_code`
 as they came, and each caller classifies them. In an ordinary run (an
 import, `connect`) all four refresh codes are `invalid_grant`, so
 `provider_unauthorized`. Giving a session up (§5.7) and the backlog check
-(§5.5 step 3) count `refresh_token_not_found` as done, since GoTrue has no
-session for that token, and a bare RFC `error: invalid_grant` keeps its
-documented meaning there: done. No other refresh error counts as done. The other three may leave the session behind: a ban
+(§5.5 step 3) count only `refresh_token_not_found` as done: GoTrue has no
+session for that token. No other refresh error counts as done there: a bare
+RFC `error: invalid_grant` (never observed on GoTrue's refresh) is kept and
+retried like the three codes below. Ordinary runs still treat it as
+`provider_unauthorized`. The other three may leave the session behind: a ban
 only sets `banned_until`, so the same refresh token works again once it is
 lifted; reuse and `not_after` do not prove the session row is gone. For
 them Retainer keeps the tokens and the obligation, retries within the
@@ -881,7 +883,7 @@ a session.
    - If `release` holds four entries, check each with `GET /v1/me` (a read,
      which never revokes anything), refreshing once on `401` as §5.6 does
      and writing any new tokens. Drop the entries that still answer `401`
-     or whose refresh answers `invalid_grant` or `refresh_token_not_found`: Retainer has no
+     or whose refresh answers `refresh_token_not_found`: Retainer has no
      access through them, which §5.7 already counts as done. The other
      refresh codes in §5.4 keep the entry, as §5.7 does. This is how entries
      that the cleanup hook gave up, but could not remove because it cannot
@@ -984,7 +986,7 @@ next (extensions-lambda.md §3.2).
 
 To give up one session: `DELETE /v1/access` with its access token. `204` is
 done. On `401`, refresh that session once and repeat; a second `401` or
-a refresh answering `invalid_grant` or `refresh_token_not_found` (§5.4) means Retainer has no
+a refresh answering `refresh_token_not_found` (§5.4) means Retainer has no
 access through that session now, which is also done: Retainer drops its tokens and can do nothing more with it. A
 `401` does not mean Tamloot deleted the session (Tamloot §10, "Known limit:
 re-approval"; see §13). `429`, a `5xx` or a network error means try again
@@ -1264,9 +1266,9 @@ Real Postgres, a fresh database per file, no mocked database.
 - **Token answers (unit):** the fixtures use the bodies in §5.4, not RFC
   guesses. A refresh answering any of the four refresh `error_code`s in §5.4
   is `provider_unauthorized` in an ordinary run; in a release and the §5.5
-  backlog check only `error: invalid_grant` and `refresh_token_not_found` are done, and
-  `refresh_token_already_used`, `user_banned` and `session_expired` keep the
-  entry; a `429` with any body is `retry`; the same codes on an exchange, `invalid_credentials`,
+  backlog check only `refresh_token_not_found` is done, and
+  `refresh_token_already_used`, `user_banned`, `session_expired` and a bare
+  `error: invalid_grant` keep the entry; a `429` with any body is `retry`; the same codes on an exchange, `invalid_credentials`,
   `error: invalid_client` and an unknown `error_code` are
   `oauth_client_rejected`. A `403` or a client refusal during a release keeps
   the entry and names the code (§5.7).
