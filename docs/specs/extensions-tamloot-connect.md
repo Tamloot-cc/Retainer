@@ -211,7 +211,8 @@ New columns on `extension_connections`:
   timestamptz`: set when a cleanup that holds provider credentials did not
   finish (§4.7). They drive the member's notice (§6.2).
 - `release_incidents text[] not null default '{}'`: the incident IDs already
-  recorded for this connection (§4.7), at most 32, oldest dropped first.
+  recorded for this connection (§4.7), each matching the result pattern
+  (at most 89 characters), at most 32, oldest dropped first.
 
 ### 4.4 Starting an authorization
 
@@ -427,14 +428,16 @@ leaves `active`, so the platform runs the hook for them, with input
 **When cleanup does not finish.** Reports are idempotent and kept by the
 server, never by the bundle's store, so a crash can repeat a report but
 never lose one. The execution result (`@retainer/extension`,
-`executionResultSchema`) gains `releaseIncomplete?: string[]`: incident IDs
-(at most 8, each `^[a-z]+:[a-z0-9]{1,80}$`), allowed with any status. The
+`executionResultSchema`) gains `releaseIncomplete?: string[]`: at most 8
+incident IDs, each matching `^[a-z]{1,8}:[a-z0-9-]{1,80}$` (at most 89
+characters; a lowercase canonical UUID fits), allowed with any status. The
 transaction that records a job's result, for each ID not yet in the
 connection's `release_incidents`, appends it and sets
 `release_incomplete_at = now()`. An ID already there changes nothing. It
-also records the incident `cleanup:<job id>` when a `disconnect` job of a
-connection with non-empty `disconnect_secrets` fails (for good, out of
-retries, or at the 24-hour deadline).
+also records the incident `cleanup:<job id>`, the job's UUID in lowercase
+with hyphens, when a `disconnect` job of a connection with non-empty
+`disconnect_secrets` fails (for good, out of retries, or at the 24-hour
+deadline).
 
 The Tamloot bundle uses one kind of ID, `exchange:<codeHash>`, for an
 exchange that may have left a session nobody holds (§5.5). It reports every
