@@ -126,9 +126,7 @@ export async function extensionServices(
               'disconnect',
               'schedule',
               'change',
-            ].includes(
-              fn.trigger.kind,
-            )
+            ].includes(fn.trigger.kind)
           )
             throw new Error('trigger runtime is unavailable');
           const executable = registry.lookup(
