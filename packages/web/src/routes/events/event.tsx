@@ -90,6 +90,7 @@ export function EventPage() {
   return (
     <Page
       eyebrow={classLabel(type) ?? r.object}
+      eyebrowLink={{ to: '/o/$object', params: { object: r.object } }}
       title={eventTitle(e)}
       description={[
         type?.labelSingular ?? r.object,
