@@ -102,9 +102,10 @@ paste-a-key option as a fallback, or remove it?
 Changes to Tamloot's PRD that affect this one, newest first. Each names the
 Tamloot commit and what changed here.
 
-| Date       | Tamloot commit | Change in Tamloot's PRD                                      | Effect here                                           |
-| ---------- | -------------- | ------------------------------------------------------------ | ----------------------------------------------------- |
-| 2026-11-15 | `1cc8cc53e`    | Each workspace has its own access; disconnecting gives it up | Requirement 6 and the Disconnecting paragraph         |
-| 2026-11-15 | `d6574e687`    | The list of approved apps shows each app's address           | Requirement 8; the approval names retainer.tamloot.cc |
-| 2026-11-15 | `d6574e687`    | Tamloot enforces Retainer's read-only access on its side     | Requirement 7                                         |
-| 2026-11-15 | `d0cca4331`    | First version: approving, revoking, Connected apps page      | Revoking stops every workspace the member connected   |
+| Date       | Tamloot commit | Change in Tamloot's PRD                                        | Effect here                                           |
+| ---------- | -------------- | -------------------------------------------------------------- | ----------------------------------------------------- |
+| 2026-11-15 | `45d901102`    | The approval gives the same read access an API key gives today | Requirement 9 rests on it: imports stay the same      |
+| 2026-11-15 | `1cc8cc53e`    | Each workspace has its own access; disconnecting gives it up   | Requirement 6 and the Disconnecting paragraph         |
+| 2026-11-15 | `d6574e687`    | The list of approved apps shows each app's address             | Requirement 8; the approval names retainer.tamloot.cc |
+| 2026-11-15 | `d6574e687`    | Tamloot enforces Retainer's read-only access on its side       | Requirement 7                                         |
+| 2026-11-15 | `d0cca4331`    | First version: approving, revoking, Connected apps page        | Revoking stops every workspace the member connected   |
