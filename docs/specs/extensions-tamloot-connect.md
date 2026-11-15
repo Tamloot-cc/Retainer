@@ -238,7 +238,13 @@ Steps, in `MemberConnections` (new method `authorize`), following `stage`:
    `409 connection_exists`). Reconnect: the connection is the caller's, not
    disconnected (else 404), its `credential` is `oauth` (else
    `409 credential_mismatch`) and `expectedGeneration` matches (else
-   `409 stale_plan`).
+   `409 stale_plan`). For a reconnect, a `{ keep: 'current' }` cleanup of
+   this connection that is **running** refuses the start with
+   `409 cleanup_running`, and one that is **queued** is cancelled in this
+   transaction (§4.7). The web app shows "Retainer is finishing an earlier
+   attempt. Try again in a moment." Claiming a job takes the same queue
+   lock, so a cleanup can never start giving sessions up after a reconnect
+   has begun.
 3. Create the verifier (32 random bytes, base64url; the challenge is its
    base64url SHA-256) and the state:
    `v1.<workspaceId>.<installationId>.<nonce>`, where the nonce is 32 random
@@ -408,11 +414,14 @@ leaves `active`, so the platform runs the hook for them, with input
     `admitRun`, and so does `GET …/runtime/oauth-client` (§4.6), which a
     hook needs to refresh a session before releasing it. The same holds for
     the full hook on a disconnected connection.
-- **Never beside a connect.** It takes the connection's one running slot
-  (`extension_jobs_one_running_connection_uq`). A reconnect bumps the
-  generation, so it is cancelled at claim; the reconnect's own `connect`
-  drains the same sessions first (§5.5). A disconnect cancels it and queues
-  the full hook.
+- **Never beside a reconnect.** It takes the connection's one running slot
+  (`extension_jobs_one_running_connection_uq`). Starting a reconnect
+  (§4.4) is refused while it runs and cancels it while it is queued, under
+  the queue lock that claiming also takes, so it can never give up the
+  session a reconnect's new code depends on. The reconnect's own `connect`
+  gives the same sessions up in step 7, after its new session is promoted
+  (§5.5), or the cleanup queued when it fails does. A disconnect cancels it
+  and queues the full hook.
 - **Changes nothing about the connection.** It never releases `current`
   (after a rejected reconnect, that is the member's previous session). It
   writes no secret, so entries it released stay in the store until a later
@@ -431,9 +440,13 @@ never lose one. The execution result (`@retainer/extension`,
 `executionResultSchema`) gains `releaseIncomplete?: string[]`: at most 8
 incident IDs, each matching `^[a-z]{1,8}:[a-z0-9-]{1,80}$` (at most 89
 characters; a lowercase canonical UUID fits), allowed with any status. The
-transaction that records a job's result, for each ID not yet in the
-connection's `release_incidents`, appends it and sets
-`release_incomplete_at = now()`. An ID already there changes nothing. It
+transaction that records a job's result locks the connection row
+(`for update`) and, for each ID not yet in the connection's
+`release_incidents`, appends it and stamps `release_incomplete_at` with
+`greatest(clock_timestamp(), release_incomplete_at + 1µs,
+release_notice_dismissed_at + 1µs)`, so a new incident is always later than
+the last one and than the last dismissal. An ID already there changes
+nothing. It
 also records the incident `cleanup:<job id>`, the job's UUID in lowercase
 with hyphens, when a `disconnect` job of a connection with non-empty
 `disconnect_secrets` fails (for good, out of retries, or at the 24-hour
@@ -453,9 +466,17 @@ sees a notice whenever `release_incomplete_at` is later than
 what was reported before it. The same incident reported again after a
 dismissal is deduped and stays hidden; a new incident sets a later
 `release_incomplete_at` and shows again (§6.2).
-Dismissing sets `release_notice_dismissed_at = now()` through
+**Dismissing.**
 `POST /v1/extensions/:id/connections/:cid/release-notice/dismiss`, the owner
-only. Retainer never claims the access ended when it did not.
+only, with `{ at }`: the `releaseNotice.at` the member saw. Under
+the same row lock, if `release_incomplete_at` equals `at` exactly, it sets
+`release_notice_dismissed_at = release_incomplete_at`, the stored value, not
+the click time and not the client's value. Otherwise it answers
+`409 notice_changed`, changes nothing, and the web app reloads the notice.
+So a dismissal hides exactly the incident on screen. One recorded between
+loading the page and clicking stays visible. A forged or future `at` never
+matches, so it hides nothing. Retainer never claims the access ended when it
+did not.
 
 ### 4.8 Reads
 
@@ -480,14 +501,14 @@ only. Retainer never claims the access ended when it did not.
 
 - SDK: `authorizeExtensionConnection(id, input)`,
   `completeExtensionAuthorization(id, input)`,
-  `dismissReleaseNotice(id, connectionId)` and, for runs,
+  `dismissReleaseNotice(id, connectionId, at)` and, for runs,
   `extensionOAuthClient(id)`.
 - MCP stays read-only. `list_extension_connections` shows `credential`.
 - New error codes: `oauth_unavailable`, `authorization_expired`,
-  `credential_mismatch`. New job result codes from the Tamloot bundle:
-  `release_backlog`, `lost_backlog`, `exchange_interrupted`,
-  `release_incomplete` (§5), and
-  the result field `releaseIncomplete` (§4.7).
+  `credential_mismatch`, `cleanup_running`, `notice_changed`. New job
+  result codes from the Tamloot bundle: `release_backlog`, `lost_backlog`,
+  `exchange_interrupted`, `release_incomplete` (§5), and the result field
+  `releaseIncomplete` (§4.7).
 
 ## 5. Part B: the Tamloot bundle
 
@@ -1086,7 +1107,21 @@ Real Postgres, a fresh database per file, no mocked database.
     all recorded already changes nothing. Two results with the same new ID
     recorded at the same moment set it once.
   - `releaseNotice` shows only the caller's own connection, dismissing is
-    the owner's alone, and it stays until dismissed. **The same incident
+    the owner's alone, and it stays until dismissed.
+  - **A new incident between reading and dismissing:** the member reads
+    incident A, incident B is recorded, and the dismiss with A's `at` gets
+    `409 notice_changed` and B stays visible. A forged future `at`, or an
+    old one, also gets `409` and hides nothing.
+  - **Dismiss racing a result:** a dismissal and a result recording a new
+    incident run at the same moment. In either commit order the new
+    incident's `release_incomplete_at` is later than the dismissal and the
+    notice shows.
+  - **Reconnect versus a running cleanup:** with a `{ keep: 'current' }`
+    hook running, starting a reconnect answers `409 cleanup_running` and
+    the hook finishes; with it queued, the start cancels it and no
+    `DELETE /v1/access` is made before the new session is promoted. Run
+    both concurrently: no order lets the hook release a session after the
+    start has committed. **The same incident
     after a dismissal** stays hidden. **A later, different incident** shows
     the notice again.
 - **Completion and the state (API):** completion with the workspace named in
