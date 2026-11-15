@@ -485,7 +485,8 @@ only. Retainer never claims the access ended when it did not.
 - MCP stays read-only. `list_extension_connections` shows `credential`.
 - New error codes: `oauth_unavailable`, `authorization_expired`,
   `credential_mismatch`. New job result codes from the Tamloot bundle:
-  `release_backlog`, `exchange_interrupted`, `release_incomplete` (§5), and
+  `release_backlog`, `lost_backlog`, `exchange_interrupted`,
+  `release_incomplete` (§5), and
   the result field `releaseIncomplete` (§4.7).
 
 ## 5. Part B: the Tamloot bundle
@@ -595,10 +596,20 @@ use `current` for this code; any other state with no `pending` fails.
    (§5.7). Write the store, without the entries that are gone. Failures
    here do not fail the run.
 3. **New code** (nothing stored, or `codeHash` is not this code's hash):
-   - If `release` or `lost` holds four entries, fail with `release_backlog`
-     without exchanging. An unexchanged code creates no session in Tamloot.
-     The connection is `setup_failed`; with a full `lost`, only a disconnect
-     and a new connection clear it.
+   - If `release` holds four entries, fail with `release_backlog` without
+     exchanging. An unexchanged code creates no session in Tamloot. The
+     connection is `setup_failed`, and a later attempt may succeed once
+     Tamloot answers.
+   - If `lost` holds four entries, fail with `lost_backlog` without
+     exchanging. This is a chosen, bounded stop, not a lock nobody can
+     explain: four exchanges ended without an answer Retainer could read
+     (a crash, a timeout or a `5xx` that outlasted the job's retries), and
+     each may have left a session. Retainer cannot tell which, so it keeps
+     every hash and stops adding more. The member's way out is to
+     disconnect and connect again, which starts a new connection with an
+     empty store; the reason text says so and points to revoking in
+     Tamloot for any access left behind. No acknowledgement or pruning
+     protocol is added.
    - Write `{ codeHash, exchange: 'started', failure: null, pending: null }`,
      keeping `current`, `release` and `lost`. Then exchange, and write as
      the table below says before any other call.
@@ -724,9 +735,10 @@ request that is not a GET.
 | API, key       | 401 or 403                 | `failed`, `provider_unauthorized` | `needs_reconnect`, as today          |
 | API            | 429, 5xx                   | `retry` with `Retry-After`        | unchanged, as today                  |
 | `connect`      | §5.5 step 3, full release  | `failed`, `release_backlog`       | `setup_failed`                       |
+| `connect`      | §5.5 step 3, full `lost`   | `failed`, `lost_backlog`          | `setup_failed`                       |
 | `connect`      | §5.5 step 4, spent code    | `failed`, `exchange_interrupted`  | `setup_failed`, and the notice       |
 | `connect`      | §5.5 step 2, earlier crash | as the run ends, IDs reported     | as the run ends, and the notice      |
-| `disconnect`   | a session it cannot name   | `failed`, `release_incomplete`    | unchanged (§4.7); the notice         |
+| `disconnect`   | a store that doesn't parse | `failed`, `release_incomplete`    | unchanged (§4.7); the notice         |
 
 `provider_unauthorized` already deletes the connection's schedules and leaves
 its queued jobs to be cancelled at claim, so a revoked connection fails once
@@ -858,14 +870,15 @@ This is a stated limit (§13), not a promise.
 Reasons, for an OAuth connection (extend `connectionError`, which takes the
 credential and the state):
 
-| State and code                             | Text                                                                                                   |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `needs_reconnect`, `provider_unauthorized` | "Retainer's access to this Tamloot account ended. Connect again to resume imports."                    |
-| `setup_failed`, `provider_unauthorized`    | "Tamloot didn't finish connecting. Try again."                                                         |
-| `source_account_changed`                   | "You approved a different Tamloot account. Connect again with the first one, or disconnect to switch." |
-| `setup_failed`, `release_backlog`          | "Tamloot couldn't be reached to end an earlier connection. Try again in a few minutes."                |
-| `setup_failed`, `exchange_interrupted`     | "Tamloot didn't finish connecting. Try again."                                                         |
-| Anything else                              | Today's texts                                                                                          |
+| State and code                             | Text                                                                                                                                                                                                                                                    |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `needs_reconnect`, `provider_unauthorized` | "Retainer's access to this Tamloot account ended. Connect again to resume imports."                                                                                                                                                                     |
+| `setup_failed`, `provider_unauthorized`    | "Tamloot didn't finish connecting. Try again."                                                                                                                                                                                                          |
+| `source_account_changed`                   | "You approved a different Tamloot account. Connect again with the first one, or disconnect to switch."                                                                                                                                                  |
+| `setup_failed`, `release_backlog`          | "Tamloot couldn't be reached to end an earlier connection. Try again in a few minutes."                                                                                                                                                                 |
+| `setup_failed`, `exchange_interrupted`     | "Tamloot didn't finish connecting. Try again."                                                                                                                                                                                                          |
+| `setup_failed`, `lost_backlog`             | "Connecting to Tamloot was interrupted too many times. Disconnect, then connect again. To end any access left behind, revoke Retainer in Tamloot: Settings → Connected apps. That disconnects every Retainer workspace that uses this Tamloot account." |
+| Anything else                              | Today's texts                                                                                                                                                                                                                                           |
 
 The admin table gains a "Reason" column with the same text, so admins see why
 a connection needs reconnecting (PRD requirement 4). For a connection with
@@ -886,8 +899,8 @@ A new operator command prints the first three for the last `n` days, per
 registration: `retainer extension connections [--days <n>]`, beside
 `model usage` in `operator/commands.ts`. It also prints how many connections
 got `release_incomplete_at`, and how many `connect` jobs failed with
-`release_backlog` or `exchange_interrupted`, so a leak is counted, not
-silent. It reads counts and timings only.
+`release_backlog`, `lost_backlog` or `exchange_interrupted`, so a leak is
+counted, not silent. It reads counts and timings only.
 
 ## 8. Security
 
@@ -986,8 +999,9 @@ Real Postgres, a fresh database per file, no mocked database.
     session that is gone, and reports every `lost` hash and a `started`
     one; it fails with `release_incomplete` only for a store that does not
     parse.
-  - `lost` at four: a new code fails with `release_backlog` without a token
-    call.
+  - `lost` at four: a new code fails with `lost_backlog` without a token
+    call, and the card shows its reason text. After a disconnect, a new
+    connection starts with an empty store and connects.
   - `poll`, `scan` and `sync-session` drain `release` before importing, and
     still import when the drain fails.
   - An upgrade's `connect` with the same code and `promoted` makes no token
