@@ -42,6 +42,11 @@ button. Tamloot offers to create an account, with Google first and the email
 address they use in Retainer suggested, and then shows the approval. Back on
 the Connections tab the connection is active but has nothing to import yet,
 so the tab says so and shows how to start recording meetings with Tamloot.
+If signing up continues in another tab or window of the same browser,
+connecting still finishes there. In a browser where they are not signed in
+to Retainer, such as an email link opened on a phone, Retainer asks them to
+sign in and connect again; the second time Tamloot skips the approval.
+Until then Tamloot lists Retainer as approved, without access to anything.
 
 **Declining.** If they deny the approval or close Tamloot, they return to
 Retainer with nothing connected and a plain message saying so. They can try
@@ -55,9 +60,31 @@ their Tamloot account, imports stop right away in every workspace that member
 connected, and each connection shows that it needs to be reconnected.
 Reconnecting is the same button; it does not import meetings twice.
 
-**Disconnecting.** Disconnect stops imports and keeps the records already
-imported, as today. It also gives up that connection's access in Tamloot, so
-Tamloot stops listing Retainer once none of the member's workspaces use it.
+**Disconnecting.** Disconnect stops imports at once and keeps the records
+already imported, as today. Retainer then asks Tamloot to end that
+connection's access, retrying for up to a day if Tamloot can't be reached.
+When Retainer gives up the member's last remaining session, Tamloot stops
+listing Retainer. That can fail to happen (see the next section, and a
+session Tamloot revives when the member approves Retainer again); revoking
+Retainer in Tamloot always ends it.
+
+**When Retainer can't give up its access.** Rarely, Retainer can't confirm
+that its access in Tamloot ended: Tamloot was unreachable for a whole day, or
+connecting was interrupted at the moment Tamloot handed over access. Retainer
+never claims the access ended when it can't confirm it. It tells the member
+on the extension's Connections tab, until they dismiss it, that Retainer may
+still have access, and that revoking Retainer in Tamloot's Connected apps
+ends it, in every workspace connected to that Tamloot account. Admins see
+the same in the connections table. This also covers access from a failed
+attempt to connect, such as approving a different Tamloot account: Retainer
+tries to give it up right away and keeps trying for a day. Connecting again
+does not end that access by itself.
+
+If the extension is uninstalled, the workspace deleted or the member removed,
+the member can no longer open that tab, and Retainer does not message them
+elsewhere. Tamloot's Connected apps lists Retainer for as long as it has any
+access, so that is where the member checks; the uninstall confirmation says
+so.
 
 ## Requirements
 
@@ -72,9 +99,13 @@ Tamloot stops listing Retainer once none of the member's workspaces use it.
    "Needs reconnect" with a short reason, and imports stop without errors
    piling up.
 5. Reconnecting, including with a different Tamloot account, behaves as
-   reconnecting does today.
-6. Disconnecting ends that connection's access in Tamloot. The member's
-   other workspaces keep their connections.
+   reconnecting does today: a different account is refused, the connection
+   is not switched to it, and it needs connecting again with the first
+   account or disconnecting. Access to the refused account is never used to
+   import; Retainer tries to give it up, as in requirement 13.
+6. Disconnecting stops imports at once and asks Tamloot to end that
+   connection's access, retrying for up to a day; if that fails, requirement
+   13 applies. The member's other workspaces keep their connections.
 7. Retainer's access is read-only, and Tamloot refuses any change Retainer
    attempts. The extension only reads today, so members notice no
    difference.
@@ -88,6 +119,11 @@ Tamloot stops listing Retainer once none of the member's workspaces use it.
     and finish connecting in the same flow.
 12. A connection with nothing imported yet shows how to start recording in
     Tamloot, so it does not look stuck or broken.
+13. When Retainer can't confirm it gave up access it no longer uses, it tells
+    the member on the Connections tab while they can still open it, and
+    points them to revoke Retainer in Tamloot, warning that this ends
+    Retainer's access in every workspace. Retainer never drops access it
+    holds without trying to give it up and counting a failure.
 
 ## Out of scope
 
@@ -116,10 +152,13 @@ paste-a-key option as a fallback, or remove it?
 ## Changes from Tamloot's PRD
 
 Changes to Tamloot's PRD that affect this one, newest first. Each names the
-Tamloot commit and what changed here.
+Tamloot commit and what changed here. Commits from Tamloot PR #2410 are cited
+before it merges; its squash commit will differ.
 
 | Date       | Tamloot commit | Change in Tamloot's PRD                                                | Effect here                                                             |
 | ---------- | -------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 2026-11-15 | `e711a9870`    | The approval names each task's contact by email only, as the API does  | Requirement 9 holds: tasks stay linked to their person's email          |
+| 2026-11-15 | `e711a9870`    | Access may remain if release fails; a revoke ends it everywhere        | Disconnecting; When Retainer can't give up its access; requirement 13   |
 | 2026-11-15 | `e9a472de6`    | Someone with no Tamloot account signs up while connecting              | New to Tamloot paragraph; requirements 11 and 12                        |
 | 2026-11-15 | `250ef8191`    | Retainer reads each task's contact and email, shown on the approval    | Requirement 9 holds: tasks stay linked to their person                  |
 | 2026-11-15 | `49b974f7c`    | Revoking cuts an app off at once, including access it already had      | When access stops: imports stop right away                              |
