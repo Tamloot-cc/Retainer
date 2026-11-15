@@ -479,8 +479,13 @@ dismissal is deduped and stays hidden; a new incident sets a later
 `release_incomplete_at` and shows again (§6.2).
 **Dismissing.**
 `POST /v1/extensions/:id/connections/:cid/release-notice/dismiss`, the owner
-only, with `{ at }`: the `releaseNotice.at` the member saw. Under
-the same row lock, if `release_incomplete_at` equals `at` exactly, it sets
+only, with `{ at }`: the `releaseNotice.at` the member saw. `at` is an
+opaque string: the server writes it as `release_incomplete_at::text`, at
+full microsecond precision as the cursors do (`created_at::text as stamp`
+in `comments/service.ts`, checked by `db/pagination.ts`), and the
+web app sends it back unchanged, never through a JS `Date` or
+`toISOString()`, which would keep milliseconds only. Under the same row
+lock, if `release_incomplete_at = at::timestamptz` in SQL, it sets
 `release_notice_dismissed_at = release_incomplete_at`, the stored value, not
 the click time and not the client's value. Otherwise it answers
 `409 notice_changed`, changes nothing, and the web app reloads the notice.
@@ -498,7 +503,8 @@ did not.
   returns disconnected connections (all of them to an admin, the caller's
   own otherwise), so the warning is read back from the database, not from
   the browser, and survives the disconnect.
-- `ExtensionInstallation` gains `releaseNotice: { connectionId, at } | null`
+- `ExtensionInstallation` gains `releaseNotice: { connectionId, at } | null`,
+  with `at` the opaque full-precision string described in §4.7,
   for the caller: their most recent connection on this installation whose
   `release_incomplete_at` is later than its `release_notice_dismissed_at`,
   or has no dismissal. It stays until the member dismisses it. It is
@@ -1119,6 +1125,9 @@ Real Postgres, a fresh database per file, no mocked database.
     recorded at the same moment set it once.
   - `releaseNotice` shows only the caller's own connection, dismissing is
     the owner's alone, and it stays until dismissed.
+  - **Sub-millisecond round trip:** an incident stamped with a non-zero
+    microsecond part is read, sent back as `at` unchanged, and dismisses.
+    An `at` truncated to milliseconds gets `409 notice_changed`.
   - **A new incident between reading and dismissing:** the member reads
     incident A, incident B is recorded, and the dismiss with A's `at` gets
     `409 notice_changed` and B stays visible. A forged future `at`, or an
