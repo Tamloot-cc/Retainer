@@ -46,7 +46,7 @@ OAuth client is configured, which is every self-hosted server.
 | Can a connection change its method?       | No. Key or OAuth is fixed when the connection is created. To switch, disconnect and connect.      |
 | Does the key option stay on hosted?       | Yes, as a secondary link, until the PRD's open question is decided (§13).                         |
 | Which OAuth library?                      | None. One URL and two form posts do not need one.                                                 |
-| What if access can't be given up?         | Retried for 24 hours and never dropped silently; then the member is told to revoke in Tamloot.    |
+| What if access can't be given up?         | Retried for 24 hours, never dropped silently; then a notice, where the member can see it (§6.2).  |
 | When is an exchanged session used?        | Only after `verifySource` passes. Until then it is `pending`, and a refused one is released.      |
 
 **Why the bundle exchanges and refreshes.** On the hosted service the
