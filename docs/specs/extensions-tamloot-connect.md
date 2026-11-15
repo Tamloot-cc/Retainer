@@ -866,9 +866,8 @@ Real Postgres, a fresh database per file, no mocked database.
     the old one is released only after that write.
   - Reconnect with another account: `verifySource` refuses, `current` is
     still the old session, the new one is in `release` as `rejected`,
-    `pending` is empty, its
-    `DELETE /v1/access` is attempted in the same run, and the run fails with
-    `source_account_changed`.
+    `pending` is empty, its `DELETE /v1/access` is attempted in the same
+    run, and the run fails with `source_account_changed`.
   - The same, with `DELETE /v1/access` answering `503`: the entry stays, and
     the queued `{ keep: 'current' }` hook releases it on its next attempt
     without touching `current`.
