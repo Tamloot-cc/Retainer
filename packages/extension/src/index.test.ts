@@ -684,7 +684,143 @@ describe('member connection manifests', () => {
         ...member(),
         functions: [hook('connect'), { ...disconnect, secrets: ['apiKey'] }],
       }),
-    ).toThrow('cannot request secrets');
+    ).toThrow('only generated connection secrets');
+  });
+});
+
+describe('OAuth member connections', () => {
+  const hook = (kind: 'connect' | 'disconnect', secrets?: string[]) => ({
+    universalId: randomUUID(),
+    name: kind,
+    description: `${kind} lifecycle`,
+    handlerDigest: 'b'.repeat(64),
+    trigger: { kind },
+    inputSchema: { type: 'object', additionalProperties: false },
+    ...(secrets ? { secrets } : {}),
+  });
+  const generated = (label: string) => ({
+    type: 'string',
+    label,
+    secret: true,
+    generated: true,
+    level: 'connection',
+  });
+  const oauth = () => ({
+    ...fixture(),
+    connection: 'member',
+    settings: {
+      apiKey: { type: 'string', label: 'API key', secret: true, level: 'connection' },
+      verifier: generated('Verifier'),
+      code: generated('Code'),
+      tokens: generated('Tokens'),
+    },
+    functions: [
+      hook('connect', ['apiKey', 'verifier', 'code', 'tokens']),
+      hook('disconnect', ['tokens']),
+    ],
+    oauth: {
+      verifierSetting: 'verifier',
+      codeSetting: 'code',
+      tokenSetting: 'tokens',
+      keySetting: 'apiKey',
+      revokeUrl: 'https://provider.example/settings/apps',
+    },
+    gettingStarted: { text: 'Nothing yet.', linkLabel: 'Open', url: 'https://provider.example' },
+  });
+
+  it('accepts an OAuth release whose disconnect hook reads the token secret', () => {
+    const manifest = defineExtension(oauth());
+    const fn = manifest.functions.find((entry) => entry.trigger.kind === 'disconnect');
+    if (!fn) throw new Error('disconnect missing');
+    expect(functionSecrets(manifest, fn)).toEqual(['tokens']);
+    expect(manifest.oauth?.tokenSetting).toBe('tokens');
+  });
+
+  it('refuses links that are not https', () => {
+    for (const url of ['http://provider.example', 'javascript:alert(1)', 'data:text/html,x']) {
+      const revoke = oauth();
+      expect(() =>
+        defineExtension({ ...revoke, oauth: { ...revoke.oauth, revokeUrl: url } }),
+      ).toThrow();
+      const started = oauth();
+      expect(() =>
+        defineExtension({ ...started, gettingStarted: { ...started.gettingStarted, url } }),
+      ).toThrow();
+    }
+  });
+
+  it('requires a member connection', () => {
+    const input = oauth();
+    expect(() =>
+      defineExtension({
+        ...fixture(),
+        oauth: input.oauth,
+      }),
+    ).toThrow('workspace releases');
+    expect(() =>
+      defineExtension({
+        ...fixture(),
+        gettingStarted: input.gettingStarted,
+      }),
+    ).toThrow('workspace releases');
+  });
+
+  it('requires three distinct generated connection secrets for the handshake', () => {
+    const base = oauth();
+    for (const change of [
+      { codeSetting: 'verifier' },
+      { tokenSetting: 'apiKey' },
+      { verifierSetting: 'missing' },
+    ])
+      expect(() => defineExtension({ ...base, oauth: { ...base.oauth, ...change } })).toThrow(
+        'three generated connection secrets',
+      );
+    expect(() =>
+      defineExtension({
+        ...base,
+        settings: { ...base.settings, code: { ...generated('Code'), level: undefined } },
+      }),
+    ).toThrow();
+  });
+
+  it('requires the key setting to be a connection secret that is not generated', () => {
+    const base = oauth();
+    expect(() =>
+      defineExtension({ ...base, oauth: { ...base.oauth, keySetting: 'tokens' } }),
+    ).toThrow('key setting');
+    expect(() =>
+      defineExtension({ ...base, oauth: { ...base.oauth, keySetting: 'missing' } }),
+    ).toThrow('key setting');
+  });
+
+  it('refuses required connection secrets with OAuth', () => {
+    const base = oauth();
+    expect(() =>
+      defineExtension({
+        ...base,
+        settings: { ...base.settings, apiKey: { ...base.settings.apiKey, required: true } },
+      }),
+    ).toThrow('no connection secret may be required');
+  });
+
+  it('requires the connect hook to declare the handshake secrets', () => {
+    const base = oauth();
+    expect(() =>
+      defineExtension({
+        ...base,
+        functions: [hook('connect', ['apiKey', 'tokens']), hook('disconnect', ['tokens'])],
+      }),
+    ).toThrow('connect hook must declare');
+  });
+
+  it('limits disconnect hooks to generated connection secrets', () => {
+    const base = oauth();
+    expect(() =>
+      defineExtension({
+        ...base,
+        functions: [base.functions[0], hook('disconnect', ['apiKey'])],
+      }),
+    ).toThrow('only generated connection secrets');
   });
 });
 

@@ -336,6 +336,29 @@ export const manifestSchema = z.strictObject({
   functions: z.array(functionSchema).max(100),
   /** Outputs an admin binds to fields at install; written only through the mapped write. */
   mapping: mappingSchema.optional(),
+  /**
+   * A member connection may connect by OAuth (Tamloot connect spec 4.2). The
+   * server stages the verifier and the code; the bundle stores the tokens.
+   * No defaults, so manifests without it keep their digests.
+   */
+  oauth: z
+    .strictObject({
+      verifierSetting: name,
+      codeSetting: name,
+      tokenSetting: name,
+      keySetting: name.optional(),
+      /** Where a member revokes the app; shown as a link. */
+      revokeUrl: z.url(),
+    })
+    .optional(),
+  /** Shown to a member whose active connection has imported nothing yet. */
+  gettingStarted: z
+    .strictObject({
+      text: z.string().min(1).max(300),
+      linkLabel: z.string().min(1).max(60),
+      url: z.url(),
+    })
+    .optional(),
 });
 export type ExtensionManifest = z.infer<typeof manifestSchema>;
 export type SchemaContribution = z.infer<typeof contributionSchema>;
@@ -456,7 +479,8 @@ export function functionSecrets(
   manifest: Pick<ExtensionManifest, 'settings'>,
   fn: Pick<FunctionDefinition, 'secrets'> & { trigger?: FunctionDefinition['trigger'] },
 ): string[] {
-  if (fn.trigger?.kind === 'disconnect') return [];
+  // A disconnect hook gets only what it declares: generated connection secrets (connect spec 4.2).
+  if (fn.trigger?.kind === 'disconnect') return fn.secrets ?? [];
   return (
     fn.secrets ??
     Object.entries(manifest.settings)
@@ -492,11 +516,19 @@ export function supportsServer(
 function checkConnections(manifest: ExtensionManifest): void {
   const hooks = (kind: 'connect' | 'disconnect') =>
     manifest.functions.filter((fn) => fn.trigger.kind === kind);
+  const https = (url: string) => {
+    if (new URL(url).protocol !== 'https:')
+      throw new Error('unsupported_manifest: manifest links must use https');
+  };
+  if (manifest.oauth) https(manifest.oauth.revokeUrl);
+  if (manifest.gettingStarted) https(manifest.gettingStarted.url);
   if (manifest.connection === 'workspace') {
     if (
       Object.values(manifest.settings).some((setting) => setting.level === 'connection') ||
       hooks('connect').length ||
-      hooks('disconnect').length
+      hooks('disconnect').length ||
+      manifest.oauth ||
+      manifest.gettingStarted
     )
       throw new Error(
         'unsupported_manifest: workspace releases cannot declare member settings or hooks',
@@ -523,8 +555,51 @@ function checkConnections(manifest: ExtensionManifest): void {
     if (setting.consent && setting.level === 'connection')
       throw new Error('unsupported_manifest: sharing consent requires installation level');
   }
-  if (hooks('disconnect').some((fn) => fn.secrets?.length))
-    throw new Error('unsupported_manifest: disconnect hooks cannot request secrets');
+  const generatedConnectionSecret = (key: string) => {
+    const setting = manifest.settings[key];
+    return (
+      !!setting && setting.level === 'connection' && setting.secret && setting.generated === true
+    );
+  };
+  if (
+    hooks('disconnect').some((fn) =>
+      (fn.secrets ?? []).some((key) => !generatedConnectionSecret(key)),
+    )
+  )
+    throw new Error(
+      'unsupported_manifest: disconnect hooks may request only generated connection secrets',
+    );
+  const oauth = manifest.oauth;
+  if (!oauth) return;
+  const handshake = [oauth.verifierSetting, oauth.codeSetting, oauth.tokenSetting];
+  if (new Set(handshake).size !== 3 || !handshake.every(generatedConnectionSecret))
+    throw new Error(
+      'unsupported_manifest: OAuth verifier, code and token settings must be three generated connection secrets',
+    );
+  if (oauth.keySetting !== undefined) {
+    const key = manifest.settings[oauth.keySetting];
+    if (
+      !key ||
+      key.level !== 'connection' ||
+      !key.secret ||
+      key.generated ||
+      handshake.includes(oauth.keySetting)
+    )
+      throw new Error(
+        'unsupported_manifest: the OAuth key setting must be a connection secret that is not generated',
+      );
+  }
+  if (
+    Object.values(manifest.settings).some(
+      (setting) => setting.level === 'connection' && setting.secret && setting.required,
+    )
+  )
+    throw new Error(
+      'unsupported_manifest: with OAuth, no connection secret may be required; the method decides',
+    );
+  const connect = hooks('connect')[0];
+  if (!connect || !handshake.every((key) => functionSecrets(manifest, connect).includes(key)))
+    throw new Error('unsupported_manifest: the connect hook must declare the OAuth secrets');
 }
 export function defineExtension(value: unknown): ExtensionManifest {
   bounded(value);
@@ -866,7 +941,15 @@ export type ExtensionInstallation = {
   createdBy: { type: string; id: string };
   /** Single-installation reads of a release that declares a mapping. */
   mapping?: ExtensionMappingView;
+  /** How a member may connect, for a member release: OAuth, a pasted key, or both. */
+  connectionMethods?: ExtensionConnectionMethod[];
+  /**
+   * The caller's most recent connection whose provider access may remain and
+   * whose notice they have not dismissed. `at` is opaque: send it back unchanged.
+   */
+  releaseNotice?: { connectionId: string; at: string } | null;
 };
+export type ExtensionConnectionMethod = 'oauth' | 'key';
 
 export * from './model.js';
 export * from './protocol.js';
@@ -890,12 +973,38 @@ export type ExtensionConnection = {
   disconnectedAt: string | null;
   lastSuccessfulScanAt: string | null;
   failedItems: number;
+  /** Fixed when the connection is created. */
+  credential: ExtensionConnectionMethod;
+  /** Whether the connection's source account imported at least one item. */
+  hasImportedItems: boolean;
+  /** When a cleanup that held provider credentials last did not finish. */
+  releaseIncompleteAt: string | null;
 };
 export type ExtensionConnectionInput = {
   settings: Record<string, string | boolean | number>;
   secretRefs?: Record<string, string>;
   /** Required when reconnecting; a stale form cannot replace a newer credential. */
   expectedGeneration?: number;
+};
+
+export type ExtensionAuthorizeInput = {
+  settings: Record<string, string | boolean | number>;
+  /** Set both to reconnect an existing OAuth connection. */
+  connectionId?: string;
+  expectedGeneration?: number;
+  /** An email the provider may prefill; carries no authority. */
+  loginHint?: string;
+};
+export type ExtensionAuthorization = { authorizationUrl: string; state: string; expiresAt: string };
+/** Exactly one of `code` and `error`. */
+export type ExtensionAuthorizationCompletion = { state: string; code?: string; error?: string };
+/** What a run that holds the token secret may read about the operator's OAuth client. */
+export type ExtensionOAuthClient = {
+  clientId: string;
+  clientSecret: string;
+  tokenEndpoint: string;
+  redirectUri: string;
+  apiOrigin?: string;
 };
 
 export type ManagedSourceTask = {
