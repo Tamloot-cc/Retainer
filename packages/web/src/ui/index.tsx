@@ -754,7 +754,6 @@ export {
   DataGrid,
   EditableCell,
   FilterChip,
-  FooterButton,
   GridFooter,
   type GridSelection,
   Toolbar,

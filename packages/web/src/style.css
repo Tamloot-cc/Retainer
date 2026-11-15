@@ -55,13 +55,13 @@
 :root {
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --frame: #f1f4f1;
+  --frame: #f7f7f8;
   --primary: #1f5e3a;
   --primary-foreground: #fff;
   --ring: #1f5e3a;
-  --selection: #e8f2e9;
-  --selection-foreground: #194c30;
-  --secondary-foreground: #4e5752;
+  --selection: #eeeef0;
+  --selection-foreground: #18181b;
+  --secondary-foreground: #52525b;
   --category-forest-fg: #245c3b;
   --category-forest-bg: #e8f2e9;
   --category-teal-fg: #23645e;
@@ -74,27 +74,27 @@
   --category-amber-bg: #faf0d8;
   --category-olive-fg: #5c641c;
   --category-olive-bg: #f1f4da;
-  --background: #fcfcfd;
-  --foreground: #202126;
-  --card: #fff;
-  --sidebar: #f1f4f1;
-  --hover: #e9ece9;
-  --muted: #f0f0f3;
-  --muted-foreground: #5f6b63;
-  --border: #e5e5eb;
-  --input: #7a8a80;
+  --background: #ffffff;
+  --foreground: #18181b;
+  --card: #ffffff;
+  --sidebar: #f7f7f8;
+  --hover: #f4f4f5;
+  --muted: #f4f4f5;
+  --muted-foreground: #52525b;
+  --border: #e4e4e7;
+  --input: #71717a;
   --destructive: #b42335;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --frame: #101916;
+    --frame: #141415;
     --primary: #d4fa38;
     --primary-foreground: #111b21;
     --ring: #d4fa38;
-    --selection: #233d2c;
-    --selection-foreground: #e1f2d9;
-    --secondary-foreground: #c0cbc4;
+    --selection: #29292d;
+    --selection-foreground: #f4f4f5;
+    --secondary-foreground: #a1a1aa;
     --category-forest-fg: #a6d6b3;
     --category-forest-bg: #253e2e;
     --category-teal-fg: #9dd4c9;
@@ -107,15 +107,15 @@
     --category-amber-bg: #433722;
     --category-olive-fg: #d5df91;
     --category-olive-bg: #373e22;
-    --background: #181e1b;
-    --foreground: #eeeef2;
-    --card: #1b231f;
-    --sidebar: #101916;
-    --hover: #29312d;
-    --muted: #29332d;
-    --muted-foreground: #a5b2a9;
-    --border: #344139;
-    --input: #7b8e80;
+    --background: #000000;
+    --foreground: #f4f4f5;
+    --card: #141415;
+    --sidebar: #141415;
+    --hover: #202023;
+    --muted: #202023;
+    --muted-foreground: #a1a1aa;
+    --border: #2c2c30;
+    --input: #767680;
     --destructive: #ff8997;
     color-scheme: dark;
   }

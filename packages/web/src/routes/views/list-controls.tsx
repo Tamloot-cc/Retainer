@@ -1,5 +1,4 @@
-import type { AggregateOp, AggregateResult, FieldView, ObjectView } from '@retainer/shared';
-import { aggregateOps } from '@retainer/shared';
+import type { FieldView, ObjectView } from '@retainer/shared';
 import {
   ArrowDown,
   ArrowUp,
@@ -17,13 +16,9 @@ import {
   ApiName,
   Button,
   CheckLabel,
-  FooterButton,
   Form,
   IconLabel,
   Input,
-  Menu,
-  MenuChoice,
-  MenuChoices,
   MenuItem,
   MenuLabel,
   MenuList,
@@ -36,11 +31,9 @@ import {
   SelectMenu,
 } from '../../ui/index.js';
 import { useApiName } from '../developer.js';
-import { isEventColumn, listFilterOperators } from '../events/event-list.js';
+import { listFilterOperators } from '../events/event-list.js';
 import {
-  aggregateLabel,
   type FilterClause,
-  formatAggregate,
   isSortable,
   operatorLabel,
   type SortState,
@@ -68,46 +61,6 @@ const fieldOption = (f: FieldView, apiName?: string) => ({
   ...(apiName ? { keywords: apiName } : {}),
   content: <FieldLabel field={f} />,
 });
-
-/** A column's footer: what it computes over the whole view, chosen from a menu. */
-export function FooterCell({
-  field,
-  op,
-  result,
-  onChange,
-}: {
-  field: FieldView;
-  op: AggregateOp | undefined;
-  result: AggregateResult | undefined;
-  onChange: (op: AggregateOp | undefined) => void;
-}) {
-  // Built-in event columns aren't fields the totals route can compute.
-  const ops = isEventColumn(field.name) && field.readOnly ? [] : aggregateOps(field);
-  if (!ops.length) return null;
-  const value = op ? result?.values.find((v) => v.field === field.name && v.op === op) : undefined;
-  return (
-    <Menu
-      label={`Calculate ${field.label}`}
-      trigger={
-        <FooterButton aria-label={`Calculate ${field.label}`}>
-          {!op ? 'Calculate' : value ? formatAggregate(field, value) : aggregateLabel(field, op)}
-        </FooterButton>
-      }
-    >
-      <MenuChoices
-        value={op ?? 'none'}
-        onChange={(next) => onChange(next === 'none' ? undefined : (next as AggregateOp))}
-      >
-        <MenuChoice value="none">None</MenuChoice>
-        {ops.map((o) => (
-          <MenuChoice key={o} value={o}>
-            {aggregateLabel(field, o)}
-          </MenuChoice>
-        ))}
-      </MenuChoices>
-    </Menu>
-  );
-}
 
 /** A field's name with its type's icon, and its API name in developer view. */
 function FieldLabel({ field }: { field: FieldView }) {

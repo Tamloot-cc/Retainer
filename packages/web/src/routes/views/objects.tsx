@@ -1,5 +1,4 @@
-import type { AggregateInput, ObjectView, QueryInput, UpdateViewInput } from '@retainer/shared';
-import { aggregateOps } from '@retainer/shared';
+import type { ObjectView, QueryInput, UpdateViewInput } from '@retainer/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from '@tanstack/react-router';
 import {
@@ -53,7 +52,7 @@ import { QueryError, recordTitle, useView } from '../state.js';
 import { BoardView } from './board-view.js';
 import { CalendarView } from './calendar-view.js';
 import { rememberView, useLastView } from './last-view.js';
-import { ColumnsMenu, FilterMenu, FooterCell, SortMenu } from './list-controls.js';
+import { ColumnsMenu, FilterMenu, SortMenu } from './list-controls.js';
 import {
   addClause,
   type ColumnPrefs,
@@ -206,21 +205,10 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
   const pages = trail.key === viewKey ? trail.pages : {};
 
   const columns = useMemo(() => resolveColumns(object, prefs), [object, prefs]);
-  // Totals over every record the view matches, not just this page.
-  const footerOps = prefs?.aggregates ?? {};
-  const aggregateInput: AggregateInput = {
-    filter: view.query.filter,
-    // By name, so reordering columns doesn't refetch the same totals.
-    aggregates: [...columns]
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .flatMap((f) => {
-        const op = footerOps[f.name];
-        return op && aggregateOps(f).includes(op) ? [{ field: f.name, op }] : [];
-      }),
-  };
-  const totals = useQuery({
-    queryKey: [workspace, 'aggregate', name, aggregateInput],
-    queryFn: ({ signal }) => api.aggregate(name, aggregateInput, signal),
+  const count = useQuery({
+    queryKey: [workspace, 'aggregate', name, 'count', view.query.filter],
+    queryFn: ({ signal }) =>
+      api.aggregate(name, { filter: view.query.filter, aggregates: [] }, signal),
     enabled: !view.error && !resolving && kind === 'table',
     placeholderData: (previous) => previous,
   });
@@ -333,18 +321,6 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
     };
   }, [writable, selectedIds, shownIds, selectRows]);
 
-  const footer = columns.map((f) => (
-    <FooterCell
-      key={f.name}
-      field={f}
-      op={footerOps[f.name]}
-      result={totals.data}
-      onChange={(op) => {
-        const { [f.name]: _, ...rest } = footerOps;
-        patchPrefs({ aggregates: op ? { ...rest, [f.name]: op } : rest });
-      }}
-    />
-  ));
   const openRow = useCallback((id: string) => void setSearch({ record: id }), [setSearch]);
 
   const saveView = useSaveView(object);
@@ -610,7 +586,6 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
           selectedRow={search.record}
           rows={rows}
           selection={selection}
-          footer={footer}
         />
       ) : query.data ? (
         <Inset>
@@ -659,8 +634,8 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
             </>
           }
         >
-          {pageRange(pages, search.cursor, rows.length, PAGE_SIZE, totals.data?.total)}
-          {nextCursor && !totals.data ? ' · more available' : ''}
+          {pageRange(pages, search.cursor, rows.length, PAGE_SIZE, count.data?.total)}
+          {nextCursor && !count.data ? ' · more available' : ''}
         </GridFooter>
       ) : null}
       {creating && !isEvent ? (

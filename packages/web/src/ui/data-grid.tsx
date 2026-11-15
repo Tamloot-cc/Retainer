@@ -1,7 +1,6 @@
 import * as PopoverPrimitive from '@radix-ui/react-popover';
 import { ArrowDown, ArrowUp, Pencil, X } from 'lucide-react';
 import {
-  type ComponentProps,
   memo,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -59,14 +58,11 @@ export function DataGrid({
   onOpenRow,
   selectedRow,
   selection,
-  footer,
 }: {
   label: string;
   columns: GridColumn[];
   rows: GridRow[];
   selection?: GridSelection;
-  /** One cell per column under the rows, e.g. column totals. */
-  footer?: ReactNode[];
   /** The row whose record is open beside the grid; it stays highlighted. */
   selectedRow?: string;
   sort?: { column: string; direction: 'asc' | 'desc' };
@@ -270,25 +266,6 @@ export function DataGrid({
           selection={selection}
           pinLeft={pinLeft}
         />
-        {footer ? (
-          <tfoot>
-            <tr>
-              {selection ? <td className={`${FOOT} left-0 z-20`} /> : null}
-              {footer.map((cell, i) => (
-                <td
-                  key={columns[i]?.id ?? i}
-                  className={cn(FOOT, columns[i]?.pinned && 'z-20')}
-                  style={columns[i]?.pinned ? { left: pinLeft } : undefined}
-                >
-                  <div className="flex h-9 items-center overflow-hidden whitespace-nowrap px-1">
-                    {cell}
-                  </div>
-                </td>
-              ))}
-              <td aria-hidden className={FOOT} />
-            </tr>
-          </tfoot>
-        ) : null}
       </table>
     </section>
   );
@@ -297,7 +274,6 @@ export function DataGrid({
 const ROW_BG = `bg-background ${ROW_STATE}`;
 const CELL = `border-b border-border border-r border-r-border/40 p-0 ${ROW_BG}`;
 const PINNED_CELL = `${CELL} sticky z-[5]`;
-const FOOT = 'sticky bottom-0 z-10 border-t border-r border-border bg-sidebar p-0';
 
 /** Rows re-render only when their data changes, not while a column is resized or dragged. */
 const GridBody = memo(function GridBody({
@@ -429,19 +405,6 @@ export function EditableCell({
   );
 }
 
-/** A footer cell's menu trigger: what the column computes, or "Calculate". */
-export function FooterButton({ children, ...props }: ComponentProps<'button'>) {
-  return (
-    <button
-      type="button"
-      {...props}
-      className="flex h-8 min-w-0 max-w-full md:h-6 items-center rounded-sm px-2 text-xs text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <span className="truncate">{children}</span>
-    </button>
-  );
-}
-
 /** The bar above a grid: filters on the left, view controls on the right. */
 export function Toolbar({ children, end }: { children: ReactNode; end?: ReactNode }) {
   return (
@@ -495,7 +458,7 @@ export function FilterChip({
 /** The bar under a grid: what's shown on the left, paging on the right. */
 export function GridFooter({ children, end }: { children: ReactNode; end?: ReactNode }) {
   return (
-    <div className="flex h-10 shrink-0 items-center gap-3 border-t border-border bg-sidebar px-3 text-xs text-muted-foreground md:px-5">
+    <div className="flex h-10 shrink-0 items-center gap-3 border-t border-border bg-sidebar px-3 text-xs text-muted-foreground md:h-[calc(var(--workspace-footer-height)-var(--workspace-bottom-inset))] md:px-5">
       <div className="min-w-0 flex-1 truncate tabular-nums">{children}</div>
       {end ? <div className="flex shrink-0 items-center gap-1">{end}</div> : null}
     </div>

@@ -93,7 +93,7 @@ export function Shell({ children, ...props }: ShellProps) {
   }, []);
   return (
     <NavigationContext.Provider value={() => setDrawer(true)}>
-      <div className="flex min-h-dvh bg-frame text-foreground">
+      <div className="flex min-h-dvh bg-frame text-foreground md:[--workspace-bottom-inset:0.5rem] md:[--workspace-footer-height:4rem]">
         <aside
           className={cn(
             'sticky top-0 hidden h-dvh shrink-0 flex-col bg-sidebar transition-[width] duration-150 md:flex',
@@ -122,7 +122,7 @@ export function Shell({ children, ...props }: ShellProps) {
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>
         </DialogPrimitive.Root>
-        <main className="min-w-0 flex-1 bg-background md:mb-2 md:mr-2 md:overflow-clip md:rounded-b-xl md:rounded-tl-xl md:ring-1 md:ring-inset md:ring-border md:[--page-height:calc(100dvh-0.5rem)]">
+        <main className="min-w-0 flex-1 bg-background md:mb-[var(--workspace-bottom-inset)] md:mr-2 md:overflow-clip md:rounded-b-xl md:rounded-tl-xl md:ring-1 md:ring-inset md:ring-border md:[--page-height:calc(100dvh-var(--workspace-bottom-inset))]">
           {children}
         </main>
       </div>
@@ -296,8 +296,8 @@ function Sidebar({
       </nav>
       <div
         className={cn(
-          'flex shrink-0 items-center gap-2 border-t border-border p-2',
-          collapsed ? 'flex-col' : '',
+          'flex shrink-0 items-center gap-2 border-t border-border p-2 md:h-[var(--workspace-footer-height)]',
+          collapsed ? 'justify-center' : '',
         )}
       >
         <Menu
