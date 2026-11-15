@@ -423,6 +423,25 @@ guard written at each site.
   in the list after the table uses one of the two; a test asserts that no
   query in `extension-runtime/` or `extensions/` reads
   `trigger_kind = 'disconnect'` without it.
+- **One blocking rule.** Whether a partial job holds a release change is
+  one expression, defined once as the SQL function
+  `retainer_partial_release_blocking(job extension_jobs)` with its
+  TypeScript twin `isPartialReleaseBlocking(job, now)`:
+
+  ```sql
+  retainer_partial_release_job(j.trigger_kind, j.input)
+    and j.status in ('queued', 'running')
+    and (clock_timestamp() < j.expires_at
+         or (j.status = 'running' and clock_timestamp() < j.lease_until))
+  ```
+
+  Before its deadline the job blocks whether it is queued, running, or
+  `running` with an expired lease after its worker died and before the
+  claim path reclaims it, so a crashed attempt is never cancelled by a
+  release change. After its deadline only an attempt with a live lease
+  blocks, since it may have a `DELETE /v1/access` in flight.
+  `cleanupPending`, `retainer_extension_upgrades_due` and the table's
+  "Counted" column all use this function and nothing else.
 
 - **Every admission layer** admits it while the connection is
   `setup_failed` or `needs_reconnect` at the job's generation, the job's
@@ -476,15 +495,12 @@ change or an auto-upgrade with `409 cleanup_pending`.
 | A release change or an auto-upgrade                                                         | `cleanupPending`                                       | untouched; the change is refused while the job is counted                                                                        | yes, see below          |
 
 So every event that makes the job unclaimable either ends it in the same
-transaction or leaves `expires_at`, which the sweep owns. `cleanupPending`
-counts a partial job that is `running` with an unexpired lease
-(`lease_until > clock_timestamp()`), whatever its `expires_at`: a hook
-already running may have a `DELETE /v1/access` in flight, so no upgrade
-starts beside it. It counts a `queued` one only before `expires_at`; a
-queued job past its deadline holds nothing, even before the sweep runs. A
-release change therefore waits at most 24 hours from when the job was
-queued, plus the time an attempt already running then takes to settle,
-which its lease bounds.
+transaction or leaves `expires_at`, which the sweep owns. "Counted" is the
+blocking rule above: a queued job past its deadline holds nothing, even
+before the sweep runs, and a running attempt with a live lease holds until
+it settles. A release change therefore waits at most 24 hours from when the
+job was queued, plus the time an attempt already running then takes to
+settle, which its lease bounds.
 It never cancels the job: a job of the old release could not be admitted
 after the change, and an upgrade whose `install` fails would leave its
 sessions with no run and no report.
@@ -508,9 +524,9 @@ depends on the job being admittable, never changes the connection's
 - `failDisconnectCleanup` (`locks.ts`) and the uninstall completion checks
   in `queue.ts` (after a `disconnect` and after the `uninstall` job) read
   disconnect cleanup only.
-- `cleanupPending` counts disconnect cleanup, and a partial job while it is
-  `running` with an unexpired lease, or `queued` before its `expires_at`;
-  so does `retainer_extension_upgrades_due`
+- `cleanupPending` counts disconnect cleanup, and a partial job only
+  through `retainer_partial_release_blocking`; so does
+  `retainer_extension_upgrades_due`
   (`0107`), which picks the installations auto-upgrade tries.
 - `runnable` in `queue.ts`, used at claim, on every leased call and by the
   retry route: a partial job is runnable while the installation is
@@ -552,8 +568,10 @@ The Tamloot bundle uses two kinds of ID:
   holds (§5.5). Every `connect` and every cleanup run reports each one in
   `lost`.
 - `release:<id>`: a session in `release` that Retainer has been trying to
-  give up for 24 hours or more (§5.3). Every run of the connection reports
-  each one while it stays in the list.
+  give up for 24 hours or more (§5.3). A run reports it only when it tried
+  to give the entry up in that run, or checked it with a read that does not
+  revoke, and could not confirm Retainer has no access through it (§5.5,
+  §5.6, §5.7). An entry merely still in the store is not reported.
 
 It keeps reporting them; the server's dedupe makes that safe. At most four
 of each kind fit in a store, so a result never carries more than eight.
@@ -661,8 +679,10 @@ their key.
 ### 5.2 Which credential a run uses
 
 A run reads the installation once (`sdk.extension(id)`), as today. Its
-`secrets` map says which secrets the connection has. `oauthCode` present
-means OAuth; otherwise the run uses `apiKey` exactly as today. The method is
+`secrets` map says which secrets the connection has. `oauthTokens` or
+`oauthCode` present means OAuth: `connect` receives both, and `poll`,
+`scan` and `sync-session` receive `oauthTokens` but not `oauthCode`
+(§5.1). Otherwise the run uses `apiKey` exactly as today. The method is
 fixed per connection (§2), so the two never mix.
 
 ### 5.3 The token secret
@@ -1135,6 +1155,8 @@ Real Postgres, a fresh database per file, no mocked database.
   endpoint retry and never mark the connection; a write conflict uses the
   stored tokens; OAuth `403` with any code, or none, is `provider_forbidden`
   and never `needs_reconnect`; a key connection behaves exactly as before;
+  `poll`, `scan` and `sync-session` of an OAuth connection, which receive
+  `oauthTokens` and no `oauthCode`, use the tokens and never `apiKey`;
   two handler runs in one process share nothing.
 - **Session lifecycle (bundle fixtures, one test per failure):**
   - The exchanged session is stored as `pending` before `/v1/me` is called;
@@ -1263,6 +1285,16 @@ Real Postgres, a fresh database per file, no mocked database.
     in flight. Run the release change concurrently with the attempt's
     completion and with the sweep: in no order does the upgrade's
     `connect` promote a session the old hook then deletes.
+  - **A crashed attempt before the deadline:** the worker running the hook
+    dies, leaving the job `running` with an expired lease, before
+    `expires_at`, while an open request keeps it from being reclaimed. A
+    release change and an auto-upgrade answer `409 cleanup_pending`; the
+    job is not cancelled, and is reclaimed once the request ends.
+  - **One blocking rule:** a table-driven test of
+    `retainer_partial_release_blocking` and `isPartialReleaseBlocking` over
+    `queued`/`running`, live/expired lease and before/after `expires_at`
+    gives the same answers, and `cleanupPending` and
+    `retainer_extension_upgrades_due` agree with them on every case.
   - **Deadlines are never extended:** carrying the job across a disable, a
     deferral by an open request, and a manual retry through
     `POST …/runs/:run/retry` all leave `expires_at` unchanged.
