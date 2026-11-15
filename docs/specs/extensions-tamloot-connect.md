@@ -804,13 +804,18 @@ So a refresh answer counts as `invalid_grant` when it is `400` with
 codes, and only on the refresh grant: any other `error_code` stays a setup
 error (§5.8). A banned member sees "Needs reconnect" and cannot reconnect
 until Tamloot lifts the ban; that is still the member's state, not an
-operator's. A ban does not end the session: GoTrue only sets `banned_until`,
-so the same refresh token works again once the ban is lifted. So the
-classification keeps the original `error_code` until the caller has decided:
-in an ordinary run (import, `connect`) `user_banned` is `invalid_grant` and
-the connection becomes `needs_reconnect`; when giving a session up, it is
-never done, and the entry stays and is retried until its deadline and notice
-(§5.7). Add a code only
+operator's.
+
+The token helper returns the status and the native `error` and `error_code`
+as they came, and each caller classifies them. In an ordinary run (an
+import, `connect`) all four refresh codes are `invalid_grant`, so
+`provider_unauthorized`. Giving a session up (§5.7) and the backlog check
+(§5.5 step 3) count only `refresh_token_not_found` as done: GoTrue has no
+session for that token. The other three may leave the session behind: a ban
+only sets `banned_until`, so the same refresh token works again once it is
+lifted; reuse and `not_after` do not prove the session row is gone. For
+them Retainer keeps the tokens and the obligation, retries within the
+bounded cleanup, and then gives the notice (§5.7). Add a code only
 after it is observed on the token endpoint. The parent of the active refresh
 token returns the active one even outside the reuse interval, so a run that
 dies between a refresh and its write, or a disconnect hook that cannot write
@@ -875,8 +880,9 @@ a session.
    - If `release` holds four entries, check each with `GET /v1/me` (a read,
      which never revokes anything), refreshing once on `401` as §5.6 does
      and writing any new tokens. Drop the entries that still answer `401`
-     or whose refresh fails with `invalid_grant`: Retainer has no access
-     through them, which §5.7 already counts as done. This is how entries
+     or whose refresh answers `refresh_token_not_found`: Retainer has no
+     access through them, which §5.7 already counts as done. The other
+     refresh codes in §5.4 keep the entry, as §5.7 does. This is how entries
      that the cleanup hook gave up, but could not remove because it cannot
      write, leave the list. If four remain, fail with `release_backlog`
      without exchanging; the cleanup in §4.7 gives them up, and the member
@@ -977,19 +983,20 @@ next (extensions-lambda.md §3.2).
 
 To give up one session: `DELETE /v1/access` with its access token. `204` is
 done. On `401`, refresh that session once and repeat; a second `401` or
-`invalid_grant` means Retainer has no access through that session now, which
-is also done: Retainer drops its tokens and can do nothing more with it. A
+a refresh answering `refresh_token_not_found` (§5.4) means Retainer has no
+access through that session now, which is also done: Retainer drops its tokens and can do nothing more with it. A
 `401` does not mean Tamloot deleted the session (Tamloot §10, "Known limit:
 re-approval"; see §13). `429`, a `5xx` or a network error means try again
-later. A `403`, a refresh answering `user_banned` (§5.4: the session
-outlives the ban), or a refresh refused as a setup error (`oauth_client_rejected`,
+later. A `403`, a refresh answering `refresh_token_already_used`,
+`user_banned` or `session_expired` (§5.4: the session may outlive them), or a
+refresh refused as a setup error (`oauth_client_rejected`,
 §5.8), is never done: Retainer still holds the tokens and the obligation to
 give the session up. The entry stays and is retried like a `5xx`: on an
 active connection by every run, with `release:<id>` after 24 hours; in a
 cleanup job until its deadline, which then records `cleanup:<job id>` as
 today. The run names the setup error in the result's existing `code` field
-(`provider_forbidden` or `oauth_client_rejected`; a ban names
-`provider_unauthorized`), without changing its
+(`provider_forbidden` or `oauth_client_rejected`; the three refresh codes
+name `provider_unauthorized`), without changing its
 status: a cleanup job returns `retry` with it, and an ordinary run that
 otherwise succeeds returns `succeeded` with it. The queue already stores a
 code on any status, and a `succeeded` code does not change the connection's
@@ -1032,7 +1039,9 @@ request that is not a GET.
 | `connect`      | §5.5 step 2, earlier crash | as the run ends, IDs reported     | as the run ends, and the notice      |
 | `disconnect`   | a store that doesn't parse | `failed`, `release_incomplete`    | unchanged (§4.7); the notice         |
 
-`invalid_grant` here includes the refresh `error_code`s in §5.4. Any
+`invalid_grant` here includes the refresh `error_code`s in §5.4; giving a
+session up classifies them its own way (§5.7). A `429` from the token
+endpoint, whatever its body or code, is always `retry`. Any
 other token-endpoint `4xx` except `429`, with or without an OAuth error
 code (`invalid_request`, `unauthorized_client`, `unsupported_grant_type`,
 `invalid_scope`, GoTrue's `invalid_credentials`, or one Retainer doesn't
@@ -1253,9 +1262,10 @@ Real Postgres, a fresh database per file, no mocked database.
   run and a function that does not declare the token secret.
 - **Token answers (unit):** the fixtures use the bodies in §5.4, not RFC
   guesses. A refresh answering any of the four refresh `error_code`s in §5.4
-  is `provider_unauthorized`; in a release, `refresh_token_not_found`,
-  `refresh_token_already_used` and `session_expired` are done, and
-  `user_banned` keeps the entry; the same codes on an exchange, `invalid_credentials`,
+  is `provider_unauthorized` in an ordinary run; in a release and the §5.5
+  backlog check only `refresh_token_not_found` is done, and
+  `refresh_token_already_used`, `user_banned` and `session_expired` keep the
+  entry; a `429` with any body is `retry`; the same codes on an exchange, `invalid_credentials`,
   `error: invalid_client` and an unknown `error_code` are
   `oauth_client_rejected`. A `403` or a client refusal during a release keeps
   the entry and names the code (§5.7).
@@ -1364,7 +1374,7 @@ Real Postgres, a fresh database per file, no mocked database.
     hours later a reconnect returns `retry` at step 5 (`503`), and another
     fails with `source_account_changed`, both before step 7. Neither result
     carries `release:<P1 id>` and no notice appears. When a later run's
-    step 7 tries `P1`, it gets `401` then `invalid_grant`, counts it as done
+    step 7 tries `P1`, it gets `401` then `refresh_token_not_found`, counts it as done
     and removes it.
 - **Cleanup paths (database and API):**
   - A failed `connect` queues the `{ keep: 'current' }` hook in the same
