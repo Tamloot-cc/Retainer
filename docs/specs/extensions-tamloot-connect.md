@@ -419,17 +419,25 @@ leaves `active`, so the platform runs the hook for them, with input
   Its only effect, when it does not succeed, is `release_incomplete_at`
   below.
 
-**When cleanup does not finish.** If a `disconnect` job of a connection with
-non-empty `disconnect_secrets` fails (for good, out of retries, or at the
-24-hour deadline), or a `connect` job ends with `exchange_interrupted`, the
-transaction that records it sets `release_incomplete_at = now()` on the
-connection. A cleanup job cancelled by a reconnect or a disconnect sets
-nothing: the run that replaced it carries the same sessions. The hook fails
-with `release_incomplete` when it knows of access it cannot name
-(§5.7). The member sees a notice until they dismiss it (§6.2); dismissing
-sets `release_notice_dismissed_at` through
-`POST /v1/extensions/:id/connections/:cid/release-notice/dismiss`, the
-owner only. Retainer never claims the access ended when it did not.
+**When cleanup does not finish.** The transaction that records a job's
+result sets `release_incomplete_at = now()` on the connection when:
+
+- a `disconnect` job of a connection with non-empty `disconnect_secrets`
+  fails (for good, out of retries, or at the 24-hour deadline); or
+- any job of the connection reports `releaseIncomplete: true`. The execution
+  result (`@retainer/extension`, `executionResultSchema`) gains this
+  optional flag, allowed with any status. A run sets it once, when it first
+  finds a session it cannot name (§5.5 steps 2 and 4, §5.7), so a run that
+  succeeds can still report one.
+
+A cleanup job cancelled by a reconnect or a disconnect sets nothing: the run
+that replaced it carries the same sessions and reports them itself. The
+member sees a notice whenever `release_incomplete_at` is later than
+`release_notice_dismissed_at` (or nothing was dismissed), so a dismissal
+hides what was reported before it and never a later report (§6.2).
+Dismissing sets `release_notice_dismissed_at = now()` through
+`POST /v1/extensions/:id/connections/:cid/release-notice/dismiss`, the owner
+only. Retainer never claims the access ended when it did not.
 
 ### 4.8 Reads
 
@@ -441,9 +449,9 @@ owner only. Retainer never claims the access ended when it did not.
   own otherwise), so the warning is read back from the database, not from
   the browser, and survives the disconnect.
 - `ExtensionInstallation` gains `releaseNotice: { connectionId, at } | null`
-  for the caller: their most recent connection on this installation with
-  `release_incomplete_at` set and not dismissed. It stays until the member
-  dismisses it. It is
+  for the caller: their most recent connection on this installation whose
+  `release_incomplete_at` is later than its `release_notice_dismissed_at`,
+  or has no dismissal. It stays until the member dismisses it. It is
   computed from the caller only, so it never shows another member's
   connections.
 - `ExtensionInstallation` gains `connectionMethods` for a member
@@ -459,7 +467,8 @@ owner only. Retainer never claims the access ended when it did not.
 - MCP stays read-only. `list_extension_connections` shows `credential`.
 - New error codes: `oauth_unavailable`, `authorization_expired`,
   `credential_mismatch`. New job result codes from the Tamloot bundle:
-  `release_backlog`, `exchange_interrupted`, `release_incomplete` (§5).
+  `release_backlog`, `exchange_interrupted`, `release_incomplete` (§5), and
+  the result flag `releaseIncomplete` (§4.7).
 
 ## 5. Part B: the Tamloot bundle
 
@@ -506,7 +515,6 @@ const tokenStore = z.strictObject({
   codeHash: z.string().length(64),        // SHA-256 of the last code this connection was given
   exchange: z.enum(['started', 'done']),  // 'started' is written before the token call
   rejected: z.string().nullable(),        // why verifySource refused the session from codeHash
-  interrupted: z.number().int().min(0),   // exchanges that may have left a session Retainer can't name
   current: session.nullable(),            // the verified session runs use
   pending: session.nullable(),            // exchanged, not yet verified; never used to import
   release: z.array(z.strictObject({       // sessions to give up in Tamloot
@@ -544,24 +552,28 @@ response without `refresh_token` keeps the old one.
    and `oauthTokens` if stored.
 2. **Drain.** If `pending` is from an earlier code, move it to `release`
    (`rejected`). If the store says `exchange: 'started'` for an earlier code
-   with no `pending`, add one to `interrupted`. Give up every entry in
-   `release` (§5.7) and write the store without the ones that are gone.
-   Failures here do not fail the run.
+   with no `pending`, an earlier run died during its exchange and Tamloot
+   may hold a session Retainer cannot name: set `exchange: 'done'` so it is
+   reported only once, and set `releaseIncomplete` on this run's result,
+   whatever its status. Give up every entry in `release` (§5.7) and write
+   the store without the ones that are gone. Failures here do not fail the
+   run.
 3. **New code** (nothing stored, or `codeHash` is not this code's hash):
    - If `release` still holds four entries, fail with `release_backlog`
      without exchanging. An unexchanged code creates no session in Tamloot.
      The connection is `setup_failed` and the member tries again later.
    - Write `{ codeHash, exchange: 'started', rejected: null, pending: null }`,
-     keeping `current`, `release` and `interrupted`. Then exchange. Write the
+     keeping `current` and `release`. Then exchange. Write the
      session as `pending` with `exchange: 'done'` at once, before any other
      call.
 4. **Same code** (a retry, or the `connect` an upgrade or re-enable queues):
    - `exchange: 'started'`: the run that exchanged died before writing.
      Exchange once more. If the first call never reached Tamloot this
      succeeds; continue at step 5. `invalid_grant` means the code was spent
-     and Tamloot may hold a session Retainer cannot name: add one to
-     `interrupted`, write, and fail with `exchange_interrupted`, which the
-     server reports to the member at once (§4.7).
+     and Tamloot may hold a session Retainer cannot name: write
+     `exchange: 'done'` with no `pending`, so no later run reports it again,
+     and fail with `exchange_interrupted` and `releaseIncomplete`, which the
+     server shows the member at once (§4.7).
    - `rejected` set: the session was already refused. Fail with that code.
    - `pending` set: continue at step 5.
    - Otherwise (an upgrade, a re-enable, or a retry after promotion):
@@ -630,10 +642,13 @@ succeed. Otherwise it gives up `pending`, every entry in `release` and,
 unless its input is `{ keep: 'current' }` (§4.7), `current`. It writes
 nothing. If any attempt must be retried it returns `retry`; the platform
 retries inside the 24-hour cleanup window. It fails with
-`release_incomplete`, after releasing everything it can, when it knows of a
-session it cannot name: `interrupted` is above zero, the store says
-`exchange: 'started'` with no `pending`, or the store does not parse. Then,
-or if the 24 hours run out, the member is told (§4.7, §6.2).
+`release_incomplete` and `releaseIncomplete`, after releasing everything it
+can, when it knows of a session it cannot name: the store says
+`exchange: 'started'` with no `pending` (a crash no `connect` has reported
+yet; the hook cannot write, so a `{ keep: 'current' }` run and a later full
+disconnect may both report it, each time a real reason to check), or the
+store does not parse. Then, or if the 24 hours run out, the member is told
+(§4.7, §6.2). Reported crashes leave nothing for it to report again.
 
 Add `DELETE /v1/access` to the provider's path allowlist. It stays the only
 request that is not a GET.
@@ -651,6 +666,7 @@ request that is not a GET.
 | API            | 429, 5xx                   | `retry` with `Retry-After`        | unchanged, as today                  |
 | `connect`      | §5.5 step 3, full release  | `failed`, `release_backlog`       | `setup_failed`                       |
 | `connect`      | §5.5 step 4, spent code    | `failed`, `exchange_interrupted`  | `setup_failed`, and the notice       |
+| `connect`      | §5.5 step 2, earlier crash | as the run ends, flag reported    | as the run ends, and the notice      |
 | `disconnect`   | a session it cannot name   | `failed`, `release_incomplete`    | unchanged (§4.7); the notice         |
 
 `provider_unauthorized` already deletes the connection's schedules and leaves
@@ -887,11 +903,18 @@ Real Postgres, a fresh database per file, no mocked database.
     stored.
   - The run dies after the token endpoint answered and before `pending` is
     written: the retry sees `exchange: 'started'`, exchanges again, gets
-    `invalid_grant`, records `interrupted` and fails with
-    `exchange_interrupted`.
+    `invalid_grant`, writes `exchange: 'done'` and fails with
+    `exchange_interrupted` and `releaseIncomplete`. A later `connect`,
+    `poll` or cleanup of that connection reports nothing more for it.
+  - The same crash, then the member connects again with a new code before
+    any retry: step 2 reports `releaseIncomplete` on a `connect` that
+    succeeds, and the connection is `active` with the notice shown.
   - `disconnect` releases `current`, `pending` and `release`; tolerates a
-    session that is gone; fails with `release_incomplete` when
-    `interrupted` is above zero, after releasing the rest.
+    session that is gone; fails with `release_incomplete` when the store
+    says `exchange: 'started'` with no `pending`, after releasing the rest.
+  - After a reported crash and a revoke in Tamloot, the connection goes to
+    `needs_reconnect` and its `{ keep: 'current' }` cleanup succeeds
+    without reporting again.
   - `poll`, `scan` and `sync-session` drain `release` before importing, and
     still import when the drain fails.
   - An upgrade's `connect` with the same code and no `pending` makes no
@@ -921,10 +944,12 @@ Real Postgres, a fresh database per file, no mocked database.
     it, and `retainer_retire_extension_secrets` does not end the hook's read
     early.
   - A hook that fails for good, runs out of retries or reaches 24 hours sets
-    `release_incomplete_at`; one that succeeds does not; a `connect` failing
-    with `exchange_interrupted` sets it at once.
+    `release_incomplete_at`; one that succeeds does not; any result with
+    `releaseIncomplete`, succeeded or failed, sets it in the same
+    transaction.
   - `releaseNotice` shows only the caller's own connection, dismissing is
-    the owner's alone, and it stays until dismissed.
+    the owner's alone, and it stays until dismissed. A report after a
+    dismissal shows it again; the dismissed report does not come back.
 - **Completion and the state (API):** completion with the workspace named in
   the state works with nothing else from the starting tab. Each gives the
   same `409 authorization_expired` body: a state whose workspace or
@@ -1062,9 +1087,12 @@ hours; Retainer never promises it unconditionally.
   retry detects it (§5.5 step 4), the connection is `setup_failed` and the
   member sees the notice. The session stays in Tamloot until the member
   revokes Retainer there.
-- **Tamloot unreachable for 24 hours.** After a disconnect, or after a failed
-  connect, sessions not given up in 24 hours stay in Tamloot. Retainer
-  deletes its tokens at the deadline and shows the member the notice.
+- **Tamloot unreachable for 24 hours.** After a disconnect, sessions not
+  given up in 24 hours stay in Tamloot: Retainer deletes its tokens at the
+  deadline and shows the member the notice. After a failed connect,
+  Retainer keeps its tokens, including the previous `current`: the
+  `{ keep: 'current' }` cleanup stops at 24 hours and shows the notice, and
+  the member's next reconnect or disconnect gives up what is left.
 - **No place to show the notice.** After an uninstall, a workspace deletion
   or the member's removal, the member cannot open the Connections tab. The
   cleanup still runs for 24 hours; if it does not finish, only the operator
