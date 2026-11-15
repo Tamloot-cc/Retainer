@@ -44,8 +44,9 @@ their Tamloot account, imports stop and the connection shows that it needs to
 be reconnected. Reconnecting is the same button; it does not import meetings
 twice.
 
-**Disconnecting.** Disconnect works as today: it stops imports and keeps the
-records already imported.
+**Disconnecting.** Disconnect stops imports and keeps the records already
+imported, as today. It also gives up that connection's access in Tamloot, so
+Tamloot stops listing Retainer once none of the member's workspaces use it.
 
 ## Requirements
 
@@ -61,9 +62,11 @@ records already imported.
    piling up.
 5. Reconnecting, including with a different Tamloot account, behaves as
    reconnecting does today.
-6. Everything else stays as it is today: what is imported, the workspace
+6. Disconnecting ends that connection's access in Tamloot. The member's
+   other workspaces keep their connections.
+7. Everything else stays as it is today: what is imported, the workspace
    sharing consent, the create-contacts choice and days of history.
-7. Self-hosted Retainer keeps connecting with a read-only API key.
+8. Self-hosted Retainer keeps connecting with a read-only API key.
 
 ## Out of scope
 
@@ -81,10 +84,7 @@ records already imported.
 - Few connections need reconnecting for reasons other than the member
   revoking access.
 
-## Open questions
+## Open question
 
-1. Once Connect with Tamloot works, does the hosted service keep the
-   paste-a-key option as a fallback, or remove it?
-2. Should disconnecting in Retainer also revoke Retainer in Tamloot when it is
-   the member's last connection, so Tamloot's list of approved apps stays
-   accurate?
+Once Connect with Tamloot works, does the hosted service keep the
+paste-a-key option as a fallback, or remove it?
