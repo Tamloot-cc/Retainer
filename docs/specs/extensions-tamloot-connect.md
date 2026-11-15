@@ -207,6 +207,8 @@ New columns on `extension_connections`:
 - `release_incomplete_at timestamptz` and `release_notice_dismissed_at
   timestamptz`: set when a cleanup that holds provider credentials did not
   finish (§4.7). They drive the member's notice (§6.2).
+- `release_incidents text[] not null default '{}'`: the incident IDs already
+  recorded for this connection (§4.7), at most 32, oldest dropped first.
 
 ### 4.4 Starting an authorization
 
@@ -419,22 +421,32 @@ leaves `active`, so the platform runs the hook for them, with input
   Its only effect, when it does not succeed, is `release_incomplete_at`
   below.
 
-**When cleanup does not finish.** The transaction that records a job's
-result sets `release_incomplete_at = now()` on the connection when:
+**When cleanup does not finish.** Reports are idempotent and kept by the
+server, never by the bundle's store, so a crash can repeat a report but
+never lose one. The execution result (`@retainer/extension`,
+`executionResultSchema`) gains `releaseIncomplete?: string[]`: incident IDs
+(at most 8, each `^[a-z]+:[a-z0-9]{1,80}$`), allowed with any status. The
+transaction that records a job's result, for each ID not yet in the
+connection's `release_incidents`, appends it and sets
+`release_incomplete_at = now()`. An ID already there changes nothing. It
+also records the incident `cleanup:<job id>` when a `disconnect` job of a
+connection with non-empty `disconnect_secrets` fails (for good, out of
+retries, or at the 24-hour deadline).
 
-- a `disconnect` job of a connection with non-empty `disconnect_secrets`
-  fails (for good, out of retries, or at the 24-hour deadline); or
-- any job of the connection reports `releaseIncomplete: true`. The execution
-  result (`@retainer/extension`, `executionResultSchema`) gains this
-  optional flag, allowed with any status. A run sets it once, when it first
-  finds a session it cannot name (§5.5 steps 2 and 4, §5.7), so a run that
-  succeeds can still report one.
+The Tamloot bundle uses one kind of ID, `exchange:<codeHash>`, for an
+exchange that may have left a session nobody holds (§5.5). It reports every
+such ID it knows of on every `connect` and every cleanup run, and keeps
+reporting them; the server's dedupe makes that safe. Dropping the oldest of
+32 recorded IDs can at worst show one old incident again, never hide a new
+one.
 
 A cleanup job cancelled by a reconnect or a disconnect sets nothing: the run
-that replaced it carries the same sessions and reports them itself. The
-member sees a notice whenever `release_incomplete_at` is later than
-`release_notice_dismissed_at` (or nothing was dismissed), so a dismissal
-hides what was reported before it and never a later report (§6.2).
+that replaced it reads the same store and reports the same IDs. The member
+sees a notice whenever `release_incomplete_at` is later than
+`release_notice_dismissed_at` (or nothing was dismissed). A dismissal hides
+what was reported before it. The same incident reported again after a
+dismissal is deduped and stays hidden; a new incident sets a later
+`release_incomplete_at` and shows again (§6.2).
 Dismissing sets `release_notice_dismissed_at = now()` through
 `POST /v1/extensions/:id/connections/:cid/release-notice/dismiss`, the owner
 only. Retainer never claims the access ended when it did not.
@@ -468,7 +480,7 @@ only. Retainer never claims the access ended when it did not.
 - New error codes: `oauth_unavailable`, `authorization_expired`,
   `credential_mismatch`. New job result codes from the Tamloot bundle:
   `release_backlog`, `exchange_interrupted`, `release_incomplete` (§5), and
-  the result flag `releaseIncomplete` (§4.7).
+  the result field `releaseIncomplete` (§4.7).
 
 ## 5. Part B: the Tamloot bundle
 
@@ -513,8 +525,9 @@ const session = z.strictObject({
 });
 const tokenStore = z.strictObject({
   codeHash: z.string().length(64),        // SHA-256 of the last code this connection was given
-  exchange: z.enum(['started', 'done']),  // 'started' is written before the token call
-  rejected: z.string().nullable(),        // why verifySource refused the session from codeHash
+  exchange: z.enum(['started', 'exchanged', 'refused', 'lost']), // what happened to that code (§5.5)
+  rejected: z.string().nullable(),        // why that code's session, or the code, was refused
+  lost: z.array(z.string().length(64)).max(4), // codeHashes of exchanges that may have left a session nobody holds
   current: session.nullable(),            // the verified session runs use
   pending: session.nullable(),            // exchanged, not yet verified; never used to import
   release: z.array(z.strictObject({       // sessions to give up in Tamloot
@@ -526,8 +539,10 @@ const tokenStore = z.strictObject({
 
 A connection holds at most six sessions: `current`, `pending` and four to
 release. Nothing is ever removed from `release` except by releasing it
-(§5.7). The cap is kept by refusing new work (§5.5 step 3), never by
-dropping an entry.
+(§5.7), and nothing is ever removed from `lost`. Both caps are kept by
+refusing new work (§5.5 step 3), never by dropping an entry. The store
+records what happened; it never records whether something was reported
+(§4.7).
 
 Every write uses the revision the run read (`expectedRevision`). On
 `revision_conflict` the run reads again and uses what is stored; it does not
@@ -548,44 +563,39 @@ response without `refresh_token` keeps the old one.
 
 ### 5.5 `connect`
 
+What happened to the last code is one field, `exchange`, with one meaning
+per value:
+
+| `exchange`  | Means                                                                                   | Set by                       |
+| ----------- | --------------------------------------------------------------------------------------- | ---------------------------- |
+| `started`   | The token call for `codeHash` may have been sent; no answer was read                    | Step 3, before the call      |
+| `exchanged` | Tokens came back: in `pending`, or since promoted to `current` or moved to `release`    | Step 3 or 4, with the tokens |
+| `refused`   | Tamloot answered with an OAuth error; no session was created; `rejected` holds the code | Step 3 or 4                  |
+| `lost`      | The code was spent but no tokens were read; `codeHash` is in `lost`                     | Step 2 or 4                  |
+
 1. Read the client (`sdk.extensionOAuthClient`), `oauthCode`, `oauthVerifier`
    and `oauthTokens` if stored.
-2. **Drain.** If `pending` is from an earlier code, move it to `release`
-   (`rejected`). If the store says `exchange: 'started'` for an earlier code
-   with no `pending`, an earlier run died during its exchange and Tamloot
-   may hold a session Retainer cannot name: set `exchange: 'done'` so it is
-   reported only once, and set `releaseIncomplete` on this run's result,
-   whatever its status. Give up every entry in `release` (§5.7) and write
-   the store without the ones that are gone. Failures here do not fail the
-   run.
+2. **Drain.** If the store is for an earlier code: a `pending` session moves
+   to `release` (`rejected`), and `exchange: 'started'` becomes `'lost'`
+   with that `codeHash` added to `lost` (the earlier run died during its
+   exchange and was never retried). Give up every entry in `release`
+   (§5.7). Write the store, without the entries that are gone. Failures
+   here do not fail the run.
 3. **New code** (nothing stored, or `codeHash` is not this code's hash):
-   - If `release` still holds four entries, fail with `release_backlog`
+   - If `release` or `lost` holds four entries, fail with `release_backlog`
      without exchanging. An unexchanged code creates no session in Tamloot.
-     The connection is `setup_failed` and the member tries again later.
+     The connection is `setup_failed`; with a full `lost`, only a disconnect
+     and a new connection clear it.
    - Write `{ codeHash, exchange: 'started', rejected: null, pending: null }`,
-     keeping `current` and `release`. Then exchange. Write the
-     session as `pending` with `exchange: 'done'` at once, before any other
-     call.
-   - If Tamloot answers the exchange with an OAuth error (a `4xx` with an
-     `error`, such as `invalid_grant` or `invalid_client`), no session was
-     created: write `exchange: 'done'` with no `pending`, then fail as §5.8
-     says. `'started'` stays only when the call may have reached Tamloot
-     without an answer Retainer read: a timeout, a network error or a
-     `5xx`, which retry (step 4).
+     keeping `current`, `release` and `lost`. Then exchange, and write as
+     the table below says before any other call.
 4. **Same code** (a retry, or the `connect` an upgrade or re-enable queues):
-   - `exchange: 'started'`: the run that exchanged died before writing.
-     Exchange once more. If the first call never reached Tamloot this
-     succeeds; continue at step 5. `invalid_grant` means the code was spent
-     and Tamloot may hold a session Retainer cannot name: write
-     `exchange: 'done'` with no `pending`, so no later run reports it again,
-     and fail with `exchange_interrupted` and `releaseIncomplete`, which the
-     server shows the member at once (§4.7).
-   - `rejected` set: the session was already refused. Fail with that code.
-   - `pending` set: continue at step 5.
-   - Otherwise (an upgrade, a re-enable, or a retry after promotion):
-     there is no `pending` to verify or promote. Continue with `current`,
-     refreshing it if needed (§5.6), and call `verifySource` with it as
-     today. A refusal here fails the run and touches no session.
+   act on the store as the table below says, top row first: a stored
+   refusal always wins. With `started`, the run that
+   exchanged died before it read an answer, so it exchanges once more: if
+   the first call never reached Tamloot this succeeds; `invalid_grant`
+   means the code was spent and Tamloot may hold a session Retainer cannot
+   name.
 5. **Verify.** `GET /v1/me` and `verifySource` with `pending`.
    - Success: in one write, `pending` becomes `current`, the previous
      `current`, if any, joins `release` as `replaced`, and `pending` is
@@ -593,29 +603,56 @@ response without `refresh_token` keeps the old one.
    - Refused (`source_account_changed`, or any other final failure): in one
      write, `pending` joins `release` as `rejected`, `pending` is cleared
      and `rejected` takes the code. The session is then only in `release`,
-     so it can never be promoted or counted twice. `current` is untouched: after a rejected reconnect the member's
-     previous session stays where it was. Try to give up the rejected
-     session now, then fail with the code. If Tamloot cannot be reached,
-     the cleanup in §4.7 retries it.
+     so it can never be promoted or counted twice. `current` is untouched:
+     after a rejected reconnect the member's previous session stays where
+     it was. Try to give up the rejected session now, then fail with the
+     code. If Tamloot cannot be reached, the cleanup in §4.7 retries it.
    - `429`, `5xx` or a network error: `retry`. `pending` is kept.
 6. The cursor and backfill, as today.
 7. Drain `release` again. A failure here never fails the connect.
 
-Step 3 keeps the bound: with fewer than four entries before the exchange,
-either outcome of step 5, or step 2 moving a stale `pending`, adds one, so
-`release` never exceeds four.
+Every `connect` result, whatever its status, carries
+`releaseIncomplete: ['exchange:<hash>', …]` for every hash in `lost`
+(§4.7). The server records each once.
+
+| Step and state                 | Token endpoint answers   | Write                                 | Run                                     |
+| ------------------------------ | ------------------------ | ------------------------------------- | --------------------------------------- |
+| 3, new code                    | tokens                   | `pending`, `exchanged`                | step 5                                  |
+| 3, new code                    | OAuth `4xx` with `error` | `refused`, `rejected` = its §5.8 code | fail with it                            |
+| 3, new code                    | timeout, network, `5xx`  | nothing (`started` stays)             | `retry`                                 |
+| 4, `rejected` set (any state)  | no call                  | nothing                               | fail with `rejected`                    |
+| 4, `started`                   | tokens                   | `pending`, `exchanged`                | step 5                                  |
+| 4, `started`                   | `invalid_grant`          | `lost`, add `codeHash` to `lost`      | fail `exchange_interrupted`             |
+| 4, `started`                   | other OAuth `4xx`        | `refused`, `rejected` = its code      | fail with it                            |
+| 4, `started`                   | timeout, network, `5xx`  | nothing                               | `retry`                                 |
+| 4, `exchanged`, `pending`      | no call                  | nothing                               | step 5                                  |
+| 4, `exchanged`, `current` only | no call                  | nothing                               | verify `current` as today; no promotion |
+| 4, `exchanged`, no session     | no call                  | nothing                               | fail `provider_unauthorized`            |
+| 4, `lost`                      | no call                  | nothing                               | fail `exchange_interrupted`             |
+
+Step 3 keeps the bounds: with fewer than four entries in each list before
+the exchange, one run adds at most one entry to either list, and step 2
+moving a stale `pending` or a stale `started` adds one at most, so neither
+list exceeds four.
 
 The order in step 5 matters. Tamloot revokes the member's approval when
 Retainer gives up its last session, so the new session is verified and
 current before the old one is released.
 
+**Crash safety.** Every write happens before the call or the result that
+depends on it. A run that dies after writing `lost` but before its result
+is recorded is retried, or followed by a cleanup run or a later `connect`;
+each reads `lost` and reports the same IDs, and the server records them
+once. Nothing is marked "reported" in the store, so nothing can be marked
+and then lost.
+
 **The window Retainer cannot close.** Between Tamloot answering an exchange
 and the run writing `pending`, only Tamloot knows the session. If the run
-dies there, step 4 detects it on the retry, or step 2 on the next connect,
-and the member is told (§6.2). Retainer cannot release that session, and if
-no later run of the connection ever happens it cannot even tell. Only the
-member's revoke in Tamloot ends it, and Tamloot's Connected apps lists
-Retainer while it lasts.
+dies there, a retry (step 4), a cleanup run (§5.7) or the next `connect`
+(step 2) finds `started` and the member is told (§6.2). Retainer cannot
+release that session, and if no later run of the connection ever happens it
+cannot even tell. Only the member's revoke in Tamloot ends it, and
+Tamloot's Connected apps lists Retainer while it lasts.
 
 ### 5.6 Access in every other function
 
@@ -650,14 +687,15 @@ means a key connection, or nothing stored, so no exchange ever started:
 succeed. Otherwise it gives up `pending`, every entry in `release` and,
 unless its input is `{ keep: 'current' }` (§4.7), `current`. It writes
 nothing. If any attempt must be retried it returns `retry`; the platform
-retries inside the 24-hour cleanup window. It fails with
-`release_incomplete` and `releaseIncomplete`, after releasing everything it
-can, when it knows of a session it cannot name: the store says
-`exchange: 'started'` with no `pending` (a crash no `connect` has reported
-yet; the hook cannot write, so a `{ keep: 'current' }` run and a later full
-disconnect may both report it, each time a real reason to check), or the
-store does not parse. Then, or if the 24 hours run out, the member is told
-(§4.7, §6.2). Reported crashes leave nothing for it to report again.
+retries inside the 24-hour cleanup window. Its result carries
+`releaseIncomplete` with every hash in `lost` and, when the store says
+`exchange: 'started'`, that `codeHash` too: the connect died during its
+exchange and was never retried, so a session may exist. The hook writes
+nothing; the server's dedupe (§4.7) keeps a hook and a later `connect`
+reporting the same ID from showing it twice. It fails with
+`release_incomplete` only when the store does not parse. A failure, or the
+24 hours running out, is its own incident and the member is told (§4.7,
+§6.2).
 
 Add `DELETE /v1/access` to the provider's path allowlist. It stays the only
 request that is not a GET.
@@ -675,7 +713,7 @@ request that is not a GET.
 | API            | 429, 5xx                   | `retry` with `Retry-After`        | unchanged, as today                  |
 | `connect`      | §5.5 step 3, full release  | `failed`, `release_backlog`       | `setup_failed`                       |
 | `connect`      | §5.5 step 4, spent code    | `failed`, `exchange_interrupted`  | `setup_failed`, and the notice       |
-| `connect`      | §5.5 step 2, earlier crash | as the run ends, flag reported    | as the run ends, and the notice      |
+| `connect`      | §5.5 step 2, earlier crash | as the run ends, IDs reported     | as the run ends, and the notice      |
 | `disconnect`   | a session it cannot name   | `failed`, `release_incomplete`    | unchanged (§4.7); the notice         |
 
 `provider_unauthorized` already deletes the connection's schedules and leaves
@@ -910,29 +948,37 @@ Real Postgres, a fresh database per file, no mocked database.
     rejections and release outcomes: the store never holds more than six
     sessions, and every session ever stored is either released or still
     stored.
+  - Every row of the §5.5 transition table, one test each, checking the
+    write, the token calls made and the result.
   - The run dies after the token endpoint answered and before `pending` is
-    written: the retry sees `exchange: 'started'`, exchanges again, gets
-    `invalid_grant`, writes `exchange: 'done'` and fails with
-    `exchange_interrupted` and `releaseIncomplete`. A later `connect`,
-    `poll` or cleanup of that connection reports nothing more for it.
+    written: the retry sees `started`, exchanges again, gets
+    `invalid_grant`, writes `lost` and fails with `exchange_interrupted`,
+    reporting `exchange:<hash>`.
   - The first exchange answered `invalid_grant` or `invalid_client`: the
-    store says `exchange: 'done'` with no `pending`, the run fails as §5.8
-    says, and neither the `{ keep: 'current' }` cleanup nor the next
-    `connect` reports anything.
+    store says `refused` with `rejected` set, nothing is reported, and an
+    upgrade's later `connect` fails with the same code and makes no token
+    call. The same for a new connection (no `current`) and a reconnect
+    (`current` is the old session, which is not reactivated).
   - The same crash, then the member connects again with a new code before
-    any retry: step 2 reports `releaseIncomplete` on a `connect` that
-    succeeds, and the connection is `active` with the notice shown.
-  - `disconnect` releases `current`, `pending` and `release`; tolerates a
-    session that is gone; fails with `release_incomplete` when the store
-    says `exchange: 'started'` with no `pending`, after releasing the rest.
-  - After a reported crash and a revoke in Tamloot, the connection goes to
-    `needs_reconnect` and its `{ keep: 'current' }` cleanup succeeds
-    without reporting again.
+    any retry: step 2 moves it to `lost` before the new exchange, and the
+    `connect` that succeeds reports it, so the connection is `active` with
+    the notice shown.
+  - **Crash between the store write and the result:** the run writes `lost`
+    and dies before its result is recorded. The retry, the cleanup run and
+    the next `connect` each report the same ID. The server sets
+    `release_incomplete_at` once.
+  - `disconnect` releases `current`, `pending` and `release`, tolerates a
+    session that is gone, and reports every `lost` hash and a `started`
+    one; it fails with `release_incomplete` only for a store that does not
+    parse.
+  - `lost` at four: a new code fails with `release_backlog` without a token
+    call.
   - `poll`, `scan` and `sync-session` drain `release` before importing, and
     still import when the drain fails.
-  - An upgrade's `connect` with the same code and no `pending` makes no
-    token call, promotes nothing and leaves `release` as it was apart from
-    the drain.
+  - An upgrade's `connect` with the same code, `exchanged` and only
+    `current` makes no token call, promotes nothing and leaves `release` as
+    it was apart from the drain. With no session at all it fails with
+    `provider_unauthorized`.
   - Entries the `{ keep: 'current' }` hook already released are removed by
     the next `connect` or `poll` without error.
 - **Cleanup paths (database and API):**
@@ -956,13 +1002,16 @@ Real Postgres, a fresh database per file, no mocked database.
     `uninstalling` until the hook succeeds, the secrets are deleted after
     it, and `retainer_retire_extension_secrets` does not end the hook's read
     early.
-  - A hook that fails for good, runs out of retries or reaches 24 hours sets
-    `release_incomplete_at`; one that succeeds does not; any result with
-    `releaseIncomplete`, succeeded or failed, sets it in the same
-    transaction.
+  - A hook that fails for good, runs out of retries or reaches 24 hours
+    records its own incident; one that succeeds records nothing of its own.
+    A result with new IDs in `releaseIncomplete`, succeeded or failed, sets
+    `release_incomplete_at` in the same transaction; a result whose IDs are
+    all recorded already changes nothing. Two results with the same new ID
+    recorded at the same moment set it once.
   - `releaseNotice` shows only the caller's own connection, dismissing is
-    the owner's alone, and it stays until dismissed. A report after a
-    dismissal shows it again; the dismissed report does not come back.
+    the owner's alone, and it stays until dismissed. **The same incident
+    after a dismissal** stays hidden. **A later, different incident** shows
+    the notice again.
 - **Completion and the state (API):** completion with the workspace named in
   the state works with nothing else from the starting tab. Each gives the
   same `409 authorization_expired` body: a state whose workspace or
