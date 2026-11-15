@@ -11,7 +11,7 @@ import {
   type SchemaDescription,
 } from '@retainer/shared';
 import type { CompiledSchema } from '../schema/compiled.js';
-import type { FieldState } from '../schema/types.js';
+import type { FieldState, ObjectState } from '../schema/types.js';
 import { PROTECTED_OPTIONS } from './protection.js';
 
 export type { FieldView, ObjectView } from '@retainer/shared';
@@ -57,6 +57,17 @@ export function presentValueFormats(objects: ObjectView[]): SchemaDescription['v
   );
 }
 
+function avatarFieldName(object: ObjectState): string | null {
+  const id =
+    object.avatarFieldId === 'default' && object.universalId === BASE_OBJECT_IDS.company
+      ? BASE_FIELD_IDS_BY_NAME.companyDomain
+      : object.avatarFieldId;
+  return (
+    object.fields.find((f) => f.universalId === id && f.status === 'active' && f.type === 'links')
+      ?.name ?? null
+  );
+}
+
 /** The active schema as describe_schema and GET /v1/schema show it (5). */
 export function presentSchema(schema: CompiledSchema): ObjectView[] {
   return [...schema.objectsByName.values()].map((object) => ({
@@ -66,6 +77,7 @@ export function presentSchema(schema: CompiledSchema): ObjectView[] {
     labelPlural: object.state.labelPlural,
     description: object.state.description,
     labelField: object.labelField?.name ?? null,
+    avatarField: avatarFieldName(object.state),
     owner: object.state.owner,
     isProtected: object.state.isProtected,
     class: object.state.class,

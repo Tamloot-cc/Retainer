@@ -34,6 +34,7 @@ import {
   Segmented,
   Toolbar,
 } from '../../ui/index.js';
+import { recordImageUrl } from '../../ui/record-image.js';
 import { useApiName } from '../developer.js';
 import {
   DEFAULT_EVENT_SORT,
@@ -264,6 +265,11 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
                       name={label}
                       object={r.object}
                       objectClass={object.class}
+                      imageUrl={recordImageUrl(
+                        schema.workspace.externalRecordImages,
+                        object.avatarField,
+                        r.fields,
+                      )}
                     />
                   }
                 >
@@ -292,7 +298,15 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
           }),
         };
       }),
-    [records, columns, references, writable, object.class],
+    [
+      records,
+      columns,
+      references,
+      writable,
+      object.class,
+      object.avatarField,
+      schema.workspace.externalRecordImages,
+    ],
   );
 
   // Selection belongs to one page of one view, and only to rows still shown.

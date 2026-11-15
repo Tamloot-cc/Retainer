@@ -66,6 +66,8 @@ export type ObjectState = {
   description: string | null;
   /** Universal ID of the label field. */
   labelFieldId: string | null;
+  /** Field universal ID, null to disable, or 'default' to use the built-in source. */
+  avatarFieldId: string | null;
   /** Set by the engine for objects server code depends on (protection.ts). */
   isProtected: boolean;
   /** `entity` or `event`; fixed when the object is created. */
@@ -91,7 +93,7 @@ export type DiffOp =
       kind: 'update_object';
       objectId: string;
       object: string;
-      property: 'labelSingular' | 'labelPlural' | 'description' | 'labelFieldId';
+      property: 'labelSingular' | 'labelPlural' | 'description' | 'labelFieldId' | 'avatarFieldId';
       from: string | null;
       to: string | null;
     }

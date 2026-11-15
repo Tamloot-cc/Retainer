@@ -528,6 +528,7 @@ export const workspaces = pgTable(
     /** Increments on every applied schema change. API/MCP schemas cache on it. */
     schemaVersion: integer('schema_version').notNull().default(0),
     settings: jsonb('settings').$type<WorkspaceSettings>().notNull().default({}),
+    externalRecordImages: boolean('external_record_images').notNull().default(false),
     /** Templates applied to this workspace, with their versions (3.1). */
     templates: jsonb('templates').$type<AppliedTemplate[]>().notNull().default([]),
     /** Set when a template (including `blank`) is first applied. */
@@ -605,6 +606,8 @@ export const objectTypes = pgTable(
     description: text('description'),
     /** The field shown when a record is referenced (usually its name). */
     labelFieldId: uuid('label_field_id'),
+    /** SQL null uses the built-in default; a setting with null fieldId disables it. */
+    avatarField: jsonb('avatar_field').$type<{ fieldId: string | null }>(),
     /** Server code depends on the object; set by the schema engine only (1.1). */
     isProtected: boolean('is_protected').notNull().default(false),
     /**

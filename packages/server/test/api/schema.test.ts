@@ -37,6 +37,7 @@ describe('GET /v1/schema', () => {
       templates: [],
       initialized: false,
       schemaVersion: 1,
+      externalRecordImages: false,
     });
     const objects = res.body.objects as { nameSingular: string; class: string }[];
     expect(objects.filter((o) => o.class === 'entity').map((o) => o.nameSingular)).toEqual([
@@ -109,6 +110,27 @@ describe('GET /v1/schema', () => {
       },
     });
     expect(JSON.stringify(res.body)).not.toContain('universalId');
+  });
+});
+
+describe('PATCH /v1/workspace/record-images', () => {
+  it('requires a human workspace admin and keeps opt-in scoped to the workspace', async () => {
+    const other = await t.setupWorkspace(
+      { name: 'Unrelated avatar workspace' },
+      { reader: { actor: { type: 'user', id: 'other' }, scopes: ['read'] } },
+    );
+    const setting = (key: string, enabled: boolean) =>
+      t.request('/v1/workspace/record-images', { method: 'PATCH', key, body: { enabled } });
+    const enabled = async (key: string) =>
+      (await t.request('/v1/schema', { key })).body.workspace.externalRecordImages;
+    for (const key of [keys.reader, keys.agent, keys.adminAgent]) {
+      expect((await setting(key, true)).status).toBe(403);
+    }
+    expect((await setting(keys.admin, true)).status).toBe(200);
+    expect(await enabled(keys.reader)).toBe(true);
+    expect(await enabled(other.keys.reader)).toBe(false);
+    expect((await setting(keys.admin, false)).status).toBe(200);
+    expect(await enabled(keys.reader)).toBe(false);
   });
 });
 

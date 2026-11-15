@@ -290,6 +290,21 @@ export function applyOperations(
     }
   }
 
+  function setAvatarField(object: ObjectState, ref: string | null | undefined) {
+    if (ref === undefined) return;
+    if (ref === null) {
+      object.avatarFieldId = null;
+      return;
+    }
+    const field = findField(object, ref);
+    if (!field) return;
+    if (field.type !== 'links') {
+      issue(`${object.nameSingular}.${field.name}`, 'avatarField must be a Links field');
+      return;
+    }
+    object.avatarFieldId = field.universalId;
+  }
+
   for (const operation of operations) {
     switch (operation.op) {
       case 'create_object': {
@@ -311,6 +326,7 @@ export function applyOperations(
           labelPlural: definition.labelPlural,
           description: definition.description ?? null,
           labelFieldId: null,
+          avatarFieldId: 'default',
           isProtected: PROTECTED_OBJECT_IDS.has(universalId),
           class: objectClass,
           owner: context.owner,
@@ -338,6 +354,7 @@ export function applyOperations(
           }
           for (const field of definition.fields) addField(object, field);
           object.labelFieldId = coreFieldUniversalId(universalId, 'title');
+          setAvatarField(object, definition.avatarField);
           break;
         }
         // A profile type holds facts only: no fields, and a computed label.
@@ -347,6 +364,7 @@ export function applyOperations(
           break;
         }
         for (const field of definition.fields) addField(object, field);
+        setAvatarField(object, definition.avatarField);
         const labelField = object.fields.find(
           (f) => f.name === definition.labelField && f.status === 'active',
         );
@@ -370,6 +388,7 @@ export function applyOperations(
             issue(object.nameSingular, "an event type's labelField is always its title");
           } else if (field) object.labelFieldId = field.universalId;
         }
+        setAvatarField(object, operation.avatarField);
         break;
       }
 
@@ -510,6 +529,7 @@ export function applyOperations(
           );
           break;
         }
+        if (object.avatarFieldId === field.universalId) object.avatarFieldId = null;
         deprecateField(field);
         break;
       }

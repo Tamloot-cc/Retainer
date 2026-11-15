@@ -59,6 +59,7 @@ export const objectDefinitionSchema = z.strictObject({
    * entity; an event type's label is always its core title field.
    */
   labelField: z.string().min(1).optional(),
+  avatarField: z.string().min(1).nullable().optional(),
   fields: z.array(fieldDefinitionSchema).default([]),
 });
 
@@ -74,6 +75,7 @@ export const schemaOperationSchema = z.discriminatedUnion('op', [
     labelPlural: z.string().min(1).max(200).optional(),
     description: z.string().max(2000).nullable().optional(),
     labelField: z.string().min(1).optional(),
+    avatarField: z.string().min(1).nullable().optional(),
   }),
   z.strictObject({
     op: z.literal('rename_object'),

@@ -43,6 +43,7 @@ import {
 } from '../../ui/index.js';
 import { objectByName, QueryError, sortObjects, useView } from '../state.js';
 import { FieldSheet, FLAGS } from './field-sheet.js';
+import { ExternalRecordImages, RecordImageField } from './record-image-settings.js';
 import { CORE_ROLE_TEXT, FieldTypeLabel, OwnerBadge } from './schema-labels.js';
 import { matchesField, typeDetail } from './schema-model.js';
 
@@ -93,6 +94,7 @@ export function ObjectsTab() {
     <>
       {!schema.workspace.templates.length ? <TemplatePicker /> : null}
       <ClassIntro />
+      <ExternalRecordImages />
       {objects.length ? null : (
         <Empty
           title="No objects yet"
@@ -272,6 +274,7 @@ function ObjectDetail({
           </Button>
         }
       />
+      <RecordImageField object={object} />
       <Row>
         <div>
           <Input

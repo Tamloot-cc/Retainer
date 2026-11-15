@@ -42,7 +42,15 @@ it('preserves existing person grants and bootstraps concurrent/new workspaces be
     } finally {
       await migrator.end();
     }
-    const workspace = await createWorkspace(sql, { name: 'Legacy OAuth' });
+    // Seed the historical rows directly so today's schema engine only runs
+    // after migrations have added the columns it expects.
+    const [workspace] = await sql<{ id: string }[]>`
+      with organization as (
+        insert into organizations (name) values ('Legacy OAuth') returning id
+      )
+      insert into workspaces (organization_id, slug, name)
+      select id, 'legacy-oauth', 'Legacy OAuth' from organization returning id`;
+    if (!workspace) throw new Error('Legacy workspace was not created');
     const [user] =
       await sql`insert into users(name,email) values('Legacy','legacy@example.test') returning id`;
     await sql`insert into oauth_clients(client_id,redirect_uris) values('legacy-client',array['https://app.example/callback'])`;

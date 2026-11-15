@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useWorkspace } from '../../api/client.js';
 import { Notice, ObjectIcon, Page, RecordAvatar } from '../../ui/index.js';
+import { recordImageUrl } from '../../ui/record-image.js';
 import { classLabel, objectByName, QueryError, recordTitle } from '../state.js';
 import { RecordActions } from './record-actions.js';
 import { useMemoryNav } from './record-memory.js';
@@ -36,6 +37,11 @@ export function RecordPage() {
           name={recordTitle(r)}
           object={r.object}
           objectClass={object?.class}
+          imageUrl={recordImageUrl(
+            schema.workspace.externalRecordImages,
+            object?.avatarField,
+            r.fields,
+          )}
           large
         />
       }

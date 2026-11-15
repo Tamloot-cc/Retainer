@@ -14,6 +14,10 @@ import { z } from 'zod';
  */
 const DESIGN_RULES = `### Use what Retainer already has
 
+- For a website-based record image, set avatarField to a Links field on the
+  object (for example, website on Organization), separately from labelField.
+  External image lookups require a workspace admin to enable them.
+
 - Meetings, calls, emails and chats are all one event type, conversation,
   and its medium field says which. describe_schema lists event types as
   objects of class "event", and log_event logs them. Never create an entity object for them, nor a join

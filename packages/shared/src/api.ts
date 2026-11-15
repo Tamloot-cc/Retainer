@@ -58,6 +58,8 @@ export type ObjectView = {
   labelPlural: string;
   description: string | null;
   labelField: string | null;
+  /** API name of the Links field supplying the record image, if set. */
+  avatarField?: string | null;
   owner: SchemaOwner;
   /** Server behavior depends on the object: it cannot be deleted (1.1). */
   isProtected: boolean;
@@ -72,6 +74,7 @@ export type ObjectView = {
 export type SchemaDescription = {
   workspace: Session['workspace'] & {
     schemaVersion: number;
+    externalRecordImages?: boolean;
     initialized: boolean;
     templates: { name: string; version: number; appliedAt: string }[];
   };
@@ -603,6 +606,7 @@ export type SchemaOperation =
       labelPlural?: string;
       description?: string | null;
       labelField?: string;
+      avatarField?: string | null;
     }
   | { op: 'rename_object'; object: string; nameSingular: string; namePlural: string }
   | { op: 'delete_object'; object: string }

@@ -1,4 +1,5 @@
 import type { Hono } from 'hono';
+import { z } from 'zod';
 import { requireScope } from '../../auth/middleware.js';
 import type { Sql } from '../../db/client.js';
 import { after, page } from '../../db/pagination.js';
@@ -31,6 +32,22 @@ export function schemaRoutes(app: Hono<AppEnv>, sql: Sql) {
   app.get('/schema', requireScope('read'), async (c) =>
     c.json(await describeSchema(sql, c.get('caller'))),
   );
+
+  app.patch('/workspace/record-images', requireScope('admin'), async (c) => {
+    const caller = c.get('caller');
+    if (caller.actor.type !== 'user')
+      throw new AppError(
+        403,
+        'forbidden',
+        'Only a workspace admin can change external image lookups.',
+      );
+    const { enabled } = await readBody(c, z.strictObject({ enabled: z.boolean() }));
+    await inWorkspace(sql, caller.workspaceId, async (tx) => {
+      await tx`update workspaces set external_record_images = ${enabled}, updated_at = now()
+        where id = ${caller.workspaceId}`;
+    });
+    return c.json({ enabled });
+  });
 
   app.post('/schema/changes', requireScope('schema:write'), async (c) => {
     const body = await readBody(c, schemaChangeRequestSchema);

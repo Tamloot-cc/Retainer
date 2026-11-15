@@ -21,7 +21,13 @@ function fieldProps({ id: _id, status: _status, ...props }: FieldState): FieldPr
   return props;
 }
 
-const OBJECT_PROPERTIES = ['labelSingular', 'labelPlural', 'description', 'labelFieldId'] as const;
+const OBJECT_PROPERTIES = [
+  'labelSingular',
+  'labelPlural',
+  'description',
+  'labelFieldId',
+  'avatarFieldId',
+] as const;
 const FIELD_PROPERTIES = [
   'label',
   'description',

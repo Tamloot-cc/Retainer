@@ -17,6 +17,7 @@ let t: TestApp;
 let agent: McpTestClient;
 let agent2: McpTestClient;
 let user: McpTestClient;
+let admin: McpTestClient;
 let reader: McpTestClient;
 let outsider: McpTestClient;
 let fresh: McpTestClient;
@@ -89,6 +90,7 @@ beforeAll(async () => {
     [sales.keys.agent, (c: McpTestClient) => (agent = c)],
     [sales.keys.agent2, (c: McpTestClient) => (agent2 = c)],
     [sales.keys.user, (c: McpTestClient) => (user = c)],
+    [sales.keys.admin, (c: McpTestClient) => (admin = c)],
     [sales.keys.reader, (c: McpTestClient) => (reader = c)],
     [other.keys.agent, (c: McpTestClient) => (outsider = c)],
     [blank.keys.agent, (c: McpTestClient) => (fresh = c)],
@@ -861,6 +863,69 @@ describe('propose_schema_change', () => {
       (o: { nameSingular: string }) => o.nameSingular === 'person',
     );
     expect(person.fields.map((f: { name: string }) => f.name)).toContain('preferredLanguage');
+  });
+
+  it('sets an image source for a custom object and tracks field renames', async () => {
+    const create = await agent.call('propose_schema_change', {
+      operations: [
+        {
+          op: 'create_object',
+          object: {
+            nameSingular: 'organization',
+            namePlural: 'organizations',
+            labelSingular: 'Organization',
+            labelPlural: 'Organizations',
+            labelField: 'name',
+            avatarField: 'website',
+            fields: [
+              { name: 'name', label: 'Name', type: 'text' },
+              { name: 'website', label: 'Website', type: 'links' },
+            ],
+          },
+        },
+      ],
+    });
+    expect(create.isError).toBe(false);
+    expect(create.body.status).toBe('applied');
+    const avatarField = async (name: string) => {
+      const described = await agent.call('describe_schema');
+      expect(described.isError).toBe(false);
+      return described.body.objects.find((o: { nameSingular: string }) => o.nameSingular === name)
+        .avatarField;
+    };
+    expect(await avatarField('organization')).toBe('website');
+    expect(await avatarField('company')).toBe('domain');
+
+    const update = (field: string | null, object = 'organization') =>
+      agent.call('propose_schema_change', {
+        operations: [{ op: 'update_object', object, avatarField: field }],
+      });
+    for (const badField of ['name', 'domain']) {
+      const invalid = await update(badField);
+      expect(invalid.isError).toBe(true);
+      expect(invalid.body.error.code).toBe('schema_invalid');
+    }
+    expect(await avatarField('organization')).toBe('website');
+    const renamed = await admin.call('propose_schema_change', {
+      operations: [
+        { op: 'rename_field', object: 'organization', field: 'website', name: 'homepage' },
+      ],
+    });
+    expect(renamed.body.status).toBe('applied');
+    expect(await avatarField('organization')).toBe('homepage');
+
+    expect((await update(null)).body.status).toBe('applied');
+    expect(await avatarField('organization')).toBeNull();
+    expect((await update('homepage')).body.status).toBe('applied');
+    const removed = await admin.call('propose_schema_change', {
+      operations: [{ op: 'delete_field', object: 'organization', field: 'homepage' }],
+    });
+    expect(removed.body.status).toBe('applied');
+    expect(await avatarField('organization')).toBeNull();
+
+    expect((await update(null, 'company')).body.status).toBe('applied');
+    expect(await avatarField('company')).toBeNull();
+    expect((await update('domain', 'company')).body.status).toBe('applied');
   });
 
   it('reports an invalid change with its issues', async () => {

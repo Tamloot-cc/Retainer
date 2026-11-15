@@ -82,6 +82,18 @@ itself is not: an unused one can be deleted like any object.
 `taskDueDate`), so a client finds them after a rename without reading
 universal IDs.
 
+A record image source is an optional object setting, separate from its label.
+Use `avatarField` on `create_object` or `update_object` to select an active
+Links field by API name. The schema engine stores its stable field ID.
+`describe_schema` returns the field's current name. Setting it to `null`
+clears it. The built-in Company defaults to its base Domain field.
+
+External image lookups are off by default. A human workspace admin can enable
+them in Schema or through `PATCH /v1/workspace/record-images`. The web app
+requests a favicon from Twenty Icons using only the primary website hostname.
+It renders the icon beside the record label even when the source column is
+hidden, and falls back to the usual avatar if the request fails.
+
 Workspaces carry a `schema_version` that increments on every applied change.
 API and MCP schemas are cached per `(workspace, schema_version)`.
 

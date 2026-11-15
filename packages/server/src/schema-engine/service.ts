@@ -35,6 +35,7 @@ export async function describeSchema(sql: Sql, caller: Caller): Promise<SchemaDe
         templates: workspace.templates,
         initialized: workspace.initializedAt !== null,
         schemaVersion: schema.version,
+        externalRecordImages: workspace.externalRecordImages,
       },
       objects,
       valueFormats: presentValueFormats(objects),

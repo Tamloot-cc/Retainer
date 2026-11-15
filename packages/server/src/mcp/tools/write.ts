@@ -278,7 +278,8 @@ export function registerWriteTools(server: McpServer, sql: Sql, caller: Caller):
         'approves them, and the response says "proposed". Field types cannot be changed; ' +
         'create a new field instead. Fields are not searchable unless you set isSearchable: ' +
         'set it on text fields people will look records up by (the label field is always ' +
-        'searchable). Give a short reason. Needs the schema:write scope.\n\n' +
+        'searchable). Set avatarField on create_object or update_object to the name of a Links ' +
+        'field supplying the record image, or null to clear it. Give a short reason. Needs the schema:write scope.\n\n' +
         'Make the smallest change that works: an option before a field, a field before an ' +
         'object. Meetings, calls, emails and chats are conversations (log_event): add an ' +
         'option to medium or a field to conversation rather than a new type. Create an event ' +

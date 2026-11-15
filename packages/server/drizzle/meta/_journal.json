@@ -785,6 +785,20 @@
       "when": 1794667420186,
       "tag": "0111_model_calls_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1794769481605,
+      "tag": "0112_record_avatars",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1794769482732,
+      "tag": "0113_record_image_setting_grant",
+      "breakpoints": true
     }
   ]
 }

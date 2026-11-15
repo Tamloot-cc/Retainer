@@ -34,6 +34,7 @@ import {
   Sheet,
   Stack,
 } from '../../ui/index.js';
+import { recordImageUrl } from '../../ui/record-image.js';
 import { DeveloperFacts, useApiName } from '../developer.js';
 import { EventDetailsView } from '../events/event-details.js';
 import { eventMedium, mediumField } from '../events/event-list.js';
@@ -115,6 +116,11 @@ export function RecordSheet({ id, onClose }: { id: string; onClose: () => void }
             name={recordTitle(r)}
             object={r.object}
             objectClass={object?.class}
+            imageUrl={recordImageUrl(
+              schema.workspace.externalRecordImages,
+              object?.avatarField,
+              r.fields,
+            )}
             large
           />
         ) : undefined

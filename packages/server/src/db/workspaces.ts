@@ -9,6 +9,7 @@ export type Workspace = {
   slug: string;
   name: string;
   schemaVersion: number;
+  externalRecordImages: boolean;
   templates: { name: string; version: number; appliedAt: string }[];
   initializedAt: string | null;
   /** Set when someone deleted it; it is removed for good after a grace period. */
@@ -22,6 +23,7 @@ type WorkspaceRow = {
   slug: string;
   name: string;
   schema_version: number;
+  external_record_images: boolean;
   templates: Workspace['templates'];
   initialized_at: Date | null;
   deletion_scheduled_at: Date | null;
@@ -35,6 +37,7 @@ function toWorkspace(row: WorkspaceRow): Workspace {
     slug: row.slug,
     name: row.name,
     schemaVersion: row.schema_version,
+    externalRecordImages: row.external_record_images,
     templates: row.templates,
     initializedAt: row.initialized_at?.toISOString() ?? null,
     deletionScheduledAt: row.deletion_scheduled_at?.toISOString() ?? null,

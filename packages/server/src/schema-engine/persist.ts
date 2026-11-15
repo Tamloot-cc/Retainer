@@ -219,6 +219,8 @@ export async function persistSchema(
   for (const object of desired.objects) {
     const before = currentObjects.get(object.universalId);
     const labelFieldId = object.labelFieldId ? (fieldIds.get(object.labelFieldId) ?? null) : null;
+    const avatarField =
+      object.avatarFieldId === 'default' ? null : tx.json({ fieldId: object.avatarFieldId });
     const objectId = objectIds.get(object.universalId) as string;
     if (
       !before ||
@@ -228,6 +230,7 @@ export async function persistSchema(
       before.labelPlural !== object.labelPlural ||
       before.description !== object.description ||
       before.labelFieldId !== object.labelFieldId ||
+      before.avatarFieldId !== object.avatarFieldId ||
       before.isProtected !== object.isProtected ||
       before.status !== object.status
     ) {
@@ -235,7 +238,8 @@ export async function persistSchema(
         update object_types set name_singular = ${object.nameSingular},
           name_plural = ${object.namePlural}, label_singular = ${object.labelSingular},
           label_plural = ${object.labelPlural}, description = ${object.description},
-          label_field_id = ${labelFieldId}, is_protected = ${object.isProtected},
+          label_field_id = ${labelFieldId}, avatar_field = ${avatarField},
+          is_protected = ${object.isProtected},
           status = ${object.status}, updated_at = now()
         where id = ${objectId}`;
     }

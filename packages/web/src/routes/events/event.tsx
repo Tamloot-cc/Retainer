@@ -19,6 +19,7 @@ import {
   RecordAvatar,
   Stack,
 } from '../../ui/index.js';
+import { recordImageUrl } from '../../ui/record-image.js';
 import { DeveloperFacts, useApiName } from '../developer.js';
 import { MemoryTabs, useMemoryNav } from '../records/record-memory.js';
 import { useRecord } from '../records/record-view.js';
@@ -96,7 +97,18 @@ export function EventPage() {
       title={eventTitle(e)}
       icon={<ObjectIcon name={r.object} objectClass="event" />}
       avatar={
-        <RecordAvatar id={r.id} name={eventTitle(e)} object={r.object} objectClass="event" large />
+        <RecordAvatar
+          id={r.id}
+          name={eventTitle(e)}
+          object={r.object}
+          objectClass="event"
+          imageUrl={recordImageUrl(
+            schema.workspace.externalRecordImages,
+            type?.avatarField,
+            r.fields,
+          )}
+          large
+        />
       }
       description={[
         type?.labelSingular ?? r.object,

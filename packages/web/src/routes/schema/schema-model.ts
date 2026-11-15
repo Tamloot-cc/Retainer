@@ -211,6 +211,8 @@ export function describeOperation(op: SchemaOperation, objects: ObjectView[]) {
         op.labelSingular !== undefined && `singular label ${quote(op.labelSingular)}`,
         op.labelPlural !== undefined && `plural label ${quote(op.labelPlural)}`,
         op.labelField !== undefined && `label field ${op.labelField}`,
+        op.avatarField !== undefined &&
+          (op.avatarField ? `record image field ${op.avatarField}` : 'clear record image'),
         op.description !== undefined &&
           (op.description ? `description ${quote(op.description)}` : 'clear description'),
       ].filter(Boolean);
@@ -255,6 +257,7 @@ const DIFF_PROPERTY_WORDS: Record<string, string> = {
   labelSingular: 'singular label',
   labelPlural: 'plural label',
   labelFieldId: 'label field',
+  avatarFieldId: 'record image field',
   label: 'label',
   description: 'description',
 };
@@ -284,7 +287,8 @@ export function describeDiffOp(
       const flag = FLAG_WORDS[s(op.property)];
       if (flag) return `Change ${where}: ${op.to ? flag[0] : flag[1]}`;
       const what = DIFF_PROPERTY_WORDS[s(op.property)] ?? s(op.property);
-      if (op.property === 'labelFieldId') return `Change ${where}: ${what}`;
+      if (op.property === 'labelFieldId' || op.property === 'avatarFieldId')
+        return `Change ${where}: ${what}`;
       return `Change ${where}: ${op.to ? `${what} ${quote(op.to)}` : `clear ${what}`}`;
     }
     case 'rename_object':

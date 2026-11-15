@@ -196,6 +196,9 @@ export class RetainerClient {
   schema(signal?: AbortSignal) {
     return this.get<SchemaDescription>('/v1/schema', {}, signal);
   }
+  setExternalRecordImages(enabled: boolean) {
+    return this.send<{ enabled: boolean }>('PATCH', '/v1/workspace/record-images', { enabled });
+  }
   templates(signal?: AbortSignal) {
     return this.get<{ templates: TemplateView[] }>('/v1/templates', {}, signal);
   }

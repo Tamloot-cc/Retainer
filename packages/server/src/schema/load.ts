@@ -11,6 +11,7 @@ type ObjectRow = {
   label_plural: string;
   description: string | null;
   label_field_id: string | null;
+  avatar_field: { fieldId: string | null } | null;
   is_protected: boolean;
   class: ObjectClass;
   owner: SchemaOwner;
@@ -42,7 +43,7 @@ export async function loadSchemaState(tx: Tx, workspaceId: string): Promise<Sche
   const [objectRows, fieldRows] = await Promise.all([
     tx<ObjectRow[]>`
       select id, universal_id, name_singular, name_plural, label_singular, label_plural,
-        description, label_field_id, is_protected, class, owner, status
+        description, label_field_id, avatar_field, is_protected, class, owner, status
       from object_types where workspace_id = ${workspaceId}
       order by created_at, id`,
     tx<FieldRow[]>`
@@ -90,6 +91,7 @@ export async function loadSchemaState(tx: Tx, workspaceId: string): Promise<Sche
     labelFieldId: row.label_field_id
       ? (universalIdByFieldId.get(row.label_field_id) ?? null)
       : null,
+    avatarFieldId: row.avatar_field ? row.avatar_field.fieldId : 'default',
     isProtected: row.is_protected,
     class: row.class,
     owner: row.owner,

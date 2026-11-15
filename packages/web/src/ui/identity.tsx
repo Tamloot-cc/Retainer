@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { type CategoryColor, categoryColor, objectColor } from './colors.js';
 import { cn } from './core.js';
 import { objectIcon } from './object-icons.js';
@@ -42,31 +42,61 @@ export function RecordAvatar({
   object = 'record',
   objectClass = 'entity',
   large = false,
+  imageUrl,
 }: {
   id: string;
   name: string;
   object: string;
   objectClass?: 'entity' | 'event';
   large?: boolean;
+  imageUrl?: string | undefined;
 }) {
   const person = object === 'person' && objectClass !== 'event';
   const Icon = objectIcon(object, objectClass);
+  const fallback = person ? (
+    <span data-initials={initials(name)} className="record-initials" />
+  ) : (
+    <Icon size={large ? 22 : 12} />
+  );
   return (
     <span
       aria-hidden
       data-color={person ? categoryColor(`record:${id}`) : objectColor(object)}
       className={cn(
-        'category-tag inline-flex shrink-0 items-center justify-center font-semibold',
+        'category-tag relative inline-flex shrink-0 items-center justify-center overflow-hidden font-semibold',
         person ? 'rounded-full' : 'rounded-lg',
         large ? 'size-12 text-base' : 'size-5 text-[9px]',
       )}
     >
-      {person ? (
-        <span data-initials={initials(name)} className="record-initials" />
+      {imageUrl ? (
+        <RecordAvatarImage key={imageUrl} url={imageUrl} fallback={fallback} />
       ) : (
-        <Icon size={large ? 22 : 12} />
+        fallback
       )}
     </span>
+  );
+}
+
+function RecordAvatarImage({ url, fallback }: { url: string; fallback: ReactNode }) {
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  return (
+    <>
+      {status !== 'loaded' ? fallback : null}
+      {status !== 'failed' ? (
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onLoad={() => setStatus('loaded')}
+          onError={() => setStatus('failed')}
+          className={cn(
+            'absolute inset-0 size-full object-contain',
+            status === 'loading' && 'opacity-0',
+          )}
+        />
+      ) : null}
+    </>
   );
 }
 

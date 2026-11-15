@@ -253,6 +253,8 @@ export type ObjectDefinition = {
    * entity; an event type's label is always its core `title` field.
    */
   labelField?: string;
+  /** Active Links field whose primary website supplies the record image. */
+  avatarField?: string | null;
   /**
    * The object's own fields. An event type gets its core `title` and
    * `summary` fields from the schema engine; list only the others.
