@@ -1,15 +1,17 @@
 # PRD: Connect with Tamloot
 
 Status: draft, 2026-11-15. Product requirements only; the design and
-implementation come later in a spec.
+implementation come later in a spec. Tamloot's side (the approval and a page
+to see and revoke approved apps) is in Tamloot's own PRD,
+`docs/prds/PRD-connected-apps.md` in the Tamloot repository.
 
 ## Problem
 
 To share their Tamloot meetings with a Retainer workspace, a member today has
-to leave Retainer, open Tamloot Settings → API keys, create a read-only key,
-copy it, come back and paste it into the Connect form. It is the slowest step
-of setting up the Tamloot extension, it asks people to handle a secret, and
-anyone who loses or rotates the key has to repeat it.
+to leave Retainer, create a read-only API key in Tamloot, copy it, come back
+and paste it into the Connect form. It is the slowest step of setting up the
+Tamloot extension, it asks people to handle a secret, and anyone who loses or
+rotates the key has to repeat it.
 
 ## Goal
 
@@ -24,50 +26,44 @@ Tamloot.
 
 ## The experience
 
-**Connecting.** On the extension's Connections tab, the member clicks
-**Connect with Tamloot**. They still choose how many days of history to import
-first. Tamloot opens, asks them to sign in if they are not, and shows an
-approval screen naming Retainer and what it will read: meetings, notes,
-participants and tasks, read-only. They click Allow and land back on the
-Connections tab, which shows the connection starting and then importing, as
-it does today.
+**Connecting.** On the extension's Connections tab, the member chooses how
+many days of history to import and clicks **Connect with Tamloot**. Tamloot
+opens and asks them to approve Retainer, or skips that if they approved it
+before. They land back on the Connections tab, which shows the connection
+starting and then importing, as it does today.
 
-**Declining.** If they click Deny or close Tamloot, they return to Retainer
-with nothing connected and a plain message saying so. They can try again.
+**Declining.** If they deny the approval or close Tamloot, they return to
+Retainer with nothing connected and a plain message saying so. They can try
+again.
 
 **Staying connected.** The connection keeps working without the member
-approving again, for as long as they keep Tamloot's access in place.
+approving again, for as long as Retainer keeps its access in Tamloot.
 
-**When access stops.** If the member revokes Retainer's access in Tamloot or
-deletes their Tamloot account, imports stop
-and the connection shows that it needs to be reconnected. Reconnecting is the
-same button and approval; it does not import meetings twice.
+**When access stops.** If the member revokes Retainer in Tamloot or deletes
+their Tamloot account, imports stop and the connection shows that it needs to
+be reconnected. Reconnecting is the same button; it does not import meetings
+twice.
 
 **Disconnecting.** Disconnect works as today: it stops imports and keeps the
-records already imported. It also ends Retainer's access to the member's
-Tamloot account.
+records already imported.
 
 ## Requirements
 
 1. A member can connect their own Tamloot account from the Connections tab
-   with one approval in Tamloot, without handling an API key.
-2. The approval screen names Retainer and lists what it can read. Access is
-   read-only.
-3. Each member approves for themselves, per workspace. Connecting one
-   workspace does not connect another, and an admin cannot approve on a
+   without handling an API key.
+2. Each member connects for themselves, per workspace. Connecting one
+   workspace does not connect another, and an admin cannot connect on a
    member's behalf.
-4. The connection stays active without further approvals until the member or
-   Tamloot ends it.
-5. When Tamloot access ends, the member and the workspace admins see
+3. The connection stays active without further approvals until the member,
+   or Tamloot, ends Retainer's access.
+4. When Tamloot access ends, the member and the workspace admins see
    "Needs reconnect" with a short reason, and imports stop without errors
    piling up.
-6. Reconnecting, including with a different Tamloot account, behaves as
+5. Reconnecting, including with a different Tamloot account, behaves as
    reconnecting does today.
-7. Disconnecting in Retainer ends Retainer's access to that Tamloot account
-   for that connection.
-8. Everything else stays as it is today: what is imported, the workspace
+6. Everything else stays as it is today: what is imported, the workspace
    sharing consent, the create-contacts choice and days of history.
-9. Self-hosted Retainer keeps connecting with a read-only API key.
+7. Self-hosted Retainer keeps connecting with a read-only API key.
 
 ## Out of scope
 
@@ -87,10 +83,8 @@ Tamloot account.
 
 ## Open questions
 
-1. **Where members revoke in Tamloot.** Tamloot has no page today listing the
-   apps a person has approved. Do we add one, or is disconnecting in Retainer
-   enough for the first release?
-2. **Clinical attestation.** Tamloot asks clinical users to tick an attestation
-   before approving Claude or ChatGPT. Should approving Retainer ask the same?
-3. **API keys on hosted.** Once Connect with Tamloot works, do we keep the
-   paste-a-key option on the hosted service as a fallback, or remove it?
+1. Once Connect with Tamloot works, does the hosted service keep the
+   paste-a-key option as a fallback, or remove it?
+2. Should disconnecting in Retainer also revoke Retainer in Tamloot when it is
+   the member's last connection, so Tamloot's list of approved apps stays
+   accurate?
