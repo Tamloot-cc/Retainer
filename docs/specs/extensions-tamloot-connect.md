@@ -574,14 +574,14 @@ response without `refresh_token` keeps the old one.
 The store keeps one state per code, `exchange`, with one meaning per value,
 and one sticky flag, `uncertain`:
 
-| `exchange`  | Means                                                                                                                          |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `ready`     | No token call for `codeHash` is in flight; any earlier attempt was answered as not processed (`429`, or failed before sending) |
-| `started`   | A token call for `codeHash` was sent, or may have been, and no answer was read yet                                             |
-| `exchanged` | Tokens came back and are in `pending`, not yet verified                                                                        |
-| `promoted`  | This code's session passed `verifySource` and became `current`                                                                 |
-| `refused`   | The code can never succeed and no session can exist for it; `failure` holds why                                                |
-| `lost`      | The code can never succeed and a session may exist that nobody holds; `codeHash` is in `lost`                                  |
+| `exchange`  | Means                                                                                                                                                                         |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ready`     | No token call for `codeHash` is in flight, and the last one was answered as not processed (`429`, or failed before sending); an earlier one may still have been (`uncertain`) |
+| `started`   | A token call for `codeHash` was sent, or may have been, and no answer was read yet                                                                                            |
+| `exchanged` | Tokens came back and are in `pending`, not yet verified                                                                                                                       |
+| `promoted`  | This code's session passed `verifySource` and became `current`                                                                                                                |
+| `refused`   | The code can never succeed and no session can exist for it; `failure` holds why                                                                                               |
+| `lost`      | The code can never succeed and a session may exist that nobody holds; `codeHash` is in `lost`                                                                                 |
 
 `uncertain` starts `false` for a new code and only ever becomes `true`: an
 answer that says "not processed" never clears an earlier attempt that may
@@ -616,18 +616,21 @@ a session.
 2. **Stage.** If the store is for an earlier code: a `pending` session moves
    to `release` (`rejected`); `started`, or `uncertain` with no session for
    that code, becomes `lost` with that `codeHash` added to `lost`. Write.
-   Then give up the entries in `release` (§5.7) **only if `current` is set**:
-   the member's current session keeps the approval alive, so releasing the
-   others cannot revoke the approval the new code depends on. With no
-   `current`, giving up waits for step 7, after the new session is
-   promoted. The one exception is step 3's full list.
+   No session is given up here: `connect` makes **no** `DELETE /v1/access`
+   call before the new code's session is promoted (step 7), whether or not
+   `current` is set. A stored `current` does not prove its session is still
+   live, so releasing anything earlier could end the member's last live
+   session and revoke the approval the new code depends on.
 3. **New code** (nothing stored, or `codeHash` is not this code's hash):
-   - If `release` holds four entries and `current` is not set, give them up
-     now, since nothing else can empty the list: if one was still live this
-     may revoke the approval, and the new code then fails at `/v1/me` with
-     `provider_unauthorized`; the member connects again and sees Tamloot's
-     approval screen. If `release` still holds four, fail with
-     `release_backlog` without exchanging.
+   - If `release` holds four entries, check each with `GET /v1/me` (a read,
+     which never revokes anything), refreshing once on `401` as §5.6 does
+     and writing any new tokens. Drop the entries that still answer `401`
+     or whose refresh fails with `invalid_grant`: Retainer has no access
+     through them, which §5.7 already counts as done. This is how entries
+     that the cleanup hook gave up, but could not remove because it cannot
+     write, leave the list. If four remain, fail with `release_backlog`
+     without exchanging; the cleanup in §4.7 gives them up, and the member
+     connects again later.
    - If `lost` holds four entries, fail with `lost_backlog` without
      exchanging. This is a chosen, bounded stop: four codes may each have
      left a session, Retainer cannot tell which, and it stops adding more.
@@ -656,8 +659,8 @@ a session.
      and `failure` takes the code. The session is then only in `release`,
      so it can never be promoted or counted twice. `current` is untouched:
      after a rejected reconnect the member's previous session stays where
-     it was. If `current` is set, try to give up the rejected session now;
-     otherwise leave it to the cleanup in §4.7. Then fail with the code.
+     it was. The rejected session is not given up in this run; the cleanup
+     in §4.7 does it. Then fail with the code.
    - `429`, `5xx` or a network error: `retry`. `pending` is kept.
 6. The cursor and backfill, as today.
 7. Give up every entry in `release`. A failure here never fails the
@@ -673,9 +676,10 @@ attempt), and step 2 moves at most one stale `pending` and one stale code,
 so neither list exceeds four.
 
 **Order.** Tamloot revokes the member's approval when Retainer gives up its
-last session. So Retainer gives up sessions only while `current` holds the
-approval (steps 2 and 5) or after the new session is promoted (step 7). The
-single exception is the full `release` list in step 3, stated there.
+last session. So `connect` gives up sessions only in step 7, after the new
+session is promoted and holds the approval. Before that it only reads (step
+3's check). Sessions from a failed `connect`, including a same-code replay,
+are given up by the cleanup in §4.7.
 
 **Crash safety.** Every write happens before the call or the result that
 depends on it. `started` is written before each send, so a run that dies
@@ -979,21 +983,20 @@ Real Postgres, a fresh database per file, no mocked database.
     the old one is released only after that write.
   - Reconnect with another account: `verifySource` refuses, `current` is
     still the old session, the new one is in `release` as `rejected`,
-    `pending` is empty, its `DELETE /v1/access` is attempted in the same
-    run, and the run fails with `source_account_changed`.
-  - The same, with `DELETE /v1/access` answering `503`: the entry stays, and
-    the queued `{ keep: 'current' }` hook releases it on its next attempt
-    without touching `current`.
-  - Four entries in `release` that cannot be released, no `current`:
-    `connect` tries to give them up, then fails with `release_backlog`
-    without a token call.
-  - **No release before the exchange while `current` is null.** A first
-    connect leaves `P1` in `pending` and fails at `/v1/me` with `5xx`; the
-    member connects again at once with `C2`. Step 2 moves `P1` to `release`
-    but makes no `DELETE /v1/access` before `C2` is exchanged and promoted;
-    `P1` is given up in step 7. The fixture's approval is never revoked
-    between the two.
-  - With `current` set, step 2 gives up `release` before the exchange.
+    `pending` is empty, no `DELETE /v1/access` is made in the run, and it
+    fails with `source_account_changed`. The queued `{ keep: 'current' }`
+    hook then releases the rejected session without touching `current`;
+    with `DELETE /v1/access` answering `503` it retries.
+  - Four live entries in `release`: step 3 reads each, keeps them, and fails
+    with `release_backlog` with no token call and no `DELETE /v1/access`.
+  - Four entries the cleanup hook already gave up: step 3's reads get `401`
+    and a failed refresh, drops them, and the new code is exchanged.
+  - **No release call before promotion.** A first connect leaves `P1` in
+    `pending` and fails at `/v1/me` with `5xx`; the member connects again
+    at once with `C2`. No `DELETE /v1/access` is made before `C2` is
+    promoted; `P1` is given up in step 7. The same with a stored `current`
+    whose session is already gone in the fixture. The fixture's approval is
+    never revoked before `C2` is promoted.
   - No path removes an entry from `release` except a `204` or a session that
     is already gone. A property test over random sequences of reconnects,
     rejections and release outcomes: the store never holds more than six
