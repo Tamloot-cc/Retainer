@@ -42,9 +42,9 @@ again.
 approving again, for as long as Retainer keeps its access in Tamloot.
 
 **When access stops.** If the member revokes Retainer in Tamloot or deletes
-their Tamloot account, imports stop in every workspace that member connected,
-and each connection shows that it needs to be reconnected. Reconnecting is the
-same button; it does not import meetings twice.
+their Tamloot account, imports stop right away in every workspace that member
+connected, and each connection shows that it needs to be reconnected.
+Reconnecting is the same button; it does not import meetings twice.
 
 **Disconnecting.** Disconnect stops imports and keeps the records already
 imported, as today. It also gives up that connection's access in Tamloot, so
@@ -102,10 +102,12 @@ paste-a-key option as a fallback, or remove it?
 Changes to Tamloot's PRD that affect this one, newest first. Each names the
 Tamloot commit and what changed here.
 
-| Date       | Tamloot commit | Change in Tamloot's PRD                                        | Effect here                                           |
-| ---------- | -------------- | -------------------------------------------------------------- | ----------------------------------------------------- |
-| 2026-11-15 | `45d901102`    | The approval gives the same read access an API key gives today | Requirement 9 rests on it: imports stay the same      |
-| 2026-11-15 | `1cc8cc53e`    | Each workspace has its own access; disconnecting gives it up   | Requirement 6 and the Disconnecting paragraph         |
-| 2026-11-15 | `d6574e687`    | The list of approved apps shows each app's address             | Requirement 8; the approval names retainer.tamloot.cc |
-| 2026-11-15 | `d6574e687`    | Tamloot enforces Retainer's read-only access on its side       | Requirement 7                                         |
-| 2026-11-15 | `d0cca4331`    | First version: approving, revoking, Connected apps page        | Revoking stops every workspace the member connected   |
+| Date       | Tamloot commit | Change in Tamloot's PRD                                                | Effect here                                                             |
+| ---------- | -------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 2026-11-15 | `49b974f7c`    | Revoking cuts an app off at once, including access it already had      | When access stops: imports stop right away                              |
+| 2026-11-15 | `49b974f7c`    | Retainer reads only what it imports: no contact search, no transcripts | Requirement 9 holds; importing more needs Tamloot's PRD to change first |
+| 2026-11-15 | `45d901102`    | The approval must work where Retainer reads Tamloot today              | Requirement 9 rests on it: imports stay the same                        |
+| 2026-11-15 | `1cc8cc53e`    | Each workspace has its own access; disconnecting gives it up           | Requirement 6 and the Disconnecting paragraph                           |
+| 2026-11-15 | `d6574e687`    | The list of approved apps shows each app's address                     | Requirement 8; the approval names retainer.tamloot.cc                   |
+| 2026-11-15 | `d6574e687`    | Tamloot enforces Retainer's read-only access on its side               | Requirement 7                                                           |
+| 2026-11-15 | `d0cca4331`    | First version: approving, revoking, Connected apps page                | Revoking stops every workspace the member connected                     |
