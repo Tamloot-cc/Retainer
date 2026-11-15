@@ -601,11 +601,11 @@ use `current` for this code; any other state with no `pending` fails.
      the table below says before any other call.
 4. **Same code** (a retry, or the `connect` an upgrade or re-enable queues):
    act on the store as the table below says, top row first: a stored
-   `failure` always wins, and `current` is used only after `promoted`. With `started`, the run that
-   exchanged died before it read an answer, so it exchanges once more: if
-   the first call never reached Tamloot this succeeds; `invalid_grant`
-   means the code was spent and Tamloot may hold a session Retainer cannot
-   name.
+   `failure` always wins, and `current` is used only after `promoted`.
+   With `started`, the run that exchanged died before it read an answer,
+   so it exchanges once more: if the first call never reached Tamloot this
+   succeeds; `invalid_grant` means the code was spent and Tamloot may hold
+   a session Retainer cannot name.
 5. **Verify.** `GET /v1/me` and `verifySource` with `pending`.
    - Success: in one write, `pending` becomes `current`, the previous
      `current`, if any, joins `release` as `replaced`, `pending` is cleared
