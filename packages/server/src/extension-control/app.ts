@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { AppDeps } from '../api/app.js';
+import { extensionDataRoutes } from '../api/routes/extension-data.js';
 import { runtimeRoutes } from '../api/routes/extension-runtime.js';
 import { extensionRoutes } from '../api/routes/extensions.js';
 import { webhookIngress, webhookRuntime } from '../api/routes/webhooks.js';
@@ -51,6 +52,7 @@ export function createExtensionControlApp(deps: AppDeps) {
   );
   extensionRoutes(v1, extensions, !deps.accountsSecret);
   runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets);
+  extensionDataRoutes(v1, deps.sql, extensions.catalog);
   webhookRuntime(v1, deps.webhooks);
   app.route('/v1', v1);
   return app;

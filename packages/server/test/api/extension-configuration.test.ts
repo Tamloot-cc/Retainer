@@ -3,6 +3,7 @@ import type { ExtensionManifest } from '@retainer/extension';
 import { granolaManifest } from '@retainer/runner/granola-contract';
 import { RetainerClient } from '@retainer/sdk';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { createApp } from '../../src/api/app.js';
 import { loadConfig } from '../../src/config.js';
 import { createExtensionControlApp } from '../../src/extension-control/app.js';
 import { extensionServices } from '../../src/extension-control/configuration.js';
@@ -404,5 +405,17 @@ describe('operator runtime configuration and dedicated key-mode control', () => 
         extensionServices({ ...config, RETAINER_EXTENSION_EXECUTABLES: JSON.stringify(wrong) }),
       ).rejects.toThrow('configuration');
     }
+  });
+  it('serves every /v1/extensions route of the main API, since the hosted gateway routes them all here', () => {
+    const routes = (app: { routes: { method: string; path: string }[] }) =>
+      new Set(
+        app.routes
+          .filter((r) => r.method !== 'ALL' && r.path.startsWith('/v1/extensions'))
+          .map((r) => `${r.method} ${r.path}`),
+      );
+    const api = routes(createApp({ sql: t.sql })),
+      control = routes(createExtensionControlApp({ sql: t.sql }));
+    expect(api.size).toBeGreaterThan(0);
+    expect([...api].filter((route) => !control.has(route))).toEqual([]);
   });
 });
