@@ -288,7 +288,11 @@ its CSRF header check. Nothing about either is relaxed.
    is not a member of the named workspace gets the middleware's ordinary
    refusal, the same for a workspace that does not exist; so a state, real
    or forged, tells the caller nothing they could not learn without it.
-2. With `error`: delete the request and return `{ cancelled: true }`.
+2. With `error`: claim the request the same way a code does,
+   `delete … where id = … and consumed_at is null`. One row deleted returns
+   `{ cancelled: true }`. No row means a code completion won, and the
+   answer is `409 authorization_expired`; a decline never reports success
+   beside a connection that started.
 3. With `code` (1 to 2,048 characters): stage it through `broker.stage` under
    `codeSetting`, bound to the request's connection ID.
 4. Run the existing connect transaction with the request's settings, both
@@ -503,6 +507,10 @@ lock, if `release_incomplete_at = at::timestamptz` in SQL, it sets
 `release_notice_dismissed_at = release_incomplete_at`, the stored value, not
 the click time and not the client's value. Otherwise it answers
 `409 notice_changed`, changes nothing, and the web app reloads the notice.
+Before the cast, the server checks `at` against the cursor stamp pattern in
+`db/pagination.ts` (at most 64 characters, an ISO time with up to six
+fractional digits and an offset). An `at` that doesn't match is
+`409 notice_changed`, never a database error.
 So a dismissal hides exactly the incident on screen. One recorded between
 loading the page and clicking stays visible. A forged or future `at` never
 matches, so it hides nothing. Retainer never claims the access ended when it
@@ -1146,6 +1154,8 @@ Real Postgres, a fresh database per file, no mocked database.
     recorded at the same moment set it once.
   - `releaseNotice` shows only the caller's own connection, dismissing is
     the owner's alone, and it stays until dismissed.
+  - A malformed `at` (`"invalid"`, too long, no offset) answers
+    `409 notice_changed`.
   - **Sub-millisecond round trip:** an incident stamped with a non-zero
     microsecond part is read, sent back as `at` unchanged, and dismisses.
     An `at` truncated to milliseconds gets `409 notice_changed`.
@@ -1183,7 +1193,9 @@ Real Postgres, a fresh database per file, no mocked database.
   who is not a member gets the same refusal for a real and a made-up
   workspace ID. A request without the CSRF header is refused. Two
   completions of one state from two tabs at once: one connection, one
-  `409`.
+  `409`. A decline and a code completion of one state at once: either the
+  connection starts and the decline gets `409`, or the decline returns
+  `{ cancelled: true }` and the code gets `409`; never both successes.
 - **Web (unit and Playwright):** the button and inline days; the round trip
   through a stub authorize page to "Connecting…"; declined; the
   getting-started text; "Needs reconnect" with its reason for the member and
