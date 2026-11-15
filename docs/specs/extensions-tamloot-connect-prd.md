@@ -104,6 +104,7 @@ Tamloot commit and what changed here.
 
 | Date       | Tamloot commit | Change in Tamloot's PRD                                                | Effect here                                                             |
 | ---------- | -------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 2026-11-15 | `250ef8191`    | Retainer reads each task's contact and email, shown on the approval    | Requirement 9 holds: tasks stay linked to their person                  |
 | 2026-11-15 | `49b974f7c`    | Revoking cuts an app off at once, including access it already had      | When access stops: imports stop right away                              |
 | 2026-11-15 | `49b974f7c`    | Retainer reads only what it imports: no contact search, no transcripts | Requirement 9 holds; importing more needs Tamloot's PRD to change first |
 | 2026-11-15 | `45d901102`    | The approval must work where Retainer reads Tamloot today              | Requirement 9 rests on it: imports stay the same                        |
