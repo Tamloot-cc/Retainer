@@ -9,12 +9,12 @@ import { admitRun } from '../extension-runtime/admission.js';
 import { requestHash } from '../idempotency.js';
 import { retractEventClaims } from '../memory/events.js';
 import { isEventIdentitySuppressed } from '../privacy/suppression.js';
-import { canonicalUniqueValue } from '../records/derive.js';
 import { prepareValues } from '../records/values.js';
 import {
   insertRecord,
   lockRecordsForUpdate,
   softDeleteRecord,
+  UniqueConflictError,
   type WriteContext,
   writeFields,
 } from '../records/write.js';
@@ -232,17 +232,19 @@ export async function reconcileTasks(
     );
     values.delete(identity);
     if (!record) {
-      const collision =
-        await tx`select 1 from record_identifiers where workspace_id=${context.workspaceId} and field_id=${identity.id!} and kind='value' and value=${canonicalUniqueValue(identityValue)} and is_claim`;
-      if (collision.length)
+      record = await insertRecord(tx, context, object);
+      // The unique claim waits for a concurrent claimer, so its conflict is the race-free test.
+      try {
+        await writeFields(tx, context, object, record, new Map([[identity, identityValue]]));
+      } catch (error) {
+        if (!(error instanceof UniqueConflictError) || error.field.id !== identity.id) throw error;
         throw new AppError(
           409,
           'source_task_conflict',
           'the managed task identity is already held by another record',
           { field: identity.name },
         );
-      record = await insertRecord(tx, context, object);
-      await writeFields(tx, context, object, record, new Map([[identity, identityValue]]));
+      }
     } else if (record.deleted_at) {
       await context.changes?.capture(tx, record.id);
       await tx`update records set deleted_at=null,updated_at=clock_timestamp(),updated_by=${tx.json(context.actor)} where id=${record.id}`;
