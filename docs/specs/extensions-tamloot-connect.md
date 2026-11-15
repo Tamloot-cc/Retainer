@@ -535,7 +535,7 @@ const tokenStore = z.strictObject({
   exchange: z.enum(['ready', 'started', 'exchanged', 'promoted', 'refused', 'lost']), // that code's state (§5.5)
   uncertain: z.boolean(),                 // sticky: an attempt for codeHash may have been processed unseen
   failure: z.string().nullable(),         // terminal failure code for codeHash, replayed on a same-code run
-  lost: z.array(z.string().length(64)).max(4), // codeHashes of exchanges that may have left a session nobody holds
+  lost: z.array(z.string().length(64)).max(4), // unique codeHashes of exchanges that may have left a session nobody holds
   current: session.nullable(),            // the verified session runs use
   pending: session.nullable(),            // exchanged, not yet verified; never used to import
   release: z.array(z.strictObject({       // sessions to give up in Tamloot
@@ -547,7 +547,9 @@ const tokenStore = z.strictObject({
 
 A connection holds at most six sessions: `current`, `pending` and four to
 release. Nothing is ever removed from `release` except by releasing it
-(§5.7), and nothing is ever removed from `lost`. Both caps are kept by
+(§5.7), and nothing is ever removed from `lost`. `lost` holds each hash
+once: adding a hash that is already there changes nothing, so repeating a
+stage after a backlog failure never inflates it. Both caps are kept by
 refusing new work (§5.5 step 3), never by dropping an entry. The store
 records what happened; it never records whether something was reported
 (§4.7).
@@ -614,8 +616,11 @@ a session.
 1. Read the client (`sdk.extensionOAuthClient`), `oauthCode`, `oauthVerifier`
    and `oauthTokens` if stored.
 2. **Stage.** If the store is for an earlier code: a `pending` session moves
-   to `release` (`rejected`); `started`, or `uncertain` with no session for
-   that code, becomes `lost` with that `codeHash` added to `lost`. Write.
+   to `release` (`rejected`); `started`, or `ready` with `uncertain`,
+   becomes `lost` with that `codeHash` added to `lost`, the same test §5.7
+   uses. Any other state names no unknown session: after `exchanged`,
+   `promoted` or `refused` the code's session, if any, is in `release` or
+   `current`, even when `uncertain` is still true. Write.
    No session is given up here: `connect` makes **no** `DELETE /v1/access`
    call before the new code's session is promoted (step 7), whether or not
    `current` is set. A stored `current` does not prove its session is still
@@ -1037,6 +1042,9 @@ Real Postgres, a fresh database per file, no mocked database.
     session that is gone, and reports every `lost` hash and a `started` or
     uncertain `ready` one; it fails with `release_incomplete` only for a
     store that does not parse.
+  - Step 2 after an `exchanged` code refused by `verifySource` with
+    `uncertain` true adds nothing to `lost`. Repeating step 2 for the same
+    earlier code, after a `release_backlog` failure, adds no duplicate.
   - `lost` at four: a new code fails with `lost_backlog` without a token
     call, and the card shows its reason text. After a disconnect, a new
     connection starts with an empty store and connects.
