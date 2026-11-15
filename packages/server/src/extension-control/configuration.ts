@@ -6,6 +6,7 @@ import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../extension-runtime/secrets.js';
 import { importRunPublicKey, RunTokens, runPublicJwkSchema } from '../extension-runtime/tokens.js';
 import { parseExtensionCatalog } from '../extensions/catalog.js';
+import { parseOAuthClients } from '../extensions/oauth-clients.js';
 import { Extensions } from '../extensions/service.js';
 import { createFileStorage } from '../file-storage/configuration.js';
 import { Webhooks } from '../webhooks/service.js';
@@ -34,6 +35,11 @@ export async function extensionServices(
       ? config.RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX
       : config.RETAINER_EXTENSION_VERIFIER_ORIGIN;
     const catalog = parseExtensionCatalog(config.RETAINER_EXTENSION_CATALOG);
+    const oauthClients = parseOAuthClients(
+      config.RETAINER_EXTENSION_OAUTH_CLIENTS,
+      catalog,
+      config.RETAINER_PUBLIC_ORIGIN,
+    );
     let tokens: RunTokens | undefined;
     if (config.RETAINER_EXTENSION_RUN_PUBLIC_KEY) {
       const publicJwk = runPublicJwkSchema.parse(
@@ -250,6 +256,7 @@ export async function extensionServices(
         : undefined;
     return {
       catalog,
+      oauthClients,
       tokens,
       broker,
       webhooks,
@@ -265,7 +272,7 @@ export async function extensionServices(
     await close();
     // Never include raw configuration, key material, connection URLs or parse errors.
     throw new Error(
-      'invalid extension runtime configuration; check catalog, keyring, run keys, executor and file storage settings',
+      'invalid extension runtime configuration; check catalog, OAuth clients, keyring, run keys, executor and file storage settings',
     );
   }
 }

@@ -11,6 +11,7 @@ import { AppError } from '../errors.js';
 import type { SecretBroker } from '../extension-runtime/secrets.js';
 import type { RunTokens } from '../extension-runtime/tokens.js';
 import type { ExtensionCatalog } from '../extensions/catalog.js';
+import type { ExtensionOAuthClients } from '../extensions/oauth-clients.js';
 import { Extensions } from '../extensions/service.js';
 import type { FileStorage } from '../file-storage/contract.js';
 import { type RateLimit, rateLimit } from '../http/rate-limit.js';
@@ -44,6 +45,8 @@ export type AppDeps = {
   extensionActivation?: ReadonlySet<string>;
   runTokens?: RunTokens;
   extensionSecrets?: SecretBroker;
+  /** Operator OAuth clients for member connections (Tamloot connect spec 4.1). */
+  extensionOAuthClients?: ExtensionOAuthClients;
   webDir?: string;
   publicOrigin?: string;
   /**
@@ -115,9 +118,10 @@ export function createApp(deps: AppDeps) {
     deps.extensionCatalog,
     deps.extensionSecrets,
     deps.extensionActivation,
+    deps.extensionOAuthClients,
   );
   extensionRoutes(v1, extensions, !deps.accountsSecret);
-  runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets);
+  runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets, extensions.oauthClients);
   extensionDataRoutes(v1, deps.sql, extensions.catalog);
   webhookRuntime(v1, deps.webhooks);
   fileRoutes(v1, deps.sql, deps.fileStorage, deps.fileQuota);

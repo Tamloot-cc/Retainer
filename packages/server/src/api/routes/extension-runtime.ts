@@ -9,6 +9,7 @@ import { admitRun } from '../../extension-runtime/admission.js';
 import { ExtensionQueue, type Lease } from '../../extension-runtime/queue.js';
 import type { SecretBroker } from '../../extension-runtime/secrets.js';
 import type { ExtensionCatalog } from '../../extensions/catalog.js';
+import { type ExtensionOAuthClients, oauthClientFor } from '../../extensions/oauth-clients.js';
 import { mappedWrite, mappedWriteSchema } from '../../extensions/mapped-write.js';
 import { saveSuggestions, suggestionsSchema } from '../../extensions/suggestions.js';
 import { idParam, readBody } from '../../http/request.js';
@@ -20,6 +21,7 @@ export function runtimeRoutes(
   sql: Sql,
   catalog: ExtensionCatalog,
   broker?: SecretBroker,
+  oauthClients: ExtensionOAuthClients = new Map(),
 ) {
   const queue = new ExtensionQueue(sql, catalog.runtime);
   app.post('/extensions/:id/runs/:run/retry', async (c) =>
@@ -78,6 +80,45 @@ export function runtimeRoutes(
       };
     });
   };
+  /**
+   * The operator's OAuth client, for a live run whose function declares the
+   * release's token secret (Tamloot connect spec 4.6). Cleanup hooks are
+   * admitted as for a secret read; a configure run never is.
+   */
+  app.get('/extensions/:id/runtime/oauth-client', async (c) => {
+    const caller = c.get('caller'),
+      run = caller.run;
+    if (!run) throw new AppError(403, 'forbidden', 'run credential required');
+    const client = await inWorkspace(sql, caller.workspaceId, async (tx) => {
+      await lockSchemaShared(tx, caller.workspaceId);
+      await admitRun(tx, caller.workspaceId, run, false, 'runtime');
+      const release = catalog
+        .list()
+        .find(
+          (r) => r.digest === run.releaseDigest && r.manifest.universalId === run.registrationId,
+        );
+      const fn = release?.manifest.functions.find((f) => f.universalId === run.functionId);
+      const token = release?.manifest.oauth?.tokenSetting;
+      if (
+        !release ||
+        !fn ||
+        !token ||
+        fn.trigger.kind === 'configure' ||
+        !functionSecrets(release.manifest, fn).includes(token)
+      )
+        throw new AppError(403, 'forbidden', 'this function cannot read the OAuth client');
+      return oauthClientFor(release.manifest, oauthClients, !!broker);
+    });
+    if (!client) throw new AppError(409, 'oauth_unavailable', 'no OAuth client is configured');
+    c.header('Cache-Control', 'no-store');
+    return c.json({
+      clientId: client.clientId,
+      clientSecret: client.clientSecret,
+      tokenEndpoint: client.tokenEndpoint,
+      redirectUri: client.redirectUri,
+      ...(client.apiOrigin ? { apiOrigin: client.apiOrigin } : {}),
+    });
+  });
   app.put('/extensions/:id/runtime/suggestions', async (c) => {
     let input: z.infer<typeof suggestionsSchema>;
     try {

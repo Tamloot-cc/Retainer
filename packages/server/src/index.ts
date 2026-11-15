@@ -108,6 +108,7 @@ if (role === 'api' || role === 'all' || role === 'control' || role === 'extensio
           webhooks: extensions.webhooks,
           ...(extensions.tokens ? { runTokens: extensions.tokens } : {}),
           ...(extensions.broker ? { extensionSecrets: extensions.broker } : {}),
+          extensionOAuthClients: extensions.oauthClients,
           webDir: config.RETAINER_WEB_DIR,
           // The same origin /account issues OAuth tokens for, even in its own container.
           publicOrigin: accountsMode(config)

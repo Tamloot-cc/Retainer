@@ -3,14 +3,13 @@ import { z } from 'zod';
 import { AppError } from '../errors.js';
 import type { Tx } from './tx.js';
 
-const cursorSchema = z.tuple([
-  z
-    .string()
-    .max(64)
-    .regex(/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}(?::?\d{2})?)$/)
-    .refine((v) => Number.isFinite(Date.parse(v))),
-  z.uuid(),
-]);
+/** A full-precision timestamp written as `timestamptz::text`, sent back unchanged by clients. */
+export const stampSchema = z
+  .string()
+  .max(64)
+  .regex(/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}(?::?\d{2})?)$/)
+  .refine((v) => Number.isFinite(Date.parse(v)));
+const cursorSchema = z.tuple([stampSchema, z.uuid()]);
 export function cursorValue(raw?: string): [string, string] | undefined {
   if (!raw) return undefined;
   try {

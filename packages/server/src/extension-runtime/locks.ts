@@ -1,4 +1,5 @@
 import type { Tx } from '../db/tx.js';
+import { finishMemberCleanup, recordCleanupFailure } from './lifecycle.js';
 
 /** Shared by admitted runs, exclusive for control transitions. Always after schema. */
 export async function lockExtension(
@@ -22,15 +23,22 @@ export async function cancelRuns(tx: Tx, installationId: string, cleanupGenerati
     // Same-release transitions retain cleanup's job identity and retry budget.
     // A running attempt is replayed, as with a mapping change; its old lease
     // and credential are fenced. Provider side effects are at least once.
+    // Disconnect cleanup and partial release jobs are carried alike; a partial
+    // job keeps its expires_at, and a disabled installation never admits it.
     await tx`update extension_attempts set status='cancelled',code='installation_changed',finished_at=now()
       where finished_at is null and job_id in(select id from extension_jobs where installation_id=${installationId}
-      and trigger_kind='disconnect' and status in ('queued','running') and generation<>${cleanupGeneration})`;
+      and (trigger_kind='disconnect' and not retainer_partial_release_job(trigger_kind,input) or retainer_partial_release_job(trigger_kind,input))
+      and status in ('queued','running') and generation<>${cleanupGeneration})`;
     await tx`update extension_jobs set generation=${cleanupGeneration},
       available_at=case when status='running' then now() else available_at end,
       status='queued',lease_owner=null,lease_until=null,run_until=null,fence=fence+1,updated_at=now()
-      where installation_id=${installationId} and trigger_kind='disconnect'
+      where installation_id=${installationId}
+      and (trigger_kind='disconnect' and not retainer_partial_release_job(trigger_kind,input) or retainer_partial_release_job(trigger_kind,input))
       and status in ('queued','running') and generation<>${cleanupGeneration}`;
   }
+  // Without a cleanup generation (a release change or an uninstall), the caller
+  // ran the partial-release sweep first, so no job past its deadline is
+  // cancelled without its incident.
   await tx`delete from extension_schedules where installation_id=${installationId}`;
   await tx`update extension_attempts set status='cancelled',code='installation_disabled',finished_at=now()
     where finished_at is null and job_id in (select id from extension_jobs where installation_id=${installationId}
@@ -42,14 +50,19 @@ export async function cancelRuns(tx: Tx, installationId: string, cleanupGenerati
 
 /** A terminal cleanup boundary records failure rather than cancelling the obligation. */
 export async function failDisconnectCleanup(tx: Tx, installationId: string, code: string) {
-  const jobs = await tx`update extension_jobs set status='failed',code=${code},lease_owner=null,
+  const jobs = await tx<
+    { id: string; trigger_kind: string; input: unknown; connection_id: string | null }[]
+  >`update extension_jobs set status='failed',code=${code},lease_owner=null,
     lease_until=null,run_until=null,updated_at=now() where installation_id=${installationId}
-    and trigger_kind='disconnect' and status in ('queued','running') returning id,connection_id`;
+    and trigger_kind='disconnect' and not retainer_partial_release_job(trigger_kind,input)
+    and status in ('queued','running') returning id,trigger_kind,input,connection_id`;
   for (const job of jobs) {
     await tx`update extension_attempts set status='failed',code=${code},finished_at=now()
       where job_id=${job.id} and finished_at is null`;
     await tx`update extension_connections set health='degraded',last_error=${code}
       where id=${job.connection_id} and installation_id=${installationId}`;
+    await recordCleanupFailure(tx, job);
+    await finishMemberCleanup(tx, installationId, job);
   }
   return jobs.length;
 }

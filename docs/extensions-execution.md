@@ -89,6 +89,17 @@ matching protocol/runtime/release/bundle labels verified before launch.
   `RETAINER_EXTENSION_API_ORIGIN`, which may use the internal API address.
 - `RETAINER_EXTENSION_SECRET_KEYS`: `{currentVersion, keys:{version:base64}}`.
   Each decoded key is 32 bytes. Retain old key versions through rotation.
+- `RETAINER_EXTENSION_OAUTH_CLIENTS`: optional OAuth clients for member
+  connections, a JSON object keyed by registration universal ID:
+  `{clientId, clientSecret, authorizationEndpoint, tokenEndpoint, apiOrigin?,
+  scope?, keyFallback?}`. Addresses use `https` (`http` only for `localhost`).
+  A registration with no release that declares `oauth`, or a malformed value,
+  fails startup. OAuth needs the secret broker and `RETAINER_PUBLIC_ORIGIN`;
+  the redirect address is `<RETAINER_PUBLIC_ORIGIN>/app/connect/callback`. Set
+  it on every process that serves `/v1/extensions`. Only a run whose function
+  holds the release's token secret reads the client, through
+  `GET …/runtime/oauth-client`; it is never stored in Postgres. Without it,
+  members connect with a key (`docs/specs/extensions-tamloot-connect.md`).
 - `RETAINER_EXTENSION_LAUNCHER_ORIGIN` and `RETAINER_LAUNCHER_TOKEN`: executor's
   private launcher endpoint and independently generated bearer token.
 - `RETAINER_EXTENSION_BUNDLES`: launcher's immutable bundle allowlist, separate

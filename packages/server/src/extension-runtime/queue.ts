@@ -1,8 +1,10 @@
 import type { ExtensionUse, InputSchema } from '@retainer/extension';
 import {
+  disconnectInputSchema,
   functionScopes,
   functionSecrets,
   functionUses,
+  RELEASE_INCIDENT_PATTERN,
   lifecycleInputSchema,
   nextOccurrence,
   SYSTEM_LIFECYCLE_FUNCTION_ID,
@@ -24,7 +26,15 @@ import {
   resolveRelease,
   runnableReleases,
 } from './availability.js';
-import { failInstallation } from './lifecycle.js';
+import {
+  failInstallation,
+  finishMemberCleanup,
+  isPartialReleaseJob,
+  recordCleanupFailure,
+  recordReleaseIncidents,
+  supersedePartialRelease,
+  sweepPartialReleases,
+} from './lifecycle.js';
 import { cancelRuns, failDisconnectCleanup, lockExtension, lockQueue } from './locks.js';
 import { type ContributionRow, retiredContributions } from './retired.js';
 
@@ -65,6 +75,8 @@ type Installation = {
   connection_generation?: number | null;
   connection_state?: string;
   connection_cleanup_live?: boolean;
+  /** An unconsumed, unexpired OAuth handshake of this connection is open. */
+  connection_authorizing?: boolean;
   id: string;
   workspace_id: string;
   registration_id: string;
@@ -124,13 +136,17 @@ export const CHANGE_ENQUEUES_PER_MINUTE = 500;
 export type QueueLimits = { queued: number; kvBytes: number; changesPerMinute?: number };
 const unavailable = () =>
   new AppError(409, 'installation_disabled', 'installation is disabled or its generation changed');
-const runnable = (i: Installation, kind: string) =>
+/** `partial` marks a partial release job (`isPartialReleaseJob`), never the disconnect-cleanup rule. */
+const runnable = (i: Installation, kind: string, partial = false) =>
   kind === 'configure'
     ? !i.connection_id && ['configuring', 'active'].includes(i.state)
     : i.connection_id
       ? kind === 'connect'
         ? i.state === 'active' && i.connection_state === 'connecting'
-        : kind === 'disconnect'
+        : partial
+          ? i.state === 'active' &&
+            ['setup_failed', 'needs_reconnect'].includes(i.connection_state ?? '')
+          : kind === 'disconnect'
           ? i.connection_state === 'disconnected' &&
             i.connection_cleanup_live === true &&
             i.state !== 'uninstalled' &&
@@ -203,7 +219,9 @@ export function validateLifecycleInput(
   const valid =
     kind === 'install' || kind === 'connect'
       ? lifecycleInputSchema.safeParse(value).success
-      : z.strictObject({}).safeParse(value).success;
+      : kind === 'disconnect'
+        ? disconnectInputSchema.safeParse(value).success
+        : z.strictObject({}).safeParse(value).success;
   if (!valid)
     throw new AppError(422, 'invalid_input', 'lifecycle input does not match its server contract');
 }
@@ -254,7 +272,9 @@ export class ExtensionQueue {
   ): Promise<Installation> {
     if (!id) return installation;
     const [row] =
-      await tx`select generation,state,connected_at,disconnected_at+interval '24 hours'>clock_timestamp() as cleanup_live
+      await tx`select generation,state,connected_at,disconnected_at+interval '24 hours'>clock_timestamp() as cleanup_live,
+      exists(select 1 from extension_authorizations a where a.installation_id=${installation.id} and a.connection_id=${id}
+        and a.consumed_at is null and a.expires_at>clock_timestamp()) as authorizing
       from extension_connections where id=${id} and installation_id=${installation.id}`;
     return {
       ...installation,
@@ -262,6 +282,7 @@ export class ExtensionQueue {
       connection_generation: row?.generation ?? -1,
       connection_state: row?.state ?? 'disconnected',
       connection_cleanup_live: row?.cleanup_live ?? false,
+      connection_authorizing: row?.authorizing ?? false,
       activated_at: row?.connected_at ?? installation.activated_at,
     };
   }
@@ -793,6 +814,7 @@ export class ExtensionQueue {
             false,
           );
           generation = installation.generation;
+          await sweepPartialReleases(tx, installation.id);
           if (installation.state === 'configuring') {
             const [due] =
               await tx`select 1 from extension_installations where id=${installation.id} and created_at<=now()-interval '14 days'`;
@@ -957,8 +979,20 @@ export class ExtensionQueue {
           where job_id=${id} and finished_at is null`;
         return null;
       }
+      const partial = isPartialReleaseJob(job);
+      if (partial) {
+        // Past its deadline the sweep's outcome applies; while a handshake of
+        // the connection is open it is deferred, never claimed (spec 4.7).
+        const [past] = await tx`select 1 where ${job.expires_at}::timestamptz<=clock_timestamp()`;
+        if (past) {
+          await sweepPartialReleases(tx, installation.id);
+          return null;
+        }
+        if (installation.connection_authorizing) return null;
+      }
       if (
         job.trigger_kind === 'disconnect' &&
+        !partial &&
         job.connection_id &&
         job.connection_generation === installation.connection_generation &&
         (installation.connection_cleanup_live !== true ||
@@ -973,13 +1007,13 @@ export class ExtensionQueue {
       if (
         job.connection_id &&
         (job.connection_generation !== installation.connection_generation ||
-          !runnable(installation, job.trigger_kind))
+          !runnable(installation, job.trigger_kind, partial))
       ) {
         await tx`update extension_jobs set status='cancelled',code='connection_disconnected',lease_owner=null,lease_until=null,run_until=null,updated_at=now() where id=${id}`;
         await tx`update extension_attempts set status='cancelled',code='connection_disconnected',finished_at=now() where job_id=${id} and finished_at is null`;
         return null;
       }
-      if (!runnable(installation, job.trigger_kind)) return null;
+      if (!runnable(installation, job.trigger_kind, partial)) return null;
       const [exhausted] =
         await tx`select 1 where ${job.expires_at}<=clock_timestamp() or ${job.cycle_attempt}>=10`;
       if (exhausted) {
@@ -1113,7 +1147,7 @@ export class ExtensionQueue {
       installation = await this.connection(tx, installation, job.connection_id);
       if (job.connection_id && job.connection_generation !== installation.connection_generation)
         throw expired();
-      if (!runnable(installation, job.trigger_kind)) throw unavailable();
+      if (!runnable(installation, job.trigger_kind, isPartialReleaseJob(job))) throw unavailable();
       return fn(tx, installation, job);
     });
   }
@@ -1132,6 +1166,14 @@ export class ExtensionQueue {
     status: string,
     code: string | null,
   ) {
+    if (job.connection_id && job.trigger_kind === 'disconnect') {
+      // A cleanup job holding provider credentials that does not finish is an incident.
+      if (status === 'failed') await recordCleanupFailure(tx, job);
+      // A partial release job changes nothing about its connection (spec 4.7).
+      if (isPartialReleaseJob(job)) return false;
+      if (status === 'succeeded' || status === 'failed')
+        await finishMemberCleanup(tx, installation.id, job);
+    }
     if (job.connection_id) {
       if (job.connection_generation !== installation.connection_generation) return false;
       if (status === 'failed') {
@@ -1155,7 +1197,7 @@ export class ExtensionQueue {
       if (job.trigger_kind === 'disconnect' && installation.state === 'uninstalling') {
         const [pending] =
           await tx`select 1 from extension_jobs where installation_id=${installation.id} and generation=${installation.generation}
-          and trigger_kind in ('uninstall','disconnect') and status<>'succeeded' limit 1`;
+          and trigger_kind in ('uninstall','disconnect') and not retainer_partial_release_job(trigger_kind,input) and status<>'succeeded' limit 1`;
         if (!pending) {
           await tx`update extension_installations set state='uninstalled',last_error=null,updated_at=now() where id=${installation.id}`;
           await tx`select retainer_finish_extension_cleanup(${installation.id}::uuid)`;
@@ -1241,12 +1283,16 @@ export class ExtensionQueue {
           on conflict(workspace_id,installation_id) do update set generation=excluded.generation,position=excluded.position,blocked_cycles=0`;
       await tx`update extension_installations set state='active',connection_health='ok',last_error=null,activated_at=clock_timestamp(),updated_at=now() where id=${installation.id}`;
       if (this.manifest(installation).connection === 'member') {
-        const hook =
-          this.manifest(installation).functions.find((f) => f.trigger.kind === 'disconnect')
-            ?.universalId ?? null;
+        const manifest = this.manifest(installation);
+        const fn = manifest.functions.find((f) => f.trigger.kind === 'disconnect');
+        const hook = fn?.universalId ?? null;
+        const secrets = fn ? functionSecrets(manifest, fn) : [];
         const connections =
-          await tx`update extension_connections set state='connecting',health='ok',last_error=null,disconnect_function_id=${hook}
+          await tx`update extension_connections set state='connecting',health='ok',last_error=null,disconnect_function_id=${hook},
+          disconnect_secrets=${secrets}::text[]
           where installation_id=${installation.id} and state<>'disconnected' returning id`;
+        // The connect each one runs gives the sessions up (spec 4.7, table).
+        for (const c of connections) await supersedePartialRelease(tx, c.id);
         for (const c of connections)
           await this.enqueueConnectionLifecycle(
             tx,
@@ -1260,7 +1306,7 @@ export class ExtensionQueue {
     }
     const [memberCleanup] =
       await tx`select 1 from extension_jobs where installation_id=${installation.id} and generation=${installation.generation}
-      and trigger_kind='disconnect' and status<>'succeeded' limit 1`;
+      and trigger_kind='disconnect' and not retainer_partial_release_job(trigger_kind,input) and status<>'succeeded' limit 1`;
     if (memberCleanup) return false;
     await tx`update extension_installations set state='uninstalled',last_error=null,updated_at=now() where id=${installation.id}`;
     await tx`select retainer_finish_extension_cleanup(${installation.id}::uuid)`;
@@ -1268,7 +1314,12 @@ export class ExtensionQueue {
   }
   async complete(
     lease: Lease,
-    result: { status: 'succeeded' | 'retry' | 'failed'; code?: string; retryAfterSeconds?: number },
+    result: {
+      status: 'succeeded' | 'retry' | 'failed';
+      code?: string;
+      retryAfterSeconds?: number;
+      releaseIncomplete?: string[];
+    },
   ) {
     z.strictObject({
       status: z.enum(['succeeded', 'retry', 'failed']),
@@ -1277,6 +1328,7 @@ export class ExtensionQueue {
         .regex(/^[a-z][a-z0-9_]{0,79}$/)
         .optional(),
       retryAfterSeconds: z.number().int().min(0).max(3600).optional(),
+      releaseIncomplete: z.array(z.string().regex(RELEASE_INCIDENT_PATTERN)).max(8).optional(),
     }).parse(result);
     return this.withLease(
       lease,
@@ -1301,6 +1353,9 @@ export class ExtensionQueue {
         await tx`update extension_jobs set status=${status},code=${code},lease_owner=null,lease_until=null,
         available_at=now()+${delay}*interval '1 second',updated_at=now() where id=${job.id}`;
         await tx`update extension_attempts set status=${result.status},code=${code},finished_at=now() where job_id=${job.id} and attempt=${job.attempt}`;
+        // Reported with any status; recorded once per connection (spec 4.7).
+        if (job.connection_id && result.releaseIncomplete?.length)
+          await recordReleaseIncidents(tx, job.connection_id, result.releaseIncomplete);
         const activated = await this.finishLifecycle(tx, installation, job, status, code);
         return { status, activated };
       },
@@ -1529,19 +1584,21 @@ export class ExtensionQueue {
           (installation.state === 'disabled' &&
             !!installation.last_error &&
             installation.setup_kind === 'upgrade'));
-      if (!runnable(installation, job.trigger_kind) && !setupRetry) throw unavailable();
+      const partial = isPartialReleaseJob(job);
+      if (!runnable(installation, job.trigger_kind, partial) && !setupRetry) throw unavailable();
       const system =
         job.function_id === SYSTEM_LIFECYCLE_FUNCTION_ID &&
         ['install', 'uninstall'].includes(job.trigger_kind);
       if (!system && (!fn || fn.trigger.kind !== job.trigger_kind))
         throw conflict('incompatible_runtime', 'job function is unavailable');
-      if (job.trigger_kind === 'install' || job.trigger_kind === 'uninstall')
-        validateLifecycleInput(job.trigger_kind, job.input);
+      if (['install', 'uninstall', 'disconnect'].includes(job.trigger_kind))
+        validateLifecycleInput(job.trigger_kind as 'install' | 'uninstall' | 'disconnect', job.input);
       else if (fn) validateInput(fn.inputSchema, job.input);
       if (setupRetry)
         await tx`update extension_installations set state=${installation.setup_kind === 'upgrade' ? 'upgrading' : 'installing'},last_error=null where id=${installationId}`;
       await tx`update extension_jobs set status='queued',code=null,cycle_attempt=0,fence=fence+1,
-        lease_owner=null,lease_until=null,run_until=null,available_at=clock_timestamp(),expires_at=clock_timestamp()+interval '24 hours',updated_at=now() where id=${jobId}`;
+        lease_owner=null,lease_until=null,run_until=null,available_at=clock_timestamp(),
+        expires_at=case when ${partial} then expires_at else clock_timestamp()+interval '24 hours' end,updated_at=now() where id=${jobId}`;
       const response = { id: jobId, status: 'queued' };
       await tx`insert into extension_receipts(workspace_id,key,request_hash,installation_id,generation,response)
         values(${caller.workspaceId},${key},${hash},${installationId},${installation.generation},${tx.json(response)})`;
