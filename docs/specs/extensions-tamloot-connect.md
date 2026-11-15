@@ -147,7 +147,7 @@ oauth: z.strictObject({
   codeSetting: name,     // the authorization code, staged by the server on return
   tokenSetting: name,    // whatever the bundle stores after the exchange
   keySetting: name.optional(), // a secret a member may paste instead
-  revokeUrl: z.url(),          // https; where a member revokes the app (§6.2)
+  revokeUrl: z.url(),          // where a member revokes the app (§6.2)
 }).optional(),
 gettingStarted: z.strictObject({
   text: z.string().min(1).max(300),
@@ -158,6 +158,9 @@ gettingStarted: z.strictObject({
 
 Validation, in `checkConnections`:
 
+- `oauth.revokeUrl` and `gettingStarted.url` must use `https:`; any other
+  scheme is refused. `z.url()` alone accepts any scheme, and both are shown
+  to members as links.
 - `oauth` and `gettingStarted` require `connection: 'member'`.
 - The verifier, code and token settings are three different settings, each
   `level: 'connection'`, `secret: true` and `generated: true`. `generated`
@@ -525,8 +528,8 @@ const session = z.strictObject({
 });
 const tokenStore = z.strictObject({
   codeHash: z.string().length(64),        // SHA-256 of the last code this connection was given
-  exchange: z.enum(['started', 'exchanged', 'refused', 'lost']), // what happened to that code (§5.5)
-  rejected: z.string().nullable(),        // why that code's session, or the code, was refused
+  exchange: z.enum(['started', 'exchanged', 'promoted', 'refused', 'lost']), // what happened to that code (§5.5)
+  failure: z.string().nullable(),         // terminal failure code for codeHash, replayed on a same-code run
   lost: z.array(z.string().length(64)).max(4), // codeHashes of exchanges that may have left a session nobody holds
   current: session.nullable(),            // the verified session runs use
   pending: session.nullable(),            // exchanged, not yet verified; never used to import
@@ -566,12 +569,19 @@ response without `refresh_token` keeps the old one.
 What happened to the last code is one field, `exchange`, with one meaning
 per value:
 
-| `exchange`  | Means                                                                                   | Set by                       |
-| ----------- | --------------------------------------------------------------------------------------- | ---------------------------- |
-| `started`   | The token call for `codeHash` may have been sent; no answer was read                    | Step 3, before the call      |
-| `exchanged` | Tokens came back: in `pending`, or since promoted to `current` or moved to `release`    | Step 3 or 4, with the tokens |
-| `refused`   | Tamloot answered with an OAuth error; no session was created; `rejected` holds the code | Step 3 or 4                  |
-| `lost`      | The code was spent but no tokens were read; `codeHash` is in `lost`                     | Step 2 or 4                  |
+| `exchange`  | Means                                                                | Set by                       |
+| ----------- | -------------------------------------------------------------------- | ---------------------------- |
+| `started`   | The token call for `codeHash` may have been sent; no answer was read | Step 3, before the call      |
+| `exchanged` | Tokens came back and are in `pending`, not yet verified              | Step 3 or 4, with the tokens |
+| `promoted`  | This code's session passed `verifySource` and became `current`       | Step 5, on success           |
+| `refused`   | Tamloot answered with an OAuth error; no session was created         | Step 3 or 4                  |
+| `lost`      | The code was spent but no tokens were read; `codeHash` is in `lost`  | Step 2 or 4                  |
+
+`failure` holds the terminal failure code of `codeHash` whenever this code
+can never succeed: the token endpoint's refusal, `exchange_interrupted`, or
+`verifySource`'s refusal (which leaves `exchange: 'exchanged'` with no
+`pending`). A run with the same code replays it. Only `promoted` lets a run
+use `current` for this code; any other state with no `pending` fails.
 
 1. Read the client (`sdk.extensionOAuthClient`), `oauthCode`, `oauthVerifier`
    and `oauthTokens` if stored.
@@ -586,23 +596,23 @@ per value:
      without exchanging. An unexchanged code creates no session in Tamloot.
      The connection is `setup_failed`; with a full `lost`, only a disconnect
      and a new connection clear it.
-   - Write `{ codeHash, exchange: 'started', rejected: null, pending: null }`,
+   - Write `{ codeHash, exchange: 'started', failure: null, pending: null }`,
      keeping `current`, `release` and `lost`. Then exchange, and write as
      the table below says before any other call.
 4. **Same code** (a retry, or the `connect` an upgrade or re-enable queues):
    act on the store as the table below says, top row first: a stored
-   refusal always wins. With `started`, the run that
+   `failure` always wins, and `current` is used only after `promoted`. With `started`, the run that
    exchanged died before it read an answer, so it exchanges once more: if
    the first call never reached Tamloot this succeeds; `invalid_grant`
    means the code was spent and Tamloot may hold a session Retainer cannot
    name.
 5. **Verify.** `GET /v1/me` and `verifySource` with `pending`.
    - Success: in one write, `pending` becomes `current`, the previous
-     `current`, if any, joins `release` as `replaced`, and `pending` is
-     cleared.
+     `current`, if any, joins `release` as `replaced`, `pending` is cleared
+     and `exchange` becomes `promoted`.
    - Refused (`source_account_changed`, or any other final failure): in one
      write, `pending` joins `release` as `rejected`, `pending` is cleared
-     and `rejected` takes the code. The session is then only in `release`,
+     and `failure` takes the code. The session is then only in `release`,
      so it can never be promoted or counted twice. `current` is untouched:
      after a rejected reconnect the member's previous session stays where
      it was. Try to give up the rejected session now, then fail with the
@@ -615,20 +625,19 @@ Every `connect` result, whatever its status, carries
 `releaseIncomplete: ['exchange:<hash>', …]` for every hash in `lost`
 (§4.7). The server records each once.
 
-| Step and state                 | Token endpoint answers   | Write                                 | Run                                     |
-| ------------------------------ | ------------------------ | ------------------------------------- | --------------------------------------- |
-| 3, new code                    | tokens                   | `pending`, `exchanged`                | step 5                                  |
-| 3, new code                    | OAuth `4xx` with `error` | `refused`, `rejected` = its §5.8 code | fail with it                            |
-| 3, new code                    | timeout, network, `5xx`  | nothing (`started` stays)             | `retry`                                 |
-| 4, `rejected` set (any state)  | no call                  | nothing                               | fail with `rejected`                    |
-| 4, `started`                   | tokens                   | `pending`, `exchanged`                | step 5                                  |
-| 4, `started`                   | `invalid_grant`          | `lost`, add `codeHash` to `lost`      | fail `exchange_interrupted`             |
-| 4, `started`                   | other OAuth `4xx`        | `refused`, `rejected` = its code      | fail with it                            |
-| 4, `started`                   | timeout, network, `5xx`  | nothing                               | `retry`                                 |
-| 4, `exchanged`, `pending`      | no call                  | nothing                               | step 5                                  |
-| 4, `exchanged`, `current` only | no call                  | nothing                               | verify `current` as today; no promotion |
-| 4, `exchanged`, no session     | no call                  | nothing                               | fail `provider_unauthorized`            |
-| 4, `lost`                      | no call                  | nothing                               | fail `exchange_interrupted`             |
+| Step and state               | Token endpoint answers              | Write                                                                | Run                                     |
+| ---------------------------- | ----------------------------------- | -------------------------------------------------------------------- | --------------------------------------- |
+| 3, new code                  | tokens                              | `pending`, `exchanged`                                               | step 5                                  |
+| 3, new code                  | OAuth `4xx` with `error`, not `429` | `refused`, `failure` = its §5.8 code                                 | fail with it                            |
+| 3, new code                  | timeout, network, `429`, `5xx`      | nothing (`started` stays)                                            | `retry`                                 |
+| 4, `failure` set (any state) | no call                             | nothing                                                              | fail with `failure`                     |
+| 4, `started`                 | tokens                              | `pending`, `exchanged`                                               | step 5                                  |
+| 4, `started`                 | `invalid_grant`                     | `lost`, `failure` = `exchange_interrupted`, add `codeHash` to `lost` | fail `exchange_interrupted`             |
+| 4, `started`                 | other OAuth `4xx`, not `429`        | `refused`, `failure` = its code                                      | fail with it                            |
+| 4, `started`                 | timeout, network, `429`, `5xx`      | nothing                                                              | `retry`                                 |
+| 4, `exchanged`, `pending`    | no call                             | nothing                                                              | step 5                                  |
+| 4, `promoted`                | no call                             | nothing                                                              | verify `current` as today; no promotion |
+| 4, any other state           | no call                             | nothing                                                              | fail `provider_unauthorized`            |
 
 Step 3 keeps the bounds: with fewer than four entries in each list before
 the exchange, one run adds at most one entry to either list, and step 2
@@ -906,8 +915,9 @@ silent. It reads counts and timings only.
 
 Real Postgres, a fresh database per file, no mocked database.
 
-- **Manifest (unit):** every rule in §4.2; a manifest without `oauth` keeps
-  its digest.
+- **Manifest (unit):** every rule in §4.2, including `http:`, `javascript:`
+  and `data:` refused for `revokeUrl` and `gettingStarted.url`; a manifest
+  without `oauth` keeps its digest.
 - **Authorize and complete (API):** the happy path to `connecting`; each
   refusal in §4.4 and §4.5; another member's state; an expired request; a
   denied request leaves nothing connected; `keyFallback: false` refuses a key
@@ -949,13 +959,14 @@ Real Postgres, a fresh database per file, no mocked database.
     sessions, and every session ever stored is either released or still
     stored.
   - Every row of the §5.5 transition table, one test each, checking the
-    write, the token calls made and the result.
+    write, the token calls made and the result. A `429` with an `error`
+    body at the exchange retries and leaves `started`, like a `5xx`.
   - The run dies after the token endpoint answered and before `pending` is
     written: the retry sees `started`, exchanges again, gets
     `invalid_grant`, writes `lost` and fails with `exchange_interrupted`,
     reporting `exchange:<hash>`.
   - The first exchange answered `invalid_grant` or `invalid_client`: the
-    store says `refused` with `rejected` set, nothing is reported, and an
+    store says `refused` with `failure` set, nothing is reported, and an
     upgrade's later `connect` fails with the same code and makes no token
     call. The same for a new connection (no `current`) and a reconnect
     (`current` is the old session, which is not reactivated).
@@ -975,10 +986,12 @@ Real Postgres, a fresh database per file, no mocked database.
     call.
   - `poll`, `scan` and `sync-session` drain `release` before importing, and
     still import when the drain fails.
-  - An upgrade's `connect` with the same code, `exchanged` and only
-    `current` makes no token call, promotes nothing and leaves `release` as
-    it was apart from the drain. With no session at all it fails with
-    `provider_unauthorized`.
+  - An upgrade's `connect` with the same code and `promoted` makes no token
+    call, promotes nothing and leaves `release` as it was apart from the
+    drain. With the same code after a `verifySource` refusal, a token
+    refusal or `exchange_interrupted`, it replays `failure` and never uses
+    `current`, so a reconnect's old account is never reactivated by a
+    failed new authorization.
   - Entries the `{ keep: 'current' }` hook already released are removed by
     the next `connect` or `poll` without error.
 - **Cleanup paths (database and API):**
