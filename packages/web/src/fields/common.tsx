@@ -25,6 +25,7 @@ import { objectByName, objectLabel, recordTitle, useDebounced } from '../routes/
 import {
   Badge,
   Button,
+  CategoryTag,
   Check,
   CheckLabel,
   Columns,
@@ -172,22 +173,25 @@ export function FieldDisplay({ field, value, compact = false, references = {} }:
           <span>{dateText(String(value), field.type === 'date_time')}</span>
         </Tooltip>
       );
-    case 'select':
+    case 'select': {
+      const option = field.settings.options?.find((o) => o.value === value);
       return (
-        <Badge>
-          {field.settings.options?.find((o) => o.value === value)?.label ?? String(value)}
-        </Badge>
+        <CategoryTag value={String(value)} known={!!option}>
+          {option?.label ?? String(value)}
+        </CategoryTag>
       );
+    }
     case 'multi_select': {
       // Each key carries what the item shows, so a changed label is measured again.
       const badges = (value as string[]).map((v) => {
-        const label = field.settings.options?.find((o) => o.value === v)?.label ?? v;
+        const option = field.settings.options?.find((o) => o.value === v);
+        const label = option?.label ?? v;
         return {
           key: `${v}\u0000${label}`,
           node: (
-            <Badge>
+            <CategoryTag value={v} known={!!option}>
               <span className="truncate">{label}</span>
-            </Badge>
+            </CategoryTag>
           ),
         };
       });
@@ -354,7 +358,7 @@ export function selectOptions(field: FieldView): PickerOption[] {
   return (field.settings.options ?? []).map((o) => ({
     value: o.value,
     label: o.label,
-    content: <Badge>{o.label}</Badge>,
+    content: <CategoryTag value={o.value}>{o.label}</CategoryTag>,
   }));
 }
 /**

@@ -289,7 +289,12 @@ export function Page({
   const openNavigation = useContext(NavigationContext);
   const fill = layout === 'fill';
   return (
-    <section className={cn('flex flex-col', fill ? 'h-dvh' : 'min-h-dvh')}>
+    <section
+      className={cn(
+        'flex flex-col',
+        fill ? 'h-[var(--page-height,100dvh)]' : 'min-h-[var(--page-height,100dvh)]',
+      )}
+    >
       <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-3 backdrop-blur md:px-5">
         {openNavigation ? (
           <Button
@@ -700,7 +705,7 @@ export {
   MonthGrid,
   MoreEntries,
 } from './calendar.js';
-export { Badge, type Tone } from './core.js';
+export { Badge, CategoryTag, type Tone } from './core.js';
 export {
   DataGrid,
   EditableCell,

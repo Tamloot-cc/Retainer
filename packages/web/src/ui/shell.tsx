@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
 import { BrandMark } from './brand.js';
+import { type CategoryColor, objectColor } from './colors.js';
 import { cn, Kbd, NavigationContext } from './core.js';
 import { Menu, MenuAction, MenuCheck, MenuChoice, MenuChoices, MenuSeparator } from './menu.js';
 
@@ -139,10 +140,10 @@ export function Shell({ children, ...props }: ShellProps) {
   }, []);
   return (
     <NavigationContext.Provider value={() => setDrawer(true)}>
-      <div className="flex min-h-dvh bg-background text-foreground">
+      <div className="flex min-h-dvh bg-frame text-foreground">
         <aside
           className={cn(
-            'sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-border bg-sidebar transition-[width] duration-150 md:flex',
+            'sticky top-0 hidden h-dvh shrink-0 flex-col bg-sidebar transition-[width] duration-150 md:flex',
             collapsed ? 'w-[52px]' : 'w-60',
           )}
         >
@@ -168,7 +169,9 @@ export function Shell({ children, ...props }: ShellProps) {
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>
         </DialogPrimitive.Root>
-        <main className="min-w-0 flex-1">{children}</main>
+        <main className="min-w-0 flex-1 bg-background md:mb-2 md:mr-2 md:overflow-clip md:rounded-b-xl md:rounded-tl-xl md:ring-1 md:ring-inset md:ring-border md:[--page-height:calc(100dvh-0.5rem)]">
+          {children}
+        </main>
       </div>
     </NavigationContext.Provider>
   );
@@ -203,6 +206,7 @@ function Sidebar({
           to="/o/$object"
           params={{ object: o.name }}
           icon={objectIcon(o.name, objectClass)}
+          color={objectColor(o.name)}
           label={o.label}
           collapsed={collapsed}
           onNavigate={onNavigate}
@@ -429,7 +433,7 @@ function NavGroup({
 const navItem = (collapsed: boolean) =>
   cn(
     'relative flex h-8 shrink-0 items-center gap-2.5 rounded-md text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-    'data-[status=active]:bg-hover data-[status=active]:font-medium data-[status=active]:text-foreground',
+    'data-[status=active]:bg-selection data-[status=active]:font-medium data-[status=active]:text-selection-foreground',
     collapsed ? 'mx-auto w-8 justify-center' : 'px-2',
   );
 
@@ -437,6 +441,7 @@ function NavLink({
   to,
   params,
   icon: Icon,
+  color,
   label,
   collapsed,
   exact = false,
@@ -446,6 +451,7 @@ function NavLink({
   to: '/' | '/o/$object' | '/schema' | '/activity' | '/extensions';
   params?: { object: string };
   icon: LucideIcon;
+  color?: CategoryColor;
   label: string;
   collapsed: boolean;
   exact?: boolean;
@@ -462,7 +468,7 @@ function NavLink({
       title={collapsed ? label : undefined}
       className={navItem(collapsed)}
     >
-      <Icon size={16} className="shrink-0" />
+      <Icon size={16} data-color={color} className={cn('shrink-0', color && 'category-color')} />
       {collapsed ? null : <span className="truncate">{label}</span>}
       {children}
     </Link>

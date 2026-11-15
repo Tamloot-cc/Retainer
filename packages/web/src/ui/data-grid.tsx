@@ -196,7 +196,7 @@ export function DataGrid({
                     setOver(null);
                   }}
                   className={cn(
-                    'group/th sticky top-0 z-10 h-9 border-b border-r border-border bg-sidebar p-0 text-left text-xs font-medium text-muted-foreground',
+                    'group/th sticky top-0 z-10 h-9 border-b border-border border-r border-r-border/40 bg-sidebar p-0 text-left text-xs font-medium text-muted-foreground',
                     c.pinned && 'z-20',
                     canDrag && 'cursor-grab active:cursor-grabbing',
                     dragging === c.id && 'opacity-50',
@@ -295,7 +295,7 @@ export function DataGrid({
 }
 
 const ROW_BG = `bg-background ${ROW_STATE}`;
-const CELL = `border-b border-r border-border p-0 ${ROW_BG}`;
+const CELL = `border-b border-border border-r border-r-border/40 p-0 ${ROW_BG}`;
 const PINNED_CELL = `${CELL} sticky z-[5]`;
 const FOOT = 'sticky bottom-0 z-10 border-t border-r border-border bg-sidebar p-0';
 

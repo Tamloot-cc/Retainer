@@ -46,7 +46,7 @@ export function Sheet({
           }}
           // Clicking the list behind opens another record; it must not close the sheet.
           onInteractOutside={(e) => e.preventDefault()}
-          className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-background shadow-2xl outline-none sm:w-[min(38rem,92vw)] motion-safe:animate-sheet-in"
+          className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-background shadow-[-6px_0_20px_rgb(0_0_0/0.06)] outline-none sm:w-[min(38rem,92vw)] motion-safe:animate-sheet-in"
         >
           <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border pl-4 pr-2">
             <div className="min-w-0 flex-1 truncate text-sm text-muted-foreground first-letter:uppercase">
