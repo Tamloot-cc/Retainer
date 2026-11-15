@@ -63,8 +63,10 @@ Reconnecting is the same button; it does not import meetings twice.
 **Disconnecting.** Disconnect stops imports at once and keeps the records
 already imported, as today. Retainer then asks Tamloot to end that
 connection's access, retrying for up to a day if Tamloot can't be reached.
-Once none of the member's workspaces hold access, Tamloot stops listing
-Retainer. Revoking Retainer in Tamloot always ends it.
+When Retainer gives up the member's last remaining session, Tamloot stops
+listing Retainer. That can fail to happen (see the next section, and a
+session Tamloot revives when the member approves Retainer again); revoking
+Retainer in Tamloot always ends it.
 
 **When Retainer can't give up its access.** Rarely, Retainer can't confirm
 that its access in Tamloot ended: Tamloot was unreachable for a whole day, or
