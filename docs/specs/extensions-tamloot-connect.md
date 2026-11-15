@@ -289,18 +289,25 @@ its CSRF header check. Nothing about either is relaxed.
    refusal, the same for a workspace that does not exist; so a state, real
    or forged, tells the caller nothing they could not learn without it.
 2. With `error`: claim the request the same way a code does,
-   `delete … where id = … and consumed_at is null`. One row deleted returns
-   `{ cancelled: true }`. No row means a code completion won, and the
-   answer is `409 authorization_expired`; a decline never reports success
-   beside a connection that started.
+   `delete … where id = … and consumed_at is null and expires_at >
+   clock_timestamp()`, after the same queue lock. One row deleted returns
+   `{ cancelled: true }`. No row means a code completion won or the request
+   expired, and the answer is `409 authorization_expired`; a decline never
+   reports success beside a connection that started.
 3. With `code` (1 to 2,048 characters): stage it through `broker.stage` under
    `codeSetting`, bound to the request's connection ID.
 4. Run the existing connect transaction with the request's settings, both
    pending references and `credential: 'oauth'`. Its first statement marks the
    request consumed:
-   `update … set consumed_at = now() where id = … and consumed_at is null`.
-   No row means another completion won: `409 authorization_expired`, and the
-   transaction rolls back. The same transaction copies `created_at` to
+   `update … set consumed_at = now() where id = … and consumed_at is null
+   and expires_at > clock_timestamp()`, run after the queue lock that
+   claiming a job takes is held. `clock_timestamp()`, not `now()`: `now()` is
+   the transaction's start, and a wait for the lock can cross the expiry.
+   No row means another completion or a decline won, or the request expired
+   in the meantime: `409 authorization_expired`, and the transaction rolls
+   back. So a request is either consumed while unexpired, and the deferred
+   cleanup (§4.7) is then cancelled by the generation bump, or it is not,
+   and the cleanup may run. The same transaction copies `created_at` to
    `authorization_started_at`.
 
 `connect` (`extensions/connections.ts`) changes in three places:
@@ -406,16 +413,19 @@ leaves `active`, so the platform runs the hook for them, with input
   `trigger_kind = 'disconnect'` as "cleanup of a disconnected connection".
   A job with `input->>'keep' = 'current'` is not that, and every such site
   excludes it:
-  - `cancelRuns` (`extension-runtime/locks.ts`) cancels it on an uninstall,
-    a workspace deletion or a release change, instead of carrying it to
-    the cleanup generation. The connection's full hook (queued by
-    `disconnectConnection`) or the upgrade's `connect` takes over the same
-    sessions.
+  - `cancelRuns` (`extension-runtime/locks.ts`) cancels it on an uninstall
+    or a workspace deletion, instead of carrying it to the cleanup
+    generation. `disconnectConnection` then queues the connection's full
+    hook, which takes over the same sessions.
   - The uninstall completion checks in `queue.ts` (after a `disconnect` and
     after the `uninstall` job) count only jobs without `keep`. A cancelled
     keep-current job never holds an installation in `uninstalling`.
-  - `cleanupPending` (`extensions/service.ts`) ignores it, so it never
-    blocks a release change or an auto-upgrade.
+  - It is **not** excluded from `cleanupPending` (`extensions/service.ts`):
+    like disconnect cleanup today, it holds a release change or an
+    auto-upgrade until it ends, at most 24 hours. A release change never
+    cancels it, because a job of the old release could not be admitted
+    after the change, and an upgrade whose `install` fails would leave its
+    sessions with no run and no report.
 - **Every admission layer** admits it while the connection is
   `setup_failed` or `needs_reconnect` at the job's generation and the job
   is under 24 hours old, and the installation is `active`:
@@ -1137,9 +1147,10 @@ Real Postgres, a fresh database per file, no mocked database.
     handshake, or retrying while Tamloot is down): the job is cancelled,
     and the installation becomes `uninstalled` as soon as the full hooks
     succeed, not at the 24-hour deadline. The same for workspace deletion.
-  - A release change and an auto-upgrade are allowed while a keep-current
-    job is queued or running; the job is cancelled, and the upgrade's
-    `connect` (or the cleanup it queues on failure) handles the sessions.
+  - A release change and an auto-upgrade answer `409 cleanup_pending` while
+    a keep-current job is queued or running, as for disconnect cleanup, and
+    go through once it ends, by success or its deadline (with its
+    incident).
   - Member disconnect, admin disconnect, member removal, uninstall and
     workspace deletion each queue the hook and let it read the token secret
     within 24 hours. For uninstall and deletion, the installation stays
@@ -1195,7 +1206,12 @@ Real Postgres, a fresh database per file, no mocked database.
   completions of one state from two tabs at once: one connection, one
   `409`. A decline and a code completion of one state at once: either the
   connection starts and the decline gets `409`, or the decline returns
-  `{ cancelled: true }` and the code gets `409`; never both successes.
+  `{ cancelled: true }` and the code gets `409`; never both successes. A
+  completion arriving as the request expires is consumed only if the
+  request was still unexpired under the lock; otherwise it gets `409` and a
+  deferred cleanup may be claimed. **Lock wait across the expiry:** a
+  completion and a decline each start before `expires_at` but wait for the
+  queue lock until after it; both get `409 authorization_expired`.
 - **Web (unit and Playwright):** the button and inline days; the round trip
   through a stub authorize page to "Connecting…"; declined; the
   getting-started text; "Needs reconnect" with its reason for the member and
@@ -1337,6 +1353,12 @@ hours; Retainer never promises it unconditionally.
   cleanup still runs for 24 hours; if it does not finish, only the operator
   count (§7) records it, and the member's guidance is Tamloot's Connected
   apps (§6.2).
+- **Upgrades can wait up to a day.** While a failed connect's cleanup is
+  queued or running (§4.7), a release change or an auto-upgrade of that
+  installation answers `409 cleanup_pending`, as disconnect cleanup already
+  makes it do. The wait ends when the cleanup succeeds or reaches its
+  24-hour deadline. This was chosen over cancelling the cleanup, which
+  would lose its sessions if the upgrade then failed.
 - **A browser not signed in to Retainer** cannot finish connecting (§6.1).
   The member connects again from Retainer.
 - **Revoking is per member, not per workspace.** The only way for a member to
