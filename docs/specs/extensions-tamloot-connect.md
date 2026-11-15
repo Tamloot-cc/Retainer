@@ -481,18 +481,18 @@ Who ends a partial release job, for every event. "Counted" is whether
 `cleanupPending` (`extensions/service.ts`) counts it, which holds a release
 change or an auto-upgrade with `409 cleanup_pending`.
 
-| Event                                                                                       | Owner                                                  | What happens to the job                                                                                                          | Counted                 |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| Claimed while admitted (above)                                                              | the claim and result path (`queue.ts`)                 | runs; the result ends it: succeeded, failed (`cleanup:<job id>`), or `retry` inside the deadline                                 | yes, see below          |
-| `expires_at` passes while it is not claimed, for any reason                                 | the maintenance sweep (below)                          | failed, `cleanup_deadline_expired`, and `cleanup:<job id>`                                                                       | no                      |
-| A reconnect starts                                                                          | `authorize/start` (§4.4)                               | running: the start answers `409 cleanup_running`. Queued: stays queued, not claimed while the request is open                    | yes                     |
-| A reconnect completes (the connection leaves its failed state)                              | the connect transaction of `authorize/complete` (§4.5) | cancelled, `superseded`, in the same transaction; the reconnect's `connect` gives the sessions up in step 7                      | no                      |
-| The request is declined or expires                                                          | the claim path                                         | claimed again as before, inside the same `expires_at`                                                                            | yes                     |
-| Disconnect, member removal                                                                  | `disconnectConnection` (exists today)                  | cancelled with every job of the connection; the full hook it queues takes over the same sessions                                 | no                      |
-| Install completion moves the connection to `connecting` (re-enable, install retry, upgrade) | the install completion in `queue.ts`                   | cancelled, `superseded`, in the same transaction; the `connect` it queues gives the sessions up, or queues a new job if it fails | no                      |
-| The installation is disabled                                                                | `transition` → `cancelRuns` (`locks.ts`)               | carried to the new generation with its `expires_at`; a disabled installation never admits it, so re-enable or the sweep ends it  | yes, see below          |
-| Uninstall, workspace deletion                                                               | `cancelRuns`, then `disconnectConnection`              | cancelled; the full hook takes over; never holds the installation in `uninstalling`                                              | no                      |
-| A release change or an auto-upgrade                                                         | `cleanupPending`                                       | untouched; the change is refused while the job is counted                                                                        | yes, see below          |
+| Event                                                                                       | Owner                                                  | What happens to the job                                                                                                          | Counted        |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Claimed while admitted (above)                                                              | the claim and result path (`queue.ts`)                 | runs; the result ends it: succeeded, failed (`cleanup:<job id>`), or `retry` inside the deadline                                 | yes, see below |
+| `expires_at` passes while it is not claimed, for any reason                                 | the maintenance sweep (below)                          | failed, `cleanup_deadline_expired`, and `cleanup:<job id>`                                                                       | no             |
+| A reconnect starts                                                                          | `authorize/start` (§4.4)                               | running: the start answers `409 cleanup_running`. Queued: stays queued, not claimed while the request is open                    | yes            |
+| A reconnect completes (the connection leaves its failed state)                              | the connect transaction of `authorize/complete` (§4.5) | cancelled, `superseded`, in the same transaction; the reconnect's `connect` gives the sessions up in step 7                      | no             |
+| The request is declined or expires                                                          | the claim path                                         | claimed again as before, inside the same `expires_at`                                                                            | yes            |
+| Disconnect, member removal                                                                  | `disconnectConnection` (exists today)                  | cancelled with every job of the connection; the full hook it queues takes over the same sessions                                 | no             |
+| Install completion moves the connection to `connecting` (re-enable, install retry, upgrade) | the install completion in `queue.ts`                   | cancelled, `superseded`, in the same transaction; the `connect` it queues gives the sessions up, or queues a new job if it fails | no             |
+| The installation is disabled                                                                | `transition` → `cancelRuns` (`locks.ts`)               | carried to the new generation with its `expires_at`; a disabled installation never admits it, so re-enable or the sweep ends it  | yes, see below |
+| Uninstall, workspace deletion                                                               | `cancelRuns`, then `disconnectConnection`              | cancelled; the full hook takes over; never holds the installation in `uninstalling`                                              | no             |
+| A release change or an auto-upgrade                                                         | `cleanupPending`                                       | refused while the job is counted; once not counted, the change first fails it as the sweep does, then cancels the rest           | yes, see below |
 
 So every event that makes the job unclaimable either ends it in the same
 transaction or leaves `expires_at`, which the sweep owns. "Counted" is the
@@ -501,9 +501,18 @@ before the sweep runs, and a running attempt with a live lease holds until
 it settles. A release change therefore waits at most 24 hours from when the
 job was queued, plus the time an attempt already running then takes to
 settle, which its lease bounds.
-It never cancels the job: a job of the old release could not be admitted
-after the change, and an upgrade whose `install` fails would leave its
-sessions with no run and no report.
+While the job is counted, the change never cancels it: a job of the old
+release could not be admitted after the change, and an upgrade whose
+`install` fails would leave its sessions with no run and no report. Once it
+is no longer counted, the release change in `commitPlan`
+(`extensions/service.ts`), which calls `cancelRuns` with no cleanup
+generation and so cancels every job of the installation, first runs the
+sweep's step for that installation under the same queue lock: each partial
+job past its `expires_at` is failed with `cleanup_deadline_expired` and
+`cleanup:<job id>` is recorded before anything is cancelled. So a release
+change made after the deadline but before the next maintenance tick loses
+no incident. Auto-upgrade already runs after `maintain()` in the same tick,
+and takes the same step.
 
 **The maintenance sweep.** `retainer_extension_maintenance_due` (`0109`)
 also returns an installation, in any state, that has a partial release job
@@ -520,7 +529,9 @@ depends on the job being admittable, never changes the connection's
   disable or an enable (`extensions/service.ts`) it carries a partial job
   like disconnect cleanup, keeping `expires_at`; for an uninstall
   (`transition`) or a workspace deletion (`workspace-deletion.ts`) it
-  cancels it.
+  cancels it. Before a release change or an auto-upgrade calls it with no
+  cleanup generation, the sweep's step runs for that installation (above),
+  so no partial job past its deadline is cancelled without its incident.
 - `failDisconnectCleanup` (`locks.ts`) and the uninstall completion checks
   in `queue.ts` (after a `disconnect` and after the `uninstall` job) read
   disconnect cleanup only.
@@ -1285,6 +1296,12 @@ Real Postgres, a fresh database per file, no mocked database.
     in flight. Run the release change concurrently with the attempt's
     completion and with the sweep: in no order does the upgrade's
     `connect` promote a session the old hook then deletes.
+  - **A release change between the deadline and the sweep:** a partial job
+    is `queued` past its `expires_at` and the sweep has not run. An admin's
+    release change is accepted; the job ends `failed` with
+    `cleanup_deadline_expired`, not `cancelled`, `cleanup:<job id>` is
+    recorded and the notice shows. Run the release change concurrently
+    with the sweep: the job is failed once and the incident recorded once.
   - **A crashed attempt before the deadline:** the worker running the hook
     dies, leaving the job `running` with an expired lease, before
     `expires_at`, while an open request keeps it from being reclaimed. A
