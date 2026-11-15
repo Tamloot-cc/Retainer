@@ -298,17 +298,16 @@ its CSRF header check. Nothing about either is relaxed.
    `codeSetting`, bound to the request's connection ID.
 4. Run the existing connect transaction with the request's settings, both
    pending references and `credential: 'oauth'`. Its first statement marks the
-   request consumed:
-   `update … set consumed_at = now() where id = … and consumed_at is null
-   and expires_at > clock_timestamp()`, run after the queue lock that
-   claiming a job takes is held. `clock_timestamp()`, not `now()`: `now()` is
-   the transaction's start, and a wait for the lock can cross the expiry.
-   No row means another completion or a decline won, or the request expired
-   in the meantime: `409 authorization_expired`, and the transaction rolls
-   back. So a request is either consumed while unexpired, and the deferred
-   cleanup (§4.7) is then cancelled by the generation bump, or it is not,
-   and the cleanup may run. The same transaction copies `created_at` to
-   `authorization_started_at`.
+   request consumed: `update … set consumed_at = now() where id = … and
+   consumed_at is null and expires_at > clock_timestamp()`, run after the queue
+   lock that claiming a job takes is held. `clock_timestamp()`, not `now()`:
+   `now()` is the transaction's start, and a wait for the lock can cross the
+   expiry. No row means another completion or a decline won, or the request
+   expired in the meantime: `409 authorization_expired`, and the transaction
+   rolls back. So a request is either consumed while unexpired, and the same
+   transaction cancels the connection's deferred partial release job
+   (`superseded`, §4.7), or it is not, and the job may run. The same transaction
+   copies `created_at` to `authorization_started_at`.
 
 `connect` (`extensions/connections.ts`) changes in three places:
 
@@ -398,37 +397,36 @@ disconnect, and is deleted when the hook finishes or at the deadline.
 the bundle holds but no longer wants: one rejected by `verifySource`, or old
 ones it could not release yet (§5.5). Ordinary runs stop when the connection
 leaves `active`, so the platform runs the hook for them, with input
-`{ "keep": "current" }`. This is the only new kind of run, and it reuses the
-`disconnect` trigger; no new trigger kind.
+`{ "keep": "current" }`: a **partial release job**. It reuses the bundle's
+`disconnect` hook, so the manifest and the extension protocol gain no new
+trigger kind; the server tells it apart by one named predicate, never by a
+guard written at each site.
 
 - **Queued.** `failInstallation` (`extension-runtime/lifecycle.ts`) queues
   it in the same transaction when it moves an OAuth connection whose
   `disconnect_secrets` is not empty to `setup_failed` (a `connect` job) or
   to `needs_reconnect` (any other job), at the connection's generation after
-  the move, with dedupe key `abandoned:<connection>:<generation>`. Nothing
-  else queues it, and it never queues itself.
+  the move, with dedupe key `abandoned:<connection>:<generation>`. Its
+  deadline is fixed then: `expires_at = clock_timestamp() + 24 hours`.
+  Nothing extends it: carrying the job across a disable keeps it, and the
+  manual retry route (`POST …/runs/:run/retry`) leaves `expires_at` as it is
+  for a partial job instead of resetting it. Nothing else queues it, and it
+  never queues itself.
 - **Input.** `lifecycleInputSchema` for `disconnect` becomes
   `{ keep?: 'current' }`. Jobs queued today carry `{}`: release everything.
-- **Kept apart from disconnect cleanup.** Existing code reads
-  `trigger_kind = 'disconnect'` as "cleanup of a disconnected connection".
-  A job with `input->>'keep' = 'current'` is not that, and every such site
-  excludes it:
-  - `cancelRuns` (`extension-runtime/locks.ts`) cancels it on an uninstall
-    or a workspace deletion, instead of carrying it to the cleanup
-    generation. `disconnectConnection` then queues the connection's full
-    hook, which takes over the same sessions.
-  - The uninstall completion checks in `queue.ts` (after a `disconnect` and
-    after the `uninstall` job) count only jobs without `keep`. A cancelled
-    keep-current job never holds an installation in `uninstalling`.
-  - It is **not** excluded from `cleanupPending` (`extensions/service.ts`):
-    like disconnect cleanup today, it holds a release change or an
-    auto-upgrade until it ends, at most 24 hours. A release change never
-    cancels it, because a job of the old release could not be admitted
-    after the change, and an upgrade whose `install` fails would leave its
-    sessions with no run and no report.
+- **One predicate.** A SQL function
+  `retainer_partial_release_job(trigger_kind text, input jsonb)`, true for
+  `trigger_kind = 'disconnect'` with `input->>'keep' = 'current'`, and its
+  TypeScript twin `isPartialReleaseJob(job)` in
+  `extension-runtime/lifecycle.ts`. "Disconnect cleanup" everywhere below
+  means `trigger_kind = 'disconnect'` and **not** this predicate. Every site
+  in the list after the table uses one of the two; a test asserts that no
+  query in `extension-runtime/` or `extensions/` reads
+  `trigger_kind = 'disconnect'` without it.
+
 - **Every admission layer** admits it while the connection is
-  `setup_failed` or `needs_reconnect` at the job's generation and the job
-  is under 24 hours old, and the installation is `active`:
+  `setup_failed` or `needs_reconnect` at the job's generation, the job's
+  `expires_at` has not passed, and the installation is `active`:
   - `retainer_extension_jobs_due` claims it;
   - `admitRun` (`extension-runtime/admission.ts`) counts it as cleanup:
     `purpose` other than `crm`, no CRM, KV or children, exactly like the
@@ -447,29 +445,81 @@ leaves `active`, so the platform runs the hook for them, with input
   does not claim it: the check runs under the queue lock that starting an
   authorization also takes, so it can never give up the session a
   reconnect's new code depends on. Starting the browser handshake changes
-  nothing else; the job stays queued with its original 24-hour deadline,
-  which is not extended.
-  - The member completes: completion bumps the generation, so the job is
-    cancelled at claim. The reconnect's `connect` gives the same sessions
-    up in step 7, after promotion (§5.5), or the cleanup queued when it
-    fails does.
-  - The member declines, closes Tamloot, or lets the request expire: the
-    request is deleted or expires, and the next claim runs the job as
-    before, inside its original deadline.
-  - The deadline passes during the handshake: the job ends at its deadline
-    like any other cleanup, and §4.7's incident and notice follow.
-  - A disconnect cancels it and queues the full hook.
+  nothing else, and the job's `expires_at` is not extended. The table
+  below says what each outcome of the handshake does.
 - **Changes nothing about the connection.** It never releases `current`
   (after a rejected reconnect, that is the member's previous session). It
   writes no secret, so entries it released stay in the store until a later
   run finds them gone and removes them (§5.7: releasing a session that is
   already gone counts as done). Its result never calls `failInstallation`,
-  never sets `state`, `health` or `last_error` (the `health='ok'` reset in
-  `queue.ts` after a lifecycle job skips it), never retires or deletes a
+  never sets `state`, `health` or `last_error`, never retires or deletes a
   secret, and never queues another job. The connection keeps the code and
   status of the failure that queued it, such as `source_account_changed`.
   Its only effect, when it does not succeed, is `release_incomplete_at`
   below.
+
+Who ends a partial release job, for every event. "Counted" is whether
+`cleanupPending` (`extensions/service.ts`) counts it, which holds a release
+change or an auto-upgrade with `409 cleanup_pending`.
+
+| Event                                                                                       | Owner                                                  | What happens to the job                                                                                                          | Counted                 |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| Claimed while admitted (above)                                                              | the claim and result path (`queue.ts`)                 | runs; the result ends it: succeeded, failed (`cleanup:<job id>`), or `retry` inside the deadline                                 | yes, until `expires_at` |
+| `expires_at` passes while it is not claimed, for any reason                                 | the maintenance sweep (below)                          | failed, `cleanup_deadline_expired`, and `cleanup:<job id>`                                                                       | no                      |
+| A reconnect starts                                                                          | `authorize/start` (§4.4)                               | running: the start answers `409 cleanup_running`. Queued: stays queued, not claimed while the request is open                    | yes                     |
+| A reconnect completes (the connection leaves its failed state)                              | the connect transaction of `authorize/complete` (§4.5) | cancelled, `superseded`, in the same transaction; the reconnect's `connect` gives the sessions up in step 7                      | no                      |
+| The request is declined or expires                                                          | the claim path                                         | claimed again as before, inside the same `expires_at`                                                                            | yes                     |
+| Disconnect, member removal                                                                  | `disconnectConnection` (exists today)                  | cancelled with every job of the connection; the full hook it queues takes over the same sessions                                 | no                      |
+| Install completion moves the connection to `connecting` (re-enable, install retry, upgrade) | the install completion in `queue.ts`                   | cancelled, `superseded`, in the same transaction; the `connect` it queues gives the sessions up, or queues a new job if it fails | no                      |
+| The installation is disabled                                                                | `transition` → `cancelRuns` (`locks.ts`)               | carried to the new generation with its `expires_at`; a disabled installation never admits it, so re-enable or the sweep ends it  | yes, until `expires_at` |
+| Uninstall, workspace deletion                                                               | `cancelRuns`, then `disconnectConnection`              | cancelled; the full hook takes over; never holds the installation in `uninstalling`                                              | no                      |
+| A release change or an auto-upgrade                                                         | `cleanupPending`                                       | untouched; the change is refused while the job is counted                                                                        | yes, until `expires_at` |
+
+So every event that makes the job unclaimable either ends it in the same
+transaction or leaves `expires_at`, which the sweep owns, and
+`cleanupPending` stops counting it at `expires_at` even before the sweep
+runs. A release change waits at most 24 hours from when the job was queued.
+It never cancels the job: a job of the old release could not be admitted
+after the change, and an upgrade whose `install` fails would leave its
+sessions with no run and no report.
+
+**The maintenance sweep.** `retainer_extension_maintenance_due` (`0109`)
+also returns an installation, in any state, that has a partial release job
+`queued`, or `running` with an expired lease, whose `expires_at` has
+passed. `maintain()` (`queue.ts`) locks the queue for it and, for each such
+job, sets `failed` with `cleanup_deadline_expired`, fails its open attempt,
+and records `cleanup:<job id>` in the same transaction (below). It never
+depends on the job being admittable, never changes the connection's
+`state`, `health` or `last_error`, and retires no secret.
+
+**Sites that use the predicate.**
+
+- `cancelRuns` (`extension-runtime/locks.ts`) takes why it runs: for a
+  disable or an enable (`extensions/service.ts`) it carries a partial job
+  like disconnect cleanup, keeping `expires_at`; for an uninstall
+  (`transition`) or a workspace deletion (`workspace-deletion.ts`) it
+  cancels it.
+- `failDisconnectCleanup` (`locks.ts`) and the uninstall completion checks
+  in `queue.ts` (after a `disconnect` and after the `uninstall` job) read
+  disconnect cleanup only.
+- `cleanupPending` counts disconnect cleanup, and a partial job only while
+  `expires_at > clock_timestamp()`; so does `retainer_extension_upgrades_due`
+  (`0107`), which picks the installations auto-upgrade tries.
+- `runnable` in `queue.ts`, used at claim, on every leased call and by the
+  retry route: a partial job is runnable while the installation is
+  `active` and the connection is `setup_failed` or `needs_reconnect`, never
+  under the disconnected-connection rule.
+- The claim path's `cleanup_deadline_expired` check for a disconnected
+  connection (`queue.ts`, `connection_cleanup_live`) applies to disconnect
+  cleanup only; a partial job's deadline is its `expires_at`.
+- The `health='ok'` reset after a lifecycle job, `finishLifecycle` and
+  `retainer_finish_member_cleanup` skip a partial job.
+- The install completion in `queue.ts` and the connect transaction of
+  `authorize/complete` cancel the connection's partial job, as in the
+  table.
+- The retry route keeps a partial job's `expires_at`.
+- The admission layers above (`retainer_extension_jobs_due` and
+  `retainer_admit_secret_run`, last replaced in `0103`), and the sweep.
 
 **When cleanup does not finish.** Reports are idempotent and kept by the
 server, never by the bundle's store, so a crash can repeat a report but
@@ -489,10 +539,27 @@ with hyphens, when a `disconnect` job of a connection with non-empty
 `disconnect_secrets` fails (for good, out of retries, or at the 24-hour
 deadline).
 
-The Tamloot bundle uses one kind of ID, `exchange:<codeHash>`, for an
-exchange that may have left a session nobody holds (§5.5). It reports every
-such ID it knows of on every `connect` and every cleanup run, and keeps
-reporting them; the server's dedupe makes that safe. Dropping the oldest of
+The Tamloot bundle uses two kinds of ID:
+
+- `exchange:<codeHash>`: an exchange that may have left a session nobody
+  holds (§5.5). Every `connect` and every cleanup run reports each one in
+  `lost`.
+- `release:<id>`: a session in `release` that Retainer has been trying to
+  give up for 24 hours or more (§5.3). Every run of the connection reports
+  each one while it stays in the list.
+
+It keeps reporting them; the server's dedupe makes that safe. At most four
+of each kind fit in a store, so a result never carries more than eight.
+
+**Two different 24-hour limits.** A cleanup job, the full hook after a
+disconnect or the `{ keep: 'current' }` hook, has a **deadline**: at 24
+hours it stops, `cleanup:<job id>` is recorded and, after a disconnect, the
+tokens are deleted. An active connection has **no deadline** for its
+`release` list: its runs keep giving each entry up for as long as the
+connection runs (§5.6). Twenty-four hours after an entry's `since`, they
+report `release:<id>`, so the member sees the notice while the retries go
+on. A session given up after the notice showed does not withdraw it; the
+member dismisses it. Dropping the oldest of
 32 recorded IDs can at worst show one old incident again, never hide a new
 one.
 
@@ -609,6 +676,7 @@ const tokenStore = z.strictObject({
   current: session.nullable(),            // the verified session runs use
   pending: session.nullable(),            // exchanged, not yet verified; never used to import
   release: z.array(z.strictObject({       // sessions to give up in Tamloot
+    id: z.uuid(),                         // stable incident ID, set when the entry is added
     session, since: z.iso.datetime({ offset: true }),
     reason: z.enum(['replaced', 'rejected']),
   })).max(4),
@@ -616,12 +684,14 @@ const tokenStore = z.strictObject({
 ```
 
 A connection holds at most six sessions: `current`, `pending` and four to
-release. Nothing is ever removed from `release` except by releasing it
-(§5.7), and nothing is ever removed from `lost`. `lost` holds each hash
-once: adding a hash that is already there changes nothing, so repeating a
-stage after a backlog failure never inflates it. Both caps are kept by
-refusing new work (§5.5 step 3), never by dropping an entry. The store
-records what happened; it never records whether something was reported
+release. A session gets its `id`, a random lowercase UUID, and its `since` when
+it joins `release`, and keeps both until it leaves: a refresh or a retry
+rewrites its tokens, never its `id` or `since`. Nothing is ever removed from
+`release` except by releasing it (§5.7), and nothing is ever removed from
+`lost`. `lost` holds each hash once: adding a hash that is already there changes
+nothing, so repeating a stage after a backlog failure never inflates it. Both
+caps are kept by refusing new work (§5.5 step 3), never by dropping an entry.
+The store records what happened; it never records whether something was reported
 (§4.7).
 
 Every write uses the revision the run read (`expectedRevision`). On
@@ -741,9 +811,11 @@ a session.
 7. Give up every entry in `release`. A failure here never fails the
    connect.
 
-Every `connect` result, whatever its status, carries
-`releaseIncomplete: ['exchange:<hash>', …]` for every hash in `lost`
-(§4.7). The server records each once.
+Every `connect` result, whatever its status, carries `releaseIncomplete`
+with `exchange:<hash>` for every hash in `lost`, and `release:<id>` for every
+entry still in `release` when the run ends whose `since` is 24 hours ago or
+more (§4.7). That is at most eight IDs, the field's limit. The server
+records each once.
 
 **Bounds.** Step 3 checks both lists before the exchange. One run adds at
 most one entry to `release` (step 5) and at most one to `lost` (an
@@ -785,7 +857,10 @@ apps lists Retainer while it lasts.
   `provider_unauthorized`.
 - Every run of the connection (`poll`, `scan`, `sync-session`) drains
   `release` before it imports, so an active connection keeps retrying until
-  each entry is gone. A failure here does not fail the run.
+  each entry is gone. A failure here does not fail the run. The result
+  carries `release:<id>` for every entry still in `release` after the drain
+  whose `since` is 24 hours ago or more. Reaching 24 hours warns the member;
+  it does not stop the retries.
 
 No module-level caches: a warm Lambda environment serves other installations
 next (extensions-lambda.md §3.2).
@@ -801,18 +876,18 @@ re-approval"; see §13). `429`, a `5xx` or a network error means try again
 later.
 
 The `disconnect` function reads `oauthTokens`. `409 connection_required`
-means a key connection, or nothing stored, so no exchange ever started:
-succeed. Otherwise it gives up `pending`, every entry in `release` and,
-unless its input is `{ keep: 'current' }` (§4.7), `current`. It writes
-nothing. If any attempt must be retried it returns `retry`; the platform
-retries inside the 24-hour cleanup window. Its result carries
-`releaseIncomplete` with every hash in `lost` and, when the store says
-`started`, or `ready` with `uncertain`, that `codeHash` too: an attempt may
-have been processed and was never resolved, so a session may exist. The
-hook writes nothing; the server's dedupe (§4.7) keeps a hook and a later
-`connect` reporting the same ID from showing it twice. It fails with
-`release_incomplete` only when the store does not parse. A failure, or the
-24 hours running out, is its own incident and the member is told (§4.7,
+means a key connection, or nothing stored, so no exchange ever started: succeed.
+Otherwise it gives up `pending`, every entry in `release` and, unless its input
+is `{ keep: 'current' }` (§4.7), `current`. It writes nothing. If any attempt
+must be retried it returns `retry`; the platform retries inside the 24-hour
+cleanup window. Its result carries `releaseIncomplete` with every hash in `lost`
+and, when the store says `started`, or `ready` with `uncertain`, that `codeHash`
+too: an attempt may have been processed and was never resolved, so a session may
+exist, and `release:<id>` for every entry it could not give up whose `since` is
+24 hours ago or more. The hook writes nothing; the server's dedupe (§4.7) keeps
+a hook and a later `connect` reporting the same ID from showing it twice. It
+fails with `release_incomplete` only when the store does not parse. A failure,
+or the 24 hours running out, is its own incident and the member is told (§4.7,
 §6.2).
 
 Add `DELETE /v1/access` to the provider's path allowlist. It stays the only
@@ -1128,14 +1203,47 @@ Real Postgres, a fresh database per file, no mocked database.
     failed new authorization.
   - Entries the `{ keep: 'current' }` hook already released are removed by
     the next `connect` or `poll` without error.
+  - **An entry that outlives 24 hours on an active connection:** a
+    successful reconnect moves the old session to `release` and
+    `DELETE /v1/access` answers `503` on every try. Runs before 24 hours
+    report nothing for it. The first `poll` after reports `release:<id>`
+    and the notice shows; later runs report the same ID, which the server
+    records once. The runs keep trying, and when Tamloot answers `204` the
+    entry is removed and nothing new is reported. Refreshing that session
+    leaves its `id` and `since` unchanged.
+  - A result from a store with four hashes in `lost` and four aged entries
+    in `release` carries eight IDs and is accepted.
 - **Cleanup paths (database and API):**
   - A failed `connect` queues the `{ keep: 'current' }` hook in the same
     transaction. It is claimed while the connection is `setup_failed` and
-    the job is under 24 hours old, and not after; it reads the token secret
-    and cannot write it; `admitRun`, the installation read and
-    `oauth-client` admit it; CRM, KV and children refuse it; a reconnect
-    cancels it; a disconnect cancels it and queues the full hook. The same
-    for `needs_reconnect`.
+    its `expires_at` has not passed, and not after; it reads the token
+    secret and cannot write it; `admitRun`, the installation read and
+    `oauth-client` admit it; CRM, KV and children refuse it; a completed
+    reconnect cancels it; a disconnect cancels it and queues the full hook.
+    The same for `needs_reconnect`.
+  - **The lifecycle table (§4.7), one test per row**, each checking the
+    job's final status and code, whether `cleanup:<job id>` is recorded,
+    and whether a release change answers `409 cleanup_pending`.
+  - **Deadline while unclaimable:** a partial job is deferred by an open
+    request until past its `expires_at`, then the request is declined. The
+    sweep fails it with `cleanup_deadline_expired`, records
+    `cleanup:<job id>` and the notice shows; the connection's `state`,
+    `health` and `last_error` are unchanged and no secret is retired. The
+    same with the installation disabled for more than 24 hours.
+  - **Disable, then re-enable:** the job is carried with its `expires_at`
+    and not claimed while disabled. The install completion that moves the
+    connection to `connecting` cancels it (`superseded`) in the same
+    transaction, and a release change is accepted right after.
+  - **`cleanupPending` is bounded:** with a partial job still `queued` past
+    its `expires_at` and the sweep not yet run, a release change is
+    accepted.
+  - **Deadlines are never extended:** carrying the job across a disable, a
+    deferral by an open request, and a manual retry through
+    `POST …/runs/:run/retry` all leave `expires_at` unchanged.
+  - **One predicate:** a test fails if a query under
+    `extension-runtime/` or `extensions/` filters on
+    `trigger_kind = 'disconnect'` without
+    `retainer_partial_release_job` or `isPartialReleaseJob`.
   - The `{ keep: 'current' }` hook succeeding leaves the connection's
     `state`, `health`, `last_error` (still `source_account_changed`) and
     generation unchanged, retires no secret and queues nothing. Failing for
@@ -1191,8 +1299,10 @@ Real Postgres, a fresh database per file, no mocked database.
   - **Deadline during the handshake:** the request stays open past the
     hook's deadline. The hook ends at its deadline and records its
     incident, and the notice shows.
-  - **Handshake completed:** the generation bump cancels the deferred hook,
-    and the reconnect's step 7 gives the sessions up. **The same incident
+  - **Handshake completed:** the completion's transaction cancels the
+    deferred hook (`superseded`), and the reconnect's step 7 gives the
+    sessions up. Run a completion and the sweep concurrently: the job ends
+    once, cancelled or failed, never both. **The same incident
     after a dismissal** stays hidden. **A later, different incident** shows
     the notice again.
 - **Completion and the state (API):** completion with the workspace named in
@@ -1347,17 +1457,20 @@ hours; Retainer never promises it unconditionally.
   deadline and shows the member the notice. After a failed connect,
   Retainer keeps its tokens, including the previous `current`: the
   `{ keep: 'current' }` cleanup stops at 24 hours and shows the notice, and
-  the member's next reconnect or disconnect gives up what is left.
+  the member's next reconnect or disconnect gives up what is left. On an
+  active connection, a session it replaced is retried by every run with no
+  deadline, and the notice shows once it has waited 24 hours.
 - **No place to show the notice.** After an uninstall, a workspace deletion
   or the member's removal, the member cannot open the Connections tab. The
   cleanup still runs for 24 hours; if it does not finish, only the operator
   count (§7) records it, and the member's guidance is Tamloot's Connected
   apps (§6.2).
-- **Upgrades can wait up to a day.** While a failed connect's cleanup is
-  queued or running (§4.7), a release change or an auto-upgrade of that
-  installation answers `409 cleanup_pending`, as disconnect cleanup already
-  makes it do. The wait ends when the cleanup succeeds or reaches its
-  24-hour deadline. This was chosen over cancelling the cleanup, which
+- **Upgrades can wait up to a day.** While a failed connect's cleanup is queued
+  or running (§4.7), a release change or an auto-upgrade of that installation
+  answers `409 cleanup_pending`, as disconnect cleanup already makes it do. The
+  wait ends when the cleanup succeeds or reaches its 24-hour deadline, fixed
+  when it was queued; past that deadline it no longer holds anything, even
+  before the sweep ends it. This was chosen over cancelling the cleanup, which
   would lose its sessions if the upgrade then failed.
 - **A browser not signed in to Retainer** cannot finish connecting (§6.1).
   The member connects again from Retainer.
