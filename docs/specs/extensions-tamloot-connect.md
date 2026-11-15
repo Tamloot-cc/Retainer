@@ -436,6 +436,10 @@ owner only. Retainer never claims the access ended when it did not.
 - `ExtensionConnection` gains `credential` and `hasImportedItems`: whether
   the connection's source account has at least one source item past
   `reserved`. `list` computes it through `source_bindings`.
+- `ExtensionConnection` also gains `releaseIncompleteAt`. `list` already
+  returns disconnected connections (all of them to an admin, the caller's
+  own otherwise), so the warning is read back from the database, not from
+  the browser, and survives the disconnect.
 - `ExtensionInstallation` gains `releaseNotice: { connectionId, at } | null`
   for the caller: their most recent connection on this installation with
   `release_incomplete_at` set and not dismissed. It stays until the member
@@ -788,7 +792,10 @@ credential and the state):
 | Anything else                              | Today's texts                                                                                          |
 
 The admin table gains a "Reason" column with the same text, so admins see why
-a connection needs reconnecting (PRD requirement 4).
+a connection needs reconnecting (PRD requirement 4). For a connection with
+`releaseIncompleteAt`, disconnected or not, the column says "Tamloot access
+may remain. The member can revoke Retainer in Tamloot." Admins see it until
+the connection row is deleted with the installation or workspace.
 
 ## 7. Measuring success
 

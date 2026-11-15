@@ -72,10 +72,11 @@ connecting was interrupted at the moment Tamloot handed over access. Retainer
 never claims the access ended when it can't confirm it. It tells the member
 on the extension's Connections tab, until they dismiss it, that Retainer may
 still have access, and that revoking Retainer in Tamloot's Connected apps
-ends it, in every workspace connected to that Tamloot account. The same
-applies to access from a failed attempt to connect, such as approving a
-different Tamloot account: Retainer gives it up right away, or keeps
-retrying for a day.
+ends it, in every workspace connected to that Tamloot account. Admins see
+the same in the connections table. This also covers access from a failed
+attempt to connect, such as approving a different Tamloot account: Retainer
+tries to give it up right away and keeps trying for a day. Connecting again
+does not end that access by itself.
 
 If the extension is uninstalled, the workspace deleted or the member removed,
 the member can no longer open that tab, and Retainer does not message them
@@ -96,9 +97,10 @@ so.
    "Needs reconnect" with a short reason, and imports stop without errors
    piling up.
 5. Reconnecting, including with a different Tamloot account, behaves as
-   reconnecting does today: a different account is refused and the
-   connection keeps its previous account. Access to the refused account is
-   given up, never kept for imports.
+   reconnecting does today: a different account is refused, the connection
+   is not switched to it, and it needs connecting again with the first
+   account or disconnecting. Access to the refused account is never used to
+   import; Retainer tries to give it up, as in requirement 13.
 6. Disconnecting stops imports at once and asks Tamloot to end that
    connection's access, retrying for up to a day; if that fails, requirement
    13 applies. The member's other workspaces keep their connections.
