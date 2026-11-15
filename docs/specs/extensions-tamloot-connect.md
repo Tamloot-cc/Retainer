@@ -464,21 +464,27 @@ change or an auto-upgrade with `409 cleanup_pending`.
 
 | Event                                                                                       | Owner                                                  | What happens to the job                                                                                                          | Counted                 |
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| Claimed while admitted (above)                                                              | the claim and result path (`queue.ts`)                 | runs; the result ends it: succeeded, failed (`cleanup:<job id>`), or `retry` inside the deadline                                 | yes, until `expires_at` |
+| Claimed while admitted (above)                                                              | the claim and result path (`queue.ts`)                 | runs; the result ends it: succeeded, failed (`cleanup:<job id>`), or `retry` inside the deadline                                 | yes, see below          |
 | `expires_at` passes while it is not claimed, for any reason                                 | the maintenance sweep (below)                          | failed, `cleanup_deadline_expired`, and `cleanup:<job id>`                                                                       | no                      |
 | A reconnect starts                                                                          | `authorize/start` (§4.4)                               | running: the start answers `409 cleanup_running`. Queued: stays queued, not claimed while the request is open                    | yes                     |
 | A reconnect completes (the connection leaves its failed state)                              | the connect transaction of `authorize/complete` (§4.5) | cancelled, `superseded`, in the same transaction; the reconnect's `connect` gives the sessions up in step 7                      | no                      |
 | The request is declined or expires                                                          | the claim path                                         | claimed again as before, inside the same `expires_at`                                                                            | yes                     |
 | Disconnect, member removal                                                                  | `disconnectConnection` (exists today)                  | cancelled with every job of the connection; the full hook it queues takes over the same sessions                                 | no                      |
 | Install completion moves the connection to `connecting` (re-enable, install retry, upgrade) | the install completion in `queue.ts`                   | cancelled, `superseded`, in the same transaction; the `connect` it queues gives the sessions up, or queues a new job if it fails | no                      |
-| The installation is disabled                                                                | `transition` → `cancelRuns` (`locks.ts`)               | carried to the new generation with its `expires_at`; a disabled installation never admits it, so re-enable or the sweep ends it  | yes, until `expires_at` |
+| The installation is disabled                                                                | `transition` → `cancelRuns` (`locks.ts`)               | carried to the new generation with its `expires_at`; a disabled installation never admits it, so re-enable or the sweep ends it  | yes, see below          |
 | Uninstall, workspace deletion                                                               | `cancelRuns`, then `disconnectConnection`              | cancelled; the full hook takes over; never holds the installation in `uninstalling`                                              | no                      |
-| A release change or an auto-upgrade                                                         | `cleanupPending`                                       | untouched; the change is refused while the job is counted                                                                        | yes, until `expires_at` |
+| A release change or an auto-upgrade                                                         | `cleanupPending`                                       | untouched; the change is refused while the job is counted                                                                        | yes, see below          |
 
 So every event that makes the job unclaimable either ends it in the same
-transaction or leaves `expires_at`, which the sweep owns, and
-`cleanupPending` stops counting it at `expires_at` even before the sweep
-runs. A release change waits at most 24 hours from when the job was queued.
+transaction or leaves `expires_at`, which the sweep owns. `cleanupPending`
+counts a partial job that is `running` with an unexpired lease
+(`lease_until > clock_timestamp()`), whatever its `expires_at`: a hook
+already running may have a `DELETE /v1/access` in flight, so no upgrade
+starts beside it. It counts a `queued` one only before `expires_at`; a
+queued job past its deadline holds nothing, even before the sweep runs. A
+release change therefore waits at most 24 hours from when the job was
+queued, plus the time an attempt already running then takes to settle,
+which its lease bounds.
 It never cancels the job: a job of the old release could not be admitted
 after the change, and an upgrade whose `install` fails would leave its
 sessions with no run and no report.
@@ -502,8 +508,9 @@ depends on the job being admittable, never changes the connection's
 - `failDisconnectCleanup` (`locks.ts`) and the uninstall completion checks
   in `queue.ts` (after a `disconnect` and after the `uninstall` job) read
   disconnect cleanup only.
-- `cleanupPending` counts disconnect cleanup, and a partial job only while
-  `expires_at > clock_timestamp()`; so does `retainer_extension_upgrades_due`
+- `cleanupPending` counts disconnect cleanup, and a partial job while it is
+  `running` with an unexpired lease, or `queued` before its `expires_at`;
+  so does `retainer_extension_upgrades_due`
   (`0107`), which picks the installations auto-upgrade tries.
 - `runnable` in `queue.ts`, used at claim, on every leased call and by the
   retry route: a partial job is runnable while the installation is
@@ -811,11 +818,14 @@ a session.
 7. Give up every entry in `release`. A failure here never fails the
    connect.
 
-Every `connect` result, whatever its status, carries `releaseIncomplete`
-with `exchange:<hash>` for every hash in `lost`, and `release:<id>` for every
-entry still in `release` when the run ends whose `since` is 24 hours ago or
-more (§4.7). That is at most eight IDs, the field's limit. The server
-records each once.
+Every `connect` result, whatever its status, carries `releaseIncomplete` with
+`exchange:<hash>` for every hash in `lost`, and `release:<id>` for every entry
+whose `since` is 24 hours ago or more that this run tried and failed to give up:
+in step 7, or kept by step 3's check because it still has access (§4.7). An
+entry the run never asked Tamloot about is not reported: a `connect` that ends
+before step 7 may hold entries the cleanup hook already gave up but could not
+remove, and the cleanup a failed `connect` queues reports any it leaves. That is
+at most eight IDs, the field's limit. The server records each once.
 
 **Bounds.** Step 3 checks both lists before the exchange. One run adds at
 most one entry to `release` (step 5) and at most one to `lost` (an
@@ -1213,6 +1223,13 @@ Real Postgres, a fresh database per file, no mocked database.
     leaves its `id` and `since` unchanged.
   - A result from a store with four hashes in `lost` and four aged entries
     in `release` carries eight IDs and is accepted.
+  - **`connect` reports only what it tried:** the `{ keep: 'current' }` hook
+    gives up `P1` (`204`) but cannot remove it from the store. More than 24
+    hours later a reconnect returns `retry` at step 5 (`503`), and another
+    fails with `source_account_changed`, both before step 7. Neither result
+    carries `release:<P1 id>` and no notice appears. When a later run's
+    step 7 tries `P1`, it gets `401` then `invalid_grant`, counts it as done
+    and removes it.
 - **Cleanup paths (database and API):**
   - A failed `connect` queues the `{ keep: 'current' }` hook in the same
     transaction. It is claimed while the connection is `setup_failed` and
@@ -1237,6 +1254,15 @@ Real Postgres, a fresh database per file, no mocked database.
   - **`cleanupPending` is bounded:** with a partial job still `queued` past
     its `expires_at` and the sweep not yet run, a release change is
     accepted.
+  - **A running hook crossing its deadline:** a partial job's attempt is
+    `running` with an unexpired lease and a `DELETE /v1/access` held open
+    in the fixture when `expires_at` passes. A release change and an
+    auto-upgrade answer `409 cleanup_pending` until the attempt ends, or
+    its lease expires and the sweep fails the job; only then is the
+    change accepted, and no upgrade `connect` runs while the `DELETE` is
+    in flight. Run the release change concurrently with the attempt's
+    completion and with the sweep: in no order does the upgrade's
+    `connect` promote a session the old hook then deletes.
   - **Deadlines are never extended:** carrying the job across a disable, a
     deferral by an open request, and a manual retry through
     `POST …/runs/:run/retry` all leave `expires_at` unchanged.
@@ -1469,9 +1495,10 @@ hours; Retainer never promises it unconditionally.
   or running (§4.7), a release change or an auto-upgrade of that installation
   answers `409 cleanup_pending`, as disconnect cleanup already makes it do. The
   wait ends when the cleanup succeeds or reaches its 24-hour deadline, fixed
-  when it was queued; past that deadline it no longer holds anything, even
-  before the sweep ends it. This was chosen over cancelling the cleanup, which
-  would lose its sessions if the upgrade then failed.
+  when it was queued, plus the time an attempt already running then takes to
+  settle, bounded by its lease. A queued job past its deadline holds nothing,
+  even before the sweep ends it. This was chosen over cancelling the cleanup,
+  which would lose its sessions if the upgrade then failed.
 - **A browser not signed in to Retainer** cannot finish connecting (§6.1).
   The member connects again from Retainer.
 - **Revoking is per member, not per workspace.** The only way for a member to
