@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { isPlainClick } from './core.js';
+import type { CategoryColor } from './colors.js';
+import { cn, isPlainClick } from './core.js';
 
 // A feed (5.2): things that happened, read by time rather than by column.
 
@@ -37,6 +38,7 @@ export function FeedDay({ heading, children }: { heading: string; children: Reac
 export function FeedItem({
   icon: Icon,
   iconLabel,
+  color,
   title,
   chips,
   time,
@@ -48,6 +50,7 @@ export function FeedItem({
   icon: LucideIcon;
   /** What the icon stands for, e.g. the event type. */
   iconLabel: string;
+  color?: CategoryColor;
   title: string;
   chips?: ReactNode;
   time: string;
@@ -63,13 +66,17 @@ export function FeedItem({
       onClick={(e) => {
         if (isPlainClick(e)) onOpen();
       }}
-      className="group flex cursor-pointer gap-3 px-3 py-3 transition-colors first:rounded-t-lg last:rounded-b-lg hover:bg-hover data-selected:bg-muted"
+      className="group flex cursor-pointer gap-3 px-3 py-3 transition-colors first:rounded-t-lg last:rounded-b-lg hover:bg-hover data-selected:bg-selection"
     >
       <span
         role="img"
         aria-label={iconLabel}
         title={iconLabel}
-        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground"
+        data-color={color}
+        className={cn(
+          'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
+          color ? 'category-tag' : 'border border-border bg-background text-muted-foreground',
+        )}
       >
         <Icon size={14} aria-hidden />
       </span>

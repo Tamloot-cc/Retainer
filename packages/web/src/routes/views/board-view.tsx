@@ -11,6 +11,7 @@ import type {
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { api, useWorkspace } from '../../api/client.js';
 import { fields } from '../../fields/index.js';
+import { categoryColor } from '../../ui/colors.js';
 import {
   Board,
   BoardCard,
@@ -260,6 +261,7 @@ function Column({
     <BoardColumn
       id={group.key}
       title={group.label}
+      color={group.value === null ? undefined : categoryColor(group.value)}
       count={count}
       meta={meta}
       locked={!draggable}

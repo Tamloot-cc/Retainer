@@ -22,8 +22,8 @@ import { Plus, Star, X } from 'lucide-react';
 import { type ComponentType, type ContextType, type ReactNode, useContext, useState } from 'react';
 import { api, useWorkspace, WorkspaceContext } from '../api/client.js';
 import { objectByName, objectLabel, recordTitle, useDebounced } from '../routes/state.js';
+import { objectColor } from '../ui/colors.js';
 import {
-  Badge,
   Button,
   CategoryTag,
   Check,
@@ -33,11 +33,13 @@ import {
   type FitItem,
   FitList,
   Fixed,
+  IdentityTag,
   Input,
   Label,
   Muted,
   OptionList,
   type PickerOption,
+  RecordAvatar,
   RecordLink,
   Row,
   SelectMenu,
@@ -90,24 +92,41 @@ export function joinOr(words: string[]) {
     : (words[0] ?? '');
 }
 /** The object a polymorphic relation's record belongs to, after its name. */
-function ObjectTag({ children }: { children: ReactNode }) {
+function ObjectTag({ children, name }: { children: ReactNode; name: string }) {
   // Read as "Acme (Company)"; the parentheses are only for screen readers.
   return (
-    <Badge>
+    <IdentityTag identity={name} color={objectColor(name)}>
       <span className="sr-only">(</span>
       {children}
       <span className="sr-only">)</span>
-    </Badge>
+    </IdentityTag>
   );
 }
 /** A record's name, with its object when the field links several (`object`). */
-function TargetName({ title, object }: { title: ReactNode; object?: string }) {
-  return object ? (
+function TargetName({
+  title,
+  id,
+  object,
+  label,
+  objectClass,
+}: {
+  title: string;
+  id: string;
+  object: string;
+  label?: string;
+  objectClass?: 'entity' | 'event';
+}) {
+  return (
     <span className="flex min-w-0 items-center gap-1.5">
-      <span className="truncate">{title}</span> <ObjectTag>{object}</ObjectTag>
+      <RecordAvatar id={id} name={title} object={object} objectClass={objectClass} />
+      <span className="truncate">{title}</span>
+      {label ? (
+        <>
+          {' '}
+          <ObjectTag name={object}>{label}</ObjectTag>
+        </>
+      ) : null}
     </span>
-  ) : (
-    title
   );
 }
 /** A relation value's record IDs: one, a set, or none. */
@@ -318,15 +337,38 @@ export function relationItems(
     const reference = references[id];
     if (!reference) return { key: id, node: <Muted>Unavailable reference</Muted> };
     const name = recordTitle(reference);
+    const objectClass = workspace
+      ? objectByName(workspace.schema, reference.object)?.class
+      : undefined;
     const object = workspace ? objectLabel(workspace.schema, reference.object) : reference.object;
     return {
       key: `${id}\u0000${name}\u0000${tagged ? object : ''}`,
       node: tagged ? (
         <span className="inline-flex min-w-0 items-center gap-1.5">
-          <RecordLink id={id}>{name}</RecordLink> <ObjectTag>{object}</ObjectTag>
+          <RecordLink
+            id={id}
+            avatar={
+              <RecordAvatar
+                id={id}
+                name={name}
+                object={reference.object}
+                objectClass={objectClass}
+              />
+            }
+          >
+            {name}
+          </RecordLink>{' '}
+          <ObjectTag name={reference.object}>{object}</ObjectTag>
         </span>
       ) : (
-        <RecordLink id={id}>{name}</RecordLink>
+        <RecordLink
+          id={id}
+          avatar={
+            <RecordAvatar id={id} name={name} object={reference.object} objectClass={objectClass} />
+          }
+        >
+          {name}
+        </RecordLink>
       ),
     };
   });
@@ -435,14 +477,20 @@ export function interleave<T>(lists: T[][]): T[] {
  * A picker option for a record. Where the field links several objects, its
  * object is named after it ("Acme (Company)"), on screen and to search.
  */
-function recordOption(title: string, id: string, object?: string): PickerOption {
-  return object
-    ? {
-        value: id,
-        label: `${title} (${object})`,
-        content: <TargetName title={title} object={object} />,
-      }
-    : { value: id, label: title };
+function recordOption(
+  title: string,
+  id: string,
+  object: string,
+  label?: string,
+  objectClass?: 'entity' | 'event',
+): PickerOption {
+  return {
+    value: id,
+    label: label ? `${title} (${label})` : title,
+    content: (
+      <TargetName title={title} id={id} object={object} label={label} objectClass={objectClass} />
+    ),
+  };
 }
 
 /**
@@ -487,12 +535,25 @@ function useRelationOptions(
   const [seen, setSeen] = useState<Record<string, PickerOption>>({});
   const records = interleave(results.map((r) => (r.data?.records ?? []) as PresentedRecord[]));
   const options: PickerOption[] = records.map((r) =>
-    recordOption(recordTitle(r), r.id, objectOf(r.object)),
+    recordOption(
+      recordTitle(r),
+      r.id,
+      r.object,
+      objectOf(r.object),
+      objectByName(workspace.schema, r.object)?.class,
+    ),
   );
   const current = relationIds(value);
   const optionOf = (id: string): PickerOption => {
     const reference = references?.[id];
-    if (reference) return recordOption(recordTitle(reference), id, objectOf(reference.object));
+    if (reference)
+      return recordOption(
+        recordTitle(reference),
+        id,
+        reference.object,
+        objectOf(reference.object),
+        objectByName(workspace.schema, reference.object)?.class,
+      );
     return seen[id] ?? { value: id, label: 'Current record' };
   };
   const first = current[0] ? optionOf(current[0]) : null;

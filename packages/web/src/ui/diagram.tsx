@@ -141,7 +141,13 @@ function Card({ data: { node } }: NodeProps<CardNode>) {
             variant.header,
           )}
         >
-          <span className={cn('flex size-6 shrink-0 items-center justify-center', variant.icon)}>
+          <span
+            data-color={node.color}
+            className={cn(
+              'flex size-6 shrink-0 items-center justify-center rounded-md',
+              node.color ? 'category-tag' : variant.icon,
+            )}
+          >
             <node.icon size={14} aria-hidden />
           </span>
           <span className="truncate text-sm font-semibold">{node.label}</span>

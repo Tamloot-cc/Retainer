@@ -161,7 +161,7 @@ export function EntryComposer({
 /** A quote from a source, set apart from what is said about it. */
 export function EntryQuote({ children }: { children: ReactNode }) {
   return (
-    <blockquote className="m-0 border-l-2 border-border pl-2.5 text-sm text-muted-foreground [overflow-wrap:anywhere]">
+    <blockquote className="m-0 border-l-2 border-primary/30 pl-2.5 text-sm text-muted-foreground [overflow-wrap:anywhere]">
       {children}
     </blockquote>
   );
@@ -173,7 +173,7 @@ export function EntryLoading({ label }: { label: string }) {
     <div role="status" className="flex flex-col divide-y divide-border">
       <span className="sr-only">{label}</span>
       {[0, 1, 2].map((row) => (
-        <div key={row} aria-hidden className="flex animate-pulse gap-3 py-3">
+        <div key={row} aria-hidden className="flex motion-safe:animate-pulse gap-3 py-3">
           <span className="h-7 w-7 shrink-0 rounded-full bg-muted" />
           <div className="flex min-w-0 flex-1 flex-col gap-2 pt-1">
             <span className="h-3.5 w-2/5 rounded-sm bg-muted" />

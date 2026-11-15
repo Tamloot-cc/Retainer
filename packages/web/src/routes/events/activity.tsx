@@ -5,6 +5,7 @@ import { memo, useCallback, useMemo, useState } from 'react';
 import { api, useWorkspace } from '../../api/client.js';
 import { FieldPicker } from '../../fields/common.js';
 import { fields } from '../../fields/index.js';
+import { objectColor } from '../../ui/colors.js';
 import {
   ApiName,
   Badge,
@@ -213,6 +214,7 @@ const ActivityItem = memo(function ActivityItem({
     <FeedItem
       icon={objectIcon(e.type, 'event')}
       iconLabel={type?.labelSingular ?? e.type}
+      color={objectColor(e.type)}
       title={eventTitle(e.event)}
       chips={
         <>

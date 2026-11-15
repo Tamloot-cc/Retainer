@@ -6,7 +6,7 @@ import { format } from 'date-fns';
 import { PencilLine } from 'lucide-react';
 import { api, useWorkspace } from '../../api/client.js';
 import { fields as fieldModules } from '../../fields/index.js';
-import { ActorBadge } from '../../provenance/index.js';
+import { ActorBadge, SourceBadge } from '../../provenance/index.js';
 import {
   Badge,
   Button,
@@ -206,7 +206,7 @@ function FieldChange({
           {source ? (
             <>
               <Muted small>from</Muted>
-              <Badge>{objectLabel(schema, source.type)}</Badge>
+              <SourceBadge type={source.type} label={objectLabel(schema, source.type)} />
               <EventLink id={source.id}>
                 {eventTitle(source)} · {new Date(source.occurredAt).toLocaleDateString()}
               </EventLink>

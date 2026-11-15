@@ -1,6 +1,8 @@
 import type { KeyboardEvent, ReactNode } from 'react';
+import type { CategoryColor } from './colors.js';
 import { cn, isPlainClick } from './core.js';
 import { useDragItem, useDropTarget } from './drag.js';
+import { ColorDot } from './identity.js';
 import { Button } from './index.js';
 
 export type CardField = { name: string; label: string; value: ReactNode };
@@ -26,6 +28,7 @@ export function Board({ label, children }: { label: string; children: ReactNode 
 export function BoardColumn({
   id,
   title,
+  color,
   count,
   meta,
   locked = false,
@@ -34,6 +37,7 @@ export function BoardColumn({
 }: {
   id: string;
   title: string;
+  color?: CategoryColor;
   count?: number;
   meta?: ReactNode;
   locked?: boolean;
@@ -49,6 +53,7 @@ export function BoardColumn({
       className="flex w-72 shrink-0 flex-col rounded-lg border border-border bg-muted/50 transition-colors data-over:border-primary/60 data-over:bg-primary/5"
     >
       <header className="flex h-10 shrink-0 items-center gap-2 px-3">
+        <ColorDot color={color} />
         <h2 className="truncate text-sm font-medium">{title}</h2>
         {count !== undefined ? (
           <span className="shrink-0 rounded-sm bg-card px-1.5 text-xs tabular-nums text-muted-foreground">
@@ -95,8 +100,7 @@ export function ColumnMore({
   );
 }
 
-const CARD =
-  'flex flex-col gap-2 rounded-md border border-border bg-card p-2.5 text-left text-sm shadow-xs';
+const CARD = 'flex flex-col gap-2 rounded-md border border-border bg-card p-2.5 text-left text-sm';
 
 function CardBody({ title, fields }: { title: string; fields: CardField[] }) {
   return (
@@ -172,7 +176,7 @@ export function BoardCard({
       }}
       className={cn(
         CARD,
-        'cursor-pointer transition-[border-color,opacity] hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[current]:border-primary aria-[current]:ring-1 aria-[current]:ring-primary data-dragging:opacity-40 data-pending:opacity-60',
+        'cursor-pointer transition-[border-color,opacity] hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[current]:bg-selection aria-[current]:border-primary aria-[current]:ring-1 aria-[current]:ring-primary data-dragging:opacity-40 data-pending:opacity-60',
         draggable && 'touch-manipulation active:cursor-grabbing',
       )}
     >

@@ -2,7 +2,18 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api, useWorkspace } from '../api/client.js';
-import { Badge, Button, Dialog, Input, Muted, Notice, Stack, Truncate } from '../ui/index.js';
+import {
+  Badge,
+  Button,
+  Dialog,
+  Input,
+  Muted,
+  Notice,
+  ObjectIcon,
+  RecordAvatar,
+  Stack,
+  Truncate,
+} from '../ui/index.js';
 import { groupRecordHits } from './records/write-model.js';
 import {
   eventTitle,
@@ -71,6 +82,7 @@ export function CommandPalette({
                     key={hit.id}
                     onClick={() => void go({ to: '/r/$id', params: { id: hit.id } })}
                   >
+                    <RecordAvatar id={hit.id} name={recordTitle(hit)} object={hit.object} />
                     {recordTitle(hit)}
                     {hit.match === 'similar_label' ? <Badge>similar name</Badge> : null}
                   </Button>
@@ -126,6 +138,7 @@ export function CommandPalette({
                 key={o.nameSingular}
                 onClick={() => void go({ to: '/o/$object', params: { object: o.nameSingular } })}
               >
+                <ObjectIcon name={o.nameSingular} objectClass={o.class} />
                 {o.labelPlural}
               </Button>
             ))}

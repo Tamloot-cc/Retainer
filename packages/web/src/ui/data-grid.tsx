@@ -346,7 +346,12 @@ const GridBody = memo(function GridBody({
               className={columns[i]?.pinned ? PINNED_CELL : CELL}
               style={columns[i]?.pinned ? { left: pinLeft } : undefined}
             >
-              <div className="flex h-9 items-center gap-1 overflow-hidden whitespace-nowrap px-3 [&>*]:min-w-0 [&>*]:truncate">
+              <div
+                className={cn(
+                  'flex h-9 items-center gap-1 overflow-hidden whitespace-nowrap px-3 [&>*]:min-w-0 [&>*]:truncate',
+                  i === 0 ? 'text-foreground' : 'text-secondary-foreground',
+                )}
+              >
                 {cell}
               </div>
             </td>
@@ -430,7 +435,7 @@ export function FooterButton({ children, ...props }: ComponentProps<'button'>) {
     <button
       type="button"
       {...props}
-      className="flex h-7 min-w-0 max-w-full items-center rounded-sm px-2 text-xs text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex h-8 min-w-0 max-w-full md:h-6 items-center rounded-sm px-2 text-xs text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span className="truncate">{children}</span>
     </button>
@@ -440,9 +445,15 @@ export function FooterButton({ children, ...props }: ComponentProps<'button'>) {
 /** The bar above a grid: filters on the left, view controls on the right. */
 export function Toolbar({ children, end }: { children: ReactNode; end?: ReactNode }) {
   return (
-    <div className="flex min-h-11 shrink-0 items-center gap-2 border-b border-border px-3 py-1.5 md:px-5">
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">{children}</div>
-      {end ? <div className="flex shrink-0 items-center gap-1.5">{end}</div> : null}
+    <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-1.5 md:px-5">
+      <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5 sm:w-auto sm:flex-1">
+        {children}
+      </div>
+      {end ? (
+        <div className="flex w-full max-w-full flex-wrap items-center gap-1.5 sm:ml-auto sm:w-auto">
+          {end}
+        </div>
+      ) : null}
     </div>
   );
 }

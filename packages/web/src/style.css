@@ -16,7 +16,8 @@
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
-  --color-input: var(--border);
+  --color-input: var(--input);
+  --color-tertiary-foreground: var(--muted-foreground);
   --color-ring: var(--ring);
   --color-destructive: var(--destructive);
 }
@@ -79,8 +80,9 @@
   --sidebar: #f1f4f1;
   --hover: #e9ece9;
   --muted: #f0f0f3;
-  --muted-foreground: #66716b;
+  --muted-foreground: #5f6b63;
   --border: #e5e5eb;
+  --input: #7a8a80;
   --destructive: #b42335;
   color-scheme: light;
 }
@@ -113,6 +115,7 @@
     --muted: #29332d;
     --muted-foreground: #a5b2a9;
     --border: #344139;
+    --input: #7b8e80;
     --destructive: #ff8997;
     color-scheme: dark;
   }
@@ -141,7 +144,7 @@ button:not(:disabled) {
   appearance: none;
   flex-shrink: 0;
   margin: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   background-color: var(--card);
   cursor: pointer;
   transition:
@@ -206,7 +209,7 @@ button:not(:disabled) {
   height: 1rem;
   border: 0;
   border-radius: 9999px;
-  background-color: var(--border);
+  background-color: var(--input);
 }
 .ui-switch::before {
   content: "";
@@ -265,6 +268,23 @@ button:not(:disabled) {
   .ui-radio,
   .ui-switch,
   .ui-switch::before {
+    transition: none;
+  }
+}
+
+.category-dot {
+  background: var(--category-fg);
+}
+.record-initials::before {
+  content: attr(data-initials);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  a,
+  input,
+  select,
+  textarea {
     transition: none;
   }
 }

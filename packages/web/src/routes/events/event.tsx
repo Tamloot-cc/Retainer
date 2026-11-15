@@ -11,10 +11,12 @@ import {
   EntryText,
   Muted,
   Notice,
+  ObjectIcon,
   Page,
   Panel,
   Property,
   PropertyList,
+  RecordAvatar,
   Stack,
 } from '../../ui/index.js';
 import { DeveloperFacts, useApiName } from '../developer.js';
@@ -91,6 +93,10 @@ export function EventPage() {
     <Page
       eyebrow={classLabel(type) ?? r.object}
       title={eventTitle(e)}
+      icon={<ObjectIcon name={r.object} objectClass="event" />}
+      avatar={
+        <RecordAvatar id={r.id} name={eventTitle(e)} object={r.object} objectClass="event" large />
+      }
       description={[
         type?.labelSingular ?? r.object,
         medium,

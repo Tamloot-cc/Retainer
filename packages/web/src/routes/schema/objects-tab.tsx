@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
+import { objectColor } from '../../ui/colors.js';
 import {
   Badge,
   Button,
@@ -81,6 +82,7 @@ export function ObjectsTab() {
     <NavItem
       key={o.nameSingular}
       icon={objectIcon(o.nameSingular, o.class)}
+      color={objectColor(o.nameSingular)}
       label={o.labelPlural}
       meta={o.fields.length}
       active={o.nameSingular === object?.nameSingular}
@@ -249,6 +251,7 @@ function ObjectDetail({
     <>
       <EntityHeader
         icon={objectIcon(object.nameSingular, object.class)}
+        color={objectColor(object.nameSingular)}
         title={object.labelPlural}
         meta={
           <>

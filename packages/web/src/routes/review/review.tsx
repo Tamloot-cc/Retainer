@@ -5,16 +5,20 @@ import { useEffect, useState } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import { fields } from '../../fields/index.js';
 import { ActorBadge } from '../../provenance/index.js';
+import { objectColor } from '../../ui/colors.js';
 import {
   Badge,
   Button,
   Empty,
   EventLink,
+  IdentityTag,
   Input,
   Muted,
   Notice,
+  ObjectIcon,
   Page,
   Panel,
+  RecordAvatar,
   RecordLink,
   Row,
   Stack,
@@ -353,8 +357,20 @@ export function ReviewPage() {
                           )
                         }
                       />
-                      <Badge>{a.object}</Badge>
-                      <RecordLink id={a.recordId}>
+                      <IdentityTag identity={a.object} color={objectColor(a.object)}>
+                        <ObjectIcon name={a.object} size={12} />
+                        {objectByName(schema, a.object)?.labelSingular ?? a.object}
+                      </IdentityTag>
+                      <RecordLink
+                        id={a.recordId}
+                        avatar={
+                          <RecordAvatar
+                            id={a.recordId}
+                            name={recordTitle({ label: a.recordLabel })}
+                            object={a.object}
+                          />
+                        }
+                      >
                         {recordTitle({ label: a.recordLabel })}
                       </RecordLink>
                       <Muted>{field?.label ?? a.field}</Muted>

@@ -28,7 +28,9 @@ import {
   Inset,
   Muted,
   Notice,
+  ObjectIcon,
   Page,
+  RecordAvatar,
   RecordLink,
   Segmented,
   Toolbar,
@@ -264,7 +266,19 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
               );
             const cell =
               i === 0 ? (
-                <RecordLink key={f.name} id={r.id} inSheet>
+                <RecordLink
+                  key={f.name}
+                  id={r.id}
+                  inSheet
+                  avatar={
+                    <RecordAvatar
+                      id={r.id}
+                      name={label}
+                      object={r.object}
+                      objectClass={object.class}
+                    />
+                  }
+                >
                   {r.label ? shown : label}
                 </RecordLink>
               ) : (
@@ -290,7 +304,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
           }),
         };
       }),
-    [records, columns, references, writable],
+    [records, columns, references, writable, object.class],
   );
 
   // Selection belongs to one page of one view, and only to rows still shown.
@@ -378,31 +392,25 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
       layout="fill"
       eyebrow={isEvent ? 'Activity' : 'Records'}
       title={object.labelPlural}
+      icon={<ObjectIcon name={object.nameSingular} objectClass={object.class} />}
       apiName={apiName(object.nameSingular)}
       actions={
-        <>
-          {kind !== 'calendar' ? (
-            <ColumnsMenu
-              title={kind === 'board' ? 'Card fields' : 'Columns'}
-              object={object}
-              columns={columns}
-              order={order}
-              onChange={saveOrder}
-              onReset={() => savePrefs({ order: defaultColumnOrder(object), widths: {} })}
-            />
-          ) : null}
-          {!isEvent ? (
-            writable ? (
-              <Button variant="primary" size="small" onClick={() => setCreating(true)}>
-                <Plus size={14} />
-                New {object.labelSingular.toLowerCase()}
-              </Button>
-            ) : null
-          ) : (
-            // Events have no New button; say why in its place (5.3).
-            <LoggedByAgents />
-          )}
-        </>
+        !isEvent ? (
+          writable ? (
+            <Button
+              variant="primary"
+              size="small"
+              className="max-w-[50vw]"
+              onClick={() => setCreating(true)}
+            >
+              <Plus size={14} />
+              <span className="truncate">New {object.labelSingular.toLowerCase()}</span>
+            </Button>
+          ) : null
+        ) : (
+          // Events have no New button; say why in its place (5.3).
+          <LoggedByAgents />
+        )
       }
     >
       {selectedIds.length && kind === 'table' ? (
@@ -467,6 +475,16 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
                       month: undefined,
                     })
                   }
+                />
+              ) : null}
+              {kind !== 'calendar' ? (
+                <ColumnsMenu
+                  title={kind === 'board' ? 'Card fields' : 'Columns'}
+                  object={object}
+                  columns={columns}
+                  order={order}
+                  onChange={saveOrder}
+                  onReset={() => savePrefs({ order: defaultColumnOrder(object), widths: {} })}
                 />
               ) : null}
               <SortMenu
@@ -596,6 +614,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
       ) : query.data ? (
         <Inset>
           <Empty
+            quiet
             title="No records found"
             description={
               effective.filter

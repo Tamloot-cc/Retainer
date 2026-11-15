@@ -17,7 +17,7 @@ import { PanelBody } from './popover.js';
 export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-1.5">
-      <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+      <h3 className="text-[11px] font-semibold text-muted-foreground">{title}</h3>
       {children}
     </section>
   );
@@ -56,10 +56,12 @@ export function Property({
     <div
       className={cn(
         'group/property grid items-start gap-x-3 rounded-md px-2 py-1',
-        editor ? 'grid-cols-1 gap-y-1.5 py-2' : 'grid-cols-[minmax(6rem,10rem)_minmax(0,1fr)]',
+        editor
+          ? 'grid-cols-1 gap-y-1.5 py-2'
+          : 'grid-cols-[minmax(5rem,7rem)_minmax(0,1fr)] sm:grid-cols-[minmax(6rem,10rem)_minmax(0,1fr)]',
       )}
     >
-      <dt className={cn('truncate text-sm text-muted-foreground', !editor && 'py-1.5')}>
+      <dt className={cn('truncate text-sm text-secondary-foreground', !editor && 'py-1.5')}>
         {label}
         {apiName ? <ApiName>{apiName}</ApiName> : null}
       </dt>

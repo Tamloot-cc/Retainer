@@ -3,6 +3,7 @@ import { Asterisk, Link2 } from 'lucide-react';
 import { Suspense, useCallback, useMemo } from 'react';
 import { useWorkspace } from '../../api/client.js';
 import { fields } from '../../fields/index.js';
+import { objectColor } from '../../ui/colors.js';
 import {
   Diagram,
   DiagramDashedKey,
@@ -42,6 +43,7 @@ export function DiagramTab() {
           (o): DiagramNode => ({
             id: o.nameSingular,
             icon: objectIcon(o.nameSingular, o.class),
+            color: objectColor(o.nameSingular),
             label: o.labelPlural,
             meta: `${o.class === 'event' ? 'Event · ' : ''}${o.fields.length} ${o.fields.length === 1 ? 'field' : 'fields'}`,
             variant: o.class,

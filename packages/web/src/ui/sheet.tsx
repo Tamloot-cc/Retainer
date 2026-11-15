@@ -16,6 +16,8 @@ export function Sheet({
   title,
   description,
   actions,
+  avatar,
+  subtitle,
   children,
 }: {
   onClose: () => void;
@@ -25,6 +27,8 @@ export function Sheet({
   /** Read by assistive technology only. */
   description: string;
   actions?: ReactNode;
+  avatar?: ReactNode;
+  subtitle?: ReactNode;
   children: ReactNode;
 }) {
   const panel = useRef<HTMLDivElement>(null);
@@ -61,9 +65,17 @@ export function Sheet({
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [--sticky-top:0px] [scrollbar-gutter:stable]">
             <div className="flex flex-col gap-6 px-5 py-5">
-              <DialogPrimitive.Title className="text-lg font-semibold tracking-tight">
-                {title}
-              </DialogPrimitive.Title>
+              <div className="flex min-w-0 items-start gap-3">
+                {avatar}
+                <div className="min-w-0">
+                  <DialogPrimitive.Title className="text-xl font-semibold tracking-tight [overflow-wrap:anywhere]">
+                    {title}
+                  </DialogPrimitive.Title>
+                  {subtitle ? (
+                    <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
+                  ) : null}
+                </div>
+              </div>
               <DialogPrimitive.Description className="sr-only">
                 {description}
               </DialogPrimitive.Description>

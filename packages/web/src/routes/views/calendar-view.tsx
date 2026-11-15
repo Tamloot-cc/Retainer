@@ -21,6 +21,7 @@ import {
   MoreEntries,
   Notice,
 } from '../../ui/index.js';
+import { recordCategory } from '../../ui/record-colors.js';
 import { isEventColumn, withEventValues } from '../events/event-list.js';
 import { useRecordMoves } from '../records/record-move.js';
 import { isWritable } from '../records/write-model.js';
@@ -153,6 +154,7 @@ export function CalendarView({
       item={r}
       title={recordTitle(r)}
       time={timeOf(field, dateValue(r))}
+      category={recordCategory(object, r)}
       // One move at a time: a record saving its move can't be moved again.
       draggable={draggable && !Object.hasOwn(moves.moving, r.id)}
       selected={selected === r.id}
@@ -198,7 +200,11 @@ export function CalendarView({
       <DragArea<PresentedRecord>
         names={{ item: recordTitle, target: keyLabel }}
         overlay={(record) => (
-          <EntryPreview title={recordTitle(record)} time={timeOf(field, dateValue(record))} />
+          <EntryPreview
+            title={recordTitle(record)}
+            time={timeOf(field, dateValue(record))}
+            category={recordCategory(object, record)}
+          />
         )}
         onMove={(record, day) => {
           const value = record.fields[field.name];

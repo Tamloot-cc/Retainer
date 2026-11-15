@@ -2,26 +2,10 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Link } from '@tanstack/react-router';
 import {
   Activity,
-  Box,
-  BriefcaseBusiness,
-  Building2,
-  CalendarDays,
   ChevronsUpDown,
-  CircleCheck,
-  Eye,
-  FileSignature,
-  FileText,
-  FolderKanban,
-  Handshake,
-  House,
   Inbox,
   LogOut,
   type LucideIcon,
-  MessageSquareDot,
-  MessageSquareMore,
-  MessageSquareQuote,
-  MessageSquareText,
-  MessagesSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -29,49 +13,18 @@ import {
   Search,
   Settings,
   Shapes,
-  SquarePen,
   UserCog,
-  UserRound,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
 import { BrandMark } from './brand.js';
 import { type CategoryColor, objectColor } from './colors.js';
 import { cn, Kbd, NavigationContext } from './core.js';
 import { Menu, MenuAction, MenuCheck, MenuChoice, MenuChoices, MenuSeparator } from './menu.js';
+import { objectIcon } from './object-icons.js';
 
 const COLLAPSED_KEY = 'retainer:sidebar:collapsed';
 
-/** Icons for the objects the built-in templates define; any other object gets a box. */
-const OBJECT_ICONS: Record<string, LucideIcon> = {
-  person: UserRound,
-  company: Building2,
-  deal: Handshake,
-  task: CircleCheck,
-  project: FolderKanban,
-  property: House,
-  viewing: Eye,
-  job: BriefcaseBusiness,
-  application: FileText,
-  proposal: FileSignature,
-  appointment: CalendarDays,
-};
-/**
- * Event types draw from one family (squared speech marks), so Activity reads
- * apart from Records at a glance; any other event type gets the plain one.
- */
-const EVENT_ICONS: Record<string, LucideIcon> = {
-  conversation: MessagesSquare,
-  note: SquarePen,
-  meeting: MessageSquareMore,
-  call: MessageSquareDot,
-  email: MessageSquareText,
-  message: MessageSquareText,
-};
-const EVENT_ICON = MessageSquareQuote;
-
-/** The icon for an object or event type, by its singular API name and class. */
-export const objectIcon = (name: string, objectClass: 'entity' | 'event' = 'entity'): LucideIcon =>
-  objectClass === 'event' ? (EVENT_ICONS[name] ?? EVENT_ICON) : (OBJECT_ICONS[name] ?? Box);
+export { objectIcon } from './object-icons.js';
 /** The icon for the workspace-wide activity feed. */
 export const activityIcon = Activity;
 

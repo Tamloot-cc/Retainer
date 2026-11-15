@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { Ellipsis } from 'lucide-react';
+import { Ellipsis, Puzzle } from 'lucide-react';
 import { useState } from 'react';
 import { useAccount } from '../../accounts/context.js';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
@@ -10,6 +10,7 @@ import {
   CopyButton,
   Dialog,
   Empty,
+  IdentityTag,
   Input,
   Label,
   Loading,
@@ -172,6 +173,11 @@ function InstalledExtension({
     <Page
       eyebrow="Extensions"
       title={name}
+      avatar={
+        <IdentityTag identity={installation.registrationId}>
+          <Puzzle size={24} aria-hidden />
+        </IdentityTag>
+      }
       {...(manifest ? { description: manifest.description } : {})}
       actions={
         <>
