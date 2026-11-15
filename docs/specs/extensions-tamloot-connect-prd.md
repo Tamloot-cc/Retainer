@@ -16,13 +16,14 @@ rotates the key has to repeat it.
 ## Goal
 
 A member connects their Tamloot account to a workspace with a button and one
-approval in Tamloot, without seeing or copying a key.
+approval in Tamloot, without seeing or copying a key. A member who has no
+Tamloot account yet creates one along the way.
 
 ## Who it is for
 
 Members of a Retainer workspace that has the Tamloot extension installed, on
 the hosted service (retainer.tamloot.cc), who record their meetings in
-Tamloot.
+Tamloot or want to start.
 
 ## The experience
 
@@ -33,6 +34,12 @@ before. The approval shows Retainer's name and its address,
 retainer.tamloot.cc, and says Retainer can only read. They land back on the
 Connections tab, which shows the connection
 starting and then importing, as it does today.
+
+**New to Tamloot.** A member without a Tamloot account clicks the same
+button. Tamloot offers to create an account, with Google first and the email
+address they use in Retainer suggested, and then shows the approval. Back on
+the Connections tab the connection is active but has nothing to import yet,
+so the tab says so and shows how to start recording meetings with Tamloot.
 
 **Declining.** If they deny the approval or close Tamloot, they return to
 Retainer with nothing connected and a plain message saying so. They can try
@@ -75,6 +82,10 @@ Tamloot stops listing Retainer once none of the member's workspaces use it.
 9. Everything else stays as it is today: what is imported, the workspace
    sharing consent, the create-contacts choice and days of history.
 10. Self-hosted Retainer keeps connecting with a read-only API key.
+11. A member with no Tamloot account can create one from Connect with Tamloot
+    and finish connecting in the same flow.
+12. A connection with nothing imported yet shows how to start recording in
+    Tamloot, so it does not look stuck or broken.
 
 ## Out of scope
 
@@ -82,6 +93,7 @@ Tamloot stops listing Retainer once none of the member's workspaces use it.
 - Writing to Tamloot.
 - Changing what the extension imports.
 - Signing in to Retainer with a Tamloot account.
+- Creating a Tamloot account for a member without them seeing Tamloot.
 
 ## Success
 
@@ -91,6 +103,8 @@ Tamloot stops listing Retainer once none of the member's workspaces use it.
   starting.
 - Few connections need reconnecting for reasons other than the member
   revoking access.
+- We know how many members create their Tamloot account while connecting,
+  and most of them record a first meeting.
 
 ## Open question
 
@@ -104,6 +118,7 @@ Tamloot commit and what changed here.
 
 | Date       | Tamloot commit | Change in Tamloot's PRD                                                | Effect here                                                             |
 | ---------- | -------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 2026-11-15 | `e9a472de6`    | Someone with no Tamloot account signs up while connecting              | New to Tamloot paragraph; requirements 11 and 12                        |
 | 2026-11-15 | `250ef8191`    | Retainer reads each task's contact and email, shown on the approval    | Requirement 9 holds: tasks stay linked to their person                  |
 | 2026-11-15 | `49b974f7c`    | Revoking cuts an app off at once, including access it already had      | When access stops: imports stop right away                              |
 | 2026-11-15 | `49b974f7c`    | Retainer reads only what it imports: no contact search, no transcripts | Requirement 9 holds; importing more needs Tamloot's PRD to change first |
