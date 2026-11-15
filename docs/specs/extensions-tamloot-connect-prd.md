@@ -29,7 +29,9 @@ Tamloot.
 **Connecting.** On the extension's Connections tab, the member chooses how
 many days of history to import and clicks **Connect with Tamloot**. Tamloot
 opens and asks them to approve Retainer, or skips that if they approved it
-before. They land back on the Connections tab, which shows the connection
+before. The approval shows Retainer's name and its address,
+retainer.tamloot.cc, and says Retainer can only read. They land back on the
+Connections tab, which shows the connection
 starting and then importing, as it does today.
 
 **Declining.** If they deny the approval or close Tamloot, they return to
@@ -40,9 +42,9 @@ again.
 approving again, for as long as Retainer keeps its access in Tamloot.
 
 **When access stops.** If the member revokes Retainer in Tamloot or deletes
-their Tamloot account, imports stop and the connection shows that it needs to
-be reconnected. Reconnecting is the same button; it does not import meetings
-twice.
+their Tamloot account, imports stop in every workspace that member connected,
+and each connection shows that it needs to be reconnected. Reconnecting is the
+same button; it does not import meetings twice.
 
 **Disconnecting.** Disconnect stops imports and keeps the records already
 imported, as today. It also gives up that connection's access in Tamloot, so
@@ -64,9 +66,15 @@ Tamloot stops listing Retainer once none of the member's workspaces use it.
    reconnecting does today.
 6. Disconnecting ends that connection's access in Tamloot. The member's
    other workspaces keep their connections.
-7. Everything else stays as it is today: what is imported, the workspace
+7. Retainer's access is read-only, and Tamloot refuses any change Retainer
+   attempts. The extension only reads today, so members notice no
+   difference.
+8. Tamloot shows Retainer, on its approval and in its list of approved apps,
+   under its name and its address, retainer.tamloot.cc, so members can tell
+   it apart from any other app that uses the same name.
+9. Everything else stays as it is today: what is imported, the workspace
    sharing consent, the create-contacts choice and days of history.
-8. Self-hosted Retainer keeps connecting with a read-only API key.
+10. Self-hosted Retainer keeps connecting with a read-only API key.
 
 ## Out of scope
 
@@ -88,3 +96,15 @@ Tamloot stops listing Retainer once none of the member's workspaces use it.
 
 Once Connect with Tamloot works, does the hosted service keep the
 paste-a-key option as a fallback, or remove it?
+
+## Changes from Tamloot's PRD
+
+Changes to Tamloot's PRD that affect this one, newest first. Each names the
+Tamloot commit and what changed here.
+
+| Date       | Tamloot commit | Change in Tamloot's PRD                                      | Effect here                                           |
+| ---------- | -------------- | ------------------------------------------------------------ | ----------------------------------------------------- |
+| 2026-11-15 | `1cc8cc53e`    | Each workspace has its own access; disconnecting gives it up | Requirement 6 and the Disconnecting paragraph         |
+| 2026-11-15 | `d6574e687`    | The list of approved apps shows each app's address           | Requirement 8; the approval names retainer.tamloot.cc |
+| 2026-11-15 | `d6574e687`    | Tamloot enforces Retainer's read-only access on its side     | Requirement 7                                         |
+| 2026-11-15 | `d0cca4331`    | First version: approving, revoking, Connected apps page      | Revoking stops every workspace the member connected   |
