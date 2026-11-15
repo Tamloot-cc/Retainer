@@ -734,14 +734,15 @@ member to reconnect: reconnecting would not fix it.
 accept.** An API Gateway authorizer that denies a request makes the gateway
 answer `403 Forbidden`, which would send a revoked or expired token down the
 `403` row: `degraded`, never "Needs reconnect". Tamloot owns the fix, and its
-revised spec (PR #2410, `e711a9870`, §5.1–§5.2 and §10) makes it: a rejected
+revised spec (PR #2410 at `d283f1fd6`, §5.1–§5.2 and §10) makes it: a rejected
 approval token passes the authorizer with a context that carries no
 identity, and the application answers `401 invalid_token`; that context can
 never become a principal. `401` codes are `invalid_token`, `access_revoked`
-or none, all handled by the `401` rows. Retainer does not guess around it:
-every OAuth `403`, whatever its `code`, is `provider_forbidden`.
-The staging check in §11 (check 7) through the real gateway is a launch
-blocker.
+or none, all handled by the `401` rows. Tamloot answers `500` for its own
+misconfiguration, which the `5xx` row retries and never treats as a revoke.
+Retainer does not guess around it: every OAuth `403`, whatever its `code`,
+is `provider_forbidden`. The staging check in §11 (check 7) through the real
+gateway is a launch blocker.
 
 ## 6. Web (`packages/web`)
 
@@ -1111,7 +1112,7 @@ API Gateway with Retainer's staging client, not a fixture.
 10. **Release racing an unexchanged code.** One workspace releases the
     member's last session while another holds an approved code it has not
     exchanged, one after the other and at the same moment. Tamloot (PR
-    #2410, `61de28d45`, its §4.2 and §13 item 7) treats a session as live
+    #2410 at `d283f1fd6`, its §4.2 and §13 item 7) treats a session as live
     only while the member's approval is not revoked, so a session under a
     revoked approval reads nothing. Supabase's exchange does not check the
     approval, so the exchange itself returns tokens. Expected:
@@ -1140,8 +1141,8 @@ Setup values, and the fixes Tamloot owns.
 - The staging application and API addresses, for `authorizationEndpoint` and
   `apiOrigin`.
 - The project's refresh-token reuse settings (check 1).
-- The fixes in Tamloot PR #2410 (`e711a9870`, `24e412526`, `61de28d45`),
-  live on the same environment: `401` for a token it refuses (check 7), its
+- The fixes in Tamloot PR #2410 (checked at `d283f1fd6`), live on the same
+  environment: `401` for a token it refuses (check 7), its
   release serialized per member and client (check 9), the approval naming
   task contacts by email only, as `GET /v1/tasks` returns them, and the
   Connected apps tab at the `revokeUrl` in §5.1.
