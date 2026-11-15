@@ -179,10 +179,11 @@ test('selects rows in a list to delete them together or merge two', async ({
   expect((await r.request(`/records/${newer.id}`)).id).toBe(older.id);
 });
 
-test('totals columns over the whole list and edits a cell from the grid', async ({
+test('aligns the footer on a wide grid and edits a cell in place', async ({
   page,
   retainer: r,
 }) => {
+  await page.setViewportSize({ width: 900, height: 800 });
   await r.request('/objects/person/records', { values: { name: 'Dana Levi', jobTitle: 'CTO' } });
   await r.request('/objects/person/records', { values: { name: 'Noa Cohen', jobTitle: 'CFO' } });
   const avi = (await r.request('/objects/person/records', { values: { name: 'Avi Katz' } })).record;
@@ -191,14 +192,22 @@ test('totals columns over the whole list and edits a cell from the grid', async 
   const grid = page.getByRole('region', { name: 'People' });
   await expect(page.getByText('1–3 of 3')).toBeVisible();
 
-  await grid.getByRole('button', { name: 'Calculate Job title' }).click();
-  await page.getByRole('menuitemradio', { name: 'Percent empty' }).click();
-  await expect(grid.getByRole('button', { name: 'Calculate Job title' })).toHaveText('Empty 33%');
-  await grid.getByRole('button', { name: 'Calculate Name' }).click();
-  await page.getByRole('menuitemradio', { name: 'Not empty', exact: true }).click();
-  await expect(grid.getByRole('button', { name: 'Calculate Name' })).toHaveText('Not empty 3');
+  await expect(grid.getByRole('button', { name: /^Calculate / })).toHaveCount(0);
+  const scrollLeft = await grid.evaluate((el) => {
+    el.scrollLeft = 64;
+    return el.scrollLeft;
+  });
+  expect(scrollLeft).toBeGreaterThan(0);
+  const accountFooter = page.getByRole('button', { name: /^Account:/ }).locator('..');
+  const gridFooter = page.getByText('1–3 of 3').locator('..');
+  await expect(accountFooter).toBeVisible();
+  const accountTop = (await accountFooter.boundingBox())?.y;
+  expect((await gridFooter.boundingBox())?.y).toBe(accountTop);
+  await grid.evaluate((el) => {
+    el.scrollLeft = 0;
+  });
 
-  // The pencil edits in place, without opening the record, and the total follows.
+  // The pencil edits in place without opening the record.
   const row = grid.getByRole('row').filter({ hasText: 'Avi Katz' });
   await row.hover();
   await row.getByRole('button', { name: 'Edit Job title of Avi Katz' }).click();
@@ -211,18 +220,14 @@ test('totals columns over the whole list and edits a cell from the grid', async 
   await expect(row.getByText('CEO', { exact: true })).toBeVisible();
   expect(new URL(page.url()).searchParams.get('record')).toBeNull();
   expect((await r.request(`/records/${avi.id}`)).fields.jobTitle).toBe('CEO');
-  await expect(grid.getByRole('button', { name: 'Calculate Job title' })).toHaveText('Empty 0%');
 
-  // Escape drops a draft; the chosen totals are kept for next time.
+  // Escape drops a draft.
   await row.hover();
   await row.getByRole('button', { name: 'Edit Job title of Avi Katz' }).click();
   await input.fill('Discarded');
   await page.keyboard.press('Escape');
   await expect(input).not.toBeVisible();
   await expect(row.getByText('CEO', { exact: true })).toBeVisible();
-  await page.reload();
-  await expect(grid.getByRole('button', { name: 'Calculate Job title' })).toHaveText('Empty 0%');
-  await page.screenshot({ path: '/tmp/retainer-web-list-totals.png', fullPage: true });
 });
 
 test('finds records, facts and events across objects with the command palette', async ({

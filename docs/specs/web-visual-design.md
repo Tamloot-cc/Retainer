@@ -48,10 +48,10 @@ apply indiscriminately to text.
 | --- | --- | --- |
 | Main action | Forest fill, white text | Lime fill, dark ink text |
 | Focus | Forest outline | Lime outline |
-| Selected row/navigation | Pale green surface, dark green emphasis | Deep green surface, pale green emphasis |
-| Hover | Neutral gray | Neutral raised surface |
-| Workspace frame | Subtle neutral gray with a green undertone | Dark neutral ink |
-| Content pane | White | Raised dark neutral |
+| Selected row/navigation | Light gray (#EEEEF0) | Charcoal (#29292D) |
+| Hover | Light gray (#F4F4F5) | Charcoal (#202023) |
+| Workspace frame and sidebar | Off-white (#F7F7F8) | Near-black (#141415) |
+| Content pane | White (#FFFFFF) | Black (#000000) |
 | Main values | Strong neutral | Near white |
 | Supporting labels | Secondary neutral | Secondary neutral |
 | Metadata | Tertiary neutral, readable | Tertiary neutral, readable |
@@ -106,7 +106,7 @@ express the meaning. Brand green must not imply that a record is verified.
   does not erase the meaning of rich field renderers.
 - Soften grid lines, especially vertical separators. Preserve resize handles,
   pinned columns, sorting indicators and clear column alignment.
-- Hover remains gray; selected rows use the green selection tint. Keyboard focus
+- Hover and selected rows use distinct neutral grays. Keyboard focus
   must remain visible on selected or hovered cells.
 - Known select and multi-select values get soft colored tags. Unknown legacy
   values stay neutral. Use the same tag component in display, edit pickers and
