@@ -26,6 +26,7 @@ export function RecordPage() {
   return (
     <Page
       eyebrow={classLabel(objectByName(schema, r.object)) ?? r.object}
+      eyebrowLink={{ to: '/o/$object', params: { object: r.object } }}
       title={recordTitle(r)}
       description={`Last updated ${new Date(r.updatedAt).toLocaleString()}`}
       actions={

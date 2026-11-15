@@ -357,8 +357,10 @@ One route for every object. Source: `POST /v1/objects/:object/query`.
   `localStorage`; the rail keeps a divider between the two groups. Below
   `md` it is a drawer opened from the top bar.
 - Every screen has a slim top bar with a breadcrumb and the screen's
-  actions. Record lists fill the width; other screens use a readable
-  centred column.
+  actions. The crumb before the title links to the page it names (a
+  record's list, Extensions, All activity); a crumb with no page of its
+  own stays plain text. Record lists fill the width; other screens use a
+  readable centred column.
 
 ### 5.3b Saved views — `?view=`
 
@@ -438,7 +440,8 @@ are named without a read each.
 Source: `GET /v1/records/:id`, its provenance (9.1), facts and events.
 An ID that was merged loads the surviving record and says so. The header's
 breadcrumb (and the side sheet's) starts with a quiet class label before
-the object's name: "Record · Company" or "Activity · Conversation".
+the object's name: "Record · Company" or "Activity · Conversation". On the
+page, the label links to the object's list.
 
 Three areas:
 
