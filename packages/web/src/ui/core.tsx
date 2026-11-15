@@ -1,6 +1,7 @@
 import { type ClassValue, clsx } from 'clsx';
 import { createContext, type ReactNode } from 'react';
 import { twMerge } from 'tailwind-merge';
+import { categoryColor } from './colors.js';
 
 export const cn = (...inputs: ClassValue[]) => twMerge(clsx(inputs));
 
@@ -22,7 +23,7 @@ export function focusFirst(root: HTMLElement | null) {
 }
 
 /** Hover and selected backgrounds for the cells of a clickable row (`group` on the row). */
-export const ROW_STATE = 'group-hover:bg-hover group-data-selected:bg-muted';
+export const ROW_STATE = 'group-hover:bg-hover group-data-selected:bg-selection';
 
 /**
  * Whether a click on a clickable area (a grid row, a field value) is meant
@@ -64,6 +65,27 @@ export function Badge({ children, tone = 'neutral' }: { children: ReactNode; ton
               ? 'border-destructive/30 text-destructive'
               : 'border-border text-muted-foreground',
       )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** Categorical values use identity colors; status badges keep their semantic tones. */
+export function CategoryTag({
+  value,
+  children,
+  known = true,
+}: {
+  value: string;
+  children: ReactNode;
+  known?: boolean;
+}) {
+  if (!known) return <Badge>{children}</Badge>;
+  return (
+    <span
+      data-color={categoryColor(value)}
+      className="category-tag inline-flex min-w-0 items-center gap-1 rounded-sm px-1.5 py-px text-xs font-medium"
     >
       {children}
     </span>

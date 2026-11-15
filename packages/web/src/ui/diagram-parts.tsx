@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import type { CategoryColor } from './colors.js';
 
 // The diagram's light half: its types, line ends and legend. The canvas
 // itself (React Flow and dagre) is in diagram.tsx and loads only when shown.
@@ -18,6 +19,7 @@ export interface DiagramNode {
   id: string;
   icon: LucideIcon;
   label: string;
+  color?: CategoryColor;
   meta?: string;
   rows: DiagramRow[];
   /**

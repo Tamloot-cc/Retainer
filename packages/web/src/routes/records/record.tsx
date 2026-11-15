@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useWorkspace } from '../../api/client.js';
-import { Notice, Page } from '../../ui/index.js';
+import { Notice, ObjectIcon, Page, RecordAvatar } from '../../ui/index.js';
 import { classLabel, objectByName, QueryError, recordTitle } from '../state.js';
 import { RecordActions } from './record-actions.js';
 import { useMemoryNav } from './record-memory.js';
@@ -23,11 +23,22 @@ export function RecordPage() {
       </Page>
     );
   const r = record.data;
+  const object = objectByName(schema, r.object);
   return (
     <Page
       eyebrow={classLabel(objectByName(schema, r.object)) ?? r.object}
       eyebrowLink={{ to: '/o/$object', params: { object: r.object } }}
       title={recordTitle(r)}
+      icon={<ObjectIcon name={r.object} objectClass={object?.class} />}
+      avatar={
+        <RecordAvatar
+          id={r.id}
+          name={recordTitle(r)}
+          object={r.object}
+          objectClass={object?.class}
+          large
+        />
+      }
       description={`Last updated ${new Date(r.updatedAt).toLocaleString()}`}
       actions={
         <RecordActions

@@ -1,5 +1,6 @@
 import { Check as CheckIcon, Copy, type LucideIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
+import type { CategoryColor } from './colors.js';
 import { cn, type Tone } from './core.js';
 
 /**
@@ -9,9 +10,9 @@ import { cn, type Tone } from './core.js';
  */
 export function SplitView({ nav, children }: { nav: ReactNode; children: ReactNode }) {
   return (
-    <div className="grid gap-5 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-8">
+    <div className="grid gap-6 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-8">
       <div className="min-w-0 md:sticky md:top-16 md:self-start">{nav}</div>
-      <div className="flex min-w-0 flex-col gap-5">{children}</div>
+      <div className="flex min-w-0 flex-col gap-6">{children}</div>
     </div>
   );
 }
@@ -31,12 +32,14 @@ export function NavList({ label, children }: { label: string; children: ReactNod
 export function NavItem({
   icon: Icon,
   label,
+  color,
   meta,
   active = false,
   onSelect,
 }: {
   icon: LucideIcon;
   label: string;
+  color?: CategoryColor;
   /** A short count or note at the end of the row. */
   meta?: ReactNode;
   active?: boolean;
@@ -51,11 +54,16 @@ export function NavItem({
         className={cn(
           'flex h-8 w-full items-center gap-2.5 rounded-md border px-2 text-sm transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:border-transparent',
           active
-            ? 'border-border bg-hover font-medium text-foreground'
+            ? 'border-border bg-selection font-medium text-selection-foreground'
             : 'border-border text-muted-foreground',
         )}
       >
-        <Icon size={16} aria-hidden className="shrink-0" />
+        <Icon
+          size={16}
+          aria-hidden
+          data-color={color}
+          className={cn('shrink-0', color && 'category-color')}
+        />
         <span className="truncate">{label}</span>
         {meta !== undefined ? (
           <span className="ml-auto pl-2 text-xs font-normal tabular-nums text-muted-foreground">
@@ -71,12 +79,14 @@ export function NavItem({
 export function EntityHeader({
   icon: Icon,
   title,
+  color,
   meta,
   description,
   actions,
 }: {
   icon: LucideIcon;
   title: string;
+  color?: CategoryColor;
   meta?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
@@ -86,12 +96,16 @@ export function EntityHeader({
       <div className="flex items-start gap-3">
         <span
           aria-hidden
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground"
+          data-color={color}
+          className={cn(
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
+            color ? 'category-tag' : 'border border-border bg-card text-muted-foreground',
+          )}
         >
           <Icon size={20} />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-lg font-semibold tracking-tight">{title}</h2>
+          <h2 className="truncate text-xl font-semibold tracking-tight">{title}</h2>
           {meta ? (
             <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
               {meta}

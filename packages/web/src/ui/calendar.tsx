@@ -1,8 +1,10 @@
 import * as PopoverPrimitive from '@radix-ui/react-popover';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
+import type { CategoryColor } from './colors.js';
 import { cn } from './core.js';
 import { useDragItem, useDropTarget } from './drag.js';
+import { ColorDot } from './identity.js';
 import { Button } from './index.js';
 import { PanelHeader, Popover } from './popover.js';
 
@@ -134,15 +136,29 @@ export function CalendarDay({
 }
 
 const ENTRY =
-  'flex h-6 min-w-0 shrink-0 items-center gap-1.5 rounded-sm border border-border bg-card px-1.5 text-left text-xs shadow-xs';
+  'flex h-6 min-w-0 shrink-0 items-center gap-1.5 rounded-sm border border-border bg-card px-1.5 text-left text-xs';
 
-function EntryBody({ title, time }: { title: string; time?: string }) {
+function EntryBody({
+  title,
+  time,
+  category,
+}: {
+  title: string;
+  time?: string;
+  category?: { color: CategoryColor; label: string };
+}) {
   return (
     <>
+      {category ? <ColorDot color={category.color} label={category.label} /> : null}
       {time ? <span className="shrink-0 tabular-nums text-muted-foreground">{time}</span> : null}
       <span className="min-w-0 truncate font-medium">{title}</span>
     </>
   );
+}
+
+/** The same identity is announced on focus and during keyboard moves. */
+export function calendarEntryLabel(title: string, time?: string, category?: string) {
+  return [title, time, category].filter(Boolean).join(', ');
 }
 
 /**
@@ -155,6 +171,7 @@ export function CalendarEntry({
   item,
   title,
   time,
+  category,
   draggable,
   selected = false,
   pending = false,
@@ -168,6 +185,7 @@ export function CalendarEntry({
   item: unknown;
   title: string;
   time?: string;
+  category?: { color: CategoryColor; label: string };
   draggable: boolean;
   selected?: boolean;
   pending?: boolean;
@@ -183,28 +201,36 @@ export function CalendarEntry({
       ref={drag.ref}
       type="button"
       {...drag.handle}
-      aria-label={time ? `${title}, ${time}` : title}
+      aria-label={calendarEntryLabel(title, time, category?.label)}
       aria-current={selected || undefined}
       data-pending={pending || undefined}
       data-dragging={drag.isDragging || undefined}
       onClick={onOpen}
       className={cn(
         ENTRY,
-        'w-full transition-[border-color,opacity] hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[current]:border-primary aria-[current]:ring-1 aria-[current]:ring-primary data-dragging:opacity-40 data-pending:opacity-60',
+        'w-full transition-[border-color,opacity] hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[current]:bg-selection aria-[current]:border-primary aria-[current]:ring-1 aria-[current]:ring-primary data-dragging:opacity-40 data-pending:opacity-60',
         draggable && 'touch-manipulation',
       )}
     >
-      <EntryBody title={title} time={time} />
+      <EntryBody title={title} time={time} category={category} />
     </button>
   );
   return inPanel ? <PopoverPrimitive.Close asChild>{entry}</PopoverPrimitive.Close> : entry;
 }
 
 /** The entry under the pointer while it is dragged. */
-export function EntryPreview({ title, time }: { title: string; time?: string }) {
+export function EntryPreview({
+  title,
+  time,
+  category,
+}: {
+  title: string;
+  time?: string;
+  category?: { color: CategoryColor; label: string };
+}) {
   return (
     <div className={cn(ENTRY, 'w-40 cursor-grabbing shadow-lg ring-1 ring-primary/40')}>
-      <EntryBody title={title} time={time} />
+      <EntryBody title={title} time={time} category={category} />
     </div>
   );
 }

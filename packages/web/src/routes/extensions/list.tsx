@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Empty,
+  IdentityTag,
   ItemCard,
   ItemCards,
   Loading,
@@ -56,7 +57,11 @@ export function ExtensionsPage() {
             return (
               <ItemCard
                 key={installation.id}
-                icon={<Puzzle size={18} />}
+                icon={
+                  <IdentityTag identity={installation.registrationId}>
+                    <Puzzle size={18} />
+                  </IdentityTag>
+                }
                 title={release?.manifest.name ?? 'Unavailable extension'}
                 status={
                   <>
@@ -76,7 +81,11 @@ export function ExtensionsPage() {
           {available.map((release) => (
             <ItemCard
               key={release.manifest.universalId}
-              icon={<Puzzle size={18} />}
+              icon={
+                <IdentityTag identity={release.manifest.universalId}>
+                  <Puzzle size={18} />
+                </IdentityTag>
+              }
               title={release.manifest.name}
               status={<Muted small>{release.manifest.version}</Muted>}
               description={release.manifest.description}

@@ -4,11 +4,13 @@ import type { ReactNode } from 'react';
 import { useWorkspace } from '../api/client.js';
 import { fields } from '../fields/index.js';
 import { eventTitle, objectLabel } from '../routes/state.js';
+import { objectColor } from '../ui/colors.js';
 import {
-  Badge,
   EntryQuote,
   EventLink,
+  IdentityTag,
   Muted,
+  ObjectIcon,
   ReviewLink,
   Row,
   Sourced,
@@ -18,11 +20,13 @@ import {
 export function ActorBadge({ actor }: { actor: Actor }) {
   const Icon = { agent: Bot, user: UserRound, integration: Plug, system: Cog }[actor.type];
   return (
-    <Badge>
-      <Icon size={12} aria-hidden="true" />
-      {actor.name || actor.id}
-      <span>· {actor.type}</span>
-    </Badge>
+    <IdentityTag identity={`actor:${actor.type}:${actor.id}`}>
+      <Icon size={12} aria-hidden className="shrink-0" />
+      <span className="truncate" title={actor.name || actor.id}>
+        {actor.name || actor.id}
+      </span>
+      <span className="shrink-0">· {actor.type}</span>
+    </IdentityTag>
   );
 }
 /** What a fact rests on: the internal note, or each source event with its quote. */
@@ -48,7 +52,10 @@ export function AssertionSource({ assertion }: { assertion: AssertionView }) {
       <Muted>Observed {new Date(assertion.observedAt).toLocaleString()}</Muted>
       {assertion.source ? (
         <Row>
-          <Badge>{objectLabel(schema, assertion.source.type)}</Badge>
+          <SourceBadge
+            type={assertion.source.type}
+            label={objectLabel(schema, assertion.source.type)}
+          />
           <EventLink id={assertion.source.id}>
             {eventTitle(assertion.source)} ·{' '}
             {new Date(assertion.source.occurredAt).toLocaleDateString()}
@@ -124,5 +131,16 @@ function PendingPreview({
         <Muted>Open the review item to see its proposal.</Muted>
       )}
     </Stack>
+  );
+}
+
+export function SourceBadge({ type, label }: { type: string; label: string }) {
+  return (
+    <IdentityTag identity={type} color={objectColor(type)}>
+      <ObjectIcon name={type} objectClass="event" size={12} />
+      <span className="truncate" title={label}>
+        {label}
+      </span>
+    </IdentityTag>
   );
 }

@@ -36,9 +36,9 @@ const buttonVariants = cva(
       },
       size: {
         default: 'h-8 px-3',
-        small: 'h-7 px-2 text-xs',
+        small: 'h-8 px-2 text-xs md:h-6',
         icon: 'h-8 w-8 px-0',
-        iconSmall: 'h-7 w-7 px-0',
+        iconSmall: 'h-8 w-8 px-0 md:h-6 md:w-6',
       },
     },
     defaultVariants: { variant: 'outline', size: 'default' },
@@ -277,6 +277,8 @@ export function Page({
   eyebrow,
   eyebrowLink,
   title,
+  icon,
+  avatar,
   apiName,
   description,
   actions,
@@ -287,6 +289,8 @@ export function Page({
   /** Where the eyebrow crumb leads; without it the crumb is plain text. */
   eyebrowLink?: LinkProps;
   title: string;
+  icon?: ReactNode;
+  avatar?: ReactNode;
   /** Developer view: the API name, shown beside the title. */
   apiName?: string;
   actions?: ReactNode;
@@ -295,7 +299,12 @@ export function Page({
   const openNavigation = useContext(NavigationContext);
   const fill = layout === 'fill';
   return (
-    <section className={cn('flex flex-col', fill ? 'h-dvh' : 'min-h-dvh')}>
+    <section
+      className={cn(
+        'flex flex-col',
+        fill ? 'h-[var(--page-height,100dvh)]' : 'min-h-[var(--page-height,100dvh)]',
+      )}
+    >
       <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-3 backdrop-blur md:px-5">
         {openNavigation ? (
           <Button
@@ -308,7 +317,7 @@ export function Page({
             <Menu size={16} />
           </Button>
         ) : null}
-        <div className="flex min-w-0 items-center gap-1.5 text-sm">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
           {eyebrow ? (
             <>
               {eyebrowLink ? (
@@ -331,6 +340,7 @@ export function Page({
               />
             </>
           ) : null}
+          {icon}
           {fill ? (
             <h1 className="truncate font-medium">{title}</h1>
           ) : (
@@ -344,11 +354,16 @@ export function Page({
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
       ) : (
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-6 md:px-8 md:py-8">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-            {description ? (
-              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p>
-            ) : null}
+          <div className="flex min-w-0 items-start gap-3">
+            {avatar}
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold tracking-tight [overflow-wrap:anywhere]">
+                {title}
+              </h1>
+              {description ? (
+                <p className="mt-1 max-w-2xl text-sm text-secondary-foreground">{description}</p>
+              ) : null}
+            </div>
           </div>
           {children}
         </div>
@@ -479,16 +494,19 @@ export function RecordLink({
   id,
   inSheet = false,
   struck = false,
+  avatar,
   children,
 }: {
   id: string;
   inSheet?: boolean;
   struck?: boolean;
+  avatar?: ReactNode;
   children: ReactNode;
 }) {
   const className = cn(
-    'min-w-0 max-w-full truncate font-medium',
-    struck ? 'text-muted-foreground line-through' : 'hover:underline',
+    'inline-flex min-w-0 max-w-full items-center gap-1.5 font-medium',
+    avatar ? 'group/record' : 'truncate',
+    struck ? 'text-muted-foreground line-through' : !avatar && 'hover:underline',
   );
   return inSheet ? (
     <Link
@@ -496,11 +514,25 @@ export function RecordLink({
       search={(prev: Record<string, unknown>) => ({ ...prev, record: id })}
       className={className}
     >
-      {children}
+      {avatar ? (
+        <>
+          {avatar}
+          <span className="truncate group-hover/record:underline">{children}</span>
+        </>
+      ) : (
+        children
+      )}
     </Link>
   ) : (
     <Link to="/r/$id" params={{ id }} className={className}>
-      {children}
+      {avatar ? (
+        <>
+          {avatar}
+          <span className="truncate group-hover/record:underline">{children}</span>
+        </>
+      ) : (
+        children
+      )}
     </Link>
   );
 }
@@ -712,11 +744,12 @@ export {
   CalendarDay,
   CalendarEntry,
   CalendarHeader,
+  calendarEntryLabel,
   EntryPreview,
   MonthGrid,
   MoreEntries,
 } from './calendar.js';
-export { Badge, type Tone } from './core.js';
+export { Badge, CategoryTag, type Tone } from './core.js';
 export {
   DataGrid,
   EditableCell,
@@ -750,6 +783,7 @@ export {
 } from './entry.js';
 export { FeedDay, FeedItem, FeedLinks, FeedScroll } from './feed.js';
 export { type FitItem, FitList, fitCount } from './fit-list.js';
+export { ColorDot, IdentityTag, ObjectIcon, RecordAvatar } from './identity.js';
 /** React Flow and dagre are heavy, so the canvas loads on first render; wrap it in Suspense. */
 export const Diagram = lazy(() => import('./diagram.js').then((m) => ({ default: m.Diagram })));
 export {

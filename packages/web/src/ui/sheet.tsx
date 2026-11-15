@@ -16,6 +16,8 @@ export function Sheet({
   title,
   description,
   actions,
+  avatar,
+  subtitle,
   children,
 }: {
   onClose: () => void;
@@ -25,6 +27,8 @@ export function Sheet({
   /** Read by assistive technology only. */
   description: string;
   actions?: ReactNode;
+  avatar?: ReactNode;
+  subtitle?: ReactNode;
   children: ReactNode;
 }) {
   const panel = useRef<HTMLDivElement>(null);
@@ -46,7 +50,7 @@ export function Sheet({
           }}
           // Clicking the list behind opens another record; it must not close the sheet.
           onInteractOutside={(e) => e.preventDefault()}
-          className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-background shadow-2xl outline-none sm:w-[min(38rem,92vw)] motion-safe:animate-sheet-in"
+          className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-background shadow-[-6px_0_20px_rgb(0_0_0/0.06)] outline-none sm:w-[min(38rem,92vw)] motion-safe:animate-sheet-in"
         >
           <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border pl-4 pr-2">
             <div className="min-w-0 flex-1 truncate text-sm text-muted-foreground first-letter:uppercase">
@@ -61,9 +65,17 @@ export function Sheet({
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [--sticky-top:0px] [scrollbar-gutter:stable]">
             <div className="flex flex-col gap-6 px-5 py-5">
-              <DialogPrimitive.Title className="text-lg font-semibold tracking-tight">
-                {title}
-              </DialogPrimitive.Title>
+              <div className="flex min-w-0 items-start gap-3">
+                {avatar}
+                <div className="min-w-0">
+                  <DialogPrimitive.Title className="text-xl font-semibold tracking-tight [overflow-wrap:anywhere]">
+                    {title}
+                  </DialogPrimitive.Title>
+                  {subtitle ? (
+                    <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
+                  ) : null}
+                </div>
+              </div>
               <DialogPrimitive.Description className="sr-only">
                 {description}
               </DialogPrimitive.Description>

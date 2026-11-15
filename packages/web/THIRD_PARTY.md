@@ -26,3 +26,10 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Inter — SIL Open Font License 1.1
+
+`public/fonts/inter-latin-{400,500,600}.woff2` are Inter font assets, reused
+from the local Twenty website's font distribution. Inter is an independent font
+project by Rasmus Andersson. The full license is in `public/fonts/OFL.txt`.
+No Twenty component implementation was copied.

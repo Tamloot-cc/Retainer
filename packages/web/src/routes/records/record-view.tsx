@@ -27,6 +27,7 @@ import {
   Property,
   PropertyEditor,
   PropertyList,
+  RecordAvatar,
   RecordLink,
   Row,
   Section,
@@ -107,6 +108,18 @@ export function RecordSheet({ id, onClose }: { id: string; onClose: () => void }
       onClose={onClose}
       eyebrow={classLabel(object)}
       title={r ? recordTitle(r) : 'Record'}
+      avatar={
+        r ? (
+          <RecordAvatar
+            id={r.id}
+            name={recordTitle(r)}
+            object={r.object}
+            objectClass={object?.class}
+            large
+          />
+        ) : undefined
+      }
+      subtitle={r ? `Updated ${new Date(r.updatedAt).toLocaleString()}` : undefined}
       description="Record details. Click a value to edit it."
       actions={
         <>
