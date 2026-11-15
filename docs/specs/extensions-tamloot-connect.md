@@ -2,7 +2,9 @@
 
 Status: proposal, 2026-11-15, revised the same day after a review of both
 products' specs (session lifecycle, cleanup, the `401` contract, the
-callback). Not implemented, and nothing in it has been run.
+callback). Not implemented. Spike corrections, same day, from real GoTrue
+answers and a client harness (branch `spike/oauth-client-lifecycle`): §5.4,
+§5.7, §5.8, §9 and §11 checks 1, 4 and 8.
 Implements [extensions-tamloot-connect-prd.md](extensions-tamloot-connect-prd.md)
 on the member connections in
 [extensions-tamloot-implementation.md](extensions-tamloot-implementation.md).
@@ -782,6 +784,32 @@ authentication, through the injected transport, with a 20-second timeout,
 A response must carry `access_token` and a positive `expires_in`. A refresh
 response without `refresh_token` keeps the old one.
 
+Tamloot's token endpoint is GoTrue, and its refusals do not all use the RFC
+6749 `error` field. Observed on GoTrue v2.197.0, local and hosted staging
+(spike 2026-11-15):
+
+| Call     | Situation                                                         | Answer                                          |
+| -------- | ----------------------------------------------------------------- | ----------------------------------------------- |
+| Exchange | spent, expired or unknown code; wrong client; bad PKCE            | `400`, `error: invalid_grant`                   |
+| Refresh  | session ended (revoked, released), user deleted, or unknown token | `400`, `error_code: refresh_token_not_found`    |
+| Refresh  | a token two rotations old, outside the reuse interval             | `400`, `error_code: refresh_token_already_used` |
+| Refresh  | the Tamloot user is banned                                        | `400`, `error_code: user_banned`                |
+| Refresh  | the session is past its `not_after` (seen locally only)           | `400`, `error_code: session_expired`            |
+| Refresh  | another client's credentials                                      | `400`, `error: invalid_client`                  |
+| Either   | client authentication missing or wrong                            | `400`, `error_code: invalid_credentials`        |
+
+So a refresh answer counts as `invalid_grant` when it is `400` with
+`error: invalid_grant`, or with `error_code` `refresh_token_not_found`,
+`refresh_token_already_used`, `user_banned` or `session_expired`. Only those
+codes, and only on the refresh grant: any other `error_code` stays a setup
+error (§5.8). A banned member sees "Needs reconnect" and cannot reconnect
+until Tamloot lifts the ban; that is still the member's state, not an
+operator's. Add a code only
+after it is observed on the token endpoint. The parent of the active refresh
+token returns the active one even outside the reuse interval, so a run that
+dies between a refresh and its write, or a disconnect hook that cannot write
+what it refreshed, recovers on its next run (§11 check 1, observed).
+
 ### 5.5 `connect`
 
 The store keeps one state per code, `exchange`, with one meaning per value,
@@ -947,7 +975,18 @@ done. On `401`, refresh that session once and repeat; a second `401` or
 is also done: Retainer drops its tokens and can do nothing more with it. A
 `401` does not mean Tamloot deleted the session (Tamloot §10, "Known limit:
 re-approval"; see §13). `429`, a `5xx` or a network error means try again
-later.
+later. A `403`, or a refresh refused as a setup error (`oauth_client_rejected`,
+§5.8), is never done: Retainer still holds the tokens and the obligation to
+give the session up. The entry stays and is retried like a `5xx`: on an
+active connection by every run, with `release:<id>` after 24 hours; in a
+cleanup job until its deadline, which then records `cleanup:<job id>` as
+today. The run names the setup error in the result's existing `code` field
+(`provider_forbidden` or `oauth_client_rejected`), without changing its
+status: a cleanup job returns `retry` with it, and an ordinary run that
+otherwise succeeds returns `succeeded` with it. The queue already stores a
+code on any status, and a `succeeded` code does not change the connection's
+health. A run that fails for its own reason keeps its own code. No new result
+field.
 
 The `disconnect` function reads `oauthTokens`. `409 connection_required`
 means a key connection, or nothing stored, so no exchange ever started: succeed.
@@ -971,7 +1010,7 @@ request that is not a GET.
 
 | Where          | Response                   | Result                            | Connection becomes                   |
 | -------------- | -------------------------- | --------------------------------- | ------------------------------------ |
-| Token endpoint | `invalid_grant`            | `failed`, `provider_unauthorized` | `needs_reconnect`, or `setup_failed` |
+| Token endpoint | `invalid_grant` (§5.4)     | `failed`, `provider_unauthorized` | `needs_reconnect`, or `setup_failed` |
 | Token endpoint | `invalid_client`, or 401   | `failed`, `oauth_client_rejected` | `degraded`: an operator setup error  |
 | Token endpoint | any other non-429 `4xx`    | `failed`, `oauth_client_rejected` | `degraded`: an operator setup error  |
 | Token endpoint | 429, 5xx, timeout, network | `retry`                           | unchanged                            |
@@ -985,9 +1024,11 @@ request that is not a GET.
 | `connect`      | §5.5 step 2, earlier crash | as the run ends, IDs reported     | as the run ends, and the notice      |
 | `disconnect`   | a store that doesn't parse | `failed`, `release_incomplete`    | unchanged (§4.7); the notice         |
 
-Any other token-endpoint `4xx` except `429`, with or without an OAuth error
+`invalid_grant` here includes the refresh `error_code`s in §5.4. Any
+other token-endpoint `4xx` except `429`, with or without an OAuth error
 code (`invalid_request`, `unauthorized_client`, `unsupported_grant_type`,
-`invalid_scope` or one Retainer doesn't know), is `oauth_client_rejected`:
+`invalid_scope`, GoTrue's `invalid_credentials`, or one Retainer doesn't
+know), is `oauth_client_rejected`:
 Retainer sent what the client registration should accept, so it is a setup
 error, not the member's. So every terminal token answer has one code to store
 in `failure` and replay (§5.5).
@@ -997,8 +1038,10 @@ its queued jobs to be cancelled at claim, so a revoked connection fails once
 and then stops (PRD requirement 4). A `403` with OAuth must not ask the
 member to reconnect: reconnecting would not fix it.
 
-**This table rests on Tamloot answering `401` for a token it does not
-accept.** An API Gateway authorizer that denies a request makes the gateway
+**This table rests on Tamloot answering `401` for a JWT it issued and no
+longer accepts (expired, released or revoked).** A bearer that is not a JWT
+answers `403` and stays `provider_forbidden`, as Tamloot's §10 specifies.
+An API Gateway authorizer that denies a request makes the gateway
 answer `403 Forbidden`, which would send a revoked or expired token down the
 `403` row: `degraded`, never "Needs reconnect". Tamloot owns the fix, and its
 revised spec (PR #2410 at `d283f1fd6`, §5.1–§5.2 and §10) makes it: a rejected
@@ -1200,6 +1243,13 @@ Real Postgres, a fresh database per file, no mocked database.
   everything at once, as before.
 - **Runtime route:** `oauth-client` refuses a non-run caller, a `configure`
   run and a function that does not declare the token secret.
+- **Token answers (unit):** the fixtures use the bodies in §5.4, not RFC
+  guesses. A refresh answering any of the four refresh `error_code`s in §5.4
+  is `provider_unauthorized` and, in a release,
+  done; the same codes on an exchange, `invalid_credentials`,
+  `error: invalid_client` and an unknown `error_code` are
+  `oauth_client_rejected`. A `403` or a client refusal during a release keeps
+  the entry and names the code (§5.7).
 - **Bundle, against HTTP fixtures (`packages/runner`, `test/api/tamloot.test.ts`):**
   exchange then import; a retried `connect` does not exchange twice; refresh
   when close to expiry; `401`, refresh, retry; `invalid_grant` gives
@@ -1494,10 +1544,12 @@ ARCHITECTURE.md where it lists connection secrets.
 ## 11. Check these first
 
 Each is believed true or is Tamloot's to fix, and each is cheap to check on
-staging. None was run for this spec. Rows 7 to 10 go through Tamloot's real
+staging. The observations below come from the spike; the complete product
+acceptance run is still required. Rows 7 to 10 go through Tamloot's real
 API Gateway with Retainer's staging client, not a fixture.
 
-1. **Refresh recovery.** Supabase accepts a refresh with the parent of the
+1. **Refresh recovery.** Observed 2026-11-15 on local and hosted staging
+   (§5.4). Supabase accepts a refresh with the parent of the
    active refresh token, outside the reuse interval, and returns the active
    session (its documented exception). Test: refresh, drop the response,
    refresh again with the old token. If not: a run that dies between a
@@ -1507,9 +1559,18 @@ API Gateway with Retainer's staging client, not a fixture.
    send the client ID and secret in the form body.
 3. **Scope.** A refresh token is issued for the scope Retainer sends, or for
    none. If not: settle `scope` with Tamloot (its §13 item 6).
-4. **Code lifetime.** An authorization code outlives the wait for the
-   `connect` job. If not: start the executor when a `connect` job is queued
-   (extensions-lambda.md §3.3, "optional, later").
+4. **Code lifetime.** Measured 2026-11-15: the authorization lasts 600
+   seconds from `/oauth/authorize`, and that budget covers Tamloot sign-in or
+   sign-up, the approval and the exchange. The hosted executor runs every
+   minute and drains until 15 seconds idle, so a `connect` on an idle queue
+   waits about 60 to 75 seconds plus a cold start. That is an estimate from
+   the configuration, not a bound: queue load, a deploy holding the pass
+   lock, or `Retry-After` can make it longer. A member who spends more than about eight
+   minutes signing up gets `invalid_grant` on a certain first attempt:
+   `refused`, `setup_failed`, no notice and no stranded session; they connect
+   again. Measure the pickup on staging. If it is often too slow: start the
+   executor when a `connect` job is queued (extensions-lambda.md §3.3,
+   "optional, later").
 5. **Speed.** The hosted executor picks up a `connect` job fast enough for
    "under a minute". If not: the same fix as 4.
 6. **Routes.** `/v1/extensions/*` and `/app/*` reach the right functions
@@ -1518,9 +1579,9 @@ API Gateway with Retainer's staging client, not a fixture.
    session was released and a token after a revoke each answer `401`, never
    `403`. A launch blocker: Tamloot fixes its gateway (§5.8), and Retainer
    does not reinterpret `403`.
-8. **Token endpoint errors.** A spent code, a used refresh token outside the
-   reuse interval, a revoked approval and a wrong client secret each give
-   the error §5.8 expects. If not: correct §5.8 before launch.
+8. **Token endpoint errors.** Observed 2026-11-15 and recorded in §5.4,
+   which §5.8 now reads. Re-run on staging with Retainer's client before
+   launch.
 9. **Concurrent last disconnects.** Two workspaces of one member disconnect
    at the same moment: Tamloot revokes the approval once and stops listing
    Retainer. If not: Tamloot serializes its release per member and client;
