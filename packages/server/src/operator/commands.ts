@@ -4,6 +4,7 @@ import type { Sql } from '../db/client.js';
 import { listOrganizations } from '../db/organizations.js';
 import { listWorkspaces } from '../db/workspaces.js';
 import { AppError } from '../errors.js';
+import { connectionMeasures } from '../extensions/measures.js';
 import { dailyUsage } from '../model/usage.js';
 import { TEMPLATE_NAMES } from '../templates/index.js';
 import { purgeAfter, purgeDeletedWorkspaces, restoreWorkspace } from '../workspaces/deletion.js';
@@ -39,6 +40,11 @@ API keys
 
 Model calls
   retainer model usage [--days <n>]        Tokens per day across workspaces (default 30 days)
+
+Extensions
+  retainer extension connections [--days <n>]
+                                           New member connections by method, time to connect,
+                                           reconnects and access left behind (default 30 days)
 
 Options
   --json    Print machine-readable JSON
@@ -268,6 +274,25 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
                 ...rows.map(
                   (r) =>
                     `${r.day}\t${r.kind}\t${r.requests}\t${r.inputTokens}\t${r.outputTokens}\t${r.cacheReadTokens}\t${r.cacheWriteTokens}`,
+                ),
+              ].join('\n'),
+          rows,
+        );
+        return 0;
+      }
+      case 'extension connections': {
+        const days = values.days === undefined ? 30 : Number(values.days);
+        if (!Number.isInteger(days) || days < 1 || days > 366)
+          throw new AppError(400, 'invalid_request', '--days must be a whole number from 1 to 366');
+        const rows = await connectionMeasures(io.sql, days);
+        print(
+          rows.length === 0
+            ? 'No member connections in this period.'
+            : [
+                'registration\toauth\tkey\tmedian connect s\tneeds reconnect\taccess may remain\trelease backlog\tlost backlog\texchange interrupted',
+                ...rows.map(
+                  (r) =>
+                    `${r.registrationId}\t${r.newConnections.oauth}\t${r.newConnections.key}\t${r.connectSeconds.median ?? '-'}\t${r.oauthNeedsReconnect}\t${r.releaseIncomplete}\t${r.connectFailures.release_backlog}\t${r.connectFailures.lost_backlog}\t${r.connectFailures.exchange_interrupted}`,
                 ),
               ].join('\n'),
           rows,

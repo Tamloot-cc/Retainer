@@ -318,6 +318,9 @@ that application code was never invoked; do not attach it to arbitrary failures.
 Optional first-party extension execution is a development preview. See the
 [execution topology, lifecycle and local verification](extensions-execution.md)
 before enabling its Compose overlay. The default catalog is empty.
+Members of a self-hosted server connect Tamloot with an API key: Connect with
+Tamloot needs an OAuth client registered with Tamloot, which only the hosted
+service has (`RETAINER_EXTENSION_OAUTH_CLIENTS`).
 
 Optional [private file storage](files.md) uses a dedicated byte service and volume
 through `docker/compose.files.yml`, with signed transfers and durable erasure.
