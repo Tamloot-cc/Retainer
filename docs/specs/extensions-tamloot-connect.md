@@ -639,8 +639,11 @@ next (extensions-lambda.md §3.2).
 
 To give up one session: `DELETE /v1/access` with its access token. `204` is
 done. On `401`, refresh that session once and repeat; a second `401` or
-`invalid_grant` means the session is already gone, which is also done. `429`,
-a `5xx` or a network error means try again later.
+`invalid_grant` means Retainer has no access through that session now, which
+is also done: Retainer drops its tokens and can do nothing more with it. A
+`401` does not mean Tamloot deleted the session (Tamloot §10, "Known limit:
+re-approval"; see §13). `429`, a `5xx` or a network error means try again
+later.
 
 The `disconnect` function reads `oauthTokens`. `409 connection_required`
 means a key connection, or nothing stored, so no exchange ever started:
@@ -1046,15 +1049,19 @@ API Gateway with Retainer's staging client, not a fixture.
 10. **Release racing an unexchanged code.** One workspace releases the
     member's last session while another holds an approved code it has not
     exchanged, one after the other and at the same moment. Tamloot (PR
-    #2410, `24e412526`, its §13 item 7) treats a session as live only while
-    the member's approval is not revoked, so a session made under a revoked
-    approval can never read. Valid outcomes: released first, the exchange
-    fails and the connect is `setup_failed`; concurrent, either the approval
-    is revoked and the new session's first read answers `401`, its refresh
-    fails and the connection becomes "Needs reconnect" by the ordinary rule
-    (§5.8), or the new session existed first, the approval stays and the
-    connection works. No Retainer change. A read under a revoked approval is
-    a Tamloot blocker.
+    #2410, `61de28d45`, its §4.2 and §13 item 7) treats a session as live
+    only while the member's approval is not revoked, so a session under a
+    revoked approval reads nothing. Supabase's exchange does not check the
+    approval, so the exchange itself returns tokens. Expected:
+    - One after the other: the exchange returns tokens, the `connect`'s
+      `GET /v1/me` answers `401 access_revoked`, the refresh and retry
+      answer `401` again, and the connect fails `setup_failed` with
+      `provider_unauthorized`. The `pending` session goes to `release`, and
+      its release ends at the second `401` (§5.7).
+    - At the same moment: either the same as above, or the new session
+      existed first, the approval stays and the connection works.
+    No Retainer change. A read that succeeds while Tamloot's Connected apps
+    does not list Retainer is a Tamloot blocker.
 11. **Load and isolation.** Several connections of one member, polling at
     the normal rate, stay inside the shared API throttle, and their sessions
     stay separate. If not: poll OAuth connections less often.
@@ -1071,13 +1078,12 @@ Setup values, and the fixes Tamloot owns.
 - The staging application and API addresses, for `authorizationEndpoint` and
   `apiOrigin`.
 - The project's refresh-token reuse settings (check 1).
-- The fixes in Tamloot PR #2410 (`e711a9870`, `24e412526`), live on the
-  same environment: `401` for a token it refuses (check 7), its release
-  serialized per member and client (check 9), the approval naming task
-  contacts by email only, as `GET /v1/tasks` returns them, and the
+- The fixes in Tamloot PR #2410 (`e711a9870`, `24e412526`, `61de28d45`),
+  live on the same environment: `401` for a token it refuses (check 7), its
+  release serialized per member and client (check 9), the approval naming
+  task contacts by email only, as `GET /v1/tasks` returns them, and the
   Connected apps tab at the `revokeUrl` in §5.1.
-- Liveness that requires a non-revoked approval (PR #2410, `24e412526`),
-  for check 10.
+- Liveness that requires a non-revoked approval, for check 10.
 
 ## 13. Not in this spec
 
@@ -1113,6 +1119,14 @@ hours; Retainer never promises it unconditionally.
 - **Revoking is per member, not per workspace.** The only way for a member to
   end access Retainer could not give up is to revoke Retainer in Tamloot,
   which ends it in every workspace they connected.
+- **Re-approval brings back a stranded session.** A session Retainer gave up
+  after a `401` (§5.7), including one from the race in §11 check 10, may
+  still exist in Tamloot under the revoked approval. If the member approves
+  Retainer again, Tamloot clears the revoke and that session works again,
+  though Retainer no longer holds its tokens. It counts as remaining
+  access, so the last disconnect may leave Retainer listed in Tamloot's
+  Connected apps. Revoking Retainer there ends it. This is Tamloot's
+  documented limit (its §10).
 - Retainer notices a revoke at its next request, up to 5 minutes later.
   Tamloot refuses reads from the moment of the revoke.
 
