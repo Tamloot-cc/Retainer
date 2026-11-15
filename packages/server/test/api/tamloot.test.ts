@@ -322,6 +322,22 @@ describe('Tamloot bundle through real API and Postgres with provider HTTP fixtur
     expect(h.bodies.join(' ')).not.toContain('NEVER IMPORT');
     expect(h.bodies.join(' ')).toContain('a'.repeat(22000));
   }, 60000);
+  it('refuses to import a task whose Tamloot task ID another record already holds', async () => {
+    const h = await fixture();
+    const local = await h.app.request('/v1/objects/task/records', {
+      key: h.keys.admin,
+      body: { values: { title: 'Typed by hand', tamlootTaskId: h.task1 } },
+    });
+    expect(local.status).toBe(201);
+    await h.connect();
+    const results = await h.drain();
+    expect(results).toContainEqual(
+      expect.objectContaining({ status: 'failed', code: 'source_task_conflict' }),
+    );
+    expect(
+      await db.owner`select 1 from source_tasks where installation_id=${h.id} and external_id=${h.task1}`,
+    ).toHaveLength(0);
+  }, 60000);
   it('preserves edited tasks across a new meeting revision, recovers an expired cursor and suppresses erased sources', async () => {
     const h = await fixture();
     await h.connect();

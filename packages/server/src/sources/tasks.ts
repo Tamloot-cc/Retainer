@@ -9,6 +9,7 @@ import { admitRun } from '../extension-runtime/admission.js';
 import { requestHash } from '../idempotency.js';
 import { retractEventClaims } from '../memory/events.js';
 import { isEventIdentitySuppressed } from '../privacy/suppression.js';
+import { canonicalUniqueValue } from '../records/derive.js';
 import { prepareValues } from '../records/values.js';
 import {
   insertRecord,
@@ -232,7 +233,7 @@ export async function reconcileTasks(
     values.delete(identity);
     if (!record) {
       const collision =
-        await tx`select 1 from record_identifiers where workspace_id=${context.workspaceId} and field_id=${identity.id!} and value=${identityValue} and is_claim`;
+        await tx`select 1 from record_identifiers where workspace_id=${context.workspaceId} and field_id=${identity.id!} and kind='value' and value=${canonicalUniqueValue(identityValue)} and is_claim`;
       if (collision.length)
         throw new AppError(
           409,
