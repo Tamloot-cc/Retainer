@@ -708,9 +708,13 @@ describe('member connection API, broker and execution with real Postgres', () =>
 });
 
 async function taskFixture() {
-  const h = await setup(),
-    c = await connecting(h, h.keys.dana, 'task-key');
-  const parent = await work(h, await activate(h, c, 'task-account'));
+  const h = await setup();
+  return { ...h, ...(await memberTasks(h, h.keys.dana, 'task-account')) };
+}
+/** One member's connected account with one imported meeting whose tasks a test can sync. */
+async function memberTasks(h: Setup, key: string, accountId: string) {
+  const c = await connecting(h, key, `${accountId}-key`);
+  const parent = await work(h, await activate(h, c, accountId));
   const account = (await t.request(`${h.base}/source`, { key: parent.token })).body.sourceAccountId;
   const item = (
     await t.request(`${h.base}/source-items`, {
@@ -755,7 +759,7 @@ async function taskFixture() {
       },
     });
   };
-  return { ...h, sync, item, revision, tasks, event: imported.body.eventId };
+  return { sync, item, revision, tasks, event: imported.body.eventId };
 }
 const managedTask = (externalId: string, title = 'Follow up') => ({
   externalId,
@@ -764,6 +768,19 @@ const managedTask = (externalId: string, title = 'Follow up') => ({
   contactEmails: [],
 });
 describe('managed source tasks with real Postgres', () => {
+  it('lets one of two accounts importing the same task ID concurrently win and refuses the other as source_task_conflict', async () => {
+    const h = await taskFixture(),
+      eli = await memberTasks(h, h.keys.eli, 'eli-account');
+    const results = await Promise.all([
+      h.tasks([managedTask('shared')]),
+      eli.tasks([managedTask('shared')]),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(results.find((r) => r.status === 409)!.body.error.code).toBe('source_task_conflict');
+    expect(
+      await db.owner`select 1 from source_tasks where installation_id=${h.id} and external_id='shared'`,
+    ).toHaveLength(1);
+  });
   it('serializes competing snapshots, is idempotent and keeps edited tasks permanently', async () => {
     const h = await taskFixture();
     const results = await Promise.all([

@@ -539,7 +539,10 @@ is part of this work.
 
 The source policy gains `tasks`: object, identity, title, status and optional
 person-field universal IDs, plus the source's open/done status mapping. The
-identity field must be a contributed unique text field. The server resolves
+identity field must be a contributed unique text field. It holds the
+provider's task ID as is, because people read it; provider task IDs must
+therefore be unique across one workspace's source accounts, and a clash fails
+as `source_task_conflict`. The server resolves
 all bindings under the schema lock. No client picks a field or record ID.
 `GET /v1/extensions/:id/source-tasks/schema` returns current names and binding
 health to a live run, without changing public schema reads.

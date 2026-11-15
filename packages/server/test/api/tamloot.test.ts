@@ -275,6 +275,12 @@ describe('Tamloot bundle through real API and Postgres with provider HTTP fixtur
     const tasks =
       await db.owner`select t.*,r.created_by from source_tasks t join records r on r.id=t.record_id where t.installation_id=${h.id} order by external_id`;
     expect(tasks).toHaveLength(2);
+    const [idField] =
+      await db.owner`select key from fields where workspace_id=${h.workspace} and universal_id=${TAMLOOT.taskIdField}`;
+    const shown =
+      await db.owner`select r.data->>${idField!.key} as value from source_tasks t join records r on r.id=t.record_id where t.installation_id=${h.id} order by t.external_id`;
+    // The field shows the provider's own task ID, not an internal account-scoped key.
+    expect(shown.map((r) => r.value)).toEqual(tasks.map((t) => t.external_id));
     expect(tasks[0]!.created_by).toMatchObject({
       type: 'integration',
       id: h.id,
@@ -315,6 +321,22 @@ describe('Tamloot bundle through real API and Postgres with provider HTTP fixtur
     ).toBe('ok');
     expect(h.bodies.join(' ')).not.toContain('NEVER IMPORT');
     expect(h.bodies.join(' ')).toContain('a'.repeat(22000));
+  }, 60000);
+  it('refuses to import a task whose Tamloot task ID another record already holds', async () => {
+    const h = await fixture();
+    const local = await h.app.request('/v1/objects/task/records', {
+      key: h.keys.admin,
+      body: { values: { title: 'Typed by hand', tamlootTaskId: h.task1 } },
+    });
+    expect(local.status).toBe(201);
+    await h.connect();
+    const results = await h.drain();
+    expect(results).toContainEqual(
+      expect.objectContaining({ status: 'failed', code: 'source_task_conflict' }),
+    );
+    expect(
+      await db.owner`select 1 from source_tasks where installation_id=${h.id} and external_id=${h.task1}`,
+    ).toHaveLength(0);
   }, 60000);
   it('preserves edited tasks across a new meeting revision, recovers an expired cursor and suppresses erased sources', async () => {
     const h = await fixture();
