@@ -65,7 +65,8 @@ export async function recordCleanupFailure(
   if (job.trigger_kind !== 'disconnect' || !job.connection_id) return;
   const [held] =
     await tx`select 1 from extension_connections where id=${job.connection_id} and cardinality(disconnect_secrets)>0`;
-  if (held) await recordReleaseIncidents(tx, job.connection_id, [`cleanup:${job.id.toLowerCase()}`]);
+  if (held)
+    await recordReleaseIncidents(tx, job.connection_id, [`cleanup:${job.id.toLowerCase()}`]);
 }
 
 /** Retires the secrets a full disconnect hook kept, once that hook reaches a final state. */
@@ -100,7 +101,9 @@ export async function sweepPartialReleases(tx: Tx, installationId: string) {
 
 /** Cancels a connection's partial release job when a new connect takes over its sessions. */
 export async function supersedePartialRelease(tx: Tx, connectionId: string) {
-  const jobs = await tx<{ id: string }[]>`update extension_jobs set status='cancelled',code='superseded',
+  const jobs = await tx<
+    { id: string }[]
+  >`update extension_jobs set status='cancelled',code='superseded',
     lease_owner=null,lease_until=null,run_until=null,updated_at=now()
     where connection_id=${connectionId} and retainer_partial_release_job(trigger_kind,input)
     and status in ('queued','running') returning id`;

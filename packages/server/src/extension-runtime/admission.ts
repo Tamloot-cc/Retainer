@@ -87,10 +87,10 @@ export async function admitRun(
         job.job_live === true &&
         ['setup_failed', 'needs_reconnect'].includes(connection.state)
       : job.trigger_kind === 'disconnect' &&
-      connection.state === 'disconnected' &&
-      connection.cleanup_live === true &&
-      installation.state !== 'uninstalled' &&
-      (installation.state !== 'uninstalling' || installation.cleanup_live === true)
+        connection.state === 'disconnected' &&
+        connection.cleanup_live === true &&
+        installation.state !== 'uninstalled' &&
+        (installation.state !== 'uninstalling' || installation.cleanup_live === true)
     : job.trigger_kind === 'uninstall' &&
       installation.state === 'uninstalling' &&
       installation.cleanup_live === true;

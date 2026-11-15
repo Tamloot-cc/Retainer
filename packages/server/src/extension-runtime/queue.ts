@@ -4,9 +4,9 @@ import {
   functionScopes,
   functionSecrets,
   functionUses,
-  RELEASE_INCIDENT_PATTERN,
   lifecycleInputSchema,
   nextOccurrence,
+  RELEASE_INCIDENT_PATTERN,
   SYSTEM_LIFECYCLE_FUNCTION_ID,
 } from '@retainer/extension';
 import { sourceScanSchema } from '@retainer/shared';
@@ -147,11 +147,11 @@ const runnable = (i: Installation, kind: string, partial = false) =>
           ? i.state === 'active' &&
             ['setup_failed', 'needs_reconnect'].includes(i.connection_state ?? '')
           : kind === 'disconnect'
-          ? i.connection_state === 'disconnected' &&
-            i.connection_cleanup_live === true &&
-            i.state !== 'uninstalled' &&
-            (i.state !== 'uninstalling' || i.cleanup_live === true)
-          : i.state === 'active' && i.connection_state === 'active'
+            ? i.connection_state === 'disconnected' &&
+              i.connection_cleanup_live === true &&
+              i.state !== 'uninstalled' &&
+              (i.state !== 'uninstalling' || i.cleanup_live === true)
+            : i.state === 'active' && i.connection_state === 'active'
       : kind === 'install'
         ? ['installing', 'upgrading'].includes(i.state)
         : kind === 'uninstall'
@@ -1592,7 +1592,10 @@ export class ExtensionQueue {
       if (!system && (!fn || fn.trigger.kind !== job.trigger_kind))
         throw conflict('incompatible_runtime', 'job function is unavailable');
       if (['install', 'uninstall', 'disconnect'].includes(job.trigger_kind))
-        validateLifecycleInput(job.trigger_kind as 'install' | 'uninstall' | 'disconnect', job.input);
+        validateLifecycleInput(
+          job.trigger_kind as 'install' | 'uninstall' | 'disconnect',
+          job.input,
+        );
       else if (fn) validateInput(fn.inputSchema, job.input);
       if (setupRetry)
         await tx`update extension_installations set state=${installation.setup_kind === 'upgrade' ? 'upgrading' : 'installing'},last_error=null where id=${installationId}`;

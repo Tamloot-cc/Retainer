@@ -53,13 +53,13 @@ import {
 import { holdReason, type UpgradeTarget, upgradeTargets } from './auto-upgrade.js';
 import { ExtensionCatalog, hash } from './catalog.js';
 import { MemberConnections } from './connections.js';
-import { connectionMethods, type ExtensionOAuthClients } from './oauth-clients.js';
 import {
   type ContributionRow,
   contributionOperations,
   retiredContributions,
 } from './contributions.js';
 import { bindingStatus, EMPTY_MAPPING, resolveMapping, type StoredMapping } from './mapping.js';
+import { connectionMethods, type ExtensionOAuthClients } from './oauth-clients.js';
 import { getSuggestions } from './suggestions.js';
 import { installationMonthUsage } from './usage.js';
 
@@ -124,7 +124,8 @@ type Plan = Awaited<ReturnType<Extensions['plan']>>;
  * spec 4.7). `retainer_extension_upgrades_due` applies the same rule.
  */
 async function cleanupPending(tx: Tx, installationId: string) {
-  const [pending] = await tx`select 1 from extension_jobs j where j.installation_id=${installationId}
+  const [pending] =
+    await tx`select 1 from extension_jobs j where j.installation_id=${installationId}
     and ((j.trigger_kind='disconnect' and not retainer_partial_release_job(j.trigger_kind,j.input) and j.status in ('queued','running'))
       or retainer_partial_release_blocking(j)) limit 1`;
   return !!pending;

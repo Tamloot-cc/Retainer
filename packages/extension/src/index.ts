@@ -579,8 +579,7 @@ function checkConnections(manifest: ExtensionManifest): void {
   if (oauth.keySetting !== undefined) {
     const key = manifest.settings[oauth.keySetting];
     if (
-      !key ||
-      key.level !== 'connection' ||
+      key?.level !== 'connection' ||
       !key.secret ||
       key.generated ||
       handshake.includes(oauth.keySetting)

@@ -358,8 +358,7 @@ describe('starting and completing an OAuth connection', () => {
     const late = await complete(h, h.keys.dana, { state: started.body.state, code: 'x' });
     expect(late.body.error.code).toBe('authorization_expired');
     expect(
-      (await complete(h, h.keys.dana, { state: started.body.state, code: 'x', error: 'y' }))
-        .status,
+      (await complete(h, h.keys.dana, { state: started.body.state, code: 'x', error: 'y' })).status,
     ).toBe(400);
     expect((await complete(h, h.keys.dana, { state: started.body.state })).status).toBe(400);
     expect((await authorize(h, h.keys.dana, { loginHint: 'not-an-email' })).status).toBe(400);
@@ -380,9 +379,9 @@ describe('starting and completing an OAuth connection', () => {
       (await complete(h, h.keys.dana, { state: started.body.state, error: 'access_denied' })).body
         .error.code,
     ).toBe('authorization_expired');
-    expect(await db.owner`select 1 from extension_connections where installation_id=${h.id}`).toEqual(
-      [],
-    );
+    expect(
+      await db.owner`select 1 from extension_connections where installation_id=${h.id}`,
+    ).toEqual([]);
   });
 
   it('refuses agents, a second connection, a key reconnect of OAuth and a stale generation', async () => {
@@ -440,8 +439,8 @@ describe('starting and completing an OAuth connection', () => {
     expect(keyed.status).toBe(201);
     expect((await connectionRow(keyed.body.id))?.credential).toBe('key');
     expect(
-      (await authorize(h, h.keys.dana, { connectionId: keyed.body.id, expectedGeneration: 1 }))
-        .body.error.code,
+      (await authorize(h, h.keys.dana, { connectionId: keyed.body.id, expectedGeneration: 1 })).body
+        .error.code,
     ).toBe('credential_mismatch');
     const again = await strict.request(`${h.base}/connections/secrets`, {
       key: h.keys.eli,
@@ -463,9 +462,7 @@ describe('starting and completing an OAuth connection', () => {
     expect((await authorize(h, h.keys.dana, { settings: {} })).body.error.code).toBe(
       'oauth_unavailable',
     );
-    expect((await t.request(h.base, { key: h.keys.dana })).body.connectionMethods).toEqual([
-      'key',
-    ]);
+    expect((await t.request(h.base, { key: h.keys.dana })).body.connectionMethods).toEqual(['key']);
   });
 
   it('a second start replaces the first request', async () => {
@@ -517,11 +514,15 @@ describe('starting and completing an OAuth connection', () => {
     const acquired = new Promise<void>((resolve) => {
       locked = resolve;
     });
-    const holding = inWorkspace(db.connect({ role: 'retainer_app', max: 1 }), h.workspace, async (tx) => {
-      await tx`select pg_advisory_xact_lock(21062::int4, hashtext(${`${h.workspace}:${h.id}`}))`;
-      locked();
-      await held;
-    });
+    const holding = inWorkspace(
+      db.connect({ role: 'retainer_app', max: 1 }),
+      h.workspace,
+      async (tx) => {
+        await tx`select pg_advisory_xact_lock(21062::int4, hashtext(${`${h.workspace}:${h.id}`}))`;
+        locked();
+        await held;
+      },
+    );
     await acquired;
     const answers = Promise.all([
       complete(h, h.keys.dana, { state: started.body.state, code: 'a' }),
@@ -530,7 +531,8 @@ describe('starting and completing an OAuth connection', () => {
     await new Promise((resolve) => setTimeout(resolve, 600));
     release();
     await holding;
-    for (const answer of await answers) expect(answer.body.error?.code).toBe('authorization_expired');
+    for (const answer of await answers)
+      expect(answer.body.error?.code).toBe('authorization_expired');
   });
 });
 
@@ -706,7 +708,8 @@ describe('partial release jobs', () => {
     const f = await failedConnect(h, h.keys.dana);
     const before = await connectionRow(f.cid);
     await db.owner`update extension_jobs set expires_at=clock_timestamp()-interval '1 second' where id=${f.job.id}`;
-    const due = await db.owner`select * from retainer_extension_jobs_due(100,${[manifest.universalId]}::uuid[],${[catalog.get(manifest.universalId, manifest.version).digest]}::text[]) where job_id=${f.job.id}`;
+    const due =
+      await db.owner`select * from retainer_extension_jobs_due(100,${[manifest.universalId]}::uuid[],${[catalog.get(manifest.universalId, manifest.version).digest]}::text[]) where job_id=${f.job.id}`;
     expect(due).toEqual([]);
     await h.queue.maintain(db.connect({ role: 'retainer_executor', max: 1 }));
     const [job] = await partialJobs(f.cid);
@@ -723,7 +726,10 @@ describe('partial release jobs', () => {
       await db.owner`select delete_after from extension_secrets where connection_id=${f.cid} and name='tokens'`;
     expect(kept?.delete_after).toBeNull();
     const read = await t.request(h.base, { key: h.keys.dana });
-    expect(read.body.releaseNotice).toEqual({ connectionId: f.cid, at: after?.release_incomplete_at });
+    expect(read.body.releaseNotice).toEqual({
+      connectionId: f.cid,
+      at: after?.release_incomplete_at,
+    });
   });
 
   it('an open handshake defers it; starting a reconnect while it runs is refused', async () => {
@@ -941,13 +947,14 @@ describe('release incidents and the notice', () => {
     const notice = (await t.request(h.base, { key: h.keys.dana })).body.releaseNotice;
     expect(notice.connectionId).toBe(c.cid);
     // Microsecond precision survives the round trip; a millisecond copy does not match.
-    const [stamp] =
-      await db.owner`select release_incomplete_at from extension_connections where id=${c.cid}`;
-    const truncated = (stamp?.release_incomplete_at as Date).toISOString();
     const dismiss = (key: string, at: unknown) =>
       t.request(`${h.base}/connections/${c.cid}/release-notice/dismiss`, { key, body: { at } });
     await db.owner`update extension_connections set release_incomplete_at=release_incomplete_at+interval '123 microseconds' where id=${c.cid}`;
     const precise = (await t.request(h.base, { key: h.keys.dana })).body.releaseNotice.at;
+    const [stamp] =
+      await db.owner`select release_incomplete_at from extension_connections where id=${c.cid}`;
+    const truncated = new Date(stamp?.release_incomplete_at).toISOString();
+    expect(precise).not.toBe(truncated);
     for (const at of ['invalid', 'x'.repeat(100), '2026-11-15T10:00:00', truncated])
       expect((await dismiss(h.keys.dana, at)).body.error.code).toBe('notice_changed');
     expect((await dismiss(h.keys.dana, '2999-01-01T00:00:00Z')).body.error.code).toBe(

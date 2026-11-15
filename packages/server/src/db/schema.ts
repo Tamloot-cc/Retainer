@@ -1680,10 +1680,7 @@ export const extensionConnections = pgTable(
   (t) => [
     unique('extension_connections_scope_uq').on(t.workspaceId, t.installationId, t.id),
     check('extension_connections_credential', sql`${t.credential} in ('key','oauth')`),
-    check(
-      'extension_connections_release_incidents',
-      sql`cardinality(${t.releaseIncidents})<=32`,
-    ),
+    check('extension_connections_release_incidents', sql`cardinality(${t.releaseIncidents})<=32`),
     index('extension_connections_account_idx').on(t.workspaceId, t.sourceAccountId),
     uniqueIndex('extension_connections_owner_uq')
       .on(t.workspaceId, t.installationId, t.ownerId)

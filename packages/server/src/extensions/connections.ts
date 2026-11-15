@@ -131,7 +131,11 @@ export class MemberConnections {
       const manifest = this.catalog.get(i.registration_id, i.version).manifest;
       const client = this.oauthClient(manifest);
       if (!client || !manifest.oauth || !this.broker)
-        throw new AppError(409, 'oauth_unavailable', 'this extension cannot connect with OAuth here');
+        throw new AppError(
+          409,
+          'oauth_unavailable',
+          'this extension cannot connect with OAuth here',
+        );
       validateConnectionSettings(manifest, input.settings);
       const reconnect = input.connectionId !== undefined;
       if (reconnect) {
@@ -201,7 +205,8 @@ export class MemberConnections {
   ): Promise<{ id: string; state: 'connecting' } | { cancelled: true }> {
     human(caller);
     const ids = stateIds(input.state);
-    if (!ids || ids.workspaceId !== caller.workspaceId || ids.installationId !== id) throw expired();
+    if (!ids || ids.workspaceId !== caller.workspaceId || ids.installationId !== id)
+      throw expired();
     const hash = sha256(input.state);
     if (input.error !== undefined)
       return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
@@ -229,7 +234,8 @@ export class MemberConnections {
         where workspace_id=${caller.workspaceId} and installation_id=${id} and state_hash=${hash}
         and owner_id=${caller.actor.id} and consumed_at is null and expires_at>clock_timestamp()`;
       if (!row) throw expired();
-      const [i] = await tx`select registration_id,version from extension_installations where id=${id}`;
+      const [i] =
+        await tx`select registration_id,version from extension_installations where id=${id}`;
       if (!i) throw expired();
       return { ...row, manifest: this.catalog.get(i.registration_id, i.version).manifest };
     });
@@ -432,10 +438,7 @@ export class MemberConnections {
       if (oauth && credential === 'key' && !oauth.keySetting)
         throw new AppError(422, 'invalid_connection', 'this extension connects with OAuth only');
       for (const name of required)
-        if (
-          !input.secretRefs[name] &&
-          (credential === 'oauth' || !stored?.names.includes(name))
-        )
+        if (!input.secretRefs[name] && (credential === 'oauth' || !stored?.names.includes(name)))
           throw new AppError(422, 'invalid_secret', 'required connection secret missing', {
             key: name,
           });
