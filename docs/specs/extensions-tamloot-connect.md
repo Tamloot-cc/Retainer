@@ -569,8 +569,9 @@ response without `refresh_token` keeps the old one.
      `current`, if any, joins `release` as `replaced`, and `pending` is
      cleared.
    - Refused (`source_account_changed`, or any other final failure): in one
-     write, `pending` joins `release` as `rejected` and `rejected` takes the
-     code. `current` is untouched: after a rejected reconnect the member's
+     write, `pending` joins `release` as `rejected`, `pending` is cleared
+     and `rejected` takes the code. The session is then only in `release`,
+     so it can never be promoted or counted twice. `current` is untouched: after a rejected reconnect the member's
      previous session stays where it was. Try to give up the rejected
      session now, then fail with the code. If Tamloot cannot be reached,
      the cleanup in §4.7 retries it.
@@ -646,7 +647,7 @@ request that is not a GET.
 | API            | 429, 5xx                   | `retry` with `Retry-After`        | unchanged, as today                  |
 | `connect`      | §5.5 step 3, full release  | `failed`, `release_backlog`       | `setup_failed`                       |
 | `connect`      | §5.5 step 4, spent code    | `failed`, `exchange_interrupted`  | `setup_failed`, and the notice       |
-| `disconnect`   | a session it cannot name   | `failed`, `release_incomplete`    | already `disconnected`; the notice   |
+| `disconnect`   | a session it cannot name   | `failed`, `release_incomplete`    | unchanged (§4.7); the notice         |
 
 `provider_unauthorized` already deletes the connection's schedules and leaves
 its queued jobs to be cancelled at claim, so a revoked connection fails once
@@ -662,7 +663,7 @@ approval token passes the authorizer with a context that carries no
 identity, and the application answers `401 invalid_token`; that context can
 never become a principal. `401` codes are `invalid_token`, `access_revoked`
 or none, all handled by the `401` rows. Retainer does not guess around it:
-an OAuth `403` without a recognized `code` is still `provider_forbidden`.
+every OAuth `403`, whatever its `code`, is `provider_forbidden`.
 The staging check in §11 (check 7) through the real gateway is a launch
 blocker.
 
@@ -735,9 +736,10 @@ Connected with OAuth:
 | `setup_failed`                             | The reason and **Connect with Tamloot**                     |
 
 For `needs_reconnect` and `setup_failed`, the card adds: "If you don't
-connect again, disconnect to end Retainer's access in Tamloot." Until
-the member does one or the other, Retainer may still hold the previous
-session.
+connect again, disconnect: imports stay stopped and Retainer gives up its
+access in Tamloot, retrying for up to a day. Revoking Retainer in Tamloot
+always ends it." Until the member does one or the other, Retainer may still
+hold the previous session.
 
 Reconnecting an OAuth connection is the same button, with the connection's
 ID and generation. It shows the same inline settings, filled with the current
@@ -806,8 +808,9 @@ silent. It reads counts and timings only.
 
 ## 8. Security
 
-- `state` is 256 random bits, stored only as a hash, single-use, good for 15
-  minutes and bound to the member, workspace and installation. A completion
+- `state` is `v1.<workspaceId>.<installationId>.<nonce>` with a 256-bit
+  random nonce (§4.4). The whole state is stored only as a hash, single-use,
+  good for 15 minutes and bound to the member, workspace and installation. A completion
   from another member's session is refused, so a code cannot be planted in
   someone else's connection.
 - The workspace and installation IDs in the state only route the callback.
@@ -862,7 +865,8 @@ Real Postgres, a fresh database per file, no mocked database.
   - Reconnect with the same account: the new session becomes `current` and
     the old one is released only after that write.
   - Reconnect with another account: `verifySource` refuses, `current` is
-    still the old session, the new one is in `release` as `rejected`, its
+    still the old session, the new one is in `release` as `rejected`,
+    `pending` is empty, its
     `DELETE /v1/access` is attempted in the same run, and the run fails with
     `source_account_changed`.
   - The same, with `DELETE /v1/access` answering `503`: the entry stays, and
@@ -999,11 +1003,15 @@ API Gateway with Retainer's staging client, not a fixture.
    Retainer. If not: Tamloot serializes its release per member and client;
    nothing changes in Retainer.
 10. **Release racing an unexchanged code.** One workspace releases the
-    member's last session while another holds an approved code it has not
-    exchanged. The exchange fails, or its session is listed and released
-    like any other. If it makes a session under a revoked approval that
-    Tamloot does not list, Tamloot must refuse that exchange; the member
-    then sees "Tamloot didn't finish connecting".
+    member's last session while another holds an approved code, both one
+    after the other and at the same moment. Tamloot (PR #2410, `24e412526`)
+    treats a session as live only while the member's approval is not
+    revoked, so a session made under a revoked approval can never read,
+    whatever the token endpoint does with the exchange. Check, in both
+    orders: the exchange either fails, or its first read answers `401
+    access_revoked`, its refresh fails, and the connection becomes "Needs
+    reconnect" by the ordinary `401` rule (§5.8). No Retainer change. If a
+    read succeeds, it is a Tamloot blocker.
 11. **Load and isolation.** Several connections of one member, polling at
     the normal rate, stay inside the shared API throttle, and their sessions
     stay separate. If not: poll OAuth connections less often.
@@ -1025,7 +1033,8 @@ Setup values, and the fixes Tamloot owns.
   and client (check 9), the approval naming task contacts by email only, as
   `GET /v1/tasks` returns them, and the Connected apps tab at the
   `revokeUrl` in §5.1.
-- An answer for check 10.
+- Liveness that requires a non-revoked approval (PR #2410, `24e412526`),
+  for check 10.
 
 ## 13. Not in this spec
 
