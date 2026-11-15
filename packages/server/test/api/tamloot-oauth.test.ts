@@ -9,8 +9,8 @@ import { type ClaimedJob, ExtensionQueue } from '../../src/extension-runtime/que
 import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
-import { runCli } from '../../src/operator/commands.js';
 import { parseOAuthClients } from '../../src/extensions/oauth-clients.js';
+import { runCli } from '../../src/operator/commands.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 
@@ -200,9 +200,7 @@ describe('Connect with Tamloot through the real API, Postgres and bundle', () =>
     });
     expect(disconnected.status).toBe(200);
     const cleanup = await h.drain();
-    expect(cleanup.map((r) => [r.trigger, r.result.status])).toEqual([
-      ['disconnect', 'succeeded'],
-    ]);
+    expect(cleanup.map((r) => [r.trigger, r.result.status])).toEqual([['disconnect', 'succeeded']]);
     expect(fx.liveSessions('dana')).toHaveLength(0);
     expect(fx.listsRetainer('dana')).toBe(false);
     const [secret] =

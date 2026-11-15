@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "rootDir": "."
+    "rootDir": ".."
   },
   "include": ["src", "test", "vitest.config.ts", "drizzle.config.ts", "e2e", "playwright.config.ts"]
 }
