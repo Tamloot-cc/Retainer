@@ -493,6 +493,56 @@ describe('extension pages and human approval', () => {
     await vi.waitFor(() => expect(uninstall).toHaveBeenCalledWith(installation.id));
     await vi.waitFor(() => expect(router.navigate).toHaveBeenCalledWith({ to: '/extensions' }));
   });
+  it('says on the uninstall confirmation that member OAuth access is given up for a day', async () => {
+    const member: Release = {
+      ...release,
+      manifest: {
+        ...release.manifest,
+        name: 'tamloot',
+        connection: 'member',
+        oauth: {
+          verifierSetting: 'verifier',
+          codeSetting: 'code',
+          tokenSetting: 'tokens',
+          revokeUrl: 'https://provider.example/apps',
+        },
+      },
+    };
+    const oauth = { ...installation, connectionMethods: ['oauth' as const] };
+    vi.spyOn(api, 'extensionCatalog').mockResolvedValue({ releases: [member] });
+    vi.spyOn(api, 'extensions').mockResolvedValue({ installations: [oauth] });
+    vi.spyOn(api, 'extensionConnections').mockResolvedValue({ connections: [] });
+    router.params = { id: installation.id };
+    router.search = { connect: 'declined' };
+    mount(<ExtensionPage />);
+    // The return notice stays on the tab while the address drops `connect`.
+    expect(
+      await screen.findByText(
+        "Tamloot isn't connected: the request was declined. You can try again.",
+      ),
+    ).toBeTruthy();
+    await vi.waitFor(() =>
+      expect(router.navigate).toHaveBeenCalledWith(expect.objectContaining({ replace: true })),
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Extension actions' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Uninstall' }));
+    const confirm = await screen.findByRole('dialog', { name: 'Uninstall tamloot?' });
+    expect(
+      within(confirm).getByText(
+        "Retainer will try for up to a day to give up each member's access in Tamloot. Members can check Tamloot's Connected apps.",
+      ),
+    ).toBeTruthy();
+  });
+  it('keeps the uninstall confirmation unchanged without OAuth', async () => {
+    vi.spyOn(api, 'extensionCatalog').mockResolvedValue({ releases: [release] });
+    vi.spyOn(api, 'extensions').mockResolvedValue({ installations: [installation] });
+    router.params = { id: installation.id };
+    mount(<ExtensionPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Extension actions' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Uninstall' }));
+    const confirm = await screen.findByRole('dialog', { name: 'Uninstall Fixture?' });
+    expect(within(confirm).queryByText(/Connected apps/)).toBeNull();
+  });
   it('saves settings on the Settings tab and sends credential changes to Reconnect', async () => {
     vi.spyOn(api, 'extensionCatalog').mockResolvedValue({ releases: [release] });
     const list = vi.spyOn(api, 'extensions').mockResolvedValue({ installations: [installation] });

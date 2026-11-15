@@ -34,10 +34,7 @@ export const executionResultSchema = z.strictObject({
    * Incidents where provider access may remain (Tamloot connect spec 4.7), such as
    * `exchange:<hash>` or `release:<uuid>`. The server records each once per connection.
    */
-  releaseIncomplete: z
-    .array(z.string().regex(RELEASE_INCIDENT_PATTERN))
-    .max(8)
-    .optional(),
+  releaseIncomplete: z.array(z.string().regex(RELEASE_INCIDENT_PATTERN)).max(8).optional(),
 });
 /**
  * The server-defined input of an `install` or `connect` lifecycle function: the release

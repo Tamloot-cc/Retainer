@@ -4,10 +4,10 @@ import type {
   ExtensionAuthorizeInput,
   ExtensionConnection,
   ExtensionConnectionInput,
-  ExtensionOAuthClient,
   ExtensionInstallation,
   ExtensionInstallInput,
   ExtensionManifest,
+  ExtensionOAuthClient,
   ExtensionPreview,
 } from '@retainer/extension';
 import { isMaintenance, maintenanceFetch } from './maintenance.js';
