@@ -804,7 +804,9 @@ So a refresh answer counts as `invalid_grant` when it is `400` with
 codes, and only on the refresh grant: any other `error_code` stays a setup
 error (§5.8). A banned member sees "Needs reconnect" and cannot reconnect
 until Tamloot lifts the ban; that is still the member's state, not an
-operator's. Add a code only
+operator's. A ban does not end the session: GoTrue only sets `banned_until`,
+so the same refresh token works again once the ban is lifted. When giving a
+session up, `user_banned` is therefore never done (§5.7). Add a code only
 after it is observed on the token endpoint. The parent of the active refresh
 token returns the active one even outside the reuse interval, so a run that
 dies between a refresh and its write, or a disconnect hook that cannot write
@@ -975,13 +977,15 @@ done. On `401`, refresh that session once and repeat; a second `401` or
 is also done: Retainer drops its tokens and can do nothing more with it. A
 `401` does not mean Tamloot deleted the session (Tamloot §10, "Known limit:
 re-approval"; see §13). `429`, a `5xx` or a network error means try again
-later. A `403`, or a refresh refused as a setup error (`oauth_client_rejected`,
+later. A `403`, a refresh answering `user_banned` (§5.4: the session
+outlives the ban), or a refresh refused as a setup error (`oauth_client_rejected`,
 §5.8), is never done: Retainer still holds the tokens and the obligation to
 give the session up. The entry stays and is retried like a `5xx`: on an
 active connection by every run, with `release:<id>` after 24 hours; in a
 cleanup job until its deadline, which then records `cleanup:<job id>` as
 today. The run names the setup error in the result's existing `code` field
-(`provider_forbidden` or `oauth_client_rejected`), without changing its
+(`provider_forbidden` or `oauth_client_rejected`; a ban names
+`provider_unauthorized`), without changing its
 status: a cleanup job returns `retry` with it, and an ordinary run that
 otherwise succeeds returns `succeeded` with it. The queue already stores a
 code on any status, and a `succeeded` code does not change the connection's
@@ -1245,8 +1249,9 @@ Real Postgres, a fresh database per file, no mocked database.
   run and a function that does not declare the token secret.
 - **Token answers (unit):** the fixtures use the bodies in §5.4, not RFC
   guesses. A refresh answering any of the four refresh `error_code`s in §5.4
-  is `provider_unauthorized` and, in a release,
-  done; the same codes on an exchange, `invalid_credentials`,
+  is `provider_unauthorized`; in a release, `refresh_token_not_found`,
+  `refresh_token_already_used` and `session_expired` are done, and
+  `user_banned` keeps the entry; the same codes on an exchange, `invalid_credentials`,
   `error: invalid_client` and an unknown `error_code` are
   `oauth_client_rejected`. A `403` or a client refusal during a release keeps
   the entry and names the code (§5.7).
