@@ -14,6 +14,7 @@ import {
   CalendarDay,
   CalendarEntry,
   CalendarHeader,
+  calendarEntryLabel,
   DragArea,
   EntryPreview,
   Inset,
@@ -198,7 +199,15 @@ export function CalendarView({
         </Inset>
       ) : null}
       <DragArea<PresentedRecord>
-        names={{ item: recordTitle, target: keyLabel }}
+        names={{
+          item: (record) =>
+            calendarEntryLabel(
+              recordTitle(record),
+              timeOf(field, dateValue(record)),
+              recordCategory(object, record).label,
+            ),
+          target: keyLabel,
+        }}
         overlay={(record) => (
           <EntryPreview
             title={recordTitle(record)}

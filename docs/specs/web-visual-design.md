@@ -245,7 +245,7 @@ Final checks (2026-11-15):
 
 | Check | Result |
 | --- | --- |
-| Web unit tests | 286 passed across 31 files |
+| Web unit tests | 289 passed across 32 files |
 | Web production build and TypeScript | Passed |
 | Server and browser-test TypeScript | Passed |
 | Repository lint / import layers | Passed; 49 existing warnings and 12 informational diagnostics |
@@ -270,3 +270,11 @@ not a cross-browser certification or a full audit of every legacy color usage.
 
 All implementation items in this spec are complete. Publication/merge/deployment
 is a separate delivery action and has not been performed.
+
+### PR review follow-up
+
+Calendar entry accessible names include their category alongside the record name
+and optional time. Screen-reader users get the category directly from the button;
+they do not have to discover the nested visual marker. Component tests cover both
+categorized and uncategorized entries, and the authenticated calendar test checks
+the complete accessible name. Keyboard-drag announcements share the same label.

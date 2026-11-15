@@ -744,6 +744,7 @@ export {
   CalendarDay,
   CalendarEntry,
   CalendarHeader,
+  calendarEntryLabel,
   EntryPreview,
   MonthGrid,
   MoreEntries,

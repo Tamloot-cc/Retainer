@@ -156,6 +156,11 @@ function EntryBody({
   );
 }
 
+/** The same identity is announced on focus and during keyboard moves. */
+export function calendarEntryLabel(title: string, time?: string, category?: string) {
+  return [title, time, category].filter(Boolean).join(', ');
+}
+
 /**
  * A record on a day. Click or Enter opens it; with `draggable`, Space picks
  * it up to move to another day.
@@ -196,7 +201,7 @@ export function CalendarEntry({
       ref={drag.ref}
       type="button"
       {...drag.handle}
-      aria-label={time ? `${title}, ${time}` : title}
+      aria-label={calendarEntryLabel(title, time, category?.label)}
       aria-current={selected || undefined}
       data-pending={pending || undefined}
       data-dragging={drag.isDragging || undefined}

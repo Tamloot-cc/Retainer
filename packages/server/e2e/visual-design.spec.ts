@@ -128,7 +128,7 @@ test('category identity follows records through tables, boards, calendars and Sc
   await page.emulateMedia({ colorScheme: 'dark' });
   await capture(page, 'board-dark');
   await page.goto(`${r.url}/app/o/deal?view=${calendar.id}&month=2026-03`);
-  const entry = page.getByRole('button', { name: 'Acme renewal', exact: true });
+  const entry = page.getByRole('button', { name: 'Acme renewal, Stage: Qualified', exact: true });
   await expect(entry).toBeVisible();
   await expect(entry.getByRole('img', { name: 'Stage: Qualified' })).toHaveAttribute(
     'data-color',
