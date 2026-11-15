@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { Ellipsis, Puzzle } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAccount } from '../../accounts/context.js';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import {
@@ -112,6 +112,11 @@ function InstalledExtension({
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   // Kept here: the settings form starts again from each new revision, saved or not.
   const [savedRevision, setSavedRevision] = useState<number | undefined>();
+  // After an OAuth return: the Connections tab keeps the notice; the address drops it.
+  const [returned] = useState(search.connect);
+  useEffect(() => {
+    if (returned) void setSearch({ connect: undefined }, { replace: true });
+  }, [returned, setSearch]);
   const action = useMutation({
     mutationFn: (kind: 'enable' | 'disable' | 'uninstall') =>
       kind === 'enable'
@@ -273,6 +278,7 @@ function InstalledExtension({
           release={release}
           admin={admin}
           onChanged={refresh}
+          returned={returned}
           onRuns={(connection) => {
             setRunsConnection(connection);
             void setSearch({ tab: 'runs' });
@@ -316,6 +322,13 @@ function InstalledExtension({
               It loses its access to this workspace and stops running. The data it brought in, the
               fields it added and its saved views stay.
             </p>
+            {manifest?.oauth && installation.connectionMethods?.includes('oauth') ? (
+              <p className="text-sm">
+                Retainer will try for up to a day to give up each member's access in{' '}
+                {stateLabel(manifest.name)}. Members can check {stateLabel(manifest.name)}'s
+                Connected apps.
+              </p>
+            ) : null}
             <Row>
               <Button
                 variant="destructive"

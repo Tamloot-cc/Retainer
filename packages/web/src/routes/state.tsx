@@ -7,6 +7,8 @@ import { api, useWorkspace } from '../api/client.js';
 import { Button, Notice, Row } from '../ui/index.js';
 export type ViewSearch = {
   tab?: string;
+  /** Extension page, after an OAuth return: what the Connections tab says about it. */
+  connect?: string;
   cursor?: string;
   filter?: string;
   sort?: string;

@@ -208,6 +208,7 @@ function validateSearch(raw: Record<string, unknown>): ViewSearch {
     'to',
     'linked',
     'layout',
+    'connect',
   ] as const)
     if (typeof raw[key] === 'string') result[key] = raw[key];
   return result;
@@ -396,6 +397,12 @@ function KeyApp() {
       .catch((e) => setError(e.message));
   };
   if (loading) return <Splash label="Checking session…" />;
+  if (window.location.pathname === CONNECT_CALLBACK)
+    return (
+      <Suspense fallback={<Splash label="Connecting…" />}>
+        <LazyConnectCallback {...(session ? { session } : {})} />
+      </Suspense>
+    );
   return (
     <>
       {error ? <Notice error>{error}</Notice> : null}
@@ -478,6 +485,11 @@ const LazyNoAccess = lazy(() => screens().then((m) => ({ default: m.NoAccess }))
 const oauth = () => import('./accounts/oauth.js');
 const LazyOAuthContinue = lazy(() => oauth().then((m) => ({ default: m.OAuthContinue })));
 const LazyOAuthConsent = lazy(() => oauth().then((m) => ({ default: m.OAuthConsent })));
+/** Where an extension's OAuth provider sends a member back (Tamloot connect spec 6.1). */
+const CONNECT_CALLBACK = '/app/connect/callback';
+const LazyConnectCallback = lazy(() =>
+  import('./routes/extensions/callback.js').then((m) => ({ default: m.ConnectCallback })),
+);
 const LazyYourAccount = lazy(() =>
   import('./accounts/your-account.js').then((m) => ({ default: m.YourAccount })),
 );
@@ -490,6 +502,7 @@ function AccountsApp({ account }: { account: Account }) {
   // Connecting an app over OAuth (accounts spec 4.7).
   if (path === '/app/oauth/sign-in') return <LazyOAuthContinue />;
   if (path === '/app/oauth/consent') return <LazyOAuthConsent account={account} />;
+  if (path === CONNECT_CALLBACK) return <LazyConnectCallback account={account} />;
   if (path === '/app/account' || path === '/app/account/')
     return <LazyYourAccount account={account} />;
   const reachable = allWorkspaces(account);
@@ -560,7 +573,10 @@ function App() {
   return (
     <QueryClientProvider client={accountClient}>
       <Suspense fallback={loading}>
-        {boot.mode === 'signed-out' ? (
+        {boot.mode === 'signed-out' && window.location.pathname === CONNECT_CALLBACK ? (
+          // Never signs in here: the code would be posted by whoever signs in.
+          <LazyConnectCallback />
+        ) : boot.mode === 'signed-out' ? (
           // Connecting an app keeps its whole address, signed parameters and
           // all, but not the error of a sign-in that failed.
           <LazySignIn
