@@ -1,9 +1,11 @@
 # PRD: Connect with Tamloot
 
 Status: draft, 2026-11-15. Product requirements only; the design and
-implementation come later in a spec. Tamloot's side (the approval and a page
-to see and revoke approved apps) is in Tamloot's own PRD,
-`docs/prds/PRD-connected-apps.md` in the Tamloot repository.
+implementation are in
+[extensions-tamloot-connect.md](extensions-tamloot-connect.md). Tamloot's
+side (the approval and a page to see and revoke approved apps) is in
+Tamloot's own PRD, `docs/prds/PRD-connected-apps.md` in the Tamloot
+repository.
 
 ## Problem
 
