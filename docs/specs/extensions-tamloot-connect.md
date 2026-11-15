@@ -805,8 +805,12 @@ codes, and only on the refresh grant: any other `error_code` stays a setup
 error (§5.8). A banned member sees "Needs reconnect" and cannot reconnect
 until Tamloot lifts the ban; that is still the member's state, not an
 operator's. A ban does not end the session: GoTrue only sets `banned_until`,
-so the same refresh token works again once the ban is lifted. When giving a
-session up, `user_banned` is therefore never done (§5.7). Add a code only
+so the same refresh token works again once the ban is lifted. So the
+classification keeps the original `error_code` until the caller has decided:
+in an ordinary run (import, `connect`) `user_banned` is `invalid_grant` and
+the connection becomes `needs_reconnect`; when giving a session up, it is
+never done, and the entry stays and is retried until its deadline and notice
+(§5.7). Add a code only
 after it is observed on the token endpoint. The parent of the active refresh
 token returns the active one even outside the reuse interval, so a run that
 dies between a refresh and its write, or a disconnect hook that cannot write
