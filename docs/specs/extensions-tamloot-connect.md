@@ -457,15 +457,15 @@ guard written at each site.
     `admitRun`, and so does `GET …/runtime/oauth-client` (§4.6), which a
     hook needs to refresh a session before releasing it. The same holds for
     the full hook on a disconnected connection.
-- **Never beside a reconnect.** It takes the connection's one running slot
-  (`extension_jobs_one_running_connection_uq`). Starting a reconnect
-  (§4.4) is refused while it runs. While the connection has an unconsumed,
-  unexpired `extension_authorizations` row, `retainer_extension_jobs_due`
-  does not claim it: the check runs under the queue lock that starting an
-  authorization also takes, so it can never give up the session a
-  reconnect's new code depends on. Starting the browser handshake changes
-  nothing else, and the job's `expires_at` is not extended. The table
-  below says what each outcome of the handshake does.
+- **Not beside a member's reconnect.** It takes the connection's one running
+  slot (`extension_jobs_one_running_connection_uq`). Starting a reconnect (§4.4)
+  is refused while it runs. While the connection has an unconsumed, unexpired
+  `extension_authorizations` row, `retainer_extension_jobs_due` does not claim
+  it: the check runs under the queue lock that starting an authorization also
+  takes, so no attempt the platform admits gives up a session while a reconnect
+  is open. An attempt fenced by a disable is the one exception, below. Starting
+  the browser handshake changes nothing else, and the job's `expires_at` is not
+  extended. The table below says what each outcome of the handshake does.
 - **Changes nothing about the connection.** It never releases `current`
   (after a rejected reconnect, that is the member's previous session). It
   writes no secret, so entries it released stay in the store until a later
@@ -513,6 +513,39 @@ job past its `expires_at` is failed with `cleanup_deadline_expired` and
 change made after the deadline but before the next maintenance tick loses
 no incident. Auto-upgrade already runs after `maintain()` in the same tick,
 and takes the same step.
+
+**An attempt already in flight when the installation changes.** Disabling
+calls `cancelRuns` with a cleanup generation, which requeues a running
+disconnect job, clears its lease and fences its credential
+(`extension-runtime/locks.ts`; its comment says provider side effects are
+at least once). The fence stops the old attempt's platform calls (secret
+reads, its result), but a `DELETE /v1/access` it already sent still reaches
+Tamloot. A partial job is no different: after a quick disable and re-enable,
+the install completion supersedes it (table) and queues a `connect`, or the
+member starts a reconnect, while that request may still finish. Its target
+was chosen when it was sent: `pending` or an entry in `release`, not
+`current` at that time, and never a session from a code exchanged after it
+was sent. A `pending` session can be promoted to `current` before the
+delayed request lands, so the request can end what has since become
+`current`. This spec keeps those framework semantics rather than adding a
+cancellation protocol. What can happen depends on when the request lands:
+
+- **Before the next `connect` verifies `pending`:** step 5's
+  `GET /v1/me` gets `401`, then `invalid_grant` on refresh, and the
+  `connect` fails with `provider_unauthorized`: the connection is
+  `setup_failed` and nothing is imported. The member connects again.
+- **After that `connect` promoted the session:** imports so far came from
+  the account `verifySource` checked. The next request with `current` gets
+  `401` and a failed refresh, and the connection becomes `needs_reconnect`
+  (§5.6). The member reconnects.
+- **It ended Retainer's last session:** Tamloot revokes the approval
+  (§5.5, Order), and a code exchanged in the meantime fails the same way
+  at its first check; the member sees Tamloot's approval screen again.
+
+In every order, promotion still needs `verifySource`, so nothing is ever
+imported from the wrong account, and no access is hidden: the request only
+ends access, and a session it ended counts as given up (§5.7). An entry it
+ended but could not remove is checked or retried by the next run as usual.
 
 **The maintenance sweep.** `retainer_extension_maintenance_due` (`0109`)
 also returns an installation, in any state, that has a partial release job
@@ -940,6 +973,7 @@ request that is not a GET.
 | -------------- | -------------------------- | --------------------------------- | ------------------------------------ |
 | Token endpoint | `invalid_grant`            | `failed`, `provider_unauthorized` | `needs_reconnect`, or `setup_failed` |
 | Token endpoint | `invalid_client`, or 401   | `failed`, `oauth_client_rejected` | `degraded`: an operator setup error  |
+| Token endpoint | any other non-429 `4xx`    | `failed`, `oauth_client_rejected` | `degraded`: an operator setup error  |
 | Token endpoint | 429, 5xx, timeout, network | `retry`                           | unchanged                            |
 | API            | 401 twice (§5.6)           | `failed`, `provider_unauthorized` | `needs_reconnect`                    |
 | API, OAuth     | 403                        | `failed`, `provider_forbidden`    | `degraded`: a bug or a setup error   |
@@ -950,6 +984,13 @@ request that is not a GET.
 | `connect`      | §5.5 step 4, spent code    | `failed`, `exchange_interrupted`  | `setup_failed`, and the notice       |
 | `connect`      | §5.5 step 2, earlier crash | as the run ends, IDs reported     | as the run ends, and the notice      |
 | `disconnect`   | a store that doesn't parse | `failed`, `release_incomplete`    | unchanged (§4.7); the notice         |
+
+Any other token-endpoint `4xx` except `429`, with or without an OAuth error
+code (`invalid_request`, `unauthorized_client`, `unsupported_grant_type`,
+`invalid_scope` or one Retainer doesn't know), is `oauth_client_rejected`:
+Retainer sent what the client registration should accept, so it is a setup
+error, not the member's. So every terminal token answer has one code to store
+in `failure` and replay (§5.5).
 
 `provider_unauthorized` already deletes the connection's schedules and leaves
 its queued jobs to be cancelled at claim, so a revoked connection fails once
@@ -1164,7 +1205,10 @@ Real Postgres, a fresh database per file, no mocked database.
   when close to expiry; `401`, refresh, retry; `invalid_grant` gives
   `needs_reconnect` and no further runs; `5xx` and `429` at the token
   endpoint retry and never mark the connection; a write conflict uses the
-  stored tokens; OAuth `403` with any code, or none, is `provider_forbidden`
+  stored tokens; a token `400` with `invalid_request`, `invalid_scope`, an
+  unknown code or none is `oauth_client_rejected`, stored in `failure` and
+  replayed by a same-code run without a token call; OAuth `403` with any
+  code, or none, is `provider_forbidden`
   and never `needs_reconnect`; a key connection behaves exactly as before;
   `poll`, `scan` and `sync-session` of an OAuth connection, which receive
   `oauthTokens` and no `oauthCode`, use the tokens and never `apiKey`;
@@ -1302,6 +1346,19 @@ Real Postgres, a fresh database per file, no mocked database.
     `cleanup_deadline_expired`, not `cancelled`, `cleanup:<job id>` is
     recorded and the notice shows. Run the release change concurrently
     with the sweep: the job is failed once and the incident recorded once.
+  - **A disable while the hook's `DELETE` is in flight**, with the fixture
+    holding a `DELETE /v1/access` for the `pending` session open across a
+    disable and re-enable, in each order:
+    - It completes `204` before the superseding `connect` verifies
+      `pending`: the `connect` fails with `provider_unauthorized`, the
+      connection is `setup_failed`, nothing is imported, and a later
+      reconnect connects.
+    - It completes `204` after that `connect` promoted the session: the
+      imports made before it all came from the verified account; the next
+      `poll` gets `401` and a failed refresh, and the connection is
+      `needs_reconnect`.
+    - It ended the last session, so the fixture revokes the approval: a
+      code exchanged in the meantime fails at its first check.
   - **A crashed attempt before the deadline:** the worker running the hook
     dies, leaving the job `running` with an expired lease, before
     `expires_at`, while an open request keeps it from being reclaimed. A
@@ -1331,9 +1388,8 @@ Real Postgres, a fresh database per file, no mocked database.
     and the installation becomes `uninstalled` as soon as the full hooks
     succeed, not at the 24-hour deadline. The same for workspace deletion.
   - A release change and an auto-upgrade answer `409 cleanup_pending` while
-    a keep-current job is queued or running, as for disconnect cleanup, and
-    go through once it ends, by success or its deadline (with its
-    incident).
+    `retainer_partial_release_blocking` holds for a keep-current job, and
+    go through once it does not (§4.7).
   - Member disconnect, admin disconnect, member removal, uninstall and
     workspace deletion each queue the hook and let it read the token secret
     within 24 hours. For uninstall and deletion, the installation stays
@@ -1361,13 +1417,12 @@ Real Postgres, a fresh database per file, no mocked database.
     incident run at the same moment. In either commit order the new
     incident's `release_incomplete_at` is later than the dismissal and the
     notice shows.
-  - **Reconnect versus a running cleanup:** with a `{ keep: 'current' }`
-    hook running, starting a reconnect answers `409 cleanup_running` and
-    the hook finishes. With it queued, the start leaves it queued, it is not
-    claimed while the request is open, and no `DELETE /v1/access` is made
-    before the new session is promoted. Run the start and a claim
-    concurrently: no order lets the hook release a session after the start
-    has committed.
+  - **Reconnect versus a running cleanup:** with a `{ keep: 'current' }` hook
+    running, starting a reconnect answers `409 cleanup_running` and the hook
+    finishes. With it queued, the start leaves it queued, it is not claimed
+    while the request is open, and no `DELETE /v1/access` is made before the new
+    session is promoted. Run the start and a claim concurrently: no order lets
+    an admitted attempt release a session after the start has committed.
   - **Handshake abandoned:** the member declines, closes Tamloot, or the
     request expires. The deferred hook is claimed and runs, and its
     deadline is still 24 hours from when it was queued.
@@ -1550,6 +1605,12 @@ hours; Retainer never promises it unconditionally.
   which would lose its sessions if the upgrade then failed.
 - **A browser not signed in to Retainer** cannot finish connecting (§6.1).
   The member connects again from Retainer.
+- **Disabling during a running cleanup** (§4.7, "An attempt already in
+  flight"). A `DELETE /v1/access` sent before a disable can still finish
+  after a quick re-enable or a reconnect, and can end a session that has
+  since been promoted to `current`. The member may have to connect again
+  (`setup_failed` or `needs_reconnect`, depending on when it lands);
+  nothing is imported from another account and no access is hidden.
 - **Revoking is per member, not per workspace.** The only way for a member to
   end access Retainer could not give up is to revoke Retainer in Tamloot,
   which ends it in every workspace they connected.
