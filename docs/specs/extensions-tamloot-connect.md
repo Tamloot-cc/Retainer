@@ -566,6 +566,12 @@ response without `refresh_token` keeps the old one.
      keeping `current` and `release`. Then exchange. Write the
      session as `pending` with `exchange: 'done'` at once, before any other
      call.
+   - If Tamloot answers the exchange with an OAuth error (a `4xx` with an
+     `error`, such as `invalid_grant` or `invalid_client`), no session was
+     created: write `exchange: 'done'` with no `pending`, then fail as §5.8
+     says. `'started'` stays only when the call may have reached Tamloot
+     without an answer Retainer read: a timeout, a network error or a
+     `5xx`, which retry (step 4).
 4. **Same code** (a retry, or the `connect` an upgrade or re-enable queues):
    - `exchange: 'started'`: the run that exchanged died before writing.
      Exchange once more. If the first call never reached Tamloot this
@@ -906,6 +912,10 @@ Real Postgres, a fresh database per file, no mocked database.
     `invalid_grant`, writes `exchange: 'done'` and fails with
     `exchange_interrupted` and `releaseIncomplete`. A later `connect`,
     `poll` or cleanup of that connection reports nothing more for it.
+  - The first exchange answered `invalid_grant` or `invalid_client`: the
+    store says `exchange: 'done'` with no `pending`, the run fails as §5.8
+    says, and neither the `{ keep: 'current' }` cleanup nor the next
+    `connect` reports anything.
   - The same crash, then the member connects again with a new code before
     any retry: step 2 reports `releaseIncomplete` on a `connect` that
     succeeds, and the connection is `active` with the notice shown.
@@ -1061,11 +1071,11 @@ Setup values, and the fixes Tamloot owns.
 - The staging application and API addresses, for `authorizationEndpoint` and
   `apiOrigin`.
 - The project's refresh-token reuse settings (check 1).
-- The fixes in Tamloot PR #2410 (`e711a9870`), live on the same environment:
-  `401` for a token it refuses (check 7), its release serialized per member
-  and client (check 9), the approval naming task contacts by email only, as
-  `GET /v1/tasks` returns them, and the Connected apps tab at the
-  `revokeUrl` in §5.1.
+- The fixes in Tamloot PR #2410 (`e711a9870`, `24e412526`), live on the
+  same environment: `401` for a token it refuses (check 7), its release
+  serialized per member and client (check 9), the approval naming task
+  contacts by email only, as `GET /v1/tasks` returns them, and the
+  Connected apps tab at the `revokeUrl` in §5.1.
 - Liveness that requires a non-revoked approval (PR #2410, `24e412526`),
   for check 10.
 
