@@ -398,6 +398,20 @@ leaves `active`, so the platform runs the hook for them, with input
   else queues it, and it never queues itself.
 - **Input.** `lifecycleInputSchema` for `disconnect` becomes
   `{ keep?: 'current' }`. Jobs queued today carry `{}`: release everything.
+- **Kept apart from disconnect cleanup.** Existing code reads
+  `trigger_kind = 'disconnect'` as "cleanup of a disconnected connection".
+  A job with `input->>'keep' = 'current'` is not that, and every such site
+  excludes it:
+  - `cancelRuns` (`extension-runtime/locks.ts`) cancels it on an uninstall,
+    a workspace deletion or a release change, instead of carrying it to
+    the cleanup generation. The connection's full hook (queued by
+    `disconnectConnection`) or the upgrade's `connect` takes over the same
+    sessions.
+  - The uninstall completion checks in `queue.ts` (after a `disconnect` and
+    after the `uninstall` job) count only jobs without `keep`. A cancelled
+    keep-current job never holds an installation in `uninstalling`.
+  - `cleanupPending` (`extensions/service.ts`) ignores it, so it never
+    blocks a release change or an auto-upgrade.
 - **Every admission layer** admits it while the connection is
   `setup_failed` or `needs_reconnect` at the job's generation and the job
   is under 24 hours old, and the installation is `active`:
@@ -1111,6 +1125,13 @@ Real Postgres, a fresh database per file, no mocked database.
     `release_incomplete_at`, and queues no further cleanup.
   - The full hook on a disconnected connection retires the retained
     secrets when it finishes; the `{ keep: 'current' }` hook never does.
+  - **Uninstall with a keep-current job queued** (also deferred by an open
+    handshake, or retrying while Tamloot is down): the job is cancelled,
+    and the installation becomes `uninstalled` as soon as the full hooks
+    succeed, not at the 24-hour deadline. The same for workspace deletion.
+  - A release change and an auto-upgrade are allowed while a keep-current
+    job is queued or running; the job is cancelled, and the upgrade's
+    `connect` (or the cleanup it queues on failure) handles the sessions.
   - Member disconnect, admin disconnect, member removal, uninstall and
     workspace deletion each queue the hook and let it read the token secret
     within 24 hours. For uninstall and deletion, the installation stays
