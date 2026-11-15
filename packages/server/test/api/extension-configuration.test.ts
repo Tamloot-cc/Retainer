@@ -1,4 +1,5 @@
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
+import type { ExtensionManifest } from '@retainer/extension';
 import { granolaManifest } from '@retainer/runner/granola-contract';
 import { RetainerClient } from '@retainer/sdk';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -130,6 +131,54 @@ describe('operator runtime configuration and dedicated key-mode control', () => 
       }
     },
   );
+  it('activates a member release whose connect and disconnect hooks run on Lambda', async () => {
+    const { publicKey } = generateKeyPairSync('ed25519');
+    const hook = (kind: 'connect' | 'disconnect') => ({
+      universalId: crypto.randomUUID(),
+      name: kind,
+      description: 'Fixture',
+      handlerDigest: 'b'.repeat(64),
+      timeoutSeconds: 120,
+      trigger: { kind },
+      scopes: ['read'],
+      inputSchema: { type: 'object', additionalProperties: false },
+    });
+    const manifest = extensionFixture({
+      connection: 'member',
+      functions: [hook('connect'), hook('disconnect')] as ExtensionManifest['functions'],
+    });
+    const release = new ExtensionCatalog([
+      { manifest, actorCeiling: 'integration', runtimeEnabled: true },
+    ]).list()[0];
+    if (!release) throw new Error('release missing');
+    const services = await extensionServices(
+      loadConfig({
+        DATABASE_URL: db.url,
+        RETAINER_EXTENSION_DRIVER: 'lambda',
+        RETAINER_EXTENSION_LAMBDA_PREFIX:
+          'arn:aws:lambda:eu-central-1:123456789012:function:retainer-ext-',
+        RETAINER_EXTENSION_ISSUER: 'https://retainer.test',
+        RETAINER_EXTENSION_RUN_PUBLIC_KEY: JSON.stringify(publicKey.export({ format: 'jwk' })),
+        RETAINER_EXTENSION_CATALOG: JSON.stringify([release].map(({ digest: _d, ...r }) => r)),
+        RETAINER_EXTENSION_EXECUTABLES: JSON.stringify(
+          manifest.functions.map((fn) => ({
+            registrationId: manifest.universalId,
+            releaseDigest: release.digest,
+            functionId: fn.universalId,
+            handlerDigest: fn.handlerDigest,
+            packageDigest: manifest.packageDigest,
+            runtimeVersion: 'node24',
+            driverTarget: 'arn:aws:lambda:eu-central-1:123456789012:function:retainer-ext-member:7',
+          })),
+        ),
+      }),
+    );
+    try {
+      expect([...services.activationReady]).toEqual([release.digest]);
+    } finally {
+      await services.close();
+    }
+  });
   it('serves preview/install and broker staging without accounts mode or sign-in control', async () => {
     const config = loadConfig({
       DATABASE_URL: db.url,

@@ -117,7 +117,16 @@ export async function extensionServices(
             )
               throw new Error('verifier runtime is unavailable');
           } else if (
-            !['job', 'configure', 'install', 'uninstall', 'schedule', 'change'].includes(
+            ![
+              'job',
+              'configure',
+              'install',
+              'uninstall',
+              'connect',
+              'disconnect',
+              'schedule',
+              'change',
+            ].includes(
               fn.trigger.kind,
             )
           )
