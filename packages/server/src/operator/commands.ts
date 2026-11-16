@@ -44,7 +44,7 @@ Model calls
 Extensions
   retainer extension connections [--days <n>]
                                            New member connections by method, time to connect,
-                                           reconnects and access left behind (default 30 days)
+                                           reconnects and access left behind (30 days, at most)
 
 Options
   --json    Print machine-readable JSON
@@ -279,7 +279,9 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         return 0;
       }
       case 'extension connections': {
-        const days = parseDays(values.days);
+        // Finished jobs are kept 30 days (worker/changes.ts), and reconnects and
+        // connect failures are counted from them.
+        const days = parseDays(values.days, 30);
         const rows = await connectionMeasures(io.sql, days);
         print(
           rows.length === 0
@@ -316,11 +318,11 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
 }
 
 /** A quota from the command line: a whole number, or `none` for no limit. */
-/** `--days`: 30 by default, a whole number from 1 to 366. */
-function parseDays(value: string | undefined): number {
+/** `--days`: 30 by default, a whole number from 1 to `max`. */
+function parseDays(value: string | undefined, max = 366): number {
   const days = value === undefined ? 30 : Number(value);
-  if (!Number.isInteger(days) || days < 1 || days > 366)
-    throw new AppError(400, 'invalid_request', '--days must be a whole number from 1 to 366');
+  if (!Number.isInteger(days) || days < 1 || days > max)
+    throw new AppError(400, 'invalid_request', `--days must be a whole number from 1 to ${max}`);
   return days;
 }
 function parseLimit(value: string, kind: string): number | null {

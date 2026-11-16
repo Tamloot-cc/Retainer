@@ -1215,7 +1215,9 @@ registration: `retainer extension connections [--days <n>]`, beside
 `model usage` in `operator/commands.ts`. It also prints how many connections
 got `release_incomplete_at`, and how many `connect` jobs failed with
 `release_backlog`, `lost_backlog` or `exchange_interrupted`, so a leak is
-counted, not silent. It reads counts and timings only.
+counted, not silent. It reads counts and timings only. Reconnects and those
+failures are counted from failed jobs, which are kept 30 days, so `n` is at
+most 30 (and 30 by default).
 
 ## 8. Security
 

@@ -255,7 +255,12 @@ describe('Connect with Tamloot through the real API, Postgres and bundle', () =>
 
     // Made long before the period, it needs a reconnect within it: counted by the failure.
     await db.owner`update extension_connections set created_at=now()-interval '90 days' where id=${cid}`;
-    await db.owner`update extension_jobs set status='failed',code='provider_unauthorized',updated_at=now() where connection_id=${cid}`;
+    // A failed connect ends in setup_failed and is not a reconnect.
+    await db.owner`update extension_jobs set status='failed',code='provider_unauthorized',updated_at=now() where connection_id=${cid} and trigger_kind='connect'`;
+    expect((await measure())?.oauthNeedsReconnect).toBe(after?.oauthNeedsReconnect ?? 0);
+    const [run] =
+      await db.owner`update extension_jobs set status='failed',code='provider_unauthorized',updated_at=now() where connection_id=${cid} and trigger_kind not in ('connect','disconnect','configure') returning id`;
+    expect(run).toBeDefined();
     const later = await measure();
     expect(later?.newConnections.oauth).toBe((after?.newConnections.oauth ?? 0) - 1);
     expect(later?.oauthNeedsReconnect).toBe((after?.oauthNeedsReconnect ?? 0) + 1);
@@ -266,5 +271,15 @@ describe('Connect with Tamloot through the real API, Postgres and bundle', () =>
       err: () => {},
     });
     expect(human.join('\n')).toContain('access may remain');
+    // Failed jobs are kept 30 days, so a longer period would undercount.
+    const err: string[] = [];
+    expect(
+      await runCli(['extension', 'connections', '--days', '31'], {
+        sql: db.owner,
+        out: () => {},
+        err: (line) => err.push(line),
+      }),
+    ).not.toBe(0);
+    expect(err.join('\n')).toContain('from 1 to 30');
   });
 });

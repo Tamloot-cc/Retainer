@@ -248,13 +248,20 @@ describe('every row of the attempt table (connect spec 5.5)', () => {
     expect((await connect(c)).status).toBe('retry');
     expect(store(c)).toMatchObject({ exchange: 'exchanged', pending: expect.any(Object) });
   });
-  it('an exchange answer without a refresh token is refused, stored and replayed', async () => {
+  it('an exchange answer without a refresh token is lost, reported and replayed', async () => {
     const c = h.connection();
     h.approve(c, 'alice');
     fault('token', status(200, { access_token: 'at', token_type: 'bearer', expires_in: 3600 }));
-    expect(await connect(c)).toMatchObject({ status: 'failed', code: 'provider_invalid_response' });
-    expect(store(c)).toMatchObject({ exchange: 'refused', failure: 'provider_invalid_response' });
-    expect(store(c)?.pending).toBeNull();
+    const first = await connect(c);
+    expect(first).toMatchObject({ status: 'failed', code: 'provider_invalid_response' });
+    const hash = store(c)?.codeHash;
+    expect(store(c)).toMatchObject({
+      exchange: 'lost',
+      failure: 'provider_invalid_response',
+      pending: null,
+    });
+    expect(store(c)?.lost).toEqual([hash]);
+    expect(JSON.stringify(first)).toContain(`exchange:${hash}`);
     const calls = tokenCalls();
     expect(await connect(c)).toMatchObject({ status: 'failed', code: 'provider_invalid_response' });
     expect(tokenCalls()).toBe(calls);

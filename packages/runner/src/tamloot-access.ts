@@ -359,10 +359,14 @@ async function attempt(access: TamlootAccess, code: string, verifier: string): P
   s = access.s();
   switch (answer.kind) {
     case 'tokens':
-      // Without a refresh token the session dies with its access token. This answer
-      // consumed the code, so nothing earlier can have been processed: refused, not lost.
+      // A session exists, but without a refresh token nothing can hold or give it
+      // up: lost, so the release incident reports the access that may remain.
       if (!answer.refreshToken) {
-        await access.save({ ...s, exchange: 'refused', failure: 'provider_invalid_response' });
+        await access.save({
+          ...addLost(s, s.codeHash),
+          exchange: 'lost',
+          failure: 'provider_invalid_response',
+        });
         throw new TamlootError('provider_invalid_response');
       }
       await access.save({

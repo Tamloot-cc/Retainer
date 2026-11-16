@@ -36,12 +36,15 @@ export async function connectionMeasures(owner: Sql, days: number) {
         and j.code=any(${[...LEAK_CODES]}::text[])),
     -- No column records when a connection reached needs_reconnect: the failed run
     -- that moved it there does (extension-runtime/lifecycle.ts), so long-lived
-    -- connections count by when it happened, not by when they were created.
+    -- connections count by when it happened, not by when they were created. A
+    -- failed connect ends in setup_failed, and release and configure runs never
+    -- change the connection, so neither counts.
     reconnects as (
       select distinct i.registration_id,c.id from extension_jobs j
       join extension_connections c on c.id=j.connection_id and c.workspace_id=j.workspace_id
       join extension_installations i on i.id=c.installation_id and i.workspace_id=c.workspace_id
       where c.credential='oauth' and j.status='failed' and j.updated_at>=(select t from since)
+        and j.trigger_kind not in ('connect','disconnect','configure')
         and j.code=any(${[...RECONNECT_CODES]}::text[]))
     select r.registration_id,
       (select count(*)::int from connections c where c.registration_id=r.registration_id and c.credential='oauth') as oauth,
