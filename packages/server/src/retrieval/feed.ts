@@ -11,6 +11,7 @@ import { AppError } from '../errors.js';
 import { presentRecords, RECORD_COLUMNS, type RecordRow } from '../records/read.js';
 import { relationReferences } from '../records/references.js';
 import { withRead } from '../records/service.js';
+import { resolveRecordId } from '../records/write.js';
 import { presentValues } from './timeline.js';
 
 export const feedInputSchema = z.strictObject({
@@ -41,6 +42,9 @@ export async function workspaceFeed(
   input: z.infer<typeof feedInputSchema>,
 ): Promise<WorkspaceFeedPage> {
   return withRead(sql, caller, async (tx, schema) => {
+    const linkedId = input.linked
+      ? await resolveRecordId(tx, caller.workspaceId, input.linked)
+      : undefined;
     const typeIds = input.types?.length
       ? input.types.map((name) => {
           const object = schema.objectsByName.get(name);
@@ -58,7 +62,7 @@ export async function workspaceFeed(
           [...typeIds].sort(),
           input.query ?? '',
           input.channel ?? null,
-          input.linked ?? null,
+          linkedId ?? null,
           input.from ?? null,
           input.to ?? null,
         ]),
@@ -94,10 +98,10 @@ export async function workspaceFeed(
           where e.record_id=${source} and e.channel=${input.channel} and s.deleted_at is null
             and s.object_type_id=any(${schema.visibleObjectIds}::uuid[]))`
         : tx`true`;
-    const linked = input.linked
-      ? tx`(r.id=${input.linked} or exists (select 1 from event_links l
+    const linked = linkedId
+      ? tx`(r.id=${linkedId} or exists (select 1 from event_links l
           join records target on target.id=l.record_id and target.deleted_at is null
-          where l.event_id=r.id and l.record_id=${input.linked}
+          where l.event_id=r.id and l.record_id=${linkedId}
             and target.object_type_id=any(${schema.visibleObjectIds}::uuid[])))`
       : tx`true`;
     const query = input.query

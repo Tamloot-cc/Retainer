@@ -155,6 +155,37 @@ describe('workspace Home feed', () => {
     expect((await feed({ query: tag, from: '2100-01-01T00:00:00Z' })).body.items).toEqual([]);
   });
 
+  it('keeps a saved linked-record filter working after that record is merged', async () => {
+    const survivor = await create(word());
+    const merged = await create(word());
+    const event = await t.request('/v1/events', {
+      key: keys.user,
+      body: {
+        type: 'conversation',
+        title: 'Conversation before merge',
+        channel: 'zoom',
+        occurredAt: new Date().toISOString(),
+        about: [merged],
+      },
+    });
+    const result = await t.request(`/v1/records/${survivor}/merge`, {
+      key: keys.user,
+      body: { recordId: merged },
+    });
+    expect(result.status).toBe(200);
+    await update(survivor, { jobTitle: 'CEO' });
+    const canonical = await feed({ linked: survivor });
+    const bookmarked = await feed({ linked: merged });
+    expect(bookmarked.status).toBe(200);
+    expect(bookmarked.body).toEqual(canonical.body);
+    expect(bookmarked.body.items.some((item) => item.record.id === event.body.id)).toBe(true);
+    expect(
+      bookmarked.body.items.some(
+        (item) => item.kind === 'record_updated' && item.record.id === survivor,
+      ),
+    ).toBe(true);
+  });
+
   it('pages equal microsecond timestamps exactly once', async () => {
     const tag = word();
     const ids: string[] = [];
