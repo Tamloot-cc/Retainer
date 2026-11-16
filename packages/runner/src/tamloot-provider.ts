@@ -1,6 +1,13 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import type { z } from 'zod';
 export const TAMLOOT_ORIGIN = 'https://api.tamloot.cc';
+/** `Retry-After` in seconds or as an HTTP date, in whole seconds up to an hour; none without one. */
+export function retryAfter(headers: Headers): number | undefined {
+  const raw = headers.get('retry-after');
+  if (!raw) return undefined;
+  const seconds = /^\d+(?:\.\d+)?$/.test(raw) ? Number(raw) : (Date.parse(raw) - Date.now()) / 1000;
+  return Number.isFinite(seconds) && seconds > 0 ? Math.min(3600, Math.ceil(seconds)) : undefined;
+}
 export class TamlootError extends Error {
   constructor(
     readonly code: string,
@@ -115,7 +122,7 @@ export class TamlootProvider {
       }
       if (response.ok) return { response, signal };
       await response.body?.cancel().catch(() => {});
-      if (response.status === 401 && oauth && attempt === 0 && credential.refreshed) {
+      if (response.status === 401 && attempt === 0 && credential.refreshed) {
         // Tamloot's contract: refresh once on 401 and repeat the request.
         bearer = await credential.refreshed();
         continue;
@@ -129,19 +136,10 @@ export class TamlootProvider {
       if ([404, 410].includes(response.status) && path.startsWith('/v1/sessions/'))
         throw new TamlootError('provider_session_deleted');
       if (response.status === 429 || response.status >= 500) {
-        const raw = response.headers.get('retry-after'),
-          seconds =
-            raw && /^\d+(?:\.\d+)?$/.test(raw)
-              ? Number(raw)
-              : raw
-                ? (Date.parse(raw) - Date.now()) / 1000
-                : NaN;
         throw new TamlootError(
           response.status === 429 ? 'provider_rate_limited' : 'provider_unavailable',
           true,
-          Number.isFinite(seconds) && seconds > 0
-            ? Math.min(3600, Math.ceil(seconds))
-            : 30 + Math.floor(Math.random() * 15),
+          retryAfter(response.headers) ?? 30 + Math.floor(Math.random() * 15),
         );
       }
       throw new TamlootError('provider_invalid_request');

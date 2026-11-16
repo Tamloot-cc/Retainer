@@ -262,9 +262,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         return 0;
       }
       case 'model usage': {
-        const days = values.days === undefined ? 30 : Number(values.days);
-        if (!Number.isInteger(days) || days < 1 || days > 366)
-          throw new AppError(400, 'invalid_request', '--days must be a whole number from 1 to 366');
+        const days = parseDays(values.days);
         const rows = await dailyUsage(io.sql, days);
         print(
           rows.length === 0
@@ -281,9 +279,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         return 0;
       }
       case 'extension connections': {
-        const days = values.days === undefined ? 30 : Number(values.days);
-        if (!Number.isInteger(days) || days < 1 || days > 366)
-          throw new AppError(400, 'invalid_request', '--days must be a whole number from 1 to 366');
+        const days = parseDays(values.days);
         const rows = await connectionMeasures(io.sql, days);
         print(
           rows.length === 0
@@ -320,6 +316,13 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
 }
 
 /** A quota from the command line: a whole number, or `none` for no limit. */
+/** `--days`: 30 by default, a whole number from 1 to 366. */
+function parseDays(value: string | undefined): number {
+  const days = value === undefined ? 30 : Number(value);
+  if (!Number.isInteger(days) || days < 1 || days > 366)
+    throw new AppError(400, 'invalid_request', '--days must be a whole number from 1 to 366');
+  return days;
+}
 function parseLimit(value: string, kind: string): number | null {
   if (value === 'none') return null;
   if (!/^\d+$/.test(value)) {

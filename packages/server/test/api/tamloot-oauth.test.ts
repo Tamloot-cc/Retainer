@@ -2,17 +2,17 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { type Invocation, isRetryLater, retryLaterResult } from '@retainer/extension';
 import { executeTamloot } from '@retainer/runner/tamloot';
 import { tamlootManifest } from '@retainer/runner/tamloot-contract';
-import { generateKeyPair } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { TamlootFixture, testClock } from '../../../runner/src/tamloot-test-fixture.js';
 import { type ClaimedJob, ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.js';
-import { RunTokens } from '../../src/extension-runtime/tokens.js';
+import type { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { parseOAuthClients } from '../../src/extensions/oauth-clients.js';
 import { runCli } from '../../src/operator/commands.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
+import { testRunTokens } from '../helpers/model.js';
 
 // The whole round trip: the real API and Postgres, the real Tamloot bundle, and
 // a local stand-in for Tamloot's token endpoint and API (the runner's fixture).
@@ -20,13 +20,7 @@ const db = useTestDatabase();
 const REDIRECT = 'https://retainer.test/app/connect/callback';
 let tokens: RunTokens, broker: SecretBroker, fx: TamlootFixture;
 beforeAll(async () => {
-  const keys = await generateKeyPair('EdDSA');
-  tokens = new RunTokens({
-    issuer: 'https://retainer.test',
-    keyId: 'tamloot',
-    signingKey: keys.privateKey,
-    verificationKey: keys.publicKey,
-  });
+  ({ tokens } = await testRunTokens());
   broker = new SecretBroker(
     db.connect({ role: 'retainer_secret_broker' }),
     new SecretCipher('test', new Map([['test', randomBytes(32)]])),

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { ExtensionOAuthClient } from '@retainer/extension';
 import { z } from 'zod';
+import { retryAfter } from './tamloot-provider.js';
 
 /** One Tamloot session: what an exchange or a refresh gives (connect spec 5.3). */
 export const oauthSession = z.strictObject({
@@ -99,13 +100,6 @@ async function readCapped(response: Response, signal: AbortSignal): Promise<stri
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
-}
-
-function retryAfter(headers: Headers): number | undefined {
-  const raw = headers.get('retry-after');
-  if (!raw) return undefined;
-  const seconds = /^\d+(?:\.\d+)?$/.test(raw) ? Number(raw) : (Date.parse(raw) - Date.now()) / 1000;
-  return Number.isFinite(seconds) && seconds > 0 ? Math.min(3600, Math.ceil(seconds)) : undefined;
 }
 
 /**
