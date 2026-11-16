@@ -34,6 +34,7 @@ import {
   Sheet,
   Stack,
 } from '../../ui/index.js';
+import { useRememberCommand } from '../command-recents.js';
 import { DeveloperFacts, useApiName } from '../developer.js';
 import { EventDetailsView } from '../events/event-details.js';
 import { eventMedium, mediumField } from '../events/event-list.js';
@@ -165,6 +166,7 @@ export function RecordView({
 }) {
   const { session, schema } = useWorkspace(),
     apiName = useApiName();
+  useRememberCommand('record', r.id);
   const [history, setHistory] = useState<FieldView | null>(null),
     [historyCursor, setHistoryCursor] = useState<string>();
   const rid = r.id;

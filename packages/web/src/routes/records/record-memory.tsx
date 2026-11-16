@@ -10,7 +10,7 @@ import type {
 import { isCollectionRelation, TASK_DONE_OPTION } from '@retainer/shared';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarClock, Circle, CircleCheck, Lightbulb, PencilLine, Undo2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import { selectOptions } from '../../fields/common.js';
 import { fields } from '../../fields/index.js';
@@ -71,7 +71,7 @@ export const pointsAt = (field: FieldView, id: string) =>
  * Where the memory tabs keep their tab and filters: the URL on a page, local
  * state in the sheet.
  */
-export type MemoryState = { tab?: string; fields?: string; tasks?: string };
+export type MemoryState = { tab?: string; fields?: string; tasks?: string; fact?: string };
 export type MemoryNav = MemoryState & { set: (change: MemoryState) => void };
 
 /** The memory tabs' state in the address, for a page. */
@@ -82,6 +82,7 @@ export function useMemoryNav(): MemoryNav {
     tab: search.tab === 'timeline' ? 'history' : search.tab,
     fields: search.fields,
     tasks: search.tasks,
+    fact: search.fact,
     set: (change) => void setSearch(change),
   };
 }
@@ -189,11 +190,13 @@ export function MemoryTabs({ record, nav }: { record: PresentedRecord; nav: Memo
         sticky
         value={tab}
         items={tabs}
-        onChange={(next) => nav.set({ tab: next, fields: undefined, tasks: undefined })}
+        onChange={(next) =>
+          nav.set({ tab: next, fields: undefined, tasks: undefined, fact: undefined })
+        }
       />
       <TabPanel ref={anchor.panel}>
         {tab === 'comments' ? <CommentsPanel recordId={rid} /> : null}
-        {tab === 'facts' ? <FactsPanel recordId={rid} /> : null}
+        {tab === 'facts' ? <FactsPanel recordId={rid} targetFact={nav.fact} /> : null}
         {tab === 'events' ? <ActivityPanel record={record} /> : null}
         {tab === 'history' ? (
           <RecordHistory
@@ -228,8 +231,10 @@ function FactRow({
   onRetract,
   retractLabel = 'Retract fact',
   children,
+  focused,
 }: {
   fact: PresentedFact;
+  focused?: boolean;
   onRetract?: () => void;
   retractLabel?: string;
   children?: React.ReactNode;
@@ -259,7 +264,15 @@ function FactRow({
         ) : null
       }
     >
-      <EntryText clamp={4}>{fact.content}</EntryText>
+      <div
+        id={`fact-${fact.id}`}
+        tabIndex={-1}
+        className={
+          focused ? 'rounded-md bg-selection p-2 outline-none ring-1 ring-ring' : undefined
+        }
+      >
+        <EntryText clamp={4}>{fact.content}</EntryText>
+      </div>
       {children}
     </Entry>
   );
@@ -296,10 +309,12 @@ export function FactsPanel({
   recordId,
   canRetract,
   words = RECORD_FACT_WORDS,
+  targetFact,
 }: {
   recordId: string;
   canRetract?: boolean;
   words?: FactsWords;
+  targetFact?: string;
 }) {
   const { session } = useWorkspace(),
     client = useQueryClient();
@@ -313,6 +328,26 @@ export function FactsPanel({
     [message, setMessage] = useState('');
   const canWrite = canRetract ?? canMutate(session);
   const items = facts.data?.pages.flatMap((p) => p.facts) ?? [];
+  const focused = useRef<string | undefined>(undefined);
+  const targetLoaded = !!targetFact && items.some((f) => f.id === targetFact);
+  useEffect(() => {
+    if (!targetFact || focused.current === targetFact) return;
+    if (targetLoaded) {
+      const target = document.getElementById(`fact-${targetFact}`);
+      target?.scrollIntoView({ block: 'center' });
+      target?.focus({ preventScroll: true });
+      focused.current = targetFact;
+    } else if (facts.hasNextPage && !facts.isFetching && !facts.error) {
+      void facts.fetchNextPage();
+    }
+  }, [
+    targetFact,
+    targetLoaded,
+    facts.hasNextPage,
+    facts.isFetching,
+    facts.error,
+    facts.fetchNextPage,
+  ]);
   async function retractFact() {
     if (!retract) return;
     setBusy(true);
@@ -339,6 +374,7 @@ export function FactsPanel({
             <FactRow
               key={f.id}
               fact={f}
+              focused={f.id === targetFact}
               retractLabel={words.retract}
               {...(canWrite ? { onRetract: () => setRetract(f.id) } : {})}
             >

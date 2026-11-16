@@ -180,7 +180,11 @@ function Layout() {
             {report ? <Notice onDismiss={() => setReport(null)}>{report}</Notice> : null}
             <Outlet />
           </Shell>
-          <CommandPalette open={command} onOpenChange={setCommand} />
+          <CommandPalette
+            key={JSON.stringify([session.workspace.id, session.actor.type, session.actor.id])}
+            open={command}
+            onOpenChange={setCommand}
+          />
           {accountState && creating ? (
             <Suspense fallback={null}>
               <LazyNewWorkspace
@@ -203,6 +207,7 @@ function validateSearch(raw: Record<string, unknown>): ViewSearch {
     'filter',
     'sort',
     'assertion',
+    'fact',
     'record',
     'view',
     'month',

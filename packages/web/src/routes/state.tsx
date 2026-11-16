@@ -15,6 +15,8 @@ export type ViewSearch = {
   filter?: string;
   sort?: string;
   assertion?: string;
+  /** Fact selected from workspace search. */
+  fact?: string;
   /** A record open in the side sheet over an object list. */
   record?: string;
   /** Object list: the saved view shown; absent for all records. */
