@@ -192,7 +192,7 @@ export function MemberConnectionPanel({
             </Muted>
             {own.lastError ? <Notice>{connectionError(own.lastError)}</Notice> : null}
             <Row>
-              {human ? (
+              {human && keyMethod ? (
                 <Button disabled={!enabled} onClick={() => setForm({ connection: own })}>
                   Reconnect account
                 </Button>

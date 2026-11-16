@@ -529,6 +529,12 @@ describe('connecting with OAuth', () => {
     expect(screen.queryByRole('form', { name: 'Connect with Tamloot' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Disconnect account' })).toBeTruthy();
   });
+  it('keeps a key connection but hides its reconnect once the key method is withdrawn', async () => {
+    rows([{ ...oauthConnection, credential: 'key' }]);
+    mountOAuth({ inst: { ...installation, connectionMethods: ['oauth'] } });
+    expect(await screen.findByRole('button', { name: 'Disconnect account' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Reconnect account' })).toBeNull();
+  });
   it('offers no connect action when the server offers no method', async () => {
     rows([]);
     mountOAuth({ inst: { ...installation, connectionMethods: [] } });
