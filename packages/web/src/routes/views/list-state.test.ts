@@ -11,6 +11,7 @@ import {
   formatAggregate,
   isSortable,
   loadColumnPrefs,
+  loadRowDensity,
   moveColumn,
   nextSort,
   operatorLabel,
@@ -18,6 +19,7 @@ import {
   parseListSearch,
   recordNextPage,
   resolveColumns,
+  saveRowDensity,
   setColumnVisible,
   shiftColumn,
   shownColumnPrefs,
@@ -353,5 +355,31 @@ describe('column totals', () => {
       'Earliest —',
     );
     expect(aggregateLabel(count, 'countUnique')).toBe('Unique values');
+  });
+});
+
+describe('row density', () => {
+  it('defaults to compact and isolates persisted choices by workspace and object', () => {
+    const items: Record<string, string> = {};
+    const store = () => ({
+      getItem: (k: string) => items[k] ?? null,
+      setItem: (k: string, v: string) => {
+        items[k] = v;
+      },
+    });
+    expect(loadRowDensity(store, 'a', 'task')).toBe('compact');
+    saveRowDensity(store, 'a', 'task', 'expanded');
+    expect(loadRowDensity(store, 'a', 'task')).toBe('expanded');
+    expect(loadRowDensity(store, 'a', 'person')).toBe('compact');
+    expect(loadRowDensity(store, 'b', 'task')).toBe('compact');
+    saveRowDensity(store, 'a', 'task', 'compact');
+    expect(loadRowDensity(store, 'a', 'task')).toBe('compact');
+  });
+  it('tolerates blocked browser storage', () => {
+    const blocked = () => {
+      throw new Error('Storage blocked');
+    };
+    expect(loadRowDensity(blocked, 'a', 'task')).toBe('compact');
+    expect(() => saveRowDensity(blocked, 'a', 'task', 'expanded')).not.toThrow();
   });
 });

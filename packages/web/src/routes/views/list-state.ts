@@ -403,3 +403,32 @@ export function formatAggregate(field: FieldView, result: AggregateValue): strin
   if (typeof value === 'string') return `${label} ${dateText(value, field.type === 'date_time')}`;
   return `${label} ${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
+
+export type RowDensity = 'compact' | 'expanded';
+const densityKey = (workspace: string, object: string) =>
+  `retainer:row-density:${workspace}:${object}`;
+
+export function loadRowDensity(
+  storage: () => Pick<Storage, 'getItem'>,
+  workspace: string,
+  object: string,
+): RowDensity {
+  try {
+    return storage().getItem(densityKey(workspace, object)) === 'expanded' ? 'expanded' : 'compact';
+  } catch {
+    return 'compact';
+  }
+}
+
+export function saveRowDensity(
+  storage: () => Pick<Storage, 'setItem'>,
+  workspace: string,
+  object: string,
+  density: RowDensity,
+): void {
+  try {
+    storage().setItem(densityKey(workspace, object), density);
+  } catch {
+    // Keep the preference for this visit when browser storage is unavailable.
+  }
+}

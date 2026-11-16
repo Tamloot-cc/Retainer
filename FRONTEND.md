@@ -285,6 +285,10 @@ One route for every object. Source: `POST /v1/objects/:object/query`.
   and stay in place while other chips are added, replaced or removed.
 - Click a sortable header to sort ascending, descending, then off. The Sort
   menu also offers Updated and Created.
+- Table row height is a personal browser preference per workspace and object,
+  separate from saved views: Compact (default) shows one line; Expanded gives
+  text fields up to two lines. Other values keep their compact layout. Text
+  truncation follows the column width rather than a character limit.
 - Cursor pagination with `limit` 50. A footer shows the row range out of
   the total the view matches ("51–100 of 230") and Previous/Next; Previous is
   remembered for pages reached in this visit, otherwise it returns to the

@@ -58,8 +58,11 @@ export function DataGrid({
   onOpenRow,
   selectedRow,
   selection,
+  expanded = false,
 }: {
   label: string;
+  /** Two-line rows; cell renderers decide which values wrap. */
+  expanded?: boolean;
   columns: GridColumn[];
   rows: GridRow[];
   selection?: GridSelection;
@@ -265,6 +268,7 @@ export function DataGrid({
           selectedRow={selectedRow}
           selection={selection}
           pinLeft={pinLeft}
+          expanded={expanded}
         />
       </table>
     </section>
@@ -283,6 +287,7 @@ const GridBody = memo(function GridBody({
   selectedRow,
   selection,
   pinLeft,
+  expanded,
 }: {
   rows: GridRow[];
   columns: GridColumn[];
@@ -290,6 +295,7 @@ const GridBody = memo(function GridBody({
   selectedRow?: string;
   selection?: GridSelection;
   pinLeft: number;
+  expanded: boolean;
 }) {
   function openRow(e: ReactMouseEvent, id: string) {
     if (onOpenRow && isPlainClick(e)) onOpenRow(id);
@@ -324,7 +330,8 @@ const GridBody = memo(function GridBody({
             >
               <div
                 className={cn(
-                  'flex h-9 items-center gap-1 overflow-hidden whitespace-nowrap px-3 [&>*]:min-w-0 [&>*]:truncate',
+                  'flex items-center gap-1 overflow-hidden whitespace-nowrap px-3 [&>*]:min-w-0 [&>*]:truncate',
+                  expanded ? 'h-14' : 'h-9',
                   i === 0 ? 'text-foreground' : 'text-secondary-foreground',
                 )}
               >

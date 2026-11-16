@@ -52,6 +52,8 @@ export type DisplayProps = {
   field: FieldView;
   value: unknown;
   compact?: boolean;
+  /** Grid hosts clip by width; other compact hosts keep their short preview. */
+  textLines?: 1 | 2;
   references?: Record<string, RecordReference>;
 };
 export type InputProps = {
@@ -167,15 +169,27 @@ export function moneyText(v: MoneyValue): string {
     return `${v.amountMicros / 1e6} ${v.currency}`;
   }
 }
-export function FieldDisplay({ field, value, compact = false, references = {} }: DisplayProps) {
+export function FieldDisplay({
+  field,
+  value,
+  compact = false,
+  textLines,
+  references = {},
+}: DisplayProps) {
   if (isEmptyFor(field.type, value)) return <Muted>—</Muted>;
   switch (field.type) {
     case 'text':
       return (
         <Tooltip content={String(value)}>
-          {/* Compact hosts outside the grid (the merge table) don't truncate. */}
-          <span>
-            {compact && String(value).length > 60
+          {/* Grid hosts clip by width; merge comparisons need a bounded preview. */}
+          <span
+            className={
+              textLines === 2
+                ? 'line-clamp-2 whitespace-normal [overflow-wrap:anywhere]'
+                : undefined
+            }
+          >
+            {compact && textLines === undefined && String(value).length > 60
               ? `${String(value).slice(0, 60)}…`
               : String(value)}
           </span>
