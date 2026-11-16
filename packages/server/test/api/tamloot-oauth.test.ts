@@ -237,6 +237,7 @@ describe('Connect with Tamloot through the real API, Postgres and bundle', () =>
         registrationId: string;
         newConnections: { oauth: number; key: number };
         connectSeconds: { count: number; median: number | null };
+        oauthNeedsReconnect: number;
         releaseIncomplete: number;
       }[];
       return rows.find((r) => r.registrationId === h.registrationId);
@@ -251,6 +252,13 @@ describe('Connect with Tamloot through the real API, Postgres and bundle', () =>
     expect(after?.newConnections.key).toBe(before?.newConnections.key ?? 0);
     expect(after?.connectSeconds.count).toBe((before?.connectSeconds.count ?? 0) + 1);
     expect(after?.releaseIncomplete).toBe((before?.releaseIncomplete ?? 0) + 1);
+
+    // Made long before the period, it needs a reconnect within it: counted by the failure.
+    await db.owner`update extension_connections set created_at=now()-interval '90 days' where id=${cid}`;
+    await db.owner`update extension_jobs set status='failed',code='provider_unauthorized',updated_at=now() where connection_id=${cid}`;
+    const later = await measure();
+    expect(later?.newConnections.oauth).toBe((after?.newConnections.oauth ?? 0) - 1);
+    expect(later?.oauthNeedsReconnect).toBe((after?.oauthNeedsReconnect ?? 0) + 1);
     const human: string[] = [];
     await runCli(['extension', 'connections'], {
       sql: db.owner,

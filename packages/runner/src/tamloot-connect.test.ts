@@ -248,6 +248,17 @@ describe('every row of the attempt table (connect spec 5.5)', () => {
     expect((await connect(c)).status).toBe('retry');
     expect(store(c)).toMatchObject({ exchange: 'exchanged', pending: expect.any(Object) });
   });
+  it('an exchange answer without a refresh token is refused, stored and replayed', async () => {
+    const c = h.connection();
+    h.approve(c, 'alice');
+    fault('token', status(200, { access_token: 'at', token_type: 'bearer', expires_in: 3600 }));
+    expect(await connect(c)).toMatchObject({ status: 'failed', code: 'provider_invalid_response' });
+    expect(store(c)).toMatchObject({ exchange: 'refused', failure: 'provider_invalid_response' });
+    expect(store(c)?.pending).toBeNull();
+    const calls = tokenCalls();
+    expect(await connect(c)).toMatchObject({ status: 'failed', code: 'provider_invalid_response' });
+    expect(tokenCalls()).toBe(calls);
+  });
   it('an unknown 400 code, or none, is oauth_client_rejected, stored and replayed', async () => {
     for (const body of [{ error: 'whatever' }, { code: 400, error_code: 'mystery' }, {}]) {
       const c = h.connection();

@@ -359,12 +359,18 @@ async function attempt(access: TamlootAccess, code: string, verifier: string): P
   s = access.s();
   switch (answer.kind) {
     case 'tokens':
+      // Without a refresh token the session dies with its access token. This answer
+      // consumed the code, so nothing earlier can have been processed: refused, not lost.
+      if (!answer.refreshToken) {
+        await access.save({ ...s, exchange: 'refused', failure: 'provider_invalid_response' });
+        throw new TamlootError('provider_invalid_response');
+      }
       await access.save({
         ...s,
         exchange: 'exchanged',
         pending: {
           accessToken: answer.accessToken,
-          refreshToken: answer.refreshToken ?? '',
+          refreshToken: answer.refreshToken,
           expiresAt: new Date(access.now() + answer.expiresIn * 1000).toISOString(),
         },
       });
