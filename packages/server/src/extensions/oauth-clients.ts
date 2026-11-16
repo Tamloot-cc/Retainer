@@ -66,8 +66,8 @@ export function connectionMethods(
 ): ('oauth' | 'key')[] | undefined {
   if (manifest.connection !== 'member') return undefined;
   const client = oauthClientFor(manifest, clients, brokerConfigured);
-  // An OAuth release without a `keySetting` has no key method to fall back on.
-  const key = !manifest.oauth || !!manifest.oauth.keySetting;
+  // An OAuth release's key method needs a `keySetting` and the broker to stage it.
+  const key = !manifest.oauth || (!!manifest.oauth.keySetting && brokerConfigured);
   if (!client) return key ? ['key'] : [];
   return client.keyFallback && key ? ['oauth', 'key'] : ['oauth'];
 }

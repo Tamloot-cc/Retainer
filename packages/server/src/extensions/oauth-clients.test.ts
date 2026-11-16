@@ -21,6 +21,8 @@ describe('connectionMethods', () => {
     expect(connectionMethods(m, clients(true), true)).toEqual(['oauth', 'key']);
     expect(connectionMethods(m, clients(false), true)).toEqual(['oauth']);
     expect(connectionMethods(m, new Map(), true)).toEqual(['key']);
+    // Without the broker the key cannot be staged.
+    expect(connectionMethods(m, clients(true), false)).toEqual([]);
   });
   it('never offers a key method a release without keySetting cannot use', () => {
     const m = manifest({ oauth: oauth as ExtensionManifest['oauth'] });
