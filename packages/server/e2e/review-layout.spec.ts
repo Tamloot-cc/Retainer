@@ -136,3 +136,88 @@ test('read-only review and long values fit even a narrow phone', async ({ page, 
     .evaluateAll((cards) => cards.some((card) => card.scrollWidth > card.clientWidth));
   expect(overflow).toBe(false);
 });
+
+test('starts on the first category with items, preserves yellow merge reasons, and respects chosen categories', async ({
+  page,
+  retainer: r,
+}) => {
+  for (const name of ['Fijoya', 'Wiz'])
+    await r.request('/objects/company/records', { values: { name, domain: 'wiz.io' } });
+  await r.consolidate();
+  await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'Review inbox' }).click();
+  const categories = page.getByRole('navigation', { name: 'Review categories' });
+  await expect(categories.getByRole('button', { name: 'Possible duplicates (1)' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(page).toHaveURL(/tab=mergeSuggestions/);
+  await expect(page.getByText('shared domain', { exact: true })).toBeVisible();
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveClass('dark');
+  if (process.env.RETAINER_CAPTURE_REVIEW)
+    await page.screenshot({ path: '/tmp/retainer-review-merge-dark.png', animations: 'disabled' });
+  // An explicitly chosen empty category stays selected, including after reload.
+  await categories.getByRole('button', { name: 'Proposed updates (0)' }).click();
+  await page.reload();
+  await expect(categories.getByRole('button', { name: 'Proposed updates (0)' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(page.getByText("You're all caught up")).toBeVisible();
+  // An earlier category with items takes priority on the next fresh inbox visit.
+  await r.request('/schema/changes', {
+    operations: [{ op: 'update_field', object: 'person', field: 'jobTitle', isUnique: true }],
+  });
+  await page.goto(`${r.url}/app/review`);
+  await expect(categories.getByRole('button', { name: 'Structure changes (1)' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await categories.getByRole('button', { name: 'Possible duplicates (1)' }).click();
+  await page.getByRole('button', { name: 'Compare and merge', exact: false }).click();
+  await page.getByRole('button', { name: 'Not duplicates' }).click();
+  await expect(categories.getByRole('button', { name: 'Possible duplicates (0)' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(page.getByText('No possible duplicates')).toBeVisible();
+});
+
+test('an assertion link stays on its proposal and an empty inbox has a stable default', async ({
+  page,
+  retainer: r,
+}) => {
+  await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'Review inbox' }).click();
+  const categories = page.getByRole('navigation', { name: 'Review categories' });
+  await expect(page).toHaveURL(/tab=pendingAssertions/);
+  await expect(categories.getByRole('button', { name: 'Proposed updates (0)' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  const record = (
+    await r.request(
+      '/objects/person/records',
+      { values: { name: 'Dana', jobTitle: 'CTO' } },
+      r.keys.user,
+    )
+  ).record;
+  await r.request(`/records/${record.id}`, { values: { jobTitle: 'CEO' } }, r.keys.agent, 'PATCH');
+  const queue = await r.request('/review');
+  const assertion = queue.pendingAssertions.find(
+    (item: { recordId: string }) => item.recordId === record.id,
+  );
+  await r.request('/schema/changes', {
+    operations: [{ op: 'update_field', object: 'person', field: 'jobTitle', isUnique: true }],
+  });
+  await page.goto(`${r.url}/app/review?assertion=${assertion.id}`);
+  await page.getByRole('button', { name: 'Accept', exact: true }).click();
+  await expect(page.getByText("You're all caught up")).toBeVisible();
+  await expect(categories.getByRole('button', { name: 'Proposed updates (0)' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(categories.getByRole('button', { name: 'Structure changes (1)' })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`assertion=${assertion.id}`));
+});

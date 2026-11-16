@@ -227,6 +227,13 @@ participant handles wrap. Keyboard hints appear only on desktop and only
 where they apply. The page stays at its introduction on load; explicit
 keyboard movement scrolls the focused item into view.
 
+On a visit without an explicit category or linked assertion, the inbox waits
+for both sets of counts and selects the first nonempty category in display
+order. With no items it opens Proposed updates. It pins that choice in the
+URL, so resolving the last item does not move the person to another category.
+Explicit category and assertion links take precedence. Suggested-merge reason
+badges (including **shared domain**) retain their yellow pending tone.
+
 The sidebar badge totals all four categories. Each category has its own cursor
 and Next page and First page controls (9.1); no category may
 silently truncate outstanding items. Counts and pages reflect live data and

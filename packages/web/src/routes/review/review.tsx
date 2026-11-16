@@ -23,10 +23,10 @@ import {
   Stack,
 } from '../../ui/index.js';
 import {
+  REVIEW_CATEGORIES,
   ReviewActions,
   ReviewCard,
   ReviewCategories,
-  type ReviewCategory,
   ReviewComparison,
   ReviewDetails,
   ReviewIntroduction,
@@ -101,14 +101,8 @@ export function ReviewPage() {
   const { session, schema } = useWorkspace(),
     client = useQueryClient(),
     { search, setSearch } = useView();
-  const tab = [
-    'pendingAssertions',
-    'schema',
-    'mergeSuggestions',
-    'unresolvedParticipants',
-  ].includes(search.tab ?? '')
-    ? ((search.tab ?? 'pendingAssertions') as ReviewCategory)
-    : 'pendingAssertions';
+  const requestedTab = REVIEW_CATEGORIES.find((item) => item.value === search.tab)?.value;
+  const tab = requestedTab ?? 'pendingAssertions';
   const cursor = search.cursor;
   const wid = session.workspace.id;
   const review = useQuery({
@@ -117,6 +111,31 @@ export function ReviewPage() {
       api.review({ limit: 50, ...(tab !== 'schema' ? { [`${tab}Cursor`]: cursor } : {}), signal }),
   });
   const changes = useSchemaChanges('proposed', tab === 'schema' ? cursor : undefined);
+  // Pick a starting category only after both fresh counts are ready, then pin it
+  // in the URL so handling the last item never switches the person's context.
+  useEffect(() => {
+    if (
+      requestedTab ||
+      search.assertion ||
+      !review.data ||
+      !changes.data ||
+      review.isFetching ||
+      changes.isFetching
+    )
+      return;
+    const counts = { ...review.data.totals, schema: changes.data.total };
+    const first =
+      REVIEW_CATEGORIES.find((item) => counts[item.value] > 0)?.value ?? 'pendingAssertions';
+    void setSearch({ tab: first, cursor: undefined }, { replace: true });
+  }, [
+    requestedTab,
+    search.assertion,
+    review.data,
+    changes.data,
+    review.isFetching,
+    changes.isFetching,
+    setSearch,
+  ]);
   const deep = useQuery({
     queryKey: [wid, 'assertion', search.assertion],
     queryFn: ({ signal }) => api.assertion(search.assertion ?? '', signal),
