@@ -52,6 +52,8 @@ export type DisplayProps = {
   field: FieldView;
   value: unknown;
   compact?: boolean;
+  /** Table text may wrap to two lines; other compact values keep their own layout. */
+  textLines?: 1 | 2;
   references?: Record<string, RecordReference>;
 };
 export type InputProps = {
@@ -167,17 +169,27 @@ export function moneyText(v: MoneyValue): string {
     return `${v.amountMicros / 1e6} ${v.currency}`;
   }
 }
-export function FieldDisplay({ field, value, compact = false, references = {} }: DisplayProps) {
+export function FieldDisplay({
+  field,
+  value,
+  compact = false,
+  textLines = 1,
+  references = {},
+}: DisplayProps) {
   if (isEmptyFor(field.type, value)) return <Muted>—</Muted>;
   switch (field.type) {
     case 'text':
       return (
         <Tooltip content={String(value)}>
-          {/* Compact hosts outside the grid (the merge table) don't truncate. */}
-          <span>
-            {compact && String(value).length > 60
-              ? `${String(value).slice(0, 60)}…`
-              : String(value)}
+          {/* The host clips text to its available width; keep the full value for resizing. */}
+          <span
+            className={
+              textLines === 2
+                ? 'line-clamp-2 whitespace-normal [overflow-wrap:anywhere]'
+                : undefined
+            }
+          >
+            {String(value)}
           </span>
         </Tooltip>
       );

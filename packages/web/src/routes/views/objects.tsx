@@ -64,6 +64,7 @@ import {
   type FilterParts,
   isSortable,
   loadColumnPrefs,
+  loadRowDensity,
   moveColumn,
   nextSort,
   type PageTrail,
@@ -72,6 +73,7 @@ import {
   recordNextPage,
   resolveColumns,
   saveColumnPrefs,
+  saveRowDensity,
   shownColumnPrefs,
 } from './list-state.js';
 import {
@@ -114,6 +116,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
   // An event type lists its built-in columns and links beside its fields (5.3).
   const object = useMemo(() => eventListObject(schemaObject, schema), [schemaObject, schema]);
   const workspace = session.workspace.id;
+  const [density, setDensity] = useState(() => loadRowDensity(() => localStorage, workspace, name));
   const [error, setError] = useState(''),
     [creating, setCreating] = useState(false),
     [bulk, setBulk] = useState<'merge' | 'delete' | null>(null),
@@ -249,6 +252,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
                   field={f}
                   value={r.fields[f.name]}
                   compact
+                  textLines={density === 'expanded' ? 2 : 1}
                   references={references}
                 />
               );
@@ -292,7 +296,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
           }),
         };
       }),
-    [records, columns, references, writable, object.class],
+    [records, columns, references, writable, object.class, density],
   );
 
   // Selection belongs to one page of one view, and only to rows still shown.
@@ -454,6 +458,20 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
                   }
                 />
               ) : null}
+              {kind === 'table' ? (
+                <Segmented
+                  label="Row height"
+                  value={density}
+                  options={[
+                    { value: 'compact', label: 'Compact' },
+                    { value: 'expanded', label: 'Expanded' },
+                  ]}
+                  onChange={(next) => {
+                    setDensity(next);
+                    saveRowDensity(() => localStorage, workspace, name, next);
+                  }}
+                />
+              ) : null}
               {kind !== 'calendar' ? (
                 <ColumnsMenu
                   title={kind === 'board' ? 'Card fields' : 'Columns'}
@@ -575,6 +593,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
       ) : rows.length ? (
         <DataGrid
           label={object.labelPlural}
+          expanded={density === 'expanded'}
           columns={gridColumns}
           sort={sort ? { column: sort.field, direction: sort.direction } : undefined}
           onSort={(column) => setSort(nextSort(view.sort, column))}

@@ -516,3 +516,70 @@ test('fits as many of a list as its column holds, and counts the rest', async ({
   for (const email of emails) await expect(sheet.getByText(email)).toBeVisible();
   await expect(sheet.getByText(first)).toHaveCSS('white-space', 'normal');
 });
+
+test('text uses resized column width and supports persistent two-line rows', async ({
+  page,
+  retainer: r,
+}, testInfo) => {
+  const title =
+    'Follow-up meeting with Shir on GTM Teardown feedback and the next steps for our conference presentation';
+  const hebrew = 'לתאם פגישה עם הצוות ולעבור על התוצאות של המצגת והצעדים הבאים לקראת הכנס הבא';
+  for (const text of [title, hebrew, 'X'.repeat(180)])
+    await r.request('/objects/task/records', { values: { title: text, status: 'todo' } });
+  await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click();
+  const grid = page.getByRole('region', { name: 'Tasks', exact: true });
+  const text = grid.getByText(title, { exact: true });
+  const size = () =>
+    text.evaluate((el) => {
+      const box = el.closest('a')?.lastElementChild ?? el;
+      return {
+        width: box.getBoundingClientRect().width,
+        height: box.getBoundingClientRect().height,
+      };
+    });
+  await expect(text).toBeVisible();
+  const compact = await size();
+  expect(compact.height).toBeLessThanOrEqual(20);
+  const resize = page.getByRole('separator', { name: 'Resize Title', exact: true });
+  await resize.focus();
+  for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowRight');
+  await expect.poll(async () => (await size()).width).toBeGreaterThan(compact.width + 100);
+  await resize.focus();
+  for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowLeft');
+  await page.screenshot({ path: testInfo.outputPath('compact.png') });
+  await page.getByRole('button', { name: 'Expanded', exact: true }).click();
+  await expect.poll(async () => (await size()).height).toBe(40);
+  for (const value of [hebrew, 'X'.repeat(180)])
+    await expect
+      .poll(() =>
+        grid.getByText(value, { exact: true }).evaluate((el) => el.getBoundingClientRect().height),
+      )
+      .toBe(40);
+  await page.screenshot({ path: testInfo.outputPath('expanded.png') });
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Expanded', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect.poll(async () => (await size()).height).toBe(40);
+  await page.getByRole('link', { name: 'People', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Compact', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Expanded', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await grid.getByRole('checkbox', { name: `Select ${title}`, exact: true }).check();
+  await expect(grid.getByRole('checkbox', { name: `Select ${title}`, exact: true })).toBeChecked();
+  await grid.getByRole('checkbox', { name: `Select ${title}`, exact: true }).uncheck();
+  await page.getByRole('button', { name: 'Compact', exact: true }).click();
+  await expect.poll(async () => (await size()).height).toBe(compact.height);
+  await grid.getByRole('link', { name: title, exact: true }).click();
+  await expect(
+    page.getByRole('dialog').getByRole('heading', { name: title, exact: true }),
+  ).toBeVisible();
+});
