@@ -79,8 +79,13 @@ export function MemberConnectionPanel({
 }) {
   const { session } = useWorkspace(),
     client = useQueryClient();
-  const oauth = !!release.manifest.oauth && !!installation.connectionMethods?.includes('oauth'),
-    keyMethod = !oauth || installation.connectionMethods?.includes('key'),
+  // The manifest decides how connections and notices look; the offered
+  // methods only decide which connect actions are shown (spec 4.8, 6.2).
+  const oauthRelease = !!release.manifest.oauth,
+    oauth = oauthRelease && !!installation.connectionMethods?.includes('oauth'),
+    keyMethod = installation.connectionMethods
+      ? installation.connectionMethods.includes('key')
+      : !oauthRelease,
     provider = label(release.manifest.name);
   const key = [session.workspace.id, 'extension-connections', installation.id];
   const connections = useQuery({
@@ -104,7 +109,7 @@ export function MemberConnectionPanel({
     enabled = installation.state === 'active';
   const [reconnecting, setReconnecting] = useState(false);
   const [returnNotice, setReturnNotice] = useState<string | null>(() =>
-    !oauth
+    !oauthRelease
       ? null
       : returned === 'declined'
         ? `${provider} isn't connected: the request was declined. You can try again.`
@@ -115,14 +120,26 @@ export function MemberConnectionPanel({
   // A saved attempt with no connection and no result never came back (spec 6.2).
   const checked = useRef(false);
   useEffect(() => {
-    if (!oauth || !connections.data || checked.current) return;
+    if (!oauthRelease || !connections.data || checked.current) return;
     checked.current = true;
     const saved = savedAttempts(session.workspace.id, installation.id);
     for (const state of saved) forgetAttempt(state);
     if (saved.length && !own && !returned)
       setReturnNotice(`${provider} isn't connected. You can try again.`);
-  }, [oauth, connections.data, own, returned, provider, session.workspace.id, installation.id]);
-  const ownOAuth = oauth && own?.credential === 'oauth';
+  }, [
+    oauthRelease,
+    connections.data,
+    own,
+    returned,
+    provider,
+    session.workspace.id,
+    installation.id,
+  ]);
+  const ownOAuth = oauthRelease && own?.credential === 'oauth';
+  // Without an OAuth client the table is today's, unless OAuth connections remain.
+  const reasons =
+    oauth ||
+    (oauthRelease && !!connections.data?.connections.some((c) => c.credential === 'oauth'));
   return (
     <Stack>
       <section
@@ -133,7 +150,7 @@ export function MemberConnectionPanel({
         {returnNotice ? (
           <Notice onDismiss={() => setReturnNotice(null)}>{returnNotice}</Notice>
         ) : null}
-        {oauth && installation.releaseNotice ? (
+        {oauthRelease && installation.releaseNotice ? (
           <ReleaseNotice
             key={installation.releaseNotice.at}
             installation={installation}
@@ -156,6 +173,7 @@ export function MemberConnectionPanel({
             release={release}
             provider={provider}
             human={human}
+            available={oauth}
             enabled={enabled}
             reconnecting={reconnecting}
             onReconnect={() => setReconnecting((open) => !open)}
@@ -233,7 +251,7 @@ export function MemberConnectionPanel({
       {form ? (
         <ConnectionForm
           installation={installation}
-          release={oauth ? keyRequired(release) : release}
+          release={oauthRelease ? keyRequired(release) : release}
           connection={form.connection}
           onClose={() => setForm(null)}
           onSaved={refresh}
@@ -252,7 +270,7 @@ export function MemberConnectionPanel({
                     'Health',
                     'Last completed scan',
                     'Failed imports',
-                    ...(oauth ? ['Reason'] : []),
+                    ...(reasons ? ['Reason'] : []),
                     'Actions',
                   ].map((title) => (
                     <th className="p-2" scope="col" key={title}>
@@ -269,7 +287,7 @@ export function MemberConnectionPanel({
                     <td className="p-2">{label(c.health)}</td>
                     <td className="p-2">{date(c.lastSuccessfulScanAt)}</td>
                     <td className="p-2">{c.failedItems}</td>
-                    {oauth ? (
+                    {reasons ? (
                       <td className="p-2">
                         {c.releaseIncompleteAt
                           ? `${provider} access may remain. The member can revoke Retainer in ${provider}.`
@@ -502,6 +520,7 @@ function OAuthConnection({
   release,
   provider,
   human,
+  available,
   enabled,
   reconnecting,
   onReconnect,
@@ -514,6 +533,8 @@ function OAuthConnection({
   release: Release;
   provider: string;
   human: boolean;
+  /** Whether OAuth is available on this server now; the connection may outlive it. */
+  available: boolean;
   enabled: boolean;
   reconnecting: boolean;
   onReconnect: () => void;
@@ -565,7 +586,7 @@ function OAuthConnection({
           ends it.
         </Muted>
       ) : null}
-      {human && (broken || reconnecting) ? (
+      {human && available && (broken || reconnecting) ? (
         <OAuthStart
           installation={installation}
           release={release}
@@ -575,7 +596,7 @@ function OAuthConnection({
         />
       ) : null}
       <Row>
-        {human && !broken ? (
+        {human && available && !broken ? (
           <Button disabled={!enabled} onClick={onReconnect}>
             Reconnect account
           </Button>

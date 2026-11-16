@@ -500,6 +500,42 @@ describe('connecting with OAuth', () => {
       'Needs attention: rate limited',
     );
   });
+  it('keeps showing an OAuth connection as OAuth after the server stops offering OAuth', async () => {
+    rows([
+      {
+        ...oauthConnection,
+        state: 'needs_reconnect',
+        health: 'needs_reconnect',
+        lastError: 'provider_unauthorized',
+      },
+    ]);
+    mountOAuth({
+      inst: {
+        ...installation,
+        connectionMethods: ['key'],
+        releaseNotice: { connectionId: 'old', at: '2026-11-15T10:00:00Z' },
+      },
+    });
+    expect(await screen.findByText('Needs reconnect')).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Retainer's access to this Tamloot account ended. Connect again to resume imports.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(/If you don't connect again, disconnect/)).toBeTruthy();
+    expect(
+      screen.getByText(/Retainer couldn't confirm it ended its access in Tamloot\./),
+    ).toBeTruthy();
+    expect(screen.queryByRole('form', { name: 'Connect with Tamloot' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Disconnect account' })).toBeTruthy();
+  });
+  it('offers no connect action when the server offers no method', async () => {
+    rows([]);
+    mountOAuth({ inst: { ...installation, connectionMethods: [] } });
+    expect(await screen.findByText(/Connect your own account/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Connect with Tamloot' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Connect account' })).toBeNull();
+  });
   it('shows the release notice with the revoke link and dismisses it with the exact stamp', async () => {
     rows([]);
     const at = '2026-11-15 10:00:00.123456+00';
