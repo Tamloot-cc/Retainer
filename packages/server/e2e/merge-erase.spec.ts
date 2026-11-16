@@ -15,7 +15,7 @@ test('merges a suggested duplicate, choosing the value to keep', async ({ page, 
   await r.consolidate();
   await signIn(page, r.url, r.keys.user);
   await page.getByRole('link', { name: 'Review inbox' }).click();
-  await page.getByRole('button', { name: /Suggested merges/ }).click();
+  await page.getByRole('button', { name: /Possible duplicates/ }).click();
   await expect(page.getByText('similar names')).toBeVisible();
   await page
     .getByRole('button', { name: /^Compare and merge Yael Mizra.*hi and Yael Mizra.*hi$/ })
@@ -31,7 +31,7 @@ test('merges a suggested duplicate, choosing the value to keep', async ({ page, 
   );
   await dialog.getByRole('button', { name: 'Merge into Yael Mizrahi' }).click();
   await expect(page.getByText('Merged Yael Mizrachi into')).toBeVisible();
-  await expect(page.getByText('No suggested merges')).toBeVisible();
+  await expect(page.getByText('No possible duplicates')).toBeVisible();
   expect(await r.request(`/records/${newer.id}`)).toMatchObject({
     id: older.id,
     fields: {

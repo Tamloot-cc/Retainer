@@ -7,9 +7,9 @@ test('approves a schema proposal and refreshes the schema', async ({ page, retai
   });
   await signIn(page, r.url, r.keys.user);
   await page.getByRole('link', { name: 'Review inbox' }).click();
-  await page.getByRole('button', { name: /Schema changes/ }).click();
+  await page.getByRole('button', { name: /Structure changes/ }).click();
   await page.getByRole('button', { name: 'Approve', exact: true }).click();
-  await expect(page.getByText('No schema changes to review')).toBeVisible();
+  await expect(page.getByText('No structure changes to review')).toBeVisible();
   await page.getByRole('link', { name: 'Schema', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Schema', exact: true })).toBeVisible();
   // Pick an object, filter its fields and open one in the side sheet.
@@ -62,9 +62,9 @@ test('shows why a schema approval failed, with the records in the way', async ({
   }
   await signIn(page, r.url, r.keys.user);
   await page.getByRole('link', { name: 'Review inbox' }).click();
-  await page.getByRole('button', { name: /Schema changes/ }).click();
+  await page.getByRole('button', { name: /Structure changes/ }).click();
   await page.getByRole('button', { name: 'Approve', exact: true }).click();
-  await expect(page.getByText(/^The schema change could not be applied: .+/)).toBeVisible();
+  await expect(page.getByText(/^The structure change could not be applied: .+/)).toBeVisible();
   await expect(page.getByRole('link', { name: 'Twin One' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Twin Two' })).toBeVisible();
 });
