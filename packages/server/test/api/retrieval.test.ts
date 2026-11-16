@@ -60,6 +60,41 @@ const search = (body: Record<string, unknown>, key = keys.agent) =>
   t.request('/v1/search', { key, body });
 
 describe('POST /v1/search', () => {
+  it('optionally includes identifying details and visible record context without changing the default response', async () => {
+    const tag = word();
+    const email = `${tag}@acme.test`;
+    const dana = await create('person', { name: `Dana ${tag}`, emails: email });
+    const company = await create('company', { name: `Acme ${tag}`, domain: `https://${tag}.test` });
+    const foreign = await create(
+      'person',
+      { name: `Foreign ${tag}`, emails: `${tag}@other.test` },
+      otherKey,
+    );
+    const call = await logEvent({
+      title: `Call ${tag}`,
+      participants: [{ recordId: dana }],
+      about: [company],
+    });
+    await rememberFact(dana, `Prefers email ${tag}`, call);
+    const plain = await search({ query: tag });
+    expect(plain.body.references).toBeUndefined();
+    expect(plain.body.records.every((r: any) => r.detail === undefined)).toBe(true);
+    const rich = await search({ query: tag, includeContext: true });
+    expect(rich.status).toBe(200);
+    expect(rich.body.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: dana, detail: email }),
+        expect.objectContaining({ id: company, detail: `https://${tag}.test` }),
+      ]),
+    );
+    expect(rich.body.references).toEqual({
+      [dana]: { id: dana, object: 'person', label: `Dana ${tag}` },
+      [company]: { id: company, object: 'company', label: `Acme ${tag}` },
+    });
+    expect(JSON.stringify(rich.body)).not.toContain(foreign);
+    expect(JSON.stringify(rich.body)).not.toContain('object_type_id');
+    expect(rich.body.records.every((r: any) => r.data === undefined)).toBe(true);
+  });
   it('finds records, facts and events, grouped by type with their record IDs', async () => {
     const tag = word();
     const email = `${tag}@acme.test`;

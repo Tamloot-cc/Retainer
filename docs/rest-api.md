@@ -185,6 +185,13 @@ scope. Request and response shapes are exported as TypeScript types from
 `@retainer/shared`, and [ARCHITECTURE.md section 6](../ARCHITECTURE.md#6-interfaces)
 shows annotated examples.
 
+`POST /v1/search` takes `{ "query": "Dana", "limit": 10 }` and returns
+separately ranked `records`, `facts` and `events`. `limit` applies to each category
+(at most 50). Search UIs can add `"includeContext": true` to receive a compact
+`detail` on record hits (the first available primary email, phone or website from
+active searchable fields) and a `references` map of visible records named by facts
+and events. Without that option, the response shape is unchanged.
+
 `POST /v1/objects/:object/aggregate` takes the same `filter` and `search` as
 a query, plus `aggregates: [{ "field": "amount", "op": "sum" }]` (at most 50),
 and returns `{ "total": 42, "values": [{ "field", "op", "value" }] }`. The

@@ -48,7 +48,7 @@ test('searches the workspace with the command palette and keeps list filters in 
   await expect(page.getByRole('link', { name: 'Dana Levi' })).toBeVisible();
   await page.keyboard.press('ControlOrMeta+k');
   await page.getByLabel('Search the workspace').fill('Other');
-  await page.getByRole('dialog').getByRole('button', { name: 'Other person', exact: true }).click();
+  await page.getByRole('dialog').getByRole('option').filter({ hasText: 'Other person' }).click();
   await expect(page.getByRole('heading', { name: 'Other person' })).toBeVisible();
 });
 
@@ -251,26 +251,19 @@ test('finds records, facts and events across objects with the command palette', 
   });
   await signIn(page, r.url, r.keys.user);
   await page.keyboard.press('ControlOrMeta+k');
-  const palette = page.getByRole('dialog', { name: 'Find anything' });
+  const palette = page.getByRole('dialog', { name: 'Search and commands' });
   await palette.getByLabel('Search the workspace').fill('Levi');
-  await expect(
-    palette.getByRole('region', { name: 'People' }).getByRole('button', { name: 'Dana Levi' }),
-  ).toBeVisible();
-  await expect(
-    palette
-      .getByRole('region', { name: 'Companies' })
-      .getByRole('button', { name: 'Levi Logistics' }),
-  ).toBeVisible();
+  await expect(palette.getByRole('option').filter({ hasText: 'Dana Levi' })).toContainText(
+    'Person',
+  );
+  await expect(palette.getByRole('option').filter({ hasText: 'Levi Logistics' })).toContainText(
+    'Company',
+  );
   await palette.getByLabel('Search the workspace').fill('quarterly');
   await expect(
-    palette
-      .getByRole('region', { name: 'Events' })
-      .getByRole('button', { name: /Quarterly pricing review/ }),
+    palette.getByRole('option').filter({ hasText: 'Quarterly pricing review' }),
   ).toBeVisible();
-  await palette
-    .getByRole('region', { name: 'Facts' })
-    .getByRole('button', { name: 'Wants quarterly invoices' })
-    .click();
+  await palette.getByRole('option').filter({ hasText: 'Wants quarterly invoices' }).click();
   await expect(page.getByRole('heading', { name: 'Dana Levi' })).toBeVisible();
   expect(page.url()).toContain('tab=facts');
   await expect(page.getByText('Wants quarterly invoices')).toBeVisible();

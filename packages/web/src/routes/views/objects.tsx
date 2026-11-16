@@ -34,6 +34,7 @@ import {
   Segmented,
   Toolbar,
 } from '../../ui/index.js';
+import { useRememberCommand } from '../command-recents.js';
 import { useApiName } from '../developer.js';
 import {
   DEFAULT_EVENT_SORT,
@@ -115,6 +116,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
   const apiName = useApiName();
   // An event type lists its built-in columns and links beside its fields (5.3).
   const object = useMemo(() => eventListObject(schemaObject, schema), [schemaObject, schema]);
+  useRememberCommand('object', object.nameSingular);
   const workspace = session.workspace.id;
   const [density, setDensity] = useState(() => loadRowDensity(() => localStorage, workspace, name));
   const [error, setError] = useState(''),

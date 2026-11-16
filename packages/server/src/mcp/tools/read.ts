@@ -69,6 +69,9 @@ const searchInput = z.strictObject({
       'word need OR, e.g. "ran OR run". Use "quotes" for a phrase and -word to exclude a word.',
   ),
   limit: searchInputSchema.shape.limit.describe('Hits per type, 10 by default (at most 50).'),
+  includeContext: searchInputSchema.shape.includeContext.describe(
+    'Include compact identifying details and labels of records named by facts and events. Omitted by default.',
+  ),
 });
 
 const getContextInput = z.strictObject({

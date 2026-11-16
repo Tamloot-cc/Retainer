@@ -646,13 +646,20 @@ export type TemplateView = {
  * `POST /v1/search` input (5.1), in Postgres `websearch_to_tsquery` syntax;
  * every word also matches as a prefix, and accents are ignored.
  */
-export type SearchInput = { query: string; limit?: number };
+export type SearchInput = {
+  query: string;
+  limit?: number;
+  /** Include compact identifying details and labels for related records (for search UIs). */
+  includeContext?: boolean;
+};
 export type RecordHit = {
   id: string;
   object: string;
   label: string | null;
   /** `text`: a full-text match. `similar_label`: the fuzzy fallback on the label. */
   match: 'text' | 'similar_label';
+  /** Primary email, phone or website, when context was requested. */
+  detail?: string;
 };
 export type FactHit = FactPlace & { id: string; content: string; validFrom: string };
 export type EventHit = {
@@ -670,6 +677,8 @@ export type SearchResult = {
   records: RecordHit[];
   facts: FactHit[];
   events: EventHit[];
+  /** Visible records named by facts and events; included only when context was requested. */
+  references?: Record<string, RecordReference>;
 };
 /** `GET /v1/records/:id/context` input (6.2). */
 export type ContextInput = { tokenBudget?: number };

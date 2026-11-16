@@ -216,7 +216,7 @@ describe('MemoryTabs', () => {
   function show(
     r: PresentedRecord,
     tab?: string,
-    { tasks, taskFields }: { tasks?: string; taskFields?: unknown[] } = {},
+    { tasks, taskFields, fact }: { tasks?: string; taskFields?: unknown[]; fact?: string } = {},
   ) {
     const set = vi.fn();
     render(
@@ -235,7 +235,7 @@ describe('MemoryTabs', () => {
               : schema,
           }}
         >
-          <MemoryTabs record={r} nav={{ tab, tasks, set }} />
+          <MemoryTabs record={r} nav={{ tab, tasks, fact, set }} />
         </WorkspaceContext.Provider>
       </QueryClientProvider>,
     );
@@ -303,6 +303,39 @@ describe('MemoryTabs', () => {
     expect(facts.mock.calls[1]?.[1]).toMatchObject({ cursor: 'c2' });
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
     expect(screen.queryByRole('button', { name: /First page|Next page/ })).toBeNull();
+  });
+
+  it('loads later fact pages and focuses the fact selected from search', async () => {
+    const fact = (id: string) => ({
+      id,
+      record: 'r1',
+      content: id,
+      kind: 'stated',
+      validFrom: '2026-11-01T09:00:00.000Z',
+      validTo: null,
+      writtenBy: { type: 'agent', id: 'bot' },
+      sources: [],
+    });
+    const facts = vi
+      .spyOn(api, 'facts')
+      .mockResolvedValueOnce({ facts: [fact('f1')], nextCursor: 'c2' } as never)
+      .mockResolvedValueOnce({ facts: [fact('f2')], nextCursor: null } as never);
+    const previous = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
+    const scroll = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scroll,
+    });
+    try {
+      show(record({}), 'facts', { fact: 'f2' });
+      await vi.waitFor(() => expect(document.activeElement?.id).toBe('fact-f2'));
+      expect(facts.mock.calls[1]?.[1]).toMatchObject({ cursor: 'c2' });
+      expect(scroll).toHaveBeenCalledWith({ block: 'center' });
+      expect(facts).toHaveBeenCalledTimes(2);
+    } finally {
+      if (previous) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', previous);
+      else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
+    }
   });
 
   it('reads a task’s status and due date from its role fields, not their names', async () => {

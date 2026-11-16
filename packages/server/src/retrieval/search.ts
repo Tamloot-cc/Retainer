@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Tx } from '../db/tx.js';
 import { currentFact, currentSourceEvidence } from '../memory/events.js';
 import { factPlace } from '../memory/profiles.js';
+import { references } from '../records/references.js';
 import { exactQuery, prefixQuery } from '../records/search-sql.js';
 import { type CompiledSchema, eventText } from '../schema/compiled.js';
 
@@ -18,6 +19,7 @@ import { type CompiledSchema, eventText } from '../schema/compiled.js';
 export const searchInputSchema = z.strictObject({
   query: z.string().trim().min(1).max(500),
   limit: z.number().int().min(1).max(50).default(10),
+  includeContext: z.boolean().optional(),
 });
 export type SearchInput = z.infer<typeof searchInputSchema>;
 
@@ -38,7 +40,21 @@ export async function search(
     searchFacts(tx, workspaceId, schema, input),
     searchEvents(tx, workspaceId, schema, input),
   ]);
-  return { records, facts, events };
+  return {
+    records,
+    facts,
+    events,
+    ...(input.includeContext
+      ? {
+          references: await references(tx, schema, [
+            ...new Set([
+              ...facts.flatMap((f) => (f.record ? [f.record] : [])),
+              ...events.flatMap((e) => e.records),
+            ]),
+          ]),
+        }
+      : {}),
+  };
 }
 
 /**
@@ -51,7 +67,33 @@ function rank(tx: Tx, column: 'search' | 'f.search' | 'r.search', text: string) 
     ts_rank_cd(${tx.unsafe(column)}, ${prefixQuery(tx, text)}, ${RANK_NORMALIZATION}) desc`;
 }
 
-type RecordRow = { id: string; object_type_id: string; label: string | null };
+type RecordRow = {
+  id: string;
+  object_type_id: string;
+  label: string | null;
+  data?: Record<string, unknown>;
+};
+
+/** Only active searchable contact fields; never return arbitrary record data. */
+function recordDetail(schema: CompiledSchema, row: RecordRow): string | undefined {
+  const object = schema.objectsById.get(row.object_type_id);
+  for (const type of ['emails', 'phones', 'links']) {
+    for (const field of object?.activeFields ?? []) {
+      if (!field.isSearchable || field.type !== type) continue;
+      const value = row.data?.[field.key] as { primary?: unknown } | undefined;
+      const primary = value?.primary;
+      const text =
+        typeof primary === 'string'
+          ? primary
+          : primary && typeof primary === 'object'
+            ? ((primary as { number?: string; url?: string }).number ??
+              (primary as { url?: string }).url)
+            : undefined;
+      if (text) return text.slice(0, 160);
+    }
+  }
+  return undefined;
+}
 
 async function searchRecords(
   tx: Tx,
@@ -60,15 +102,19 @@ async function searchRecords(
   input: SearchInput,
 ): Promise<RecordHit[]> {
   const present = (rows: RecordRow[], match: RecordHit['match']) =>
-    rows.map((row) => ({
-      id: row.id,
-      object: schema.objectsById.get(row.object_type_id)?.name ?? 'unknown',
-      label: row.label,
-      match,
-    }));
+    rows.map((row) => {
+      const detail = input.includeContext ? recordDetail(schema, row) : undefined;
+      return {
+        id: row.id,
+        object: schema.objectsById.get(row.object_type_id)?.name ?? 'unknown',
+        label: row.label,
+        match,
+        ...(detail ? { detail } : {}),
+      };
+    });
 
   const text = await tx<RecordRow[]>`
-    select id, object_type_id, label from records
+    select id, object_type_id, label${input.includeContext ? tx`, data` : tx``} from records
     where workspace_id = ${workspaceId} and deleted_at is null
       and object_type_id = any(${schema.entityTypeIds}::uuid[])
       and search @@ ${prefixQuery(tx, input.query)}
@@ -79,7 +125,7 @@ async function searchRecords(
   // Nothing matched, even as a prefix: a misspelled name ("Dana Levy") can
   // still find its record by trigram similarity of the label.
   const similar = await tx<RecordRow[]>`
-    select id, object_type_id, label from records
+    select id, object_type_id, label${input.includeContext ? tx`, data` : tx``} from records
     where workspace_id = ${workspaceId} and deleted_at is null
       and object_type_id = any(${schema.entityTypeIds}::uuid[]) and label % ${input.query}
     order by similarity(label, ${input.query}) desc, updated_at desc, id
