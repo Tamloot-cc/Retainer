@@ -15,6 +15,7 @@ import { type ClaimedJob, ExtensionQueue } from '../src/extension-runtime/queue.
 import { SecretBroker, SecretCipher } from '../src/extension-runtime/secrets.js';
 import { RunTokens } from '../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../src/extensions/catalog.js';
+import { parseOAuthClients } from '../src/extensions/oauth-clients.js';
 import { createFileServer, LocalFileStorage } from '../src/file-storage/local.js';
 import { consolidateWorkspace } from '../src/worker/consolidate.js';
 import { createWorkspace } from '../src/workspaces/workspaces.js';
@@ -177,6 +178,84 @@ export const browserMemberManifest = manifestFixture({
     },
   ],
 });
+const generatedSecret = (label: string) => ({
+  type: 'string' as const,
+  label,
+  level: 'connection' as const,
+  secret: true,
+  generated: true,
+  required: false,
+  reconnect: false,
+});
+/** A member extension members connect with OAuth (Tamloot connect spec 4). */
+export const browserOAuthManifest = manifestFixture({
+  universalId: '5b0f3c1e-2a43-4d7e-9a61-6c2f1d0e8b47',
+  name: 'oauth-browser',
+  connection: 'member',
+  scopes: ['read', 'write'],
+  settings: {
+    share: {
+      type: 'boolean',
+      label: 'Share member data',
+      required: true,
+      consent: true,
+      default: false,
+      secret: false,
+      reconnect: false,
+    },
+    days: {
+      type: 'number',
+      label: 'History days',
+      level: 'connection',
+      required: true,
+      default: 31,
+      secret: false,
+      reconnect: false,
+    },
+    apiKey: {
+      type: 'string',
+      label: 'Member API key',
+      level: 'connection',
+      required: false,
+      secret: true,
+      reconnect: true,
+    },
+    verifier: generatedSecret('Verifier'),
+    code: generatedSecret('Code'),
+    tokens: generatedSecret('Tokens'),
+  },
+  oauth: {
+    verifierSetting: 'verifier',
+    codeSetting: 'code',
+    tokenSetting: 'tokens',
+    keySetting: 'apiKey',
+    revokeUrl: 'https://provider.test/settings/apps',
+  },
+  functions: [
+    {
+      universalId: '0f2b7d5c-8e14-4a39-b6d2-3c9e1a7f5048',
+      name: 'connect',
+      description: 'Browser OAuth member setup',
+      handlerDigest: 'c'.repeat(64),
+      trigger: { kind: 'connect' },
+      inputSchema: { type: 'object', additionalProperties: false },
+      timeoutSeconds: 120,
+      secrets: ['apiKey', 'verifier', 'code', 'tokens'],
+    },
+    {
+      universalId: '7c4e9a21-5d36-4f8b-a0e3-2b8d6f1c9e75',
+      name: 'disconnect',
+      description: 'Browser OAuth member release',
+      handlerDigest: 'd'.repeat(64),
+      trigger: { kind: 'disconnect' },
+      inputSchema: { type: 'object', additionalProperties: false },
+      timeoutSeconds: 120,
+      secrets: ['tokens'],
+    },
+  ],
+});
+/** Where the fixture's provider sends members to approve; tests route it. */
+export const BROWSER_OAUTH_AUTHORIZE = 'https://provider.test/oauth/start';
 export const test = base.extend<
   {
     retainer: {
@@ -186,6 +265,8 @@ export const test = base.extend<
       /** Runs the consolidator once, which suggests merges. */
       consolidate: () => Promise<unknown>;
       activateMembers: () => Promise<void>;
+      /** Installs the OAuth member fixture as the admin; returns its ID. */
+      installOAuthMember: () => Promise<string>;
       finishConfigure: (setup?: boolean) => Promise<void>;
       previousConfiguration: () => Promise<string>;
       expireConfigurationSecrets: () => Promise<void>;
@@ -203,6 +284,7 @@ export const test = base.extend<
     sourceFixture: boolean;
     mappingFixture: boolean;
     memberFixture: boolean;
+    oauthMemberFixture: boolean;
     configureFixture: boolean;
     configureSecretFixture: boolean;
   }
@@ -215,6 +297,7 @@ export const test = base.extend<
   configureSecretFixture: [false, { option: true, scope: 'worker' }],
   configureFixture: [false, { option: true, scope: 'worker' }],
   memberFixture: [false, { option: true, scope: 'worker' }],
+  oauthMemberFixture: [false, { option: true, scope: 'worker' }],
   retainer: async (
     {
       browserName: _browserName,
@@ -224,6 +307,7 @@ export const test = base.extend<
       sourceFixture,
       mappingFixture,
       memberFixture,
+      oauthMemberFixture,
       configureFixture,
       configureSecretFixture,
     },
@@ -313,17 +397,17 @@ export const test = base.extend<
           ? new ExtensionCatalog([
               { manifest: sourceManifest, actorCeiling: 'integration', runtimeEnabled: true },
             ])
-          : memberFixture
+          : memberFixture || oauthMemberFixture
             ? new ExtensionCatalog([
                 {
-                  manifest: browserMemberManifest,
+                  manifest: memberFixture ? browserMemberManifest : browserOAuthManifest,
                   actorCeiling: 'integration',
                   runtimeEnabled: true,
                 },
               ])
             : undefined;
     const secretSql =
-      memberFixture || configureSecretFixture
+      memberFixture || oauthMemberFixture || configureSecretFixture
         ? createSql(dbUrl.toString(), { role: 'retainer_secret_broker' })
         : undefined;
     const extensionSecrets = secretSql
@@ -333,7 +417,11 @@ export const test = base.extend<
         )
       : undefined;
     const pair =
-      sourceFixture || memberFixture || configureFixture || configureSecretFixture
+      sourceFixture ||
+      memberFixture ||
+      oauthMemberFixture ||
+      configureFixture ||
+      configureSecretFixture
         ? await generateKeyPair('EdDSA')
         : undefined;
     const runTokens = pair
@@ -344,8 +432,33 @@ export const test = base.extend<
           verificationKey: pair.publicKey,
         })
       : undefined;
+    // The OAuth redirect address needs the port, so listen before the app exists.
+    let handle: (request: Request) => Response | Promise<Response> = () =>
+      new Response('starting', { status: 503 });
+    const server = serve({ fetch: (request) => handle(request), port: 0, hostname: '127.0.0.1' });
+    await new Promise<void>((r) => server.once('listening', () => r()));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('No listening address');
+    const url = `http://127.0.0.1:${address.port}`;
+    fileOrigins.push(url);
     const app = createApp({
       sql,
+      ...(oauthMemberFixture && catalog
+        ? {
+            extensionOAuthClients: parseOAuthClients(
+              JSON.stringify({
+                [browserOAuthManifest.universalId]: {
+                  clientId: 'browser-client',
+                  clientSecret: 'browser-secret',
+                  authorizationEndpoint: BROWSER_OAUTH_AUTHORIZE,
+                  tokenEndpoint: 'https://provider.test/oauth/token',
+                },
+              }),
+              catalog,
+              url,
+            ),
+          }
+        : {}),
       ...(storage ? { fileStorage: storage } : {}),
       ...(extensionSecrets ? { extensionSecrets } : {}),
       ...(catalog && runTokens
@@ -372,12 +485,7 @@ export const test = base.extend<
         : {}),
       webDir: fileURLToPath(new URL('../../web/dist', import.meta.url)),
     });
-    const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' });
-    await new Promise<void>((r) => server.once('listening', () => r()));
-    const address = server.address();
-    if (!address || typeof address === 'string') throw new Error('No listening address');
-    const url = `http://127.0.0.1:${address.port}`;
-    fileOrigins.push(url);
+    handle = (request) => app.fetch(request);
     async function request(
       path: string,
       body?: unknown,
@@ -445,14 +553,30 @@ export const test = base.extend<
       await queue.complete(job, { status: 'succeeded' });
     }
     async function previousConfiguration() {
-      if (!catalog) throw new Error('configure fixture is not enabled');
       const manifest = browserConfigurePrevious;
-      const input = {
+      return install({
         registrationId: manifest.universalId,
         version: manifest.version,
         settings: {},
         mapping: { employee_count: { action: 'create' } },
-      };
+      });
+    }
+    function installOAuthMember() {
+      const manifest = browserOAuthManifest;
+      return install({
+        registrationId: manifest.universalId,
+        version: manifest.version,
+        settings: { share: true },
+      });
+    }
+    /** Installs a release as the admin and finishes its install job. */
+    async function install(input: {
+      registrationId: string;
+      version: string;
+      settings: Record<string, unknown>;
+      mapping?: Record<string, unknown>;
+    }) {
+      if (!catalog) throw new Error('no extension catalog in this fixture');
       const preview = await request('/extensions/preview', input, user);
       const response = await fetch(`${url}/v1/extensions`, {
         method: 'POST',
@@ -603,6 +727,7 @@ export const test = base.extend<
         consolidate: () => consolidateWorkspace(sql, workspace.id),
         sourceEvidence,
         activateMembers,
+        installOAuthMember,
         finishConfigure,
         previousConfiguration,
         expireConfigurationSecrets: async () => {
