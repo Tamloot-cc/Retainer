@@ -8,6 +8,7 @@ export const TAMLOOT = {
   scan: '0c0f3520-c561-4f02-9d44-8bd6df4613d4',
   poll: 'f73caeba-09d4-4c76-b36c-a5d157ad67f8',
   sync: '20542a5c-65fb-4593-9336-f6f61014806e',
+  disconnect: '0b6f1c7e-3d52-4a8e-9f1b-6c2d7e4a9b35',
   taskIdField: '72ef5898-253b-4335-bcdb-50dfc8031095',
 } as const;
 export const TAMLOOT_FUNCTION_IDS: string[] = [
@@ -15,7 +16,15 @@ export const TAMLOOT_FUNCTION_IDS: string[] = [
   TAMLOOT.scan,
   TAMLOOT.poll,
   TAMLOOT.sync,
+  TAMLOOT.disconnect,
 ];
+/** The connection secrets the release declares (connect spec 5.1). */
+export const TAMLOOT_SECRETS = {
+  key: 'apiKey',
+  verifier: 'oauthVerifier',
+  code: 'oauthCode',
+  tokens: 'oauthTokens',
+} as const;
 export const tamlootRevision = z
   .number()
   .int()
@@ -82,11 +91,13 @@ export function tamlootManifest(build: {
   serverRange: string;
 }): ExtensionManifest {
   const empty = { type: 'object', additionalProperties: false };
+  const { key, verifier, code, tokens } = TAMLOOT_SECRETS;
   const fn = (
     universalId: string,
     name: string,
     trigger: unknown,
     inputSchema: unknown = empty,
+    secrets: string[] = [key, tokens],
   ) => ({
     universalId,
     name,
@@ -95,8 +106,17 @@ export function tamlootManifest(build: {
     timeoutSeconds: 120,
     trigger,
     inputSchema,
-    secrets: ['apiKey'],
+    secrets,
     scopes: ['read', 'write'],
+  });
+  const generated = (label: string) => ({
+    type: 'string',
+    label,
+    level: 'connection',
+    required: false,
+    secret: true,
+    generated: true,
+    reconnect: false,
   });
   return defineExtension({
     manifestVersion: 1,
@@ -140,11 +160,14 @@ export function tamlootManifest(build: {
         type: 'string',
         label: 'Tamloot read-only API key',
         level: 'connection',
-        required: true,
+        required: false,
         secret: true,
         reconnect: true,
         description: 'Create a read-only key in Tamloot Settings → API keys.',
       },
+      oauthVerifier: generated('Tamloot sign-in verifier'),
+      oauthCode: generated('Tamloot sign-in code'),
+      oauthTokens: generated('Tamloot session'),
       backfillDays: {
         type: 'number',
         label: 'Days of history',
@@ -156,6 +179,18 @@ export function tamlootManifest(build: {
         description:
           'Choose a whole number from 1 to 3650. Previously imported meetings are also checked on reconnect.',
       },
+    },
+    oauth: {
+      verifierSetting: verifier,
+      codeSetting: code,
+      tokenSetting: tokens,
+      keySetting: key,
+      revokeUrl: 'https://app.tamloot.cc/dashboard/settings?tab=apps',
+    },
+    gettingStarted: {
+      text: 'No meetings to import yet. Record a meeting with Tamloot and it shows up here a few minutes after it ends.',
+      linkLabel: 'Open Tamloot',
+      url: 'https://app.tamloot.cc',
     },
     source: {
       provider: 'tamloot',
@@ -191,7 +226,7 @@ export function tamlootManifest(build: {
     ],
     views: [],
     functions: [
-      fn(TAMLOOT.connect, 'connect', { kind: 'connect' }),
+      fn(TAMLOOT.connect, 'connect', { kind: 'connect' }, empty, [key, verifier, code, tokens]),
       fn(
         TAMLOOT.poll,
         'poll',
@@ -230,6 +265,11 @@ export function tamlootManifest(build: {
           required: ['sourceItemId'],
         },
       ),
+      {
+        ...fn(TAMLOOT.disconnect, 'disconnect', { kind: 'disconnect' }, empty, [tokens]),
+        description: 'Give up the connection’s Tamloot sessions.',
+        timeoutSeconds: 60,
+      },
     ],
   });
 }

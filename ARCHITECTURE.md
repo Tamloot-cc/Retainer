@@ -1814,7 +1814,10 @@ enforcement. Until then, new code keeps that path open:
    returning its connection-secret identity, never the secret or CRM rows.
    `retainer_admit_secret_run` is broker-only: it holds installation and live
    lease locks through the broker transaction, without returning CRM rows or
-   secret values. API metadata validation releases its locks before awaiting a
+   secret values. A disconnect hook may read, never write, the generated
+   connection secrets it declares (an OAuth token store) for 24 hours after
+   the disconnect, or before a partial release job's deadline;
+   `retainer_finish_member_cleanup` retires them when the hook finishes. API metadata validation releases its locks before awaiting a
    second broker connection; broker admission rechecks generation/fence itself.
    Ordinary record reads, search and context take no shortcut around RLS.
 2. Per-request database context is set in one place (`inWorkspace`).

@@ -40,7 +40,10 @@ chooses one. Extensions an admin sets up once for everyone, such as company
 enrichment and Granola, stay `'workspace'`. Settings get a level:
 installation settings (no secrets) are approved by the admin, and connection
 settings (the Tamloot API key, `secret: true`, `reconnect: true`) are entered
-by each member.
+by each member. Where the operator configured Tamloot's OAuth client, a member
+connects with **Connect with Tamloot** instead, and the key stays a secondary
+option; the method is fixed per connection
+([extensions-tamloot-connect.md](extensions-tamloot-connect.md)).
 
 **Who does what.**
 
@@ -116,8 +119,12 @@ connection with its owner and health.
   410 or 404 is the deletion. Tamloot can keep a `delete` entry for a session
   that was restored in a racing transaction, so acting on `op` alone could
   remove a live session.
-- `disconnect`: there is nothing to clean up at Tamloot in v1, because no
-  webhooks are registered.
+- `disconnect`: reads `oauthTokens` and gives Retainer's Tamloot sessions up
+  with `DELETE /v1/access`, retrying for up to 24 hours. A key connection has
+  nothing to clean up, because no webhooks are registered. The same hook runs
+  with `{ keep: 'current' }` after a failed OAuth connect, to give up the
+  sessions that connect no longer wants
+  ([extensions-tamloot-connect.md](extensions-tamloot-connect.md) §4.7, §5.7).
 
 **Why the session is the unit.** Tamloot regenerates notes by deleting every
 task of the session and creating new ones, and writes the tasks before the

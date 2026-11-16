@@ -1,16 +1,27 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  disconnectInputSchema,
   type ExecutionResult,
   type Invocation,
   isRetryLater,
   type ManagedSourceTask,
+  retryLaterResult,
 } from '@retainer/extension';
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
 import { BASE_EVENT_TYPE_IDS, type SourceScan, sourceScanSchema } from '@retainer/shared';
 import { z } from 'zod';
 import { apiFetch, transient } from './outcome.js';
 import {
+  type AccessDeps,
+  connectOAuth,
+  readSecret,
+  releaseAll,
+  TamlootAccess,
+} from './tamloot-access.js';
+import {
   TAMLOOT,
+  TAMLOOT_FUNCTION_IDS,
+  TAMLOOT_SECRETS,
   tamlootChanges,
   tamlootHead,
   tamlootMe,
@@ -18,7 +29,8 @@ import {
   tamlootSessions,
   tamlootTasks,
 } from './tamloot-contract.js';
-import { TamlootError, TamlootProvider } from './tamloot-provider.js';
+import { refreshFailure, TokenRefused } from './tamloot-oauth.js';
+import { type TamlootCredential, TamlootError, TamlootProvider } from './tamloot-provider.js';
 
 const DAY = 86400000,
   FEED = 'tamloot-feed',
@@ -325,10 +337,13 @@ async function importSession(
     snapshot.data.length < 500,
   );
 }
+/** Test seams: a clock, request pacing and timeouts. Production uses the defaults. */
+export type TamlootRunOptions = { now?: () => number; pacingMs?: number; timeoutMs?: number };
 export async function executeTamloot(
   invocation: Invocation,
   signal: AbortSignal,
   transport: typeof fetch = fetch,
+  options: TamlootRunOptions = {},
 ): Promise<ExecutionResult> {
   const sdk = new RetainerClient({
       baseUrl: invocation.apiOrigin,
@@ -336,68 +351,143 @@ export async function executeTamloot(
       fetch: apiFetch(transport, signal),
     }),
     id = invocation.installationId;
-  try {
-    const installation = await sdk.extension(id),
-      settings = settingsSchema.safeParse(installation.settings);
-    if (!settings.success) return { status: 'failed', code: 'invalid_settings' };
-    const key = await sdk.extensionSecret(id, 'apiKey'),
-      provider = new TamlootProvider(key.value, signal, transport);
-    if (invocation.functionId === TAMLOOT.connect) {
-      const me = await provider.request('/v1/me', tamlootMe);
-      await sdk.verifySource(id, { accountId: me.data.user_id, sharing: 'workspace' });
-      const cursor = await sdk.extensionKv(id, FEED);
-      if (!cursor) {
-        const head = await provider.request('/v1/changes/head', tamlootHead),
-          scan = backfill(settings.data.backfillDays);
-        // Persist recovery work first, then publish the active scan before connection activation.
-        // Retried setup can reuse that scan, and a poll cannot overtake its backfill.
-        await sdk.extensionCheckpoint(id, {
-          children: [scanChild(scan, `connect:${scan.scanId}`)],
-          kv: { key: FEED, expectedRevision: null, value: { cursor: head.data.cursor } },
+  const deps: AccessDeps = {
+    sdk,
+    installationId: id,
+    signal,
+    transport,
+    now: options.now ?? Date.now,
+    ...(options.pacingMs !== undefined ? { pacingMs: options.pacingMs } : {}),
+    ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+  };
+  if (invocation.functionId === TAMLOOT.disconnect) {
+    const input = disconnectInputSchema.safeParse(invocation.input);
+    if (!input.success) return { status: 'failed', code: 'invalid_input' };
+    return outcome(() => releaseAll(deps, input.data, () => sdk.extensionOAuthClient(id)));
+  }
+  let access: TamlootAccess | undefined;
+  // `connect` reports every lost exchange; imports report only what they tried (spec 4.7).
+  const includeLost = invocation.functionId === TAMLOOT.connect;
+  return outcome(
+    async () => {
+      const installation = await sdk.extension(id),
+        settings = settingsSchema.safeParse(installation.settings);
+      if (!settings.success) return { status: 'failed', code: 'invalid_settings' };
+      // The method is fixed per connection: its stored secrets say which (connect spec 5.2).
+      const oauth = !!(
+        installation.secrets?.[TAMLOOT_SECRETS.tokens] ||
+        installation.secrets?.[TAMLOOT_SECRETS.code]
+      );
+      let provider: TamlootProvider;
+      if (oauth) {
+        access = new TamlootAccess(deps, await sdk.extensionOAuthClient(id));
+        await access.load();
+        provider = access.provider;
+      } else {
+        const key = await sdk.extensionSecret(id, TAMLOOT_SECRETS.key);
+        provider = new TamlootProvider(key.value, signal, transport, {
+          ...(options.pacingMs !== undefined ? { pacingMs: options.pacingMs } : {}),
+          ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
         });
-        await sdk.beginSourceScan(id, scan);
-      } else await start(sdk, id, settings.data.backfillDays, invocation.runId, true);
-    } else if (invocation.functionId === TAMLOOT.poll)
-      await start(sdk, id, settings.data.backfillDays, invocation.runId, false);
-    else if (invocation.functionId === TAMLOOT.scan)
-      await scanPage(
-        sdk,
-        id,
-        provider,
-        sourceScanSchema.parse(invocation.input),
-        settings.data.backfillDays,
-      );
-    else if (invocation.functionId === TAMLOOT.sync)
-      await importSession(
-        sdk,
-        id,
-        provider,
-        z.strictObject({ sourceItemId: z.uuid() }).parse(invocation.input).sourceItemId,
-      );
-    else return { status: 'failed', code: 'function_not_bundled' };
-    return { status: 'succeeded' };
+      }
+      const verify = async (credential?: TamlootCredential) => {
+        const me = await provider.request('/v1/me', tamlootMe, {}, credential);
+        await sdk.verifySource(id, { accountId: me.data.user_id, sharing: 'workspace' });
+      };
+      const importStep = async () => {
+        const cursor = await sdk.extensionKv(id, FEED);
+        if (!cursor) {
+          const head = await provider.request('/v1/changes/head', tamlootHead),
+            scan = backfill(settings.data.backfillDays);
+          // Persist recovery work first, then publish the active scan before connection activation.
+          // Retried setup can reuse that scan, and a poll cannot overtake its backfill.
+          await sdk.extensionCheckpoint(id, {
+            children: [scanChild(scan, `connect:${scan.scanId}`)],
+            kv: { key: FEED, expectedRevision: null, value: { cursor: head.data.cursor } },
+          });
+          await sdk.beginSourceScan(id, scan);
+        } else await start(sdk, id, settings.data.backfillDays, invocation.runId, true);
+      };
+      if (invocation.functionId === TAMLOOT.connect) {
+        if (access) {
+          const [code, verifier] = await Promise.all([
+            readSecret(sdk, id, TAMLOOT_SECRETS.code),
+            readSecret(sdk, id, TAMLOOT_SECRETS.verifier),
+          ]);
+          await connectOAuth(
+            access,
+            { code: code?.value ?? null, verifier: verifier?.value ?? null },
+            verify,
+            importStep,
+          );
+        } else {
+          await verify();
+          await importStep();
+        }
+        return { status: 'succeeded' };
+      }
+      if (!TAMLOOT_FUNCTION_IDS.includes(invocation.functionId))
+        return { status: 'failed', code: 'function_not_bundled' };
+      if (access) {
+        // Every run of the connection drains `release` before it imports (connect spec 5.6).
+        if (!access.store?.current) throw new TamlootError('provider_unauthorized');
+        await access.drain();
+      }
+      if (invocation.functionId === TAMLOOT.poll)
+        await start(sdk, id, settings.data.backfillDays, invocation.runId, false);
+      else if (invocation.functionId === TAMLOOT.scan)
+        await scanPage(
+          sdk,
+          id,
+          provider,
+          sourceScanSchema.parse(invocation.input),
+          settings.data.backfillDays,
+        );
+      else if (invocation.functionId === TAMLOOT.sync)
+        await importSession(
+          sdk,
+          id,
+          provider,
+          z.strictObject({ sourceItemId: z.uuid() }).parse(invocation.input).sourceItemId,
+        );
+      return { status: 'succeeded' };
+    },
+    (result) => (access ? access.decorate(result, includeLost) : result),
+  );
+}
+/** Maps what a run threw to its result; `finish` adds the run's release incidents. */
+async function outcome(
+  run: () => Promise<ExecutionResult>,
+  finish: (result: ExecutionResult) => ExecutionResult = (result) => result,
+): Promise<ExecutionResult> {
+  try {
+    return finish(await run());
   } catch (error) {
+    if (error instanceof TokenRefused)
+      return finish({ status: 'failed', code: refreshFailure(error.answer) });
     if (error instanceof TamlootError)
-      return {
+      return finish({
         status: error.retry ? 'retry' : 'failed',
         code: error.code,
         ...(error.retry ? { retryAfterSeconds: error.retryAfterSeconds } : {}),
-      };
+      });
     if (
       error instanceof RetainerApiError &&
       ['source_erased', 'source_deleted'].includes(error.code)
     )
-      return { status: 'succeeded' };
+      return finish({ status: 'succeeded' });
     if (
       error instanceof RetainerApiError &&
-      ['source_task_delete_conflict', 'source_task_conflict'].includes(error.code)
+      ['source_task_delete_conflict', 'source_task_conflict', 'oauth_unavailable'].includes(
+        error.code,
+      )
     )
-      return { status: 'failed', code: error.code };
+      return finish({ status: 'failed', code: error.code });
     const retryable = transient(error);
-    if (isRetryLater(retryable)) throw retryable;
-    return {
+    if (isRetryLater(retryable)) return finish(retryLaterResult(retryable));
+    return finish({
       status: 'failed',
       code: error instanceof RetainerApiError ? 'source_api_rejected' : 'provider_invalid_response',
-    };
+    });
   }
 }
