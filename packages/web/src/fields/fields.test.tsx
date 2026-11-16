@@ -266,10 +266,15 @@ describe('list cells', () => {
 });
 
 describe('text', () => {
+  it('keeps compact previews bounded outside the grid, including merge comparisons', () => {
+    const value = 'x'.repeat(100);
+    render(<FieldDisplay field={f('text')} value={value} compact />);
+    expect(screen.getByText(`${value.slice(0, 60)}…`)).toBeTruthy();
+  });
   it('keeps the full compact value so wider table columns can reveal it', () => {
     const value =
       'Follow up on the conference presentation and share the complete findings with the team';
-    render(<FieldDisplay field={f('text')} value={value} compact />);
+    render(<FieldDisplay field={f('text')} value={value} compact textLines={1} />);
     expect(screen.getByText(value).textContent).toBe(value);
     expect(screen.queryByText(`${value.slice(0, 60)}…`)).toBeNull();
   });

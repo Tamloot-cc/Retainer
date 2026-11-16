@@ -52,7 +52,7 @@ export type DisplayProps = {
   field: FieldView;
   value: unknown;
   compact?: boolean;
-  /** Table text may wrap to two lines; other compact values keep their own layout. */
+  /** Grid hosts clip by width; other compact hosts keep their short preview. */
   textLines?: 1 | 2;
   references?: Record<string, RecordReference>;
 };
@@ -173,7 +173,7 @@ export function FieldDisplay({
   field,
   value,
   compact = false,
-  textLines = 1,
+  textLines,
   references = {},
 }: DisplayProps) {
   if (isEmptyFor(field.type, value)) return <Muted>—</Muted>;
@@ -181,7 +181,7 @@ export function FieldDisplay({
     case 'text':
       return (
         <Tooltip content={String(value)}>
-          {/* The host clips text to its available width; keep the full value for resizing. */}
+          {/* Grid hosts clip by width; merge comparisons need a bounded preview. */}
           <span
             className={
               textLines === 2
@@ -189,7 +189,9 @@ export function FieldDisplay({
                 : undefined
             }
           >
-            {String(value)}
+            {compact && textLines === undefined && String(value).length > 60
+              ? `${String(value).slice(0, 60)}…`
+              : String(value)}
           </span>
         </Tooltip>
       );
