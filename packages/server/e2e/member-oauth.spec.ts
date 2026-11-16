@@ -32,17 +32,16 @@ test('a member connects through the provider and back; the callback finishes onl
   const callback = (s: string) =>
     `${r.url}/app/connect/callback?${new URLSearchParams({ state: s, code: 'provider-code' })}`;
 
-  // A browser with no Retainer session asks to sign in and never posts the code.
+  // Another member's browser: the server refuses the completion, the page shows
+  // the generic message, and the first member's attempt is untouched (it
+  // completes below). Signed out and malformed states never reach the server;
+  // the web unit tests cover them.
   const elsewhere = await browser.newContext();
   const stranger = await elsewhere.newPage();
   const completions: string[] = [];
   stranger.on('request', (request) => {
     if (request.url().includes('/authorize/complete')) completions.push(request.url());
   });
-  await stranger.goto(callback(state));
-  await expect(stranger.getByRole('heading', { name: 'Sign in to Retainer' })).toBeVisible();
-  // Signed in as another member: the generic message. The server refuses it,
-  // and the first member's attempt is untouched (it completes below).
   await signIn(stranger, r.url, r.keys.user);
   await stranger.goto(callback(state));
   await expect(stranger.getByRole('heading', { name: "Connecting didn't finish" })).toBeVisible();
@@ -50,11 +49,9 @@ test('a member connects through the provider and back; the callback finishes onl
   await elsewhere.close();
 
   // A new page of the member's own browser has empty sessionStorage, as when
-  // the provider opens the callback in a new tab. A malformed state can't finish;
-  // the real one completes from the state alone and lands on the Connections tab.
+  // the provider opens the callback in a new tab: it completes from the state
+  // alone and lands on the Connections tab.
   const returned = await page.context().newPage();
-  await returned.goto(callback('not-a-state'));
-  await expect(returned.getByRole('heading', { name: "Connecting didn't finish" })).toBeVisible();
   await returned.goto(callback(state));
   // The connection's region shows only on the Connections tab.
   await expect(returned).toHaveURL(/\/extensions\/[0-9a-f-]{36}$/);

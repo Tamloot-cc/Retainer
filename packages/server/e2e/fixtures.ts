@@ -194,24 +194,7 @@ export const browserOAuthManifest = manifestFixture({
   connection: 'member',
   scopes: ['read', 'write'],
   settings: {
-    share: {
-      type: 'boolean',
-      label: 'Share member data',
-      required: true,
-      consent: true,
-      default: false,
-      secret: false,
-      reconnect: false,
-    },
-    days: {
-      type: 'number',
-      label: 'History days',
-      level: 'connection',
-      required: true,
-      default: 31,
-      secret: false,
-      reconnect: false,
-    },
+    ...browserMemberManifest.settings,
     apiKey: {
       type: 'string',
       label: 'Member API key',
@@ -381,6 +364,11 @@ export const test = base.extend<
       if (!a || typeof a === 'string') throw new Error('file address missing');
       storage = new LocalFileStorage(`http://127.0.0.1:${a.port}`, fileKey);
     }
+    const memberManifest = memberFixture
+      ? browserMemberManifest
+      : oauthMemberFixture
+        ? browserOAuthManifest
+        : undefined;
     const catalog =
       configureFixture || configureSecretFixture
         ? new ExtensionCatalog(
@@ -397,17 +385,17 @@ export const test = base.extend<
           ? new ExtensionCatalog([
               { manifest: sourceManifest, actorCeiling: 'integration', runtimeEnabled: true },
             ])
-          : memberFixture || oauthMemberFixture
+          : memberManifest
             ? new ExtensionCatalog([
                 {
-                  manifest: memberFixture ? browserMemberManifest : browserOAuthManifest,
+                  manifest: memberManifest,
                   actorCeiling: 'integration',
                   runtimeEnabled: true,
                 },
               ])
             : undefined;
     const secretSql =
-      memberFixture || oauthMemberFixture || configureSecretFixture
+      memberManifest || configureSecretFixture
         ? createSql(dbUrl.toString(), { role: 'retainer_secret_broker' })
         : undefined;
     const extensionSecrets = secretSql
