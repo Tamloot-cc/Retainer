@@ -2,7 +2,7 @@
 
 `src/ui/index.tsx`: Button's class-variance-authority and Slot composition is
 adapted from [shadcn/ui](https://github.com/shadcn-ui/ui), MIT.
-Other UI components are original wrappers around installed Radix primitives.
+Other UI components are original wrappers around installed Radix primitives and cmdk.
 No Twenty or Comp AI source files were copied or translated.
 
 ## shadcn/ui — MIT License

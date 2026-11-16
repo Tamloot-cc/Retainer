@@ -99,11 +99,7 @@ export function CommandPalette({
     <>
       <CommandDialog open={open} onOpenChange={onOpenChange}>
         {open ? (
-          <PaletteContents
-            key={recentCommandsKey(session)}
-            onClose={() => onOpenChange(false)}
-            onCreate={setCreating}
-          />
+          <PaletteContents onClose={() => onOpenChange(false)} onCreate={setCreating} />
         ) : null}
       </CommandDialog>
       {creating && canMutate(session) ? (
@@ -224,8 +220,9 @@ function PaletteContents({
           create: o,
         }))
     : [];
+  const normalizedQuery = normalize(typed);
   const match = (item: Item) =>
-    !typed || normalize(`${item.title} ${item.id} ${item.detail ?? ''}`).includes(normalize(typed));
+    !typed || normalize(`${item.title} ${item.id} ${item.detail ?? ''}`).includes(normalizedQuery);
   const recents: Item[] = recent
     .flatMap((r) => {
       if (r.kind === 'object')
@@ -305,7 +302,7 @@ function PaletteContents({
     { title: 'Events', items: events },
     { title: 'Actions', items: actions.filter(match) },
   ];
-  const total = groups.reduce((n, g) => n + g.items.length, 0);
+  const items = groups.flatMap((group) => group.items);
   const more =
     !expanded &&
     data &&
@@ -329,7 +326,7 @@ function PaletteContents({
       void navigate({ to: item.to, search: item.search ?? {} });
     }
   };
-  const current = groups.flatMap((g) => g.items).find((i) => i.id === selected);
+  const current = items.find((item) => item.id === selected);
   return (
     <Command
       label="Search the workspace"
@@ -411,7 +408,7 @@ function PaletteContents({
             </button>
           </div>
         ) : null}
-        {!total && !searching && !results.error ? (
+        {!items.length && !searching && !results.error ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
             <Search size={24} className="text-muted-foreground" />
             <p className="text-sm font-medium">No results for “{typed}”</p>
