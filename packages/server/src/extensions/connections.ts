@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { type ExtensionManifest, functionSecrets } from '@retainer/extension';
+import { disconnectHook, type ExtensionManifest, functionSecrets } from '@retainer/extension';
 import { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
 import type { Sql } from '../db/client.js';
@@ -90,8 +90,19 @@ export function validateConnectionSettings(
     )
       throw new AppError(422, 'invalid_settings', 'required connection setting missing', { key });
 }
-const ownerId = (caller: Caller) =>
+export const ownerId = (caller: Caller) =>
   caller.person?.id ?? (caller.actor.type === 'user' ? caller.actor.id : null);
+/** One connection per member and installation; a second is a reconnect. */
+async function assertNoConnection(tx: Tx, installationId: string, caller: Caller) {
+  const [row] =
+    await tx`select 1 from extension_connections where installation_id=${installationId} and owner_id=${caller.actor.id} and state<>'disconnected'`;
+  if (row)
+    throw new AppError(
+      409,
+      'connection_exists',
+      'you already have a connection; reconnect or disconnect it',
+    );
+}
 function human(caller: Caller) {
   if (caller.actor.type !== 'user' || caller.run || caller.installation)
     throw forbidden('only a person can manage a member connection');
@@ -158,16 +169,7 @@ export class MemberConnections {
             'cleanup_running',
             'Retainer is finishing an earlier attempt; try again in a moment',
           );
-      } else if (
-        await tx`select 1 from extension_connections where installation_id=${id} and owner_id=${caller.actor.id} and state<>'disconnected'`.then(
-          (rows) => rows.length > 0,
-        )
-      )
-        throw new AppError(
-          409,
-          'connection_exists',
-          'you already have a connection; reconnect or disconnect it',
-        );
+      } else await assertNoConnection(tx, id, caller);
       const connectionId = input.connectionId ?? randomUUID();
       const staged = await (this.broker as SecretBroker).stage(caller, {
         registrationId: manifest.universalId,
@@ -386,19 +388,13 @@ export class MemberConnections {
       const oauth = manifest.oauth;
       const handshake = oauth ? [oauth.verifierSetting, oauth.codeSetting] : [];
       if (credential === 'oauth' && (!oauth || !method.authorizationId)) throw expired();
-      if (credential === 'key' && oauth && this.oauthClient(manifest)?.keyFallback === false)
-        throw new AppError(422, 'invalid_connection', 'this extension connects with OAuth only');
       if (
-        !reconnect &&
-        (await tx`select 1 from extension_connections where installation_id=${id} and owner_id=${caller.actor.id} and state<>'disconnected'`.then(
-          (rows) => rows.length > 0,
-        ))
+        credential === 'key' &&
+        oauth &&
+        (!oauth.keySetting || this.oauthClient(manifest)?.keyFallback === false)
       )
-        throw new AppError(
-          409,
-          'connection_exists',
-          'you already have a connection; reconnect or disconnect it',
-        );
+        throw new AppError(422, 'invalid_connection', 'this extension connects with OAuth only');
+      if (!reconnect) await assertNoConnection(tx, id, caller);
       for (const [name, ref] of Object.entries(input.secretRefs)) {
         const definition = manifest.settings[name];
         const row = pending.find((p) => p.id === ref);
@@ -426,25 +422,19 @@ export class MemberConnections {
         ? await tx`select retainer_connection_secret_names(${id}::uuid,${cid}::uuid) as names`
         : [];
       // With OAuth in the manifest the method decides which secrets a connection needs.
-      const required = oauth
-        ? credential === 'oauth'
-          ? handshake
-          : oauth.keySetting
-            ? [oauth.keySetting]
-            : []
-        : Object.entries(manifest.settings)
+      const required = !oauth
+        ? Object.entries(manifest.settings)
             .filter(([, d]) => d.level === 'connection' && d.secret && d.required)
-            .map(([name]) => name);
-      if (oauth && credential === 'key' && !oauth.keySetting)
-        throw new AppError(422, 'invalid_connection', 'this extension connects with OAuth only');
+            .map(([name]) => name)
+        : credential === 'oauth'
+          ? handshake
+          : [oauth.keySetting as string];
       for (const name of required)
         if (!input.secretRefs[name] && (credential === 'oauth' || !stored?.names.includes(name)))
           throw new AppError(422, 'invalid_secret', 'required connection secret missing', {
             key: name,
           });
-      const disconnectHook = manifest.functions.find((f) => f.trigger.kind === 'disconnect');
-      const disconnect = disconnectHook?.universalId ?? null;
-      const disconnectSecrets = disconnectHook ? functionSecrets(manifest, disconnectHook) : [];
+      const { functionId: disconnect, secrets: disconnectSecrets } = disconnectHook(manifest);
       if (reconnect) {
         // The new connect gives the sessions up (spec 4.7, table).
         await supersedePartialRelease(tx, cid);

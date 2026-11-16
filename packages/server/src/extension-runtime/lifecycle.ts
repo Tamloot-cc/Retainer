@@ -8,7 +8,7 @@ import { requestHash } from '../idempotency.js';
  * (Tamloot connect spec 4.7). The SQL twin is `retainer_partial_release_job`.
  * Everywhere else, "disconnect cleanup" means a `disconnect` job that is not this.
  */
-export function isPartialReleaseJob(job: { trigger_kind: string; input: unknown }): boolean {
+export function isPartialReleaseJob(job: { trigger_kind: string; input?: unknown }): boolean {
   return (
     job.trigger_kind === 'disconnect' &&
     typeof job.input === 'object' &&
@@ -150,7 +150,7 @@ export async function failInstallation(
 ) {
   if (job.trigger_kind === 'configure') return;
   // A partial release job never changes its connection (spec 4.7).
-  if (isPartialReleaseJob({ trigger_kind: job.trigger_kind, input: job.input })) return;
+  if (isPartialReleaseJob(job)) return;
   if (
     job.generation !== installation.generation ||
     job.release_digest !== installation.release_digest

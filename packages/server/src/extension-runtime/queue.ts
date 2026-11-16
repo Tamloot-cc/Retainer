@@ -1,5 +1,6 @@
 import type { ExtensionUse, InputSchema } from '@retainer/extension';
 import {
+  disconnectHook,
   disconnectInputSchema,
   functionScopes,
   functionSecrets,
@@ -1283,24 +1284,23 @@ export class ExtensionQueue {
           on conflict(workspace_id,installation_id) do update set generation=excluded.generation,position=excluded.position,blocked_cycles=0`;
       await tx`update extension_installations set state='active',connection_health='ok',last_error=null,activated_at=clock_timestamp(),updated_at=now() where id=${installation.id}`;
       if (this.manifest(installation).connection === 'member') {
-        const manifest = this.manifest(installation);
-        const fn = manifest.functions.find((f) => f.trigger.kind === 'disconnect');
-        const hook = fn?.universalId ?? null;
-        const secrets = fn ? functionSecrets(manifest, fn) : [];
+        const { functionId: hook, secrets } = disconnectHook(this.manifest(installation));
         const connections =
           await tx`update extension_connections set state='connecting',health='ok',last_error=null,disconnect_function_id=${hook},
           disconnect_secrets=${secrets}::text[]
           where installation_id=${installation.id} and state<>'disconnected' returning id`;
         // The connect each one runs gives the sessions up (spec 4.7, table).
-        for (const c of connections) await supersedePartialRelease(tx, c.id);
-        for (const c of connections)
+        const previousVersion = lifecycleInputSchema.parse(job.input).previousVersion ?? null;
+        for (const c of connections) {
+          await supersedePartialRelease(tx, c.id);
           await this.enqueueConnectionLifecycle(
             tx,
             installation.workspace_id,
             installation.id,
             c.id,
-            lifecycleInputSchema.parse(job.input).previousVersion ?? null,
+            previousVersion,
           );
+        }
       }
       return true;
     }

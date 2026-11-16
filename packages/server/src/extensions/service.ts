@@ -1,5 +1,6 @@
 import {
   compareVersions,
+  disconnectHook,
   type ExtensionInstallation,
   type ExtensionInstallInput,
   type ExtensionManifest,
@@ -52,7 +53,7 @@ import {
 } from '../views/service.js';
 import { holdReason, type UpgradeTarget, upgradeTargets } from './auto-upgrade.js';
 import { ExtensionCatalog, hash } from './catalog.js';
-import { MemberConnections } from './connections.js';
+import { MemberConnections, ownerId } from './connections.js';
 import {
   type ContributionRow,
   contributionOperations,
@@ -233,7 +234,7 @@ export class Extensions {
       ? connectionMethods(manifest, this.oauthClients, !!this.secrets)
       : undefined;
     if (!methods) return {};
-    const owner = caller.person?.id ?? (caller.actor.type === 'user' ? caller.actor.id : null);
+    const owner = ownerId(caller);
     const [notice] =
       owner && !caller.run && !caller.installation
         ? await tx<{ id: string; at: string }[]>`select id,release_incomplete_at::text as at
@@ -387,7 +388,7 @@ export class Extensions {
       if (!installation) throw notFound('extension installation');
       const [member] =
         await tx`select 1 from extension_connections where installation_id=${id} limit 1`;
-      const owner = caller.person?.id ?? (caller.actor.type === 'user' ? caller.actor.id : null);
+      const owner = ownerId(caller);
       const all = canApproveDestructive(caller.actor, caller.scopes);
       const rows = await tx<
         {
@@ -1066,9 +1067,7 @@ export class Extensions {
     if (manifest.connection === 'member') {
       // Membership removal can run before setup finishes. Cache the hook
       // with the release adoption, under the same installation lock.
-      const hook = manifest.functions.find((fn) => fn.trigger.kind === 'disconnect');
-      const disconnect = hook?.universalId ?? null;
-      const secrets = hook ? functionSecrets(manifest, hook) : [];
+      const { functionId: disconnect, secrets } = disconnectHook(manifest);
       await tx`update extension_connections set disconnect_function_id=${disconnect},disconnect_secrets=${secrets}::text[]
         where installation_id=${row.id} and state<>'disconnected'`;
     }

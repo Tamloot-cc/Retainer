@@ -488,6 +488,15 @@ export function functionSecrets(
       .map(([key]) => key)
   );
 }
+
+/** A release's disconnect hook and the generated secrets it may read after a disconnect. */
+export function disconnectHook(manifest: Pick<ExtensionManifest, 'settings' | 'functions'>): {
+  functionId: string | null;
+  secrets: string[];
+} {
+  const fn = manifest.functions.find((f) => f.trigger.kind === 'disconnect');
+  return { functionId: fn?.universalId ?? null, secrets: fn ? functionSecrets(manifest, fn) : [] };
+}
 /** The scopes a function needs; its run token gets their intersection with the grant (spec 8). */
 export function functionScopes(
   manifest: Pick<ExtensionManifest, 'scopes'>,
