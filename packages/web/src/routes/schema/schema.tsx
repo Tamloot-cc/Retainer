@@ -30,7 +30,7 @@ export function SchemaPage() {
       actions={
         pending ? (
           <Button size="small" asChild>
-            <Link to="/" search={{ tab: 'schema' }}>
+            <Link to="/review" search={{ tab: 'schema' }}>
               <Clock size={14} aria-hidden />
               {pending} proposed
             </Link>

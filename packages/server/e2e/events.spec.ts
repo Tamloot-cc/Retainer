@@ -62,10 +62,10 @@ test('groups the sidebar into Records and Activity, and explains what event list
   const activity = page.getByRole('group', { name: 'Activity' });
   await expect(records.getByRole('link', { name: 'People', exact: true })).toBeVisible();
   await expect(records.getByRole('link', { name: 'Conversations' })).toHaveCount(0);
-  await expect(activity.getByRole('link')).toHaveText(['All activity', 'Conversations']);
+  await expect(activity.getByRole('link')).toHaveText(['Conversations']);
   // The icon rail keeps both groups.
   await page.getByRole('button', { name: 'Collapse sidebar' }).click();
-  await expect(activity.getByRole('link', { name: 'All activity' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Home', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Expand sidebar' }).click();
 
   await activity.getByRole('link', { name: 'Conversations' }).click();
@@ -101,8 +101,8 @@ test('groups the sidebar into Records and Activity, and explains what event list
   await expect(page.getByRole('button', { name: /Kickoff/ })).toBeVisible();
   // People write comments now, not notes (C5).
   await expect(page.getByRole('button', { name: 'Write a note' })).toHaveCount(0);
-  await page.getByRole('link', { name: 'All activity' }).click();
-  await expect(page.getByRole('heading', { name: 'All activity' })).toBeVisible();
+  await page.getByRole('link', { name: 'Home', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Write a note' })).toHaveCount(0);
 });
 
@@ -157,13 +157,13 @@ test('filters all activity by type, source, date and linked record, in the addre
     about: [acme.id],
   });
   await signIn(page, r.url, r.keys.user);
-  await page.getByRole('link', { name: 'All activity' }).click();
-  await expect(page.getByRole('heading', { name: 'All activity' })).toBeVisible();
+  await page.getByRole('link', { name: 'Home', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
   const titles = page.getByRole('button', { name: /^(Acme intro|Globex demo|Acme budget note)$/ });
   await expect(titles).toHaveText(['Acme budget note', 'Globex demo', 'Acme intro']);
   // Grouped by day, with the medium as a chip and the about records linked.
-  await expect(page.getByRole('region', { name: /October 20/ })).toContainText('Call');
-  await expect(page.getByRole('region', { name: /October 20/ })).toContainText(
+  await expect(page.getByRole('region', { name: /Today/ })).toContainText('Call');
+  await expect(page.getByRole('region', { name: /Today/ })).toContainText(
     'First call with the Acme team',
   );
 
@@ -186,11 +186,11 @@ test('filters all activity by type, source, date and linked record, in the addre
   await page.getByRole('button', { name: 'Remove filter Source' }).click();
 
   await filter('Date');
-  await page.getByRole('textbox', { name: 'From', exact: true }).fill('2026-10-21');
-  await page.getByRole('textbox', { name: 'To', exact: true }).fill('2026-10-22');
+  await page.getByRole('textbox', { name: 'From', exact: true }).fill('2100-01-01');
+  await page.getByRole('textbox', { name: 'To', exact: true }).fill('2100-01-02');
   await page.getByRole('button', { name: 'Apply filter' }).click();
-  await expect(titles).toHaveText(['Globex demo']);
-  await page.getByRole('button', { name: 'Remove filter Date' }).click();
+  await expect(titles).toHaveCount(0);
+  await page.getByRole('button', { name: 'Remove filter Added' }).click();
 
   await filter('Linked record');
   await page.getByRole('combobox', { name: 'Linked record' }).fill('Acme');

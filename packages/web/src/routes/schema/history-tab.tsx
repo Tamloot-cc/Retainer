@@ -131,7 +131,7 @@ function ChangeItem({ change, canDecide }: { change: SchemaChange; canDecide: bo
       {canDecide && change.status === 'proposed' ? (
         <Row>
           <Button size="small" asChild>
-            <Link to="/" search={{ tab: 'schema' }}>
+            <Link to="/review" search={{ tab: 'schema' }}>
               Review in inbox
             </Link>
           </Button>

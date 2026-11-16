@@ -1,14 +1,14 @@
-import { type EventQueryInput, isRecordId } from '@retainer/shared';
+import { isRecordId, type WorkspaceFeedInput } from '@retainer/shared';
 import { addDays, format, isValid, parse } from 'date-fns';
 import { joined, list, type ViewSearch } from '../state.js';
 import { DAY } from '../views/views-state.js';
 
 // The activity feed's state (5.2): its filters live in the URL only, and
-// its events are read by day.
+// its activity is read by day.
 
 /** What the feed shows: every filter is optional, and they are ANDed. */
 export type FeedFilters = {
-  /** Event type API names; none means every type. */
+  /** Entity or event type API names; none means every type. */
   types: string[];
   /** One source (`channel`). */
   channel?: string;
@@ -16,7 +16,7 @@ export type FeedFilters = {
   from?: string;
   /** Last day shown, `yyyy-MM-dd`, included. */
   to?: string;
-  /** The one record the events are attached to. */
+  /** The record to show, alongside events attached to it. */
   linked?: string;
 };
 
@@ -70,23 +70,15 @@ export function feedSearch(
 /** Local midnight at the start of a `yyyy-MM-dd` day, as an instant. */
 const startOf = (day: string) => parse(day, DAY, new Date());
 
-/**
- * `POST /v1/events/query` for the filters, newest first. A day range runs
- * from local midnight of `from` to local midnight after `to`.
- */
-export function feedQuery(filters: FeedFilters, limit = 30): EventQueryInput {
-  const parts: Record<string, unknown>[] = [];
-  if (filters.types.length === 1) parts.push({ type: { eq: filters.types[0] } });
-  else if (filters.types.length > 1) parts.push({ type: { in: filters.types } });
-  if (filters.channel) parts.push({ channel: { eq: filters.channel } });
-  if (filters.from) parts.push({ occurredAt: { gte: startOf(filters.from).toISOString() } });
-  if (filters.to) parts.push({ occurredAt: { lt: addDays(startOf(filters.to), 1).toISOString() } });
+/** Home filters use added time, from local midnight through the last included day. */
+export function feedQuery(filters: FeedFilters, limit = 30): WorkspaceFeedInput {
   return {
     limit,
-    sort: [{ field: 'occurredAt', direction: 'desc' }],
-    include: ['relationReferences'],
-    ...(parts.length === 1 ? { filter: parts[0] } : parts.length ? { filter: { and: parts } } : {}),
-    ...(filters.linked ? { linked: { record: filters.linked } } : {}),
+    ...(filters.types.length ? { types: filters.types } : {}),
+    ...(filters.channel ? { channel: filters.channel } : {}),
+    ...(filters.from ? { from: startOf(filters.from).toISOString() } : {}),
+    ...(filters.to ? { to: addDays(startOf(filters.to), 1).toISOString() } : {}),
+    ...(filters.linked ? { linked: filters.linked } : {}),
   };
 }
 
@@ -122,22 +114,22 @@ export function dayHeading(day: string, now: Date = new Date()): string {
 }
 
 /**
- * Events grouped by the local day they happened, in the order given (the
+ * Items grouped by the local day they were added, in the order given (the
  * feed is newest first, so days come out newest first too).
  */
-export function groupByDay<T extends { event: { occurredAt: string } }>(
-  events: T[],
+export function groupByDay<T extends { at: string }>(
+  items: T[],
   now: Date = new Date(),
-): { day: string; heading: string; events: T[] }[] {
-  const groups: { day: string; heading: string; events: T[] }[] = [];
-  for (const e of events) {
-    const day = localDay(e.event.occurredAt);
+): { day: string; heading: string; items: T[] }[] {
+  const groups: { day: string; heading: string; items: T[] }[] = [];
+  for (const e of items) {
+    const day = localDay(e.at);
     const last = groups[groups.length - 1];
-    if (last?.day === day) last.events.push(e);
+    if (last?.day === day) last.items.push(e);
     else {
       const earlier = groups.find((g) => g.day === day);
-      if (earlier) earlier.events.push(e);
-      else groups.push({ day, heading: dayHeading(day, now), events: [e] });
+      if (earlier) earlier.items.push(e);
+      else groups.push({ day, heading: dayHeading(day, now), items: [e] });
     }
   }
   return groups;

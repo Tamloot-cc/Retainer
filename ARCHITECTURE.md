@@ -256,6 +256,12 @@ install can add them later as an opt-in.
 | `fact_sources`              | What a fact rests on: an event (`source_record_id`, with an optional quote the agent chose) or other facts (for inferences)                                                                                                                                                                                    |
 | `event_moves`               | Each move of events to another event type: the actor, the two types, the event IDs and the field mapping, by ID and name, never values. Only ever added to                                                                                                                                                     |
 
+`field_assertions.write_at` records transaction time for grouped Home feed
+updates. It does not participate in assertion ranking. It is null for writes
+before the Home migration, whose grouping cannot be reconstructed reliably.
+The feed is a read projection, not a new stored event type; see
+[FRONTEND.md 5.3c](FRONTEND.md#53c-home--app).
+
 `field_assertions.observed_at` and `facts.valid_from` come from the source
 (rules 2.2 and 2.6); `valid_from` has no `now()` default, so backfilled
 facts do not appear newly true. No v1 write path creates `inferred` facts,

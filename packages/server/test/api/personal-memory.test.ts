@@ -199,6 +199,11 @@ describe('accounts mode', () => {
     expect(theirs).toMatchObject({ profile: 'me', facts: [] });
     expect((await withKey(plain, '/v1/records/me/context')).status).toBe(422);
 
+    // Home remains a shared workspace feed even for a caller who can read their own memory.
+    const home = await v1(dana, '/v1/feed/query', 'POST', {});
+    expect(home.status).toBe(200);
+    expect(await home.json()).toMatchObject({ items: [] });
+
     const listed = await app.account(`/account/workspaces/${workspaceId}/keys`, {
       cookie: dana.cookie,
     });

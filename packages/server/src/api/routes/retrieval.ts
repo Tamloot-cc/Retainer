@@ -4,6 +4,7 @@ import type { Sql } from '../../db/client.js';
 import { readBody, recordParam, zodError } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 import { contextInputSchema } from '../../retrieval/context.js';
+import { feedInputSchema, workspaceFeed } from '../../retrieval/feed.js';
 import { searchInputSchema } from '../../retrieval/search.js';
 import { contextFor, searchFor, timelineFor } from '../../retrieval/service.js';
 import { timelineInputSchema } from '../../retrieval/timeline.js';
@@ -13,6 +14,11 @@ const LIST_PARAMS = new Set(['types', 'fields', 'eventTypes']);
 
 /** Keyword search, context packs and timelines (6.1), on the same services as the MCP tools. */
 export function retrievalRoutes(app: Hono<AppEnv>, sql: Sql) {
+  app.post('/feed/query', requireScope('read'), async (c) => {
+    const input = await readBody(c, feedInputSchema);
+    return c.json(await workspaceFeed(sql, c.get('caller'), input));
+  });
+
   app.post('/search', requireScope('read'), async (c) => {
     const input = await readBody(c, searchInputSchema);
     return c.json(await searchFor(sql, c.get('caller'), input));

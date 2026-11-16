@@ -53,7 +53,7 @@ test('comments on a company: posted once despite a lost response, edited, delete
   await expect(page.getByText('Name set to')).toBeVisible();
   await expect(page.getByText('Procurement is quick after all.')).toHaveCount(0);
   await page.goto(`${r.url}/app/activity`);
-  await expect(page.getByRole('heading', { name: 'All activity' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
   await expect(page.getByText('Procurement is quick after all.')).toHaveCount(0);
 
   await page.goto(`${r.url}/app/r/${acme.id}?tab=comments`);

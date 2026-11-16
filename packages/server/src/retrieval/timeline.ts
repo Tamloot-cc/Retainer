@@ -301,7 +301,7 @@ async function presentEvents(tx: Tx, schema: CompiledSchema, ids: string[]) {
   return result;
 }
 
-async function presentValues(tx: Tx, schema: CompiledSchema, ids: string[]) {
+export async function presentValues(tx: Tx, schema: CompiledSchema, ids: string[]) {
   const result = new Map<string, TimelineItem>();
   if (ids.length === 0) return result;
   const rows = await tx<

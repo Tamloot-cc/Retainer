@@ -10,7 +10,7 @@ export async function submitKey(page: Page, key: string) {
 export async function signIn(page: Page, url: string, key: string) {
   await page.goto(`${url}/app/`);
   await submitKey(page, key);
-  await expect(page.getByRole('heading', { name: 'Review inbox' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
 }
 
 /** Sign out from the account menu at the foot of the sidebar. */

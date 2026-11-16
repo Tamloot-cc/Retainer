@@ -14,6 +14,7 @@ test('sign in, accept and reject values, browse records, and inspect provenance'
   ).record;
   await r.request(`/records/${record.id}`, { values: { jobTitle: 'CEO' } }, r.keys.agent, 'PATCH');
   await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'Review inbox' }).click();
   await expect(page.getByText('CEO', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Accept', exact: true }).click();
   await expect(page.getByText("You're all caught up")).toBeVisible();
@@ -55,6 +56,7 @@ test('preserves a draft after a stale edit and retries only with explicit action
     )
   ).record;
   await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'Review inbox' }).click();
   await page.goto(`${r.url}/app/r/${record.id}`);
   await page.getByRole('button', { name: 'Edit Job title', exact: true }).click();
   await page.getByRole('textbox', { name: 'Job title', exact: true }).fill('My draft');
@@ -124,6 +126,7 @@ test('bulk review reports individual failures and keeps only failed items select
   );
   await r.request(`/records/${valid.id}`, { values: { jobTitle: 'CEO' } }, r.keys.agent, 'PATCH');
   await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'Review inbox' }).click();
   await page.getByLabel('Select Blocked person emails').check();
   await page.getByLabel('Select Valid person jobTitle').check();
   await page.getByRole('button', { name: 'Accept selected' }).click();
@@ -149,6 +152,7 @@ test('supports keyboard review and system dark mode on a narrow screen', async (
   ).record;
   await r.request(`/records/${record.id}`, { values: { jobTitle: 'CEO' } }, r.keys.agent, 'PATCH');
   await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'Review inbox' }).click();
   await expect(page.getByLabel('Select Keyboard person jobTitle')).toBeVisible();
   await page.locator('body').click({ position: { x: 1000, y: 30 } });
   await page.keyboard.press('x');

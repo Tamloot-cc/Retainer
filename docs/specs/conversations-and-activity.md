@@ -186,28 +186,25 @@ this: a move changes an event's type in place and keeps all of that.
 The sidebar has two labeled groups:
 
 - **Records**: entity objects, standard ones first, as today.
-- **Activity**: first an **All activity** entry (5.2), then each event type.
+- **Activity**: each event type. **Home** sits above both groups, followed by
+  Find anything and Review inbox.
 
 `main.tsx` passes each object's `class` to the shell. The collapsed icon
 rail keeps a divider between the groups. Event types use icons from one
 family, so the two groups are told apart at a glance.
 
-### 5.2 All activity — `/app/activity`
+### 5.2 Home — `/app/`
 
-A feed, not a grid: people read activity by time, not by column.
+The workspace landing page now combines events, new records and grouped
+entity writes. The former `/app/activity` route redirects here. Review
+moves to `/app/review`. The current design and endpoint contract are in
+[FRONTEND.md 5.3c](../../FRONTEND.md#53c-home--app).
 
-- Source: `POST /v1/events/query` (4.2), cursor-paginated, newest first.
-- Rows are grouped by day (Today, Yesterday, then dates). Each row shows the
-  type icon, the medium as a chip when there is one, the title, two lines of
-  summary, participants, `about` records as linked chips, and the time.
-- Filters in the URL: event type, channel, date range, and one linked record
-  (a record picker). They show as removable chips, like list filters.
-- Clicking a row opens the event in the side sheet, as record lists do
-  (FRONTEND.md 5.3).
-- A **Write a note** button (D7, 5.4).
-
-Saved views stay per object in this scope. The feed keeps its filters in
-the URL only.
+The feed orders by added time, distinguishes occurrence dates, and keeps
+filters in the URL. It uses `POST /v1/feed/query`; `POST /v1/events/query`
+remains the event-only API. Grouped writes use a separate transaction time
+on assertions, without changing conflict resolution. Facts, comments and
+cross-request import grouping remain deferred.
 
 ### 5.3 Event type lists — `/app/o/:object` for event types
 

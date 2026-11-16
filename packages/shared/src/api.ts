@@ -935,3 +935,30 @@ export type FileUploadInput = {
 };
 export type FileTransfer = { url: string; headers: Record<string, string>; expiresAt: string };
 export type FileView = Omit<FileUploadInput, 'sourceItemId'> & { id: string };
+
+/** Human-facing workspace catch-up feed. Times are when activity was added. */
+export type WorkspaceFeedInput = {
+  mode?: 'all' | 'events' | 'records';
+  types?: string[];
+  query?: string;
+  channel?: string;
+  linked?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  cursor?: string;
+};
+export type WorkspaceFeedItem = {
+  id: string;
+  kind: 'event' | 'record_created' | 'record_updated';
+  at: string;
+  actor: Actor;
+  record: PresentedRecord;
+  /** Assertions from one transaction and source, not before/after diffs. */
+  changes: Extract<TimelineItem, { kind: 'field_change' }>[];
+};
+export type WorkspaceFeedPage = {
+  items: WorkspaceFeedItem[];
+  references: Record<string, RecordReference>;
+  nextCursor: string | null;
+};

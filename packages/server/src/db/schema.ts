@@ -1042,6 +1042,9 @@ export const fieldAssertions = pgTable(
     reviewedBy: jsonb('reviewed_by').$type<Actor>(),
     reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
     createdAt: createdAt(),
+    /** Transaction time groups a human feed entry without changing assertion ranking.
+     * Null on assertions written before the Home feed was introduced. */
+    writeAt: timestamp('write_at', { withTimezone: true }),
     /**
      * The person this row is private to (personal memory spec 4.2), or null
      * for a shared row. Set by the server, never by a client; a restrictive
@@ -1068,6 +1071,9 @@ export const fieldAssertions = pgTable(
       .on(t.sourceRecordId)
       .where(sql`${t.sourceRecordId} is not null`),
     index('field_assertions_initial_idx').on(t.recordId, t.fieldId).where(sql`${t.isInitial}`),
+    index('field_assertions_feed_idx')
+      .on(t.workspaceId, t.writeAt, t.recordId)
+      .where(sql`${t.writeAt} is not null`),
     index('field_assertions_review_idx')
       .on(t.workspaceId, t.createdAt)
       .where(sql`${t.status} = 'pending_review'`),
