@@ -1,8 +1,8 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Link } from '@tanstack/react-router';
 import {
-  Activity,
   ChevronsUpDown,
+  House,
   Inbox,
   LogOut,
   type LucideIcon,
@@ -25,8 +25,6 @@ import { objectIcon } from './object-icons.js';
 const COLLAPSED_KEY = 'retainer:sidebar:collapsed';
 
 export { objectIcon } from './object-icons.js';
-/** The icon for the workspace-wide activity feed. */
-export const activityIcon = Activity;
 
 const initials = (name: string) =>
   name
@@ -234,6 +232,14 @@ function Sidebar({
         aria-label="Main navigation"
         className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden p-2"
       >
+        <NavLink
+          to="/"
+          icon={House}
+          label="Home"
+          collapsed={collapsed}
+          exact
+          onNavigate={onNavigate}
+        />
         <button
           type="button"
           onClick={onSearch}
@@ -245,7 +251,7 @@ function Sidebar({
           {collapsed ? null : <Kbd>⌘K</Kbd>}
         </button>
         <NavLink
-          to="/"
+          to="/review"
           icon={Inbox}
           label="Review inbox"
           collapsed={collapsed}
@@ -269,13 +275,6 @@ function Sidebar({
           {objectLinks('entity')}
         </NavGroup>
         <NavGroup label="Activity" collapsed={collapsed}>
-          <NavLink
-            to="/activity"
-            icon={activityIcon}
-            label="All activity"
-            collapsed={collapsed}
-            onNavigate={onNavigate}
-          />
           {objectLinks('event')}
         </NavGroup>
         <div className="flex-1" />
@@ -401,7 +400,7 @@ function NavLink({
   onNavigate,
   children,
 }: {
-  to: '/' | '/o/$object' | '/schema' | '/activity' | '/extensions';
+  to: '/' | '/review' | '/o/$object' | '/schema' | '/activity' | '/extensions';
   params?: { object: string };
   icon: LucideIcon;
   color?: CategoryColor;

@@ -9,6 +9,7 @@ import {
   lazyRouteComponent,
   Outlet,
   RouterProvider,
+  redirect,
   useNavigate,
 } from '@tanstack/react-router';
 import { lazy, type ReactNode, StrictMode, Suspense, useEffect, useMemo, useState } from 'react';
@@ -203,6 +204,7 @@ function validateSearch(raw: Record<string, unknown>): ViewSearch {
     'fields',
     'tasks',
     'eventTypes',
+    'q',
     'channel',
     'from',
     'to',
@@ -218,7 +220,7 @@ const rootRoute = createRootRoute({
   validateSearch,
   notFoundComponent: () => (
     <Page title="Page not found">
-      <Link to="/">Go to the review inbox</Link>
+      <Link to="/">Go home</Link>
     </Page>
   ),
   errorComponent: ({ error, reset }) => (
@@ -231,6 +233,21 @@ const routeTree = rootRoute.addChildren([
   createRoute({
     getParentRoute: () => rootRoute,
     path: '/',
+    beforeLoad: ({ search }) => {
+      if (
+        search.assertion ||
+        ['schema', 'pendingAssertions', 'mergeSuggestions', 'unresolvedParticipants'].includes(
+          search.tab ?? '',
+        )
+      ) {
+        throw redirect({ to: '/review', search });
+      }
+    },
+    component: lazyRouteComponent(() => import('./routes/events/activity.js'), 'ActivityPage'),
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/review',
     component: lazyRouteComponent(() => import('./routes/review/review.js'), 'ReviewPage'),
   }),
   createRoute({
@@ -246,7 +263,9 @@ const routeTree = rootRoute.addChildren([
   createRoute({
     getParentRoute: () => rootRoute,
     path: '/activity',
-    component: lazyRouteComponent(() => import('./routes/events/activity.js'), 'ActivityPage'),
+    beforeLoad: ({ search }) => {
+      throw redirect({ to: '/', search });
+    },
   }),
   createRoute({
     getParentRoute: () => rootRoute,

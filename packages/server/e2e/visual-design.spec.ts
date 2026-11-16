@@ -164,6 +164,7 @@ test('actor attribution keeps its identity from review into record history', asy
   ).record;
   await r.request(`/records/${record.id}`, { values: { jobTitle: 'CEO' } }, r.keys.agent, 'PATCH');
   await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'Review inbox' }).click();
   const actor = page.locator('.category-tag').filter({ hasText: 'inbox' }).first();
   await expect(actor).toBeVisible();
   const color = await actor.getAttribute('data-color');

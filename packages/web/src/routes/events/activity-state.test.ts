@@ -12,7 +12,7 @@ import {
 /** Local midnight of a day, as the feed computes it, in ISO. */
 const midnight = (y: number, m: number, d: number) => new Date(y, m - 1, d).toISOString();
 const at = (y: number, m: number, d: number, h = 12) => ({
-  event: { occurredAt: new Date(y, m - 1, d, h).toISOString() },
+  at: new Date(y, m - 1, d, h).toISOString(),
 });
 
 describe('feed filters in the address', () => {
@@ -73,35 +73,27 @@ describe('feed filters in the address', () => {
 });
 
 describe('the feed query', () => {
-  it('reads every type newest first, with labels for the records it names', () => {
-    expect(feedQuery({ types: [] })).toEqual({
-      limit: 30,
-      sort: [{ field: 'occurredAt', direction: 'desc' }],
-      include: ['relationReferences'],
-    });
+  it('reads all record and event types with a bounded page', () => {
+    expect(feedQuery({ types: [] })).toEqual({ limit: 30 });
+    expect(feedQuery({ types: ['person', 'conversation'] }).types).toEqual([
+      'person',
+      'conversation',
+    ]);
   });
 
-  it('filters one type with eq and several with in', () => {
-    expect(feedQuery({ types: ['note'] }).filter).toEqual({ type: { eq: 'note' } });
-    expect(feedQuery({ types: ['note', 'conversation'] }).filter).toEqual({
-      type: { in: ['note', 'conversation'] },
-    });
+  it('runs an added-time range from local midnight to midnight after the last day', () => {
+    expect(feedQuery({ types: [], channel: 'zoom', from: '2026-11-01', to: '2026-11-05' })).toEqual(
+      {
+        limit: 30,
+        channel: 'zoom',
+        from: midnight(2026, 11, 1),
+        to: midnight(2026, 11, 6),
+      },
+    );
   });
 
-  it('runs a day range from local midnight to local midnight after the last day', () => {
-    expect(
-      feedQuery({ types: [], channel: 'zoom', from: '2026-11-01', to: '2026-11-05' }).filter,
-    ).toEqual({
-      and: [
-        { channel: { eq: 'zoom' } },
-        { occurredAt: { gte: midnight(2026, 11, 1) } },
-        { occurredAt: { lt: midnight(2026, 11, 6) } },
-      ],
-    });
-  });
-
-  it('finds the events attached to one record', () => {
-    expect(feedQuery({ types: [], linked: 'c1' }).linked).toEqual({ record: 'c1' });
+  it('finds a record and its linked conversations', () => {
+    expect(feedQuery({ types: [], linked: 'c1' }).linked).toBe('c1');
   });
 });
 
@@ -121,7 +113,7 @@ describe('grouping by day', () => {
       [at(2026, 11, 5, 14), at(2026, 11, 5, 9), at(2026, 11, 4, 23), at(2026, 10, 30)],
       now,
     );
-    expect(groups.map((g) => [g.heading, g.events.length])).toEqual([
+    expect(groups.map((g) => [g.heading, g.items.length])).toEqual([
       ['Today', 2],
       ['Yesterday', 1],
       [dayHeading('2026-10-30', now), 1],
@@ -131,6 +123,6 @@ describe('grouping by day', () => {
 
   it('adds a later page’s events to a day already shown', () => {
     const groups = groupByDay([at(2026, 11, 5, 14), at(2026, 11, 4), at(2026, 11, 5, 8)], now);
-    expect(groups.map((g) => g.events.length)).toEqual([2, 1]);
+    expect(groups.map((g) => g.items.length)).toEqual([2, 1]);
   });
 });

@@ -25,7 +25,8 @@ test('the top bar breadcrumb leads back to the list a page belongs to', async ({
   await crumbs.getByRole('link', { name: 'Activity · Conversation' }).click();
   await expect(page).toHaveURL(/\/app\/o\/conversation/);
   await crumbs.getByRole('link', { name: 'Activity', exact: true }).click();
-  await expect(page).toHaveURL(/\/app\/activity/);
+  await expect(page).toHaveURL(`${r.url}/app/`);
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
   // A crumb with nowhere to go stays plain text.
   await expect(crumbs.getByRole('link')).toHaveCount(0);
 

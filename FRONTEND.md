@@ -206,9 +206,9 @@ address reproduces the view.
 One field for the key, one button. Errors from `POST /auth/session` are shown
 as the server words them.
 
-### 5.2 Review inbox — `/app` (home)
+### 5.2 Review inbox — `/app/review`
 
-The first screen built and the default after sign-in. Source: `GET /v1/review`
+The dedicated destination for decisions that need a person. Source: `GET /v1/review`
 and `GET /v1/schema/changes?status=proposed`.
 
 Tabs, each with a total count from the server, independent of the loaded
@@ -352,7 +352,7 @@ One route for every object. Source: `POST /v1/objects/:object/query`.
 - A left sidebar: workspace, Find anything (⌘K), Review inbox with its
   pending count, then two labeled groups. **Records** lists the entity
   objects (standard ones first, each with its icon). **Activity** starts
-  with **All activity** (5.3c), then lists each event type. Event types
+  with each event type. **Home** (5.3c) sits above both groups. Event types
   take their icons from one family (squared speech marks), so the two
   groups are told apart at a glance. Then Schema, and the signed-in actor,
   whose account menu holds the **Developer view** switch (5.8) and Sign out.
@@ -362,7 +362,7 @@ One route for every object. Source: `POST /v1/objects/:object/query`.
   `md` it is a drawer opened from the top bar.
 - Every screen has a slim top bar with a breadcrumb and the screen's
   actions. The crumb before the title links to the page it names (a
-  record's list, Extensions, All activity); a crumb with no page of its
+  record's list, Extensions, Home); a crumb with no page of its
   own stays plain text. Record lists fill the width; other screens use a
   readable centred column.
 
@@ -416,28 +416,48 @@ set for one object, shown as a table, a board or a calendar. Source:
   have no manual order: a column follows the view's sort.
 - Clicking a card or calendar record opens the side sheet as in the table.
 
-### 5.3c All activity — `/app/activity`
+### 5.3c Home — `/app/`
 
-A feed, not a grid: people read activity by time, not by column. Source:
-`POST /v1/events/query` (every visible event type, never internal notes),
-with `include: ["relationReferences"]` so participants and `about` records
-are named without a read each.
+The default workspace landing page. Home sits first in the sidebar, followed
+by Find anything and Review inbox. Records contains entity types; Activity
+contains event types. `/app/activity` redirects here with its filters intact.
+Old home links carrying an assertion or a review tab redirect to `/app/review`.
 
-- Newest first, 30 at a time with **Load more** on the cursor. Events are
-  grouped by the viewer's local day under a heading that stays in view:
-  Today, Yesterday, then the date (with the year when it is not this one).
-- Each row shows the type's icon, the medium as a chip when there is one,
-  the title, two lines of summary, participants ("With", matched ones
-  linked, other handles as text), the `about` records as linked chips
-  ("About") and the time.
-- Filters live in the address only (saved views stay per object): event
-  type (`eventTypes`, several allowed), source (`channel`), a date range
-  (`from` and `to`, local days, both included) and one linked record
-  (`linked`, chosen with a record picker over every entity object). Each
-  shows as a removable chip, like list filters; a linked record's chip
-  names it from the page or a single label read.
-- Clicking a row opens the event in the side sheet, as record lists do
-  (`?record=`).
+Source: `POST /v1/feed/query` (`Retainer.workspaceFeed` in the SDK). A read
+projection combines visible shared events, new entity records and grouped
+entity field writes; it never turns record changes into stored events.
+
+- Newest **added** first, 30 at a time with **Load more**, grouped by local
+  day. An imported event names its occurrence date separately. Filters use
+  added time, so an old conversation imported today appears today.
+- A readable column of cards: record identity, type/medium, title, time,
+  conversation summary, participants/about links and secondary attribution.
+  New-record cards show a small preview of the record's current details;
+  update cards show asserted values, never invented before/after diffs.
+- Field assertions from one transaction, record, actor and source form one
+  card; initial record fields stay in the creation card. Two updates show
+  initially, with the rest expandable. Superseded values say **Not the
+  current value**. Pending proposals stay in Review. Original reviewed
+  proposals are omitted because acceptance creates a new user assertion.
+- `field_assertions.write_at` preserves transaction grouping independently
+  of assertion ranking timestamps. It is nullable for historical assertions:
+  grouped update cards start with writes after this migration; existing
+  records and conversations retain their original creation times.
+- Everything, Conversations & notes, and Record updates tabs. URL state:
+  `tab`, `q` (Postgres full-text over the current record), `eventTypes`
+  (entity or event type names), `channel`, inclusive local days `from`/`to`,
+  and `linked`. Source filters match events or evidence cited by updates;
+  records created without a source channel do not match a Source filter.
+- Clicking the title opens its record in the side sheet (`?record=`).
+  A review banner links to the dedicated inbox and counts pending values,
+  suggested merges, unresolved participants and schema proposals.
+- A background check offers **Show new updates** without moving the feed
+  while someone reads. Private memory, hidden/deprecated types, deleted
+  records, retracted assertions and superseded managed evidence are excluded.
+
+V1 keeps event and record-write cards separate, linking updates to their
+source conversation. Cross-request import batches, facts, comments and
+personalization are deferred until there is a stable grouping contract.
 
 ### 5.4 Record — `/app/r/:id`
 

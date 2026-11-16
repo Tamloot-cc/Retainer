@@ -35,7 +35,7 @@ function shell(collapsed: boolean) {
 }
 
 describe('the sidebar', () => {
-  it('lists entities under Records, and All activity then event types under Activity', () => {
+  it('places Home above the record and event groups', () => {
     shell(false);
     const records = screen.getByRole('group', { name: 'Records' });
     expect(
@@ -48,14 +48,19 @@ describe('the sidebar', () => {
       within(activity)
         .getAllByRole('link')
         .map((l) => l.textContent),
-    ).toEqual(['All activity', 'Conversations', 'Notes']);
+    ).toEqual(['Conversations', 'Notes']);
+    expect(
+      within(screen.getByRole('navigation', { name: 'Main navigation' }))
+        .getAllByRole('link')
+        .slice(0, 2)
+        .map((link) => link.textContent),
+    ).toEqual(['Home', 'Review inbox']);
     expect(screen.getByRole('button', { name: 'Account: Dana Levi' })).toBeTruthy();
   });
 
   it('keeps both groups, divided, in the icon rail', () => {
     shell(true);
-    const activity = screen.getByRole('group', { name: 'Activity' });
-    expect(within(activity).getByRole('link', { name: 'All activity' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Home' })).toBeTruthy();
     expect(screen.getByRole('group', { name: 'Records' })).toBeTruthy();
   });
 

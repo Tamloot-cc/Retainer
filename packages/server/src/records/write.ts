@@ -370,11 +370,11 @@ export async function writeFields(
 
     const [inserted] = await tx<AssertionRow[]>`
       insert into field_assertions (workspace_id, record_id, field_id, value, actor,
-        source_record_id, is_initial, confidence, status, review_reason, observed_at, created_at)
+        source_record_id, is_initial, confidence, status, review_reason, observed_at, created_at, write_at)
       values (${context.workspaceId}, ${record.id}, ${field.id as string},
         ${value === null ? null : tx.json(jsonValue(value))}, ${tx.json(context.actor)},
         ${options.sourceRecordId ?? null}, ${options.isInitial ?? false}, ${confidence},
-        ${reason ? 'pending_review' : 'active'}, ${reason}, ${observedAt}, clock_timestamp())
+        ${reason ? 'pending_review' : 'active'}, ${reason}, ${observedAt}, clock_timestamp(), transaction_timestamp())
       returning id, field_id, value, actor, status, observed_at, created_at`;
     const assertion = inserted as AssertionRow;
     await attachFileReferences(tx, context.workspaceId, assertion.id, field, value);

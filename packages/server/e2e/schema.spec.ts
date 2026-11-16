@@ -6,6 +6,7 @@ test('approves a schema proposal and refreshes the schema', async ({ page, retai
     operations: [{ op: 'update_field', object: 'person', field: 'jobTitle', isUnique: true }],
   });
   await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'Review inbox' }).click();
   await page.getByRole('button', { name: /Schema changes/ }).click();
   await page.getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(page.getByText('No schema changes to review')).toBeVisible();
@@ -60,6 +61,7 @@ test('shows why a schema approval failed, with the records in the way', async ({
     await r.request('/objects/person/records', { values: { name, jobTitle: 'CTO' } });
   }
   await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'Review inbox' }).click();
   await page.getByRole('button', { name: /Schema changes/ }).click();
   await page.getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(page.getByText(/^The schema change could not be applied: .+/)).toBeVisible();
@@ -82,6 +84,7 @@ test('lists facts as a built-in and event types beside objects, and shows what a
     about: [acme.id],
   });
   await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'Review inbox' }).click();
   await page.goto(`${r.url}/app/schema`);
   await page
     .getByRole('navigation', { name: 'Built-in' })
@@ -113,6 +116,7 @@ test('draws the objects and relations and opens them from the diagram', async ({
 }) => {
   await r.request('/templates/sales/apply', {});
   await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'Review inbox' }).click();
   await page.goto(`${r.url}/app/schema?tab=diagram`);
   const diagram = page.getByRole('figure', { name: 'Objects and their relations' });
   await expect(page.getByText(/^5 relations\./)).toBeVisible();

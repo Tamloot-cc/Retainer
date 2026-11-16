@@ -14,6 +14,7 @@ test('merges a suggested duplicate, choosing the value to keep', async ({ page, 
   ).record;
   await r.consolidate();
   await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'Review inbox' }).click();
   await page.getByRole('button', { name: /Suggested merges/ }).click();
   await expect(page.getByText('similar names')).toBeVisible();
   await page

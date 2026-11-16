@@ -63,6 +63,8 @@ import type {
   TimelineItemKind,
   TimelinePage,
   UpdateViewInput,
+  WorkspaceFeedInput,
+  WorkspaceFeedPage,
   WriteResponse,
 } from '@retainer/shared';
 export type RetainerClientOptions = {
@@ -466,6 +468,11 @@ export class RetainerClient {
   event(id: string, signal?: AbortSignal) {
     return this.get<PresentedRecord>(`/v1/events/${encodeURIComponent(id)}`, {}, signal);
   }
+  /** Events, new records and grouped record writes, newest added first. */
+  workspaceFeed(input: WorkspaceFeedInput = {}, signal?: AbortSignal): Promise<WorkspaceFeedPage> {
+    return this.post<WorkspaceFeedPage>('/v1/feed/query', input, signal);
+  }
+
   /**
    * Events of every event type in one page, newest first (`POST /v1/events/query`).
    * Filters take `type`, `occurredAt`, `channel` and `externalId`; `linked` finds

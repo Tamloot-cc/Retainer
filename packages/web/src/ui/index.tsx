@@ -563,7 +563,7 @@ export function EventLink({
 export function ReviewLink({ id, children }: { id: string; children: ReactNode }) {
   return (
     <Link
-      to="/"
+      to="/review"
       search={{ assertion: id }}
       className="text-xs text-amber-700 underline dark:text-amber-300"
     >
@@ -780,7 +780,6 @@ export {
   TabPanel,
   useTabAnchor,
 } from './entry.js';
-export { FeedDay, FeedItem, FeedLinks, FeedScroll } from './feed.js';
 export { type FitItem, FitList, fitCount } from './fit-list.js';
 export { ColorDot, IdentityTag, ObjectIcon, RecordAvatar } from './identity.js';
 /** React Flow and dagre are heavy, so the canvas loads on first render; wrap it in Suspense. */
@@ -822,7 +821,7 @@ export {
 } from './popover.js';
 export { Property, PropertyEditor, PropertyList, Section } from './property.js';
 export { Sheet } from './sheet.js';
-export { activityIcon, objectIcon, Shell } from './shell.js';
+export { objectIcon, Shell } from './shell.js';
 export { ItemCard, ItemCards, StepActions, StepFlow, StepHeader } from './steps.js';
 export function SignInFrame({
   subtitle = 'Sign in with your personal API key.',

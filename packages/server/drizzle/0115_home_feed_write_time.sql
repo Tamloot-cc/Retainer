@@ -1,0 +1,2 @@
+ALTER TABLE "field_assertions" ADD COLUMN "write_at" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "field_assertions_feed_idx" ON "field_assertions" USING btree ("workspace_id","write_at","record_id") WHERE "field_assertions"."write_at" is not null;

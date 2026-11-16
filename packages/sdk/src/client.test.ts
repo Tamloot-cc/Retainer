@@ -152,3 +152,23 @@ it('uses scoped member connection routes, staged references and reconnect genera
   expect(seen[5]?.url).toContain('connection=member%2Fid');
   expect(seen[2]?.body).not.toHaveProperty('owner');
 });
+
+it('reads Home through the versioned API and preserves its filters and abort signal', async () => {
+  let seenUrl = '',
+    seenInit: RequestInit | undefined;
+  const controller = new AbortController();
+  const input = { mode: 'records' as const, query: 'Acme', cursor: 'next' };
+  const client = new RetainerClient({
+    baseUrl: 'http://localhost',
+    fetch: async (url, init) => {
+      seenUrl = String(url);
+      seenInit = init;
+      return Response.json({ items: [], references: {}, nextCursor: null });
+    },
+  });
+  await client.workspaceFeed(input, controller.signal);
+  expect(seenUrl).toBe('http://localhost/v1/feed/query');
+  expect(seenInit?.method).toBe('POST');
+  expect(JSON.parse(seenInit?.body as string)).toEqual(input);
+  expect(seenInit?.signal).toBe(controller.signal);
+});
