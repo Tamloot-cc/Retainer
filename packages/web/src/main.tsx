@@ -85,6 +85,14 @@ function Layout() {
     staleTime: 60_000,
     refetchOnWindowFocus: true,
   });
+  const proposals = useQuery({
+    queryKey: [session.workspace.id, 'schemaChanges', 'proposed', undefined],
+    queryFn: ({ signal }) => api.schemaChanges({ status: 'proposed', limit: 50, signal }),
+    staleTime: 60_000,
+  });
+  const reviewCount =
+    Object.values(inbox.data?.totals ?? {}).reduce((sum, count) => sum + count, 0) +
+    (proposals.data?.total ?? 0);
   useEffect(() => {
     const refreshed = (event: Event) => {
       const schema = (event as CustomEvent<import('@retainer/shared').SchemaDescription>).detail;
@@ -152,7 +160,7 @@ function Layout() {
                   },
                 }
               : {})}
-            inboxCount={inbox.data?.totals.pendingAssertions}
+            inboxCount={reviewCount}
             objects={objects.map((o) => ({
               name: o.nameSingular,
               label: o.labelPlural,

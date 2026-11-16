@@ -17,21 +17,31 @@ import {
   Notice,
   ObjectIcon,
   Page,
-  Panel,
   RecordAvatar,
   RecordLink,
   Row,
   Stack,
-  Tabs,
 } from '../../ui/index.js';
+import {
+  REVIEW_CATEGORIES,
+  ReviewActions,
+  ReviewCard,
+  ReviewCategories,
+  ReviewComparison,
+  ReviewDetails,
+  ReviewIntroduction,
+  ReviewKeyboard,
+  ReviewScroll,
+  ReviewWelcome,
+} from '../../ui/review.js';
 import { MergeSuggestionCard } from '../records/merge.js';
 import { CandidateRecord } from '../records/record-actions.js';
 import { describeOperation, useSchemaChanges } from '../schema/schema-model.js';
 import { eventTitle, objectByName, QueryError, recordTitle, useView } from '../state.js';
 
 const reasonText = {
-  outranked: 'Newer than a value a person or integration set',
-  low_confidence: 'Below the workspace’s confidence threshold',
+  outranked: 'A person or integration already set this field',
+  low_confidence: 'The agent is not sure enough to apply this automatically',
   unique_conflict: 'Another record already has this value',
 };
 function SchemaChangeCard({
@@ -47,10 +57,10 @@ function SchemaChangeCard({
 }) {
   const { objects } = useWorkspace().schema;
   return (
-    <Panel>
+    <ReviewCard>
       <Stack>
         <Row>
-          <Badge tone="pending">{change.status}</Badge>
+          <Badge tone="pending">Needs approval</Badge>
           <ActorBadge actor={change.requestedBy} />
           <Muted>{new Date(change.createdAt).toLocaleString()}</Muted>
         </Row>
@@ -61,7 +71,7 @@ function SchemaChangeCard({
         {change.reason ? <Muted>{change.reason}</Muted> : null}
         {change.error ? <Notice error>{change.error}</Notice> : null}
         {allowed ? (
-          <Row>
+          <ReviewActions>
             <Button
               variant="primary"
               disabled={busy}
@@ -72,10 +82,10 @@ function SchemaChangeCard({
             <Button disabled={busy} onClick={() => onDecision(change.id, 'reject')}>
               Reject
             </Button>
-          </Row>
+          </ReviewActions>
         ) : null}
       </Stack>
-    </Panel>
+    </ReviewCard>
   );
 }
 type ReviewOutcome = {
@@ -91,14 +101,8 @@ export function ReviewPage() {
   const { session, schema } = useWorkspace(),
     client = useQueryClient(),
     { search, setSearch } = useView();
-  const tab = [
-    'pendingAssertions',
-    'schema',
-    'mergeSuggestions',
-    'unresolvedParticipants',
-  ].includes(search.tab ?? '')
-    ? (search.tab ?? 'pendingAssertions')
-    : 'pendingAssertions';
+  const requestedTab = REVIEW_CATEGORIES.find((item) => item.value === search.tab)?.value;
+  const tab = requestedTab ?? 'pendingAssertions';
   const cursor = search.cursor;
   const wid = session.workspace.id;
   const review = useQuery({
@@ -107,6 +111,31 @@ export function ReviewPage() {
       api.review({ limit: 50, ...(tab !== 'schema' ? { [`${tab}Cursor`]: cursor } : {}), signal }),
   });
   const changes = useSchemaChanges('proposed', tab === 'schema' ? cursor : undefined);
+  // Pick a starting category only after both fresh counts are ready, then pin it
+  // in the URL so handling the last item never switches the person's context.
+  useEffect(() => {
+    if (
+      requestedTab ||
+      search.assertion ||
+      !review.data ||
+      !changes.data ||
+      review.isFetching ||
+      changes.isFetching
+    )
+      return;
+    const counts = { ...review.data.totals, schema: changes.data.total };
+    const first =
+      REVIEW_CATEGORIES.find((item) => counts[item.value] > 0)?.value ?? 'pendingAssertions';
+    void setSearch({ tab: first, cursor: undefined }, { replace: true });
+  }, [
+    requestedTab,
+    search.assertion,
+    review.data,
+    changes.data,
+    review.isFetching,
+    changes.isFetching,
+    setSearch,
+  ]);
   const deep = useQuery({
     queryKey: [wid, 'assertion', search.assertion],
     queryFn: ({ signal }) => api.assertion(search.assertion ?? '', signal),
@@ -125,6 +154,7 @@ export function ReviewPage() {
     deep.data?.status === 'pending_review' && !rows.some((r) => r.id === deep.data?.id)
       ? [deep.data, ...rows]
       : rows;
+  const focused = Math.min(focus, Math.max(0, pending.length - 1));
   const refresh = () => client.invalidateQueries({ queryKey: [wid] });
   async function decide(ids: string[], decision: 'accept' | 'reject') {
     if (!canWrite || busy) return;
@@ -181,8 +211,8 @@ export function ReviewPage() {
       const reason = result.change?.error;
       setMessages([
         result.status === 'failed'
-          ? `The schema change could not be applied${reason ? `: ${reason}` : ''}`
-          : `Schema change ${decision === 'approve' ? 'approved' : 'rejected'}`,
+          ? `The structure change could not be applied${reason ? `: ${reason}` : ''}`
+          : `Structure change ${decision === 'approve' ? 'approved' : 'rejected'}`,
       ]);
       setBlockingRecords(result.status === 'failed' ? (result.recordIds ?? []) : []);
     } catch (e) {
@@ -196,6 +226,7 @@ export function ReviewPage() {
     function key(e: KeyboardEvent) {
       if (
         tab !== 'pendingAssertions' ||
+        !canWrite ||
         e.metaKey ||
         e.ctrlKey ||
         e.altKey ||
@@ -205,10 +236,14 @@ export function ReviewPage() {
         document.querySelector('[role="dialog"]')
       )
         return;
-      const row = pending[Math.min(focus, pending.length - 1)];
+      const row = pending[focused];
       if (e.key === 'j' || e.key === 'k') {
         e.preventDefault();
-        setFocus((n) => Math.max(0, Math.min(pending.length - 1, n + (e.key === 'j' ? 1 : -1))));
+        const next = Math.max(0, Math.min(pending.length - 1, focused + (e.key === 'j' ? 1 : -1)));
+        setFocus(next);
+        document
+          .getElementById(`review-${pending[next]?.id}`)
+          ?.scrollIntoView({ block: 'nearest' });
       }
       if (row && e.key === 'x') {
         e.preventDefault();
@@ -224,280 +259,278 @@ export function ReviewPage() {
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   });
-  useEffect(() => {
-    document.getElementById(`review-${pending[focus]?.id}`)?.scrollIntoView({ block: 'nearest' });
-  }, [focus, pending]);
   const next =
     tab === 'schema' ? changes.data?.nextCursor : review.data?.nextCursors[tab as ReviewCollection];
   return (
-    <Page
-      eyebrow="Human review"
-      title="Review inbox"
-      description="See what changed. Decide what stays."
-      actions={<Muted>j / k move · x select · a accept · r reject</Muted>}
-    >
-      <Tabs
-        value={tab}
-        onChange={(tab) => {
-          setSelected([]);
-          setFocus(0);
-          void setSearch({ tab, cursor: undefined, assertion: undefined });
-        }}
-        items={[
-          {
-            value: 'pendingAssertions',
-            label: 'Pending values',
-            count: review.data?.totals.pendingAssertions,
-          },
-          { value: 'schema', label: 'Schema changes', count: changes.data?.total },
-          {
-            value: 'mergeSuggestions',
-            label: 'Suggested merges',
-            count: review.data?.totals.mergeSuggestions,
-          },
-          {
-            value: 'unresolvedParticipants',
-            label: 'Unresolved participants',
-            count: review.data?.totals.unresolvedParticipants,
-          },
-        ]}
-      />
-      {outcomes.map((outcome) => {
-        const item = outcome.item;
-        const field = item
-          ? objectByName(schema, item.object)?.fields.find((f) => f.name === item.field)
-          : undefined;
-        const Display = field ? fields[field.type].Display : null;
-        return (
-          <Notice key={outcome.id} error={outcome.failed}>
-            <Stack>
-              <Row>
-                {outcome.item ? (
-                  <RecordLink id={outcome.item.recordId}>
-                    {recordTitle({ label: outcome.item.recordLabel })} ·{' '}
-                    {field?.label ?? outcome.item.field}
-                  </RecordLink>
-                ) : null}
-                <span>{outcome.text}</span>
-              </Row>
-              {outcome.showCurrent && Display && field ? (
+    <Page layout="fill" title="Review inbox">
+      <ReviewScroll>
+        <ReviewWelcome />
+        <ReviewCategories
+          value={tab}
+          counts={{
+            pendingAssertions: review.data?.totals.pendingAssertions,
+            schema: changes.data?.total,
+            mergeSuggestions: review.data?.totals.mergeSuggestions,
+            unresolvedParticipants: review.data?.totals.unresolvedParticipants,
+          }}
+          onChange={(tab) => {
+            setSelected([]);
+            setFocus(0);
+            setOutcomes([]);
+            setMessages([]);
+            setBlockingRecords([]);
+            void setSearch({ tab, cursor: undefined, assertion: undefined });
+          }}
+        />
+        <ReviewIntroduction category={tab} readOnly={tab === 'schema' ? !canAdmin : !canWrite} />
+        {tab === 'pendingAssertions' && canWrite ? <ReviewKeyboard /> : null}
+        {outcomes.map((outcome) => {
+          const item = outcome.item;
+          const field = item
+            ? objectByName(schema, item.object)?.fields.find((f) => f.name === item.field)
+            : undefined;
+          const Display = field ? fields[field.type].Display : null;
+          return (
+            <Notice key={outcome.id} error={outcome.failed}>
+              <Stack>
                 <Row>
-                  <Muted>Current value</Muted>
-                  <Display field={field} value={outcome.current} />
+                  {outcome.item ? (
+                    <RecordLink id={outcome.item.recordId}>
+                      {recordTitle({ label: outcome.item.recordLabel })} ·{' '}
+                      {field?.label ?? outcome.item.field}
+                    </RecordLink>
+                  ) : null}
+                  <span>{outcome.text}</span>
                 </Row>
-              ) : null}
-              {outcome.conflictId ? (
-                <RecordLink id={outcome.conflictId}>View conflicting record</RecordLink>
-              ) : null}
-            </Stack>
+                {outcome.showCurrent && Display && field ? (
+                  <Row>
+                    <Muted>Current value</Muted>
+                    <Display field={field} value={outcome.current} />
+                  </Row>
+                ) : null}
+                {outcome.conflictId ? (
+                  <RecordLink id={outcome.conflictId}>View conflicting record</RecordLink>
+                ) : null}
+              </Stack>
+            </Notice>
+          );
+        })}
+        {messages.length ? (
+          <Notice>
+            {[...new Set(messages)].map((m) => (
+              <div key={m}>{m}</div>
+            ))}
+            {blockingRecords.length ? (
+              <Row>
+                <span>Records in the way:</span>
+                {blockingRecords.slice(0, 20).map((id) => (
+                  <CandidateRecord key={id} id={id} />
+                ))}
+                {blockingRecords.length > 20 ? (
+                  <Muted>and {blockingRecords.length - 20} more</Muted>
+                ) : null}
+              </Row>
+            ) : null}
           </Notice>
-        );
-      })}
-      {messages.length ? (
-        <Notice>
-          {[...new Set(messages)].map((m) => (
-            <div key={m}>{m}</div>
-          ))}
-          {blockingRecords.length ? (
-            <Row>
-              <span>Records in the way:</span>
-              {blockingRecords.slice(0, 20).map((id) => (
-                <CandidateRecord key={id} id={id} />
-              ))}
-              {blockingRecords.length > 20 ? (
-                <Muted>and {blockingRecords.length - 20} more</Muted>
-              ) : null}
-            </Row>
-          ) : null}
-        </Notice>
-      ) : null}
-      {review.error ? (
-        <QueryError error={review.error} retry={() => void review.refetch()} />
-      ) : null}
-      {changes.error ? (
-        <QueryError error={changes.error} retry={() => void changes.refetch()} />
-      ) : null}
-      {deep.error ? <QueryError error={deep.error} /> : null}
-      {deep.data && deep.data.status !== 'pending_review' ? (
-        <Notice>The linked assertion is {deep.data.status}.</Notice>
-      ) : null}
-      {review.isPending || changes.isPending ? <Notice>Loading review items…</Notice> : null}
-      {tab === 'pendingAssertions' ? (
-        <Stack>
-          {selected.length && canWrite ? (
-            <Row>
-              <Badge>{selected.length} selected</Badge>
-              <Button
-                variant="primary"
-                disabled={busy}
-                onClick={() => void decide(selected, 'accept')}
-              >
-                Accept selected
-              </Button>
-              <Button disabled={busy} onClick={() => void decide(selected, 'reject')}>
-                Reject selected
-              </Button>
-            </Row>
-          ) : null}
-          {pending.map((a, index) => {
-            const field = objectByName(schema, a.object)?.fields.find((f) => f.name === a.field);
-            const Display = field ? fields[field.type].Display : null;
-            return (
-              <div key={a.id} id={`review-${a.id}`}>
-                <Panel title={index === focus ? 'Current item' : undefined}>
-                  <Stack>
-                    <Row>
-                      <Input
-                        type="checkbox"
-                        aria-label={`Select ${a.recordLabel ?? a.recordId} ${a.field}`}
-                        checked={selected.includes(a.id)}
-                        onChange={(e) =>
-                          setSelected((ids) =>
-                            e.target.checked ? [...ids, a.id] : ids.filter((id) => id !== a.id),
-                          )
-                        }
-                      />
-                      <IdentityTag identity={a.object} color={objectColor(a.object)}>
-                        <ObjectIcon name={a.object} size={12} />
-                        {objectByName(schema, a.object)?.labelSingular ?? a.object}
-                      </IdentityTag>
-                      <RecordLink
-                        id={a.recordId}
-                        avatar={
-                          <RecordAvatar
-                            id={a.recordId}
-                            name={recordTitle({ label: a.recordLabel })}
-                            object={a.object}
+        ) : null}
+        {review.error ? (
+          <QueryError error={review.error} retry={() => void review.refetch()} />
+        ) : null}
+        {changes.error ? (
+          <QueryError error={changes.error} retry={() => void changes.refetch()} />
+        ) : null}
+        {deep.error ? <QueryError error={deep.error} /> : null}
+        {deep.data && deep.data.status !== 'pending_review' ? (
+          <Notice>This suggestion is no longer waiting for review.</Notice>
+        ) : null}
+        {review.isPending || changes.isPending ? <Notice>Loading review items…</Notice> : null}
+        {tab === 'pendingAssertions' ? (
+          <Stack>
+            {selected.length && canWrite ? (
+              <Stack gap="small">
+                <Row>
+                  <Badge>{selected.length} selected</Badge>
+                </Row>
+                <ReviewActions>
+                  <Button
+                    variant="primary"
+                    disabled={busy}
+                    onClick={() => void decide(selected, 'accept')}
+                  >
+                    Accept selected
+                  </Button>
+                  <Button disabled={busy} onClick={() => void decide(selected, 'reject')}>
+                    Reject selected
+                  </Button>
+                </ReviewActions>
+              </Stack>
+            ) : null}
+            {pending.map((a, index) => {
+              const field = objectByName(schema, a.object)?.fields.find((f) => f.name === a.field);
+              const Display = field ? fields[field.type].Display : null;
+              return (
+                <div key={a.id} id={`review-${a.id}`}>
+                  <ReviewCard active={index === focused}>
+                    <Stack>
+                      <Row>
+                        {canWrite ? (
+                          <Input
+                            type="checkbox"
+                            aria-label={`Select ${a.recordLabel ?? a.recordId} ${a.field}`}
+                            checked={selected.includes(a.id)}
+                            onChange={(e) =>
+                              setSelected((ids) =>
+                                e.target.checked ? [...ids, a.id] : ids.filter((id) => id !== a.id),
+                              )
+                            }
                           />
-                        }
-                      >
-                        {recordTitle({ label: a.recordLabel })}
-                      </RecordLink>
-                      <Muted>{field?.label ?? a.field}</Muted>
-                    </Row>
-                    <Row>
+                        ) : null}
+                        <IdentityTag identity={a.object} color={objectColor(a.object)}>
+                          <ObjectIcon name={a.object} size={12} />
+                          {objectByName(schema, a.object)?.labelSingular ?? a.object}
+                        </IdentityTag>
+                        <RecordLink
+                          id={a.recordId}
+                          avatar={
+                            <RecordAvatar
+                              id={a.recordId}
+                              name={recordTitle({ label: a.recordLabel })}
+                              object={a.object}
+                            />
+                          }
+                        >
+                          {recordTitle({ label: a.recordLabel })}
+                        </RecordLink>
+                        <Muted>{field?.label ?? a.field}</Muted>
+                      </Row>
                       {Display && field ? (
-                        <>
-                          <Display
-                            field={field}
-                            value={a.currentValue}
-                            references={a.relationReferences}
-                          />
-                          <Muted>→</Muted>
-                          <Display
-                            field={field}
-                            value={a.value}
-                            references={a.relationReferences}
-                          />
-                        </>
+                        <ReviewComparison
+                          current={
+                            <Display
+                              field={field}
+                              value={a.currentValue}
+                              references={a.relationReferences}
+                            />
+                          }
+                          proposed={
+                            <Display
+                              field={field}
+                              value={a.value}
+                              references={a.relationReferences}
+                            />
+                          }
+                        />
                       ) : (
                         <Muted>Field is no longer available</Muted>
                       )}
-                    </Row>
-                    <Row>
-                      <ActorBadge actor={a.actor} />
-                      <Badge tone="pending">
-                        {a.reason ? reasonText[a.reason] : 'Pending review'}
-                      </Badge>
-                      <Muted>
-                        {Math.round(a.confidence * 100)}% confidence ·{' '}
-                        {new Date(a.observedAt).toLocaleString()}
-                      </Muted>
-                    </Row>
-                    {a.conflictingRecord ? (
-                      <RecordLink id={a.conflictingRecord.id}>
-                        Conflicts with {a.conflictingRecord.label || a.conflictingRecord.id}
-                      </RecordLink>
-                    ) : null}
-                    {a.source ? (
-                      <EventLink id={a.source.id}>
-                        {eventTitle(a.source)} ·{' '}
-                        {new Date(a.source.occurredAt).toLocaleDateString()}
-                      </EventLink>
-                    ) : null}
-                    {canWrite ? (
-                      <Row>
-                        <Button
-                          variant="primary"
-                          disabled={busy}
-                          onClick={() => void decide([a.id], 'accept')}
-                        >
-                          Accept
-                        </Button>
-                        <Button disabled={busy} onClick={() => void decide([a.id], 'reject')}>
-                          Reject
-                        </Button>
-                      </Row>
-                    ) : null}
-                  </Stack>
-                </Panel>
-              </div>
-            );
-          })}
-          {review.data && !pending.length ? (
-            <Empty
-              title="You're all caught up"
-              description="Values that need your decision will appear here."
-            />
-          ) : null}
-        </Stack>
-      ) : null}
-      {tab === 'schema' ? (
-        <Stack>
-          {changes.data?.changes.map((change) => (
-            <SchemaChangeCard
-              key={change.id}
-              change={change}
-              allowed={canAdmin}
-              busy={busy}
-              onDecision={(id, d) => void decideSchema(id, d)}
-            />
-          ))}
-          {changes.data && !changes.data.changes.length ? (
-            <Empty
-              title="No schema changes to review"
-              description="Agent proposals that need approval will appear here."
-            />
-          ) : null}
-        </Stack>
-      ) : null}
-      {tab === 'mergeSuggestions' ? (
-        <Stack>
-          {review.data?.mergeSuggestions.map((suggestion) => (
-            <MergeSuggestionCard key={suggestion.id} suggestion={suggestion} />
-          ))}
-          {review.data && !review.data.mergeSuggestions.length ? (
-            <Empty
-              title="No suggested merges"
-              description="Records that look like duplicates of each other will appear here."
-            />
-          ) : null}
-        </Stack>
-      ) : null}
-      {tab === 'unresolvedParticipants' ? (
-        <Stack>
-          {review.data?.unresolvedParticipants.map((p) => (
-            <Panel key={`${p.eventId}:${p.position}`}>
-              <Row>
-                <Badge tone="pending">Deleted record</Badge>
-                <span>{p.handle}</span>
-                <EventLink id={p.eventId}>
-                  {eventTitle(p)} · {new Date(p.occurredAt).toLocaleString()}
-                </EventLink>
-              </Row>
-            </Panel>
-          ))}
-          {review.data && !review.data.unresolvedParticipants.length ? (
-            <Empty title="No unresolved participants" />
-          ) : null}
-        </Stack>
-      ) : null}
-      <Row>
-        {cursor ? (
-          <Button onClick={() => void setSearch({ cursor: undefined })}>First page</Button>
+                      {a.reason ? <Muted>{reasonText[a.reason]}</Muted> : null}
+                      <ReviewDetails>
+                        <ActorBadge actor={a.actor} />
+                        <Muted>
+                          {Math.round(a.confidence * 100)}% confidence ·{' '}
+                          {new Date(a.observedAt).toLocaleString()}
+                        </Muted>
+                      </ReviewDetails>
+                      {a.conflictingRecord ? (
+                        <RecordLink id={a.conflictingRecord.id}>
+                          Conflicts with {a.conflictingRecord.label || a.conflictingRecord.id}
+                        </RecordLink>
+                      ) : null}
+                      {a.source ? (
+                        <EventLink id={a.source.id}>
+                          {eventTitle(a.source)} ·{' '}
+                          {new Date(a.source.occurredAt).toLocaleDateString()}
+                        </EventLink>
+                      ) : null}
+                      {canWrite ? (
+                        <ReviewActions>
+                          <Button
+                            variant="primary"
+                            disabled={busy}
+                            onClick={() => void decide([a.id], 'accept')}
+                          >
+                            Accept
+                          </Button>
+                          <Button disabled={busy} onClick={() => void decide([a.id], 'reject')}>
+                            Reject
+                          </Button>
+                        </ReviewActions>
+                      ) : null}
+                    </Stack>
+                  </ReviewCard>
+                </div>
+              );
+            })}
+            {review.data && !pending.length ? (
+              <Empty
+                title="You're all caught up"
+                description="Values that need your decision will appear here."
+              />
+            ) : null}
+          </Stack>
         ) : null}
-        {next ? <Button onClick={() => void setSearch({ cursor: next })}>Next page</Button> : null}
-      </Row>
+        {tab === 'schema' ? (
+          <Stack>
+            {changes.data?.changes.map((change) => (
+              <SchemaChangeCard
+                key={change.id}
+                change={change}
+                allowed={canAdmin}
+                busy={busy}
+                onDecision={(id, d) => void decideSchema(id, d)}
+              />
+            ))}
+            {changes.data && !changes.data.changes.length ? (
+              <Empty
+                title="No structure changes to review"
+                description="Agent proposals that need approval will appear here."
+              />
+            ) : null}
+          </Stack>
+        ) : null}
+        {tab === 'mergeSuggestions' ? (
+          <Stack>
+            {review.data?.mergeSuggestions.map((suggestion) => (
+              <MergeSuggestionCard key={suggestion.id} suggestion={suggestion} />
+            ))}
+            {review.data && !review.data.mergeSuggestions.length ? (
+              <Empty
+                title="No possible duplicates"
+                description="Records that look like duplicates of each other will appear here."
+              />
+            ) : null}
+          </Stack>
+        ) : null}
+        {tab === 'unresolvedParticipants' ? (
+          <Stack>
+            {review.data?.unresolvedParticipants.map((p) => (
+              <ReviewCard key={`${p.eventId}:${p.position}`}>
+                <Stack>
+                  <ReviewDetails>
+                    <Badge tone="pending">Deleted record</Badge>
+                    <span>{p.handle || 'Participant without a saved name'}</span>
+                  </ReviewDetails>
+                  <Muted>We couldn’t link this participant to an active record.</Muted>
+                  <EventLink id={p.eventId}>
+                    Open activity: {eventTitle(p)} · {new Date(p.occurredAt).toLocaleDateString()}
+                  </EventLink>
+                </Stack>
+              </ReviewCard>
+            ))}
+            {review.data && !review.data.unresolvedParticipants.length ? (
+              <Empty title="No participant issues" />
+            ) : null}
+          </Stack>
+        ) : null}
+        <ReviewActions>
+          {cursor ? (
+            <Button onClick={() => void setSearch({ cursor: undefined })}>First page</Button>
+          ) : null}
+          {next ? (
+            <Button onClick={() => void setSearch({ cursor: next })}>Next page</Button>
+          ) : null}
+        </ReviewActions>
+      </ReviewScroll>
     </Page>
   );
 }

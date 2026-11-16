@@ -11,7 +11,6 @@ import {
   Input,
   Muted,
   Notice,
-  Panel,
   RecordLink,
   Row,
   SelectMenu,
@@ -20,6 +19,7 @@ import {
   Td,
   Tr,
 } from '../../ui/index.js';
+import { ReviewActions, ReviewCard } from '../../ui/review.js';
 import {
   objectByName,
   QueryError,
@@ -255,7 +255,7 @@ export function MergeSuggestionCard({ suggestion }: { suggestion: MergeSuggestio
   const records = suggestion.recordIds.map((id) => suggestion.records.find((r) => r.id === id));
   const object = objectByName(schema, records[0]?.object);
   return (
-    <Panel>
+    <ReviewCard>
       <Stack>
         <Row>
           <Badge tone="pending">{suggestion.reason}</Badge>
@@ -274,7 +274,7 @@ export function MergeSuggestionCard({ suggestion }: { suggestion: MergeSuggestio
           )}
         </Row>
         {canMutate(session) ? (
-          <Row>
+          <ReviewActions>
             <Button
               variant="primary"
               aria-label={`Compare and merge ${records.map((r) => (r ? title(r) : 'unavailable record')).join(' and ')}`}
@@ -282,7 +282,7 @@ export function MergeSuggestionCard({ suggestion }: { suggestion: MergeSuggestio
             >
               Compare and merge
             </Button>
-          </Row>
+          </ReviewActions>
         ) : null}
       </Stack>
       {open ? (
@@ -292,7 +292,7 @@ export function MergeSuggestionCard({ suggestion }: { suggestion: MergeSuggestio
           onClose={() => setOpen(false)}
         />
       ) : null}
-    </Panel>
+    </ReviewCard>
   );
 }
 

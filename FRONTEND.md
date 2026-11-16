@@ -211,16 +211,39 @@ as the server words them.
 The dedicated destination for decisions that need a person. Source: `GET /v1/review`
 and `GET /v1/schema/changes?status=proposed`.
 
-Tabs, each with a total count from the server, independent of the loaded
-page. Each tab has its own cursor and Next page and First page controls (9.1); no tab may
+Four category cards, each with a short explanation and a total count from
+the server, independent of the loaded page. They form a two-column grid on
+phones and a four-column row on large screens; no category hides offscreen.
+The active category also explains what the person can do, with a concrete
+example for structure changes. These stay separate because accepting a value,
+approving a type/field change, comparing duplicates and checking a conversation
+are different decisions with different permissions. A combined feed would
+hide these distinctions.
+
+The inbox uses the same readable scrolling layout as Home. Current and
+proposed values have explicit labels, placed side by side on larger screens
+and stacked on phones. Actions have touch-sized targets; long values and
+participant handles wrap. Keyboard hints appear only on desktop and only
+where they apply. The page stays at its introduction on load; explicit
+keyboard movement scrolls the focused item into view.
+
+On a visit without an explicit category or linked assertion, the inbox waits
+for both sets of counts and selects the first nonempty category in display
+order. With no items it opens Proposed updates. It pins that choice in the
+URL, so resolving the last item does not move the person to another category.
+Explicit category and assertion links take precedence. Suggested-merge reason
+badges (including **shared domain**) retain their yellow pending tone.
+
+The sidebar badge totals all four categories. Each category has its own cursor
+and Next page and First page controls (9.1); no category may
 silently truncate outstanding items. Counts and pages reflect live data and
 are refreshed after decisions. A record links to a review item using its
 assertion ID in the URL; the inbox fetches that item directly even when it
 is outside the loaded page.
 
-Tabs:
+Categories (existing `tab` URL values remain compatible):
 
-1. **Pending values.** One row per pending assertion: record label and
+1. **Proposed updates** (`pendingAssertions`). Suggested changes to record details. One row per pending assertion: record label and
    object, field label, **current value → proposed value** rendered with the
    field type's display (6), who proposed it (actor badge, 7), the reason in
    plain words, confidence, `observedAt`, and the source event's type, title
@@ -228,8 +251,8 @@ Tabs:
 
    | `reason`          | Shown as                                                           |
    | ----------------- | ------------------------------------------------------------------ |
-   | `outranked`       | "Newer than a value a person or integration set"                   |
-   | `low_confidence`  | "Below the workspace's confidence threshold"                       |
+   | `outranked`       | "A person or integration already set this field"                   |
+   | `low_confidence`  | "The agent is not sure enough to apply this automatically"                       |
    | `unique_conflict` | "Another record already has this value" with a link to that record |
 
    Accept and Reject per row (`POST /v1/assertions/:id/accept` · `/reject`),
@@ -249,7 +272,7 @@ Tabs:
    keep failed pending items selected, and retry only failures. Never replay
    successful decisions automatically.
 
-2. **Schema changes.** Proposed changes with their operations listed in
+2. **Structure changes** (`schema`). Changes to record types and fields. Proposed changes with their operations listed in
    words ("Add field _Renewal date_ (date) to _Company_"), the proposing
    actor and time. Approve and Reject for `admin` keys
    (`POST /v1/schema/changes/:id/approve` · `/reject`). Approving refreshes
@@ -257,14 +280,14 @@ Tabs:
    engine's reason and links the records in the way (`recordIds`), such as
    those still holding an option being removed.
 
-3. **Unresolved participants.** Handles from logged events that match only
-   a deleted record (1.2). Read-only in v1, with links to the event.
-
-4. **Suggested merges.** One card per pending pair from the consolidator:
+3. **Possible duplicates** (`mergeSuggestions`). Records that may describe the same thing. One card per pending pair from the consolidator:
    the reason, the object and both records' labels (`records` on each
    suggestion, resolved through `references()`). "Compare and merge" opens
    the merge dialog (5.4a) for the pair, which also offers "Not duplicates"
    (`POST /v1/review/merges/:id/dismiss`).
+
+4. **Participant issues** (`unresolvedParticipants`). Participants whose matching record was deleted. Handles from logged events that match only
+   a deleted record (1.2). Read-only in v1, with links to the event.
 
 ### 5.3 Object list — `/app/o/:object`
 
