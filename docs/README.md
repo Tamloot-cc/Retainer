@@ -34,6 +34,7 @@ hold the design, the data model, the write rules and the web app's design.
 | [Accounts and access](specs/accounts-and-access.md)                 | Implemented: login with Better Auth, passkeys, organizations, roles, MCP OAuth             |
 | [Animated mark](specs/assistant-avatar.md)                          | Implemented: the loading indicator and the assistant avatar's moods                        |
 | [Personal and workspace memory](specs/user-and-workspace-memory.md) | Draft: private memory about each person, shared memory about the workspace                 |
+| [Duplicate record classification](specs/duplicate-record-classifier.md) | Proposed: API spike, OpenAI Decisions classifier and sourced merge explanations          |
 
 ## Research
 
