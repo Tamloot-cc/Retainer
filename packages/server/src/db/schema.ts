@@ -1661,6 +1661,17 @@ export const extensionConnections = pgTable(
     settingsRevision: integer('settings_revision').notNull().default(1),
     sourceAccountId: uuid('source_account_id'),
     disconnectFunctionId: uuid('disconnect_function_id'),
+    /** The secrets the reviewed disconnect hook declares; written with disconnect_function_id. */
+    disconnectSecrets: text('disconnect_secrets').array().notNull().default(sql`'{}'::text[]`),
+    /** How the member connected, fixed at creation (Tamloot connect spec 4.3). */
+    credential: text('credential').notNull().default('key'),
+    /** When the member clicked Connect, for an OAuth connection. */
+    authorizationStartedAt: timestamptz('authorization_started_at'),
+    /** A cleanup that held provider credentials did not finish (spec 4.7). */
+    releaseIncompleteAt: timestamptz('release_incomplete_at'),
+    releaseNoticeDismissedAt: timestamptz('release_notice_dismissed_at'),
+    /** Incident IDs already recorded, at most 32, oldest dropped first. */
+    releaseIncidents: text('release_incidents').array().notNull().default(sql`'{}'::text[]`),
     lastClaimedAt: timestamptz('last_claimed_at'),
     createdAt: createdAt(),
     connectedAt: timestamptz('connected_at'),
@@ -1668,6 +1679,8 @@ export const extensionConnections = pgTable(
   },
   (t) => [
     unique('extension_connections_scope_uq').on(t.workspaceId, t.installationId, t.id),
+    check('extension_connections_credential', sql`${t.credential} in ('key','oauth')`),
+    check('extension_connections_release_incidents', sql`cardinality(${t.releaseIncidents})<=32`),
     index('extension_connections_account_idx').on(t.workspaceId, t.sourceAccountId),
     uniqueIndex('extension_connections_owner_uq')
       .on(t.workspaceId, t.installationId, t.ownerId)
@@ -1693,6 +1706,47 @@ export const extensionConnections = pgTable(
     check('extension_connections_health', sql`${t.health} in ('ok','needs_reconnect','degraded')`),
     check('extension_connections_versions', sql`${t.generation}>0 and ${t.settingsRevision}>0`),
     pgPolicy('extension_connections_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+/** One OAuth handshake in progress (Tamloot connect spec 4.3). The state is stored only hashed. */
+export const extensionAuthorizations = pgTable(
+  'extension_authorizations',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    /** The existing connection (reconnect) or the draft ID of a new one. */
+    connectionId: uuid('connection_id').notNull(),
+    ownerId: text('owner_id').notNull(),
+    stateHash: text('state_hash').notNull(),
+    verifierRef: uuid('verifier_ref').notNull(),
+    settings: jsonb('settings')
+      .$type<Record<string, string | boolean | number>>()
+      .notNull()
+      .default({}),
+    reconnect: boolean('reconnect').notNull().default(false),
+    expectedGeneration: integer('expected_generation'),
+    createdAt: createdAt(),
+    expiresAt: timestamptz('expires_at').notNull(),
+    consumedAt: timestamptz('consumed_at'),
+  },
+  (t) => [
+    uniqueIndex('extension_authorizations_state_uq').on(t.workspaceId, t.stateHash),
+    index('extension_authorizations_connection_idx').on(t.workspaceId, t.connectionId),
+    index('extension_authorizations_owner_idx').on(t.workspaceId, t.installationId, t.ownerId),
+    tenantFk(
+      'extension_authorizations_install_fk',
+      [t.workspaceId, t.installationId],
+      [extensionInstallations.workspaceId, extensionInstallations.id],
+    ),
+    check('extension_authorizations_state_hash', sql`${t.stateHash} ~ '^[a-f0-9]{64}$'`),
+    pgPolicy('extension_authorizations_workspace', {
       for: 'all',
       to: 'retainer_app',
       using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,

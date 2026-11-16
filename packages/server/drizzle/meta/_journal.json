@@ -785,6 +785,27 @@
       "when": 1794667420186,
       "tag": "0111_model_calls_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1794779879060,
+      "tag": "0112_connection_authorizations",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1794779898298,
+      "tag": "0113_connection_authorization_functions",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1794792256654,
+      "tag": "0114_partial_release_due_queries",
+      "breakpoints": true
     }
   ]
 }

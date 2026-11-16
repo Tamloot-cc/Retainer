@@ -3,13 +3,16 @@ import type {
   ExtensionInstallation,
   ExtensionManifest,
 } from '@retainer/extension';
+import { RetainerApiError } from '@retainer/sdk';
 import type { Session } from '@retainer/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AccountContext, type AccountState } from '../../accounts/context.js';
 import { api, WorkspaceContext } from '../../api/client.js';
-import { MemberConnectionPanel } from './connections.js';
+import { navigation } from './connect-return.js';
+import { connectionError, MemberConnectionPanel } from './connections.js';
 
 const installation = { id: 'installation', state: 'active' } as ExtensionInstallation;
 const release = {
@@ -56,6 +59,9 @@ const connection: ExtensionConnection = {
   settings: { days: 31 },
   settingsRevision: 1,
   secrets: ['apiKey'],
+  credential: 'key',
+  hasImportedItems: true,
+  releaseIncompleteAt: null,
   lastError: null,
   createdAt: '2026-11-13T00:00:00Z',
   connectedAt: '2026-11-13T00:00:00Z',
@@ -95,7 +101,10 @@ function mount(admin = false) {
   );
   return { client, onChanged, onRuns, user: userEvent.setup() };
 }
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  sessionStorage.clear();
+});
 describe('member connection controls', () => {
   it('stages a private key and connects with only member settings, then disconnects without an admin role', async () => {
     let rows: ExtensionConnection[] = [];
@@ -180,5 +189,424 @@ describe('member connection controls', () => {
       }),
     );
     expect(await within(dialog).findByText('Connection generation changed.')).toBeTruthy();
+  });
+});
+
+const oauthRelease = {
+  manifest: {
+    ...release.manifest,
+    settings: {
+      ...release.manifest.settings,
+      apiKey: { ...release.manifest.settings.apiKey, required: false },
+      verifier: {
+        type: 'string',
+        label: 'Verifier',
+        level: 'connection',
+        secret: true,
+        generated: true,
+        reconnect: false,
+      },
+    },
+    oauth: {
+      verifierSetting: 'verifier',
+      codeSetting: 'code',
+      tokenSetting: 'tokens',
+      keySetting: 'apiKey',
+      revokeUrl: 'https://provider.example/settings?tab=apps',
+    },
+    gettingStarted: {
+      text: 'Record a meeting in Tamloot to see it here.',
+      linkLabel: 'Open Tamloot',
+      url: 'https://provider.example/start',
+    },
+  } as unknown as Pick<
+    ExtensionManifest,
+    'name' | 'connection' | 'settings' | 'oauth' | 'gettingStarted'
+  >,
+};
+const both = { ...installation, connectionMethods: ['oauth', 'key'] } as ExtensionInstallation;
+const oauthConnection: ExtensionConnection = {
+  ...connection,
+  credential: 'oauth',
+  secrets: ['tokens'],
+  lastSuccessfulScanAt: '2026-11-14T00:00:00Z',
+};
+const account = {
+  account: { user: { id: 'member', name: 'Dana', email: 'dana@example.test' } },
+} as AccountState;
+function mountOAuth({
+  admin = false,
+  inst = both,
+  rel = oauthRelease,
+  returned,
+  signedIn = account,
+}: {
+  admin?: boolean;
+  inst?: ExtensionInstallation;
+  rel?: typeof oauthRelease;
+  returned?: string;
+  signedIn?: AccountState | null;
+} = {}) {
+  const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    }),
+    onChanged = vi.fn().mockResolvedValue(undefined);
+  render(
+    <QueryClientProvider client={client}>
+      <AccountContext.Provider value={signedIn}>
+        <WorkspaceContext.Provider
+          value={
+            {
+              session: {
+                actor: { type: 'user', id: 'member' },
+                scopes: admin ? ['admin'] : ['read'],
+                workspace: { id: 'workspace' },
+              } as Session,
+              schema: { objects: [] },
+            } as never
+          }
+        >
+          <MemberConnectionPanel
+            installation={inst}
+            release={rel}
+            admin={admin}
+            onChanged={onChanged}
+            onRuns={vi.fn()}
+            returned={returned}
+          />
+        </WorkspaceContext.Provider>
+      </AccountContext.Provider>
+    </QueryClientProvider>,
+  );
+  return { onChanged, user: userEvent.setup() };
+}
+const rows = (connections: ExtensionConnection[]) =>
+  vi.spyOn(api, 'extensionConnections').mockResolvedValue({ connections });
+const authorization = {
+  authorizationUrl: 'https://provider.example/oauth/start?state=x',
+  state: 'v1.workspace.installation.nonce',
+  expiresAt: '2026-11-15T00:10:00Z',
+};
+
+describe('connecting with OAuth', () => {
+  it("keeps today's tab when the server offers no OAuth", async () => {
+    rows([]);
+    mountOAuth({ inst: { ...installation, connectionMethods: ['key'] } });
+    expect(await screen.findByRole('button', { name: 'Connect account' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Connect with Tamloot' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Use an API key instead' })).toBeNull();
+  });
+  it('starts with the inline days and the account email, saves the attempt and leaves for the provider', async () => {
+    rows([]);
+    const authorize = vi
+      .spyOn(api, 'authorizeExtensionConnection')
+      .mockResolvedValue(authorization);
+    const assign = vi.spyOn(navigation, 'assign').mockImplementation(() => {});
+    const { user } = mountOAuth();
+    const form = await screen.findByRole('form', { name: 'Connect with Tamloot' });
+    const days = within(form).getByLabelText('History days (required)') as HTMLInputElement;
+    expect(days.value).toBe('31');
+    // Secrets never appear beside the button.
+    expect(within(form).queryByLabelText(/Tamloot key/)).toBeNull();
+    await user.clear(days);
+    await user.type(days, '7');
+    await user.click(within(form).getByRole('button', { name: 'Connect with Tamloot' }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(authorization.authorizationUrl));
+    expect(authorize).toHaveBeenCalledWith('installation', {
+      settings: { days: 7 },
+      loginHint: 'dana@example.test',
+    });
+    const saved = JSON.parse(
+      sessionStorage.getItem(`retainer:connect:${authorization.state}`) ?? '',
+    );
+    expect(saved).toMatchObject({ workspaceId: 'workspace', installationId: 'installation' });
+  });
+  it('sends no login hint in key mode', async () => {
+    rows([]);
+    const authorize = vi
+      .spyOn(api, 'authorizeExtensionConnection')
+      .mockResolvedValue(authorization);
+    vi.spyOn(navigation, 'assign').mockImplementation(() => {});
+    const { user } = mountOAuth({ signedIn: null });
+    await user.click(await screen.findByRole('button', { name: 'Connect with Tamloot' }));
+    await waitFor(() =>
+      expect(authorize).toHaveBeenCalledWith('installation', { settings: { days: 31 } }),
+    );
+  });
+  it('says an earlier attempt is still finishing', async () => {
+    rows([]);
+    vi.spyOn(api, 'authorizeExtensionConnection').mockRejectedValue(
+      new RetainerApiError(409, 'cleanup_running', 'Cleanup is running.'),
+    );
+    const { user } = mountOAuth();
+    await user.click(await screen.findByRole('button', { name: 'Connect with Tamloot' }));
+    expect(
+      await screen.findByText('Retainer is finishing an earlier attempt. Try again in a moment.'),
+    ).toBeTruthy();
+  });
+  it('opens today\'s key form from "Use an API key instead", with the key required', async () => {
+    rows([]);
+    const { user } = mountOAuth();
+    await user.click(await screen.findByRole('button', { name: 'Use an API key instead' }));
+    const dialog = screen.getByRole('form', { name: 'Connect your Tamloot account' });
+    expect(within(dialog).getByLabelText('Tamloot key (required)')).toBeTruthy();
+  });
+  it('offers no key form when OAuth is the only method', async () => {
+    rows([]);
+    mountOAuth({ inst: { ...installation, connectionMethods: ['oauth'] } });
+    expect(await screen.findByRole('button', { name: 'Connect with Tamloot' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Use an API key instead' })).toBeNull();
+  });
+  it.each([
+    ['declined', "Tamloot isn't connected: the request was declined. You can try again."],
+    ['failed', "Tamloot isn't connected: connecting took too long. Try again."],
+  ])('shows the %s return notice', async (returned, text) => {
+    rows([]);
+    mountOAuth({ returned });
+    expect(await screen.findByText(text)).toBeTruthy();
+  });
+  it('says a saved attempt never completed, once, and forgets it', async () => {
+    sessionStorage.setItem(
+      'retainer:connect:v1.workspace.installation.old',
+      JSON.stringify({ workspaceId: 'workspace', installationId: 'installation' }),
+    );
+    sessionStorage.setItem(
+      'retainer:connect:v1.workspace.other.old',
+      JSON.stringify({ workspaceId: 'workspace', installationId: 'other' }),
+    );
+    rows([]);
+    mountOAuth();
+    expect(await screen.findByText("Tamloot isn't connected. You can try again.")).toBeTruthy();
+    expect(sessionStorage.getItem('retainer:connect:v1.workspace.installation.old')).toBeNull();
+    expect(sessionStorage.getItem('retainer:connect:v1.workspace.other.old')).not.toBeNull();
+  });
+  it('forgets a saved attempt without a notice when the connection exists', async () => {
+    sessionStorage.setItem(
+      'retainer:connect:v1.workspace.installation.done',
+      JSON.stringify({ workspaceId: 'workspace', installationId: 'installation' }),
+    );
+    rows([{ ...oauthConnection, state: 'connecting' }]);
+    mountOAuth();
+    expect(await screen.findByText('Connecting · Ok')).toBeTruthy();
+    await waitFor(() =>
+      expect(sessionStorage.getItem('retainer:connect:v1.workspace.installation.done')).toBeNull(),
+    );
+    expect(screen.queryByText(/isn't connected/)).toBeNull();
+  });
+  it('shows importing until the first scan finishes, then the getting-started text', async () => {
+    const list = rows([
+      { ...oauthConnection, lastSuccessfulScanAt: null, hasImportedItems: false },
+    ]);
+    mountOAuth();
+    expect(await screen.findByText('Importing…')).toBeTruthy();
+    expect(screen.getByText(/No completed scan yet/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Disconnecting stops imports now and keeps imported records in the workspace. Retainer then gives up this workspace's access in Tamloot, retrying for up to a day.",
+      ),
+    ).toBeTruthy();
+    cleanup();
+    list.mockResolvedValue({ connections: [{ ...oauthConnection, hasImportedItems: false }] });
+    mountOAuth();
+    expect(await screen.findByText(/Record a meeting in Tamloot to see it here/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Tamloot' }).getAttribute('href')).toBe(
+      'https://provider.example/start',
+    );
+    cleanup();
+    list.mockResolvedValue({ connections: [oauthConnection] });
+    mountOAuth();
+    expect(await screen.findByText(/Last completed scan:/)).toBeTruthy();
+    expect(screen.queryByText(/Record a meeting/)).toBeNull();
+  });
+  it('shows needs reconnect with its reason and reconnects with the connection and generation', async () => {
+    rows([
+      {
+        ...oauthConnection,
+        state: 'needs_reconnect',
+        health: 'needs_reconnect',
+        lastError: 'provider_unauthorized',
+        settings: { days: 14 },
+      },
+    ]);
+    const authorize = vi
+      .spyOn(api, 'authorizeExtensionConnection')
+      .mockResolvedValue(authorization);
+    vi.spyOn(navigation, 'assign').mockImplementation(() => {});
+    const { user } = mountOAuth();
+    expect(await screen.findByText('Needs reconnect')).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Retainer's access to this Tamloot account ended. Connect again to resume imports.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(/If you don't connect again, disconnect/)).toBeTruthy();
+    const form = screen.getByRole('form', { name: 'Connect with Tamloot' });
+    expect((within(form).getByLabelText('History days (required)') as HTMLInputElement).value).toBe(
+      '14',
+    );
+    await user.click(within(form).getByRole('button', { name: 'Connect with Tamloot' }));
+    await waitFor(() =>
+      expect(authorize).toHaveBeenCalledWith('installation', {
+        settings: { days: 14 },
+        connectionId: 'own',
+        expectedGeneration: 3,
+        loginHint: 'dana@example.test',
+      }),
+    );
+    expect(screen.getByRole('button', { name: 'Disconnect account' })).toBeTruthy();
+  });
+  it('reconnects an active OAuth connection through the same button', async () => {
+    rows([oauthConnection]);
+    const { user } = mountOAuth();
+    expect(screen.queryByRole('form', { name: 'Connect with Tamloot' })).toBeNull();
+    await user.click(await screen.findByRole('button', { name: 'Reconnect account' }));
+    expect(screen.getByRole('form', { name: 'Connect with Tamloot' })).toBeTruthy();
+    // Never today's key form for an OAuth connection.
+    expect(screen.queryByRole('form', { name: /Reconnect your Tamloot account/ })).toBeNull();
+  });
+  it('shows a setup failure with its reason and the connect button', async () => {
+    rows([{ ...oauthConnection, state: 'setup_failed', lastError: 'release_backlog' }]);
+    mountOAuth();
+    expect(
+      await screen.findByText(
+        "Tamloot couldn't be reached to end an earlier connection. Try again in a few minutes.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Connect with Tamloot' })).toBeTruthy();
+    expect(screen.queryByText('Needs reconnect')).toBeNull();
+  });
+  it('words each OAuth reason for its state, and keeps key texts', () => {
+    const at = (state: ExtensionConnection['state'], credential: 'oauth' | 'key' = 'oauth') => ({
+      ...connection,
+      state,
+      credential,
+    });
+    expect(connectionError('provider_unauthorized', at('setup_failed'), 'Tamloot')).toBe(
+      "Tamloot didn't finish connecting. Try again.",
+    );
+    expect(connectionError('exchange_interrupted', at('setup_failed'), 'Tamloot')).toBe(
+      "Tamloot didn't finish connecting. Try again.",
+    );
+    expect(connectionError('source_account_changed', at('needs_reconnect'), 'Tamloot')).toBe(
+      'You approved a different Tamloot account. Connect again with the first one, or disconnect to switch.',
+    );
+    expect(connectionError('lost_backlog', at('setup_failed'), 'Tamloot')).toMatch(
+      /^Connecting to Tamloot was interrupted too many times\. Disconnect, then connect again\./,
+    );
+    expect(connectionError('provider_unauthorized', at('needs_reconnect', 'key'), 'Tamloot')).toBe(
+      'Your key no longer works. Reconnect with a new key.',
+    );
+    expect(connectionError('rate_limited', at('setup_failed'), 'Tamloot')).toBe(
+      'Needs attention: rate limited',
+    );
+  });
+  it('keeps showing an OAuth connection as OAuth after the server stops offering OAuth', async () => {
+    rows([
+      {
+        ...oauthConnection,
+        state: 'needs_reconnect',
+        health: 'needs_reconnect',
+        lastError: 'provider_unauthorized',
+      },
+    ]);
+    mountOAuth({
+      inst: {
+        ...installation,
+        connectionMethods: ['key'],
+        releaseNotice: { connectionId: 'old', at: '2026-11-15T10:00:00Z' },
+      },
+    });
+    expect(await screen.findByText('Needs reconnect')).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Retainer's access to this Tamloot account ended. Connect again to resume imports.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(/If you don't connect again, disconnect/)).toBeTruthy();
+    expect(
+      screen.getByText(/Retainer couldn't confirm it ended its access in Tamloot\./),
+    ).toBeTruthy();
+    expect(screen.queryByRole('form', { name: 'Connect with Tamloot' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Disconnect account' })).toBeTruthy();
+  });
+  it('keeps a key connection but hides its reconnect once the key method is withdrawn', async () => {
+    rows([{ ...oauthConnection, credential: 'key' }]);
+    mountOAuth({ inst: { ...installation, connectionMethods: ['oauth'] } });
+    expect(await screen.findByRole('button', { name: 'Disconnect account' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Reconnect account' })).toBeNull();
+  });
+  it('offers no connect action when the server offers no method', async () => {
+    rows([]);
+    mountOAuth({ inst: { ...installation, connectionMethods: [] } });
+    expect(await screen.findByText(/Connect your own account/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Connect with Tamloot' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Connect account' })).toBeNull();
+  });
+  it('shows the release notice with the revoke link and dismisses it with the exact stamp', async () => {
+    rows([]);
+    const at = '2026-11-15 10:00:00.123456+00';
+    const dismiss = vi.spyOn(api, 'dismissReleaseNotice').mockResolvedValue({ dismissed: true });
+    const { user, onChanged } = mountOAuth({
+      inst: { ...both, releaseNotice: { connectionId: 'old', at } },
+    });
+    expect(
+      await screen.findByText(/Retainer couldn't confirm it ended its access in Tamloot\./),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Connected apps' }).getAttribute('href')).toBe(
+      'https://provider.example/settings?tab=apps',
+    );
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await waitFor(() => expect(dismiss).toHaveBeenCalledWith('installation', 'old', at));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+  it('reloads the notice quietly when a newer incident arrived', async () => {
+    rows([]);
+    vi.spyOn(api, 'dismissReleaseNotice').mockRejectedValue(
+      new RetainerApiError(409, 'notice_changed', 'The notice changed.'),
+    );
+    const { user, onChanged } = mountOAuth({
+      inst: { ...both, releaseNotice: { connectionId: 'old', at: '2026-11-15T10:00:00Z' } },
+    });
+    await user.click(await screen.findByRole('button', { name: 'Dismiss' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(screen.queryByText('The notice changed.')).toBeNull();
+  });
+  it('gives admins a reason column, including access that may remain', async () => {
+    rows([
+      {
+        ...oauthConnection,
+        id: 'eli',
+        owner: { type: 'user', id: 'eli', name: 'Eli' },
+        state: 'needs_reconnect',
+        health: 'needs_reconnect',
+        lastError: 'provider_unauthorized',
+      },
+      {
+        ...oauthConnection,
+        id: 'noa',
+        owner: { type: 'user', id: 'noa', name: 'Noa' },
+        state: 'disconnected',
+        releaseIncompleteAt: '2026-11-15T10:00:00Z',
+      },
+    ]);
+    mountOAuth({ admin: true });
+    const region = await screen.findByRole('region', { name: 'Member connections' });
+    expect(within(region).getByRole('columnheader', { name: 'Reason' })).toBeTruthy();
+    expect(
+      within(region).getByText(
+        "Retainer's access to this Tamloot account ended. Connect again to resume imports.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(region).getByText(
+        'Tamloot access may remain. The member can revoke Retainer in Tamloot.',
+      ),
+    ).toBeTruthy();
+  });
+  it('adds no reason column without OAuth', async () => {
+    rows([{ ...connection, owner: { type: 'user', id: 'eli', name: 'Eli' } }]);
+    mountOAuth({ admin: true, inst: installation });
+    const region = await screen.findByRole('region', { name: 'Member connections' });
+    expect(within(region).queryByRole('columnheader', { name: 'Reason' })).toBeNull();
   });
 });

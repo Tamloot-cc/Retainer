@@ -19,6 +19,7 @@ async function createHandler() {
     webhooks: services.webhooks,
     ...(services.tokens ? { runTokens: services.tokens } : {}),
     ...(services.broker ? { extensionSecrets: services.broker } : {}),
+    extensionOAuthClients: services.oauthClients,
     publicOrigin: config.RETAINER_PUBLIC_ORIGIN,
     accountsSecret: config.RETAINER_AUTH_SECRET,
     rateLimit: { limit: rateLimitPerMinute(config) },

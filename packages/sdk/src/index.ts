@@ -1,9 +1,13 @@
 import type {
+  ExtensionAuthorization,
+  ExtensionAuthorizationCompletion,
+  ExtensionAuthorizeInput,
   ExtensionConnection,
   ExtensionConnectionInput,
   ExtensionInstallation,
   ExtensionInstallInput,
   ExtensionManifest,
+  ExtensionOAuthClient,
   ExtensionPreview,
 } from '@retainer/extension';
 import { isMaintenance, maintenanceFetch } from './maintenance.js';
@@ -730,6 +734,33 @@ export class RetainerClient {
     return this.post<{ id: string; state: 'connecting' }>(
       `/v1/extensions/${encodeURIComponent(id)}/connections`,
       input,
+    );
+  }
+  /** Start an OAuth connection; navigate the browser to `authorizationUrl`. */
+  authorizeExtensionConnection(id: string, input: ExtensionAuthorizeInput) {
+    return this.post<ExtensionAuthorization>(
+      `/v1/extensions/${encodeURIComponent(id)}/connections/authorize`,
+      input,
+    );
+  }
+  /** Finish the OAuth round trip from the callback page, with the provider's code or error. */
+  completeExtensionAuthorization(id: string, input: ExtensionAuthorizationCompletion) {
+    return this.post<{ id: string; state: 'connecting' } | { cancelled: true }>(
+      `/v1/extensions/${encodeURIComponent(id)}/connections/authorize/complete`,
+      input,
+    );
+  }
+  /** Hide the release notice the member saw; `at` is `releaseNotice.at`, unchanged. */
+  dismissReleaseNotice(id: string, connection: string, at: string) {
+    return this.post<{ dismissed: true }>(
+      `/v1/extensions/${encodeURIComponent(id)}/connections/${encodeURIComponent(connection)}/release-notice/dismiss`,
+      { at },
+    );
+  }
+  /** The operator's OAuth client, for a live run whose function holds the token secret. */
+  extensionOAuthClient(id: string) {
+    return this.get<ExtensionOAuthClient>(
+      `/v1/extensions/${encodeURIComponent(id)}/runtime/oauth-client`,
     );
   }
   disconnectExtension(id: string, connection: string) {

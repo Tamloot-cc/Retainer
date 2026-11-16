@@ -2,7 +2,12 @@ import type { Hono } from 'hono';
 import { z } from 'zod';
 import { requireScope } from '../../auth/middleware.js';
 import { AppError } from '../../errors.js';
-import { connectionInputSchema } from '../../extensions/connections.js';
+import {
+  authorizeInputSchema,
+  completeAuthorizationSchema,
+  connectionInputSchema,
+  dismissNoticeSchema,
+} from '../../extensions/connections.js';
 import {
   commitInputSchema,
   type Extensions,
@@ -68,6 +73,38 @@ export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMo
       ),
       201,
     ),
+  );
+  app.post('/extensions/:id/connections/authorize', requireScope('read'), async (c) =>
+    c.json(
+      await extensions.connections.authorize(
+        c.get('caller'),
+        idParam(c),
+        await readBody(c, authorizeInputSchema),
+      ),
+      201,
+    ),
+  );
+  app.post('/extensions/:id/connections/authorize/complete', requireScope('read'), async (c) =>
+    c.json(
+      await extensions.connections.completeAuthorization(
+        c.get('caller'),
+        idParam(c),
+        await readBody(c, completeAuthorizationSchema),
+      ),
+    ),
+  );
+  app.post(
+    '/extensions/:id/connections/:connection/release-notice/dismiss',
+    requireScope('read'),
+    async (c) =>
+      c.json(
+        await extensions.connections.dismissReleaseNotice(
+          c.get('caller'),
+          idParam(c),
+          idParam(c, 'connection'),
+          (await readBody(c, dismissNoticeSchema)).at,
+        ),
+      ),
   );
   app.post('/extensions/:id/connections/:connection/reconnect', requireScope('read'), async (c) =>
     c.json(

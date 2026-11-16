@@ -3,6 +3,8 @@ export const SYSTEM_LIFECYCLE_FUNCTION_ID = 'b150f9ad-0629-44d0-a103-67fa9b93426
 import { z } from 'zod';
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
+/** One release incident ID: a short kind and an ID, at most 89 characters. */
+export const RELEASE_INCIDENT_PATTERN = /^[a-z]{1,8}:[a-z0-9-]{1,80}$/;
 export const invocationSchema = z.strictObject({
   protocolVersion: z.literal(1),
   runId: z.uuid(),
@@ -28,12 +30,17 @@ export const executionResultSchema = z.strictObject({
     .regex(/^[a-z][a-z0-9_]{0,79}$/)
     .optional(),
   retryAfterSeconds: z.number().int().min(0).max(3600).optional(),
+  /**
+   * Incidents where provider access may remain (Tamloot connect spec 4.7), such as
+   * `exchange:<hash>` or `release:<uuid>`. The server records each once per connection.
+   */
+  releaseIncomplete: z.array(z.string().regex(RELEASE_INCIDENT_PATTERN)).max(8).optional(),
 });
 /**
  * The server-defined input of an `install` or `connect` lifecycle function: the release
  * version installed before this setup (an upgrade, re-enable or settings
  * re-setup), or null on a first install. Lifecycle input is not the
- * function's `inputSchema`; `uninstall` and `disconnect` input is `{}`. Jobs queued before
+ * function's `inputSchema`; `uninstall` input is `{}`. Jobs queued before
  * this field existed carry `{}`.
  */
 export const lifecycleInputSchema = z.strictObject({
@@ -44,6 +51,13 @@ export const lifecycleInputSchema = z.strictObject({
     .optional(),
 });
 export type LifecycleInput = z.infer<typeof lifecycleInputSchema>;
+/**
+ * A `disconnect` hook's input. `{}` releases everything; `{ keep: 'current' }` is a
+ * partial release after a failed connect, which keeps the connection's current
+ * credential (Tamloot connect spec 4.7).
+ */
+export const disconnectInputSchema = z.strictObject({ keep: z.literal('current').optional() });
+export type DisconnectInput = z.infer<typeof disconnectInputSchema>;
 export type Invocation = z.infer<typeof invocationSchema>;
 export type ExecutionResult = z.infer<typeof executionResultSchema>;
 /** Invoke with a bounded serialized envelope; callers never supply executable locations. */

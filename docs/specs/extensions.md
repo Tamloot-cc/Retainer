@@ -357,8 +357,17 @@ automatic schema rollback: failed new setup stays disabled on the installed
 release, with retry or a separately validated compatible code rollback. Rollback
 never drops new fields or assertions. No release automatically increases scopes.
 
+A disconnect hook may declare `secrets`, limited to generated connection
+secrets. Those stay readable, never writable, by the hook for 24 hours after
+the disconnect and are retired when it finishes; every other secret is retired
+at once. An OAuth connection whose setup fails, or that needs reconnecting,
+also gets a partial release job: the same hook with input `{ keep: 'current' }`,
+which keeps its 24-hour deadline and changes nothing about the connection
+(`extensions-tamloot-connect.md` §4.7).
+
 A queued or running member disconnect hook blocks release adoption with
-`409 cleanup_pending` and `retryAfterSeconds: 15`. The check and release switch
+`409 cleanup_pending` and `retryAfterSeconds: 15`. So does a partial release
+job until its deadline, or while an attempt holds a live lease after it. The check and release switch
 hold the same installation lock as disconnect. Same-release settings, enable,
 disable, source disconnect and workspace deletion retain pending cleanup jobs
 in the new generation. Their identity, connection fence, retry budget and

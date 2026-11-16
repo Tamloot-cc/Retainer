@@ -143,6 +143,14 @@ const configSchema = z
     RETAINER_EXTENSION_API_ORIGIN: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
     RETAINER_EXTENSION_ISSUER: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
     RETAINER_EXTENSION_SECRET_KEYS: z.preprocess(emptyToUndefined, z.string().optional()),
+    /**
+     * Operator OAuth clients for member connections, by registration universal
+     * ID (Tamloot connect spec 4.1). Holds client secrets; never logged.
+     */
+    RETAINER_EXTENSION_OAUTH_CLIENTS: z.preprocess(
+      emptyToUndefined,
+      z.string().max(65536).optional(),
+    ),
     RETAINER_EXTENSION_LAUNCHER_ORIGIN: z.preprocess(
       emptyToUndefined,
       publicOriginSchema.optional(),

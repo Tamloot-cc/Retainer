@@ -1,6 +1,7 @@
 import type { Caller, InstallationBinding, RunBinding } from '../caller.js';
 import type { Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
+import { isPartialReleaseJob } from './lifecycle.js';
 import { lockExtension } from './locks.js';
 
 /** Called after schema (and privacy for CRM writes), before idempotency or record locks. */
@@ -36,7 +37,7 @@ export async function admitRun(
     );
   // Hold a shared row lock through commit so lease takeover cannot overtake an admitted write.
   const [job] =
-    await tx`select trigger_kind,connection_id,connection_generation from extension_jobs where id=${run.jobId} and installation_id=${run.installationId}
+    await tx`select trigger_kind,input,expires_at>clock_timestamp() as job_live,connection_id,connection_generation from extension_jobs where id=${run.jobId} and installation_id=${run.installationId}
     and function_id=${run.functionId} and generation=${run.generation} and release_digest=${run.releaseDigest} and status='running'
     and lease_owner=${run.owner} and fence=${run.fence}::bigint
     and lease_until>clock_timestamp() and run_until>clock_timestamp() for share`;
@@ -77,12 +78,19 @@ export async function admitRun(
       connection.state === 'connecting' &&
       installation.state === 'active'
     : job.trigger_kind === 'install' && ['installing', 'upgrading'].includes(installation.state);
+  const partial = isPartialReleaseJob(job as { trigger_kind: string; input: unknown });
   const cleanup = connection
-    ? job.trigger_kind === 'disconnect' &&
-      connection.state === 'disconnected' &&
-      connection.cleanup_live === true &&
-      installation.state !== 'uninstalled' &&
-      (installation.state !== 'uninstalling' || installation.cleanup_live === true)
+    ? partial
+      ? // A partial release job: the connection's failure stands, before the job's deadline.
+        installation.state === 'active' &&
+        !installation.deleting &&
+        job.job_live === true &&
+        ['setup_failed', 'needs_reconnect'].includes(connection.state)
+      : job.trigger_kind === 'disconnect' &&
+        connection.state === 'disconnected' &&
+        connection.cleanup_live === true &&
+        installation.state !== 'uninstalled' &&
+        (installation.state !== 'uninstalling' || installation.cleanup_live === true)
     : job.trigger_kind === 'uninstall' &&
       installation.state === 'uninstalling' &&
       installation.cleanup_live === true;

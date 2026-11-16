@@ -1,5 +1,6 @@
 import {
   compareVersions,
+  disconnectHook,
   type ExtensionInstallation,
   type ExtensionInstallInput,
   type ExtensionManifest,
@@ -32,10 +33,12 @@ import {
 } from '../extension-runtime/availability.js';
 import { disconnectConnection } from '../extension-runtime/connections.js';
 import { hashInstallationKey, mintInstallationKey } from '../extension-runtime/credentials.js';
+import { sweepPartialReleases } from '../extension-runtime/lifecycle.js';
 import {
   cancelRuns,
   failDisconnectCleanup,
   lockExtension as lockInstallation,
+  lockQueue,
 } from '../extension-runtime/locks.js';
 import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { pendingSecrets, type SecretBroker } from '../extension-runtime/secrets.js';
@@ -50,13 +53,14 @@ import {
 } from '../views/service.js';
 import { holdReason, type UpgradeTarget, upgradeTargets } from './auto-upgrade.js';
 import { ExtensionCatalog, hash } from './catalog.js';
-import { MemberConnections } from './connections.js';
+import { MemberConnections, ownerId } from './connections.js';
 import {
   type ContributionRow,
   contributionOperations,
   retiredContributions,
 } from './contributions.js';
 import { bindingStatus, EMPTY_MAPPING, resolveMapping, type StoredMapping } from './mapping.js';
+import { connectionMethods, type ExtensionOAuthClients } from './oauth-clients.js';
 import { getSuggestions } from './suggestions.js';
 import { installationMonthUsage } from './usage.js';
 
@@ -115,10 +119,16 @@ type Row = {
 
 type Plan = Awaited<ReturnType<Extensions['plan']>>;
 
-/** Whether disconnect cleanup is still running, which blocks a release change. */
+/**
+ * Whether cleanup blocks a release change: disconnect cleanup still open, or a
+ * partial release job under `retainer_partial_release_blocking` (Tamloot connect
+ * spec 4.7). `retainer_extension_upgrades_due` applies the same rule.
+ */
 async function cleanupPending(tx: Tx, installationId: string) {
-  const [pending] = await tx`select 1 from extension_jobs where installation_id=${installationId}
-    and trigger_kind='disconnect' and status in ('queued','running') limit 1`;
+  const [pending] =
+    await tx`select 1 from extension_jobs j where j.installation_id=${installationId}
+    and ((j.trigger_kind='disconnect' and not retainer_partial_release_job(j.trigger_kind,j.input) and j.status in ('queued','running'))
+      or retainer_partial_release_blocking(j)) limit 1`;
   return !!pending;
 }
 
@@ -211,9 +221,32 @@ export class Extensions {
     readonly secrets?: SecretBroker,
     /** Release digests with a deployed executable; undefined when this process does not know. */
     private readonly deployed?: ReadonlySet<string>,
+    /** Operator OAuth clients for member connections (Tamloot connect spec 4.1). */
+    readonly oauthClients: ExtensionOAuthClients = new Map(),
   ) {
     this.activation = deployed ?? new Set();
-    this.connections = new MemberConnections(sql, catalog, secrets);
+    this.connections = new MemberConnections(sql, catalog, secrets, oauthClients);
+  }
+  /** Connection methods and the caller's release notice, for a person's read (spec 4.8). */
+  private async memberView(tx: Tx, caller: Caller, row: Row) {
+    const manifest = this.catalog.find(row.registration_id, row.version)?.manifest;
+    const methods = manifest
+      ? connectionMethods(manifest, this.oauthClients, !!this.secrets)
+      : undefined;
+    if (!methods) return {};
+    const owner = ownerId(caller);
+    const [notice] =
+      owner && !caller.run && !caller.installation
+        ? await tx<{ id: string; at: string }[]>`select id,release_incomplete_at::text as at
+          from extension_connections where installation_id=${row.id} and owner_id=${owner}
+          and release_incomplete_at is not null
+          and (release_notice_dismissed_at is null or release_incomplete_at>release_notice_dismissed_at)
+          order by created_at desc,id desc limit 1`
+        : [];
+    return {
+      connectionMethods: methods,
+      releaseNotice: notice ? { connectionId: notice.id, at: notice.at } : null,
+    };
   }
   private readonly activation: ReadonlySet<string>;
   readonly connections: MemberConnections;
@@ -251,14 +284,17 @@ export class Extensions {
         await lockSchemaShared(tx, caller.workspaceId);
         await admitCaller(tx, caller, false, 'runtime');
       }
-      return {
-        installations: (
-          await tx<
-            Row[]
-          >`select i.*,(select case j.status when 'succeeded' then 'ready' when 'queued' then 'queued' when 'running' then 'running' else 'failed' end from extension_suggestions s join extension_jobs j on j.id=s.job_id where s.installation_id=i.id and s.release_digest=i.release_digest and j.generation=i.generation) as suggestions_status,retainer_extension_secret_names(i.id) as secret_names
-            from extension_installations i ${caller.run || caller.installation ? tx`where i.id = ${caller.run?.installationId ?? caller.installation?.installationId ?? null}` : tx``} order by i.created_at, i.id`
-        ).map((row) => present(row, this.catalog.runtime, this.deployed)),
-      };
+      const rows = await tx<
+        Row[]
+      >`select i.*,(select case j.status when 'succeeded' then 'ready' when 'queued' then 'queued' when 'running' then 'running' else 'failed' end from extension_suggestions s join extension_jobs j on j.id=s.job_id where s.installation_id=i.id and s.release_digest=i.release_digest and j.generation=i.generation) as suggestions_status,retainer_extension_secret_names(i.id) as secret_names
+            from extension_installations i ${caller.run || caller.installation ? tx`where i.id = ${caller.run?.installationId ?? caller.installation?.installationId ?? null}` : tx``} order by i.created_at, i.id`;
+      const installations = [];
+      for (const row of rows)
+        installations.push({
+          ...present(row, this.catalog.runtime, this.deployed),
+          ...(await this.memberView(tx, caller, row)),
+        });
+      return { installations };
     });
   }
   async get(caller: Caller, id: string) {
@@ -310,6 +346,7 @@ export class Extensions {
       >`select ${caller.run?.connectionId ? tx`retainer_connection_secret_names(${id}::uuid,${caller.run.connectionId}::uuid)` : tx`retainer_extension_secret_names(${id}::uuid)`} as names`;
       return {
         ...present(row, this.catalog.runtime, this.deployed),
+        ...(await this.memberView(tx, caller, row)),
         secrets: Object.fromEntries((presence?.names ?? []).map((name) => [name, true])),
         contributions,
         ...(mapping ? { mapping } : {}),
@@ -351,7 +388,7 @@ export class Extensions {
       if (!installation) throw notFound('extension installation');
       const [member] =
         await tx`select 1 from extension_connections where installation_id=${id} limit 1`;
-      const owner = caller.person?.id ?? (caller.actor.type === 'user' ? caller.actor.id : null);
+      const owner = ownerId(caller);
       const all = canApproveDestructive(caller.actor, caller.scopes);
       const rows = await tx<
         {
@@ -975,6 +1012,9 @@ export class Extensions {
     if (input.mappingChange && plan.existing)
       return this.commitMapping(tx, caller, plan, key, requestHash);
     if (plan.existing) {
+      // A partial job past its deadline is failed with its incident, never just cancelled.
+      await lockQueue(tx, caller.workspaceId, plan.existing.id);
+      await sweepPartialReleases(tx, plan.existing.id);
       await cancelRuns(tx, plan.existing.id);
       if (input.reconnect || input.replaceSourceAccount)
         await tx`delete from source_sync_state where installation_id=${plan.existing.id}`;
@@ -1027,9 +1067,8 @@ export class Extensions {
     if (manifest.connection === 'member') {
       // Membership removal can run before setup finishes. Cache the hook
       // with the release adoption, under the same installation lock.
-      const disconnect =
-        manifest.functions.find((fn) => fn.trigger.kind === 'disconnect')?.universalId ?? null;
-      await tx`update extension_connections set disconnect_function_id=${disconnect}
+      const { functionId: disconnect, secrets } = disconnectHook(manifest);
+      await tx`update extension_connections set disconnect_function_id=${disconnect},disconnect_secrets=${secrets}::text[]
         where installation_id=${row.id} and state<>'disconnected'`;
     }
     if (input.replaceSourceAccount) {

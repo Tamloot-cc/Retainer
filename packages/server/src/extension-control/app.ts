@@ -49,9 +49,10 @@ export function createExtensionControlApp(deps: AppDeps) {
     deps.extensionCatalog,
     deps.extensionSecrets,
     deps.extensionActivation,
+    deps.extensionOAuthClients,
   );
   extensionRoutes(v1, extensions, !deps.accountsSecret);
-  runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets);
+  runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets, extensions.oauthClients);
   extensionDataRoutes(v1, deps.sql, extensions.catalog);
   webhookRuntime(v1, deps.webhooks);
   app.route('/v1', v1);
