@@ -1,0 +1,10 @@
+{
+  "manifest_sha256": "32c5aef4f9e1caf7b259fe8a6a247550916b2e4b7b39cd955021ae699ef12162",
+  "model": "gpt-6-luna",
+  "identity_probability_floor": 0.90,
+  "minimum_end_to_end_true_suggestions": 80,
+  "maximum_false_suggestions": 0,
+  "maximum_unsupported_explanations": 0,
+  "maximum_attempts": 800,
+  "maximum_reserved_usd": 2
+}

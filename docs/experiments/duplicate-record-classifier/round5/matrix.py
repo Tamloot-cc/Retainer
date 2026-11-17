@@ -87,10 +87,9 @@ def plan():
 
 def assessment(body,request,guard=True):
     result=publication(body,request,validate,.9)
-    context=json.loads(request['input']);omissions=context.get('omitted',{})
-    omitted=any(v>0 for v in omissions.values()) if isinstance(omissions,dict) else bool(omissions)
-    result['omitted_context']=omitted
-    if guard and not complete_context(request):result.update(publish=False,explanation=None,context_deferred=True)
+    incomplete = not complete_context(request)
+    result['omitted_context'] = incomplete
+    if guard and incomplete:result.update(publish=False,explanation=None,context_deferred=True)
     return result
 
 

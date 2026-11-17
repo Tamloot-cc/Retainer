@@ -33,4 +33,4 @@ def canonical_request(original):
 
 def complete_context(request):
     context=json.loads(request['input']);omitted=context.get('omitted')
-    return isinstance(omitted,dict) and all(type(n) is int and n==0 for n in omitted.values())
+    return isinstance(omitted,dict) and set(omitted)=={'facts','history'} and all(type(n) is int and n==0 for n in omitted.values())

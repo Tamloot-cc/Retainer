@@ -1,9 +1,13 @@
 # Duplicate record classification
 
-Status: proposed. Five spike rounds and bounded Team8 read-only audits completed
-through 2026-11-17. **The production exit gate is not passed; no feature is deployed.**
+Status: limited opt-in pilot recommended for the owner's workspace. Implementation
+and enablement are pending. The Round 10 holdout narrowed 399 heuristic candidates
+to 91 suggestions (89 genuine, two false). Both errors cited a third party's alias.
+The preset zero-error gate failed. A subsequent product review reopened the pilot
+decision because a person reviews every suggestion and approves every merge.
 
-Artifacts: [latest report](../experiments/duplicate-record-classifier/round5/REPORT.md),
+Artifacts: [final calibration and decision](../experiments/duplicate-record-classifier/round10/REPORT.md),
+[experiment index](../experiments/duplicate-record-classifier/README.md),
 [Round 4](../experiments/duplicate-record-classifier/round4/REPORT.md),
 [Round 3](../experiments/duplicate-record-classifier/round3/REPORT.md),
 [Round 2](../experiments/duplicate-record-classifier/round2/REPORT.md),
@@ -22,7 +26,7 @@ accuracy estimates. Round 1 repeated templates; later rounds split distinct
 stories before calls. No unsupported published explanations occurred in these
 runs. The later 100-positive/300-negative shadow gate has not been met.
 
-**Decision:** retain the simpler 0.90 baseline for further experiments. Round 3
+**Round 3 decision:** retain the simpler 0.90 baseline for further experiments. Round 3
 selected evidence thresholds on development only and froze them before heldout
 calls, but the new rule did not outperform the baseline. A correct source choice
 could fall below its probability cutoff. Do not tune against consumed holdouts.
@@ -304,11 +308,16 @@ as classifier instructions; omit payloads and credentials from operational logs.
    matching API/SDK contracts. Preserve manual merge and human approval.
 4. **Shadow evaluation:** run the new flow without creating visible suggestions.
    Evaluate a held-out set with at least 100 duplicates and 300 nonduplicates,
-   including approved real-workspace cases. Proposed launch gate: zero published
-   false positives among those negatives, at least 80% end-to-end duplicate
-   coverage among those positives, and no unsupported published explanations.
-   Report sample uncertainty; these results do not prove a production error rate.
-5. **Team8 pilot, then broader enablement:** use explicit extension access approval.
+   which may be entirely synthetic. Approved real-workspace cases are optional.
+   Round 10 passed the original coverage target and failed its zero-error criteria.
+   The later pilot recommendation accepts synthetic validation as a starting point.
+5. **Limited opt-in pilot:** freeze the Round 10 policy at the 0.50 per-source
+   cutoff. Show the two records side by side with the exact excerpt, source and
+   surrounding names. Present a possible match without claiming the source proves
+   identity. The reviewer accepts or dismisses each suggestion. Compare queue size
+   and review time with the existing matcher, record acceptance, dismissal and
+   misleading citations, and sample withheld pairs for missed duplicates. Review
+   these results before considering expansion. Use explicit extension access approval.
    Reclassify legacy pending suggestions before showing them in the upgraded flow;
    preserve accepted merges and human dismissals. Report legacy pending counts,
    reclassified outcomes, deferred work and pilot feedback.
