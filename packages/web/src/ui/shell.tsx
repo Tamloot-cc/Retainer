@@ -15,7 +15,7 @@ import {
   Shapes,
   UserCog,
 } from 'lucide-react';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { BrandMark } from './brand.js';
 import { type CategoryColor, objectColor } from './colors.js';
 import { cn, Kbd, NavigationContext } from './core.js';
@@ -23,6 +23,11 @@ import { Menu, MenuAction, MenuCheck, MenuChoice, MenuChoices, MenuSeparator } f
 import { objectIcon } from './object-icons.js';
 
 const COLLAPSED_KEY = 'retainer:sidebar:collapsed';
+const WIDTH_KEY = 'retainer:sidebar:width';
+const MIN_WIDTH = 192;
+const DEFAULT_WIDTH = 240;
+const MAX_WIDTH = 400;
+const clampWidth = (width: number) => Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(width)));
 
 export { objectIcon } from './object-icons.js';
 
@@ -92,14 +97,9 @@ export function Shell({ children, ...props }: ShellProps) {
   return (
     <NavigationContext.Provider value={() => setDrawer(true)}>
       <div className="flex min-h-dvh bg-frame text-foreground md:[--workspace-bottom-inset:0.5rem] md:[--workspace-footer-height:4rem]">
-        <aside
-          className={cn(
-            'sticky top-0 hidden h-dvh shrink-0 flex-col bg-sidebar transition-[width] duration-150 md:flex',
-            collapsed ? 'w-[52px]' : 'w-60',
-          )}
-        >
+        <DesktopSidebar collapsed={collapsed}>
           <Sidebar {...props} collapsed={collapsed} onToggle={toggle} />
-        </aside>
+        </DesktopSidebar>
         <DialogPrimitive.Root open={drawer} onOpenChange={setDrawer}>
           <DialogPrimitive.Portal>
             <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/35 md:hidden" />
@@ -125,6 +125,79 @@ export function Shell({ children, ...props }: ShellProps) {
         </main>
       </div>
     </NavigationContext.Provider>
+  );
+}
+
+function DesktopSidebar({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
+  const id = useId();
+  const [width, setWidth] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem(WIDTH_KEY));
+      if (Number.isFinite(saved) && saved > 0) return clampWidth(saved);
+    } catch {
+      /* Storage can be unavailable. */
+    }
+    return DEFAULT_WIDTH;
+  });
+  const dragOffset = useRef(0);
+
+  function saveWidth(value: number) {
+    const next = clampWidth(value);
+    setWidth(next);
+    try {
+      localStorage.setItem(WIDTH_KEY, String(next));
+    } catch {
+      /* Resizing still works for this visit. */
+    }
+  }
+
+  return (
+    <aside
+      id={id}
+      style={{ width: collapsed ? 52 : width }}
+      className="sticky top-0 hidden h-dvh shrink-0 flex-col bg-sidebar transition-[width] duration-150 has-[[role=separator]:active]:duration-0 md:flex"
+    >
+      {children}
+      {collapsed ? null : (
+        // biome-ignore lint/a11y/useSemanticElements: a keyboard-adjustable splitter has no native element.
+        <div
+          role="separator"
+          aria-label="Resize sidebar"
+          aria-orientation="vertical"
+          aria-controls={id}
+          aria-valuemin={MIN_WIDTH}
+          aria-valuemax={MAX_WIDTH}
+          aria-valuenow={width}
+          aria-valuetext={`${width} pixels`}
+          tabIndex={0}
+          title="Resize sidebar"
+          className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize touch-none select-none border-r-2 border-transparent hover:border-primary/50 focus-visible:border-primary focus-visible:outline-none active:border-primary"
+          onPointerDown={(e) => {
+            if (e.button !== 0 || !e.isPrimary) return;
+            dragOffset.current = width - e.clientX;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            e.preventDefault();
+            e.currentTarget.focus();
+          }}
+          onPointerMove={(e) => {
+            if (e.isPrimary && e.currentTarget.hasPointerCapture(e.pointerId))
+              setWidth(clampWidth(e.clientX + dragOffset.current));
+          }}
+          onPointerUp={(e) => {
+            if (e.isPrimary && e.currentTarget.hasPointerCapture(e.pointerId))
+              saveWidth(e.clientX + dragOffset.current);
+          }}
+          onPointerCancel={(e) => {
+            if (e.isPrimary) saveWidth(width);
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+            e.preventDefault();
+            saveWidth(width + (e.key === 'ArrowRight' ? 16 : -16));
+          }}
+        />
+      )}
+    </aside>
   );
 }
 
@@ -230,7 +303,11 @@ function Sidebar({
       </div>
       <nav
         aria-label="Main navigation"
-        className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden p-2"
+        className={cn(
+          'flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden p-2',
+          // Keep the scrollbar clear of the desktop resize handle.
+          !collapsed && 'md:mr-2 md:pr-0',
+        )}
       >
         <NavLink
           to="/"

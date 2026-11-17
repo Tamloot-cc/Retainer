@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { objectIcon, Shell } from './shell.js';
@@ -61,7 +61,32 @@ describe('the sidebar', () => {
   it('keeps both groups, divided, in the icon rail', () => {
     shell(true);
     expect(screen.getByRole('link', { name: 'Home' })).toBeTruthy();
+    expect(screen.queryByRole('separator')).toBeNull();
     expect(screen.getByRole('group', { name: 'Records' })).toBeTruthy();
+  });
+
+  it.each([
+    ['invalid', 240],
+    ['900', 400],
+    ['1', 192],
+    ['320', 320],
+  ])('restores a usable sidebar width from %s', (stored, width) => {
+    localStorage.setItem('retainer:sidebar:width', String(stored));
+    shell(false);
+    const handle = screen.getByRole('separator', { name: 'Resize sidebar' });
+    expect(handle.getAttribute('aria-valuenow')).toBe(String(width));
+  });
+
+  it('resizes by keyboard within the advertised limits', () => {
+    localStorage.setItem('retainer:sidebar:width', '200');
+    shell(false);
+    const handle = screen.getByRole('separator', { name: 'Resize sidebar' });
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+    expect(handle.getAttribute('aria-valuenow')).toBe(handle.getAttribute('aria-valuemin'));
+    fireEvent.keyDown(handle, { key: 'ArrowRight' });
+    expect(localStorage.getItem('retainer:sidebar:width')).toBe('208');
+    for (let i = 0; i < 15; i++) fireEvent.keyDown(handle, { key: 'ArrowRight' });
+    expect(handle.getAttribute('aria-valuenow')).toBe(handle.getAttribute('aria-valuemax'));
   });
 
   it('draws event types from their own family of icons', () => {
