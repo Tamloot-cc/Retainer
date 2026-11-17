@@ -303,7 +303,11 @@ function Sidebar({
       </div>
       <nav
         aria-label="Main navigation"
-        className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden p-2"
+        className={cn(
+          'flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden p-2',
+          // Keep the scrollbar clear of the desktop resize handle.
+          !collapsed && 'md:mr-2 md:pr-0',
+        )}
       >
         <NavLink
           to="/"

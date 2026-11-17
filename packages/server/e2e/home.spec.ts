@@ -123,6 +123,10 @@ test('the Home feed and sidebar scroll independently of the document', async ({
   const documentRoot = page.locator('html');
   expect(await documentRoot.evaluate((el) => el.scrollHeight)).toBe(400);
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
+  const divider = page.getByRole('separator', { name: 'Resize sidebar' });
+  const navRight = await nav.evaluate((el) => el.getBoundingClientRect().right);
+  const dividerLeft = await divider.evaluate((el) => el.getBoundingClientRect().left);
+  expect(navRight).toBeLessThanOrEqual(dividerLeft);
   await nav.hover();
   await page.mouse.wheel(0, 1200);
   await expect.poll(() => nav.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
