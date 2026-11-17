@@ -152,6 +152,16 @@ describe('duplicate URL evidence (separate from lookup)', () => {
     ['acme.example/?utm_source=mail&gclid=123', 'https://acme.example'],
     ['//WWW.LinkedIn.com/company/fijoya/', 'https://linkedin.com/company/fijoya'],
     ['linkedin.com/company/fijoya?trk=public_profile', 'linkedin.com/company/fijoya'],
+    [
+      'directory.example/profile?q=hello%20world&utm_source=x',
+      'directory.example/profile?q=hello%20world',
+    ],
+    ['directory.example/profile?gclid=x&q=~hello', 'directory.example/profile?q=~hello'],
+    [
+      'directory.example/profile?utm_source=x&q=%7Ehello&fbclid=y',
+      'directory.example/profile?q=%7Ehello',
+    ],
+
     ['http://linkedin.com/company/fijoya?utm_campaign=x&fbclid=abc', 'linkedin.com/company/fijoya'],
   ])('matches equivalent forms: %s', (a, b) => {
     expect(duplicateUrlKey(a)).not.toBeNull();

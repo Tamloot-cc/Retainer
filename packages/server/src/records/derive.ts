@@ -83,22 +83,27 @@ export function duplicateUrlKey(raw: string): string | null {
     );
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
     const host = url.hostname.replace(/^www\./, '');
-    for (const key of [...url.searchParams.keys()]) {
-      if (
-        /^utm_/i.test(key) ||
-        ['fbclid', 'gclid', 'msclkid'].includes(key.toLowerCase()) ||
-        (host === 'linkedin.com' && key === 'trk')
-      ) {
-        url.searchParams.delete(key);
-      }
-    }
+    // URLSearchParams.delete() rewrites unrelated encodings (%20 -> +,
+    // ~ -> %7E). Filter raw segments so an ignored tracker cannot change identity.
+    const query = url.search
+      .slice(1)
+      .split('&')
+      .filter((part) => {
+        const key = new URLSearchParams(`?${part}`).keys().next().value ?? '';
+        return !(
+          /^utm_/i.test(key) ||
+          ['fbclid', 'gclid', 'msclkid'].includes(key.toLowerCase()) ||
+          (host === 'linkedin.com' && key === 'trk')
+        );
+      })
+      .join('&');
     let path = url.pathname;
     // LinkedIn's profile slash is optional. Don't assume that for arbitrary sites.
     if (host === 'linkedin.com' && /^\/(company|in|school)\/[^/]+\/$/.test(path)) {
       path = path.slice(0, -1);
     }
     if (SHARED_LINK_HOSTS.has(host) && path === '/') return null;
-    return `${host}${url.port ? `:${url.port}` : ''}${path}${url.search}${url.hash}`;
+    return `${host}${url.port ? `:${url.port}` : ''}${path}${query ? `?${query}` : ''}${url.hash}`;
   } catch {
     return null;
   }
