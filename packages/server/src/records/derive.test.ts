@@ -152,6 +152,8 @@ describe('duplicate URL evidence (separate from lookup)', () => {
     ['acme.example/?utm_source=mail&gclid=123', 'https://acme.example'],
     ['//WWW.LinkedIn.com/company/fijoya/', 'https://linkedin.com/company/fijoya'],
     ['linkedin.com/company/fijoya?trk=public_profile', 'linkedin.com/company/fijoya'],
+    ['directory.example/profile?q=x&utm_source=y&', 'directory.example/profile?q=x'],
+    ['directory.example/profile?&q=x&&utm_source=y&&', 'directory.example/profile?q=x'],
     [
       'directory.example/profile?q=hello%20world&utm_source=x',
       'directory.example/profile?q=hello%20world',

@@ -89,6 +89,7 @@ export function duplicateUrlKey(raw: string): string | null {
       .slice(1)
       .split('&')
       .filter((part) => {
+        if (!part) return false;
         const key = new URLSearchParams(`?${part}`).keys().next().value ?? '';
         return !(
           /^utm_/i.test(key) ||

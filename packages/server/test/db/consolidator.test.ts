@@ -337,7 +337,7 @@ describe('merge suggestions (4.2)', () => {
     ['https://directory.example/?id=1', 'https://directory.example/?id=2', false],
     [
       'https://directory.example/profile?q=hello%20world',
-      'https://directory.example/profile?q=hello%20world&utm_source=x',
+      'https://directory.example/profile?q=hello%20world&utm_source=x&',
       true,
     ],
     ['https://directory.example/profile?trk=1', 'https://directory.example/profile?trk=2', false],
