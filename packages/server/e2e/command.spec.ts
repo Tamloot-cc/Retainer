@@ -93,7 +93,7 @@ test('keyboard search, contextual results, fact navigation, recent validation an
   await input.fill('review');
   await input.press('ArrowDown');
   await input.press('Enter');
-  await expect(page).toHaveURL(`${r.url}/app/review`);
+  await expect(page).toHaveURL(`${r.url}/app/review?tab=pendingAssertions`);
 });
 
 test('new-tab navigation, empty/error states, query races, mobile layout and read-only permissions', async ({
@@ -182,6 +182,6 @@ test('expands bounded results and removes old hits immediately when the query ch
   await expect(dialog.getByRole('option').filter({ hasText: 'Review' })).toBeVisible();
   await input.press('ArrowDown');
   await input.press('Enter');
-  await expect(page).toHaveURL(`${r.url}/app/review`);
+  await expect(page).toHaveURL(`${r.url}/app/review?tab=pendingAssertions`);
   release();
 });
