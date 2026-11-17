@@ -12,6 +12,46 @@
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.fill{transition:none}}
 @media print{aside{display:none}main{margin:0}section{padding:32px 20px;break-inside:avoid}body{font-size:12px}h1{font-size:48px}h2{font-size:34px}.calibration{print-color-adjust:exact;-webkit-print-color-adjust:exact}button,input{display:none}details>div{display:block}.sources a{color:var(--ink)}}
 .api-switch{border:0;padding:0;min-width:0;display:flex;flex-wrap:wrap;gap:7px;margin-top:6px}.api-switch button{border:1px solid var(--line);border-radius:30px;background:transparent;padding:8px 13px;font-size:13px;color:var(--muted)}.api-switch button[aria-pressed="true"]{background:var(--ink);color:white;border-color:var(--ink)}.api-code-card textarea{width:100%;border:0;border-radius:10px;resize:vertical;padding:22px;background:var(--ink);color:#cce9dc;font:12px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;height:470px;max-height:65vh;overflow:auto;margin:0 0 16px;white-space:pre-wrap;line-height:1.65}.api-code-card{min-width:0}#api-kind-description{margin-top:12px}@media(max-width:820px){.api-code-card textarea{height:390px;max-height:65vh;font-size:11px}#api-contract code{overflow-wrap:anywhere}}
+@media screen {
+  :root {
+    color-scheme: dark;
+    --paper: #101918;
+    --ink: #e6eee9;
+    --muted: #a8bbb3;
+    --line: #354943;
+    --green: #75d9b7;
+    --mint: #1b392f;
+    --amber: #efb774;
+    --sand: #3d2d1e;
+    --red: #f0a19a;
+    --soft: #23332e;
+    --white: #172522;
+    --panel: #203a34;
+    --code: #0c1513;
+  }
+  .tag.green, nav a:hover, nav a.active { color: var(--green); }
+  .tag.amber { color: var(--amber); }
+  .tag.red { background: #442823; color: var(--red); }
+  button:focus-visible, a:focus-visible, input:focus-visible,
+  summary:focus-visible, textarea:focus-visible {
+    outline: 3px solid var(--amber);
+    outline-offset: 4px;
+  }
+  .hero-box.api, .stage.model, .calibration {
+    background: var(--panel);
+    border-color: var(--line);
+  }
+  .tabs button[aria-selected=true], .tabs button[aria-pressed=true],
+  .api-switch button[aria-pressed="true"] {
+    background: var(--mint);
+    border-color: var(--green);
+    color: var(--green);
+  }
+  pre, .api-code-card textarea { background: var(--code); }
+  .bench, .context-dot { border-color: #60776d; }
+  .splitbar .neg { background: #667f75; }
+  .funnel-card .track { background: #121e1a; }
+}
 </style>
 </head>
 <body>
