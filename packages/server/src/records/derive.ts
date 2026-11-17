@@ -84,7 +84,11 @@ export function duplicateUrlKey(raw: string): string | null {
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
     const host = url.hostname.replace(/^www\./, '');
     for (const key of [...url.searchParams.keys()]) {
-      if (/^utm_/i.test(key) || ['fbclid', 'gclid', 'msclkid'].includes(key.toLowerCase())) {
+      if (
+        /^utm_/i.test(key) ||
+        ['fbclid', 'gclid', 'msclkid'].includes(key.toLowerCase()) ||
+        (host === 'linkedin.com' && key === 'trk')
+      ) {
         url.searchParams.delete(key);
       }
     }

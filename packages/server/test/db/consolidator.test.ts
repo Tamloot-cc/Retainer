@@ -329,11 +329,12 @@ describe('merge suggestions (4.2)', () => {
   it.each([
     [
       'https://linkedin.com/company/fijoya',
-      'http://WWW.linkedin.com/company/fijoya/?utm_source=mail',
+      'http://WWW.linkedin.com/company/fijoya/?utm_source=mail&trk=public_profile',
       true,
     ],
     ['https://directory.example/profile?id=1', 'https://directory.example/profile?id=2', false],
     ['https://directory.example/?id=1', 'https://directory.example/?id=2', false],
+    ['https://directory.example/profile?trk=1', 'https://directory.example/profile?trk=2', false],
     ['https://directory.example/a', 'https://directory.example/b', false],
     [
       'https://directory.example/a?id=1',

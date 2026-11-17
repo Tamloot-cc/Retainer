@@ -151,6 +151,7 @@ describe('duplicate URL evidence (separate from lookup)', () => {
     ['http://WWW.Acme.example', 'https://acme.example/'],
     ['acme.example/?utm_source=mail&gclid=123', 'https://acme.example'],
     ['//WWW.LinkedIn.com/company/fijoya/', 'https://linkedin.com/company/fijoya'],
+    ['linkedin.com/company/fijoya?trk=public_profile', 'linkedin.com/company/fijoya'],
     ['http://linkedin.com/company/fijoya?utm_campaign=x&fbclid=abc', 'linkedin.com/company/fijoya'],
   ])('matches equivalent forms: %s', (a, b) => {
     expect(duplicateUrlKey(a)).not.toBeNull();
@@ -165,6 +166,7 @@ describe('duplicate URL evidence (separate from lookup)', () => {
     ['directory.example/A', 'directory.example/a'],
     ['directory.example/a', 'directory.example/a/'],
     ['directory.example/?ref=a', 'directory.example/?ref=b'],
+    ['directory.example/profile?trk=1', 'directory.example/profile?trk=2'],
     ['directory.example/#/a', 'directory.example/#/b'],
     ['directory.example:8443/a', 'directory.example/a'],
     ['acme.example', 'acme.example/about'],
