@@ -1096,7 +1096,7 @@ How this is built:
   keep theirs and get `superseded_by`. The facts are locked and the groups
   found again before writing, so a fact retracted meanwhile is skipped.
 - **Merge suggestions.** Two live records of the same object are suggested
-  when they share an email, phone or website domain identifier
+  when they share an email, phone or normalized full URL identity
   (`shared email`, `shared phone`, `shared domain`), or when their labels
   have a pg_trgm similarity of at least 0.6 and are at least three
   characters long (`similar names`). The reason never copies values. Only
@@ -1109,6 +1109,13 @@ How this is built:
   pending suggestions are closed as `dismissed` in the same transaction,
   so review only lists live pairs. The facts pass likewise compares only
   records that gained a fact or changed since `compared_until`.
+  URL evidence is computed from current active link fields, separately from
+  hostname-only lookup/search identifiers. It preserves paths, meaningful
+  queries, fragments and non-default ports; HTTP/HTTPS, host casing and `www`
+  are equivalent, and known tracking parameters are ignored. Bare homepages
+  of known social/provider hosts contribute no URL evidence. No migration or
+  backfill is needed. Existing pending suggestions and human decisions are
+  left unchanged; this rule only governs new suggestions.
 - **Dismissing.** `POST /v1/review/merges/:id/dismiss`, as a `user`.
 - **Merging.** `POST /v1/records/:id/merge` with `{ "recordId": "<B>",
   "values"?: {…} }`, as a `user` with the `write` scope; `values` overrides

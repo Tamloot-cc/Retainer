@@ -44,6 +44,62 @@ export function normalizeDomain(url: string): string | null {
   }
 }
 
+/** Shared services whose bare homepages do not identify their users. */
+const SHARED_LINK_HOSTS = new Set([
+  'linkedin.com',
+  'facebook.com',
+  'instagram.com',
+  'twitter.com',
+  'x.com',
+  'youtube.com',
+  'youtu.be',
+  'tiktok.com',
+  'github.com',
+  'gitlab.com',
+  'medium.com',
+  'notion.so',
+  'notion.site',
+  'google.com',
+  'docs.google.com',
+  'drive.google.com',
+  'linktr.ee',
+]);
+
+/**
+ * Duplicate evidence only; lookup/search deliberately keep normalizeDomain.
+ * Keep path case, non-default ports, query identities and fragments. Only
+ * known tracking parameters are discarded; unknown parameters stay significant.
+ */
+export function duplicateUrlKey(raw: string): string | null {
+  const input = raw.trim();
+  if (!input) return null;
+  try {
+    const url = new URL(
+      input.startsWith('//')
+        ? `https:${input}`
+        : /^[a-z][a-z0-9+.-]*:\/\//i.test(input)
+          ? input
+          : `https://${input}`,
+    );
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
+    const host = url.hostname.replace(/^www\./, '');
+    for (const key of [...url.searchParams.keys()]) {
+      if (/^utm_/i.test(key) || ['fbclid', 'gclid', 'msclkid'].includes(key.toLowerCase())) {
+        url.searchParams.delete(key);
+      }
+    }
+    let path = url.pathname;
+    // LinkedIn's profile slash is optional. Don't assume that for arbitrary sites.
+    if (host === 'linkedin.com' && /^\/(company|in|school)\/[^/]+\/$/.test(path)) {
+      path = path.slice(0, -1);
+    }
+    if (SHARED_LINK_HOSTS.has(host) && path === '/') return null;
+    return `${host}${url.port ? `:${url.port}` : ''}${path}${url.search}${url.hash}`;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * A unique value keeps its JSON type, so number 1 and text "1" never
  * collide. Text is trimmed; case is significant.

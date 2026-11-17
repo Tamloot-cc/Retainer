@@ -2,6 +2,7 @@ import type { Actor } from '@retainer/shared';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Caller } from '../../src/caller.js';
 import { RUNTIME_ROLE, type Sql } from '../../src/db/client.js';
+import { inWorkspace } from '../../src/db/tx.js';
 import { factsOf, logEventFor, remember, retractFactFor } from '../../src/memory/service.js';
 import { reviewPage } from '../../src/reads/review.js';
 import {
@@ -10,6 +11,7 @@ import {
   mergeRecord,
   withRead,
 } from '../../src/records/service.js';
+import { runSchemaChange } from '../../src/schema-engine/engine.js';
 import { consolidateWorkspace } from '../../src/worker/consolidate.js';
 import { startWorker } from '../../src/worker/index.js';
 import { createWorkspace } from '../../src/workspaces/workspaces.js';
@@ -223,7 +225,7 @@ describe('merge suggestions (4.2)', () => {
     });
     const acme2 = await createRecord(app, caller(ws), 'company', {
       name: 'ACME Industries',
-      domain: 'www.acme.example/about',
+      domain: 'http://www.acme.example/?utm_source=mail',
     });
     // Same name, different object: never suggested.
     await createRecord(app, caller(ws), 'task', { title: 'Dana Cohen' });
@@ -260,6 +262,122 @@ describe('merge suggestions (4.2)', () => {
 
     const queue = await reviewQueue(app, caller(ws, USER), 100);
     expect(queue.mergeSuggestions).toHaveLength(3);
+  });
+
+  it('still suggests shared non-unique emails and requires a human decision', async () => {
+    const ws = await newWorkspace();
+    await inWorkspace(app, ws, (tx) =>
+      runSchemaChange(tx, {
+        workspaceId: ws,
+        actor: USER,
+        scopes: ['schema:write', 'admin'],
+        operations: [
+          {
+            op: 'create_field',
+            object: 'company',
+            field: {
+              name: 'billing',
+              label: 'Billing email',
+              type: 'emails',
+            },
+          },
+        ],
+      }),
+    );
+    for (const [name, billing] of [
+      ['Granite', ' TEAM@example.test '],
+      ['Pelican', 'team@example.test'],
+    ]) {
+      await createRecord(app, caller(ws), 'company', { name, billing });
+    }
+    expect((await consolidateWorkspace(app, ws))?.mergeSuggestions).toBe(1);
+    expect((await suggestions(ws)).map(({ reason, status }) => ({ reason, status }))).toEqual([
+      { reason: 'shared email', status: 'pending' },
+    ]);
+    const [suggestion] = await db.owner<{ id: string }[]>`
+      select id from merge_suggestions where workspace_id = ${ws}`;
+    await expect(
+      dismissSuggestion(app, caller(ws), suggestion?.id as string),
+    ).rejects.toMatchObject({ status: 403 });
+    await dismissSuggestion(app, caller(ws, USER), suggestion?.id as string);
+    expect((await consolidateWorkspace(app, ws))?.mergeSuggestions).toBe(0);
+    expect((await suggestions(ws))[0]?.status).toBe('dismissed');
+  });
+
+  it('does not confuse Fijoya and Wiz through their shared LinkedIn host', async () => {
+    const ws = await newWorkspace();
+    for (const [name, slug] of [
+      ['Fijoya', 'fijoya'],
+      ['Wiz', 'wiz'],
+    ]) {
+      await createRecord(app, caller(ws), 'company', {
+        name,
+        domain: {
+          primary: { url: `https://${slug}.example` },
+          additional: [{ url: `https://linkedin.com/company/${slug}` }],
+        },
+      });
+    }
+    // Legacy domain identifiers stay broad; consolidation must not trust them.
+    const ids = await db.owner`select value from record_identifiers
+      where workspace_id = ${ws} and kind = 'domain' and value = 'linkedin.com'`;
+    expect(ids).toHaveLength(2);
+    expect((await consolidateWorkspace(app, ws))?.mergeSuggestions).toBe(0);
+    expect(await suggestions(ws)).toEqual([]);
+  });
+
+  it.each([
+    [
+      'https://linkedin.com/company/fijoya',
+      'http://WWW.linkedin.com/company/fijoya/?utm_source=mail',
+      true,
+    ],
+    ['https://directory.example/profile?id=1', 'https://directory.example/profile?id=2', false],
+    ['https://directory.example/?id=1', 'https://directory.example/?id=2', false],
+    ['https://directory.example/a', 'https://directory.example/b', false],
+    [
+      'https://directory.example/a?id=1',
+      'http://www.directory.example/a?id=1&utm_campaign=mail',
+      true,
+    ],
+    ['https://linkedin.com', 'https://www.linkedin.com/?trk=nav', false],
+    ['https://github.com', 'http://www.github.com/', false],
+    ['https://acme.example', 'http://www.acme.example/?fbclid=123', true],
+  ])('compares full link evidence: %s and %s', async (left, right, matches) => {
+    const ws = await newWorkspace();
+    for (const [name, url] of [
+      ['Granite', left],
+      ['Pelican', right],
+    ]) {
+      await createRecord(app, caller(ws), 'company', { name, domain: url });
+    }
+    expect((await consolidateWorkspace(app, ws))?.mergeSuggestions).toBe(matches ? 1 : 0);
+    expect(await suggestions(ws)).toHaveLength(matches ? 1 : 0);
+  });
+
+  it('preserves existing pending and human-decided URL suggestions', async () => {
+    const ws = await newWorkspace();
+    const ids: string[] = [];
+    for (const name of ['Granite', 'Pelican', 'Saffron']) {
+      ids.push(
+        (
+          await createRecord(app, caller(ws), 'company', {
+            name,
+            domain: `https://linkedin.com/company/${name}`,
+          })
+        ).id,
+      );
+    }
+    // Reproduce pre-fix rows without relying on the new matcher to create them.
+    for (const [i, status] of ['pending', 'accepted', 'dismissed'].entries()) {
+      const [a, b] = pair(ids[i % 3] as string, ids[(i + 1) % 3] as string);
+      await db.owner`insert into merge_suggestions
+        (workspace_id, record_a_id, record_b_id, reason, status)
+        values (${ws}, ${a}, ${b}, 'shared domain', ${status})`;
+    }
+    const before = await suggestions(ws);
+    expect((await consolidateWorkspace(app, ws))?.mergeSuggestions).toBe(0);
+    expect(await suggestions(ws)).toEqual(before);
   });
 
   it('never suggests two events, however alike (6.2)', async () => {
