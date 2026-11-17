@@ -495,17 +495,20 @@ export function RecordLink({
   inSheet = false,
   struck = false,
   avatar,
+  wrap = false,
   children,
 }: {
   id: string;
   inSheet?: boolean;
   struck?: boolean;
   avatar?: ReactNode;
+  /** Show the full name over multiple lines instead of truncating. */
+  wrap?: boolean;
   children: ReactNode;
 }) {
   const className = cn(
     'inline-flex min-w-0 max-w-full items-center gap-1.5 font-medium',
-    avatar ? 'group/record' : 'truncate',
+    avatar ? 'group/record' : wrap ? 'whitespace-normal [overflow-wrap:anywhere]' : 'truncate',
     struck ? 'text-muted-foreground line-through' : !avatar && 'hover:underline',
   );
   return inSheet ? (
@@ -517,7 +520,14 @@ export function RecordLink({
       {avatar ? (
         <>
           {avatar}
-          <span className="truncate group-hover/record:underline">{children}</span>
+          <span
+            className={cn(
+              'min-w-0 group-hover/record:underline',
+              wrap ? 'whitespace-normal [overflow-wrap:anywhere]' : 'truncate',
+            )}
+          >
+            {children}
+          </span>
         </>
       ) : (
         children
@@ -528,7 +538,14 @@ export function RecordLink({
       {avatar ? (
         <>
           {avatar}
-          <span className="truncate group-hover/record:underline">{children}</span>
+          <span
+            className={cn(
+              'min-w-0 group-hover/record:underline',
+              wrap ? 'whitespace-normal [overflow-wrap:anywhere]' : 'truncate',
+            )}
+          >
+            {children}
+          </span>
         </>
       ) : (
         children

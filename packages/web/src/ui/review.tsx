@@ -24,7 +24,7 @@ export const REVIEW_CATEGORIES = [
     icon: Copy,
     description: 'Records that may describe the same thing.',
     explanation:
-      'Compare the records, then choose whether to combine them into one. You choose which record to keep.',
+      'Compare the records and choose which values to keep. The older record is kept automatically.',
   },
   {
     value: 'unresolvedParticipants',

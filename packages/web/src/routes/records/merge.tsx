@@ -14,9 +14,6 @@ import {
   Row,
   SelectMenu,
   Stack,
-  Table,
-  Td,
-  Tr,
 } from '../../ui/index.js';
 import { ReviewActions, ReviewCard } from '../../ui/review.js';
 import {
@@ -126,36 +123,19 @@ export function MergeDialog({
         {keep && away && !same ? (
           <>
             {rows.length ? (
-              <Table
-                headers={[
-                  { label: 'Field' },
-                  { label: 'Older record' },
-                  { label: 'Newer record' },
-                  { label: 'Result' },
-                ]}
-              >
+              <div className="min-w-0 space-y-3">
                 {rows.map((row) => {
                   const Display = fields[row.field.type].Display;
                   return (
-                    <Tr key={row.field.name}>
-                      <Td first>{row.field.label}</Td>
-                      <Td>
-                        <Display
-                          field={row.field}
-                          value={row.keep}
-                          references={keep.relationReferences}
-                          compact
-                        />
-                      </Td>
-                      <Td>
-                        <Display
-                          field={row.field}
-                          value={row.merge}
-                          references={away.relationReferences}
-                          compact
-                        />
-                      </Td>
-                      <Td>
+                    <section
+                      key={row.field.name}
+                      aria-label={row.field.label}
+                      className="min-w-0 rounded-lg border border-border"
+                    >
+                      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+                        <h3 className="min-w-0 text-sm font-medium [overflow-wrap:anywhere]">
+                          {row.field.label}
+                        </h3>
                         {row.conflict ? (
                           <SelectMenu
                             label={`Value for ${row.field.label}`}
@@ -179,11 +159,29 @@ export function MergeDialog({
                         ) : (
                           <Muted>Keeps the only value</Muted>
                         )}
-                      </Td>
-                    </Tr>
+                      </div>
+                      <div className="grid min-w-0 sm:grid-cols-2">
+                        <div className="min-w-0 space-y-2 p-3 text-sm whitespace-pre-wrap [overflow-wrap:anywhere] [&_a]:whitespace-normal [&_a]:[overflow-wrap:anywhere]">
+                          <p className="text-xs text-muted-foreground">Older record</p>
+                          <Display
+                            field={row.field}
+                            value={row.keep}
+                            references={keep.relationReferences}
+                          />
+                        </div>
+                        <div className="min-w-0 space-y-2 border-t border-border p-3 text-sm whitespace-pre-wrap [overflow-wrap:anywhere] sm:border-l sm:border-t-0 [&_a]:whitespace-normal [&_a]:[overflow-wrap:anywhere]">
+                          <p className="text-xs text-muted-foreground">Newer record</p>
+                          <Display
+                            field={row.field}
+                            value={row.merge}
+                            references={away.relationReferences}
+                          />
+                        </div>
+                      </div>
+                    </section>
                   );
                 })}
-              </Table>
+              </div>
             ) : (
               <Muted>The two records hold the same values.</Muted>
             )}
@@ -231,17 +229,20 @@ export function MergeSuggestionCard({ suggestion }: { suggestion: MergeSuggestio
           {object ? <Badge>{object.labelSingular}</Badge> : null}
           <Muted>Suggested {new Date(suggestion.createdAt).toLocaleString()}</Muted>
         </Row>
-        <Row>
-          {records.map((r, i) =>
-            r ? (
-              <RecordLink key={r.id} id={r.id}>
-                {title(r)}
-              </RecordLink>
-            ) : (
-              <Muted key={suggestion.recordIds[i]}>Record unavailable</Muted>
-            ),
-          )}
-        </Row>
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+          {records.map((r, i) => (
+            <div key={r?.id ?? i} className="min-w-0 space-y-2 rounded-lg bg-muted/50 p-3">
+              <p className="text-xs text-muted-foreground">Record {i + 1}</p>
+              {r ? (
+                <RecordLink id={r.id} wrap>
+                  {title(r)}
+                </RecordLink>
+              ) : (
+                <Muted>Record unavailable</Muted>
+              )}
+            </div>
+          ))}
+        </div>
         {canMutate(session) ? (
           <ReviewActions>
             <Button

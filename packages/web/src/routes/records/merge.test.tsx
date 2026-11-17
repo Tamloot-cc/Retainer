@@ -11,7 +11,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it('keeps the older ID when opened from the newer record and allows its value to win', async () => {
+it('shows full long titles and keeps the older ID while allowing the newer value to win', async () => {
+  const originalTitle =
+    "Schedule Orchid's presentation of its AI-security solution and internal AI use to Team8 (Matt to present)";
+  const updatedTitle =
+    'Schedule a session for Orchid to present its AI-security solution and internal AI use back to the Team8 AI team.';
   const object = {
     nameSingular: 'task',
     fields: [{ name: 'title', label: 'Title', type: 'text', settings: {} }],
@@ -19,8 +23,8 @@ it('keeps the older ID when opened from the newer record and allows its value to
   const older = {
     id: 'older',
     object: 'task',
-    label: 'Original title',
-    fields: { title: 'Original title' },
+    label: originalTitle,
+    fields: { title: originalTitle },
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
     createdBy: { type: 'user', id: 'user' },
@@ -29,8 +33,8 @@ it('keeps the older ID when opened from the newer record and allows its value to
   const newer = {
     ...older,
     id: 'newer',
-    label: 'Updated title',
-    fields: { title: 'Updated title' },
+    label: updatedTitle,
+    fields: { title: updatedTitle },
     createdAt: '2026-02-01T00:00:00Z',
   };
   vi.spyOn(api, 'record').mockImplementation(async (id) => (id === older.id ? older : newer));
@@ -53,13 +57,15 @@ it('keeps the older ID when opened from the newer record and allows its value to
   );
   await screen.findByRole('button', { name: /Value for Title/ });
   expect(screen.queryByRole('radio')).toBeNull();
+  expect(screen.getByText(originalTitle, { exact: true })).toBeTruthy();
+  expect(screen.getByText(updatedTitle, { exact: true })).toBeTruthy();
   await userEvent.click(screen.getByRole('button', { name: /Value for Title/ }));
   await userEvent.click(screen.getByRole('option', { name: 'Newer record’s' }));
   await userEvent.click(screen.getByRole('button', { name: 'Merge records' }));
   await waitFor(() =>
     expect(merge).toHaveBeenCalledWith(
       older.id,
-      { recordId: newer.id, values: { title: 'Updated title' } },
+      { recordId: newer.id, values: { title: updatedTitle } },
       expect.any(String),
     ),
   );

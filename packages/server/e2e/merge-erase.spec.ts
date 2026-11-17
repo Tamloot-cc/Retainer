@@ -125,3 +125,54 @@ test('offers erasing only to admin user keys', async ({ page, retainer: r }) => 
   await expect(page.getByRole('menuitem', { name: 'Delete…' })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Erase for privacy…' })).not.toBeVisible();
 });
+
+for (const width of [1440, 390]) {
+  test(`long duplicate task titles wrap in cards and comparisons at ${width}px`, async ({
+    page,
+    retainer: r,
+  }, testInfo) => {
+    const olderTitle =
+      "Schedule Orchid's presentation of its AI-security solution and internal AI use to Team8 (Matt to present)";
+    const newerTitle =
+      "Schedule Orchid's presentation of its AI-security solution and internal AI use to Team8 (Matt and the AI team to present)";
+    for (const title of [olderTitle, newerTitle]) {
+      await r.request('/objects/task/records', { values: { title, status: 'todo' } });
+    }
+    await r.consolidate();
+    await page.setViewportSize({ width, height: 1000 });
+    await signIn(page, r.url, r.keys.user);
+    await page.goto(`${r.url}/app/?tab=mergeSuggestions`);
+    const card = page.locator('[data-review-card]').filter({ hasText: olderTitle });
+    for (const title of [olderTitle, newerTitle]) {
+      const link = card.getByRole('link', { name: title, exact: true });
+      await expect(link).toBeVisible();
+      await expect(link).toHaveCSS('white-space', 'normal');
+      expect(await link.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+      expect(
+        await link.evaluate(
+          (el) =>
+            el.getBoundingClientRect().height > Number.parseFloat(getComputedStyle(el).lineHeight),
+        ),
+      ).toBe(true);
+    }
+    expect(await card.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    const cardImage = testInfo.outputPath(`duplicate-card-${width}.png`);
+    await card.screenshot({ path: cardImage });
+    await testInfo.attach('Suggestion card', { path: cardImage, contentType: 'image/png' });
+    await card.getByRole('button', { name: /^Compare and merge/ }).click();
+    const dialog = page.getByRole('dialog', { name: 'Merge duplicate records' });
+    const titleComparison = dialog.getByRole('region', { name: 'Title', exact: true });
+    for (const title of [olderTitle, newerTitle]) {
+      await expect(titleComparison.getByText(title, { exact: true })).toBeVisible();
+    }
+    expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    expect(await titleComparison.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    const comparisonImage = testInfo.outputPath(`duplicate-comparison-${width}.png`);
+    await dialog.screenshot({ path: comparisonImage });
+    await testInfo.attach('Merge comparison', { path: comparisonImage, contentType: 'image/png' });
+    await dialog.getByRole('button', { name: 'Value for Title' }).click();
+    await page.getByRole('option', { name: 'Newer record’s' }).click();
+    await dialog.getByRole('button', { name: 'Merge records' }).click();
+    await expect(dialog).not.toBeVisible();
+  });
+}
