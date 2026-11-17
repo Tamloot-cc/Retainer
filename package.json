@@ -33,7 +33,7 @@
     "test:extensions:granola-bundle": "node scripts/test-granola-bundle.mjs"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.6.6",
+    "@biomejs/biome": "^2.6.7",
     "@types/node": "^26.6.6",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
