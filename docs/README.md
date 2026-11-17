@@ -32,6 +32,7 @@ hold the design, the data model, the write rules and the web app's design.
 | [Comments](specs/comments.md)                                       | Implemented: comments on any record, entity-only event links, the object-or-event rule     |
 | [Workspace upgrades](specs/workspace-upgrade.md)                    | Implemented: bringing existing workspaces up to new built-in definitions                   |
 | [Accounts and access](specs/accounts-and-access.md)                 | Implemented: login with Better Auth, passkeys, organizations, roles, MCP OAuth             |
+| [Hosted onboarding](specs/hosted-onboarding.md)                     | Proposed: connect Codex or Claude Code from the MCP URL, including first workspace creation |
 | [Animated mark](specs/assistant-avatar.md)                          | Implemented: the loading indicator and the assistant avatar's moods                        |
 | [Personal and workspace memory](specs/user-and-workspace-memory.md) | Draft: private memory about each person, shared memory about the workspace                 |
 | [Duplicate record classification](specs/duplicate-record-classifier.md) | Proposed: API spike, OpenAI Decisions classifier and sourced merge explanations          |
