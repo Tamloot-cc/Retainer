@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FieldState } from '../schema/types.js';
 import {
   canonicalUniqueValue,
+  duplicateUrlKey,
   identifiersFor,
   labelOf,
   lookupValue,
@@ -142,5 +143,68 @@ describe('label and search text', () => {
       'dana@Acme.com d@acme.com dana@globex.io Pricing https://www.acme.com/pricing ' +
         'not a url acme.com globex.io',
     );
+  });
+});
+
+describe('duplicate URL evidence (separate from lookup)', () => {
+  it.each([
+    ['http://WWW.Acme.example', 'https://acme.example/'],
+    ['acme.example/?utm_source=mail&gclid=123', 'https://acme.example'],
+    ['//WWW.LinkedIn.com/company/fijoya/', 'https://linkedin.com/company/fijoya'],
+    ['linkedin.com/company/fijoya?trk=public_profile', 'linkedin.com/company/fijoya'],
+    ['directory.example/profile?q=x&utm_source=y&', 'directory.example/profile?q=x'],
+    ['directory.example/profile?&q=x&&utm_source=y&&', 'directory.example/profile?q=x'],
+    [
+      'directory.example/profile?q=hello%20world&utm_source=x',
+      'directory.example/profile?q=hello%20world',
+    ],
+    ['directory.example/profile?gclid=x&q=~hello', 'directory.example/profile?q=~hello'],
+    [
+      'directory.example/profile?utm_source=x&q=%7Ehello&fbclid=y',
+      'directory.example/profile?q=%7Ehello',
+    ],
+
+    ['http://linkedin.com/company/fijoya?utm_campaign=x&fbclid=abc', 'linkedin.com/company/fijoya'],
+  ])('matches equivalent forms: %s', (a, b) => {
+    expect(duplicateUrlKey(a)).not.toBeNull();
+    expect(duplicateUrlKey(a)).toBe(duplicateUrlKey(b));
+  });
+
+  it.each([
+    ['linkedin.com/company/fijoya', 'linkedin.com/company/wiz'],
+    ['directory.example/profile?id=1', 'directory.example/profile?id=2'],
+    ['directory.example/?id=1', 'directory.example/?id=2'],
+    ['directory.example/a', 'directory.example/b'],
+    ['directory.example/A', 'directory.example/a'],
+    ['directory.example/a', 'directory.example/a/'],
+    ['directory.example/?ref=a', 'directory.example/?ref=b'],
+    ['directory.example/profile?trk=1', 'directory.example/profile?trk=2'],
+    ['directory.example/#/a', 'directory.example/#/b'],
+    ['directory.example:8443/a', 'directory.example/a'],
+    ['acme.example', 'acme.example/about'],
+  ])('preserves distinct identities: %s', (a, b) => {
+    expect(duplicateUrlKey(a)).not.toBe(duplicateUrlKey(b));
+  });
+
+  it.each([
+    'https://linkedin.com/',
+    'http://www.facebook.com?utm_source=mail',
+    'https://github.com',
+    'https://docs.google.com/?ref=nav',
+    'ftp://acme.example',
+    'https://user:pass@acme.example',
+    'not a url',
+    '',
+  ])('rejects shared homepages or unusable URLs: %s', (url) => {
+    expect(duplicateUrlKey(url)).toBeNull();
+  });
+
+  it('does not narrow stored identifiers or search normalization', () => {
+    const links = field({ type: 'links' });
+    for (const url of ['linkedin.com/company/fijoya', 'linkedin.com/company/wiz']) {
+      expect(identifiersFor(links, { primary: { url }, additional: [] })).toEqual([
+        { kind: 'domain', value: 'linkedin.com' },
+      ]);
+    }
   });
 });

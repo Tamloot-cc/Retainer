@@ -1,7 +1,9 @@
+import type { LinksValue } from '@retainer/shared';
 import type { Fragment } from 'postgres';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, lockPrivacyShared, type Tx, tryLockConsolidator } from '../db/tx.js';
 import { liveFactSource } from '../memory/events.js';
+import { duplicateUrlKey } from '../records/derive.js';
 
 /**
  * The consolidator (4.2), run per workspace on a schedule. It never calls a
@@ -12,7 +14,7 @@ import { liveFactSource } from '../memory/events.js';
  *   duplicate's source links. The duplicates are kept. Near-duplicates and
  *   contradictions are left alone.
  * - Duplicate records are suggested, never merged: two live records of one
- *   object that share an email, phone or website domain, or whose labels
+ *   object that share an email, phone or full URL identity, or whose labels
  *   are trigram-similar. A person decides (`POST /v1/records/:id/merge` or
  *   dismiss). A decided pair is never suggested again. Events are never
  *   suggested: each is something that happened, logged from its own source.
@@ -176,15 +178,61 @@ async function suggestMerges(
   const isNew = (a: Fragment, b: Fragment) => tx`not exists (
     select 1 from merge_suggestions m
     where m.workspace_id = ${workspaceId} and m.record_a_id = ${a} and m.record_b_id = ${b})`;
+  // Derive URL evidence from current winning values, including old records:
+  // persisted domain identifiers intentionally remain broad for lookup/search.
+  // Use the existing domain index to narrow the read to changed records and
+  // their possible counterparts. An idle incremental run reads no link values.
+  // Domains only prefilter candidates; full URL keys decide whether they match.
+  const links = await tx<{ id: string; value: LinksValue | null }[]>`
+    with changed_domains as (
+      select distinct a.object_type_id, i.value
+      from records a
+      join record_identifiers i on i.record_id = a.id and i.kind = 'domain'
+      where a.workspace_id = ${workspaceId} and a.deleted_at is null
+        and ${changed()} and ${entity}
+    )
+    select r.id, r.data -> f.key as value
+    from records r
+    join fields f on f.object_type_id = r.object_type_id
+      and f.workspace_id = r.workspace_id and f.type = 'links' and f.status = 'active'
+    join object_types o on o.id = r.object_type_id and o.class = 'entity'
+    where r.workspace_id = ${workspaceId} and r.deleted_at is null
+      and r.data -> f.key is not null
+      and exists (
+        select 1 from record_identifiers i
+        join changed_domains d on d.value = i.value and d.object_type_id = r.object_type_id
+        where i.workspace_id = ${workspaceId} and i.record_id = r.id and i.kind = 'domain')`;
+  const urlRecords: string[] = [];
+  const urlKeys: string[] = [];
+  for (const { id, value } of links) {
+    if (!value) continue;
+    const keys = new Set(
+      [value.primary, ...(value.additional ?? [])]
+        .flatMap((link) => (link ? [duplicateUrlKey(link.url)] : []))
+        .filter((key): key is string => key !== null),
+    );
+    for (const key of keys) {
+      urlRecords.push(id);
+      urlKeys.push(key);
+    }
+  }
   const shared = await tx`
+    with identifiers as (
+      select record_id, kind, value from record_identifiers
+      where workspace_id = ${workspaceId} and kind in ('email', 'phone')
+      union all
+      -- Keep the existing "shared domain" review reason for URL evidence.
+      select record_id, 'domain', value
+      from unnest(${urlRecords}::uuid[], ${urlKeys}::text[]) as urls(record_id, value)
+    )
     insert into merge_suggestions (workspace_id, record_a_id, record_b_id, reason, status)
     select ${workspaceId}::uuid, pair.a, pair.b, 'shared ' || pair.kind, 'pending'
     from (
       select distinct on (least(x.record_id, y.record_id), greatest(x.record_id, y.record_id))
         least(x.record_id, y.record_id) as a, greatest(x.record_id, y.record_id) as b, x.kind
       from records a
-      join record_identifiers x on x.record_id = a.id and x.kind in ('email', 'phone', 'domain')
-      join record_identifiers y on y.workspace_id = x.workspace_id and y.kind = x.kind
+      join identifiers x on x.record_id = a.id
+      join identifiers y on y.kind = x.kind
         and y.value = x.value and y.record_id <> x.record_id
       join records b on b.id = y.record_id and b.deleted_at is null
         and b.object_type_id = a.object_type_id
