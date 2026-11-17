@@ -43,10 +43,11 @@ first schema from the way they work and the data they already have.
    and verifies that it reached the intended workspace before reporting success
    or proposing changes. A valid connection can be reused when it reaches
    that workspace.
-3. If schema setup is pending, the agent follows `discover_schema`. It uses
-   the sources and context it already has, asks only for missing information,
-   and proposes the first schema. It applies the schema after the user approves
-   it. An initialized workspace skips this step.
+3. If schema setup is pending or `describe_schema` reports `initialized: false`,
+   the agent follows `discover_schema`. It uses the sources and context it
+   already has, asks only for missing information, and proposes the first
+   schema or additions to the existing schema. It applies the proposal after
+   the user approves it. An initialized workspace skips this step.
 
 ## Workspace before schema setup
 
@@ -62,6 +63,11 @@ The setup screen shows the workspace name, brief instructions, and the
 workspaces and signing out. The sidebar, records, and workspace settings
 appear after the approved schema is applied successfully. If applying the
 schema fails, the workspace stays in setup and the user can retry.
+
+The setup screen is reserved for workspaces created in the schema pending
+state. Existing workspaces with built-in types keep their normal workspace UI
+and remain eligible for agent-led schema discovery when `describe_schema`
+reports `initialized: false`.
 
 ## Requirements
 
@@ -116,6 +122,7 @@ Check both entry paths independently in Codex and Claude Code.
 | Pending invitation | The user can accept the invitation and continue with an accessible team workspace without an automatically created separate workspace. |
 | Multiple workspaces or an existing connection | The web handoff keeps the intended workspace. In the agent-first path, the user can select a workspace. The agent verifies the selected workspace before proceeding. |
 | Schema setup pending | The setup screen shows no record navigation. The agent proposes a schema from available sources and waits for approval. The full workspace UI appears with the approved types after a successful apply. |
+| Existing workspace with built-in types and `initialized: false` | The normal workspace UI remains available. The agent can run `discover_schema` and propose additions for the user to approve. |
 | Initialized workspace | The agent connects without repeating initial schema setup. |
 | Cancellation, expired authorization, or concurrent attempts | No unintended grant or duplicate default workspace. A later attempt can resume with the existing workspace. |
 | Client requires reload or restart | The agent gives the required step and verifies the connection before reporting success. |
