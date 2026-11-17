@@ -24,7 +24,11 @@ export type UpgradeReport = {
   aboutEventLinks: { workspace: string; count: number }[];
 };
 
-type WorkspaceRow = { templates: AppliedTemplate[]; definitions_digest: string | null };
+type WorkspaceRow = {
+  templates: AppliedTemplate[];
+  definitions_digest: string | null;
+  schema_from_scratch: boolean;
+};
 
 type WorkspaceUpgrade = { changed: boolean; conflicts: UpgradeConflict[] };
 
@@ -52,9 +56,9 @@ async function upgradeWorkspace(sql: Sql, workspaceId: string): Promise<Workspac
     await lockPrivacyShared(tx, workspaceId);
     await lockSchemaExclusive(tx, workspaceId);
     const [row] = await tx<WorkspaceRow[]>`
-      select templates, definitions_digest from workspaces where id = ${workspaceId}`;
+      select templates, definitions_digest, schema_from_scratch from workspaces where id = ${workspaceId}`;
     if (!row) return { changed: false, conflicts: [] };
-    const definitions = definitionsFor(row.templates);
+    const definitions = definitionsFor(row.templates, row.schema_from_scratch);
     if (row.definitions_digest === definitions.digest) {
       return { changed: false, conflicts: [] };
     }
@@ -101,9 +105,10 @@ async function upgradeWorkspace(sql: Sql, workspaceId: string): Promise<Workspac
 export async function upgradeWorkspaces(sql: Sql): Promise<UpgradeReport> {
   const report: UpgradeReport = { upgraded: [], conflicts: [], failed: [], aboutEventLinks: [] };
   const rows = await sql<(WorkspaceRow & { id: string; slug: string })[]>`
-    select id, slug, templates, definitions_digest from workspaces order by created_at, id`;
+    select id, slug, templates, definitions_digest, schema_from_scratch from workspaces order by created_at, id`;
   for (const row of rows) {
-    if (row.definitions_digest === definitionsFor(row.templates).digest) continue;
+    if (row.definitions_digest === definitionsFor(row.templates, row.schema_from_scratch).digest)
+      continue;
     try {
       const { changed, conflicts } = await upgradeWorkspace(sql, row.id);
       // Outside the upgrade: every write in the workspace waits on its lock.
@@ -136,6 +141,11 @@ export async function upgradeWorkspaces(sql: Sql): Promise<UpgradeReport> {
 
 /** Read-only and deliberately conservative, including unresolved conflicts. */
 export async function workspaceUpgradesPending(sql: Sql): Promise<boolean> {
-  const rows = await sql<WorkspaceRow[]>`select templates, definitions_digest from workspaces`;
-  return rows.some((row) => row.definitions_digest !== definitionsFor(row.templates).digest);
+  const rows = await sql<
+    WorkspaceRow[]
+  >`select templates, definitions_digest, schema_from_scratch from workspaces`;
+  return rows.some(
+    (row) =>
+      row.definitions_digest !== definitionsFor(row.templates, row.schema_from_scratch).digest,
+  );
 }

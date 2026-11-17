@@ -322,10 +322,8 @@ describe('event history and schema guidance', () => {
 
   it('tells agents to log conversations with a medium, and channel apart from medium', async () => {
     const instructions = agent.getInstructions() ?? '';
-    expect(instructions).toContain(
-      'Log meetings, calls, emails and chats as conversation with a medium. Use\nanother event ' +
-        'type only when the workspace defines one for that kind of event.',
-    );
+    expect(instructions).toContain('log meetings, calls, emails and chats with its medium field.');
+    expect(instructions).toContain('has no applicable event type, propose one before logging');
     const byName = await toolsByName(agent);
     expect(byName.get('log_event')?.description).toContain(
       'Log meetings, calls, emails and chats as conversation with a medium.',

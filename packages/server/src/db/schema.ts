@@ -231,6 +231,13 @@ export const oauthClients = pgTable(
     clientId: text('client_id').notNull().unique(),
     clientSecret: text('client_secret'),
     clientDiscoveryId: text('client_discovery_id'),
+    /** Public native client pre-registered for this workspace's setup prompt. */
+    onboardingWorkspaceId: uuid('onboarding_workspace_id').references(
+      (): AnyPgColumn => workspaces.id,
+      {
+        onDelete: 'cascade',
+      },
+    ),
     disabled: boolean('disabled').default(false),
     skipConsent: boolean('skip_consent'),
     enableEndSession: boolean('enable_end_session'),
@@ -264,7 +271,12 @@ export const oauthClients = pgTable(
     referenceId: text('reference_id'),
     metadata: jsonb('metadata'),
   },
-  (t) => [index('oauth_clients_user_idx').on(t.userId)],
+  (t) => [
+    index('oauth_clients_user_idx').on(t.userId),
+    index('oauth_clients_onboarding_workspace_idx')
+      .on(t.onboardingWorkspaceId)
+      .where(sql`${t.onboardingWorkspaceId} is not null`),
+  ],
 );
 
 /** The protected resources tokens are issued for: Retainer's /mcp. */
@@ -530,7 +542,9 @@ export const workspaces = pgTable(
     settings: jsonb('settings').$type<WorkspaceSettings>().notNull().default({}),
     /** Templates applied to this workspace, with their versions (3.1). */
     templates: jsonb('templates').$type<AppliedTemplate[]>().notNull().default([]),
-    /** Set when a template (including `blank`) is first applied. */
+    /** Only internal definitions are seeded/upgraded in a workspace designed from scratch. */
+    schemaFromScratch: boolean('schema_from_scratch').notNull().default(false),
+    /** First template on a legacy workspace, or first visible schema on a scratch workspace. */
     initializedAt: timestamp('initialized_at', { withTimezone: true }),
     /**
      * Digest of the built-in definitions (base, protection, applied templates)

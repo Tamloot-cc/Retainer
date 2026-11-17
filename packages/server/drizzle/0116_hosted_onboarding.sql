@@ -1,0 +1,4 @@
+ALTER TABLE "oauth_clients" ADD COLUMN "onboarding_workspace_id" uuid;--> statement-breakpoint
+ALTER TABLE "workspaces" ADD COLUMN "schema_from_scratch" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "oauth_clients" ADD CONSTRAINT "oauth_clients_onboarding_workspace_id_workspaces_id_fk" FOREIGN KEY ("onboarding_workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "oauth_clients_onboarding_workspace_idx" ON "oauth_clients" USING btree ("onboarding_workspace_id") WHERE "oauth_clients"."onboarding_workspace_id" is not null;

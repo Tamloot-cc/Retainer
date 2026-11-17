@@ -5,6 +5,7 @@ import { type Account, account as accountApi } from '../api/account.js';
 import { Button, Muted, Notice, Stack } from '../ui/index.js';
 import { allWorkspaces } from './context.js';
 import { APP_SCOPE_WORDS, capital, withoutSignInError } from './format.js';
+import { NeedWorkspace } from './onboarding.js';
 import { AccountFrame } from './screens.js';
 
 /**
@@ -67,8 +68,12 @@ function PersonConsent({ account }: { account: Account }) {
     queryFn: () => accountApi.oauthClient(clientId),
     retry: false,
   });
-  const reachable = allWorkspaces(account);
-  const [picked, setPicked] = useState(reachable.length === 1 ? reachable[0]?.workspace.id : '');
+  const boundWorkspace = client.data?.workspaceId;
+  const reachable = allWorkspaces(account).filter(
+    ({ workspace }) => !boundWorkspace || workspace.id === boundWorkspace,
+  );
+  const [selected, setSelected] = useState('');
+  const picked = reachable.length === 1 ? reachable[0]?.workspace.id : selected;
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   const name = client.data?.name ?? 'This app';
@@ -97,17 +102,37 @@ function PersonConsent({ account }: { account: Account }) {
         <Notice error>{(client.error as Error).message}</Notice>
       </AccountFrame>
     );
+  if (!client.data)
+    return (
+      <AccountFrame title="Connecting to Retainer" account={account}>
+        <Notice>Checking the connection request…</Notice>
+      </AccountFrame>
+    );
   return (
     <AccountFrame
       title={`Connect ${name} to Retainer`}
+      signOutTo={window.location.pathname + window.location.search}
       description={`${name} will work in one workspace, as ${account.user.name || account.user.email}.`}
       account={account}
     >
       {reachable.length === 0 ? (
         <Stack>
-          <Notice>
-            You have no workspace yet. <a href="/app/">Create one</a>, then connect {name} again.
-          </Notice>
+          {boundWorkspace ? (
+            <Notice>
+              You don't have access to the workspace in this setup prompt. Sign in with the account
+              that can open it.
+            </Notice>
+          ) : account.hostedOnboarding ? (
+            <NeedWorkspace
+              account={account}
+              oauthQuery={window.location.search.slice(1)}
+              onWorkspace={reloadConsent}
+            />
+          ) : (
+            <Notice>
+              You have no workspace yet. <a href="/app/">Create one</a>, then connect {name} again.
+            </Notice>
+          )}
           {error ? <Notice error>{error}</Notice> : null}
           <div>
             {/* Tells the app no, so it stops waiting. */}
@@ -130,7 +155,7 @@ function PersonConsent({ account }: { account: Account }) {
                   name="workspace"
                   value={workspace.id}
                   checked={picked === workspace.id}
-                  onChange={() => setPicked(workspace.id)}
+                  onChange={() => setSelected(workspace.id)}
                   className="mt-1"
                 />
                 <span>
@@ -145,6 +170,7 @@ function PersonConsent({ account }: { account: Account }) {
                   </span>
                   <span className="block text-muted-foreground">
                     Your role: {capital(workspace.role)}
+                    {reachable.length > 1 ? ` · ${workspace.slug}` : ''}
                   </span>
                 </span>
               </label>
@@ -173,11 +199,7 @@ function PersonConsent({ account }: { account: Account }) {
           ) : null}
           {error ? <Notice error>{error}</Notice> : null}
           <div className="flex gap-2">
-            <Button
-              variant="primary"
-              disabled={!picked || busy || !client.data}
-              onClick={() => void answer(true)}
-            >
+            <Button variant="primary" disabled={!picked || busy} onClick={() => void answer(true)}>
               Allow
             </Button>
             <Button disabled={busy} onClick={() => void answer(false)}>
@@ -188,6 +210,10 @@ function PersonConsent({ account }: { account: Account }) {
       )}
     </AccountFrame>
   );
+}
+
+function reloadConsent() {
+  window.location.reload();
 }
 
 /** Workspace grants use the reviewed installation's identity, independently of the installer. */

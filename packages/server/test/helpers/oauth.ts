@@ -11,7 +11,28 @@ import { ORIGIN } from './accounts.js';
 /** Claude's client metadata document, as claude.ai served it on November 7, 2026. */
 export const CLAUDE_CLIENT_ID = 'https://claude.ai/oauth/mcp-oauth-client-metadata';
 export const CLAUDE_REDIRECT = 'https://claude.ai/api/mcp/auth_callback';
+export const CLAUDE_CODE_CLIENT_ID = 'https://claude.ai/oauth/claude-code-client-metadata';
+export const CODEX_CLIENT_ID = 'https://chatgpt.com/oauth/codex/client.json';
 export const CLIENT_DOCUMENTS: Record<string, unknown> = {
+  [CLAUDE_CODE_CLIENT_ID]: {
+    client_id: CLAUDE_CODE_CLIENT_ID,
+    client_name: 'Claude Code',
+    client_uri: 'https://claude.ai',
+    redirect_uris: ['http://localhost/callback', 'http://127.0.0.1/callback'],
+    grant_types: ['authorization_code', 'refresh_token'],
+    response_types: ['code'],
+    token_endpoint_auth_method: 'none',
+  },
+  [CODEX_CLIENT_ID]: {
+    client_id: CODEX_CLIENT_ID,
+    client_name: 'Codex',
+    client_uri: 'https://chatgpt.com/codex',
+    application_type: 'native',
+    redirect_uris: ['http://127.0.0.1/callback', 'http://localhost/callback'],
+    grant_types: ['authorization_code', 'refresh_token'],
+    response_types: ['code'],
+    token_endpoint_auth_method: 'none',
+  },
   [CLAUDE_CLIENT_ID]: {
     client_id: CLAUDE_CLIENT_ID,
     client_name: 'Claude',

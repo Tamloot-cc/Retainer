@@ -73,6 +73,7 @@ export type SchemaDescription = {
   workspace: Session['workspace'] & {
     schemaVersion: number;
     initialized: boolean;
+    schemaFromScratch?: boolean;
     templates: { name: string; version: number; appliedAt: string }[];
   };
   objects: ObjectView[];

@@ -32,6 +32,7 @@ export function createControlHandler(
   setLogLevel(config.LOG_LEVEL);
   const app = createAccountsServer({
     config,
+    hostedOnboarding: true,
     sql,
     authSql,
     // API Gateway's or, behind CloudFront, CloudFront's view of the caller;

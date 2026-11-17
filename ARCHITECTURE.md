@@ -33,7 +33,7 @@ design as of the first release (0.1.0).
 
 | Table            | Holds                                                                                                                                                                                      |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `object_types`   | The kinds of things tracked: `person`, `company`, `task` and the base event types in every workspace, more from templates (3.1), plus custom objects. `class` is `entity` or `event` (1.3) |
+| `object_types`   | The kinds of things tracked: `person`, `company`, `task` and the base event types in seeded workspaces, more from templates (3.1), plus custom objects. Hosted onboarding starts with only hidden internal types. `class` is `entity` or `event` (1.3) |
 | `fields`         | The fields of each object: type, settings, flags (`is_nullable`, `is_unique`, `is_filterable`, `is_searchable`), and `core_role` (`title` or `summary`) on an event type's core fields     |
 | `schema_changes` | Every applied, proposed, rejected or failed change, with its operations and actor                                                                                                          |
 
@@ -81,6 +81,12 @@ itself is not: an unused one can be deleted like any object.
 (`person`, `company`, `task`) or `baseField` (`taskStatus`,
 `taskDueDate`), so a client finds them after a rename without reading
 universal IDs.
+
+New hosted workspaces start with `schema_from_scratch` and seed only the
+hidden note and memory types. Their first applied change with a visible
+type stamps `initialized_at` in the same transaction that applies the
+schema. Definition upgrades follow the workspace's seed mode, so they
+never introduce the standard types in a workspace designed from scratch.
 
 Workspaces carry a `schema_version` that increments on every applied change.
 API and MCP schemas are cached per `(workspace, schema_version)`.

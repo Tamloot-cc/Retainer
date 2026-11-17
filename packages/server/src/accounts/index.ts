@@ -14,6 +14,7 @@ export { CLIENT_IP_HEADER } from './auth.js';
  */
 export function createAccountsServer(input: {
   config: Config;
+  hostedOnboarding?: boolean;
   /** A connection as the control role. */
   sql: Sql;
   /**
@@ -42,6 +43,7 @@ export function createAccountsServer(input: {
   });
   return createAccountsApp({
     auth,
+    ...(input.hostedOnboarding ? { hostedOnboarding: true } : {}),
     sql: input.sql,
     publicOrigin,
     clientIp: input.clientIp,

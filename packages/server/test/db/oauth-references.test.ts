@@ -10,6 +10,7 @@ import { expect, inject, it } from 'vitest';
 import { createSql } from '../../src/db/client.js';
 import { runMigrations } from '../../src/db/migrate.js';
 import { inWorkspace } from '../../src/db/tx.js';
+import { createOrganization } from '../../src/workspaces/organizations.js';
 import { createWorkspace } from '../../src/workspaces/workspaces.js';
 import { databaseUrl, useTestDatabase } from '../helpers/db.js';
 
@@ -42,7 +43,12 @@ it('preserves existing person grants and bootstraps concurrent/new workspaces be
     } finally {
       await migrator.end();
     }
-    const workspace = await createWorkspace(sql, { name: 'Legacy OAuth' });
+    // Use the historical columns before booting the current workspace code.
+    const organization = await createOrganization(sql, { name: 'Legacy OAuth' });
+    const [workspace] = await sql<{ id: string }[]>`
+      insert into workspaces(organization_id,slug,name)
+      values(${organization.id},'legacy-oauth','Legacy OAuth') returning id`;
+    if (!workspace) throw new Error('missing legacy workspace');
     const [user] =
       await sql`insert into users(name,email) values('Legacy','legacy@example.test') returning id`;
     await sql`insert into oauth_clients(client_id,redirect_uris) values('legacy-client',array['https://app.example/callback'])`;
