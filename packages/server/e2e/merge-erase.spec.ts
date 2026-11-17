@@ -151,7 +151,8 @@ for (const width of [1440, 390]) {
       expect(
         await link.evaluate(
           (el) =>
-            el.getBoundingClientRect().height > Number.parseFloat(getComputedStyle(el).lineHeight),
+            el.getBoundingClientRect().height >
+            Number.parseFloat(el.ownerDocument.defaultView?.getComputedStyle(el).lineHeight ?? '0'),
         ),
       ).toBe(true);
     }
