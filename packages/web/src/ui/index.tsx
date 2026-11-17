@@ -9,6 +9,7 @@ import {
   type HTMLAttributes,
   type InputHTMLAttributes,
   lazy,
+  type PointerEvent,
   type ReactNode,
   type Ref,
   useContext,
@@ -163,12 +164,52 @@ export function Muted({ children, small = false }: { children: ReactNode; small?
     <span className={cn('text-muted-foreground', small ? 'text-xs' : 'text-sm')}>{children}</span>
   );
 }
-/** A short note inside a button, after its label, in the button's own colour: "Last used". */
-export function ButtonNote({ children }: { children: ReactNode }) {
+/** A full-width button with an optional status frame and pointer label. */
+export function BadgedButton({
+  badge,
+  ...props
+}: Pick<ComponentProps<typeof Button>, 'children' | 'disabled' | 'onClick' | 'variant'> & {
+  badge?: string;
+}) {
+  const label = useRef<HTMLSpanElement>(null);
+
+  function showLabel(event: PointerEvent<HTMLButtonElement>) {
+    if (!label.current || event.pointerType === 'touch') return;
+    const { offsetWidth, offsetHeight, style } = label.current;
+    const left = Math.max(
+      6,
+      Math.min(event.clientX - offsetWidth / 2, window.innerWidth - offsetWidth - 6),
+    );
+    const top = Math.max(6, event.clientY - offsetHeight - 11);
+    style.left = `${left}px`;
+    style.top = `${top}px`;
+    style.visibility = 'visible';
+  }
+
+  function hideLabel() {
+    if (label.current) label.current.style.visibility = 'hidden';
+  }
+
   return (
-    <span className="rounded-sm border border-current/30 px-1.5 py-px text-xs font-normal opacity-80">
-      {children}
-    </span>
+    <div className={badge ? 'rounded-md outline outline-offset-4 outline-[#FF603F]/60' : undefined}>
+      <Button
+        {...props}
+        className="flex w-full"
+        aria-description={badge}
+        onPointerMove={badge ? showLabel : undefined}
+        onPointerLeave={badge ? hideLabel : undefined}
+        onPointerCancel={badge ? hideLabel : undefined}
+      />
+      {badge ? (
+        <span
+          ref={label}
+          aria-hidden="true"
+          className="pointer-events-none invisible fixed z-50 rounded-md border border-[#FF603F]/60 bg-[#111B21] px-2 py-0.5 text-[10px] leading-3 font-semibold whitespace-nowrap text-[#FF603F]"
+        >
+          {badge}
+        </span>
+      ) : null}
+    </div>
   );
 }
 /** With `onDismiss`, a close button sits at its end. */

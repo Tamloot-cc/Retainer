@@ -724,8 +724,10 @@ for someone signed in with Google as well as for an agent.
 - **Sign in.** "Continue with Google" and "Use a passkey". Key mode keeps today's
   screen. _As built:_ "Continue with Microsoft" too, when the server has it; the page
   asks `GET /account/providers` and shows a button for each provider that is on.
-  The button for the way this browser last signed in says "Last used", from the
-  `retainer.last_sign_in` cookie (4.12); it stays after sign-out.
+  A coral outline marks the way this browser last signed in. On hover, a
+  "Last used" label follows just above the pointer. The button also has an
+  accessible description. The `retainer.last_sign_in` cookie (4.12) keeps the
+  hint after sign-out.
 - **First run.** "Name your workspace", then the existing flow. The word organization
   does not appear.
 - **URLs.** `/app/w/<slug>/...` in accounts mode, and `/app/...` as today in key
