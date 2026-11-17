@@ -100,6 +100,41 @@ test('Home combines conversations and grouped record updates, preserves filters,
     await page.screenshot({ path: '/tmp/retainer-home-mobile.png', animations: 'disabled' });
 });
 
+test('the Home feed and sidebar scroll independently of the document', async ({
+  page,
+  retainer: r,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 400 });
+  const { record } = await r.request('/objects/company/records', { values: { name: 'Acme' } });
+  for (let i = 0; i < 4; i++) {
+    await r.request('/events', {
+      type: 'conversation',
+      channel: 'zoom',
+      occurredAt: new Date().toISOString(),
+      title: `Call ${i + 1}`,
+      about: [record.id],
+    });
+  }
+  await signIn(page, r.url, r.keys.user);
+  const firstCall = page.getByRole('button', { name: 'Call 4', exact: true });
+  await expect(firstCall).toBeInViewport();
+
+  // Linked-record labels below the fold must stay inside the feed's scroll area.
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(400);
+  const nav = page.getByRole('navigation', { name: 'Main navigation' });
+  await nav.hover();
+  await page.mouse.wheel(0, 1200);
+  await expect.poll(() => nav.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await expect(firstCall).toBeInViewport();
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+
+  await firstCall.hover();
+  await page.mouse.wheel(0, 1200);
+  await expect(firstCall).not.toBeInViewport();
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeInViewport();
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+});
+
 test('an empty workspace welcomes people, and old activity and review links still work', async ({
   page,
   retainer: r,

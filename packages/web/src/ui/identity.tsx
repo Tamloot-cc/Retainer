@@ -83,7 +83,7 @@ export function IdentityTag({
   return (
     <span
       data-color={color ?? categoryColor(identity)}
-      className="category-tag inline-flex min-w-0 max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-xs"
+      className="category-tag relative inline-flex min-w-0 max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-xs"
     >
       {children}
     </span>
