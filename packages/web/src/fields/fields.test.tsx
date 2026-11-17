@@ -266,6 +266,12 @@ describe('list cells', () => {
 });
 
 describe('text', () => {
+  it('isolates RTL text in left-aligned compact cells', () => {
+    render(<FieldDisplay field={f('text')} value="שלום Retainer" compact textLines={2} />);
+    const text = screen.getByText('שלום Retainer');
+    expect(text.getAttribute('dir')).toBe('auto');
+    expect(text.style.textAlign).toBe('left');
+  });
   it('keeps compact previews bounded outside the grid, including merge comparisons', () => {
     const value = 'x'.repeat(100);
     render(<FieldDisplay field={f('text')} value={value} compact />);

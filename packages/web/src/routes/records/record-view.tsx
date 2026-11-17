@@ -8,9 +8,11 @@ import {
 } from '@retainer/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { History, Maximize2, Pencil } from 'lucide-react';
+import { FileText, History, Maximize2, Pencil } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import { FieldPicker, pickerFor } from '../../fields/common.js';
 import { fields } from '../../fields/index.js';
@@ -297,7 +299,7 @@ export function RecordView({
 }
 
 /** One field: its value with provenance, edited in place when clicked. */
-function FieldProperty({
+export function FieldProperty({
   record,
   field,
   apiName,
@@ -312,6 +314,7 @@ function FieldProperty({
 }) {
   const { session } = useWorkspace();
   const [editing, setEditing] = useState(false);
+  const [markdown, setMarkdown] = useState(false);
   const editButton = useRef<HTMLButtonElement>(null);
   const Display = fields[field.type].Display;
   function done(outside = false) {
@@ -328,6 +331,18 @@ function FieldProperty({
       editor={editing ? <InlineEditor record={record} field={field} onDone={done} /> : null}
       actions={
         <>
+          {field.type === 'text' && record.fields[field.name] ? (
+            <Button
+              variant="ghost"
+              size="iconSmall"
+              aria-label={`${markdown ? 'Show plain text' : 'Render Markdown'} for ${field.label}`}
+              title={markdown ? 'Show plain text' : 'Render Markdown'}
+              aria-pressed={markdown}
+              onClick={() => setMarkdown(!markdown)}
+            >
+              <FileText size={13} />
+            </Button>
+          ) : null}
           {editable ? (
             <Button
               ref={editButton}
@@ -357,11 +372,41 @@ function FieldProperty({
         provenance={record.provenance?.[field.name]}
         viewer={session.actor}
       >
-        <Display
-          field={field}
-          value={record.fields[field.name]}
-          references={record.relationReferences}
-        />
+        {markdown &&
+        typeof record.fields[field.name] === 'string' &&
+        record.fields[field.name] !== '' ? (
+          <div
+            dir="auto"
+            className="whitespace-normal [&_p]:my-2 [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:ps-6 [&_ol]:ps-6 [&_a]:underline [&_pre]:overflow-auto [&_pre]:text-left"
+            style={{ textAlign: 'start' }}
+          >
+            <Markdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                p: ({ node: _, ...props }) => <p {...props} dir="auto" />,
+                li: ({ node: _, ...props }) => <li {...props} dir="auto" />,
+                h1: ({ node: _, ...props }) => <h1 {...props} dir="auto" />,
+                h2: ({ node: _, ...props }) => <h2 {...props} dir="auto" />,
+                h3: ({ node: _, ...props }) => <h3 {...props} dir="auto" />,
+                h4: ({ node: _, ...props }) => <h4 {...props} dir="auto" />,
+                h5: ({ node: _, ...props }) => <h5 {...props} dir="auto" />,
+                h6: ({ node: _, ...props }) => <h6 {...props} dir="auto" />,
+                blockquote: ({ node: _, ...props }) => <blockquote {...props} dir="auto" />,
+                th: ({ node: _, ...props }) => <th {...props} dir="auto" />,
+                td: ({ node: _, ...props }) => <td {...props} dir="auto" />,
+                pre: ({ node: _, ...props }) => <pre {...props} dir="ltr" />,
+              }}
+            >
+              {record.fields[field.name] as string}
+            </Markdown>
+          </div>
+        ) : (
+          <Display
+            field={field}
+            value={record.fields[field.name]}
+            references={record.relationReferences}
+          />
+        )}
       </SourcedValue>
     </Property>
   );
