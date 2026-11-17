@@ -13,7 +13,13 @@ import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, WorkspaceContext } from '../../api/client.js';
 import { pointsAt } from './record-memory.js';
-import { InlineEditor, polymorphicLinksTo, RecordView, sameValue } from './record-view.js';
+import {
+  FieldProperty,
+  InlineEditor,
+  polymorphicLinksTo,
+  RecordView,
+  sameValue,
+} from './record-view.js';
 
 // Links need a router; plain anchors are enough to find them by name.
 vi.mock('@tanstack/react-router', async (original) => ({
@@ -305,4 +311,31 @@ describe('RecordView events tab', () => {
     expect(events).toHaveBeenCalledOnce();
     expect(record).not.toHaveBeenCalled();
   });
+});
+
+it('toggles a text field between literal and rendered Markdown without writing', async () => {
+  const field = {
+    ...stage,
+    type: 'text',
+    name: 'notes',
+    label: 'Notes',
+    settings: {},
+  } as FieldView;
+  const shown = { ...record, fields: { notes: '**שלום**' } };
+  const workspace = {
+    session: { workspace: { id: 'w1' }, actor: {} },
+    schema: { objects: [] },
+  } as unknown as { session: Session; schema: SchemaDescription };
+  const patch = vi.spyOn(api, 'patchRecord');
+  render(
+    <WorkspaceContext.Provider value={workspace}>
+      <FieldProperty record={shown} field={field} editable={false} onHistory={() => {}} />
+    </WorkspaceContext.Provider>,
+  );
+  expect(screen.getByText('**שלום**')).toBeTruthy();
+  await userEvent.click(screen.getByRole('button', { name: 'Render Markdown for Notes' }));
+  expect(screen.getByText('שלום').tagName).toBe('STRONG');
+  await userEvent.click(screen.getByRole('button', { name: 'Show plain text for Notes' }));
+  expect(screen.getByText('**שלום**')).toBeTruthy();
+  expect(patch).not.toHaveBeenCalled();
 });

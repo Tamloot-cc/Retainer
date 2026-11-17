@@ -183,6 +183,8 @@ export function FieldDisplay({
         <Tooltip content={String(value)}>
           {/* Grid hosts clip by width; other compact displays use a bounded preview. */}
           <span
+            dir="auto"
+            style={{ textAlign: compact ? 'left' : 'start', unicodeBidi: 'isolate' }}
             className={
               textLines === 2
                 ? 'line-clamp-2 whitespace-normal [overflow-wrap:anywhere]'
@@ -929,6 +931,7 @@ export function FieldInput(props: InputProps) {
       return (
         <Input
           aria-label={field.label}
+          dir="auto"
           value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value)}
         />
