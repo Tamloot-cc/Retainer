@@ -120,19 +120,53 @@ test('the Home feed and sidebar scroll independently of the document', async ({
   await expect(firstCall).toBeInViewport();
 
   // Linked-record labels below the fold must stay inside the feed's scroll area.
-  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(400);
+  const documentRoot = page.locator('html');
+  expect(await documentRoot.evaluate((el) => el.scrollHeight)).toBe(400);
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
   await nav.hover();
   await page.mouse.wheel(0, 1200);
   await expect.poll(() => nav.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
   await expect(firstCall).toBeInViewport();
-  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  expect(await documentRoot.evaluate((el) => el.scrollTop)).toBe(0);
 
   await firstCall.hover();
   await page.mouse.wheel(0, 1200);
   await expect(firstCall).not.toBeInViewport();
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeInViewport();
-  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  expect(await documentRoot.evaluate((el) => el.scrollTop)).toBe(0);
+});
+
+test('the desktop sidebar remembers its dragged width across collapse and reload', async ({
+  page,
+  retainer: r,
+}) => {
+  await signIn(page, r.url, r.keys.user);
+  const sidebar = page.getByRole('complementary');
+  const handle = sidebar.getByRole('separator', { name: 'Resize sidebar' });
+  await expect(sidebar).toHaveCSS('width', '240px');
+  const box = await handle.boundingBox();
+  if (!box) throw new Error('Sidebar resize handle is missing');
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 96, y, { steps: 4 });
+  await expect(sidebar).toHaveCSS('width', '336px');
+  await page.mouse.up();
+  await sidebar.getByRole('button', { name: 'Collapse sidebar' }).click();
+  await expect(sidebar).toHaveCSS('width', '52px');
+  await sidebar.getByRole('button', { name: 'Expand sidebar' }).click();
+  await expect(sidebar).toHaveCSS('width', '336px');
+  await page.reload();
+  await expect(sidebar).toHaveCSS('width', '336px');
+  await handle.press('ArrowLeft');
+  await expect(sidebar).toHaveCSS('width', '320px');
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Open navigation' }).click();
+  const drawer = page.getByRole('dialog', { name: 'Navigation' });
+  await expect(drawer).toHaveCSS('width', '256px');
+  await expect(drawer.getByRole('separator', { name: 'Resize sidebar' })).toHaveCount(0);
 });
 
 test('an empty workspace welcomes people, and old activity and review links still work', async ({
