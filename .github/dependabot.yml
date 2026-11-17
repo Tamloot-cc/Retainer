@@ -28,11 +28,16 @@ updates:
   # node in docker/Dockerfile, postgres in docker/compose.yml. A Postgres major
   # also needs the postgres image in .github/workflows/ci.yml, the data move in
   # docs/self-hosting.md and the RDS upgrade.
+  # Node majors stay manual: the extension runner must match Lambda's runtime
+  # (nodejs24.x) and the extension protocol's runtimeVersion 'node24'.
   - package-ecosystem: docker
     directory: /docker
     schedule:
       interval: weekly
       day: monday
+    ignore:
+      - dependency-name: node
+        update-types: [version-update:semver-major]
   - package-ecosystem: docker-compose
     directory: /docker
     schedule:
