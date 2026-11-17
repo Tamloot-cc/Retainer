@@ -15,8 +15,8 @@ import {
 } from '../api/account.js';
 import { BrandMark } from '../ui/brand.js';
 import {
+  BadgedButton,
   Button,
-  ButtonNote,
   Input,
   Label,
   Muted,
@@ -86,8 +86,9 @@ export function AccountSignIn({ returnTo }: { returnTo?: string } = {}) {
     <SignInFrame subtitle="Sign in to see what your agents remember.">
       <Stack>
         {(providers ?? []).map((provider) => (
-          <Button
+          <BadgedButton
             key={provider}
+            badge={last === provider ? 'Last used' : undefined}
             variant="primary"
             disabled={busy !== null}
             onClick={() => void social(provider)}
@@ -95,13 +96,15 @@ export function AccountSignIn({ returnTo }: { returnTo?: string } = {}) {
             {busy === provider
               ? `Opening ${SIGN_IN_PROVIDER_NAMES[provider]}…`
               : `Continue with ${SIGN_IN_PROVIDER_NAMES[provider]}`}
-            {last === provider ? <ButtonNote>Last used</ButtonNote> : null}
-          </Button>
+          </BadgedButton>
         ))}
-        <Button disabled={busy !== null} onClick={() => void passkey()}>
+        <BadgedButton
+          badge={last === 'passkey' ? 'Last used' : undefined}
+          disabled={busy !== null}
+          onClick={() => void passkey()}
+        >
           {busy === 'passkey' ? 'Waiting for your passkey…' : 'Use a passkey'}
-          {last === 'passkey' ? <ButtonNote>Last used</ButtonNote> : null}
-        </Button>
+        </BadgedButton>
         {error ? <Notice error>{error}</Notice> : null}
         {providers ? (
           <Muted>

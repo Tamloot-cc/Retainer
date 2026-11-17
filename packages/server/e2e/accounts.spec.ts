@@ -212,10 +212,17 @@ test('a person adds a passkey and signs in with it', async ({
   // The sign-in page marks the way this browser last signed in.
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Use a passkey' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Continue with Google' })).toContainText(
+  const googleButton = page.getByRole('button', { name: 'Continue with Google' });
+  const lastUsed = page.getByText('Last used', { exact: true });
+  await expect(googleButton).toHaveAccessibleDescription('Last used');
+  await expect(lastUsed).toBeHidden();
+  await googleButton.hover();
+  await expect(lastUsed).toBeVisible();
+  await page.getByRole('button', { name: 'Use a passkey' }).hover();
+  await expect(lastUsed).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Use a passkey' })).not.toHaveAccessibleDescription(
     'Last used',
   );
-  await expect(page.getByRole('button', { name: 'Use a passkey' })).not.toContainText('Last used');
   await page.goto(workspaceUrl);
   await page.getByRole('button', { name: 'Use a passkey' }).click();
   await expect(page).toHaveURL(workspaceUrl);
@@ -223,10 +230,12 @@ test('a person adds a passkey and signs in with it', async ({
 
   await page.goto(`${a.url}/app/account`);
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Use a passkey' })).toContainText('Last used');
-  await expect(page.getByRole('button', { name: 'Continue with Google' })).not.toContainText(
+  await expect(page.getByRole('button', { name: 'Use a passkey' })).toHaveAccessibleDescription(
     'Last used',
   );
+  await expect(
+    page.getByRole('button', { name: 'Continue with Google' }),
+  ).not.toHaveAccessibleDescription('Last used');
 });
 
 test('a sign-out the server refuses says so, and the person stays where they are', async ({
