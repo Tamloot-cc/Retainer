@@ -1,0 +1,5532 @@
+{
+  "groups": {
+    "development/fields/multi/forward/0": {
+      "n": 140,
+      "success": 0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "abstain": 0,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 0,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {},
+      "p50_ms": null,
+      "p95_ms": null,
+      "precision": null,
+      "recall": null
+    },
+    "development/full/multi/forward/0": {
+      "n": 140,
+      "success": 105,
+      "tp": 24,
+      "fp": 0,
+      "fn": 4,
+      "abstain": 4,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 94558,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "alias": {
+          "n": 7,
+          "published": 7,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 7,
+          "published": 4,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 7,
+          "published": 7,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 7,
+          "published": 6,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_phone": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "stale_enrichment": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "query_identity": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "shared_employer": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 322,
+      "p95_ms": 767,
+      "precision": 1.0,
+      "recall": 0.8571428571428571
+    },
+    "development/provenance/multi/forward/0": {
+      "n": 20,
+      "success": 0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "abstain": 0,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 0,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {},
+      "p50_ms": null,
+      "p95_ms": null,
+      "precision": null,
+      "recall": null
+    },
+    "development/history/multi/forward/0": {
+      "n": 20,
+      "success": 15,
+      "tp": 2,
+      "fp": 0,
+      "fn": 2,
+      "abstain": 1,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 13442,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 278,
+      "p95_ms": 635,
+      "precision": 1.0,
+      "recall": 0.5
+    },
+    "development/full/single/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "abstain": 5,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 7919,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 381,
+      "p95_ms": 704,
+      "precision": 1.0,
+      "recall": 0.2
+    },
+    "development/full/multi/reverse/0": {
+      "n": 20,
+      "success": 15,
+      "tp": 3,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 0,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 13525,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 375,
+      "p95_ms": 793,
+      "precision": 1.0,
+      "recall": 0.75
+    },
+    "development/full/multi/forward/1": {
+      "n": 20,
+      "success": 15,
+      "tp": 3,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 1,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 13524,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 367,
+      "p95_ms": 596,
+      "precision": 1.0,
+      "recall": 0.75
+    },
+    "development/long/multi/forward/0": {
+      "n": 20,
+      "success": 15,
+      "tp": 3,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 0,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 67629,
+      "cached_tokens": 7522,
+      "cache_write_tokens": 49218,
+      "by_kind": {
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 321,
+      "p95_ms": 569,
+      "precision": 1.0,
+      "recall": 0.75
+    },
+    "development/long/multi/forward/1": {
+      "n": 20,
+      "success": 15,
+      "tp": 3,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 0,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 67629,
+      "cached_tokens": 22673,
+      "cache_write_tokens": 34067,
+      "by_kind": {
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 389,
+      "p95_ms": 699,
+      "precision": 1.0,
+      "recall": 0.75
+    },
+    "development/truncated/multi/forward/0": {
+      "n": 20,
+      "success": 0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "abstain": 0,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 0,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {},
+      "p50_ms": null,
+      "p95_ms": null,
+      "precision": null,
+      "recall": null
+    },
+    "heldout/fields/multi/forward/0": {
+      "n": 60,
+      "success": 0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "abstain": 0,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 0,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {},
+      "p50_ms": null,
+      "p95_ms": null,
+      "precision": null,
+      "recall": null
+    },
+    "heldout/full/multi/forward/0": {
+      "n": 60,
+      "success": 45,
+      "tp": 10,
+      "fp": 0,
+      "fn": 2,
+      "abstain": 2,
+      "contradictory": 1,
+      "unsupported_explanations": 0,
+      "tokens": 40499,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "alias": {
+          "n": 3,
+          "published": 3,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 3,
+          "published": 1,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 3,
+          "published": 3,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 3,
+          "published": 3,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "stale_enrichment": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "query_identity": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 2
+        },
+        "shared_employer": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 512,
+      "p95_ms": 719,
+      "precision": 1.0,
+      "recall": 0.8333333333333334
+    },
+    "heldout/provenance/multi/forward/0": {
+      "n": 20,
+      "success": 0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "abstain": 0,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 0,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {},
+      "p50_ms": null,
+      "p95_ms": null,
+      "precision": null,
+      "recall": null
+    },
+    "heldout/history/multi/forward/0": {
+      "n": 20,
+      "success": 15,
+      "tp": 2,
+      "fp": 0,
+      "fn": 2,
+      "abstain": 2,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 13442,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 542,
+      "p95_ms": 783,
+      "precision": 1.0,
+      "recall": 0.5
+    },
+    "heldout/full/single/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 0,
+      "fp": 0,
+      "fn": 5,
+      "abstain": 5,
+      "contradictory": 1,
+      "unsupported_explanations": 0,
+      "tokens": 7924,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 335,
+      "p95_ms": 633,
+      "precision": null,
+      "recall": 0.0
+    },
+    "heldout/full/multi/reverse/0": {
+      "n": 20,
+      "success": 15,
+      "tp": 3,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 1,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 13525,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 492,
+      "p95_ms": 1004,
+      "precision": 1.0,
+      "recall": 0.75
+    },
+    "heldout/full/multi/forward/1": {
+      "n": 20,
+      "success": 15,
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "abstain": 1,
+      "contradictory": 1,
+      "unsupported_explanations": 0,
+      "tokens": 13524,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 522,
+      "p95_ms": 713,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "heldout/long/multi/forward/0": {
+      "n": 20,
+      "success": 15,
+      "tp": 3,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 0,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 67629,
+      "cached_tokens": 0,
+      "cache_write_tokens": 56740,
+      "by_kind": {
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 481,
+      "p95_ms": 802,
+      "precision": 1.0,
+      "recall": 0.75
+    },
+    "heldout/long/multi/forward/1": {
+      "n": 20,
+      "success": 15,
+      "tp": 3,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 0,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 67629,
+      "cached_tokens": 45382,
+      "cache_write_tokens": 11358,
+      "by_kind": {
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 510,
+      "p95_ms": 643,
+      "precision": 1.0,
+      "recall": 0.75
+    },
+    "heldout/truncated/multi/forward/0": {
+      "n": 20,
+      "success": 0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "abstain": 0,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 0,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {},
+      "p50_ms": null,
+      "p95_ms": null,
+      "precision": null,
+      "recall": null
+    }
+  },
+  "comparisons": {
+    "order": {
+      "n": 30,
+      "changed": 2,
+      "details": [
+        {
+          "id": "conflicting_sources-0",
+          "changed": true,
+          "before": "insufficient_evidence",
+          "after": "different_entities"
+        },
+        {
+          "id": "shared_phone-7",
+          "changed": true,
+          "before": "same_entity",
+          "after": "different_entities"
+        }
+      ]
+    },
+    "repeat": {
+      "n": 30,
+      "changed": 0,
+      "details": []
+    },
+    "single_vs_multi": {
+      "n": 30,
+      "changed": 0,
+      "details": []
+    }
+  },
+  "attempts": 720,
+  "failures": [
+    {
+      "id": "exact_identifiers-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 618
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-0",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 627
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 2424
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-0",
+      "variant": "history",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 594
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-0",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 2736
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-0",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 2707
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-0",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 613
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-0",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 136
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 130
+        }
+      ]
+    },
+    {
+      "id": "alias-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 128
+        }
+      ]
+    },
+    {
+      "id": "alias-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 2072
+        }
+      ]
+    },
+    {
+      "id": "alias-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 159
+        }
+      ]
+    },
+    {
+      "id": "hebrew_english-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 903
+        }
+      ]
+    },
+    {
+      "id": "hebrew_english-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 123
+        }
+      ]
+    },
+    {
+      "id": "hebrew_english-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 127
+        }
+      ]
+    },
+    {
+      "id": "rebrand-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 115
+        }
+      ]
+    },
+    {
+      "id": "rebrand-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 155
+        }
+      ]
+    },
+    {
+      "id": "rebrand-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 128
+        }
+      ]
+    },
+    {
+      "id": "historical_person-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 158
+        }
+      ]
+    },
+    {
+      "id": "historical_person-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 126
+        }
+      ]
+    },
+    {
+      "id": "historical_person-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "social_host-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 142
+        }
+      ]
+    },
+    {
+      "id": "social_host-0",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 282
+        }
+      ]
+    },
+    {
+      "id": "social_host-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 126
+        }
+      ]
+    },
+    {
+      "id": "social_host-0",
+      "variant": "history",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 126
+        }
+      ]
+    },
+    {
+      "id": "social_host-0",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 148
+        }
+      ]
+    },
+    {
+      "id": "social_host-0",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 129
+        }
+      ]
+    },
+    {
+      "id": "social_host-0",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 135
+        }
+      ]
+    },
+    {
+      "id": "social_host-0",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "social_host-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 206
+        }
+      ]
+    },
+    {
+      "id": "subsidiary-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 191
+        }
+      ]
+    },
+    {
+      "id": "subsidiary-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 150
+        }
+      ]
+    },
+    {
+      "id": "subsidiary-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 132
+        }
+      ]
+    },
+    {
+      "id": "acquisition-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 138
+        }
+      ]
+    },
+    {
+      "id": "acquisition-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 122
+        }
+      ]
+    },
+    {
+      "id": "acquisition-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 135
+        }
+      ]
+    },
+    {
+      "id": "shared_phone-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 213
+        }
+      ]
+    },
+    {
+      "id": "shared_phone-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 134
+        }
+      ]
+    },
+    {
+      "id": "shared_phone-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 224
+        }
+      ]
+    },
+    {
+      "id": "shared_office-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 126
+        }
+      ]
+    },
+    {
+      "id": "shared_office-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 135
+        }
+      ]
+    },
+    {
+      "id": "shared_office-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 249
+        }
+      ]
+    },
+    {
+      "id": "common_person_name-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 126
+        }
+      ]
+    },
+    {
+      "id": "common_person_name-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 144
+        }
+      ]
+    },
+    {
+      "id": "common_person_name-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 131
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 137
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-0",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 139
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-0",
+      "variant": "history",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 119
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-0",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 124
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-0",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 149
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-0",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 136
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-0",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 135
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 137
+        }
+      ]
+    },
+    {
+      "id": "sparse-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 132
+        }
+      ]
+    },
+    {
+      "id": "sparse-0",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 113
+        }
+      ]
+    },
+    {
+      "id": "sparse-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 223
+        }
+      ]
+    },
+    {
+      "id": "sparse-0",
+      "variant": "history",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 187
+        }
+      ]
+    },
+    {
+      "id": "sparse-0",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 147
+        }
+      ]
+    },
+    {
+      "id": "sparse-0",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 162
+        }
+      ]
+    },
+    {
+      "id": "sparse-0",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 148
+        }
+      ]
+    },
+    {
+      "id": "sparse-0",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 144
+        }
+      ]
+    },
+    {
+      "id": "sparse-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 130
+        }
+      ]
+    },
+    {
+      "id": "stale_enrichment-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 131
+        }
+      ]
+    },
+    {
+      "id": "stale_enrichment-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 116
+        }
+      ]
+    },
+    {
+      "id": "stale_enrichment-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "injection-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 122
+        }
+      ]
+    },
+    {
+      "id": "injection-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 179
+        }
+      ]
+    },
+    {
+      "id": "injection-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 127
+        }
+      ]
+    },
+    {
+      "id": "social_root-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 127
+        }
+      ]
+    },
+    {
+      "id": "social_root-0",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 124
+        }
+      ]
+    },
+    {
+      "id": "social_root-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 128
+        }
+      ]
+    },
+    {
+      "id": "social_root-0",
+      "variant": "history",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 116
+        }
+      ]
+    },
+    {
+      "id": "social_root-0",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 213
+        }
+      ]
+    },
+    {
+      "id": "social_root-0",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 212
+        }
+      ]
+    },
+    {
+      "id": "social_root-0",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 171
+        }
+      ]
+    },
+    {
+      "id": "social_root-0",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 167
+        }
+      ]
+    },
+    {
+      "id": "social_root-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 165
+        }
+      ]
+    },
+    {
+      "id": "query_identity-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 210
+        }
+      ]
+    },
+    {
+      "id": "query_identity-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 127
+        }
+      ]
+    },
+    {
+      "id": "query_identity-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 130
+        }
+      ]
+    },
+    {
+      "id": "conflicting_sources-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 137
+        }
+      ]
+    },
+    {
+      "id": "conflicting_sources-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 219
+        }
+      ]
+    },
+    {
+      "id": "conflicting_sources-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 113
+        }
+      ]
+    },
+    {
+      "id": "shared_employer-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 119
+        }
+      ]
+    },
+    {
+      "id": "shared_employer-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "shared_employer-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 115
+        }
+      ]
+    },
+    {
+      "id": "transliteration_collision-0",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 146
+        }
+      ]
+    },
+    {
+      "id": "transliteration_collision-0",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "transliteration_collision-0",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 206
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 126
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-1",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "alias-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "hebrew_english-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 123
+        }
+      ]
+    },
+    {
+      "id": "rebrand-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "historical_person-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 142
+        }
+      ]
+    },
+    {
+      "id": "social_host-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 125
+        }
+      ]
+    },
+    {
+      "id": "social_host-1",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 173
+        }
+      ]
+    },
+    {
+      "id": "subsidiary-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 145
+        }
+      ]
+    },
+    {
+      "id": "acquisition-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 143
+        }
+      ]
+    },
+    {
+      "id": "shared_phone-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 133
+        }
+      ]
+    },
+    {
+      "id": "shared_office-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 124
+        }
+      ]
+    },
+    {
+      "id": "common_person_name-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 117
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-1",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 117
+        }
+      ]
+    },
+    {
+      "id": "sparse-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "sparse-1",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 130
+        }
+      ]
+    },
+    {
+      "id": "stale_enrichment-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 115
+        }
+      ]
+    },
+    {
+      "id": "injection-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "social_root-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "social_root-1",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 193
+        }
+      ]
+    },
+    {
+      "id": "query_identity-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 186
+        }
+      ]
+    },
+    {
+      "id": "conflicting_sources-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 162
+        }
+      ]
+    },
+    {
+      "id": "shared_employer-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 129
+        }
+      ]
+    },
+    {
+      "id": "transliteration_collision-1",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 123
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-2",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 130
+        }
+      ]
+    },
+    {
+      "id": "alias-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 257
+        }
+      ]
+    },
+    {
+      "id": "hebrew_english-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "rebrand-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 314
+        }
+      ]
+    },
+    {
+      "id": "historical_person-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 127
+        }
+      ]
+    },
+    {
+      "id": "social_host-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 174
+        }
+      ]
+    },
+    {
+      "id": "social_host-2",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 243
+        }
+      ]
+    },
+    {
+      "id": "subsidiary-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 123
+        }
+      ]
+    },
+    {
+      "id": "acquisition-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 125
+        }
+      ]
+    },
+    {
+      "id": "shared_phone-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 126
+        }
+      ]
+    },
+    {
+      "id": "shared_office-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "common_person_name-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 112
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 127
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-2",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 113
+        }
+      ]
+    },
+    {
+      "id": "sparse-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 115
+        }
+      ]
+    },
+    {
+      "id": "sparse-2",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 115
+        }
+      ]
+    },
+    {
+      "id": "stale_enrichment-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 178
+        }
+      ]
+    },
+    {
+      "id": "injection-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 153
+        }
+      ]
+    },
+    {
+      "id": "social_root-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 244
+        }
+      ]
+    },
+    {
+      "id": "social_root-2",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 219
+        }
+      ]
+    },
+    {
+      "id": "query_identity-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 123
+        }
+      ]
+    },
+    {
+      "id": "conflicting_sources-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 131
+        }
+      ]
+    },
+    {
+      "id": "shared_employer-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 122
+        }
+      ]
+    },
+    {
+      "id": "transliteration_collision-2",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 127
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 126
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-3",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 210
+        }
+      ]
+    },
+    {
+      "id": "alias-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 190
+        }
+      ]
+    },
+    {
+      "id": "hebrew_english-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 219
+        }
+      ]
+    },
+    {
+      "id": "rebrand-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "historical_person-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 128
+        }
+      ]
+    },
+    {
+      "id": "social_host-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 129
+        }
+      ]
+    },
+    {
+      "id": "social_host-3",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 127
+        }
+      ]
+    },
+    {
+      "id": "subsidiary-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 140
+        }
+      ]
+    },
+    {
+      "id": "acquisition-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "shared_phone-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 125
+        }
+      ]
+    },
+    {
+      "id": "shared_office-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 124
+        }
+      ]
+    },
+    {
+      "id": "common_person_name-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 159
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 123
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-3",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 132
+        }
+      ]
+    },
+    {
+      "id": "sparse-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 135
+        }
+      ]
+    },
+    {
+      "id": "sparse-3",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 134
+        }
+      ]
+    },
+    {
+      "id": "stale_enrichment-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 143
+        }
+      ]
+    },
+    {
+      "id": "injection-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 116
+        }
+      ]
+    },
+    {
+      "id": "social_root-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 115
+        }
+      ]
+    },
+    {
+      "id": "social_root-3",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 126
+        }
+      ]
+    },
+    {
+      "id": "query_identity-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 130
+        }
+      ]
+    },
+    {
+      "id": "conflicting_sources-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 126
+        }
+      ]
+    },
+    {
+      "id": "shared_employer-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 124
+        }
+      ]
+    },
+    {
+      "id": "transliteration_collision-3",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 165
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-4",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 152
+        }
+      ]
+    },
+    {
+      "id": "alias-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 150
+        }
+      ]
+    },
+    {
+      "id": "hebrew_english-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 128
+        }
+      ]
+    },
+    {
+      "id": "rebrand-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 128
+        }
+      ]
+    },
+    {
+      "id": "historical_person-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 130
+        }
+      ]
+    },
+    {
+      "id": "social_host-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 116
+        }
+      ]
+    },
+    {
+      "id": "social_host-4",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 124
+        }
+      ]
+    },
+    {
+      "id": "subsidiary-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "acquisition-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 116
+        }
+      ]
+    },
+    {
+      "id": "shared_phone-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 165
+        }
+      ]
+    },
+    {
+      "id": "shared_office-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 139
+        }
+      ]
+    },
+    {
+      "id": "common_person_name-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 137
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 128
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-4",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "sparse-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "sparse-4",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 124
+        }
+      ]
+    },
+    {
+      "id": "stale_enrichment-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 123
+        }
+      ]
+    },
+    {
+      "id": "injection-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "social_root-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 126
+        }
+      ]
+    },
+    {
+      "id": "social_root-4",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 125
+        }
+      ]
+    },
+    {
+      "id": "query_identity-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 151
+        }
+      ]
+    },
+    {
+      "id": "conflicting_sources-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 139
+        }
+      ]
+    },
+    {
+      "id": "shared_employer-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 209
+        }
+      ]
+    },
+    {
+      "id": "transliteration_collision-4",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 115
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-5",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "alias-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 115
+        }
+      ]
+    },
+    {
+      "id": "hebrew_english-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 125
+        }
+      ]
+    },
+    {
+      "id": "rebrand-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "historical_person-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 221
+        }
+      ]
+    },
+    {
+      "id": "social_host-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 175
+        }
+      ]
+    },
+    {
+      "id": "social_host-5",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 127
+        }
+      ]
+    },
+    {
+      "id": "subsidiary-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 209
+        }
+      ]
+    },
+    {
+      "id": "acquisition-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 129
+        }
+      ]
+    },
+    {
+      "id": "shared_phone-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 130
+        }
+      ]
+    },
+    {
+      "id": "shared_office-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 150
+        }
+      ]
+    },
+    {
+      "id": "common_person_name-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 132
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-5",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 133
+        }
+      ]
+    },
+    {
+      "id": "sparse-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 122
+        }
+      ]
+    },
+    {
+      "id": "sparse-5",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 146
+        }
+      ]
+    },
+    {
+      "id": "stale_enrichment-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 141
+        }
+      ]
+    },
+    {
+      "id": "injection-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 122
+        }
+      ]
+    },
+    {
+      "id": "social_root-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 213
+        }
+      ]
+    },
+    {
+      "id": "social_root-5",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "query_identity-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 125
+        }
+      ]
+    },
+    {
+      "id": "conflicting_sources-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "shared_employer-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "transliteration_collision-5",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 122
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-6",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 142
+        }
+      ]
+    },
+    {
+      "id": "alias-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 123
+        }
+      ]
+    },
+    {
+      "id": "hebrew_english-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "rebrand-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 157
+        }
+      ]
+    },
+    {
+      "id": "historical_person-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 152
+        }
+      ]
+    },
+    {
+      "id": "social_host-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 127
+        }
+      ]
+    },
+    {
+      "id": "social_host-6",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 125
+        }
+      ]
+    },
+    {
+      "id": "subsidiary-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 134
+        }
+      ]
+    },
+    {
+      "id": "acquisition-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 116
+        }
+      ]
+    },
+    {
+      "id": "shared_phone-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 117
+        }
+      ]
+    },
+    {
+      "id": "shared_office-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 125
+        }
+      ]
+    },
+    {
+      "id": "common_person_name-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 115
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 112
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-6",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 171
+        }
+      ]
+    },
+    {
+      "id": "sparse-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 164
+        }
+      ]
+    },
+    {
+      "id": "sparse-6",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 162
+        }
+      ]
+    },
+    {
+      "id": "stale_enrichment-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 142
+        }
+      ]
+    },
+    {
+      "id": "injection-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 122
+        }
+      ]
+    },
+    {
+      "id": "social_root-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 123
+        }
+      ]
+    },
+    {
+      "id": "social_root-6",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "query_identity-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 134
+        }
+      ]
+    },
+    {
+      "id": "conflicting_sources-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 130
+        }
+      ]
+    },
+    {
+      "id": "shared_employer-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 132
+        }
+      ]
+    },
+    {
+      "id": "transliteration_collision-6",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 129
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 122
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-7",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 132
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 144
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-7",
+      "variant": "history",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 144
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-7",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 215
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-7",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 127
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-7",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 140
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-7",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 142
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 124
+        }
+      ]
+    },
+    {
+      "id": "alias-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 127
+        }
+      ]
+    },
+    {
+      "id": "alias-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "alias-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "hebrew_english-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 123
+        }
+      ]
+    },
+    {
+      "id": "hebrew_english-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 124
+        }
+      ]
+    },
+    {
+      "id": "hebrew_english-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 205
+        }
+      ]
+    },
+    {
+      "id": "rebrand-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 179
+        }
+      ]
+    },
+    {
+      "id": "rebrand-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 139
+        }
+      ]
+    },
+    {
+      "id": "rebrand-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "historical_person-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "historical_person-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 187
+        }
+      ]
+    },
+    {
+      "id": "historical_person-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "social_host-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "social_host-7",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 123
+        }
+      ]
+    },
+    {
+      "id": "social_host-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 127
+        }
+      ]
+    },
+    {
+      "id": "social_host-7",
+      "variant": "history",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 119
+        }
+      ]
+    },
+    {
+      "id": "social_host-7",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 122
+        }
+      ]
+    },
+    {
+      "id": "social_host-7",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 190
+        }
+      ]
+    },
+    {
+      "id": "social_host-7",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 168
+        }
+      ]
+    },
+    {
+      "id": "social_host-7",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 169
+        }
+      ]
+    },
+    {
+      "id": "social_host-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 135
+        }
+      ]
+    },
+    {
+      "id": "subsidiary-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 137
+        }
+      ]
+    },
+    {
+      "id": "subsidiary-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 149
+        }
+      ]
+    },
+    {
+      "id": "subsidiary-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 149
+        }
+      ]
+    },
+    {
+      "id": "acquisition-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 135
+        }
+      ]
+    },
+    {
+      "id": "acquisition-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 220
+        }
+      ]
+    },
+    {
+      "id": "acquisition-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 144
+        }
+      ]
+    },
+    {
+      "id": "shared_phone-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 140
+        }
+      ]
+    },
+    {
+      "id": "shared_phone-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "shared_phone-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 128
+        }
+      ]
+    },
+    {
+      "id": "shared_office-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 123
+        }
+      ]
+    },
+    {
+      "id": "shared_office-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 131
+        }
+      ]
+    },
+    {
+      "id": "shared_office-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 124
+        }
+      ]
+    },
+    {
+      "id": "common_person_name-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 127
+        }
+      ]
+    },
+    {
+      "id": "common_person_name-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 119
+        }
+      ]
+    },
+    {
+      "id": "common_person_name-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 197
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 137
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-7",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 182
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 144
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-7",
+      "variant": "history",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 216
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-7",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 216
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-7",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-7",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 122
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-7",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 174
+        }
+      ]
+    },
+    {
+      "id": "sparse-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 187
+        }
+      ]
+    },
+    {
+      "id": "sparse-7",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "sparse-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "sparse-7",
+      "variant": "history",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "sparse-7",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 126
+        }
+      ]
+    },
+    {
+      "id": "sparse-7",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 170
+        }
+      ]
+    },
+    {
+      "id": "sparse-7",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 180
+        }
+      ]
+    },
+    {
+      "id": "sparse-7",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 164
+        }
+      ]
+    },
+    {
+      "id": "sparse-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 222
+        }
+      ]
+    },
+    {
+      "id": "stale_enrichment-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 219
+        }
+      ]
+    },
+    {
+      "id": "stale_enrichment-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 230
+        }
+      ]
+    },
+    {
+      "id": "stale_enrichment-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 133
+        }
+      ]
+    },
+    {
+      "id": "injection-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 139
+        }
+      ]
+    },
+    {
+      "id": "injection-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 198
+        }
+      ]
+    },
+    {
+      "id": "injection-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 111
+        }
+      ]
+    },
+    {
+      "id": "social_root-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 173
+        }
+      ]
+    },
+    {
+      "id": "social_root-7",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 132
+        }
+      ]
+    },
+    {
+      "id": "social_root-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 117
+        }
+      ]
+    },
+    {
+      "id": "social_root-7",
+      "variant": "history",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 115
+        }
+      ]
+    },
+    {
+      "id": "social_root-7",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 158
+        }
+      ]
+    },
+    {
+      "id": "social_root-7",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 153
+        }
+      ]
+    },
+    {
+      "id": "social_root-7",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 211
+        }
+      ]
+    },
+    {
+      "id": "social_root-7",
+      "variant": "long",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 202
+        }
+      ]
+    },
+    {
+      "id": "social_root-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 119
+        }
+      ]
+    },
+    {
+      "id": "query_identity-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 116
+        }
+      ]
+    },
+    {
+      "id": "query_identity-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 124
+        }
+      ]
+    },
+    {
+      "id": "query_identity-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 114
+        }
+      ]
+    },
+    {
+      "id": "conflicting_sources-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 193
+        }
+      ]
+    },
+    {
+      "id": "conflicting_sources-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 124
+        }
+      ]
+    },
+    {
+      "id": "conflicting_sources-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 177
+        }
+      ]
+    },
+    {
+      "id": "shared_employer-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 170
+        }
+      ]
+    },
+    {
+      "id": "shared_employer-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 132
+        }
+      ]
+    },
+    {
+      "id": "shared_employer-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 122
+        }
+      ]
+    },
+    {
+      "id": "transliteration_collision-7",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 135
+        }
+      ]
+    },
+    {
+      "id": "transliteration_collision-7",
+      "variant": "provenance",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "transliteration_collision-7",
+      "variant": "truncated",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 119
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 125
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-8",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "alias-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 114
+        }
+      ]
+    },
+    {
+      "id": "hebrew_english-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 122
+        }
+      ]
+    },
+    {
+      "id": "rebrand-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 126
+        }
+      ]
+    },
+    {
+      "id": "historical_person-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "social_host-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 173
+        }
+      ]
+    },
+    {
+      "id": "social_host-8",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 164
+        }
+      ]
+    },
+    {
+      "id": "subsidiary-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 159
+        }
+      ]
+    },
+    {
+      "id": "acquisition-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 129
+        }
+      ]
+    },
+    {
+      "id": "shared_phone-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 135
+        }
+      ]
+    },
+    {
+      "id": "shared_office-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 125
+        }
+      ]
+    },
+    {
+      "id": "common_person_name-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 115
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 110
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-8",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 114
+        }
+      ]
+    },
+    {
+      "id": "sparse-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 202
+        }
+      ]
+    },
+    {
+      "id": "sparse-8",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 181
+        }
+      ]
+    },
+    {
+      "id": "stale_enrichment-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 155
+        }
+      ]
+    },
+    {
+      "id": "injection-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 128
+        }
+      ]
+    },
+    {
+      "id": "social_root-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 126
+        }
+      ]
+    },
+    {
+      "id": "social_root-8",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 126
+        }
+      ]
+    },
+    {
+      "id": "query_identity-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "conflicting_sources-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "shared_employer-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "transliteration_collision-8",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 112
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 163
+        }
+      ]
+    },
+    {
+      "id": "exact_identifiers-9",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 120
+        }
+      ]
+    },
+    {
+      "id": "alias-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "hebrew_english-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 139
+        }
+      ]
+    },
+    {
+      "id": "rebrand-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 132
+        }
+      ]
+    },
+    {
+      "id": "historical_person-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 112
+        }
+      ]
+    },
+    {
+      "id": "social_host-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "social_host-9",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 137
+        }
+      ]
+    },
+    {
+      "id": "subsidiary-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 129
+        }
+      ]
+    },
+    {
+      "id": "acquisition-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 180
+        }
+      ]
+    },
+    {
+      "id": "shared_phone-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 146
+        }
+      ]
+    },
+    {
+      "id": "shared_office-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 127
+        }
+      ]
+    },
+    {
+      "id": "common_person_name-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 118
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 140
+        }
+      ]
+    },
+    {
+      "id": "shared_investor-9",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 119
+        }
+      ]
+    },
+    {
+      "id": "sparse-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 128
+        }
+      ]
+    },
+    {
+      "id": "sparse-9",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 121
+        }
+      ]
+    },
+    {
+      "id": "stale_enrichment-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 128
+        }
+      ]
+    },
+    {
+      "id": "injection-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 155
+        }
+      ]
+    },
+    {
+      "id": "social_root-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 235
+        }
+      ]
+    },
+    {
+      "id": "social_root-9",
+      "variant": "full",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 112
+        }
+      ]
+    },
+    {
+      "id": "query_identity-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 129
+        }
+      ]
+    },
+    {
+      "id": "conflicting_sources-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 123
+        }
+      ]
+    },
+    {
+      "id": "shared_employer-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 117
+        }
+      ]
+    },
+    {
+      "id": "transliteration_collision-9",
+      "variant": "fields",
+      "attempts": [
+        {
+          "status": 400,
+          "latency_ms": 110
+        }
+      ]
+    }
+  ],
+  "wall_seconds": 28.2
+}

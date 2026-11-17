@@ -1,0 +1,26 @@
+{
+  "invalid_responses": [
+    {
+      "case": "scalar_json",
+      "legacy": "AttributeError: 'NoneType' object has no attribute 'get'",
+      "hardened": "InvalidDecision: response_object"
+    },
+    {
+      "case": "wrong_model",
+      "legacy": "accepted",
+      "hardened": "InvalidDecision: model_mismatch"
+    },
+    {
+      "case": "boolean_probability",
+      "legacy": "accepted",
+      "hardened": "InvalidDecision: distribution_probability"
+    },
+    {
+      "case": "negative_usage",
+      "legacy": "accepted",
+      "hardened": "InvalidDecision: usage_count"
+    }
+  ],
+  "legacy_refusal_attempt_contains_billed_usage": false,
+  "note": "Local synthetic diagnostics only; no provider or CRM calls."
+}

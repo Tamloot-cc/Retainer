@@ -1,0 +1,1073 @@
+{
+  "groups": {
+    "regression": {
+      "n": 184,
+      "positive": 48,
+      "negative": 136,
+      "api_failures": 0,
+      "tp": 37,
+      "fp": 0,
+      "guarded_tp": 37,
+      "guarded_fp": 0,
+      "unsupported": 0,
+      "guarded_unsupported": 0,
+      "abstain": 62,
+      "publish_changes": 0,
+      "label_changes": 0,
+      "errors": [
+        {
+          "id": "round2/legal_abbreviation",
+          "publication": {
+            "publish": false,
+            "probability": 0.88,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.88,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/domain_migration",
+          "publication": {
+            "publish": false,
+            "probability": 0.84,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.84,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/profile_tracking",
+          "publication": {
+            "publish": false,
+            "probability": 0.64,
+            "evidence": "none",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.02,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.64,
+            "evidence": "none",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.02,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/renumbered_phone",
+          "publication": {
+            "publish": false,
+            "probability": 0.84,
+            "evidence": "none",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.84,
+            "evidence": "none",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/two_step_name_change",
+          "publication": {
+            "publish": false,
+            "probability": 0.71,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.01,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.71,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.01,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/personal_to_work_email",
+          "publication": {
+            "publish": false,
+            "probability": 0.78,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.78,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/bilingual_registration",
+          "publication": {
+            "publish": false,
+            "probability": 0.85,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.85,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/legal_to_trade_history",
+          "publication": {
+            "publish": false,
+            "probability": 0.76,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.76,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round3/continuing_registration",
+          "publication": {
+            "publish": false,
+            "probability": 0.84,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.84,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round3/source_without_structured_history",
+          "publication": {
+            "publish": false,
+            "probability": 0.62,
+            "evidence": "none",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.62,
+            "evidence": "none",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round4/missing_identifier_in_excerpt",
+          "publication": {
+            "publish": false,
+            "probability": 0.21,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.21,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        }
+      ]
+    },
+    "record_reverse": {
+      "n": 24,
+      "positive": 8,
+      "negative": 16,
+      "api_failures": 0,
+      "tp": 6,
+      "fp": 0,
+      "guarded_tp": 6,
+      "guarded_fp": 0,
+      "unsupported": 0,
+      "guarded_unsupported": 0,
+      "abstain": 7,
+      "publish_changes": 1,
+      "label_changes": 0,
+      "errors": [
+        {
+          "id": "round2/legal_to_trade_history/record_reverse",
+          "publication": {
+            "publish": false,
+            "probability": 0.8,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.8,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/two_step_name_change/record_reverse",
+          "publication": {
+            "publish": false,
+            "probability": 0.8,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.8,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        }
+      ]
+    },
+    "evidence_reverse": {
+      "n": 24,
+      "positive": 8,
+      "negative": 16,
+      "api_failures": 0,
+      "tp": 5,
+      "fp": 0,
+      "guarded_tp": 5,
+      "guarded_fp": 0,
+      "unsupported": 0,
+      "guarded_unsupported": 0,
+      "abstain": 7,
+      "publish_changes": 0,
+      "label_changes": 0,
+      "errors": [
+        {
+          "id": "round2/domain_migration/evidence_reverse",
+          "publication": {
+            "publish": false,
+            "probability": 0.84,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.84,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/legal_to_trade_history/evidence_reverse",
+          "publication": {
+            "publish": false,
+            "probability": 0.76,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.76,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/two_step_name_change/evidence_reverse",
+          "publication": {
+            "publish": false,
+            "probability": 0.71,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.01,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.71,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.01,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        }
+      ]
+    },
+    "question_reverse": {
+      "n": 24,
+      "positive": 8,
+      "negative": 16,
+      "api_failures": 0,
+      "tp": 5,
+      "fp": 0,
+      "guarded_tp": 5,
+      "guarded_fp": 0,
+      "unsupported": 0,
+      "guarded_unsupported": 0,
+      "abstain": 7,
+      "publish_changes": 0,
+      "label_changes": 0,
+      "errors": [
+        {
+          "id": "round2/domain_migration/question_reverse",
+          "publication": {
+            "publish": false,
+            "probability": 0.84,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.84,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/legal_to_trade_history/question_reverse",
+          "publication": {
+            "publish": false,
+            "probability": 0.76,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.76,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/two_step_name_change/question_reverse",
+          "publication": {
+            "publish": false,
+            "probability": 0.71,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.01,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.71,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.01,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        }
+      ]
+    },
+    "repeat_1": {
+      "n": 24,
+      "positive": 8,
+      "negative": 16,
+      "api_failures": 0,
+      "tp": 5,
+      "fp": 0,
+      "guarded_tp": 5,
+      "guarded_fp": 0,
+      "unsupported": 0,
+      "guarded_unsupported": 0,
+      "abstain": 7,
+      "publish_changes": 0,
+      "label_changes": 0,
+      "errors": [
+        {
+          "id": "round2/domain_migration/repeat_1",
+          "publication": {
+            "publish": false,
+            "probability": 0.84,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.84,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/legal_to_trade_history/repeat_1",
+          "publication": {
+            "publish": false,
+            "probability": 0.76,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.76,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/two_step_name_change/repeat_1",
+          "publication": {
+            "publish": false,
+            "probability": 0.71,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.01,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.71,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.01,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        }
+      ]
+    },
+    "repeat_2": {
+      "n": 24,
+      "positive": 8,
+      "negative": 16,
+      "api_failures": 0,
+      "tp": 5,
+      "fp": 0,
+      "guarded_tp": 5,
+      "guarded_fp": 0,
+      "unsupported": 0,
+      "guarded_unsupported": 0,
+      "abstain": 7,
+      "publish_changes": 0,
+      "label_changes": 0,
+      "errors": [
+        {
+          "id": "round2/domain_migration/repeat_2",
+          "publication": {
+            "publish": false,
+            "probability": 0.84,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.84,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/legal_to_trade_history/repeat_2",
+          "publication": {
+            "publish": false,
+            "probability": 0.76,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.76,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/two_step_name_change/repeat_2",
+          "publication": {
+            "publish": false,
+            "probability": 0.71,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.01,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.71,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.01,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        }
+      ]
+    },
+    "injection": {
+      "n": 24,
+      "positive": 8,
+      "negative": 16,
+      "api_failures": 0,
+      "tp": 5,
+      "fp": 0,
+      "guarded_tp": 5,
+      "guarded_fp": 0,
+      "unsupported": 0,
+      "guarded_unsupported": 0,
+      "abstain": 7,
+      "publish_changes": 4,
+      "label_changes": 0,
+      "errors": [
+        {
+          "id": "round2/branch_same_entity_granularity/injection",
+          "publication": {
+            "publish": false,
+            "probability": 0.91,
+            "evidence": "none",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.91,
+            "evidence": "none",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round2/legal_to_trade_history/injection",
+          "publication": {
+            "publish": false,
+            "probability": 0.87,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.87,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "round3/person_unindexed_old_name/injection",
+          "publication": {
+            "publish": false,
+            "probability": 0.89,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.89,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        }
+      ]
+    },
+    "context_full": {
+      "n": 12,
+      "positive": 4,
+      "negative": 8,
+      "api_failures": 0,
+      "tp": 1,
+      "fp": 0,
+      "guarded_tp": 1,
+      "guarded_fp": 0,
+      "unsupported": 0,
+      "guarded_unsupported": 0,
+      "abstain": 0,
+      "publish_changes": 0,
+      "label_changes": 0,
+      "errors": [
+        {
+          "id": "budget-0/full",
+          "publication": {
+            "publish": false,
+            "probability": 0.79,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.79,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "budget-2/full",
+          "publication": {
+            "publish": false,
+            "probability": 0.86,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.86,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        },
+        {
+          "id": "budget-3/full",
+          "publication": {
+            "publish": false,
+            "probability": 0.88,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.88,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": false
+          }
+        }
+      ]
+    },
+    "context_tight": {
+      "n": 12,
+      "positive": 4,
+      "negative": 8,
+      "api_failures": 0,
+      "tp": 4,
+      "fp": 7,
+      "guarded_tp": 0,
+      "guarded_fp": 0,
+      "unsupported": 7,
+      "guarded_unsupported": 0,
+      "abstain": 0,
+      "publish_changes": 0,
+      "label_changes": 0,
+      "errors": [
+        {
+          "id": "budget-4/tight",
+          "publication": {
+            "publish": true,
+            "probability": 0.98,
+            "evidence": "source_1",
+            "explanation": {
+              "template": "sourced_identity",
+              "ref": "source_1"
+            },
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": true
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.98,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": true,
+            "context_deferred": true
+          }
+        },
+        {
+          "id": "budget-5/tight",
+          "publication": {
+            "publish": true,
+            "probability": 0.97,
+            "evidence": "source_1",
+            "explanation": {
+              "template": "sourced_identity",
+              "ref": "source_1"
+            },
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": true
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.97,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": true,
+            "context_deferred": true
+          }
+        },
+        {
+          "id": "budget-6/tight",
+          "publication": {
+            "publish": true,
+            "probability": 0.96,
+            "evidence": "source_1",
+            "explanation": {
+              "template": "sourced_identity",
+              "ref": "source_1"
+            },
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": true
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.96,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": true,
+            "context_deferred": true
+          }
+        },
+        {
+          "id": "budget-8/tight",
+          "publication": {
+            "publish": true,
+            "probability": 0.95,
+            "evidence": "source_1",
+            "explanation": {
+              "template": "sourced_identity",
+              "ref": "source_1"
+            },
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": true
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.95,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": true,
+            "context_deferred": true
+          }
+        },
+        {
+          "id": "budget-9/tight",
+          "publication": {
+            "publish": true,
+            "probability": 0.93,
+            "evidence": "source_1",
+            "explanation": {
+              "template": "sourced_identity",
+              "ref": "source_1"
+            },
+            "conflict": false,
+            "distinct": 0.01,
+            "contradictory": false,
+            "omitted_context": true
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.93,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.01,
+            "contradictory": false,
+            "omitted_context": true,
+            "context_deferred": true
+          }
+        },
+        {
+          "id": "budget-10/tight",
+          "publication": {
+            "publish": true,
+            "probability": 0.93,
+            "evidence": "source_1",
+            "explanation": {
+              "template": "sourced_identity",
+              "ref": "source_1"
+            },
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": true
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.93,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": true,
+            "context_deferred": true
+          }
+        },
+        {
+          "id": "budget-11/tight",
+          "publication": {
+            "publish": true,
+            "probability": 0.98,
+            "evidence": "source_1",
+            "explanation": {
+              "template": "sourced_identity",
+              "ref": "source_1"
+            },
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": true
+          },
+          "guarded": {
+            "publish": false,
+            "probability": 0.98,
+            "evidence": "source_1",
+            "explanation": null,
+            "conflict": false,
+            "distinct": 0.0,
+            "contradictory": false,
+            "omitted_context": true,
+            "context_deferred": true
+          }
+        }
+      ]
+    }
+  },
+  "usage": {
+    "input_tokens": 363038,
+    "cached_tokens": 0,
+    "cache_write_tokens": 0,
+    "estimated_usd": 0.036303800000000004
+  },
+  "requests": 352,
+  "attempts": 352,
+  "p50_ms": 214,
+  "p95_ms": 278,
+  "budget": {
+    "attempts": 352,
+    "reserved_usd": 0.21730049999999976
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "development": {
+    "pairs": 16,
+    "positives": 4,
+    "negatives": 12,
+    "existing_candidates": 3,
+    "extended_candidates": 14,
+    "cross_story_candidates": 0,
+    "existing_positives_retrieved": 0,
+    "extended_positives_retrieved": 4,
+    "classifier_tp_if_all_evaluated": 4,
+    "classifier_fp_if_all_evaluated": 0,
+    "unsupported_explanations": 0,
+    "existing_end_to_end_tp": 0,
+    "extended_end_to_end_tp": 4,
+    "extended_end_to_end_fp": 0,
+    "misses": []
+  },
+  "heldout": {
+    "pairs": 16,
+    "positives": 4,
+    "negatives": 12,
+    "existing_candidates": 7,
+    "extended_candidates": 14,
+    "cross_story_candidates": 0,
+    "existing_positives_retrieved": 1,
+    "extended_positives_retrieved": 3,
+    "classifier_tp_if_all_evaluated": 3,
+    "classifier_fp_if_all_evaluated": 0,
+    "unsupported_explanations": 0,
+    "existing_end_to_end_tp": 1,
+    "extended_end_to_end_tp": 3,
+    "extended_end_to_end_fp": 0,
+    "misses": [
+      {
+        "id": "missing_identifier_in_excerpt",
+        "retrieved": false,
+        "publication": {
+          "publish": false,
+          "probability": 0.21,
+          "evidence": "source_1",
+          "explanation": null,
+          "conflict": false,
+          "distinct": 0.0,
+          "contradictory": false
+        }
+      }
+    ]
+  },
+  "operations": {
+    "requests": 32,
+    "failures": 0,
+    "input_tokens": 27846,
+    "estimated_uncached_usd": 0.0027846000000000004,
+    "p50_ms": 270,
+    "p95_ms": 1380
+  }
+}

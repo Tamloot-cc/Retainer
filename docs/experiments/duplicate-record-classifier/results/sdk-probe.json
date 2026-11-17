@@ -1,0 +1,5 @@
+{
+  "python_openai_version": "2.38.0",
+  "decisions_resource": false,
+  "transport_used": "Python standard library urllib.request"
+}

@@ -1,0 +1,16 @@
+{
+  "version": "fact_mentions_v1",
+  "created_at": "2026-11-17T01:09:52.531697+00:00",
+  "dataset_sha256": "e7d8f558e3fce348a5f88142829239a69d9771794fbdc2ec8d7581b04eaabe35",
+  "requests_sha256": "6f25f64157b7396e8e36d5ab0295592456237479134cd39a5d94ec8392eceefe",
+  "retrieval_policy": {
+    "fts": "simple phrase over full normalized record names",
+    "per_fact_owner_candidates": 3,
+    "global_fact_pair_cap": 200,
+    "no_external_research": true
+  },
+  "classification_policy": "round2 baseline 0.90, unchanged",
+  "max_requests": 32,
+  "max_attempts": 64,
+  "max_reserved_usd": 0.15
+}

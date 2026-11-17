@@ -1,0 +1,37 @@
+{
+  "workspace": "Team8",
+  "captured_at": "2026-11-16T19:23:18.169296+00:00",
+  "companies": 13,
+  "has_more_companies": false,
+  "history_items": 31,
+  "identity_facts": 2,
+  "page_omissions": 0,
+  "candidates": {
+    "host": 1,
+    "current": 0,
+    "history": 0
+  },
+  "selected_pairs": 1,
+  "live_requests": 1,
+  "successful_requests": 1,
+  "outcomes": {
+    "insufficient_evidence": 1
+  },
+  "eligible_if_classified": 0,
+  "eligible_on_actual_history_candidates": 0,
+  "input_tokens": 999,
+  "estimated_uncached_usd": 9.99e-5,
+  "read_api_requests": 54,
+  "crm_writes": 0,
+  "visible_suggestions_created": 0,
+  "real_data_committed": false,
+  "quality_verdict": "unlabeled shadow sample; no accuracy or recall claim",
+  "inspection": {
+    "known_social_host_regression": true,
+    "different_websites": true,
+    "different_full_profiles": true,
+    "expected_publication": false,
+    "observed_publication": false,
+    "adjudication_basis": "Known distinct-company regression from the supplied spec, checked against full identity URLs. No real-workspace recall estimate."
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "version": "round5-matrix-v1",
+  "frozen_at": "2026-11-17T04:03:47.206673+00:00",
+  "matrix_sha256": "8afadedf5ac7ba67065d420cdff8678c03279b262ecb3677b8dbe66658fefd35",
+  "requests": 352,
+  "max_attempts": 800,
+  "max_reserved_usd": 2,
+  "identity_threshold": 0.9,
+  "omission_guard": "compare existing behavior with unconditional defer on any omitted selected context; no threshold tuning",
+  "scope": "synthetic-only; prior heldouts are regression data, not fresh validation"
+}

@@ -1,0 +1,63 @@
+{
+  "request": {
+    "model": "gpt-6-luna",
+    "input": "Synthetic companies: Fijoya, website https://fijoya.example, LinkedIn https://linkedin.com/company/fijoya; Wiz, website https://wiz.example, LinkedIn https://linkedin.com/company/wiz. No other evidence.",
+    "questions": [
+      {
+        "type": "choice",
+        "name": "identity",
+        "instructions": "Do these represent the same real-world entity? A shared social platform hostname is not identity evidence.",
+        "choices": [
+          {
+            "value": "same_entity"
+          },
+          {
+            "value": "different_entities"
+          },
+          {
+            "value": "insufficient_evidence"
+          }
+        ]
+      }
+    ]
+  },
+  "status": 200,
+  "elapsed_ms": 2618,
+  "response": {
+    "model": "gpt-6-luna",
+    "answers": [
+      {
+        "type": "choice",
+        "name": "identity",
+        "choice": "insufficient_evidence",
+        "probabilities": [
+          {
+            "value": "same_entity",
+            "probability": 0.02
+          },
+          {
+            "value": "different_entities",
+            "probability": 0.25
+          },
+          {
+            "value": "insufficient_evidence",
+            "probability": 0.73
+          }
+        ],
+        "confidence": 0.6
+      }
+    ],
+    "usage": {
+      "input_tokens": 176,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "output_tokens": 0,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 176
+    }
+  }
+}

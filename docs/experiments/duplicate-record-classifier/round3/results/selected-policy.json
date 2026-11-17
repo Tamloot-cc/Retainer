@@ -1,0 +1,175 @@
+{
+  "selected_at": "2026-11-17T00:41:15.120128+00:00",
+  "development_results_sha256": "e7c1e9a08662a48c2e0cd6f566f788653f3d80e230b79ff83f8b6a53e4f8381c",
+  "candidates": [
+    {
+      "policy": {
+        "name": "sourced_strict",
+        "identity_floor": 0.7,
+        "evidence_probability": 0.95,
+        "support_probability": 0.95
+      },
+      "metrics": {
+        "pairs": 24,
+        "duplicates": 8,
+        "negatives": 16,
+        "tp": 7,
+        "fp": 0,
+        "unsupported_explanations": 0,
+        "api_failures": 0,
+        "retrieved_duplicates": 8,
+        "end_to_end_tp": 7,
+        "end_to_end_fp": 0,
+        "errors": [
+          {
+            "id": "incorporation_style",
+            "duplicate": true,
+            "retrieved": true,
+            "assessment": {
+              "publish": false,
+              "route": null,
+              "reference": null,
+              "same_probability": 0.97,
+              "evidence_probability": 0.63,
+              "support_probability": 0.99,
+              "distinct_probability": 0.0,
+              "conflict": false,
+              "omitted_context": false,
+              "explanation": null
+            }
+          }
+        ],
+        "publication_recall": 0.875,
+        "end_to_end_recall": 0.875,
+        "precision": 1.0
+      }
+    },
+    {
+      "policy": {
+        "name": "sourced_balanced",
+        "identity_floor": 0.6,
+        "evidence_probability": 0.9,
+        "support_probability": 0.9
+      },
+      "metrics": {
+        "pairs": 24,
+        "duplicates": 8,
+        "negatives": 16,
+        "tp": 7,
+        "fp": 0,
+        "unsupported_explanations": 0,
+        "api_failures": 0,
+        "retrieved_duplicates": 8,
+        "end_to_end_tp": 7,
+        "end_to_end_fp": 0,
+        "errors": [
+          {
+            "id": "incorporation_style",
+            "duplicate": true,
+            "retrieved": true,
+            "assessment": {
+              "publish": false,
+              "route": null,
+              "reference": null,
+              "same_probability": 0.97,
+              "evidence_probability": 0.63,
+              "support_probability": 0.99,
+              "distinct_probability": 0.0,
+              "conflict": false,
+              "omitted_context": false,
+              "explanation": null
+            }
+          }
+        ],
+        "publication_recall": 0.875,
+        "end_to_end_recall": 0.875,
+        "precision": 1.0
+      }
+    },
+    {
+      "policy": {
+        "name": "sourced_loose",
+        "identity_floor": 0.5,
+        "evidence_probability": 0.8,
+        "support_probability": 0.8
+      },
+      "metrics": {
+        "pairs": 24,
+        "duplicates": 8,
+        "negatives": 16,
+        "tp": 7,
+        "fp": 0,
+        "unsupported_explanations": 0,
+        "api_failures": 0,
+        "retrieved_duplicates": 8,
+        "end_to_end_tp": 7,
+        "end_to_end_fp": 0,
+        "errors": [
+          {
+            "id": "incorporation_style",
+            "duplicate": true,
+            "retrieved": true,
+            "assessment": {
+              "publish": false,
+              "route": null,
+              "reference": null,
+              "same_probability": 0.97,
+              "evidence_probability": 0.63,
+              "support_probability": 0.99,
+              "distinct_probability": 0.0,
+              "conflict": false,
+              "omitted_context": false,
+              "explanation": null
+            }
+          }
+        ],
+        "publication_recall": 0.875,
+        "end_to_end_recall": 0.875,
+        "precision": 1.0
+      }
+    }
+  ],
+  "selected": {
+    "policy": {
+      "name": "sourced_strict",
+      "identity_floor": 0.7,
+      "evidence_probability": 0.95,
+      "support_probability": 0.95
+    },
+    "metrics": {
+      "pairs": 24,
+      "duplicates": 8,
+      "negatives": 16,
+      "tp": 7,
+      "fp": 0,
+      "unsupported_explanations": 0,
+      "api_failures": 0,
+      "retrieved_duplicates": 8,
+      "end_to_end_tp": 7,
+      "end_to_end_fp": 0,
+      "errors": [
+        {
+          "id": "incorporation_style",
+          "duplicate": true,
+          "retrieved": true,
+          "assessment": {
+            "publish": false,
+            "route": null,
+            "reference": null,
+            "same_probability": 0.97,
+            "evidence_probability": 0.63,
+            "support_probability": 0.99,
+            "distinct_probability": 0.0,
+            "conflict": false,
+            "omitted_context": false,
+            "explanation": null
+          }
+        }
+      ],
+      "publication_recall": 0.875,
+      "end_to_end_recall": 0.875,
+      "precision": 1.0
+    }
+  },
+  "development_gate_passed": true
+}

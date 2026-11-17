@@ -1,0 +1,1411 @@
+{
+  "development": {
+    "current": {
+      "candidates": [
+        {
+          "a": "r-0c8431248966d927",
+          "b": "r-af5fd2e1813b74ac",
+          "triggers": [
+            {
+              "kind": "email",
+              "value": "accounts@ashfield.example",
+              "leftRef": "current:email",
+              "rightRef": "current:email",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.72727275
+        },
+        {
+          "a": "r-0eeeb2da8f83ec30",
+          "b": "r-8d7ce05c38c59e61",
+          "triggers": [
+            {
+              "kind": "email",
+              "value": "family@moran-house.example",
+              "leftRef": "current:email",
+              "rightRef": "current:email",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.5714286
+        },
+        {
+          "a": "r-1981a158b6fa9ffb",
+          "b": "r-1f2228d79cee8d60",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "horizonquill.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.6086956
+        },
+        {
+          "a": "r-33ac910abc7a880e",
+          "b": "r-4dab3099cd745af6",
+          "triggers": null,
+          "name_similarity": 0.78571427
+        },
+        {
+          "a": "r-443fdccc4019187f",
+          "b": "r-f4f4abbca3df05db",
+          "triggers": null,
+          "name_similarity": 0.6111111
+        },
+        {
+          "a": "r-4828eb7ba456f8fd",
+          "b": "r-600d88bbd37b5d9c",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "torch-bay.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/torch-bay",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.625
+        },
+        {
+          "a": "r-51c4ac8b5870b09b",
+          "b": "r-6c632c0c7660eb09",
+          "triggers": null,
+          "name_similarity": 1
+        },
+        {
+          "a": "r-56eb568c94e7dd97",
+          "b": "r-f6b02ec8db42ef65",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "marble kite",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "marble-kite.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/marble-kite",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.75
+        },
+        {
+          "a": "r-5faa48b84be88a82",
+          "b": "r-7e92df08b5ab22c7",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "frostline technologies",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "frostline-tech.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.7027027
+        },
+        {
+          "a": "r-716dbd4121d01c30",
+          "b": "r-f8d17f99269a524c",
+          "triggers": null,
+          "name_similarity": 0.6923077
+        },
+        {
+          "a": "r-9006a936573d160b",
+          "b": "r-a193db52533cfaa9",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "alto gauge",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "altogauge.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 1
+        },
+        {
+          "a": "r-9f6d84bf86b1fa43",
+          "b": "r-e5dfc46d24bd1d93",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "glassfern.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/glassfern",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.61538464
+        },
+        {
+          "a": "r-a6042a03caeb245e",
+          "b": "r-e4f0ee383dfd0556",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "violetledger.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.6086956
+        },
+        {
+          "a": "r-aca347ccb2753480",
+          "b": "r-ea50441a83c72853",
+          "triggers": null,
+          "name_similarity": 1
+        }
+      ],
+      "total_candidates": 14,
+      "capped": false
+    },
+    "history": {
+      "candidates": [
+        {
+          "a": "r-0aa156ac235f733d",
+          "b": "r-918e07da4cc2482f",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "cobalt ladder",
+              "leftRef": "current:name",
+              "rightRef": "assertion_r-918e07da4cc2482f",
+              "historical": true
+            }
+          ],
+          "name_similarity": 0.035714287
+        },
+        {
+          "a": "r-0c8431248966d927",
+          "b": "r-af5fd2e1813b74ac",
+          "triggers": [
+            {
+              "kind": "email",
+              "value": "accounts@ashfield.example",
+              "leftRef": "current:email",
+              "rightRef": "current:email",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.72727275
+        },
+        {
+          "a": "r-0eeeb2da8f83ec30",
+          "b": "r-8d7ce05c38c59e61",
+          "triggers": [
+            {
+              "kind": "email",
+              "value": "family@moran-house.example",
+              "leftRef": "current:email",
+              "rightRef": "current:email",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.5714286
+        },
+        {
+          "a": "r-1270193f9eeefd59",
+          "b": "r-5f2946d17df4db51",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "\u05d2\u05e9\u05e8 \u05e0\u05d7\u05d5\u05e9\u05ea",
+              "leftRef": "assertion_r-1270193f9eeefd59",
+              "rightRef": "current:name",
+              "historical": true
+            }
+          ],
+          "name_similarity": 0
+        },
+        {
+          "a": "r-1981a158b6fa9ffb",
+          "b": "r-1f2228d79cee8d60",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "horizonquill.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.6086956
+        },
+        {
+          "a": "r-1f9a195b7ed208f6",
+          "b": "r-e454c7964d4e7fdd",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "nimbus loom",
+              "leftRef": "assertion_r-1f9a195b7ed208f6",
+              "rightRef": "current:name",
+              "historical": true
+            }
+          ],
+          "name_similarity": 0
+        },
+        {
+          "a": "r-33ac910abc7a880e",
+          "b": "r-4dab3099cd745af6",
+          "triggers": null,
+          "name_similarity": 0.78571427
+        },
+        {
+          "a": "r-443fdccc4019187f",
+          "b": "r-f4f4abbca3df05db",
+          "triggers": null,
+          "name_similarity": 0.6111111
+        },
+        {
+          "a": "r-4828eb7ba456f8fd",
+          "b": "r-600d88bbd37b5d9c",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "torch-bay.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/torch-bay",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.625
+        },
+        {
+          "a": "r-4cf58f4c37c7e701",
+          "b": "r-d39247d302508b02",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "sophie laurent",
+              "leftRef": "current:name",
+              "rightRef": "assertion_r-d39247d302508b02",
+              "historical": true
+            }
+          ],
+          "name_similarity": 0.5625
+        },
+        {
+          "a": "r-51c4ac8b5870b09b",
+          "b": "r-6c632c0c7660eb09",
+          "triggers": null,
+          "name_similarity": 1
+        },
+        {
+          "a": "r-56eb568c94e7dd97",
+          "b": "r-f6b02ec8db42ef65",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "marble kite",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "marble-kite.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/marble-kite",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.75
+        },
+        {
+          "a": "r-5faa48b84be88a82",
+          "b": "r-7e92df08b5ab22c7",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "frostline technologies",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "frostline-tech.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.7027027
+        },
+        {
+          "a": "r-60a69ed473e68550",
+          "b": "r-d97d2a47640078e3",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "lior ben nun",
+              "leftRef": "current:name",
+              "rightRef": "assertion_r-d97d2a47640078e3",
+              "historical": true
+            }
+          ],
+          "name_similarity": 0.33333334
+        },
+        {
+          "a": "r-716dbd4121d01c30",
+          "b": "r-f8d17f99269a524c",
+          "triggers": null,
+          "name_similarity": 0.6923077
+        },
+        {
+          "a": "r-9006a936573d160b",
+          "b": "r-a193db52533cfaa9",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "alto gauge",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "altogauge.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 1
+        },
+        {
+          "a": "r-9e177b306f609741",
+          "b": "r-c3ed808b5ee46d8c",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "parcel finch",
+              "leftRef": "assertion_r-9e177b306f609741",
+              "rightRef": "current:name",
+              "historical": true
+            }
+          ],
+          "name_similarity": 0.03125
+        },
+        {
+          "a": "r-9f6d84bf86b1fa43",
+          "b": "r-e5dfc46d24bd1d93",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "glassfern.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/glassfern",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.61538464
+        },
+        {
+          "a": "r-a6042a03caeb245e",
+          "b": "r-e4f0ee383dfd0556",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "violetledger.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.6086956
+        },
+        {
+          "a": "r-aca347ccb2753480",
+          "b": "r-ea50441a83c72853",
+          "triggers": null,
+          "name_similarity": 1
+        }
+      ],
+      "total_candidates": 20,
+      "capped": false
+    }
+  },
+  "heldout": {
+    "current": {
+      "candidates": [
+        {
+          "a": "r-057dc2884c818ae5",
+          "b": "r-67465f6dd1404666",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "sunroom-payments.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.73913044
+        },
+        {
+          "a": "r-083ad33cfcd8896a",
+          "b": "r-91583fd2c06624c2",
+          "triggers": null,
+          "name_similarity": 1
+        },
+        {
+          "a": "r-0a1adef43390fdab",
+          "b": "r-38ce9dfa6d1e2571",
+          "triggers": null,
+          "name_similarity": 0.6315789
+        },
+        {
+          "a": "r-0b01079dc03294d7",
+          "b": "r-1547a68a54e9baa8",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "sites-host.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.4347826
+        },
+        {
+          "a": "r-0e8404758c8f6fe4",
+          "b": "r-195f4db2b4226c6c",
+          "triggers": null,
+          "name_similarity": 1
+        },
+        {
+          "a": "r-1866bd4002218ed2",
+          "b": "r-e1fb02d52d572e72",
+          "triggers": null,
+          "name_similarity": 0.6666667
+        },
+        {
+          "a": "r-1d674f17a690da86",
+          "b": "r-dbc8d6119c282651",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "brightshoal.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.59090906
+        },
+        {
+          "a": "r-20af03fef3f9ece6",
+          "b": "r-f8b652877a0c0c38",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "saltwing analytics",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "saltwing.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.54285717
+        },
+        {
+          "a": "r-246497a49206ce2a",
+          "b": "r-b0f67f4f7af13c55",
+          "triggers": null,
+          "name_similarity": 0.625
+        },
+        {
+          "a": "r-2f44208f21ee26cf",
+          "b": "r-bacbb82d145cbe68",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "ravenwood.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.61904764
+        },
+        {
+          "a": "r-33636944b0e674c5",
+          "b": "r-b08dbbcbba7e0340",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "vantage loop",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            }
+          ],
+          "name_similarity": 1
+        },
+        {
+          "a": "r-34c3abf9df8af504",
+          "b": "r-cccb370ea04e5efa",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "reefline research",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "reefline-research.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/reefline-research",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.8
+        },
+        {
+          "a": "r-3cff7cb4e4bfe557",
+          "b": "r-8d2c7746f937eb3c",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "tealharbor.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/tealharbor",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.7058824
+        },
+        {
+          "a": "r-400888c8ceec0059",
+          "b": "r-9ae985a89fbfee99",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "alderline.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.35714287
+        },
+        {
+          "a": "r-46dfba314f0a9728",
+          "b": "r-bbc3803239eb1b9a",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "pocket-beacon.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.05882353
+        },
+        {
+          "a": "r-558d7e3b36d2eb4d",
+          "b": "r-82ca09b423deb72c",
+          "triggers": null,
+          "name_similarity": 0.6666667
+        },
+        {
+          "a": "r-664e536659c75493",
+          "b": "r-80e8709162f552fb",
+          "triggers": [
+            {
+              "kind": "email",
+              "value": "hello@orchard-office.example",
+              "leftRef": "current:email",
+              "rightRef": "current:email",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.6666667
+        },
+        {
+          "a": "r-7b433ad1c433897b",
+          "b": "r-bddcd3739d05b297",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "tamarack house",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "tamarackhouse.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 1
+        },
+        {
+          "a": "r-7fa58a47fa403f35",
+          "b": "r-96a26399d88c447e",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "slatecompass.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/slatecompass",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.5
+        },
+        {
+          "a": "r-82dc114c8ae34434",
+          "b": "r-c27935c5ddd4cda8",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "noor cohen",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            }
+          ],
+          "name_similarity": 1
+        },
+        {
+          "a": "r-9356d34b53f38131",
+          "b": "r-d7a7414c64a5caee",
+          "triggers": null,
+          "name_similarity": 1
+        },
+        {
+          "a": "r-939d797abf5fd8a8",
+          "b": "r-b30ad4b3e4995cdb",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "foxtail-maps.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/foxtail-cartography",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.7692308
+        },
+        {
+          "a": "r-9c12423b4789a393",
+          "b": "r-a0518c8d988ee968",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "nahal-instruments.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0
+        },
+        {
+          "a": "r-9cf961978d0a927b",
+          "b": "r-b74b8df52d9972ba",
+          "triggers": [
+            {
+              "kind": "email",
+              "value": "operations@tinroof.example",
+              "leftRef": "current:email",
+              "rightRef": "current:email",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.5714286
+        },
+        {
+          "a": "r-9e1969c04d573a52",
+          "b": "r-dd0b16ff4e5513f6",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "seabrookrail.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.4375
+        },
+        {
+          "a": "r-b12fe5290613514a",
+          "b": "r-cfdb36ab8ae9ff43",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "bramble-station.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.8333333
+        },
+        {
+          "a": "r-cb976ca35c99fb94",
+          "b": "r-e84b36361d1a8e6d",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "element",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            }
+          ],
+          "name_similarity": 1
+        },
+        {
+          "a": "r-ce9d978e8125bf36",
+          "b": "r-d1593c814e91c5e0",
+          "triggers": null,
+          "name_similarity": 0.64705884
+        },
+        {
+          "a": "r-e5db9c57bd31b97c",
+          "b": "r-f1cb958d2aef2836",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/silversedge",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.6
+        },
+        {
+          "a": "r-ec6b7f68727dbe30",
+          "b": "r-f5825240228a0875",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "gal dahan",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            }
+          ],
+          "name_similarity": 1
+        }
+      ],
+      "total_candidates": 30,
+      "capped": false
+    },
+    "history": {
+      "candidates": [
+        {
+          "a": "r-057dc2884c818ae5",
+          "b": "r-67465f6dd1404666",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "sunroom-payments.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.73913044
+        },
+        {
+          "a": "r-083ad33cfcd8896a",
+          "b": "r-91583fd2c06624c2",
+          "triggers": null,
+          "name_similarity": 1
+        },
+        {
+          "a": "r-0a1adef43390fdab",
+          "b": "r-38ce9dfa6d1e2571",
+          "triggers": null,
+          "name_similarity": 0.6315789
+        },
+        {
+          "a": "r-0b01079dc03294d7",
+          "b": "r-1547a68a54e9baa8",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "sites-host.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.4347826
+        },
+        {
+          "a": "r-0e8404758c8f6fe4",
+          "b": "r-195f4db2b4226c6c",
+          "triggers": null,
+          "name_similarity": 1
+        },
+        {
+          "a": "r-12b559ff5c52e67e",
+          "b": "r-95ef8cd9d9f30f18",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "\u05e9\u05e7\u05d3 \u05de\u05d6\u05e8\u05d7",
+              "leftRef": "assertion_r-12b559ff5c52e67e",
+              "rightRef": "current:name",
+              "historical": true
+            }
+          ],
+          "name_similarity": 0
+        },
+        {
+          "a": "r-1866bd4002218ed2",
+          "b": "r-e1fb02d52d572e72",
+          "triggers": null,
+          "name_similarity": 0.6666667
+        },
+        {
+          "a": "r-1d674f17a690da86",
+          "b": "r-dbc8d6119c282651",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "brightshoal.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.59090906
+        },
+        {
+          "a": "r-1f41b9811cd2a4e7",
+          "b": "r-aed0fd5dea997ec3",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "mountain operations research",
+              "leftRef": "current:name",
+              "rightRef": "assertion_r-aed0fd5dea997ec3",
+              "historical": true
+            }
+          ],
+          "name_similarity": 0.16216215
+        },
+        {
+          "a": "r-20af03fef3f9ece6",
+          "b": "r-f8b652877a0c0c38",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "saltwing analytics",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "saltwing.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.54285717
+        },
+        {
+          "a": "r-246497a49206ce2a",
+          "b": "r-b0f67f4f7af13c55",
+          "triggers": null,
+          "name_similarity": 0.625
+        },
+        {
+          "a": "r-2f44208f21ee26cf",
+          "b": "r-bacbb82d145cbe68",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "ravenwood.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.61904764
+        },
+        {
+          "a": "r-33636944b0e674c5",
+          "b": "r-b08dbbcbba7e0340",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "vantage loop",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            }
+          ],
+          "name_similarity": 1
+        },
+        {
+          "a": "r-34c3abf9df8af504",
+          "b": "r-cccb370ea04e5efa",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "reefline research",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "reefline-research.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/reefline-research",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.8
+        },
+        {
+          "a": "r-3683560d1ab25986",
+          "b": "r-d34f3c6b1855eb5b",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "mika arnon",
+              "leftRef": "current:name",
+              "rightRef": "assertion_r-d34f3c6b1855eb5b",
+              "historical": true
+            }
+          ],
+          "name_similarity": 0.3125
+        },
+        {
+          "a": "r-3c85f7d2b0e1c994",
+          "b": "r-a21fe903b8685c45",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "yara salem",
+              "leftRef": "assertion_r-3c85f7d2b0e1c994",
+              "rightRef": "current:name",
+              "historical": true
+            }
+          ],
+          "name_similarity": 0.5833333
+        },
+        {
+          "a": "r-3cff7cb4e4bfe557",
+          "b": "r-8d2c7746f937eb3c",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "tealharbor.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/tealharbor",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.7058824
+        },
+        {
+          "a": "r-400888c8ceec0059",
+          "b": "r-9ae985a89fbfee99",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "alderline.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.35714287
+        },
+        {
+          "a": "r-43f7fbc83cf25431",
+          "b": "r-4d42eefff6c0bbd4",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "amber paddock",
+              "leftRef": "assertion_r-43f7fbc83cf25431",
+              "rightRef": "current:name",
+              "historical": true
+            }
+          ],
+          "name_similarity": 0.30769232
+        },
+        {
+          "a": "r-46dfba314f0a9728",
+          "b": "r-bbc3803239eb1b9a",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "pocket beacon",
+              "leftRef": "current:name",
+              "rightRef": "assertion_r-bbc3803239eb1b9a",
+              "historical": true
+            },
+            {
+              "kind": "url",
+              "value": "pocket-beacon.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.05882353
+        },
+        {
+          "a": "r-558d7e3b36d2eb4d",
+          "b": "r-82ca09b423deb72c",
+          "triggers": null,
+          "name_similarity": 0.6666667
+        },
+        {
+          "a": "r-5d48206230690894",
+          "b": "r-99ad82ed07fd0d8c",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "ferry lantern",
+              "leftRef": "assertion_r-5d48206230690894",
+              "rightRef": "current:name",
+              "historical": true
+            }
+          ],
+          "name_similarity": 0
+        },
+        {
+          "a": "r-664e536659c75493",
+          "b": "r-80e8709162f552fb",
+          "triggers": [
+            {
+              "kind": "email",
+              "value": "hello@orchard-office.example",
+              "leftRef": "current:email",
+              "rightRef": "current:email",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.6666667
+        },
+        {
+          "a": "r-7b433ad1c433897b",
+          "b": "r-bddcd3739d05b297",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "tamarack house",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "tamarackhouse.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 1
+        },
+        {
+          "a": "r-7fa58a47fa403f35",
+          "b": "r-96a26399d88c447e",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "slatecompass.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/slatecompass",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.5
+        },
+        {
+          "a": "r-82dc114c8ae34434",
+          "b": "r-c27935c5ddd4cda8",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "noor cohen",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            }
+          ],
+          "name_similarity": 1
+        },
+        {
+          "a": "r-9356d34b53f38131",
+          "b": "r-d7a7414c64a5caee",
+          "triggers": null,
+          "name_similarity": 1
+        },
+        {
+          "a": "r-939d797abf5fd8a8",
+          "b": "r-b30ad4b3e4995cdb",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "foxtail-maps.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            },
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/foxtail-cartography",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.7692308
+        },
+        {
+          "a": "r-9c12423b4789a393",
+          "b": "r-a0518c8d988ee968",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "nahal-instruments.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0
+        },
+        {
+          "a": "r-9cf961978d0a927b",
+          "b": "r-b74b8df52d9972ba",
+          "triggers": [
+            {
+              "kind": "email",
+              "value": "operations@tinroof.example",
+              "leftRef": "current:email",
+              "rightRef": "current:email",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.5714286
+        },
+        {
+          "a": "r-9e1969c04d573a52",
+          "b": "r-dd0b16ff4e5513f6",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "seabrookrail.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.4375
+        },
+        {
+          "a": "r-b12fe5290613514a",
+          "b": "r-cfdb36ab8ae9ff43",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "bramble-station.example",
+              "leftRef": "current:website",
+              "rightRef": "current:website",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.8333333
+        },
+        {
+          "a": "r-cb976ca35c99fb94",
+          "b": "r-e84b36361d1a8e6d",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "element",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            }
+          ],
+          "name_similarity": 1
+        },
+        {
+          "a": "r-ce9d978e8125bf36",
+          "b": "r-d1593c814e91c5e0",
+          "triggers": null,
+          "name_similarity": 0.64705884
+        },
+        {
+          "a": "r-e5db9c57bd31b97c",
+          "b": "r-f1cb958d2aef2836",
+          "triggers": [
+            {
+              "kind": "url",
+              "value": "linkedin.com/company/silversedge",
+              "leftRef": "current:linkedin",
+              "rightRef": "current:linkedin",
+              "historical": false
+            }
+          ],
+          "name_similarity": 0.6
+        },
+        {
+          "a": "r-ec6b7f68727dbe30",
+          "b": "r-f5825240228a0875",
+          "triggers": [
+            {
+              "kind": "name",
+              "value": "gal dahan",
+              "leftRef": "current:name",
+              "rightRef": "current:name",
+              "historical": false
+            }
+          ],
+          "name_similarity": 1
+        }
+      ],
+      "total_candidates": 36,
+      "capped": false
+    }
+  }
+}

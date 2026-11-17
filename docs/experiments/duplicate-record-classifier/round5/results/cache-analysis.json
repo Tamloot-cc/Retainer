@@ -1,0 +1,92 @@
+{
+  "observations": [
+    {
+      "name": "long_single_first",
+      "ok": true,
+      "input_tokens": 2793,
+      "cached_tokens": 0,
+      "cache_write_tokens": 2563,
+      "questions": 1
+    },
+    {
+      "name": "long_single_repeat",
+      "ok": true,
+      "input_tokens": 2793,
+      "cached_tokens": 2563,
+      "cache_write_tokens": 0,
+      "questions": 1
+    },
+    {
+      "name": "long_multi_first",
+      "ok": true,
+      "input_tokens": 3299,
+      "cached_tokens": 2563,
+      "cache_write_tokens": 0,
+      "questions": 3
+    },
+    {
+      "name": "long_multi_repeat",
+      "ok": true,
+      "input_tokens": 3299,
+      "cached_tokens": 2563,
+      "cache_write_tokens": 0,
+      "questions": 3
+    },
+    {
+      "name": "long_single_again",
+      "ok": true,
+      "input_tokens": 2793,
+      "cached_tokens": 2563,
+      "cache_write_tokens": 0,
+      "questions": 1
+    },
+    {
+      "name": "changed_prefix_first",
+      "ok": true,
+      "input_tokens": 2796,
+      "cached_tokens": 0,
+      "cache_write_tokens": 2566,
+      "questions": 1
+    },
+    {
+      "name": "changed_prefix_repeat",
+      "ok": true,
+      "input_tokens": 2796,
+      "cached_tokens": 2566,
+      "cache_write_tokens": 0,
+      "questions": 1
+    },
+    {
+      "name": "original_prefix_again",
+      "ok": true,
+      "input_tokens": 2793,
+      "cached_tokens": 2563,
+      "cache_write_tokens": 0,
+      "questions": 1
+    },
+    {
+      "name": "short_prefix_first",
+      "ok": true,
+      "input_tokens": 368,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "questions": 1
+    },
+    {
+      "name": "short_prefix_repeat",
+      "ok": true,
+      "input_tokens": 368,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "questions": 1
+    }
+  ],
+  "usage": {
+    "input_tokens": 24098,
+    "cached_tokens": 15381,
+    "cache_write_tokens": 5129,
+    "estimated_usd": 0.0011537350000000001
+  },
+  "artificial_prefix": true,
+  "publication_allowed": false
+}

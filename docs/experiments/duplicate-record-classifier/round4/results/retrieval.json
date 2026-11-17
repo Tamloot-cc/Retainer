@@ -1,0 +1,574 @@
+{
+  "development": {
+    "existing": {
+      "candidates": [
+        {
+          "a": "r-06e2dc59e38061a3",
+          "b": "r-6db136ce316fb062",
+          "triggers": null,
+          "name_similarity": 1
+        },
+        {
+          "a": "r-3a9a247b462d333d",
+          "b": "r-96e2400c7bb3ea16",
+          "triggers": null,
+          "name_similarity": 0.61538464
+        },
+        {
+          "a": "r-3e8479dc350b647c",
+          "b": "r-7617f02cc0108c29",
+          "triggers": null,
+          "name_similarity": 1
+        }
+      ],
+      "total_candidates": 3,
+      "capped": false
+    },
+    "fact_mentions": {
+      "candidates": [
+        {
+          "a": "r-04bc2f8da24c5a31",
+          "b": "r-18bcb50770863122",
+          "score": 0.2,
+          "triggers": [
+            {
+              "owner": "r-04bc2f8da24c5a31",
+              "references": [
+                {
+                  "fact_id": "common_word-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-06e2dc59e38061a3",
+          "b": "r-6db136ce316fb062",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-06e2dc59e38061a3",
+              "references": [
+                {
+                  "fact_id": "historical_correction-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-0738932be15c2baf",
+          "b": "r-ba248e4037760fc4",
+          "score": 0.2,
+          "triggers": [
+            {
+              "owner": "r-0738932be15c2baf",
+              "references": [
+                {
+                  "fact_id": "brand_reuse-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-0f0548f96367912f",
+          "b": "r-bfc332d62a090c4d",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-bfc332d62a090c4d",
+              "references": [
+                {
+                  "fact_id": "registration_alias-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-1ce27abe423a0cba",
+          "b": "r-b2d6dc6a5d122e17",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-b2d6dc6a5d122e17",
+              "references": [
+                {
+                  "fact_id": "trading_identity-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-2feeabd8b83fa151",
+          "b": "r-4995470cac2b7bd1",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-4995470cac2b7bd1",
+              "references": [
+                {
+                  "fact_id": "unverified_alias-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-3a9a247b462d333d",
+          "b": "r-96e2400c7bb3ea16",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-3a9a247b462d333d",
+              "references": [
+                {
+                  "fact_id": "former_staff_link-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-3e8479dc350b647c",
+          "b": "r-7617f02cc0108c29",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-7617f02cc0108c29",
+              "references": [
+                {
+                  "fact_id": "advisory_relationship-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-402b29921cdd6be1",
+          "b": "r-b52e1f50bfeefd6d",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-b52e1f50bfeefd6d",
+              "references": [
+                {
+                  "fact_id": "copy_attack-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-679d7a04f4de4223",
+          "b": "r-b558ff896f5a17a2",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-b558ff896f5a17a2",
+              "references": [
+                {
+                  "fact_id": "bilingual_entity-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-74000640997e22fa",
+          "b": "r-e06822e77e4af50a",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-74000640997e22fa",
+              "references": [
+                {
+                  "fact_id": "funding_article-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-9177fd8dfd6cb976",
+          "b": "r-f9d91a8b84eb65dc",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-9177fd8dfd6cb976",
+              "references": [
+                {
+                  "fact_id": "personal_name_update-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-961c82ebd5f32fc9",
+          "b": "r-aaf1edd1e9f6a639",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-aaf1edd1e9f6a639",
+              "references": [
+                {
+                  "fact_id": "portfolio_mention-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-d96c2fdf6e7aa04d",
+          "b": "r-f84b47daa0bde97e",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-f84b47daa0bde97e",
+              "references": [
+                {
+                  "fact_id": "ownership_mention-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "globally_deferred": 0,
+      "owner_candidates_deferred": 0,
+      "owner_candidates_before_cap": 14,
+      "total_pairs_before_global_cap": 14
+    },
+    "union_pairs": [
+      ["r-04bc2f8da24c5a31", "r-18bcb50770863122"],
+      ["r-06e2dc59e38061a3", "r-6db136ce316fb062"],
+      ["r-0738932be15c2baf", "r-ba248e4037760fc4"],
+      ["r-0f0548f96367912f", "r-bfc332d62a090c4d"],
+      ["r-1ce27abe423a0cba", "r-b2d6dc6a5d122e17"],
+      ["r-2feeabd8b83fa151", "r-4995470cac2b7bd1"],
+      ["r-3a9a247b462d333d", "r-96e2400c7bb3ea16"],
+      ["r-3e8479dc350b647c", "r-7617f02cc0108c29"],
+      ["r-402b29921cdd6be1", "r-b52e1f50bfeefd6d"],
+      ["r-679d7a04f4de4223", "r-b558ff896f5a17a2"],
+      ["r-74000640997e22fa", "r-e06822e77e4af50a"],
+      ["r-9177fd8dfd6cb976", "r-f9d91a8b84eb65dc"],
+      ["r-961c82ebd5f32fc9", "r-aaf1edd1e9f6a639"],
+      ["r-d96c2fdf6e7aa04d", "r-f84b47daa0bde97e"]
+    ]
+  },
+  "heldout": {
+    "existing": {
+      "candidates": [
+        {
+          "a": "r-008c68fff7d6b196",
+          "b": "r-22951abe861fce7d",
+          "triggers": null,
+          "name_similarity": 0.6
+        },
+        {
+          "a": "r-0279612d862b3314",
+          "b": "r-f4dc11506abd6183",
+          "triggers": null,
+          "name_similarity": 0.61538464
+        },
+        {
+          "a": "r-1557ef4a6aece677",
+          "b": "r-820ad77572804acb",
+          "triggers": null,
+          "name_similarity": 0.7058824
+        },
+        {
+          "a": "r-19905ca8df860d2a",
+          "b": "r-dcd0496d4c2c8561",
+          "triggers": null,
+          "name_similarity": 0.8
+        },
+        {
+          "a": "r-2c5220caeddf301f",
+          "b": "r-915802d0166eecfd",
+          "triggers": null,
+          "name_similarity": 0.7
+        },
+        {
+          "a": "r-3e2e51b9ce1aa8da",
+          "b": "r-c84ae6cf53ce7b58",
+          "triggers": null,
+          "name_similarity": 0.64705884
+        },
+        {
+          "a": "r-ab3cabbf5cc93fa9",
+          "b": "r-d92b835fcf2d607a",
+          "triggers": null,
+          "name_similarity": 0.71428573
+        }
+      ],
+      "total_candidates": 7,
+      "capped": false
+    },
+    "fact_mentions": {
+      "candidates": [
+        {
+          "a": "r-008c68fff7d6b196",
+          "b": "r-22951abe861fce7d",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-008c68fff7d6b196",
+              "references": [
+                {
+                  "fact_id": "former_email_person-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-0279612d862b3314",
+          "b": "r-f4dc11506abd6183",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-f4dc11506abd6183",
+              "references": [
+                {
+                  "fact_id": "current_fact_conflict-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-1557ef4a6aece677",
+          "b": "r-820ad77572804acb",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-1557ef4a6aece677",
+              "references": [
+                {
+                  "fact_id": "copied_social_profile-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-19905ca8df860d2a",
+          "b": "r-dcd0496d4c2c8561",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-dcd0496d4c2c8561",
+              "references": [
+                {
+                  "fact_id": "retrieved_text_injection-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-1fe1d31a25e7c64e",
+          "b": "r-b5bae0d8f7c33d79",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-b5bae0d8f7c33d79",
+              "references": [
+                {
+                  "fact_id": "source_contains_third_alias-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-2c5220caeddf301f",
+          "b": "r-915802d0166eecfd",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-2c5220caeddf301f",
+              "references": [
+                {
+                  "fact_id": "separate_jurisdictions-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-2fabf8597eca22f8",
+          "b": "r-b1b7ff57c402c51e",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-2fabf8597eca22f8",
+              "references": [
+                {
+                  "fact_id": "continuing_entity_rename-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-3e2e51b9ce1aa8da",
+          "b": "r-c84ae6cf53ce7b58",
+          "score": 0.2,
+          "triggers": [
+            {
+              "owner": "r-c84ae6cf53ce7b58",
+              "references": [
+                {
+                  "fact_id": "brand_acquisition-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-6c312d4abe5523ad",
+          "b": "r-f103badec9eb4803",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-6c312d4abe5523ad",
+              "references": [
+                {
+                  "fact_id": "shared_customer-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-7a653b3a7a001081",
+          "b": "r-9fbf53ced6f33679",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-7a653b3a7a001081",
+              "references": [
+                {
+                  "fact_id": "meeting_mentions-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-84309b42f970fa5c",
+          "b": "r-cc76549e4bf06d58",
+          "score": 0.2,
+          "triggers": [
+            {
+              "owner": "r-84309b42f970fa5c",
+              "references": [
+                {
+                  "fact_id": "brand_shared_generic-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-9a57da40e13ff4a0",
+          "b": "r-a15efcfdb42766b3",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-a15efcfdb42766b3",
+              "references": [
+                {
+                  "fact_id": "brand_vs_legal-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-ab3cabbf5cc93fa9",
+          "b": "r-d92b835fcf2d607a",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-ab3cabbf5cc93fa9",
+              "references": [
+                {
+                  "fact_id": "wrong_person_link-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "a": "r-b1301ff135c9ec81",
+          "b": "r-b1984cd8e8b4cc9d",
+          "score": 0.1,
+          "triggers": [
+            {
+              "owner": "r-b1301ff135c9ec81",
+              "references": [
+                {
+                  "fact_id": "source_questions_identity-fact-0",
+                  "source_ref": "source_1"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "globally_deferred": 0,
+      "owner_candidates_deferred": 0,
+      "owner_candidates_before_cap": 14,
+      "total_pairs_before_global_cap": 14
+    },
+    "union_pairs": [
+      ["r-008c68fff7d6b196", "r-22951abe861fce7d"],
+      ["r-0279612d862b3314", "r-f4dc11506abd6183"],
+      ["r-1557ef4a6aece677", "r-820ad77572804acb"],
+      ["r-19905ca8df860d2a", "r-dcd0496d4c2c8561"],
+      ["r-1fe1d31a25e7c64e", "r-b5bae0d8f7c33d79"],
+      ["r-2c5220caeddf301f", "r-915802d0166eecfd"],
+      ["r-2fabf8597eca22f8", "r-b1b7ff57c402c51e"],
+      ["r-3e2e51b9ce1aa8da", "r-c84ae6cf53ce7b58"],
+      ["r-6c312d4abe5523ad", "r-f103badec9eb4803"],
+      ["r-7a653b3a7a001081", "r-9fbf53ced6f33679"],
+      ["r-84309b42f970fa5c", "r-cc76549e4bf06d58"],
+      ["r-9a57da40e13ff4a0", "r-a15efcfdb42766b3"],
+      ["r-ab3cabbf5cc93fa9", "r-d92b835fcf2d607a"],
+      ["r-b1301ff135c9ec81", "r-b1984cd8e8b4cc9d"]
+    ]
+  }
+}

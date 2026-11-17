@@ -1,0 +1,2817 @@
+{
+  "groups": {
+    "development/fields/multi/forward/0": {
+      "n": 140,
+      "success": 140,
+      "tp": 1,
+      "fp": 0,
+      "fn": 34,
+      "abstain": 128,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 79548,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 7,
+          "published": 1,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "hebrew_english": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 5,
+          "abstain": 2
+        },
+        "rebrand": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "historical_person": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "social_host": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "subsidiary": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "acquisition": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "shared_phone": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "shared_office": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "common_person_name": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "shared_investor": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "sparse": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "stale_enrichment": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "injection": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "social_root": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "query_identity": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "conflicting_sources": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "shared_employer": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "transliteration_collision": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        }
+      },
+      "p50_ms": 331,
+      "p95_ms": 527,
+      "precision": 1.0,
+      "recall": 0.02857142857142857
+    },
+    "development/full/multi/forward/0": {
+      "n": 140,
+      "success": 140,
+      "tp": 25,
+      "fp": 0,
+      "fn": 10,
+      "abstain": 32,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 116134,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 7,
+          "published": 1,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 7,
+          "published": 7,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 7,
+          "published": 4,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 7,
+          "published": 7,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 7,
+          "published": 6,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "subsidiary": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_phone": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "sparse": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "stale_enrichment": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "query_identity": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "shared_employer": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 333,
+      "p95_ms": 532,
+      "precision": 1.0,
+      "recall": 0.7142857142857143
+    },
+    "development/provenance/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 0,
+      "fp": 0,
+      "fn": 5,
+      "abstain": 18,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 12302,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        }
+      },
+      "p50_ms": 322,
+      "p95_ms": 674,
+      "precision": null,
+      "recall": 0.0
+    },
+    "development/history/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 2,
+      "fp": 0,
+      "fn": 3,
+      "abstain": 5,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 16510,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 370,
+      "p95_ms": 612,
+      "precision": 1.0,
+      "recall": 0.4
+    },
+    "development/full/single/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "abstain": 5,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 7919,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 332,
+      "p95_ms": 495,
+      "precision": 1.0,
+      "recall": 0.2
+    },
+    "development/full/multi/reverse/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 2,
+      "fp": 0,
+      "fn": 3,
+      "abstain": 4,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 16609,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 312,
+      "p95_ms": 672,
+      "precision": 1.0,
+      "recall": 0.4
+    },
+    "development/full/multi/forward/1": {
+      "n": 20,
+      "success": 20,
+      "tp": 4,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 5,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 16608,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 305,
+      "p95_ms": 525,
+      "precision": 1.0,
+      "recall": 0.8
+    },
+    "development/long/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 4,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 3,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 88748,
+      "cached_tokens": 56740,
+      "cache_write_tokens": 18719,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 302,
+      "p95_ms": 583,
+      "precision": 1.0,
+      "recall": 0.8
+    },
+    "development/long/multi/forward/1": {
+      "n": 20,
+      "success": 20,
+      "tp": 4,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 3,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 88748,
+      "cached_tokens": 64206,
+      "cache_write_tokens": 11253,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 340,
+      "p95_ms": 527,
+      "precision": 1.0,
+      "recall": 0.8
+    },
+    "development/truncated/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "abstain": 18,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 12665,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        }
+      },
+      "p50_ms": 361,
+      "p95_ms": 525,
+      "precision": 1.0,
+      "recall": 0.2
+    },
+    "heldout/fields/multi/forward/0": {
+      "n": 60,
+      "success": 60,
+      "tp": 0,
+      "fp": 0,
+      "fn": 15,
+      "abstain": 55,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 34062,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "hebrew_english": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 2,
+          "abstain": 1
+        },
+        "rebrand": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "historical_person": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "social_host": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "subsidiary": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "acquisition": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "shared_phone": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "shared_office": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "common_person_name": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "shared_investor": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "sparse": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "stale_enrichment": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "injection": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "social_root": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "query_identity": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "conflicting_sources": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "shared_employer": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "transliteration_collision": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        }
+      },
+      "p50_ms": 289,
+      "p95_ms": 438,
+      "precision": null,
+      "recall": 0.0
+    },
+    "heldout/full/multi/forward/0": {
+      "n": 60,
+      "success": 60,
+      "tp": 10,
+      "fp": 0,
+      "fn": 5,
+      "abstain": 14,
+      "contradictory": 1,
+      "unsupported_explanations": 0,
+      "tokens": 49738,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 3,
+          "published": 3,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 3,
+          "published": 1,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 3,
+          "published": 3,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 3,
+          "published": 3,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "subsidiary": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "sparse": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "stale_enrichment": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "query_identity": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 2
+        },
+        "shared_employer": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 299,
+      "p95_ms": 496,
+      "precision": 1.0,
+      "recall": 0.6666666666666666
+    },
+    "heldout/provenance/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 0,
+      "fp": 0,
+      "fn": 5,
+      "abstain": 19,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 12307,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        }
+      },
+      "p50_ms": 312,
+      "p95_ms": 417,
+      "precision": null,
+      "recall": 0.0
+    },
+    "heldout/history/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 2,
+      "fp": 0,
+      "fn": 3,
+      "abstain": 6,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 16515,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 287,
+      "p95_ms": 572,
+      "precision": 1.0,
+      "recall": 0.4
+    },
+    "heldout/full/single/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 0,
+      "fp": 0,
+      "fn": 5,
+      "abstain": 5,
+      "contradictory": 1,
+      "unsupported_explanations": 0,
+      "tokens": 7924,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 251,
+      "p95_ms": 525,
+      "precision": null,
+      "recall": 0.0
+    },
+    "heldout/full/multi/reverse/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 2,
+      "fp": 0,
+      "fn": 3,
+      "abstain": 5,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 16614,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 389,
+      "p95_ms": 550,
+      "precision": 1.0,
+      "recall": 0.4
+    },
+    "heldout/full/multi/forward/1": {
+      "n": 20,
+      "success": 20,
+      "tp": 4,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 5,
+      "contradictory": 1,
+      "unsupported_explanations": 0,
+      "tokens": 16613,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 354,
+      "p95_ms": 523,
+      "precision": 1.0,
+      "recall": 0.8
+    },
+    "heldout/long/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 4,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 4,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 88753,
+      "cached_tokens": 56740,
+      "cache_write_tokens": 18724,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 333,
+      "p95_ms": 525,
+      "precision": 1.0,
+      "recall": 0.8
+    },
+    "heldout/long/multi/forward/1": {
+      "n": 20,
+      "success": 20,
+      "tp": 4,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 4,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 88753,
+      "cached_tokens": 60450,
+      "cache_write_tokens": 15014,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 332,
+      "p95_ms": 522,
+      "precision": 1.0,
+      "recall": 0.8
+    },
+    "heldout/truncated/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 0,
+      "fp": 0,
+      "fn": 5,
+      "abstain": 18,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 12670,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        }
+      },
+      "p50_ms": 383,
+      "p95_ms": 518,
+      "precision": null,
+      "recall": 0.0
+    }
+  },
+  "comparisons": {
+    "order": {
+      "n": 40,
+      "changed": 2,
+      "details": [
+        {
+          "id": "conflicting_sources-0",
+          "changed": true,
+          "before": "insufficient_evidence",
+          "after": "different_entities"
+        },
+        {
+          "id": "shared_phone-7",
+          "changed": true,
+          "before": "same_entity",
+          "after": "different_entities"
+        }
+      ]
+    },
+    "repeat": {
+      "n": 40,
+      "changed": 0,
+      "details": []
+    },
+    "single_vs_multi": {
+      "n": 40,
+      "changed": 0,
+      "details": []
+    }
+  },
+  "attempts": 720,
+  "failures": [],
+  "wall_seconds": 31.5
+}

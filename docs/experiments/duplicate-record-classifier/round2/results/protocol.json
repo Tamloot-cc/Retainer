@@ -1,0 +1,18 @@
+{
+  "version": "round2-frozen-v2",
+  "frozen_at": "2026-11-16T19:19:47.986834+00:00",
+  "dataset_sha256": "2ca45b32068cffb901fe7e9e51ada595d83b25fa934dbedfc7a2feaa850225cb",
+  "requests_sha256": "4875043015cd1f9b31002c8848bfd157dc755dc40ab6a6e7dbd8a0c291b00375",
+  "policy_sha256": "4a7de49f10f9f68c54bd477680a47c0525ef2a49fb50675cddce6dd776a06253",
+  "primary_threshold": 0.9,
+  "baseline_threshold": 0.95,
+  "context_max_utf8_bytes": 8192,
+  "question_max_utf8_bytes": 8192,
+  "max_requests": 140,
+  "max_attempts": 280,
+  "timeout_seconds": 20,
+  "retries": 1,
+  "max_spend_reservation_usd": 0.3,
+  "retrieval_modes": ["host", "current", "history"],
+  "production_changes": false
+}

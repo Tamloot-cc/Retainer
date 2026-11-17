@@ -1,0 +1,6635 @@
+{
+  "host": {
+    "candidates": [
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-06e1e72633b8a408",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-3725565e7bd4af47",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.14285715
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-3e00a0d4f29e49cf",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-52053125a7bf910e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-5949b67ba8b80297",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "mossline.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.4090909
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-5ca2cbe27333a7ee",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-63777be531bf0e4a",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-64637541ff5e510e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-6dcb4ea01a5c2090",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.045454547
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-7c73acaf8967599d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-8e83d1ad7db00c0c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-8f137a2f615c17c3",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-92a39f7dffb3d18d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-9e47e6eecc070a03",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-a4f6bf51edbc671d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.1764706
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-02ec8e442870d2d0",
+        "b": "r-e1bfcc6d59f843ff",
+        "triggers": [
+          {
+            "kind": "phone",
+            "value": "+12025550190",
+            "leftRef": "current:phone",
+            "rightRef": "current:phone",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-04249fee0e4cd2dd",
+        "b": "r-b3c096858caa224b",
+        "triggers": null,
+        "name_similarity": 1
+      },
+      {
+        "a": "r-045d99e37d14f105",
+        "b": "r-5956f26b93fc2998",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "unknown@placeholder.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.4
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-3725565e7bd4af47",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-3e00a0d4f29e49cf",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-52053125a7bf910e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-5949b67ba8b80297",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-5ca2cbe27333a7ee",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-63777be531bf0e4a",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.10526316
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-64637541ff5e510e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-6dcb4ea01a5c2090",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-7c73acaf8967599d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-8e83d1ad7db00c0c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-8f137a2f615c17c3",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-92a39f7dffb3d18d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-9e47e6eecc070a03",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.0625
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-a4f6bf51edbc671d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.071428575
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.0625
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-06e1e72633b8a408",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-074dda7459f4299b",
+        "b": "r-5f05d724955a8bb5",
+        "triggers": null,
+        "name_similarity": 0.61538464
+      },
+      {
+        "a": "r-0cdb76f2c937be04",
+        "b": "r-3e17690d211e559c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "profiles.example",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-0cdb76f2c937be04",
+        "b": "r-43bd6f2f7bf4b283",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "profiles.example",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-0cdb76f2c937be04",
+        "b": "r-e4a8d235dc6d44b6",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "profiles.example",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-0de3aad97360cf6b",
+        "b": "r-4080610583adbf54",
+        "triggers": [
+          {
+            "kind": "phone",
+            "value": "+12025550105",
+            "leftRef": "current:phone",
+            "rightRef": "current:phone",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5217391
+      },
+      {
+        "a": "r-14a13e1297720906",
+        "b": "r-6a5c1f5a097051d2",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "payments-platform.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.3529412
+      },
+      {
+        "a": "r-1bf86dda153b2dc1",
+        "b": "r-f91319fa8a6d5e2a",
+        "triggers": null,
+        "name_similarity": 0.6
+      },
+      {
+        "a": "r-21c4ae50e171ec8e",
+        "b": "r-e8a223b70c50982a",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "rina@optics.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.2631579
+      },
+      {
+        "a": "r-241b4f3516eaf3bd",
+        "b": "r-693956821749be82",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "mistralrobotics.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.68
+      },
+      {
+        "a": "r-24893bea4d52507d",
+        "b": "r-63329162d23449ff",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "beancircuit.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.44827586
+      },
+      {
+        "a": "r-269297f7e9b0cb64",
+        "b": "r-45827cdd557d7080",
+        "triggers": null,
+        "name_similarity": 1
+      },
+      {
+        "a": "r-2831a2aba29fcb75",
+        "b": "r-e217e172376a689d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "accounts.google.com",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.42857143
+      },
+      {
+        "a": "r-2ac236c81f39ed0a",
+        "b": "r-2f996ff395711a0c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "directory.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-2ac236c81f39ed0a",
+        "b": "r-b73b622e6d1c3fdf",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "directory.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-2ac236c81f39ed0a",
+        "b": "r-c5396bf241a62fa0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "directory.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-2d4a0c970cffb94d",
+        "b": "r-be6af123619d54d5",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "support@helix.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-2f996ff395711a0c",
+        "b": "r-b73b622e6d1c3fdf",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "directory.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-2f996ff395711a0c",
+        "b": "r-c5396bf241a62fa0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "directory.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-2fd4a31d37362267",
+        "b": "r-3f6ad1dea17657e7",
+        "triggers": null,
+        "name_similarity": 1
+      },
+      {
+        "a": "r-3602ccee5b2f8a4f",
+        "b": "r-ba879f4e621e3adb",
+        "triggers": [
+          {
+            "kind": "phone",
+            "value": "+12025550162",
+            "leftRef": "current:phone",
+            "rightRef": "current:phone",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.72727275
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-3e00a0d4f29e49cf",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-52053125a7bf910e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-5949b67ba8b80297",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.121212125
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-5ca2cbe27333a7ee",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-63777be531bf0e4a",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-64637541ff5e510e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.06451613
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-6dcb4ea01a5c2090",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-7c73acaf8967599d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-8e83d1ad7db00c0c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-8f137a2f615c17c3",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-92a39f7dffb3d18d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-9e47e6eecc070a03",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-a4f6bf51edbc671d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "threadline.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.73333335
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.027777778
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.08695652
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.03125
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-52053125a7bf910e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.05
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-5949b67ba8b80297",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-5ca2cbe27333a7ee",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.03846154
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-63777be531bf0e4a",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-64637541ff5e510e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-6dcb4ea01a5c2090",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.04
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-7c73acaf8967599d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.44444445
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-8e83d1ad7db00c0c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-8f137a2f615c17c3",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.05
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-92a39f7dffb3d18d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-9e47e6eecc070a03",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-a4f6bf51edbc671d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.03448276
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.041666668
+      },
+      {
+        "a": "r-3e17690d211e559c",
+        "b": "r-43bd6f2f7bf4b283",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "profiles.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-3e17690d211e559c",
+        "b": "r-e4a8d235dc6d44b6",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "profiles.example",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-3e75cd4903afd72e",
+        "b": "r-ed74153b3c2c80e1",
+        "triggers": null,
+        "name_similarity": 1
+      },
+      {
+        "a": "r-3f8b4410dd712ee6",
+        "b": "r-d34e1da5e742ebde",
+        "triggers": null,
+        "name_similarity": 1
+      },
+      {
+        "a": "r-43bd6f2f7bf4b283",
+        "b": "r-e4a8d235dc6d44b6",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "profiles.example",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-481df590e507d73a",
+        "b": "r-6fbd08d9b5b36f9e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "pitchcanvas.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.02631579
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-5949b67ba8b80297",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-5ca2cbe27333a7ee",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.04347826
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-63777be531bf0e4a",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-64637541ff5e510e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-6dcb4ea01a5c2090",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.045454547
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-7c73acaf8967599d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-8e83d1ad7db00c0c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-8f137a2f615c17c3",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "oakshift.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.3846154
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-92a39f7dffb3d18d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-9e47e6eecc070a03",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-a4f6bf51edbc671d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.03846154
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.04761905
+      },
+      {
+        "a": "r-53a4d46e25b2c616",
+        "b": "r-66cf6dda5257d3c6",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "fathom-instruments.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.76
+      },
+      {
+        "a": "r-541083d42114f0a0",
+        "b": "r-ba2bde2f71a66286",
+        "triggers": null,
+        "name_similarity": 0.6923077
+      },
+      {
+        "a": "r-553a15dce9149f57",
+        "b": "r-98bb0ad2eff5e779",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "ceo@lumenfold.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.2857143
+      },
+      {
+        "a": "r-56004a6a208d7f8d",
+        "b": "r-df89d5354fff0d3c",
+        "triggers": null,
+        "name_similarity": 0.6666667
+      },
+      {
+        "a": "r-566e0da052134580",
+        "b": "r-be6ad3514d5d92fb",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "junco.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.48387095
+      },
+      {
+        "a": "r-575d7cacb2863025",
+        "b": "r-7ce88f3291ed2f6f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "radius.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5714286
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-5ca2cbe27333a7ee",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-63777be531bf0e4a",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-64637541ff5e510e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.11111111
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-6dcb4ea01a5c2090",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.028571429
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-7c73acaf8967599d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-8e83d1ad7db00c0c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.032258064
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-8f137a2f615c17c3",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-92a39f7dffb3d18d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-9e47e6eecc070a03",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-a4f6bf51edbc671d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.022727273
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.13793103
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.41935483
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.06666667
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.025641026
+      },
+      {
+        "a": "r-5949b67ba8b80297",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5b45714dda3cdb5e",
+        "b": "r-ff0287a78c68b68e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "datanest.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-63777be531bf0e4a",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-64637541ff5e510e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-6dcb4ea01a5c2090",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.26086956
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-7c73acaf8967599d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-8e83d1ad7db00c0c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-8f137a2f615c17c3",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.04347826
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-92a39f7dffb3d18d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-9e47e6eecc070a03",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-a4f6bf51edbc671d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "orbit-research.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.4347826
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.27272728
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-64637541ff5e510e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.032258064
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-6dcb4ea01a5c2090",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-7c73acaf8967599d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-8e83d1ad7db00c0c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-8f137a2f615c17c3",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-92a39f7dffb3d18d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-9e47e6eecc070a03",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.04347826
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-a4f6bf51edbc671d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "arbor.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.6086956
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.04347826
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-6433ca9c3237a6fe",
+        "b": "r-eaf13a42571cbe03",
+        "triggers": null,
+        "name_similarity": 0.6363636
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-6dcb4ea01a5c2090",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-7c73acaf8967599d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-8e83d1ad7db00c0c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-8f137a2f615c17c3",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-92a39f7dffb3d18d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-9e47e6eecc070a03",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.037037037
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-a4f6bf51edbc671d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.051282052
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.035714287
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.11111111
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "ternlabs.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.4
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.037037037
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.028571429
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-6476cf4fffa0528b",
+        "b": "r-a1685a925d17018a",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "wavelink.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-6dcb4ea01a5c2090",
+        "b": "r-7c73acaf8967599d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-6dcb4ea01a5c2090",
+        "b": "r-8e83d1ad7db00c0c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-6dcb4ea01a5c2090",
+        "b": "r-8f137a2f615c17c3",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.045454547
+      },
+      {
+        "a": "r-6dcb4ea01a5c2090",
+        "b": "r-92a39f7dffb3d18d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-6dcb4ea01a5c2090",
+        "b": "r-9e47e6eecc070a03",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-6dcb4ea01a5c2090",
+        "b": "r-a4f6bf51edbc671d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-6dcb4ea01a5c2090",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-6dcb4ea01a5c2090",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-6dcb4ea01a5c2090",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-6dcb4ea01a5c2090",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-6dcb4ea01a5c2090",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-6dcb4ea01a5c2090",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-6dcb4ea01a5c2090",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.032258064
+      },
+      {
+        "a": "r-6dcb4ea01a5c2090",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.2857143
+      },
+      {
+        "a": "r-6e3d40c67ad9c6ab",
+        "b": "r-b57a631316c8a436",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "mantle.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.6666667
+      },
+      {
+        "a": "r-795751e4c7c08d9c",
+        "b": "r-f6d5c778b8012e7c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "pelican-bank.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5416667
+      },
+      {
+        "a": "r-7c73acaf8967599d",
+        "b": "r-8e83d1ad7db00c0c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-7c73acaf8967599d",
+        "b": "r-8f137a2f615c17c3",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-7c73acaf8967599d",
+        "b": "r-92a39f7dffb3d18d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.041666668
+      },
+      {
+        "a": "r-7c73acaf8967599d",
+        "b": "r-9e47e6eecc070a03",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-7c73acaf8967599d",
+        "b": "r-a4f6bf51edbc671d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.045454547
+      },
+      {
+        "a": "r-7c73acaf8967599d",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-7c73acaf8967599d",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-7c73acaf8967599d",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-7c73acaf8967599d",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-7c73acaf8967599d",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-7c73acaf8967599d",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-7c73acaf8967599d",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-7c73acaf8967599d",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-83fea76cbe46a92b",
+        "b": "r-b8e9f80ddaea60e6",
+        "triggers": null,
+        "name_similarity": 0.60714287
+      },
+      {
+        "a": "r-845ddbcd68b9fbe2",
+        "b": "r-b1bec96b3d92fbcc",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "amir.golan@catalyst.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5833333
+      },
+      {
+        "a": "r-8e83d1ad7db00c0c",
+        "b": "r-8f137a2f615c17c3",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8e83d1ad7db00c0c",
+        "b": "r-92a39f7dffb3d18d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8e83d1ad7db00c0c",
+        "b": "r-9e47e6eecc070a03",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8e83d1ad7db00c0c",
+        "b": "r-a4f6bf51edbc671d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8e83d1ad7db00c0c",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8e83d1ad7db00c0c",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8e83d1ad7db00c0c",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "echopilot.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.45454547
+      },
+      {
+        "a": "r-8e83d1ad7db00c0c",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8e83d1ad7db00c0c",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8e83d1ad7db00c0c",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8e83d1ad7db00c0c",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8e83d1ad7db00c0c",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8f137a2f615c17c3",
+        "b": "r-92a39f7dffb3d18d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8f137a2f615c17c3",
+        "b": "r-9e47e6eecc070a03",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8f137a2f615c17c3",
+        "b": "r-a4f6bf51edbc671d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8f137a2f615c17c3",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8f137a2f615c17c3",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8f137a2f615c17c3",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8f137a2f615c17c3",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8f137a2f615c17c3",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8f137a2f615c17c3",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-8f137a2f615c17c3",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.03846154
+      },
+      {
+        "a": "r-8f137a2f615c17c3",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.04761905
+      },
+      {
+        "a": "r-92646aa61365f0ea",
+        "b": "r-f483246437070438",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "reedfoundation.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.72727275
+      },
+      {
+        "a": "r-92a39f7dffb3d18d",
+        "b": "r-9e47e6eecc070a03",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-92a39f7dffb3d18d",
+        "b": "r-a4f6bf51edbc671d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.42857143
+      },
+      {
+        "a": "r-92a39f7dffb3d18d",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-92a39f7dffb3d18d",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-92a39f7dffb3d18d",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-92a39f7dffb3d18d",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-92a39f7dffb3d18d",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-92a39f7dffb3d18d",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-92a39f7dffb3d18d",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-92a39f7dffb3d18d",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-969ce6fc48074d17",
+        "b": "r-fb973da0b664f59c",
+        "triggers": null,
+        "name_similarity": 1
+      },
+      {
+        "a": "r-97bdec4ef96efea3",
+        "b": "r-ffcc4de180a67ed5",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "stratusdigital.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-9e47e6eecc070a03",
+        "b": "r-a4f6bf51edbc671d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-9e47e6eecc070a03",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.03125
+      },
+      {
+        "a": "r-9e47e6eecc070a03",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-9e47e6eecc070a03",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-9e47e6eecc070a03",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.05263158
+      },
+      {
+        "a": "r-9e47e6eecc070a03",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "fernhouse.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-9e47e6eecc070a03",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-9e47e6eecc070a03",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-9e47e6eecc070a03",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-a4f6bf51edbc671d",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-a4f6bf51edbc671d",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-a4f6bf51edbc671d",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-a4f6bf51edbc671d",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-a4f6bf51edbc671d",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-a4f6bf51edbc671d",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-a4f6bf51edbc671d",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-a4f6bf51edbc671d",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:website",
+            "rightRef": "current:linkedin",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-a779e198342c056c",
+        "b": "r-e3a0c4fef17ec673",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "portfolio@investor.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5
+      },
+      {
+        "a": "r-afa264ca8f657830",
+        "b": "r-c5fc99b933c8e886",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "heliotrope.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.95
+      },
+      {
+        "a": "r-b373f60001da9c5b",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-b373f60001da9c5b",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.022727273
+      },
+      {
+        "a": "r-b373f60001da9c5b",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-b373f60001da9c5b",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.03125
+      },
+      {
+        "a": "r-b373f60001da9c5b",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-b373f60001da9c5b",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-b373f60001da9c5b",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-b70d3141efb4ff37",
+        "b": "r-c90bab466931c878",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "billing@outsourced-finance.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.8
+      },
+      {
+        "a": "r-b73b622e6d1c3fdf",
+        "b": "r-c5396bf241a62fa0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "directory.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-bd1baffcd2b3a25c",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.03125
+      },
+      {
+        "a": "r-bd1baffcd2b3a25c",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.05
+      },
+      {
+        "a": "r-bd1baffcd2b3a25c",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-bd1baffcd2b3a25c",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-bd1baffcd2b3a25c",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.035714287
+      },
+      {
+        "a": "r-bd1baffcd2b3a25c",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-c982748fa5c62717",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.06666667
+      },
+      {
+        "a": "r-c982748fa5c62717",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-c982748fa5c62717",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-c982748fa5c62717",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.025641026
+      },
+      {
+        "a": "r-c982748fa5c62717",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-d2b52ffb5a91e7bb",
+        "b": "r-ff8eed23c4f96300",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "blue-light.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-d4d2b4c146bac9f9",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.05263158
+      },
+      {
+        "a": "r-d4d2b4c146bac9f9",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-d4d2b4c146bac9f9",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.037037037
+      },
+      {
+        "a": "r-d4d2b4c146bac9f9",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-d79638f438b70aab",
+        "b": "r-dea97b745760f65e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-d79638f438b70aab",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-d79638f438b70aab",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-d9a038c87a20cf97",
+        "b": "r-fe3fbefafd2409db",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "lea@kinetic.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.64705884
+      },
+      {
+        "a": "r-dea97b745760f65e",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-dea97b745760f65e",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-ede7b3c539b7bc4f",
+        "b": "r-ef252f13c400ebb0",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.033333335
+      },
+      {
+        "a": "r-ee1691c4732f3fb4",
+        "b": "r-fae9dfae2b045aad",
+        "triggers": null,
+        "name_similarity": 1
+      }
+    ],
+    "total_candidates": 328,
+    "capped": false
+  },
+  "current": {
+    "candidates": [
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-5949b67ba8b80297",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "mossline.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/mossline",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.4090909
+      },
+      {
+        "a": "r-02ec8e442870d2d0",
+        "b": "r-e1bfcc6d59f843ff",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "dana tal",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          },
+          {
+            "kind": "phone",
+            "value": "+12025550190",
+            "leftRef": "current:phone",
+            "rightRef": "current:phone",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-04249fee0e4cd2dd",
+        "b": "r-b3c096858caa224b",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "canvasdock",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-045d99e37d14f105",
+        "b": "r-5956f26b93fc2998",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "unknown@placeholder.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.4
+      },
+      {
+        "a": "r-074dda7459f4299b",
+        "b": "r-5f05d724955a8bb5",
+        "triggers": null,
+        "name_similarity": 0.61538464
+      },
+      {
+        "a": "r-0cdb76f2c937be04",
+        "b": "r-e4a8d235dc6d44b6",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "contour",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-0de3aad97360cf6b",
+        "b": "r-4080610583adbf54",
+        "triggers": [
+          {
+            "kind": "phone",
+            "value": "+12025550105",
+            "leftRef": "current:phone",
+            "rightRef": "current:phone",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5217391
+      },
+      {
+        "a": "r-14a13e1297720906",
+        "b": "r-6a5c1f5a097051d2",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "payments-platform.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.3529412
+      },
+      {
+        "a": "r-1bf86dda153b2dc1",
+        "b": "r-f91319fa8a6d5e2a",
+        "triggers": null,
+        "name_similarity": 0.6
+      },
+      {
+        "a": "r-21c4ae50e171ec8e",
+        "b": "r-e8a223b70c50982a",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "rina@optics.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.2631579
+      },
+      {
+        "a": "r-241b4f3516eaf3bd",
+        "b": "r-693956821749be82",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "mistral robotics",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "mistralrobotics.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.68
+      },
+      {
+        "a": "r-24893bea4d52507d",
+        "b": "r-63329162d23449ff",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "beancircuit.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.44827586
+      },
+      {
+        "a": "r-269297f7e9b0cb64",
+        "b": "r-45827cdd557d7080",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "summit",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-2ac236c81f39ed0a",
+        "b": "r-c5396bf241a62fa0",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "anchor",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-2d4a0c970cffb94d",
+        "b": "r-be6af123619d54d5",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "support@helix.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-2f996ff395711a0c",
+        "b": "r-b73b622e6d1c3fdf",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "helm studio",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-2fd4a31d37362267",
+        "b": "r-3f6ad1dea17657e7",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "yoni gal",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-3602ccee5b2f8a4f",
+        "b": "r-ba879f4e621e3adb",
+        "triggers": [
+          {
+            "kind": "phone",
+            "value": "+12025550162",
+            "leftRef": "current:phone",
+            "rightRef": "current:phone",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.72727275
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "threadline",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "threadline.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/threadline",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.73333335
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-7c73acaf8967599d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/cascade",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.44444445
+      },
+      {
+        "a": "r-3e17690d211e559c",
+        "b": "r-43bd6f2f7bf4b283",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "mergetest",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-3e75cd4903afd72e",
+        "b": "r-ed74153b3c2c80e1",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "phoenix",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-3f8b4410dd712ee6",
+        "b": "r-d34e1da5e742ebde",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "eli levi",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-481df590e507d73a",
+        "b": "r-6fbd08d9b5b36f9e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "pitchcanvas.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.02631579
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-8f137a2f615c17c3",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "oakshift.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/oakshift",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.3846154
+      },
+      {
+        "a": "r-53a4d46e25b2c616",
+        "b": "r-66cf6dda5257d3c6",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "fathom-instruments.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.76
+      },
+      {
+        "a": "r-541083d42114f0a0",
+        "b": "r-ba2bde2f71a66286",
+        "triggers": null,
+        "name_similarity": 0.6923077
+      },
+      {
+        "a": "r-553a15dce9149f57",
+        "b": "r-98bb0ad2eff5e779",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "ceo@lumenfold.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.2857143
+      },
+      {
+        "a": "r-56004a6a208d7f8d",
+        "b": "r-df89d5354fff0d3c",
+        "triggers": null,
+        "name_similarity": 0.6666667
+      },
+      {
+        "a": "r-566e0da052134580",
+        "b": "r-be6ad3514d5d92fb",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "junco.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.48387095
+      },
+      {
+        "a": "r-575d7cacb2863025",
+        "b": "r-7ce88f3291ed2f6f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "radius.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5714286
+      },
+      {
+        "a": "r-5b45714dda3cdb5e",
+        "b": "r-ff0287a78c68b68e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "datanest.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "orbit-research.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/orbit-research",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.4347826
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "arbor.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/arbor",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.6086956
+      },
+      {
+        "a": "r-6433ca9c3237a6fe",
+        "b": "r-eaf13a42571cbe03",
+        "triggers": null,
+        "name_similarity": 0.6363636
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "ternlabs.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/ternlabs",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.4
+      },
+      {
+        "a": "r-6476cf4fffa0528b",
+        "b": "r-a1685a925d17018a",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "wavelink",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "wavelink.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-6e3d40c67ad9c6ab",
+        "b": "r-b57a631316c8a436",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "mantle.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.6666667
+      },
+      {
+        "a": "r-795751e4c7c08d9c",
+        "b": "r-f6d5c778b8012e7c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "pelican-bank.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5416667
+      },
+      {
+        "a": "r-83fea76cbe46a92b",
+        "b": "r-b8e9f80ddaea60e6",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "copper harbor",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.60714287
+      },
+      {
+        "a": "r-845ddbcd68b9fbe2",
+        "b": "r-b1bec96b3d92fbcc",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "amir.golan@catalyst.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5833333
+      },
+      {
+        "a": "r-8e83d1ad7db00c0c",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "echopilot.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/echopilot",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.45454547
+      },
+      {
+        "a": "r-92646aa61365f0ea",
+        "b": "r-f483246437070438",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "reedfoundation.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.72727275
+      },
+      {
+        "a": "r-969ce6fc48074d17",
+        "b": "r-fb973da0b664f59c",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "omer katz",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-97bdec4ef96efea3",
+        "b": "r-ffcc4de180a67ed5",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "stratus digital",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "stratusdigital.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-9e47e6eecc070a03",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "fernhouse",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "fernhouse.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/fernhouse",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-a779e198342c056c",
+        "b": "r-e3a0c4fef17ec673",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "portfolio@investor.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5
+      },
+      {
+        "a": "r-afa264ca8f657830",
+        "b": "r-c5fc99b933c8e886",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "heliotrope.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.95
+      },
+      {
+        "a": "r-b70d3141efb4ff37",
+        "b": "r-c90bab466931c878",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "billing@outsourced-finance.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.8
+      },
+      {
+        "a": "r-d2b52ffb5a91e7bb",
+        "b": "r-ff8eed23c4f96300",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "blue-light.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-d9a038c87a20cf97",
+        "b": "r-fe3fbefafd2409db",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "lea@kinetic.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.64705884
+      },
+      {
+        "a": "r-ee1691c4732f3fb4",
+        "b": "r-fae9dfae2b045aad",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "gil nave",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      }
+    ],
+    "total_candidates": 52,
+    "capped": false
+  },
+  "history": {
+    "candidates": [
+      {
+        "a": "r-027020cee55c4ed8",
+        "b": "r-5949b67ba8b80297",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "mossline.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/mossline",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.4090909
+      },
+      {
+        "a": "r-02ec8e442870d2d0",
+        "b": "r-e1bfcc6d59f843ff",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "dana tal",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          },
+          {
+            "kind": "phone",
+            "value": "+12025550190",
+            "leftRef": "current:phone",
+            "rightRef": "current:phone",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-02f9c9bf173a7cc5",
+        "b": "r-4cfef45a1bc249a5",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "nitzan sensors",
+            "leftRef": "current:name",
+            "rightRef": "historical_assertion",
+            "historical": true
+          },
+          {
+            "kind": "url",
+            "value": "nitzan-sensors.example",
+            "leftRef": "current:website",
+            "rightRef": "historical_assertion",
+            "historical": true
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-04249fee0e4cd2dd",
+        "b": "r-b3c096858caa224b",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "canvasdock",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          },
+          {
+            "kind": "phone",
+            "value": "+12025550133",
+            "leftRef": "historical_assertion",
+            "rightRef": "current:phone",
+            "historical": true
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-045d99e37d14f105",
+        "b": "r-5956f26b93fc2998",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "unknown@placeholder.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.4
+      },
+      {
+        "a": "r-074dda7459f4299b",
+        "b": "r-5f05d724955a8bb5",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "noam yarden",
+            "leftRef": "current:name",
+            "rightRef": "historical_assertion",
+            "historical": true
+          },
+          {
+            "kind": "email",
+            "value": "noam@brightcell.example",
+            "leftRef": "current:email",
+            "rightRef": "historical_assertion",
+            "historical": true
+          }
+        ],
+        "name_similarity": 0.61538464
+      },
+      {
+        "a": "r-0cdb76f2c937be04",
+        "b": "r-e4a8d235dc6d44b6",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "contour",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-0de3aad97360cf6b",
+        "b": "r-4080610583adbf54",
+        "triggers": [
+          {
+            "kind": "phone",
+            "value": "+12025550105",
+            "leftRef": "current:phone",
+            "rightRef": "current:phone",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5217391
+      },
+      {
+        "a": "r-14a13e1297720906",
+        "b": "r-6a5c1f5a097051d2",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "payments-platform.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.3529412
+      },
+      {
+        "a": "r-1bf86dda153b2dc1",
+        "b": "r-f91319fa8a6d5e2a",
+        "triggers": null,
+        "name_similarity": 0.6
+      },
+      {
+        "a": "r-1d53c818250959c2",
+        "b": "r-ceed0a13e8ba7ed9",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "harbor 2020 holdings",
+            "leftRef": "historical_assertion",
+            "rightRef": "current:name",
+            "historical": true
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-21c4ae50e171ec8e",
+        "b": "r-e8a223b70c50982a",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "rina@optics.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.2631579
+      },
+      {
+        "a": "r-241b4f3516eaf3bd",
+        "b": "r-693956821749be82",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "mistral robotics",
+            "leftRef": "current:name",
+            "rightRef": "historical_assertion",
+            "historical": true
+          },
+          {
+            "kind": "name",
+            "value": "mistral robotics",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "mistralrobotics.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.68
+      },
+      {
+        "a": "r-24893bea4d52507d",
+        "b": "r-63329162d23449ff",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "beancircuit.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.44827586
+      },
+      {
+        "a": "r-269297f7e9b0cb64",
+        "b": "r-45827cdd557d7080",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "summit",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-2a09214a8ebeff94",
+        "b": "r-32e2a479e29d5b74",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "sb metrics",
+            "leftRef": "current:name",
+            "rightRef": "historical_assertion",
+            "historical": true
+          }
+        ],
+        "name_similarity": 0.07692308
+      },
+      {
+        "a": "r-2ac236c81f39ed0a",
+        "b": "r-c5396bf241a62fa0",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "anchor",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-2d4a0c970cffb94d",
+        "b": "r-be6af123619d54d5",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "support@helix.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-2f996ff395711a0c",
+        "b": "r-b73b622e6d1c3fdf",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "helm studio",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-2fd4a31d37362267",
+        "b": "r-3f6ad1dea17657e7",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "yoni gal",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-3602ccee5b2f8a4f",
+        "b": "r-ba879f4e621e3adb",
+        "triggers": [
+          {
+            "kind": "phone",
+            "value": "+12025550162",
+            "leftRef": "current:phone",
+            "rightRef": "current:phone",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.72727275
+      },
+      {
+        "a": "r-3725565e7bd4af47",
+        "b": "r-bd1baffcd2b3a25c",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "threadline",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "threadline.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/threadline",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.73333335
+      },
+      {
+        "a": "r-3e00a0d4f29e49cf",
+        "b": "r-7c73acaf8967599d",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/cascade",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.44444445
+      },
+      {
+        "a": "r-3e17690d211e559c",
+        "b": "r-43bd6f2f7bf4b283",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "mergetest",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-3e75cd4903afd72e",
+        "b": "r-ed74153b3c2c80e1",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "phoenix",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-3f8b4410dd712ee6",
+        "b": "r-d34e1da5e742ebde",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "eli levi",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-481df590e507d73a",
+        "b": "r-6fbd08d9b5b36f9e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "pitchcanvas.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.02631579
+      },
+      {
+        "a": "r-4f56197a7d07fbad",
+        "b": "r-9e272720860b2efd",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "vesper cloud",
+            "leftRef": "current:name",
+            "rightRef": "historical_assertion",
+            "historical": true
+          }
+        ],
+        "name_similarity": 0.33333334
+      },
+      {
+        "a": "r-52053125a7bf910e",
+        "b": "r-8f137a2f615c17c3",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "oakshift.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/oakshift",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.3846154
+      },
+      {
+        "a": "r-5355a688bf3ca48c",
+        "b": "r-87d09dd1832d87ca",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "smart path",
+            "leftRef": "current:name",
+            "rightRef": "historical_assertion",
+            "historical": true
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-53a4d46e25b2c616",
+        "b": "r-66cf6dda5257d3c6",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "fathom-instruments.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.76
+      },
+      {
+        "a": "r-541083d42114f0a0",
+        "b": "r-ba2bde2f71a66286",
+        "triggers": null,
+        "name_similarity": 0.6923077
+      },
+      {
+        "a": "r-553a15dce9149f57",
+        "b": "r-98bb0ad2eff5e779",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "ceo@lumenfold.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.2857143
+      },
+      {
+        "a": "r-56004a6a208d7f8d",
+        "b": "r-df89d5354fff0d3c",
+        "triggers": null,
+        "name_similarity": 0.6666667
+      },
+      {
+        "a": "r-566e0da052134580",
+        "b": "r-be6ad3514d5d92fb",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "junco.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.48387095
+      },
+      {
+        "a": "r-575d7cacb2863025",
+        "b": "r-7ce88f3291ed2f6f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "radius.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5714286
+      },
+      {
+        "a": "r-5a5b0873fc9423b3",
+        "b": "r-70a41ce2cbd700f7",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "quartztrail",
+            "leftRef": "current:name",
+            "rightRef": "historical_assertion",
+            "historical": true
+          },
+          {
+            "kind": "url",
+            "value": "quartztrail.example",
+            "leftRef": "current:website",
+            "rightRef": "historical_assertion",
+            "historical": true
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-5b45714dda3cdb5e",
+        "b": "r-ff0287a78c68b68e",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "datanest.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5
+      },
+      {
+        "a": "r-5ca2cbe27333a7ee",
+        "b": "r-ede7b3c539b7bc4f",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "orbit-research.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/orbit-research",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.4347826
+      },
+      {
+        "a": "r-63777be531bf0e4a",
+        "b": "r-b373f60001da9c5b",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "arbor.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/arbor",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.6086956
+      },
+      {
+        "a": "r-6433ca9c3237a6fe",
+        "b": "r-eaf13a42571cbe03",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "tnir@cobalt.example",
+            "leftRef": "historical_assertion",
+            "rightRef": "current:email",
+            "historical": true
+          }
+        ],
+        "name_similarity": 0.6363636
+      },
+      {
+        "a": "r-64637541ff5e510e",
+        "b": "r-d4d2b4c146bac9f9",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "ternlabs.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/ternlabs",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.4
+      },
+      {
+        "a": "r-6476cf4fffa0528b",
+        "b": "r-a1685a925d17018a",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "wavelink",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "wavelink.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-6e3d40c67ad9c6ab",
+        "b": "r-b57a631316c8a436",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "mantle.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.6666667
+      },
+      {
+        "a": "r-795751e4c7c08d9c",
+        "b": "r-f6d5c778b8012e7c",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "pelican-bank.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5416667
+      },
+      {
+        "a": "r-83fea76cbe46a92b",
+        "b": "r-b8e9f80ddaea60e6",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "copper harbor",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          },
+          {
+            "kind": "name",
+            "value": "copper harbor",
+            "leftRef": "historical_assertion",
+            "rightRef": "current:name",
+            "historical": true
+          }
+        ],
+        "name_similarity": 0.60714287
+      },
+      {
+        "a": "r-845ddbcd68b9fbe2",
+        "b": "r-b1bec96b3d92fbcc",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "amir.golan@catalyst.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5833333
+      },
+      {
+        "a": "r-8e83d1ad7db00c0c",
+        "b": "r-c982748fa5c62717",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "echopilot.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/echopilot",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.45454547
+      },
+      {
+        "a": "r-92646aa61365f0ea",
+        "b": "r-f483246437070438",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "reedfoundation.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.72727275
+      },
+      {
+        "a": "r-951d76654af68006",
+        "b": "r-f5efd740377f3b86",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "ledgernest",
+            "leftRef": "historical_assertion",
+            "rightRef": "current:name",
+            "historical": true
+          },
+          {
+            "kind": "url",
+            "value": "ledgernest.example",
+            "leftRef": "historical_assertion",
+            "rightRef": "current:website",
+            "historical": true
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-969ce6fc48074d17",
+        "b": "r-fb973da0b664f59c",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "omer katz",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-97bdec4ef96efea3",
+        "b": "r-ffcc4de180a67ed5",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "stratus digital",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "stratusdigital.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-9e47e6eecc070a03",
+        "b": "r-d79638f438b70aab",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "fernhouse",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "fernhouse.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          },
+          {
+            "kind": "url",
+            "value": "linkedin.com/company/fernhouse",
+            "leftRef": "current:linkedin",
+            "rightRef": "current:linkedin",
+            "historical": false
+          }
+        ],
+        "name_similarity": 1
+      },
+      {
+        "a": "r-a779e198342c056c",
+        "b": "r-e3a0c4fef17ec673",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "portfolio@investor.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.5
+      },
+      {
+        "a": "r-afa264ca8f657830",
+        "b": "r-c5fc99b933c8e886",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "heliotrope.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.95
+      },
+      {
+        "a": "r-b70d3141efb4ff37",
+        "b": "r-c90bab466931c878",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "billing@outsourced-finance.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.8
+      },
+      {
+        "a": "r-d2b52ffb5a91e7bb",
+        "b": "r-ff8eed23c4f96300",
+        "triggers": [
+          {
+            "kind": "url",
+            "value": "blue-light.example",
+            "leftRef": "current:website",
+            "rightRef": "current:website",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0
+      },
+      {
+        "a": "r-d9a038c87a20cf97",
+        "b": "r-fe3fbefafd2409db",
+        "triggers": [
+          {
+            "kind": "email",
+            "value": "lea@kinetic.example",
+            "leftRef": "current:email",
+            "rightRef": "current:email",
+            "historical": false
+          }
+        ],
+        "name_similarity": 0.64705884
+      },
+      {
+        "a": "r-ee1691c4732f3fb4",
+        "b": "r-fae9dfae2b045aad",
+        "triggers": [
+          {
+            "kind": "name",
+            "value": "gil nave",
+            "leftRef": "current:name",
+            "rightRef": "current:name",
+            "historical": false
+          },
+          {
+            "kind": "email",
+            "value": "gil@capstone.example",
+            "leftRef": "historical_assertion",
+            "rightRef": "current:email",
+            "historical": true
+          }
+        ],
+        "name_similarity": 1
+      }
+    ],
+    "total_candidates": 59,
+    "capped": false
+  }
+}

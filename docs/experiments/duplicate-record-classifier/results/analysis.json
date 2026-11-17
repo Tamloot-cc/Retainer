@@ -1,0 +1,6529 @@
+{
+  "groups": {
+    "development/fields/multi/forward/0": {
+      "n": 140,
+      "success": 140,
+      "tp": 1,
+      "fp": 0,
+      "fn": 34,
+      "abstain": 128,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 79548,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 7,
+          "published": 1,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "hebrew_english": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 5,
+          "abstain": 2
+        },
+        "rebrand": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "historical_person": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "social_host": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "subsidiary": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "acquisition": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "shared_phone": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "shared_office": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "common_person_name": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "shared_investor": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "sparse": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "stale_enrichment": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "injection": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "social_root": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "query_identity": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "conflicting_sources": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "shared_employer": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "transliteration_collision": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        }
+      },
+      "p50_ms": 331,
+      "p95_ms": 527,
+      "precision": 1.0,
+      "recall": 0.02857142857142857
+    },
+    "development/full/multi/forward/0": {
+      "n": 140,
+      "success": 140,
+      "tp": 25,
+      "fp": 0,
+      "fn": 10,
+      "abstain": 32,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 116134,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 7,
+          "published": 1,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 7,
+          "published": 7,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 7,
+          "published": 4,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 7,
+          "published": 7,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 7,
+          "published": 6,
+          "same_entity": 7,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "subsidiary": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_phone": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "sparse": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "stale_enrichment": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 7
+        },
+        "query_identity": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "shared_employer": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 7,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 333,
+      "p95_ms": 532,
+      "precision": 1.0,
+      "recall": 0.7142857142857143
+    },
+    "development/provenance/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 0,
+      "fp": 0,
+      "fn": 5,
+      "abstain": 18,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 12302,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        }
+      },
+      "p50_ms": 322,
+      "p95_ms": 674,
+      "precision": null,
+      "recall": 0.0
+    },
+    "development/history/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 2,
+      "fp": 0,
+      "fn": 3,
+      "abstain": 5,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 16510,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 370,
+      "p95_ms": 612,
+      "precision": 1.0,
+      "recall": 0.4
+    },
+    "development/full/single/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "abstain": 5,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 7919,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 332,
+      "p95_ms": 495,
+      "precision": 1.0,
+      "recall": 0.2
+    },
+    "development/full/multi/reverse/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 2,
+      "fp": 0,
+      "fn": 3,
+      "abstain": 4,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 16609,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 312,
+      "p95_ms": 672,
+      "precision": 1.0,
+      "recall": 0.4
+    },
+    "development/full/multi/forward/1": {
+      "n": 20,
+      "success": 20,
+      "tp": 4,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 5,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 16608,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 305,
+      "p95_ms": 525,
+      "precision": 1.0,
+      "recall": 0.8
+    },
+    "development/long/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 4,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 3,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 88748,
+      "cached_tokens": 56740,
+      "cache_write_tokens": 18719,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 302,
+      "p95_ms": 583,
+      "precision": 1.0,
+      "recall": 0.8
+    },
+    "development/long/multi/forward/1": {
+      "n": 20,
+      "success": 20,
+      "tp": 4,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 3,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 88748,
+      "cached_tokens": 64206,
+      "cache_write_tokens": 11253,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 340,
+      "p95_ms": 527,
+      "precision": 1.0,
+      "recall": 0.8
+    },
+    "development/truncated/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "abstain": 18,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 12665,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        }
+      },
+      "p50_ms": 361,
+      "p95_ms": 525,
+      "precision": 1.0,
+      "recall": 0.2
+    },
+    "heldout/fields/multi/forward/0": {
+      "n": 60,
+      "success": 60,
+      "tp": 0,
+      "fp": 0,
+      "fn": 15,
+      "abstain": 55,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 34062,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "hebrew_english": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 2,
+          "abstain": 1
+        },
+        "rebrand": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "historical_person": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "social_host": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "subsidiary": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "acquisition": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "shared_phone": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "shared_office": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "common_person_name": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "shared_investor": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "sparse": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "stale_enrichment": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "injection": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "social_root": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "query_identity": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "conflicting_sources": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "shared_employer": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "transliteration_collision": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        }
+      },
+      "p50_ms": 289,
+      "p95_ms": 438,
+      "precision": null,
+      "recall": 0.0
+    },
+    "heldout/full/multi/forward/0": {
+      "n": 60,
+      "success": 60,
+      "tp": 10,
+      "fp": 0,
+      "fn": 5,
+      "abstain": 14,
+      "contradictory": 1,
+      "unsupported_explanations": 0,
+      "tokens": 49738,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 3,
+          "published": 3,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 3,
+          "published": 1,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 3,
+          "published": 3,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 3,
+          "published": 3,
+          "same_entity": 3,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "subsidiary": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "sparse": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "stale_enrichment": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 3
+        },
+        "query_identity": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 2
+        },
+        "shared_employer": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 3,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 299,
+      "p95_ms": 496,
+      "precision": 1.0,
+      "recall": 0.6666666666666666
+    },
+    "heldout/provenance/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 0,
+      "fp": 0,
+      "fn": 5,
+      "abstain": 19,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 12307,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        }
+      },
+      "p50_ms": 312,
+      "p95_ms": 417,
+      "precision": null,
+      "recall": 0.0
+    },
+    "heldout/history/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 2,
+      "fp": 0,
+      "fn": 3,
+      "abstain": 6,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 16515,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 287,
+      "p95_ms": 572,
+      "precision": 1.0,
+      "recall": 0.4
+    },
+    "heldout/full/single/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 0,
+      "fp": 0,
+      "fn": 5,
+      "abstain": 5,
+      "contradictory": 1,
+      "unsupported_explanations": 0,
+      "tokens": 7924,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 251,
+      "p95_ms": 525,
+      "precision": null,
+      "recall": 0.0
+    },
+    "heldout/full/multi/reverse/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 2,
+      "fp": 0,
+      "fn": 3,
+      "abstain": 5,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 16614,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 389,
+      "p95_ms": 550,
+      "precision": 1.0,
+      "recall": 0.4
+    },
+    "heldout/full/multi/forward/1": {
+      "n": 20,
+      "success": 20,
+      "tp": 4,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 5,
+      "contradictory": 1,
+      "unsupported_explanations": 0,
+      "tokens": 16613,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 354,
+      "p95_ms": 523,
+      "precision": 1.0,
+      "recall": 0.8
+    },
+    "heldout/long/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 4,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 4,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 88753,
+      "cached_tokens": 56740,
+      "cache_write_tokens": 18724,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 333,
+      "p95_ms": 525,
+      "precision": 1.0,
+      "recall": 0.8
+    },
+    "heldout/long/multi/forward/1": {
+      "n": 20,
+      "success": 20,
+      "tp": 4,
+      "fp": 0,
+      "fn": 1,
+      "abstain": 4,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 88753,
+      "cached_tokens": 60450,
+      "cache_write_tokens": 15014,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 1,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        }
+      },
+      "p50_ms": 332,
+      "p95_ms": 522,
+      "precision": 1.0,
+      "recall": 0.8
+    },
+    "heldout/truncated/multi/forward/0": {
+      "n": 20,
+      "success": 20,
+      "tp": 0,
+      "fp": 0,
+      "fn": 5,
+      "abstain": 18,
+      "contradictory": 0,
+      "unsupported_explanations": 0,
+      "tokens": 12670,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "by_kind": {
+        "exact_identifiers": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 1,
+          "abstain": 0
+        },
+        "alias": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "hebrew_english": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "rebrand": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "historical_person": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_host": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "subsidiary": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 0
+        },
+        "acquisition": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_phone": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_office": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "common_person_name": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_investor": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "sparse": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "stale_enrichment": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "injection": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "social_root": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "query_identity": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "conflicting_sources": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "shared_employer": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        },
+        "transliteration_collision": {
+          "n": 1,
+          "published": 0,
+          "same_entity": 0,
+          "abstain": 1
+        }
+      },
+      "p50_ms": 383,
+      "p95_ms": 518,
+      "precision": null,
+      "recall": 0.0
+    }
+  },
+  "comparisons": {
+    "order": {
+      "n": 40,
+      "changed": 2,
+      "details": [
+        {
+          "id": "conflicting_sources-0",
+          "changed": true,
+          "before": "insufficient_evidence",
+          "after": "different_entities"
+        },
+        {
+          "id": "shared_phone-7",
+          "changed": true,
+          "before": "same_entity",
+          "after": "different_entities"
+        }
+      ],
+      "publication_changed": 4
+    },
+    "repeat": {
+      "n": 40,
+      "changed": 0,
+      "details": [],
+      "publication_changed": 0
+    },
+    "single_vs_multi": {
+      "n": 40,
+      "changed": 0,
+      "details": []
+    }
+  },
+  "attempts": 720,
+  "failures": [],
+  "retrieval": {
+    "current_hostnames": {
+      "retrieved": 168,
+      "duplicates_retrieved": 38,
+      "nonduplicates_retrieved": 130,
+      "end_to_end_duplicates_published": 23,
+      "missed_duplicates": [
+        "alias-0",
+        "alias-1",
+        "alias-2",
+        "alias-3",
+        "alias-4",
+        "alias-5",
+        "alias-6",
+        "rebrand-6",
+        "alias-7",
+        "alias-8",
+        "alias-9",
+        "rebrand-9"
+      ],
+      "pairs": [
+        {
+          "id": "exact_identifiers-0",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": true,
+          "published": true
+        },
+        {
+          "id": "alias-0",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.45,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-0",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "rebrand-0",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-0",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-0",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "subsidiary-0",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "acquisition-0",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_phone-0",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-0",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "common_person_name-0",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-0",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "sparse-0",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-0",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-0",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "social_root-0",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.46153846,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "query_identity-0",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-0",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_employer-0",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-0",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.375,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-1",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6363636,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-1",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.47619048,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-1",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": true
+        },
+        {
+          "id": "rebrand-1",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.7,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-1",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-1",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "subsidiary-1",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "acquisition-1",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_phone-1",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-1",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "common_person_name-1",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-1",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "sparse-1",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-1",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-1",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "social_root-1",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "query_identity-1",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-1",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_employer-1",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4375,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-1",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4117647,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-2",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-2",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.45,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-2",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": true
+        },
+        {
+          "id": "rebrand-2",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-2",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-2",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "subsidiary-2",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "acquisition-2",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_phone-2",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-2",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "common_person_name-2",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-2",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "sparse-2",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-2",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-2",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "social_root-2",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.46153846,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "query_identity-2",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-2",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_employer-2",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.46153846,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-2",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.375,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-3",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6666667,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-3",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.5,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-3",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": true
+        },
+        {
+          "id": "rebrand-3",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6666667,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-3",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-3",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "subsidiary-3",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "acquisition-3",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_phone-3",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-3",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "common_person_name-3",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-3",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "sparse-3",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-3",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-3",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "social_root-3",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.53333336,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "query_identity-3",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-3",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_employer-3",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.47058824,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-3",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.44444445,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-4",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-4",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.45,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-4",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "rebrand-4",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.75,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-4",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "social_host-4",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "subsidiary-4",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "acquisition-4",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_phone-4",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-4",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "common_person_name-4",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-4",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "sparse-4",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-4",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-4",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "social_root-4",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.46153846,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "query_identity-4",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-4",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_employer-4",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-4",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.375,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-5",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6363636,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-5",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.47619048,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-5",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": true
+        },
+        {
+          "id": "rebrand-5",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6363636,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-5",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-5",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "subsidiary-5",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "acquisition-5",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_phone-5",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-5",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "common_person_name-5",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-5",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "sparse-5",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-5",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-5",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "social_root-5",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "query_identity-5",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-5",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_employer-5",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4375,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-5",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4117647,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-6",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.5555556,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-6",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.42105263,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-6",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "rebrand-6",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.5555556,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-6",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-6",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "subsidiary-6",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "acquisition-6",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_phone-6",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-6",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "common_person_name-6",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-6",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "sparse-6",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-6",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-6",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "social_root-6",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.41666666,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "query_identity-6",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-6",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_employer-6",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.35714287,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-6",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.33333334,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-7",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-7",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.45,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-7",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": true
+        },
+        {
+          "id": "rebrand-7",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-7",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-7",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "subsidiary-7",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "acquisition-7",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_phone-7",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-7",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "common_person_name-7",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-7",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "sparse-7",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-7",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-7",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "social_root-7",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.46153846,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "query_identity-7",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-7",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_employer-7",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-7",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.375,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-8",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-8",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.45,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-8",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "rebrand-8",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-8",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-8",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "subsidiary-8",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "acquisition-8",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_phone-8",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-8",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "common_person_name-8",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-8",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "sparse-8",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-8",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-8",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "social_root-8",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.46153846,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "query_identity-8",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-8",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_employer-8",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-8",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.375,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-9",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-9",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.3888889,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-9",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "rebrand-9",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.5,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-9",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-9",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.44444445,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "subsidiary-9",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.44444445,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "acquisition-9",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.44444445,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_phone-9",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.44444445,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-9",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.44444445,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "common_person_name-9",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-9",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.44444445,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "sparse-9",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-9",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.44444445,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-9",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.44444445,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "social_root-9",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.36363637,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "query_identity-9",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.44444445,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-9",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.44444445,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_employer-9",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.30769232,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-9",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.2857143,
+          "shared_identifier": false,
+          "published": false
+        }
+      ]
+    },
+    "prototype_full_urls": {
+      "retrieved": 86,
+      "duplicates_retrieved": 38,
+      "nonduplicates_retrieved": 48,
+      "end_to_end_duplicates_published": 23,
+      "missed_duplicates": [
+        "alias-0",
+        "alias-1",
+        "alias-2",
+        "alias-3",
+        "alias-4",
+        "alias-5",
+        "alias-6",
+        "rebrand-6",
+        "alias-7",
+        "alias-8",
+        "alias-9",
+        "rebrand-9"
+      ],
+      "pairs": [
+        {
+          "id": "exact_identifiers-0",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": true,
+          "published": true
+        },
+        {
+          "id": "alias-0",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.45,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-0",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "rebrand-0",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-0",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-0",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "subsidiary-0",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "acquisition-0",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_phone-0",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-0",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "common_person_name-0",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-0",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "sparse-0",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-0",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-0",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "social_root-0",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.46153846,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "query_identity-0",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-0",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_employer-0",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-0",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.375,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-1",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6363636,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-1",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.47619048,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-1",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": true
+        },
+        {
+          "id": "rebrand-1",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.7,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-1",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-1",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "subsidiary-1",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "acquisition-1",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_phone-1",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-1",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "common_person_name-1",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-1",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "sparse-1",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-1",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-1",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "social_root-1",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "query_identity-1",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-1",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_employer-1",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4375,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-1",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4117647,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-2",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-2",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.45,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-2",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": true
+        },
+        {
+          "id": "rebrand-2",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-2",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-2",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "subsidiary-2",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "acquisition-2",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_phone-2",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-2",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "common_person_name-2",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-2",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "sparse-2",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-2",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-2",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "social_root-2",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.46153846,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "query_identity-2",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-2",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_employer-2",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.46153846,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-2",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.375,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-3",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6666667,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-3",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.5,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-3",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": true
+        },
+        {
+          "id": "rebrand-3",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6666667,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-3",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-3",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "subsidiary-3",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "acquisition-3",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_phone-3",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-3",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "common_person_name-3",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-3",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "sparse-3",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-3",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-3",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "social_root-3",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.53333336,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "query_identity-3",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-3",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.61538464,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_employer-3",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.47058824,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-3",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.44444445,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-4",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-4",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.45,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-4",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "rebrand-4",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.75,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-4",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "social_host-4",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "subsidiary-4",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "acquisition-4",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_phone-4",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-4",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "common_person_name-4",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-4",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "sparse-4",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-4",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-4",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "social_root-4",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.46153846,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "query_identity-4",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-4",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_employer-4",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-4",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.375,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-5",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6363636,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-5",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.47619048,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-5",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": true
+        },
+        {
+          "id": "rebrand-5",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6363636,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-5",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-5",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "subsidiary-5",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "acquisition-5",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_phone-5",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-5",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "common_person_name-5",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-5",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "sparse-5",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-5",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5833333,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-5",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "social_root-5",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "query_identity-5",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-5",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5833333,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_employer-5",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4375,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-5",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4117647,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-6",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.5555556,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-6",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.42105263,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-6",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "rebrand-6",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.5555556,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-6",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-6",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "subsidiary-6",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "acquisition-6",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_phone-6",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-6",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "common_person_name-6",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-6",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "sparse-6",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-6",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-6",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "social_root-6",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.41666666,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "query_identity-6",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-6",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.5,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_employer-6",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.35714287,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-6",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.33333334,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-7",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-7",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.45,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-7",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": true
+        },
+        {
+          "id": "rebrand-7",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-7",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-7",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "subsidiary-7",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "acquisition-7",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_phone-7",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-7",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "common_person_name-7",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-7",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "sparse-7",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-7",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-7",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "social_root-7",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.46153846,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "query_identity-7",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-7",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_employer-7",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-7",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.375,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-8",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-8",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.45,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-8",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "rebrand-8",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.6,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-8",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-8",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "subsidiary-8",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "acquisition-8",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_phone-8",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-8",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "common_person_name-8",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-8",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "sparse-8",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-8",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.54545456,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-8",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "social_root-8",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.46153846,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "query_identity-8",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-8",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.54545456,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_employer-8",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.4,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-8",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.375,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "exact_identifiers-9",
+          "kind": "exact_identifiers",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.5,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "alias-9",
+          "kind": "alias",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.3888889,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "hebrew_english-9",
+          "kind": "hebrew_english",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 0.16666667,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "rebrand-9",
+          "kind": "rebrand",
+          "duplicate": true,
+          "retrieved": false,
+          "similarity": 0.5,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "historical_person-9",
+          "kind": "historical_person",
+          "duplicate": true,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": true
+        },
+        {
+          "id": "social_host-9",
+          "kind": "social_host",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.44444445,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "subsidiary-9",
+          "kind": "subsidiary",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.44444445,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "acquisition-9",
+          "kind": "acquisition",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.44444445,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_phone-9",
+          "kind": "shared_phone",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.44444445,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "shared_office-9",
+          "kind": "shared_office",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.44444445,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "common_person_name-9",
+          "kind": "common_person_name",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_investor-9",
+          "kind": "shared_investor",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.44444445,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "sparse-9",
+          "kind": "sparse",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 1,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "stale_enrichment-9",
+          "kind": "stale_enrichment",
+          "duplicate": false,
+          "retrieved": true,
+          "similarity": 0.44444445,
+          "shared_identifier": true,
+          "published": false
+        },
+        {
+          "id": "injection-9",
+          "kind": "injection",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.44444445,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "social_root-9",
+          "kind": "social_root",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.36363637,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "query_identity-9",
+          "kind": "query_identity",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.44444445,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "conflicting_sources-9",
+          "kind": "conflicting_sources",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.44444445,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "shared_employer-9",
+          "kind": "shared_employer",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.30769232,
+          "shared_identifier": false,
+          "published": false
+        },
+        {
+          "id": "transliteration_collision-9",
+          "kind": "transliteration_collision",
+          "duplicate": false,
+          "retrieved": false,
+          "similarity": 0.2857143,
+          "shared_identifier": false,
+          "published": false
+        }
+      ]
+    }
+  },
+  "usage": {
+    "input_tokens": 799740,
+    "cached_tokens": 238136,
+    "cache_write_tokens": 63710,
+    "estimated_usd": 0.06013451,
+    "billing_verified": false
+  },
+  "p50_ms": 325,
+  "p95_ms": 544,
+  "threshold_sensitivity": {
+    "0.85": {
+      "development": {
+        "tp": 35,
+        "fp": 0,
+        "duplicates": 35
+      },
+      "heldout": {
+        "tp": 15,
+        "fp": 0,
+        "duplicates": 15
+      }
+    },
+    "0.9": {
+      "development": {
+        "tp": 32,
+        "fp": 0,
+        "duplicates": 35
+      },
+      "heldout": {
+        "tp": 14,
+        "fp": 0,
+        "duplicates": 15
+      }
+    },
+    "0.95": {
+      "development": {
+        "tp": 25,
+        "fp": 0,
+        "duplicates": 35
+      },
+      "heldout": {
+        "tp": 10,
+        "fp": 0,
+        "duplicates": 15
+      }
+    },
+    "0.98": {
+      "development": {
+        "tp": 15,
+        "fp": 0,
+        "duplicates": 35
+      },
+      "heldout": {
+        "tp": 8,
+        "fp": 0,
+        "duplicates": 15
+      }
+    }
+  },
+  "all_runs_usage": {
+    "input_tokens": 1302314,
+    "cached_tokens": 313713,
+    "cache_write_tokens": 215093,
+    "estimated_usd": 0.107374555
+  }
+}

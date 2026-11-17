@@ -1,0 +1,2155 @@
+{
+  "0.9": {
+    "host": {
+      "development": {
+        "pairs": 40,
+        "duplicates": 10,
+        "negatives": 30,
+        "api_failures": 0,
+        "tp": 6,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 8,
+        "end_to_end_tp": 5,
+        "end_to_end_fp": 0,
+        "abstentions": 17,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "legal_abbreviation",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.88,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "domain_migration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "profile_tracking",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.64,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.02,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "renumbered_phone",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.6,
+        "retrieval_recall": 0.8,
+        "end_to_end_recall": 0.5
+      },
+      "heldout": {
+        "pairs": 40,
+        "duplicates": 10,
+        "negatives": 30,
+        "api_failures": 0,
+        "tp": 6,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 6,
+        "end_to_end_tp": 5,
+        "end_to_end_fp": 0,
+        "abstentions": 14,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "two_step_name_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.71,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "personal_to_work_email",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.78,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "bilingual_registration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.85,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "legal_to_trade_history",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.76,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.6,
+        "retrieval_recall": 0.6,
+        "end_to_end_recall": 0.5
+      },
+      "all": {
+        "pairs": 80,
+        "duplicates": 20,
+        "negatives": 60,
+        "api_failures": 0,
+        "tp": 12,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 14,
+        "end_to_end_tp": 10,
+        "end_to_end_fp": 0,
+        "abstentions": 31,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "legal_abbreviation",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.88,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "domain_migration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "profile_tracking",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.64,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.02,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "renumbered_phone",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "two_step_name_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.71,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "personal_to_work_email",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.78,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "bilingual_registration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.85,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "legal_to_trade_history",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.76,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.6,
+        "retrieval_recall": 0.7,
+        "end_to_end_recall": 0.5
+      }
+    },
+    "current": {
+      "development": {
+        "pairs": 40,
+        "duplicates": 10,
+        "negatives": 30,
+        "api_failures": 0,
+        "tp": 6,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 8,
+        "end_to_end_tp": 5,
+        "end_to_end_fp": 0,
+        "abstentions": 17,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "legal_abbreviation",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.88,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "domain_migration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "profile_tracking",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.64,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.02,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "renumbered_phone",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.6,
+        "retrieval_recall": 0.8,
+        "end_to_end_recall": 0.5
+      },
+      "heldout": {
+        "pairs": 40,
+        "duplicates": 10,
+        "negatives": 30,
+        "api_failures": 0,
+        "tp": 6,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 6,
+        "end_to_end_tp": 5,
+        "end_to_end_fp": 0,
+        "abstentions": 14,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "two_step_name_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.71,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "personal_to_work_email",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.78,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "bilingual_registration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.85,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "legal_to_trade_history",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.76,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.6,
+        "retrieval_recall": 0.6,
+        "end_to_end_recall": 0.5
+      },
+      "all": {
+        "pairs": 80,
+        "duplicates": 20,
+        "negatives": 60,
+        "api_failures": 0,
+        "tp": 12,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 14,
+        "end_to_end_tp": 10,
+        "end_to_end_fp": 0,
+        "abstentions": 31,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "legal_abbreviation",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.88,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "domain_migration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "profile_tracking",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.64,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.02,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "renumbered_phone",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "two_step_name_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.71,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "personal_to_work_email",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.78,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "bilingual_registration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.85,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "legal_to_trade_history",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.76,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.6,
+        "retrieval_recall": 0.7,
+        "end_to_end_recall": 0.5
+      }
+    },
+    "history": {
+      "development": {
+        "pairs": 40,
+        "duplicates": 10,
+        "negatives": 30,
+        "api_failures": 0,
+        "tp": 6,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 10,
+        "end_to_end_tp": 6,
+        "end_to_end_fp": 0,
+        "abstentions": 17,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "legal_abbreviation",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.88,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "domain_migration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "profile_tracking",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.64,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.02,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "renumbered_phone",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.6,
+        "retrieval_recall": 1.0,
+        "end_to_end_recall": 0.6
+      },
+      "heldout": {
+        "pairs": 40,
+        "duplicates": 10,
+        "negatives": 30,
+        "api_failures": 0,
+        "tp": 6,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 10,
+        "end_to_end_tp": 6,
+        "end_to_end_fp": 0,
+        "abstentions": 14,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "two_step_name_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.71,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "personal_to_work_email",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.78,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "bilingual_registration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.85,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "legal_to_trade_history",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.76,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.6,
+        "retrieval_recall": 1.0,
+        "end_to_end_recall": 0.6
+      },
+      "all": {
+        "pairs": 80,
+        "duplicates": 20,
+        "negatives": 60,
+        "api_failures": 0,
+        "tp": 12,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 20,
+        "end_to_end_tp": 12,
+        "end_to_end_fp": 0,
+        "abstentions": 31,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "legal_abbreviation",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.88,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "domain_migration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "profile_tracking",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.64,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.02,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "renumbered_phone",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "two_step_name_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.71,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "personal_to_work_email",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.78,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "bilingual_registration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.85,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "legal_to_trade_history",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.76,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.6,
+        "retrieval_recall": 1.0,
+        "end_to_end_recall": 0.6
+      }
+    }
+  },
+  "0.95": {
+    "host": {
+      "development": {
+        "pairs": 40,
+        "duplicates": 10,
+        "negatives": 30,
+        "api_failures": 0,
+        "tp": 3,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 8,
+        "end_to_end_tp": 2,
+        "end_to_end_fp": 0,
+        "abstentions": 17,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "legal_abbreviation",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.88,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "domain_migration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "person_marriage",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.94,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "profile_tracking",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.64,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.02,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "employee_email_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.9,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "brand_legal_name",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.93,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "renumbered_phone",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.3,
+        "retrieval_recall": 0.8,
+        "end_to_end_recall": 0.2
+      },
+      "heldout": {
+        "pairs": 40,
+        "duplicates": 10,
+        "negatives": 30,
+        "api_failures": 0,
+        "tp": 4,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 6,
+        "end_to_end_tp": 3,
+        "end_to_end_fp": 0,
+        "abstentions": 14,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "statutory_conversion",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.94,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "two_step_name_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.71,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "personal_to_work_email",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.78,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "bilingual_registration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.85,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "domain_tracking_variants",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.92,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "legal_to_trade_history",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.76,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.4,
+        "retrieval_recall": 0.6,
+        "end_to_end_recall": 0.3
+      },
+      "all": {
+        "pairs": 80,
+        "duplicates": 20,
+        "negatives": 60,
+        "api_failures": 0,
+        "tp": 7,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 14,
+        "end_to_end_tp": 5,
+        "end_to_end_fp": 0,
+        "abstentions": 31,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "legal_abbreviation",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.88,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "domain_migration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "person_marriage",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.94,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "profile_tracking",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.64,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.02,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "employee_email_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.9,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "brand_legal_name",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.93,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "renumbered_phone",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "statutory_conversion",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.94,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "two_step_name_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.71,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "personal_to_work_email",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.78,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "bilingual_registration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.85,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "domain_tracking_variants",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.92,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "legal_to_trade_history",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.76,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.35,
+        "retrieval_recall": 0.7,
+        "end_to_end_recall": 0.25
+      }
+    },
+    "current": {
+      "development": {
+        "pairs": 40,
+        "duplicates": 10,
+        "negatives": 30,
+        "api_failures": 0,
+        "tp": 3,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 8,
+        "end_to_end_tp": 2,
+        "end_to_end_fp": 0,
+        "abstentions": 17,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "legal_abbreviation",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.88,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "domain_migration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "person_marriage",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.94,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "profile_tracking",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.64,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.02,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "employee_email_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.9,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "brand_legal_name",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.93,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "renumbered_phone",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.3,
+        "retrieval_recall": 0.8,
+        "end_to_end_recall": 0.2
+      },
+      "heldout": {
+        "pairs": 40,
+        "duplicates": 10,
+        "negatives": 30,
+        "api_failures": 0,
+        "tp": 4,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 6,
+        "end_to_end_tp": 3,
+        "end_to_end_fp": 0,
+        "abstentions": 14,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "statutory_conversion",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.94,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "two_step_name_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.71,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "personal_to_work_email",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.78,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "bilingual_registration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.85,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "domain_tracking_variants",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.92,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "legal_to_trade_history",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.76,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.4,
+        "retrieval_recall": 0.6,
+        "end_to_end_recall": 0.3
+      },
+      "all": {
+        "pairs": 80,
+        "duplicates": 20,
+        "negatives": 60,
+        "api_failures": 0,
+        "tp": 7,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 14,
+        "end_to_end_tp": 5,
+        "end_to_end_fp": 0,
+        "abstentions": 31,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "legal_abbreviation",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.88,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "domain_migration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "person_marriage",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.94,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "profile_tracking",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.64,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.02,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "employee_email_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.9,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "brand_legal_name",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.93,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "renumbered_phone",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "statutory_conversion",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.94,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "two_step_name_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.71,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "personal_to_work_email",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.78,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "bilingual_registration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.85,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          },
+          {
+            "id": "domain_tracking_variants",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.92,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "legal_to_trade_history",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.76,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": false
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.35,
+        "retrieval_recall": 0.7,
+        "end_to_end_recall": 0.25
+      }
+    },
+    "history": {
+      "development": {
+        "pairs": 40,
+        "duplicates": 10,
+        "negatives": 30,
+        "api_failures": 0,
+        "tp": 3,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 10,
+        "end_to_end_tp": 3,
+        "end_to_end_fp": 0,
+        "abstentions": 17,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "legal_abbreviation",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.88,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "domain_migration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "person_marriage",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.94,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "profile_tracking",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.64,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.02,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "employee_email_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.9,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "brand_legal_name",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.93,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "renumbered_phone",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.3,
+        "retrieval_recall": 1.0,
+        "end_to_end_recall": 0.3
+      },
+      "heldout": {
+        "pairs": 40,
+        "duplicates": 10,
+        "negatives": 30,
+        "api_failures": 0,
+        "tp": 4,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 10,
+        "end_to_end_tp": 4,
+        "end_to_end_fp": 0,
+        "abstentions": 14,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "statutory_conversion",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.94,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "two_step_name_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.71,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "personal_to_work_email",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.78,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "bilingual_registration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.85,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "domain_tracking_variants",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.92,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "legal_to_trade_history",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.76,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.4,
+        "retrieval_recall": 1.0,
+        "end_to_end_recall": 0.4
+      },
+      "all": {
+        "pairs": 80,
+        "duplicates": 20,
+        "negatives": 60,
+        "api_failures": 0,
+        "tp": 7,
+        "fp": 0,
+        "unsupported": 0,
+        "duplicates_retrieved": 20,
+        "end_to_end_tp": 7,
+        "end_to_end_fp": 0,
+        "abstentions": 31,
+        "contradictions": 0,
+        "errors": [
+          {
+            "id": "legal_abbreviation",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.88,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "domain_migration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "person_marriage",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.94,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "profile_tracking",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.64,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.02,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "employee_email_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.9,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "brand_legal_name",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.93,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "renumbered_phone",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.84,
+              "evidence": "none",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "statutory_conversion",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.94,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "two_step_name_change",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.71,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.01,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "personal_to_work_email",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.78,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "bilingual_registration",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.85,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "domain_tracking_variants",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.92,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          },
+          {
+            "id": "legal_to_trade_history",
+            "label": "same_entity",
+            "publication": {
+              "publish": false,
+              "probability": 0.76,
+              "evidence": "source_1",
+              "explanation": null,
+              "conflict": false,
+              "distinct": 0.0,
+              "contradictory": false
+            },
+            "retrieved": true
+          }
+        ],
+        "precision": 1.0,
+        "classification_recall": 0.35,
+        "retrieval_recall": 1.0,
+        "end_to_end_recall": 0.35
+      }
+    }
+  },
+  "operations": {
+    "requests": 80,
+    "attempts": 80,
+    "failures": 0,
+    "usage": {
+      "input_tokens": 69613,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "estimated_usd": 0.0069613
+    },
+    "p50_ms": 268,
+    "p95_ms": 1961
+  }
+}

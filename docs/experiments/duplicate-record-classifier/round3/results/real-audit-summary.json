@@ -1,0 +1,17 @@
+{
+  "workspace": "Team8",
+  "inspected_at": "2026-11-17",
+  "person_records_read": 59,
+  "has_more_person_records": false,
+  "additional_email_phone_values": 4,
+  "candidate_pairs_primary_current_fields": 0,
+  "candidate_pairs_all_current_identifiers": 0,
+  "reads": "GET /v1/me and POST read-only /v1/objects/person/query, bounded to 187 records",
+  "crm_writes": 0,
+  "provider_calls_with_person_data": 0,
+  "known_real_positive_pairs": 0,
+  "user_reported_known_duplicate_pairs": false,
+  "quality_verdict": "No independently labeled real positive pairs available; no real recall claim. Same-record snapshots are not counted as duplicate records.",
+  "private_evidence_dir": "/tmp/retainer-classifier-round3-private",
+  "real_data_committed": false
+}

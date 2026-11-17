@@ -1,0 +1,37 @@
+{
+  "version": "evidence-round3-v1",
+  "frozen_at": "2026-11-17T00:41:11.140074+00:00",
+  "datasets": {
+    "development": "f18d6cb5b3ed8e5a2498bc6d9adf123fcb5888355ff0dc7e6402a984f522806f",
+    "heldout": "d6d0e369c80efe6280643001090c60f6478ccb3f2f1a651b76f831ec5575ffc2"
+  },
+  "requests": {
+    "development": "fc32408b8cf0620810b5694c13df9d025b121a06eacc3d02f810aee1586dcd1e",
+    "heldout": "b63a833073c07993a978b46161f09add8e6f3669a491308c3844b2fa3daf339b"
+  },
+  "candidate_policies": [
+    {
+      "name": "sourced_strict",
+      "identity_floor": 0.7,
+      "evidence_probability": 0.95,
+      "support_probability": 0.95
+    },
+    {
+      "name": "sourced_balanced",
+      "identity_floor": 0.6,
+      "evidence_probability": 0.9,
+      "support_probability": 0.9
+    },
+    {
+      "name": "sourced_loose",
+      "identity_floor": 0.5,
+      "evidence_probability": 0.8,
+      "support_probability": 0.8
+    }
+  ],
+  "selection": "first policy in strict-to-loose order with zero false/unsupported suggestions and >=80% development publication recall; otherwise highest safe development recall, strictest tie",
+  "max_phase_calls": 80,
+  "max_phase_attempts": 160,
+  "max_phase_reserved_usd": 0.3,
+  "no_production_changes": true
+}

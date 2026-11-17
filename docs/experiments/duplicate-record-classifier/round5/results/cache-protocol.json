@@ -1,0 +1,8 @@
+{
+  "frozen_at": "2026-11-17T04:13:08.902117+00:00",
+  "requests_sha256": "5c34bcc72e6fbb579588a3e63adc57314149d8c09f41c0cfcc2388563f365979",
+  "requests": 10,
+  "artificial_padding": true,
+  "max_reserved_usd": 0.15,
+  "publication_allowed": false
+}

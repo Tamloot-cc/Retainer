@@ -1,0 +1,198 @@
+{
+  "selected_policy": {
+    "name": "sourced_strict",
+    "identity_floor": 0.7,
+    "evidence_probability": 0.95,
+    "support_probability": 0.95
+  },
+  "splits": {
+    "development": {
+      "baseline_090": {
+        "pairs": 24,
+        "duplicates": 8,
+        "negatives": 16,
+        "tp": 8,
+        "fp": 0,
+        "unsupported_explanations": 0,
+        "api_failures": 0,
+        "retrieved_duplicates": 8,
+        "end_to_end_tp": 8,
+        "end_to_end_fp": 0,
+        "errors": [],
+        "publication_recall": 1.0,
+        "end_to_end_recall": 1.0,
+        "precision": 1.0
+      },
+      "evidence_aware": {
+        "pairs": 24,
+        "duplicates": 8,
+        "negatives": 16,
+        "tp": 7,
+        "fp": 0,
+        "unsupported_explanations": 0,
+        "api_failures": 0,
+        "retrieved_duplicates": 8,
+        "end_to_end_tp": 7,
+        "end_to_end_fp": 0,
+        "errors": [
+          {
+            "id": "incorporation_style",
+            "duplicate": true,
+            "retrieved": true,
+            "assessment": {
+              "publish": false,
+              "route": null,
+              "reference": null,
+              "same_probability": 0.97,
+              "evidence_probability": 0.63,
+              "support_probability": 0.99,
+              "distinct_probability": 0.0,
+              "conflict": false,
+              "omitted_context": false,
+              "explanation": null
+            }
+          }
+        ],
+        "publication_recall": 0.875,
+        "end_to_end_recall": 0.875,
+        "precision": 1.0
+      }
+    },
+    "heldout": {
+      "baseline_090": {
+        "pairs": 48,
+        "duplicates": 12,
+        "negatives": 36,
+        "tp": 10,
+        "fp": 0,
+        "unsupported_explanations": 0,
+        "api_failures": 0,
+        "retrieved_duplicates": 10,
+        "end_to_end_tp": 9,
+        "end_to_end_fp": 0,
+        "errors": [
+          {
+            "id": "continuing_registration",
+            "duplicate": true,
+            "retrieved": true,
+            "assessment": {
+              "publish": false,
+              "route": null,
+              "reference": null,
+              "same_probability": 0.84,
+              "evidence_probability": 0.88,
+              "support_probability": 1.0,
+              "distinct_probability": 0.0,
+              "conflict": false,
+              "omitted_context": false,
+              "explanation": null
+            }
+          },
+          {
+            "id": "source_without_structured_history",
+            "duplicate": true,
+            "retrieved": false,
+            "assessment": {
+              "publish": false,
+              "route": null,
+              "reference": null,
+              "same_probability": 0.62,
+              "evidence_probability": 0.75,
+              "support_probability": 0.99,
+              "distinct_probability": 0.0,
+              "conflict": false,
+              "omitted_context": false,
+              "explanation": null
+            }
+          }
+        ],
+        "publication_recall": 0.8333333333333334,
+        "end_to_end_recall": 0.75,
+        "precision": 1.0
+      },
+      "evidence_aware": {
+        "pairs": 48,
+        "duplicates": 12,
+        "negatives": 36,
+        "tp": 10,
+        "fp": 0,
+        "unsupported_explanations": 0,
+        "api_failures": 0,
+        "retrieved_duplicates": 10,
+        "end_to_end_tp": 9,
+        "end_to_end_fp": 0,
+        "errors": [
+          {
+            "id": "continuing_registration",
+            "duplicate": true,
+            "retrieved": true,
+            "assessment": {
+              "publish": false,
+              "route": null,
+              "reference": null,
+              "same_probability": 0.84,
+              "evidence_probability": 0.88,
+              "support_probability": 1.0,
+              "distinct_probability": 0.0,
+              "conflict": false,
+              "omitted_context": false,
+              "explanation": null
+            }
+          },
+          {
+            "id": "source_without_structured_history",
+            "duplicate": true,
+            "retrieved": false,
+            "assessment": {
+              "publish": false,
+              "route": null,
+              "reference": null,
+              "same_probability": 0.62,
+              "evidence_probability": 0.75,
+              "support_probability": 0.99,
+              "distinct_probability": 0.0,
+              "conflict": false,
+              "omitted_context": false,
+              "explanation": null
+            }
+          }
+        ],
+        "publication_recall": 0.8333333333333334,
+        "end_to_end_recall": 0.75,
+        "precision": 1.0
+      }
+    }
+  },
+  "stability": {
+    "reverse": {
+      "n": 12,
+      "publication_changed": 1,
+      "label_changed": 0,
+      "details": [
+        {
+          "id": "identity_source_second",
+          "publication_changed": true,
+          "identity_label_changed": false
+        }
+      ]
+    },
+    "repeat": {
+      "n": 12,
+      "publication_changed": 0,
+      "label_changed": 0,
+      "details": []
+    }
+  },
+  "operations": {
+    "requests": 96,
+    "failures": 0,
+    "usage": {
+      "input_tokens": 119701,
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "estimated_usd": 0.011970100000000001
+    },
+    "p50_ms": 254,
+    "p95_ms": 2017
+  }
+}

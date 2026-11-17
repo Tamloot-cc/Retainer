@@ -1,8 +1,77 @@
 # Duplicate record classification
 
-Status: proposed, 2026-11-16. OpenAI Decisions API selected; the spike below
-must finish before production implementation. This document specifies the
-upgrade, not a completed spike, measured result or deployed feature.
+Status: proposed. Five spike rounds and bounded Team8 read-only audits completed
+through 2026-11-17. **The production exit gate is not passed; no feature is deployed.**
+
+Artifacts: [latest report](../experiments/duplicate-record-classifier/round5/REPORT.md),
+[Round 4](../experiments/duplicate-record-classifier/round4/REPORT.md),
+[Round 3](../experiments/duplicate-record-classifier/round3/REPORT.md),
+[Round 2](../experiments/duplicate-record-classifier/round2/REPORT.md),
+[Round 1](../experiments/duplicate-record-classifier/round1-report.md),
+[visual walkthrough](../experiments/duplicate-record-classifier/decisions-explained.html).
+
+| Synthetic experiment | Duplicate pairs allowed | End-to-end duplicate coverage | False suggestions |
+| --- | --- | --- | --- |
+| Round 1, threshold 0.95 | 35/50 | 23/50 | 0/150 negatives |
+| Round 2, frozen 0.90 + historical retrieval | 12/20 | 12/20 | 0/60 negatives |
+| Round 3 fresh holdout, baseline and evidence-aware rule tied | 10/12 | 9/12 | 0/36 negatives |
+| Round 4 targeted fact-retrieval holdout, unchanged baseline | 3/4 | 3/4 | 0/12 negatives |
+
+These are different agent-authored synthetic corpora, not comparable real-data
+accuracy estimates. Round 1 repeated templates; later rounds split distinct
+stories before calls. No unsupported published explanations occurred in these
+runs. The later 100-positive/300-negative shadow gate has not been met.
+
+**Decision:** retain the simpler 0.90 baseline for further experiments. Round 3
+selected evidence thresholds on development only and froze them before heldout
+calls, but the new rule did not outperform the baseline. A correct source choice
+could fall below its probability cutoff. Do not tune against consumed holdouts.
+
+Historical active/superseded identity assertions improved Round 2 candidate
+coverage from 14/20 to 20/20. Rejected/retracted/pending values are excluded.
+Round 3 exposed misses when identity facts had no indexed historical assertion.
+Pair reversal changed publication outcomes despite stable identity labels;
+independent evidence questions are not guaranteed to agree.
+
+Round 4 tested a bounded Postgres full-text name-mention candidate path over
+record-owned facts. On a new targeted holdout it improved retrieval from 1/4 to
+3/4 known duplicates; the unchanged classifier kept all three and rejected 11
+negative candidates. The remaining positive had identifying surnames omitted
+from the available excerpt; retrieval missed it and the model abstained. This
+small synthetic test supports evaluating fact-based retrieval, not enabling it
+in production. Its inline-JSON SQL is not a production index/ACL/cursor test.
+
+Round 5 reran 184 frozen pairs with no label/publication changes, then tested
+ordering, repeated calls, injected instructions, HTTP failures and context limits.
+Dropping a correcting source caused 7/8 crafted negatives to pass the legacy gate;
+explicit deferral on incomplete or unknown context blocked all eight. This is a
+required publication invariant, not a probability-threshold adjustment. The new
+harness defaults to that guard, canonicalizes experiment inputs, rejects malformed
+responses/model mismatches and retains usage on refusals. There are 115 passing
+local tests. These include local HTTP failures and concurrent budget reservations;
+no live provider failure occurred in the 362 new successful calls.
+
+The merged URL helper from PR #115 passed 39/40 behavior probes; the shared
+`accounts.google.com` root remains a matching-identifier case to address. The old
+Python spike comparator differed from production on 17 edge pairs, so future
+experiments must use production-consistent comparison. Replaying 352 outputs
+with actual production keys changed no existing matrix publication decisions.
+Caching was observed across questions, with question tokens still billed.
+
+The Team8 shadow covered 13 companies, 31 identity assertions and two selected
+facts. Full-URL retrieval excluded Fijoya/Wiz; the model abstained when explicitly
+tested on that pair. A later audit of 59 people, including additional emails and
+phones, found no candidate pair. Neither sample supplied independently labeled
+real positives; same-record copies were not counted as duplicates. No CRM writes
+or visible suggestions were made. Raw workspace evidence stays outside the repo.
+
+Decisions access works through direct HTTP. Python SDK 2.38.0 used by the spike
+lacks Decisions; single-option evidence questions are rejected by the API.
+Byte limits and omission markers are tested, but exact production token budgets,
+real calibration, invalidation/concurrency, proxy and deployment remain untested.
+The tests include real-Postgres retrieval checks. No
+production configuration is approved. The reports retain request shapes, usage,
+caching, stability, failure simulations and deliberate limitations.
 
 ## 1. Start with an API spike
 

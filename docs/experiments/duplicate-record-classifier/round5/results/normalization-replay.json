@@ -1,0 +1,8 @@
+{
+  "production_commit": "c4b979677187aa1df290a3ff28adb9a920b043ff",
+  "unique_urls": 113,
+  "responses_replayed": 352,
+  "publication_changes": 0,
+  "details": [],
+  "note": "This replays the experimental publication gate; the production server does not implement a classifier."
+}
