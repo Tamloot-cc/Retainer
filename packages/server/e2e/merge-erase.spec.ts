@@ -22,14 +22,14 @@ test('merges a suggested duplicate, choosing the value to keep', async ({ page, 
     .click();
   const dialog = page.getByRole('dialog', { name: 'Merge duplicate records' });
   // The older record survives by default; emails are combined unless chosen.
-  await expect(dialog.getByRole('radio', { name: /Yael Mizrahi/ })).toBeChecked();
+  await expect(dialog.getByRole('radio')).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: 'Value for Emails' })).toHaveText('Combine both');
   await dialog.getByRole('button', { name: 'Value for Job title' }).click();
-  await page.getByRole('option', { name: 'Merged record’s' }).click();
+  await page.getByRole('option', { name: 'Newer record’s' }).click();
   await expect(dialog.getByRole('button', { name: 'Value for Job title' })).toHaveText(
-    'Merged record’s',
+    'Newer record’s',
   );
-  await dialog.getByRole('button', { name: 'Merge into Yael Mizrahi' }).click();
+  await dialog.getByRole('button', { name: 'Merge records' }).click();
   await expect(page.getByText('Merged Yael Mizrachi into')).toBeVisible();
   await expect(page.getByText('No possible duplicates')).toBeVisible();
   expect(await r.request(`/records/${newer.id}`)).toMatchObject({
@@ -62,16 +62,17 @@ test('dismisses a suggestion, and merges a duplicate found from the record', asy
   await expect(page.getByText('Suggestion dismissed.', { exact: false })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Yael Mizrachi' })).not.toBeVisible();
 
-  await page.goto(`${r.url}/app/r/${keep.id}`);
+  await page.goto(`${r.url}/app/r/${away.id}`);
   await page.getByRole('button', { name: 'Record actions' }).click();
   await page.getByRole('menuitem', { name: 'Merge a duplicate…' }).click();
-  const picker = page.getByRole('dialog', { name: 'Merge a duplicate into Avi Cohen' });
+  const picker = page.getByRole('dialog', { name: 'Merge a duplicate with Avi Cohen' });
+  // Start from the newer record: the older one must still survive.
   // The search starts from the record's own name, and the record itself is not offered.
   await expect(picker.getByRole('button', { name: 'Avi Cohen' })).toHaveCount(1);
   await picker.getByRole('button', { name: 'Avi Cohen' }).click();
   const dialog = page.getByRole('dialog', { name: 'Merge duplicate records' });
   await expect(dialog.getByText('Keeps the only value')).toBeVisible();
-  await dialog.getByRole('button', { name: 'Merge into Avi Cohen' }).click();
+  await dialog.getByRole('button', { name: 'Merge records' }).click();
   await expect(page.getByText('Merged Avi Cohen into')).toBeVisible();
   await expect(page.getByText('CFO', { exact: true })).toBeVisible();
   expect((await r.request(`/records/${away.id}`)).id).toBe(keep.id);

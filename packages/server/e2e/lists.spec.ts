@@ -173,7 +173,7 @@ test('selects rows in a list to delete them together or merge two', async ({
   await expect(page.getByText('2 selected')).toBeVisible();
   await page.getByRole('button', { name: 'Merge…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Merge duplicate records' });
-  await dialog.getByRole('button', { name: 'Merge into Yael Mizrahi' }).click();
+  await dialog.getByRole('button', { name: 'Merge records' }).click();
   await expect(page.getByText('Merged Yael Mizrachi into')).toBeVisible();
   await expect(people.getByRole('link', { name: /^Yael/ })).toHaveCount(1);
   expect((await r.request(`/records/${newer.id}`)).id).toBe(older.id);

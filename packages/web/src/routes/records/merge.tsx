@@ -6,7 +6,6 @@ import { fields } from '../../fields/index.js';
 import {
   Badge,
   Button,
-  CheckLabel,
   Dialog,
   Input,
   Muted,
@@ -32,19 +31,16 @@ import { defaultSurvivor, type MergeChoice, mergeRows, mergeValues } from './wri
 
 /**
  * Compares two records of one object and merges one into the other. The
- * person picks which record survives (the older one by default) and, where
- * both have a value, which value stays; undecided fields follow the server's
+ * older record survives automatically. The person picks which value stays
+ * where both have a value; undecided fields follow the server's
  * rules. The dialog's idempotency key makes a retried merge safe.
  */
 export function MergeDialog({
   ids,
-  survivor: preferred,
   suggestion,
   onClose,
 }: {
   ids: [string, string];
-  /** The record that survives unless the person picks the other. */
-  survivor?: string;
   /** The suggestion this merge answers, which can also be dismissed here. */
   suggestion?: string;
   onClose: () => void;
@@ -54,8 +50,7 @@ export function MergeDialog({
     report = useReport();
   const first = useRecord(ids[0]),
     second = useRecord(ids[1]);
-  const [picked, setPicked] = useState<string>(),
-    [choices, setChoices] = useState<Record<string, MergeChoice>>({}),
+  const [choices, setChoices] = useState<Record<string, MergeChoice>>({}),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [key] = useState(() => crypto.randomUUID());
@@ -63,10 +58,7 @@ export function MergeDialog({
     b = second.data;
   const loadError = first.error ?? second.error;
   const same = a && b && a.id === b.id;
-  const keep =
-    a && b
-      ? ([a, b].find((r) => r.id === (picked ?? preferred)) ?? defaultSurvivor(a, b))
-      : undefined;
+  const keep = a && b ? defaultSurvivor(a, b) : undefined;
   const away = keep && (keep === a ? b : a);
   const object = objectByName(schema, keep?.object);
   const rows = object && keep && away ? mergeRows(object, keep, away) : [];
@@ -124,7 +116,7 @@ export function MergeDialog({
         if (!open && !busy) onClose();
       }}
       title="Merge duplicate records"
-      description="Everything the merged record holds moves to the record you keep: values, facts, events, history and links. Its old ID opens the kept record. A merge cannot be undone."
+      description="The older record is kept, combining values, facts, events, history and links from both records. Choose which values to keep below. Existing links still work. A merge cannot be undone."
     >
       <Stack>
         {error ? <Notice error>{error}</Notice> : null}
@@ -133,35 +125,12 @@ export function MergeDialog({
         {same ? <Notice>These are already one record.</Notice> : null}
         {keep && away && !same ? (
           <>
-            <fieldset>
-              <Stack>
-                <Muted>Which record keeps its ID?</Muted>
-                {[keep, away]
-                  .sort((x, y) => Date.parse(x.createdAt) - Date.parse(y.createdAt))
-                  .map((r) => (
-                    <CheckLabel key={r.id}>
-                      <Input
-                        type="radio"
-                        name="survivor"
-                        checked={r.id === keep.id}
-                        onChange={() => {
-                          setPicked(r.id);
-                          setChoices({});
-                        }}
-                      />
-                      <span>
-                        {title(r)} · created {new Date(r.createdAt).toLocaleString()}
-                      </span>
-                    </CheckLabel>
-                  ))}
-              </Stack>
-            </fieldset>
             {rows.length ? (
               <Table
                 headers={[
                   { label: 'Field' },
-                  { label: `${title(keep)} (kept)` },
-                  { label: `${title(away)} (merged)` },
+                  { label: 'Older record' },
+                  { label: 'Newer record' },
                   { label: 'Result' },
                 ]}
               >
@@ -197,8 +166,8 @@ export function MergeDialog({
                                 value: 'auto',
                                 label: row.combined ? 'Combine both' : 'Newest wins',
                               },
-                              { value: 'keep', label: 'Kept record’s' },
-                              { value: 'merge', label: 'Merged record’s' },
+                              { value: 'keep', label: 'Older record’s' },
+                              { value: 'merge', label: 'Newer record’s' },
                             ]}
                             onChange={(next) =>
                               setChoices((c) => ({
@@ -232,7 +201,7 @@ export function MergeDialog({
             disabled={busy || !keep || !away || !!same}
             onClick={() => void merge()}
           >
-            {busy ? 'Merging…' : keep && away ? `Merge into ${title(keep)}` : 'Merge'}
+            {busy ? 'Merging…' : 'Merge records'}
           </Button>
           {suggestion ? (
             <Button disabled={busy} onClick={() => void dismiss()}>
@@ -296,7 +265,7 @@ export function MergeSuggestionCard({ suggestion }: { suggestion: MergeSuggestio
   );
 }
 
-/** Finds another record of the same object to merge into `record`. */
+/** Finds another record of the same object to merge with `record`. */
 export function MergePicker({ record, onClose }: { record: PresentedRecord; onClose: () => void }) {
   const { session, schema } = useWorkspace();
   const object = objectByName(schema, record.object);
@@ -310,7 +279,7 @@ export function MergePicker({ record, onClose }: { record: PresentedRecord; onCl
     enabled: !other,
     placeholderData: (previous) => previous,
   });
-  if (other) return <MergeDialog ids={[record.id, other]} survivor={record.id} onClose={onClose} />;
+  if (other) return <MergeDialog ids={[record.id, other]} onClose={onClose} />;
   const list = candidates.data?.records.filter((r) => r.id !== record.id) ?? [];
   return (
     <Dialog
@@ -318,7 +287,7 @@ export function MergePicker({ record, onClose }: { record: PresentedRecord; onCl
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title={`Merge a duplicate into ${title(record)}`}
+      title={`Merge a duplicate with ${title(record)}`}
       description={`Find the other ${object?.labelSingular.toLowerCase() ?? 'record'}. You’ll compare the two before anything changes.`}
     >
       <Stack>
