@@ -22,14 +22,14 @@ test('merges a suggested duplicate, choosing the value to keep', async ({ page, 
     .click();
   const dialog = page.getByRole('dialog', { name: 'Merge duplicate records' });
   // The older record survives by default; emails are combined unless chosen.
-  await expect(dialog.getByRole('radio', { name: /Yael Mizrahi/ })).toBeChecked();
+  await expect(dialog.getByRole('radio')).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: 'Value for Emails' })).toHaveText('Combine both');
   await dialog.getByRole('button', { name: 'Value for Job title' }).click();
-  await page.getByRole('option', { name: 'Merged record’s' }).click();
+  await page.getByRole('option', { name: 'Newer record’s' }).click();
   await expect(dialog.getByRole('button', { name: 'Value for Job title' })).toHaveText(
-    'Merged record’s',
+    'Newer record’s',
   );
-  await dialog.getByRole('button', { name: 'Merge into Yael Mizrahi' }).click();
+  await dialog.getByRole('button', { name: 'Merge records' }).click();
   await expect(page.getByText('Merged Yael Mizrachi into')).toBeVisible();
   await expect(page.getByText('No possible duplicates')).toBeVisible();
   expect(await r.request(`/records/${newer.id}`)).toMatchObject({
@@ -62,16 +62,17 @@ test('dismisses a suggestion, and merges a duplicate found from the record', asy
   await expect(page.getByText('Suggestion dismissed.', { exact: false })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Yael Mizrachi' })).not.toBeVisible();
 
-  await page.goto(`${r.url}/app/r/${keep.id}`);
+  await page.goto(`${r.url}/app/r/${away.id}`);
   await page.getByRole('button', { name: 'Record actions' }).click();
   await page.getByRole('menuitem', { name: 'Merge a duplicate…' }).click();
-  const picker = page.getByRole('dialog', { name: 'Merge a duplicate into Avi Cohen' });
+  const picker = page.getByRole('dialog', { name: 'Merge a duplicate with Avi Cohen' });
+  // Start from the newer record: the older one must still survive.
   // The search starts from the record's own name, and the record itself is not offered.
   await expect(picker.getByRole('button', { name: 'Avi Cohen' })).toHaveCount(1);
   await picker.getByRole('button', { name: 'Avi Cohen' }).click();
   const dialog = page.getByRole('dialog', { name: 'Merge duplicate records' });
   await expect(dialog.getByText('Keeps the only value')).toBeVisible();
-  await dialog.getByRole('button', { name: 'Merge into Avi Cohen' }).click();
+  await dialog.getByRole('button', { name: 'Merge records' }).click();
   await expect(page.getByText('Merged Avi Cohen into')).toBeVisible();
   await expect(page.getByText('CFO', { exact: true })).toBeVisible();
   expect((await r.request(`/records/${away.id}`)).id).toBe(keep.id);
@@ -124,3 +125,55 @@ test('offers erasing only to admin user keys', async ({ page, retainer: r }) => 
   await expect(page.getByRole('menuitem', { name: 'Delete…' })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Erase for privacy…' })).not.toBeVisible();
 });
+
+for (const width of [1440, 390]) {
+  test(`long duplicate task titles wrap in cards and comparisons at ${width}px`, async ({
+    page,
+    retainer: r,
+  }, testInfo) => {
+    const olderTitle =
+      "Schedule Orchid's presentation of its AI-security solution and internal AI use to Team8 (Matt to present)";
+    const newerTitle =
+      "Schedule Orchid's presentation of its AI-security solution and internal AI use to Team8 (Matt and the AI team to present)";
+    for (const title of [olderTitle, newerTitle]) {
+      await r.request('/objects/task/records', { values: { title, status: 'todo' } });
+    }
+    await r.consolidate();
+    await page.setViewportSize({ width, height: 1000 });
+    await signIn(page, r.url, r.keys.user);
+    await page.goto(`${r.url}/app/?tab=mergeSuggestions`);
+    const card = page.locator('[data-review-card]').filter({ hasText: olderTitle });
+    for (const title of [olderTitle, newerTitle]) {
+      const link = card.getByRole('link', { name: title, exact: true });
+      await expect(link).toBeVisible();
+      await expect(link).toHaveCSS('white-space', 'normal');
+      expect(await link.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+      expect(
+        await link.evaluate(
+          (el) =>
+            el.getBoundingClientRect().height >
+            Number.parseFloat(el.ownerDocument.defaultView?.getComputedStyle(el).lineHeight ?? '0'),
+        ),
+      ).toBe(true);
+    }
+    expect(await card.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    const cardImage = testInfo.outputPath(`duplicate-card-${width}.png`);
+    await card.screenshot({ path: cardImage });
+    await testInfo.attach('Suggestion card', { path: cardImage, contentType: 'image/png' });
+    await card.getByRole('button', { name: /^Compare and merge/ }).click();
+    const dialog = page.getByRole('dialog', { name: 'Merge duplicate records' });
+    const titleComparison = dialog.getByRole('region', { name: 'Title', exact: true });
+    for (const title of [olderTitle, newerTitle]) {
+      await expect(titleComparison.getByText(title, { exact: true })).toBeVisible();
+    }
+    expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    expect(await titleComparison.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    const comparisonImage = testInfo.outputPath(`duplicate-comparison-${width}.png`);
+    await dialog.screenshot({ path: comparisonImage });
+    await testInfo.attach('Merge comparison', { path: comparisonImage, contentType: 'image/png' });
+    await dialog.getByRole('button', { name: 'Value for Title' }).click();
+    await page.getByRole('option', { name: 'Newer record’s' }).click();
+    await dialog.getByRole('button', { name: 'Merge records' }).click();
+    await expect(dialog).not.toBeVisible();
+  });
+}

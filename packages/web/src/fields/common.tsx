@@ -181,7 +181,7 @@ export function FieldDisplay({
     case 'text':
       return (
         <Tooltip content={String(value)}>
-          {/* Grid hosts clip by width; merge comparisons need a bounded preview. */}
+          {/* Grid hosts clip by width; other compact displays use a bounded preview. */}
           <span
             className={
               textLines === 2
