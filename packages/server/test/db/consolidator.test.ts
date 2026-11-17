@@ -9,6 +9,7 @@ import {
   createRecord,
   dismissSuggestion,
   mergeRecord,
+  patchRecord,
   withRead,
 } from '../../src/records/service.js';
 import { runSchemaChange } from '../../src/schema-engine/engine.js';
@@ -359,6 +360,35 @@ describe('merge suggestions (4.2)', () => {
     }
     expect((await consolidateWorkspace(app, ws))?.mergeSuggestions).toBe(matches ? 1 : 0);
     expect(await suggestions(ws)).toHaveLength(matches ? 1 : 0);
+  });
+
+  it('compares changed URL records with unchanged counterparts on incremental runs', async () => {
+    const ws = await newWorkspace();
+    const old = await createRecord(app, caller(ws), 'company', {
+      name: 'Granite',
+      domain: 'https://linkedin.com/company/granite',
+    });
+    const changed = await createRecord(app, caller(ws), 'company', {
+      name: 'Pelican',
+      domain: 'https://unrelated.example',
+    });
+    expect((await consolidateWorkspace(app, ws))?.mergeSuggestions).toBe(0);
+    await db.owner`update consolidator_runs set compared_until = now() where workspace_id = ${ws}`;
+    // Idle incremental run: no link-bearing records need comparison.
+    expect((await consolidateWorkspace(app, ws))?.mergeSuggestions).toBe(0);
+    await db.owner`update consolidator_runs set compared_until = now() where workspace_id = ${ws}`;
+    await patchRecord(app, caller(ws), changed.id, {
+      values: { domain: 'http://www.linkedin.com/company/granite/?trk=referral' },
+    });
+    expect((await consolidateWorkspace(app, ws))?.mergeSuggestions).toBe(1);
+    expect(await suggestions(ws)).toEqual([
+      {
+        a: pair(old.id, changed.id)[0],
+        b: pair(old.id, changed.id)[1],
+        reason: 'shared domain',
+        status: 'pending',
+      },
+    ]);
   });
 
   it('preserves existing pending and human-decided URL suggestions', async () => {

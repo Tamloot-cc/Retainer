@@ -180,15 +180,28 @@ async function suggestMerges(
     where m.workspace_id = ${workspaceId} and m.record_a_id = ${a} and m.record_b_id = ${b})`;
   // Derive URL evidence from current winning values, including old records:
   // persisted domain identifiers intentionally remain broad for lookup/search.
-  // Read link values only, never unrelated record data or assertion history.
+  // Use the existing domain index to narrow the read to changed records and
+  // their possible counterparts. An idle incremental run reads no link values.
+  // Domains only prefilter candidates; full URL keys decide whether they match.
   const links = await tx<{ id: string; value: LinksValue | null }[]>`
+    with changed_domains as (
+      select distinct a.object_type_id, i.value
+      from records a
+      join record_identifiers i on i.record_id = a.id and i.kind = 'domain'
+      where a.workspace_id = ${workspaceId} and a.deleted_at is null
+        and ${changed()} and ${entity}
+    )
     select r.id, r.data -> f.key as value
     from records r
     join fields f on f.object_type_id = r.object_type_id
       and f.workspace_id = r.workspace_id and f.type = 'links' and f.status = 'active'
     join object_types o on o.id = r.object_type_id and o.class = 'entity'
     where r.workspace_id = ${workspaceId} and r.deleted_at is null
-      and r.data -> f.key is not null`;
+      and r.data -> f.key is not null
+      and exists (
+        select 1 from record_identifiers i
+        join changed_domains d on d.value = i.value and d.object_type_id = r.object_type_id
+        where i.workspace_id = ${workspaceId} and i.record_id = r.id and i.kind = 'domain')`;
   const urlRecords: string[] = [];
   const urlKeys: string[] = [];
   for (const { id, value } of links) {
