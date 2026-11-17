@@ -339,3 +339,35 @@ it('toggles a text field between literal and rendered Markdown without writing',
   expect(screen.getByText('**שלום**')).toBeTruthy();
   expect(patch).not.toHaveBeenCalled();
 });
+
+it('keeps empty values visible and sets direction per Markdown block', async () => {
+  const field = {
+    ...stage,
+    type: 'text',
+    name: 'notes',
+    label: 'Notes',
+    settings: {},
+  } as FieldView;
+  const workspace = {
+    session: { workspace: { id: 'w1' }, actor: {} },
+    schema: { objects: [] },
+  } as unknown as { session: Session; schema: SchemaDescription };
+  const show = (notes: string) => (
+    <WorkspaceContext.Provider value={workspace}>
+      <FieldProperty
+        record={{ ...record, fields: { notes } }}
+        field={field}
+        editable={false}
+        onHistory={() => {}}
+      />
+    </WorkspaceContext.Provider>
+  );
+  const { rerender } = render(
+    show('# English\n\n## שלום\n\n| First | שני |\n| --- | --- |\n| one | שתיים |'),
+  );
+  await userEvent.click(screen.getByRole('button', { name: 'Render Markdown for Notes' }));
+  expect(screen.getByText('שלום').getAttribute('dir')).toBe('auto');
+  expect(screen.getByText('שתיים').getAttribute('dir')).toBe('auto');
+  rerender(show(''));
+  expect(screen.getByText('—')).toBeTruthy();
+});

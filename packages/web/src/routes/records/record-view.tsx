@@ -372,7 +372,9 @@ export function FieldProperty({
         provenance={record.provenance?.[field.name]}
         viewer={session.actor}
       >
-        {markdown && typeof record.fields[field.name] === 'string' ? (
+        {markdown &&
+        typeof record.fields[field.name] === 'string' &&
+        record.fields[field.name] !== '' ? (
           <div
             dir="auto"
             className="whitespace-normal [&_p]:my-2 [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:ps-6 [&_ol]:ps-6 [&_a]:underline [&_pre]:overflow-auto [&_pre]:text-left"
@@ -381,8 +383,18 @@ export function FieldProperty({
             <Markdown
               remarkPlugins={[remarkGfm]}
               components={{
-                p: ({ children }) => <p dir="auto">{children}</p>,
-                li: ({ children }) => <li dir="auto">{children}</li>,
+                p: ({ node: _, ...props }) => <p {...props} dir="auto" />,
+                li: ({ node: _, ...props }) => <li {...props} dir="auto" />,
+                h1: ({ node: _, ...props }) => <h1 {...props} dir="auto" />,
+                h2: ({ node: _, ...props }) => <h2 {...props} dir="auto" />,
+                h3: ({ node: _, ...props }) => <h3 {...props} dir="auto" />,
+                h4: ({ node: _, ...props }) => <h4 {...props} dir="auto" />,
+                h5: ({ node: _, ...props }) => <h5 {...props} dir="auto" />,
+                h6: ({ node: _, ...props }) => <h6 {...props} dir="auto" />,
+                blockquote: ({ node: _, ...props }) => <blockquote {...props} dir="auto" />,
+                th: ({ node: _, ...props }) => <th {...props} dir="auto" />,
+                td: ({ node: _, ...props }) => <td {...props} dir="auto" />,
+                pre: ({ node: _, ...props }) => <pre {...props} dir="ltr" />,
               }}
             >
               {record.fields[field.name] as string}
