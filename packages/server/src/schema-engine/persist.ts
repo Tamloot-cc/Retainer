@@ -1,4 +1,4 @@
-import type { Actor } from '@retainer/shared';
+import { type Actor, HIDDEN_TYPE_IDS } from '@retainer/shared';
 import { ChangeCollector } from '../changes/collect.js';
 import type { Tx } from '../db/tx.js';
 import { identifiersFor } from '../records/derive.js';
@@ -311,8 +311,13 @@ export async function persistSchema(
     }
   }
 
+  const hasVisibleSchema = desired.objects.some(
+    (object) => object.status === 'active' && !HIDDEN_TYPE_IDS.has(object.universalId),
+  );
   const [workspace] = await tx<{ schema_version: number }[]>`
-    update workspaces set schema_version = schema_version + 1, updated_at = now()
+    update workspaces set schema_version = schema_version + 1, updated_at = now(),
+      initialized_at = case when schema_from_scratch and ${hasVisibleSchema}
+        then coalesce(initialized_at, now()) else initialized_at end
     where id = ${workspaceId} returning schema_version`;
   const version = workspace?.schema_version as number;
   if (viewObjects.size > 0) {

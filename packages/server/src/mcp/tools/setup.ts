@@ -25,7 +25,7 @@ export function registerSetupTools(server: McpServer, sql: Sql, caller: Caller):
     {
       title: 'Describe the workspace schema',
       description:
-        'Returns the workspace (id, name, applied templates, initialized, schemaVersion) and ' +
+        'Returns the workspace (id, name, applied templates, initialized, schemaFromScratch, schemaVersion) and ' +
         'every object with its fields: type, options, and whether it is unique, filterable or ' +
         'required. valueFormats shows how to write a value of each field type they use, ' +
         'e.g. full_name as { first, last }. isProtected marks objects that cannot be deleted and fields that cannot be ' +
@@ -74,7 +74,7 @@ export function registerSetupTools(server: McpServer, sql: Sql, caller: Caller):
         "Adds a template's objects and fields to the workspace and marks it initialized. " +
         'Templates only add, so this applies at once. Applying one twice does nothing; ' +
         '"blank" adds nothing and only marks the workspace initialized. Needs the ' +
-        'schema:write scope.',
+        'schema:write scope. Workspaces designed from scratch use propose_schema_change instead.',
       inputSchema: applyTemplateInput,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },

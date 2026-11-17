@@ -158,14 +158,17 @@ with your own tools; Retainer stores the schema you settle on.
 ## 1. Read what exists
 
 Call describe_schema and list_templates.
-- Every workspace already has person, company and task objects. Read their
-  fields in describe_schema before you add your own.
+- If workspace.schemaFromScratch is true, Retainer did not seed any visible
+  types. Design the objects and events the user actually needs. Use templates
+  as reference only; they assume base types.
+- Otherwise, the workspace already has person, company and task objects.
+  Read their fields in describe_schema before you add your own.
 - Read the templates even when the workspace is already initialized: a
   template may already define the object you are about to invent, and a
   workspace can apply a template later. Read them as reference here; choose
   one in step 4, after you have seen the data, so the data shapes the
   choice and not the other way round.
-- initialized: false means no template has been chosen. If it is true, you
+- initialized: false means first schema setup is still pending. If it is true, you
   are extending a schema someone already uses: propose additions only, and
   never rename or delete what is there unless the user asks. When they ask
   for a redesign, say which changes will wait for approval.
@@ -229,9 +232,11 @@ shape of the data, not its contents.
 
 ## 4. Design
 
-Start from the template closest to the business, or "blank" if none fits.
-A template object that is close but not exact is still better than your
-own: add the fields it lacks rather than creating a twin.
+For a workspace designed from scratch, use the templates as examples. Explicitly
+include each new type and field you recommend, including any contact, task or
+event types. Create only what the evidence supports.
+For a workspace with base types, start from the closest template or "blank".
+Add to existing objects when they fit instead of creating a twin.
 
 ${DESIGN_RULES}
 
@@ -239,7 +244,7 @@ ${DESIGN_RULES}
 
 Show the user:
 - What you understood the business to be, and the sources you looked at.
-- The template you chose and why.
+- The template you chose and why, if the workspace uses templates.
 - Each new object and field: name, type, options, what it links to, and the
   evidence ("a stage is mentioned in 31 of 80 threads").
 - What you left out and why.
@@ -249,9 +254,9 @@ anything they have not approved.
 
 ## 6. Apply
 
-1. apply_template with the chosen template, before anything else (template
-   names would otherwise collide with your own objects). Skip it if the
-   workspace already has that template.
+1. For a workspace with base types, call apply_template with the approved
+   template first, unless it is already applied. For a workspace designed
+   from scratch, skip this step and apply the entire schema in step 2.
 2. propose_schema_change once, with every approved operation and a short
    reason that says the user approved it. Create objects before
    the fields and relations that point to them.
@@ -262,8 +267,8 @@ anything they have not approved.
    what is waiting for approval.
 
 apply_template and propose_schema_change need the schema:write scope. If
-the key lacks it, give the user the approved proposal and tell them a key
-with schema:write is needed to apply it.
+the connection lacks it, give the user the approved proposal and tell them a
+workspace admin needs to connect to apply it.
 
 When the schema is in place, you can offer to import the records and
 conversations you sampled, as a separate step.`;
@@ -278,7 +283,8 @@ the same rules.
 ## Before you change anything
 
 1. Call describe_schema, and list_templates: a template may already define
-   what you need, and applying it beats building a twin.
+   what you need. Apply it only on a workspace that uses base types; use
+   it as a reference if workspace.schemaFromScratch is true.
 2. Check that the change is needed: could an option, an existing field, a
    fact or an event hold it?
 3. Make the smallest change that works, with a reason that names the

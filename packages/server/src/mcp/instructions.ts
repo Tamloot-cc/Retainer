@@ -1,12 +1,11 @@
 export const INSTRUCTIONS = `Retainer is the memory of a CRM workspace: people, companies, tasks and
-any objects the workspace adds. You are connected to one workspace through one
-API key; every call acts on it, and every write is recorded as yours.
+any objects the workspace adds. Your connection belongs to one workspace;
+every call acts on it, and every write is recorded as yours.
 
-Start with describe_schema. If the workspace is not initialized, read
+Start with describe_schema and verify the workspace ID if the user specified one.
+If the workspace is not initialized, read
 get_guide("discover_schema") and follow it: it walks you through exploring
-your user's data, proposing a schema and applying it once they agree. If you
-cannot do that now, pick a template with list_templates and apply_template,
-or ask your user.
+your user's data, proposing a schema and applying it once they agree.
 
 Find records with search (keywords across records, events and facts) or
 query_records (exact filters on one object). Events (conversations and any
@@ -21,8 +20,9 @@ which value wins. A value a person set outranks yours, so your write may come
 back as pending_review: tell your user it is waiting for approval rather than
 saying it is done.
 
-Log meetings, calls, emails and chats as conversation with a medium. Use
-another event type only when the workspace defines one for that kind of event.
+Use the event types defined by describe_schema. When conversation exists,
+log meetings, calls, emails and chats with its medium field. If the schema
+has no applicable event type, propose one before logging those events.
 channel is where the record came from (the source system or account, such as
 gmail or zoom) and is part of its identity; medium is what happened (meeting,
 call, email, message): leave it empty if you can't tell.

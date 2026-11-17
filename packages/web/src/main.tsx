@@ -47,6 +47,10 @@ import { QueryError, ReportContext, sortObjects } from './routes/state.js';
 import { Button, Notice, Page, Shell, Splash } from './ui/index.js';
 import './style.css';
 
+const onboarding = () => import('./accounts/onboarding.js');
+const LazyHostedFirstRun = lazy(() => onboarding().then((m) => ({ default: m.HostedFirstRun })));
+const LazyWorkspaceSetup = lazy(() => onboarding().then((m) => ({ default: m.WorkspaceSetup })));
+
 const LazyNewWorkspace = lazy(() =>
   import('./accounts/settings.js').then((m) => ({ default: m.NewWorkspaceDialog })),
 );
@@ -77,9 +81,15 @@ function Layout() {
       client.setQueryData([session.workspace.id, 'schema', result.workspace.schemaVersion], result);
       return result;
     },
+    refetchInterval: (query) =>
+      query.state.data?.workspace.schemaFromScratch && !query.state.data.workspace.initialized
+        ? 3000
+        : false,
   });
+  const settingUp = schema.data?.workspace.schemaFromScratch && !schema.data.workspace.initialized;
   const inbox = useQuery({
     queryKey: [session.workspace.id, 'review', 'sidebar-count'],
+    enabled: !settingUp,
     queryFn: ({ signal }) => api.review({ limit: 1, signal }),
     retry: false,
     staleTime: 60_000,
@@ -87,6 +97,7 @@ function Layout() {
   });
   const proposals = useQuery({
     queryKey: [session.workspace.id, 'schemaChanges', 'proposed', undefined],
+    enabled: !settingUp,
     queryFn: ({ signal }) => api.schemaChanges({ status: 'proposed', limit: 50, signal }),
     staleTime: 60_000,
   });
@@ -108,6 +119,7 @@ function Layout() {
     return () => window.removeEventListener('retainer:schema-refreshed', refreshed);
   }, [client, session.workspace.id]);
   useEffect(() => {
+    if (settingUp) return;
     function key(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
@@ -116,7 +128,7 @@ function Layout() {
     }
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, []);
+  }, [settingUp]);
   if (!schema.data && !schema.error) return <Splash label="Loading workspace…" />;
   if (!schema.data)
     return (
@@ -125,6 +137,13 @@ function Layout() {
         <Button onClick={signOut}>Sign out</Button>
       </Page>
     );
+  if (accountState && settingUp) {
+    return (
+      <Suspense fallback={<Splash label="Loading workspace setup…" />}>
+        <LazyWorkspaceSetup state={accountState} onApplied={() => void schema.refetch()} />
+      </Suspense>
+    );
+  }
   const objects = sortObjects(schema.data.objects);
   return (
     <WorkspaceContext.Provider value={{ session, schema: schema.data }}>
@@ -551,7 +570,11 @@ function AccountsApp({ account }: { account: Account }) {
     window.location.replace(workspaceHref(next.workspace.slug));
     return null;
   }
-  return <LazyFirstRun account={account} />;
+  return account.hostedOnboarding ? (
+    <LazyHostedFirstRun account={account} />
+  ) : (
+    <LazyFirstRun account={account} />
+  );
 }
 
 type Boot =

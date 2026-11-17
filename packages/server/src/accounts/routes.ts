@@ -37,6 +37,7 @@ export type AccountsEnv = {
 
 export type AccountsDeps = {
   auth: Auth;
+  hostedOnboarding?: boolean;
   extensionCatalog?: ExtensionCatalog;
   /** A connection as the control role. */
   sql: Sql;
@@ -88,16 +89,48 @@ export function createAccountsApp(deps: AccountsDeps) {
   account.use('*', signedIn(deps));
   const { sql } = deps;
   account.get('/', async (c) =>
-    c.json({ ...(await describeAccount(sql, c.get('person'))), providers: deps.auth.providers }),
+    c.json({
+      ...(await describeAccount(sql, c.get('person'))),
+      providers: deps.auth.providers,
+      ...(deps.hostedOnboarding ? { hostedOnboarding: true } : {}),
+    }),
   );
 
   // Workspaces
+  if (deps.hostedOnboarding) {
+    account.post('/onboarding/workspace', async (c) => {
+      const body = await readBody(
+        c,
+        z.strictObject({
+          skipInvitation: z.boolean().default(false),
+          oauthQuery: z.string().min(1).max(8192).optional(),
+        }),
+      );
+      if (body.oauthQuery) await requireCurrentAuthorization(deps.auth, body.oauthQuery);
+      return c.json({
+        workspace: await people.ensureDefaultWorkspace(
+          sql,
+          c.get('person'),
+          body.skipInvitation,
+          deps.publicOrigin,
+        ),
+      });
+    });
+  }
   account.post('/workspaces', async (c) => {
     const body = await readBody(
       c,
       named.extend({ template: z.string().optional(), organizationId: z.uuid().optional() }),
     );
-    return c.json(await people.createWorkspaceFor(sql, c.get('person'), body), 201);
+    return c.json(
+      await people.createWorkspaceFor(
+        sql,
+        c.get('person'),
+        body,
+        deps.hostedOnboarding && !body.template ? deps.publicOrigin : undefined,
+      ),
+      201,
+    );
   });
   account.patch('/workspaces/:id', async (c) => {
     const { name } = await readBody(c, named);
@@ -202,11 +235,18 @@ export function createAccountsApp(deps: AccountsDeps) {
   // Connecting an app over OAuth (4.7): the consent page's requests.
   account.get('/oauth/client', async (c) => {
     const clientId = c.req.query('client_id') ?? '';
-    const [client] = await sql<{ name: string | null; uri: string | null }[]>`
-      select name, uri from oauth_clients where client_id = ${clientId} and disabled is not true`;
+    const [client] = await sql<
+      { name: string | null; uri: string | null; onboarding_workspace_id: string | null }[]
+    >`
+      select name, uri, onboarding_workspace_id from oauth_clients where client_id = ${clientId} and disabled is not true`;
     if (!client)
       throw new AppError(404, 'not_found', 'This app is not known; start again from it.');
-    return c.json({ clientId, name: client.name ?? clientId, uri: client.uri });
+    return c.json({
+      clientId,
+      name: client.name ?? clientId,
+      uri: client.uri,
+      ...(client.onboarding_workspace_id ? { workspaceId: client.onboarding_workspace_id } : {}),
+    });
   });
   account.get('/oauth/installations', async (c) => {
     const parsed = z
@@ -235,6 +275,7 @@ export function createAccountsApp(deps: AccountsDeps) {
         expectedGeneration: z.number().int().positive().optional(),
       }),
     );
+    if (deps.hostedOnboarding) await requireCurrentAuthorization(deps.auth, body.oauth_query);
     const { accept, workspaceId } = body;
     if (accept && !workspaceId) {
       throw new AppError(400, 'invalid_request', 'pick the workspace to connect');
@@ -265,6 +306,16 @@ export function createAccountsApp(deps: AccountsDeps) {
     }
     if (body.installationId || body.expectedGeneration)
       throw new AppError(400, 'invalid_request', 'MCP uses a separate person connection');
+    const clientId = new URLSearchParams(body.oauth_query).get('client_id');
+    const [client] = await sql<{ onboarding_workspace_id: string | null }[]>`
+      select onboarding_workspace_id from oauth_clients where client_id = ${clientId}`;
+    if (client?.onboarding_workspace_id && client.onboarding_workspace_id !== workspaceId) {
+      throw new AppError(
+        400,
+        'wrong_workspace',
+        'This setup prompt connects to a different workspace.',
+      );
+    }
     return connections.recordConsent(sql, c.get('person'), workspaceId, () =>
       deps.auth.consent(request, workspaceId),
     );
@@ -289,6 +340,16 @@ export function createAccountsApp(deps: AccountsDeps) {
 
   app.route('/account', account);
   return app;
+}
+
+async function requireCurrentAuthorization(auth: Auth, query: string) {
+  if (!(await auth.validOAuthQuery(query))) {
+    throw new AppError(
+      400,
+      'expired_authorization',
+      'This authorization link expired. Start the connection again in your agent.',
+    );
+  }
 }
 
 /**

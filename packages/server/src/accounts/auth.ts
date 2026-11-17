@@ -2,7 +2,10 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { cimd } from '@better-auth/cimd';
 import { fetchClientMetadataResource } from '@better-auth/cimd/node';
 import { mcp } from '@better-auth/mcp';
-import { oauthProviderAuthServerMetadata } from '@better-auth/oauth-provider';
+import {
+  oauthProviderAuthServerMetadata,
+  verifyOAuthQueryParams,
+} from '@better-auth/oauth-provider';
 import { passkey } from '@better-auth/passkey';
 import { LAST_SIGN_IN_COOKIE, OAUTH_SCOPES, type SignInProvider } from '@retainer/shared';
 import { betterAuth } from 'better-auth';
@@ -152,6 +155,7 @@ export type Auth = {
    * checked that the person can reach the workspace.
    */
   consent: (request: Request, workspaceId: string) => Promise<Response>;
+  validOAuthQuery: (query: string) => Promise<boolean>;
   /** RFC 8414 metadata for the authorization server. */
   authServerMetadata: (request: Request) => Promise<Response>;
   /** The providers people can sign in with here, for the sign-in page. */
@@ -168,6 +172,7 @@ export function createAuth(options: AuthOptions): Auth {
     },
     consent: (request, workspaceId) =>
       pickedWorkspace.run(workspaceId, () => auth.handler(request)),
+    validOAuthQuery: (query) => verifyOAuthQueryParams(query, options.config.secret),
     authServerMetadata: oauthProviderAuthServerMetadata(auth),
     providers: signInProviders(options.config),
   };

@@ -1,7 +1,6 @@
 # Hosted onboarding
 
-Status: proposal, November 17, 2026. The complete journey still needs to be
-implemented and verified in Codex and Claude Code.
+Status: implemented November 17, 2026.
 
 ## Goal
 
@@ -88,18 +87,26 @@ reports `initialized: false`.
 - Later sessions reuse valid access to the intended workspace. Revoked or
   expired access can be renewed without repeating workspace or schema setup.
 
-## Current foundation and gaps
+## Implementation
 
-Retainer supports MCP OAuth discovery, dynamic client registration, native
-loopback redirects, and refresh tokens. The Claude Code plugin declares the
-hosted MCP endpoint. MCP already guides agents toward `discover_schema`.
+The hosted control service provisions the default workspace after checking
+for existing access and pending invitations. The web and OAuth entry points
+share the same operation and serialize first-workspace creation for the
+signed-in person. Accepting an invitation returns to the same signed OAuth
+request.
 
-Today the web app asks the user to name and create their first workspace, and
-MCP consent sends a user without a workspace to the app to do that and then
-restart authorization. A new workspace has built-in types even when
-`describe_schema` reports `initialized: false`. The proposed setup state
-needs to distinguish a workspace with no visible schema from that existing
-state.
+The setup prompt names the workspace and gives each client a separate
+connection that is bound to that workspace at consent. It works even if
+OAuth opens in a different browser. The ordinary hosted MCP URL gives the
+user a choice of accessible workspace. The public connection instructions
+are served at `/mcp/setup` and linked from the MCP resource metadata.
+
+New hosted workspaces seed the hidden note type and workspace and personal
+memory types. They unlock the full web app only when an applied schema change
+creates a visible type. Existing workspaces keep their seeded types and
+template support. An account API request that explicitly selects a built-in
+template can still create a workspace with that template already applied. In a workspace designed from scratch, templates are
+examples and the first proposal contains every type to be applied.
 
 Relevant code:
 
@@ -127,5 +134,12 @@ Check both entry paths independently in Codex and Claude Code.
 | Cancellation, expired authorization, or concurrent attempts | No unintended grant or duplicate default workspace. A later attempt can resume with the existing workspace. |
 | Client requires reload or restart | The agent gives the required step and verifies the connection before reporting success. |
 | Later session or revoked access | A valid connection is reused. Reconnection reuses the workspace and its schema. |
+
+Local verification used Codex CLI 0.169.0 and Claude Code 2.1.326.
+Both clients completed OAuth and called `describe_schema` for the intended
+workspace through each entry path. The tests used a local Retainer backed
+by Postgres, with test sign-in accounts and a stubbed model response for
+Claude Code. Browser tests additionally cover invitations, cancellation,
+and applying the first schema.
 
 Local installation and scheduled daily agent work are outside this spec.

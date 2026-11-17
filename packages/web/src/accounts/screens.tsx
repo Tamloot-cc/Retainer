@@ -120,6 +120,7 @@ export function AccountFrame({
   description,
   account,
   signOutTo,
+  currentWorkspace,
   children,
 }: {
   title: string;
@@ -127,6 +128,7 @@ export function AccountFrame({
   account?: Account;
   /** Where signing in again leads after Sign out; the person's workspaces by default. */
   signOutTo?: string;
+  currentWorkspace?: string;
   children: ReactNode;
 }) {
   const [signOutError, setSignOutError] = useState('');
@@ -137,7 +139,33 @@ export function AccountFrame({
           <BrandMark className="h-6 w-6" />
           Retainer
         </a>
-        {account ? (
+        {account && currentWorkspace ? (
+          <details className="relative ml-auto text-sm">
+            <summary className="cursor-pointer">{account.user.name || account.user.email}</summary>
+            <div className="absolute right-0 z-10 mt-2 flex max-h-64 min-w-48 flex-col gap-2 overflow-auto rounded-md border border-border bg-card p-3 shadow-md">
+              {allWorkspaces(account).map(({ workspace, organization }) => (
+                <a
+                  key={workspace.id}
+                  href={workspaceHref(workspace.slug)}
+                  aria-current={workspace.id === currentWorkspace ? 'page' : undefined}
+                >
+                  {workspace.name}
+                  {account.organizations.length > 1 ? ` · ${organization.name}` : ''}
+                </a>
+              ))}
+              <a href="/app/account">Your account</a>
+              <button
+                type="button"
+                className="text-left"
+                onClick={() =>
+                  void signOutOfAccount(signOutTo).catch((e: Error) => setSignOutError(e.message))
+                }
+              >
+                Sign out
+              </button>
+            </div>
+          </details>
+        ) : account ? (
           <span className="ml-auto flex items-center gap-3 text-sm text-muted-foreground">
             <a href="/app/account" className="hover:text-foreground">
               {account.user.name || account.user.email}
@@ -247,14 +275,22 @@ export function FirstRun({ account }: { account: Account }) {
   );
 }
 
-function InvitationRow({ id, children }: { id: string; children: ReactNode }) {
+export function InvitationRow({
+  id,
+  returnTo = '/app/',
+  children,
+}: {
+  id: string;
+  returnTo?: string;
+  children: ReactNode;
+}) {
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   async function accept() {
     setBusy(true);
     try {
       await accountApi.acceptInvitation(id);
-      window.location.assign('/app/');
+      window.location.assign(returnTo);
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);

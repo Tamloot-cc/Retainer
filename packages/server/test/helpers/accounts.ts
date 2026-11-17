@@ -74,6 +74,7 @@ export function startAccountsApp(
     microsoft?: FakeMicrosoft;
     /** False runs with Microsoft alone. */
     google?: boolean;
+    hostedOnboarding?: boolean;
     extensionCatalog?: ExtensionCatalog;
     fileStorage?: FileStorage;
   } = {},
@@ -101,6 +102,7 @@ export function startAccountsApp(
   });
   const accounts = createAccountsServer({
     config,
+    ...(options.hostedOnboarding ? { hostedOnboarding: true } : {}),
     sql: db.connect({ role: CONTROL_ROLE, max: 4 }),
     authSql: db.connect({ role: CONTROL_ROLE, max: 4 }),
     clientIp: () => '192.0.2.1',

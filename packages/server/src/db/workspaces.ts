@@ -11,6 +11,7 @@ export type Workspace = {
   schemaVersion: number;
   templates: { name: string; version: number; appliedAt: string }[];
   initializedAt: string | null;
+  schemaFromScratch: boolean;
   /** Set when someone deleted it; it is removed for good after a grace period. */
   deletionScheduledAt: string | null;
   createdAt: string;
@@ -24,6 +25,7 @@ type WorkspaceRow = {
   schema_version: number;
   templates: Workspace['templates'];
   initialized_at: Date | null;
+  schema_from_scratch: boolean;
   deletion_scheduled_at: Date | null;
   created_at: Date;
 };
@@ -37,6 +39,7 @@ function toWorkspace(row: WorkspaceRow): Workspace {
     schemaVersion: row.schema_version,
     templates: row.templates,
     initializedAt: row.initialized_at?.toISOString() ?? null,
+    schemaFromScratch: row.schema_from_scratch,
     deletionScheduledAt: row.deletion_scheduled_at?.toISOString() ?? null,
     createdAt: row.created_at.toISOString(),
   };

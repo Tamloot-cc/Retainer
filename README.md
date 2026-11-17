@@ -78,7 +78,14 @@ and events across the workspace.
 
 ## Connect an agent
 
-Agents connect over MCP (Streamable HTTP) at `/mcp`, with the same key as a
+For hosted Retainer, [open the web app](https://retainer.tamloot.cc/app/) and
+copy your workspace's setup prompt into Codex or Claude Code. You can also
+give your agent `https://retainer.tamloot.cc/mcp` and ask it to connect.
+The [hosted setup instructions](https://retainer.tamloot.cc/mcp/setup) are
+public. Sign in, approve the workspace, then let the agent verify the
+connection and help plan your first schema.
+
+For self-hosted Retainer, agents connect over MCP (Streamable HTTP) at `/mcp`, with the same key as a
 bearer token. The key decides the workspace and who the agent's writes are
 attributed to, so give each agent its own key. For example, in Claude Code:
 

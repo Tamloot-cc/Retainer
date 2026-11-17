@@ -33,6 +33,7 @@ export type Account = {
   invitations: PendingForYou[];
   /** The providers this server signs people in with. */
   providers: SignInProvider[];
+  hostedOnboarding?: boolean;
 };
 
 export type Workspace = { id: string; slug: string; name: string; organizationId: string };
@@ -143,6 +144,11 @@ export const account = {
   me: () => call<Account>('/account'),
   /** The providers this server signs people in with; needs no session. */
   providers: () => call<{ providers: SignInProvider[] }>('/account/providers'),
+  ensureWorkspace: (input: { skipInvitation: boolean; oauthQuery?: string }) =>
+    call<{ workspace: Workspace | null }>('/account/onboarding/workspace', {
+      method: 'POST',
+      body: input,
+    }),
   createWorkspace: (input: { name: string; template?: string; organizationId?: string }) =>
     call<Workspace>('/account/workspaces', { method: 'POST', body: input }),
   renameWorkspace: (id: string, name: string) =>
@@ -194,7 +200,7 @@ export const account = {
     call<void>(`/account/connections/${encodeURIComponent(connectionId)}`, { method: 'DELETE' }),
   /** The app asking to connect, for the consent page. */
   oauthClient: (clientId: string) =>
-    call<{ clientId: string; name: string; uri: string | null }>(
+    call<{ clientId: string; name: string; uri: string | null; workspaceId?: string }>(
       `/account/oauth/client?client_id=${encodeURIComponent(clientId)}`,
     ),
   /** Allows or refuses an app; returns where to send the browser next. */

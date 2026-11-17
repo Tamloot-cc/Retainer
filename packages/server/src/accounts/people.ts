@@ -31,6 +31,7 @@ import {
   lockWorkspaceOrganization,
 } from '../workspaces/organizations.js';
 import { slugify } from '../workspaces/workspaces.js';
+import { registerOnboardingClients } from './onboarding-clients.js';
 
 /**
  * What people do to their own organizations and workspaces from the web app
@@ -173,42 +174,80 @@ export async function createWorkspaceFor(
   sql: Sql,
   person: Person,
   input: { name: string; template?: string; organizationId?: string },
+  onboardingOrigin?: string,
 ): Promise<Workspace> {
   const name = input.name.trim();
   if (!name) throw new AppError(400, 'invalid_request', 'a workspace needs a name');
   const id = await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(${FIRST_WORKSPACE_LOCK}, hashtext(${person.id}))`;
     const organizationId = input.organizationId ?? (await organizationForPerson(tx, person));
-    // The lock, then the checks, as in asOrganizationManager.
-    await lockOrganization(tx, organizationId);
-    await requireOrganizationManager(tx, person, organizationId);
-    await assertWithinLimit(tx, organizationId, 'workspaces');
-
-    let workspaceId: string | undefined;
-    for (let attempt = 0; !workspaceId && attempt < 5; attempt++) {
-      const [row] = await tx<{ id: string }[]>`
-        insert into workspaces (organization_id, slug, name)
-        values (${organizationId}, ${suffixedSlug(name)}, ${name})
-        on conflict (slug) do nothing returning id`;
-      workspaceId = row?.id;
-    }
-    if (!workspaceId) throw new Error('could not find a free workspace slug');
-
-    await tx.unsafe(`set local role ${RUNTIME_ROLE}`);
-    return inWorkspaceTransaction(tx, workspaceId, async (scoped) => {
-      await seedBaseObjects(scoped, workspaceId);
-      if (input.template) {
-        await applyTemplate(scoped, {
-          workspaceId,
-          actor: SYSTEM_ACTOR,
-          scopes: ['schema:write'],
-          name: input.template,
-        });
-      }
-      return workspaceId;
-    });
+    return insertWorkspace(tx, person, organizationId, { ...input, name }, onboardingOrigin);
   });
   return getWorkspace(sql, id);
+}
+
+/** Shared by both onboarding entry points. Rechecks access and invitations under the
+ * same person lock as explicit workspace creation and accepting an invitation. */
+export async function ensureDefaultWorkspace(
+  sql: Sql,
+  person: Person,
+  skipInvitation: boolean,
+  publicOrigin: string,
+): Promise<Workspace | null> {
+  const id = await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(${FIRST_WORKSPACE_LOCK}, hashtext(${person.id}))`;
+    const [existing] = await tx<{ id: string }[]>`
+      select w.id from organization_members om
+      join workspaces w on w.organization_id = om.organization_id
+      left join workspace_members wm on wm.workspace_id = w.id and wm.user_id = om.user_id
+      where om.user_id = ${person.id} and w.deletion_scheduled_at is null
+        and (om.role in ('owner', 'admin') or wm.role is not null)
+      order by w.created_at, w.id limit 1`;
+    if (existing) return existing.id;
+    if (!skipInvitation && (await invitationsFor(tx, person)).length > 0) return null;
+    const organizationId = await organizationForPerson(tx, person);
+    return insertWorkspace(tx, person, organizationId, { name: 'My workspace' }, publicOrigin);
+  });
+  return id ? getWorkspace(sql, id) : null;
+}
+
+async function insertWorkspace(
+  tx: Tx,
+  person: Person,
+  organizationId: string,
+  input: { name: string; template?: string },
+  onboardingOrigin?: string,
+): Promise<string> {
+  // The lock, then the checks, as in asOrganizationManager.
+  await lockOrganization(tx, organizationId);
+  await requireOrganizationManager(tx, person, organizationId);
+  await assertWithinLimit(tx, organizationId, 'workspaces');
+
+  const fromScratch = onboardingOrigin !== undefined;
+  let workspaceId: string | undefined;
+  for (let attempt = 0; !workspaceId && attempt < 5; attempt++) {
+    const [row] = await tx<{ id: string }[]>`
+      insert into workspaces (organization_id, slug, name, schema_from_scratch)
+      values (${organizationId}, ${suffixedSlug(input.name)}, ${input.name}, ${fromScratch})
+      on conflict (slug) do nothing returning id`;
+    workspaceId = row?.id;
+  }
+  if (!workspaceId) throw new Error('could not find a free workspace slug');
+  if (onboardingOrigin) await registerOnboardingClients(tx, workspaceId, onboardingOrigin);
+
+  await tx.unsafe(`set local role ${RUNTIME_ROLE}`);
+  return inWorkspaceTransaction(tx, workspaceId, async (scoped) => {
+    await seedBaseObjects(scoped, workspaceId, fromScratch);
+    if (input.template) {
+      await applyTemplate(scoped, {
+        workspaceId,
+        actor: SYSTEM_ACTOR,
+        scopes: ['schema:write'],
+        name: input.template,
+      });
+    }
+    return workspaceId;
+  });
 }
 
 async function organizationForPerson(tx: Tx, person: Person): Promise<string> {
@@ -861,6 +900,7 @@ export async function acceptInvitation(
   tokenOrId: string,
 ): Promise<{ organizationId: string }> {
   return sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(${FIRST_WORKSPACE_LOCK}, hashtext(${person.id}))`;
     const found = await findInvitation(tx, person, tokenOrId);
     await lockOrganization(tx, found.organization_id);
     const row = await findInvitation(tx, person, tokenOrId);
@@ -903,7 +943,7 @@ export async function acceptInvitation(
 }
 
 /** Invitations sent to the person's address, for the first-run screen (4.5). */
-export async function invitationsFor(sql: Sql, person: Person) {
+export async function invitationsFor(sql: Sql | Tx, person: Person) {
   const rows = await sql<
     { id: string; organization_name: string; invited_by: string | null; expires_at: Date }[]
   >`

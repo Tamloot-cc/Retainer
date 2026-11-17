@@ -32,6 +32,7 @@ export const test = base.extend<{
   /** False runs the server with Google alone, as before Microsoft sign-in. */
   withMicrosoft: boolean;
   standaloneOAuth: boolean;
+  hostedOnboarding: boolean;
   accounts: {
     url: string;
     owner: ReturnType<typeof createSql>;
@@ -44,7 +45,11 @@ export const test = base.extend<{
 }>({
   withMicrosoft: [true, { option: true }],
   standaloneOAuth: [false, { option: true }],
-  accounts: async ({ browserName: _browserName, withMicrosoft, standaloneOAuth }, use) => {
+  hostedOnboarding: [false, { option: true }],
+  accounts: async (
+    { browserName: _browserName, withMicrosoft, standaloneOAuth, hostedOnboarding },
+    use,
+  ) => {
     const microsoft = withMicrosoft ? await startFakeMicrosoft() : null;
     const adminUrl = process.env.DATABASE_URL;
     if (!adminUrl) throw new Error('DATABASE_URL is required');
@@ -82,6 +87,7 @@ export const test = base.extend<{
     });
     const authOptions = {
       config,
+      hostedOnboarding,
       sql: control,
       authSql: authControl,
       clientIp: () => '127.0.0.1',

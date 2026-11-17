@@ -16,6 +16,7 @@ import { Extensions } from '../extensions/service.js';
 import type { FileStorage } from '../file-storage/contract.js';
 import { type RateLimit, rateLimit } from '../http/rate-limit.js';
 import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
+import { hostedSetup } from '../mcp/hosted-setup.js';
 import { mcpRoute } from '../mcp/route.js';
 import { mountModelRoutes } from '../model/mount.js';
 import { VERSION } from '../version.js';
@@ -132,6 +133,25 @@ export function createApp(deps: AppDeps) {
   // /account; this function only checks its tokens.
   const oauth = deps.accountsSecret && publicOrigin ? oauthSettings(publicOrigin) : undefined;
   if (oauth && publicOrigin) {
+    const setupUrl = `${publicOrigin}/mcp/setup`;
+    app.get('/mcp/setup', (c) => c.text(hostedSetup(publicOrigin)));
+    app.use('/mcp', async (c, next) => {
+      c.header('Link', `<${setupUrl}>; rel="help"`);
+      const accept = c.req.header('accept') ?? '';
+      // MCP GET requests ask for SSE. A plain, anonymous GET is an agent or
+      // person looking up what to do with this URL.
+      if (
+        c.req.method === 'GET' &&
+        !c.req.header('authorization') &&
+        !accept.includes('text/event-stream') &&
+        !accept.includes('application/json')
+      ) {
+        return accept.includes('text/html')
+          ? c.redirect(setupUrl)
+          : c.text(hostedSetup(publicOrigin));
+      }
+      await next();
+    });
     const rest = installationOAuthSettings(publicOrigin);
     app.get('/.well-known/oauth-protected-resource/v1', (c) => {
       c.header('Cache-Control', 'public, max-age=3600');
@@ -150,6 +170,7 @@ export function createApp(deps: AppDeps) {
       bearer_methods_supported: ['header'],
       scopes_supported: [...OAUTH_SCOPES],
       resource_name: 'Retainer',
+      resource_documentation: setupUrl,
     };
     for (const path of [
       '/.well-known/oauth-protected-resource',
