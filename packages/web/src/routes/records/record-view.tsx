@@ -109,6 +109,12 @@ export function RecordSheet({ id, onClose }: { id: string; onClose: () => void }
   return (
     <Sheet
       onClose={onClose}
+      getReturnFocus={(opener) => {
+        const selector = `[data-record-sheet-trigger~="${CSS.escape(id)}"]`;
+        return opener instanceof HTMLElement && opener.isConnected && opener.matches(selector)
+          ? opener
+          : document.querySelector<HTMLElement>(selector);
+      }}
       eyebrow={classLabel(object)}
       title={r ? recordTitle(r) : 'Record'}
       avatar={

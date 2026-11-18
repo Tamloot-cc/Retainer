@@ -565,6 +565,7 @@ export function RecordLink({
     <Link
       to="."
       search={(prev: Record<string, unknown>) => ({ ...prev, record: id })}
+      data-record-sheet-trigger={id}
       className={className}
     >
       {content}

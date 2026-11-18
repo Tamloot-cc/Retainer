@@ -158,6 +158,7 @@ export function BoardCard({
       tabIndex={0}
       aria-label={title}
       aria-current={selected || undefined}
+      data-record-sheet-trigger={id}
       data-pending={pending || undefined}
       data-dragging={drag.isDragging || undefined}
       onClick={(e) => {

@@ -203,6 +203,7 @@ export function CalendarEntry({
       {...drag.handle}
       aria-label={calendarEntryLabel(title, time, category?.label)}
       aria-current={selected || undefined}
+      data-record-sheet-trigger={inPanel ? undefined : id}
       data-pending={pending || undefined}
       data-dragging={drag.isDragging || undefined}
       onClick={onOpen}
@@ -237,13 +238,13 @@ export function EntryPreview({
 
 /** "3 more": the rest of a busy day's records in a panel. */
 export function MoreEntries({
-  count,
   title,
+  hiddenRecordIds,
   children,
 }: {
-  count: number;
   /** The day, as the panel's heading. */
   title: string;
+  hiddenRecordIds: string[];
   children: ReactNode;
 }) {
   return (
@@ -252,9 +253,10 @@ export function MoreEntries({
       trigger={
         <button
           type="button"
+          data-record-sheet-trigger={hiddenRecordIds.join(' ')}
           className="h-5 shrink-0 rounded-sm px-1.5 text-left text-xs text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {count} more
+          {hiddenRecordIds.length} more
         </button>
       }
     >

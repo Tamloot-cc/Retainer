@@ -330,6 +330,11 @@ test('saves a board view, totals its columns, and moves a card from the keyboard
       return [found.records[0].fields.stage, found.records[0].updatedBy];
     })
     .toEqual(['qualified', { type: 'user', id: 'dana' }]);
+  const card = page.getByRole('button', { name: 'Globex pilot' });
+  await card.press('Enter');
+  await expect(page.getByRole('dialog', { name: 'Globex pilot' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card).toBeFocused();
   await page.screenshot({ path: '/tmp/retainer-web-board.png' });
 
   // Coming back to the object opens the view used last.
@@ -374,9 +379,11 @@ test('places records on a calendar and moves one to another day', async ({ page,
   await expect(page.getByRole('dialog')).not.toBeVisible();
 
   // Clicking an entry opens the record; the month is in the address.
-  await page.getByRole('button', { name: 'Acme renewal' }).click();
+  const movedEntry = page.getByRole('button', { name: 'Acme renewal' });
+  await movedEntry.click();
   await expect(page.getByRole('dialog', { name: 'Acme renewal' })).toBeVisible();
   await page.keyboard.press('Escape');
+  await expect(movedEntry).toBeFocused();
   await page.getByRole('button', { name: 'Next month' }).click();
   await expect(page.getByText('April 2026')).toBeVisible();
   expect(new URL(page.url()).searchParams.get('month')).toBe('2026-04');
@@ -398,10 +405,17 @@ test('moves a record from a busy day\'s "more" panel', async ({ page, retainer: 
   const day = (label: string) =>
     page.getByRole('heading', { name: label, exact: true }).locator('..');
   // Three fit; the day shows two and "2 more".
-  await day('Wednesday, March 11').getByRole('button', { name: '2 more' }).click();
+  const more = day('Wednesday, March 11').getByRole('button', { name: '2 more' });
+  await more.click();
   const panel = page.getByRole('dialog', { name: 'Wednesday, March 11' });
   const last = panel.getByRole('button', { name: 'Delta deal' });
   await expect(last).toBeVisible();
+  await last.press('Enter');
+  await expect(page.getByRole('dialog', { name: 'Delta deal' })).toBeVisible();
+  await expect(panel).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(more).toBeFocused();
+  await more.click();
 
   // From the keyboard it starts over its own day, not the days the panel covers.
   await moveByKeyboard(page, last, 'ArrowRight', 'Wednesday, March 11', 'Thursday, March 12');

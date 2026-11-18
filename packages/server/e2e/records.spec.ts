@@ -177,11 +177,14 @@ test('opens records from the list in a side sheet and edits fields inline', asyn
   await signIn(page, r.url, r.keys.user);
   await page.getByRole('link', { name: 'People', exact: true }).click();
   const grid = page.getByRole('region', { name: 'People' });
+  const danaLink = grid.getByRole('link', { name: 'Dana Levi' });
+  const noaLink = grid.getByRole('link', { name: 'Noa Cohen' });
 
   // A click anywhere on the row opens the sheet and records it in the URL.
   await grid.getByRole('row').filter({ hasText: 'Dana Levi' }).getByText('CTO').click();
   const sheet = page.getByRole('dialog', { name: 'Dana Levi' });
   await expect(sheet).toBeVisible();
+  await expect(sheet).toBeFocused();
   expect(new URL(page.url()).searchParams.get('record')).toBe(dana.id);
 
   // Click the value, type, Enter: saved through the API and shown in the grid behind.
@@ -204,14 +207,20 @@ test('opens records from the list in a side sheet and edits fields inline', asyn
   await expect(sheet.getByText('Chief Technology Officer', { exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(sheet).not.toBeVisible();
+  await expect(danaLink).toBeFocused();
   expect(new URL(page.url()).searchParams.get('record')).toBeNull();
 
   // Back reopens it; clicking another row while open swaps the record.
   await page.goBack();
   await expect(sheet).toBeVisible();
-  await grid.getByRole('link', { name: 'Noa Cohen' }).click();
-  await expect(page.getByRole('dialog', { name: 'Noa Cohen' })).toBeVisible();
+  await noaLink.click();
+  const noaSheet = page.getByRole('dialog', { name: 'Noa Cohen' });
+  await expect(noaSheet).toBeVisible();
   await expect(sheet).not.toBeVisible();
+  await noaSheet.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(noaLink).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(noaSheet).toBeVisible();
 
   // The full page is one click away and edits the same way.
   await page.getByRole('link', { name: 'Open full page' }).click();

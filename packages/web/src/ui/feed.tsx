@@ -123,11 +123,20 @@ export function HomeTools({ children }: { children: ReactNode }) {
   return <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">{children}</div>;
 }
 
-export function HomeTitle({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+export function HomeTitle({
+  children,
+  onClick,
+  recordId,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  recordId: string;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
+      data-record-sheet-trigger={recordId}
       className="rounded-sm text-left text-base font-medium leading-snug text-foreground [overflow-wrap:anywhere] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {children}
