@@ -80,6 +80,11 @@ export function FieldSheet({
       title={field.label}
       description={`Definition of the ${field.label} field`}
       onClose={onClose}
+      getReturnFocus={() =>
+        document.querySelector<HTMLButtonElement>(
+          `[data-schema-field="${CSS.escape(field.name)}"] button`,
+        )
+      }
     >
       {field.description ? <Muted>{field.description}</Muted> : null}
       <Section title="Definition">

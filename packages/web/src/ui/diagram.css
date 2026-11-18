@@ -25,3 +25,19 @@
 .retainer-diagram .react-flow__attribution a {
   color: var(--muted-foreground);
 }
+
+@media (pointer: coarse) {
+  .retainer-diagram .react-flow__controls {
+    flex-direction: row;
+  }
+  .retainer-diagram .react-flow__controls-button {
+    box-sizing: border-box;
+    width: 44px;
+    height: 44px;
+    border-bottom: 0;
+    border-right: 1px solid var(--border);
+  }
+  .retainer-diagram .react-flow__controls-button:last-child {
+    border-right: 0;
+  }
+}

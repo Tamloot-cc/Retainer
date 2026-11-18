@@ -52,7 +52,7 @@ export function NavItem({
         aria-current={active ? 'true' : undefined}
         onClick={onSelect}
         className={cn(
-          'flex h-8 w-full items-center gap-2.5 rounded-md border px-2 text-sm transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:border-transparent',
+          'flex h-8 w-full items-center gap-2.5 rounded-md border px-2 text-sm transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11 md:border-transparent',
           active
             ? 'border-border bg-selection font-medium text-selection-foreground'
             : 'border-border text-muted-foreground',
@@ -93,7 +93,7 @@ export function EntityHeader({
 }) {
   return (
     <header className="flex flex-col gap-3">
-      <div className="flex items-start gap-3">
+      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
         <span
           aria-hidden
           data-color={color}
@@ -105,29 +105,46 @@ export function EntityHeader({
           <Icon size={20} />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-xl font-semibold tracking-tight">{title}</h2>
+          <h2 className="text-xl font-semibold tracking-tight [overflow-wrap:anywhere]">{title}</h2>
           {meta ? (
             <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
               {meta}
             </div>
           ) : null}
         </div>
-        {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+        {actions ? (
+          <div className="col-start-2 flex min-w-0 items-center gap-2 sm:col-start-3 sm:row-start-1">
+            {actions}
+          </div>
+        ) : null}
       </div>
       {description ? (
-        <p className="max-w-2xl text-sm text-muted-foreground">{description}</p>
+        <p className="max-w-2xl text-sm text-muted-foreground [overflow-wrap:anywhere]">
+          {description}
+        </p>
       ) : null}
     </header>
   );
 }
 
 /** A button that reads as a link in running text or a table cell. */
-export function TextButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+export function TextButton({
+  onClick,
+  className,
+  children,
+}: {
+  onClick: () => void;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="max-w-full truncate rounded-sm text-left font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={cn(
+        'max-w-full truncate rounded-sm text-left font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        className,
+      )}
     >
       {children}
     </button>
@@ -250,7 +267,9 @@ export function TimelineItem({
       >
         <Icon size={14} />
       </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5 pt-1 text-sm">{children}</div>
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5 pt-1 text-sm [overflow-wrap:anywhere]">
+        {children}
+      </div>
     </li>
   );
 }

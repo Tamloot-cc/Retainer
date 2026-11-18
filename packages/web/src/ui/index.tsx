@@ -700,14 +700,20 @@ export function Dialog({
 }
 /** A small static table inside a page. Record lists use `DataGrid`. */
 export function Table({
+  label,
   headers,
   children,
 }: {
+  label?: string;
   headers: { label: string; align?: 'center' }[];
   children: ReactNode;
 }) {
   return (
-    <div className="overflow-auto rounded-lg border border-border">
+    <section
+      aria-label={label}
+      tabIndex={label ? 0 : undefined}
+      className="overflow-auto rounded-lg border border-border focus-visible:outline-2 focus-visible:outline-ring"
+    >
       <table className="w-full border-separate border-spacing-0 text-sm">
         <thead className="text-left text-xs text-muted-foreground">
           <tr>
@@ -727,7 +733,7 @@ export function Table({
         </thead>
         <tbody className="[&>tr:last-child>td]:border-b-0">{children}</tbody>
       </table>
-    </div>
+    </section>
   );
 }
 /**

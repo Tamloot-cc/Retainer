@@ -68,6 +68,9 @@ const BUILT_IN_ICONS: Record<BuiltInView['name'], LucideIcon> = {
 export function ObjectsTab() {
   const { session, schema } = useWorkspace(),
     { search, setSearch } = useView();
+  const [introOpen, setIntroOpen] = useState(
+    () => window.matchMedia?.('(min-width: 48rem)').matches ?? true,
+  );
   const objects = sortObjects(schema.objects);
   const { builtIns } = schema;
   const named = builtIns.find((b) => b.name === search.object);
@@ -75,6 +78,8 @@ export function ObjectsTab() {
   // With no objects yet, the built-ins are still there to look at.
   const builtIn = named ?? (object ? undefined : builtIns[0]);
   const field = object?.fields.find((f) => f.name === search.field);
+  const offerTemplates = !schema.workspace.templates.length;
+  const templatesInIntro = offerTemplates && objects.length > 0;
   const select = (object: string, field?: string) => void setSearch({ object, field });
   const entities = objects.filter((o) => o.class !== 'event'),
     eventTypes = objects.filter((o) => o.class === 'event');
@@ -91,8 +96,16 @@ export function ObjectsTab() {
   );
   return (
     <>
-      {!schema.workspace.templates.length ? <TemplatePicker /> : null}
-      <ClassIntro />
+      {offerTemplates && !templatesInIntro ? <TemplatePicker /> : null}
+      <details open={introOpen} onToggle={(event) => setIntroOpen(event.currentTarget.open)}>
+        <summary className="cursor-pointer rounded-sm py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11">
+          {templatesInIntro ? 'Templates and schema basics' : 'How records and activity work'}
+        </summary>
+        <div className="mt-2 flex flex-col gap-6">
+          {templatesInIntro ? <TemplatePicker /> : null}
+          <ClassIntro />
+        </div>
+      </details>
       {objects.length ? null : (
         <Empty
           title="No objects yet"
@@ -198,7 +211,10 @@ function BuiltInDetail({ builtIn }: { builtIn: BuiltInView }) {
         }
         description={builtIn.description}
       />
-      <Table headers={[{ label: 'Field' }, { label: 'Type' }, { label: 'Description' }]}>
+      <Table
+        label={`${builtIn.labelPlural} fields`}
+        headers={[{ label: 'Field' }, { label: 'Type' }, { label: 'Description' }]}
+      >
         {builtIn.fields.map((f) => (
           <Tr key={f.name}>
             <Td first>
@@ -264,7 +280,7 @@ function ObjectDetail({
         }
         description={object.description}
         actions={
-          <Button size="small" variant="ghost" asChild>
+          <Button size="small" variant="ghost" className="pointer-coarse:min-h-11" asChild>
             <Link to="/o/$object" params={{ object: object.nameSingular }}>
               Browse records
               <ArrowUpRight size={14} aria-hidden />
@@ -273,7 +289,7 @@ function ObjectDetail({
         }
       />
       <Row>
-        <div>
+        <div className="pointer-coarse:[&>input]:min-h-11">
           <Input
             type="search"
             aria-label="Filter fields"
@@ -289,6 +305,7 @@ function ObjectDetail({
       </Row>
       {shown.length ? (
         <Table
+          label={`${object.labelPlural} fields`}
           headers={[
             { label: 'Field' },
             { label: 'Type' },
@@ -301,12 +318,18 @@ function ObjectDetail({
             return (
               <Tr
                 key={f.name}
+                data-schema-field={f.name}
                 selected={f.name === selectedField}
                 onOpen={() => onOpenField(f.name)}
               >
                 <Td first>
                   <Row>
-                    <TextButton onClick={() => onOpenField(f.name)}>{f.label}</TextButton>
+                    <TextButton
+                      className="pointer-coarse:min-h-11"
+                      onClick={() => onOpenField(f.name)}
+                    >
+                      {f.label}
+                    </TextButton>
                     {f.name === object.labelField ? (
                       <Tooltip content="Names this object’s records wherever they are referenced.">
                         <KeyRound size={13} aria-label="Label field" />
