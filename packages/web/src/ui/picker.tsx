@@ -1,6 +1,14 @@
 import * as PopoverPrimitive from '@radix-ui/react-popover';
 import { Check, ChevronDown, type LucideIcon, Search } from 'lucide-react';
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useMemo, useState } from 'react';
+import {
+  type AriaAttributes,
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from 'react';
 import { cn, PANEL, PLACEMENT } from './core.js';
 
 export type PickerOption = {
@@ -225,6 +233,8 @@ type SelectMenuProps = {
   label: string;
   options: PickerOption[];
   className?: string;
+  triggerIcon?: ReactNode;
+  controlState?: Pick<AriaAttributes, 'aria-invalid' | 'aria-describedby'>;
   placeholder?: string;
   /** Show a search box; by default when there are more than seven options. */
   searchable?: boolean;
@@ -254,6 +264,8 @@ export function SelectMenu(props: SelectMenuProps) {
     label,
     options,
     className,
+    triggerIcon,
+    controlState,
     placeholder = 'Choose…',
     fill = false,
     size = 'default',
@@ -305,7 +317,10 @@ export function SelectMenu(props: SelectMenuProps) {
         <button
           type="button"
           aria-haspopup="listbox"
-          aria-labelledby={`${id}-label ${id}-value`}
+          aria-labelledby={
+            triggerIcon && !selected.length ? `${id}-label` : `${id}-label ${id}-value`
+          }
+          {...controlState}
           className={cn(
             'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-input bg-background text-left outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:ring-2 data-[state=open]:ring-ring',
             size === 'small' ? 'h-7 px-2 text-xs' : 'h-8 px-2.5 text-sm',
@@ -313,6 +328,7 @@ export function SelectMenu(props: SelectMenuProps) {
             className,
           )}
         >
+          {triggerIcon}
           <span id={`${id}-value`} className="flex min-w-0 flex-1 items-center truncate">
             {shown}
           </span>

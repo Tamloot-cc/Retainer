@@ -120,7 +120,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
   const workspace = session.workspace.id;
   const [density, setDensity] = useState(() => loadRowDensity(() => localStorage, workspace, name));
   const [error, setError] = useState(''),
-    [creating, setCreating] = useState(false),
+    [createTrigger, setCreateTrigger] = useState<HTMLButtonElement | null>(null),
     [bulk, setBulk] = useState<'merge' | 'delete' | null>(null),
     [viewDialog, setViewDialog] = useState<'new' | 'edit' | 'delete' | null>(null);
   const writable = canMutate(session);
@@ -384,7 +384,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
               variant="primary"
               size="small"
               className="max-w-[50vw]"
-              onClick={() => setCreating(true)}
+              onClick={(event) => setCreateTrigger(event.currentTarget)}
             >
               <Plus size={14} />
               <span className="truncate">New {object.labelSingular.toLowerCase()}</span>
@@ -659,12 +659,13 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
           {nextCursor && !count.data ? ' · more available' : ''}
         </GridFooter>
       ) : null}
-      {creating && !isEvent ? (
+      {createTrigger && !isEvent ? (
         <CreateRecordDialog
           object={object}
-          onClose={() => setCreating(false)}
+          returnFocus={createTrigger}
+          onClose={() => setCreateTrigger(null)}
           onCreated={(id) => {
-            setCreating(false);
+            setCreateTrigger(null);
             void setSearch({ record: id });
           }}
         />

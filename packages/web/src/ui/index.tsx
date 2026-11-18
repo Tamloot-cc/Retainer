@@ -282,6 +282,9 @@ export function FormField({
   apiName,
   hint,
   error,
+  errorId,
+  className,
+  ref,
   children,
 }: {
   label: string;
@@ -289,19 +292,26 @@ export function FormField({
   apiName?: string;
   hint?: string;
   error?: string;
+  errorId?: string;
+  className?: string;
+  ref?: Ref<HTMLDivElement>;
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-baseline gap-2 text-sm font-medium">
-        <span>
+    <div ref={ref} className={cn('flex flex-col gap-1.5', className)}>
+      <div className="flex flex-wrap items-baseline gap-x-2 text-sm font-medium">
+        <span className="min-w-0 wrap-anywhere">
           {label}
           {apiName ? <ApiName>{apiName}</ApiName> : null}
         </span>
         {hint ? <span className="text-xs font-normal text-muted-foreground">{hint}</span> : null}
       </div>
       {children}
-      {error ? <span className="text-xs font-normal text-destructive">{error}</span> : null}
+      {error ? (
+        <span id={errorId} className="text-xs font-normal text-destructive">
+          {error}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -662,20 +672,44 @@ export function Dialog({
   onOpenChange,
   title,
   description,
+  layout = 'default',
+  icon,
+  closeDisabled,
+  onCloseAutoFocus,
   children,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   title: string;
   description?: string;
+  layout?: 'default' | 'composer';
+  icon?: ReactNode;
+  closeDisabled?: boolean;
+  onCloseAutoFocus?: ComponentProps<typeof DialogPrimitive.Content>['onCloseAutoFocus'];
   children: ReactNode;
 }) {
+  const composer = layout === 'composer';
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/35 backdrop-blur-xs" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 flex max-h-[85vh] w-[min(94vw,42rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-auto rounded-lg border border-border bg-background p-5 shadow-xl">
-          <DialogPrimitive.Title className="pr-6 text-base font-semibold">
+        <DialogPrimitive.Content
+          onCloseAutoFocus={onCloseAutoFocus}
+          className={cn(
+            'fixed left-1/2 top-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 flex-col border border-border shadow-xl',
+            composer
+              ? 'max-h-[calc(100dvh-1.5rem)] w-[min(calc(100%-1.5rem),43rem)] overflow-hidden rounded-2xl bg-card sm:rounded-[1.25rem]'
+              : 'max-h-[85vh] w-[min(94vw,42rem)] gap-4 overflow-auto rounded-lg bg-background p-5',
+          )}
+        >
+          <DialogPrimitive.Title
+            className={cn(
+              composer
+                ? 'flex shrink-0 items-center gap-2.5 pt-4 pb-2 pr-16 pl-5 text-sm font-medium text-muted-foreground wrap-anywhere sm:pt-5 sm:pl-7'
+                : 'pr-6 text-base font-semibold',
+            )}
+          >
+            {icon}
             {title}
           </DialogPrimitive.Title>
           <DialogPrimitive.Description
@@ -687,7 +721,12 @@ export function Dialog({
             <button
               type="button"
               aria-label="Close"
-              className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-hover"
+              disabled={closeDisabled}
+              className={cn(
+                'absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-hover',
+                composer &&
+                  'right-2 top-2 flex size-9 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:right-4 sm:top-3 pointer-coarse:size-11',
+              )}
             >
               <X size={16} />
             </button>

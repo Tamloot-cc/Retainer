@@ -70,7 +70,7 @@ export function Display({ value }: DisplayProps) {
     <Muted>—</Muted>
   );
 }
-export function Input({ field, value, onChange, onBusyChange }: InputProps) {
+export function Input({ field, value, onChange, onBusyChange, controlState }: InputProps) {
   const ids = idsOf(value),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
@@ -142,6 +142,7 @@ export function Input({ field, value, onChange, onBusyChange }: InputProps) {
       <label className="text-sm">
         <span>{busy ? 'Uploading…' : 'Attach a file (up to 25 MiB)'}</span>
         <input
+          {...controlState}
           aria-label={`Upload ${field.label}`}
           type="file"
           className="block w-full text-sm"
