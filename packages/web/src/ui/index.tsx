@@ -337,7 +337,7 @@ export function Page({
   actions?: ReactNode;
   children: ReactNode;
 } & ({ layout?: 'default'; description?: string } | { layout: 'fill'; description?: never })) {
-  const openNavigation = useContext(NavigationContext);
+  const hasNavigation = useContext(NavigationContext);
   const fill = layout === 'fill';
   return (
     <section
@@ -347,16 +347,17 @@ export function Page({
       )}
     >
       <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-3 backdrop-blur md:px-5">
-        {openNavigation ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Open navigation"
-            className="-ml-1 md:hidden"
-            onClick={openNavigation}
-          >
-            <Menu size={16} />
-          </Button>
+        {hasNavigation ? (
+          <DialogPrimitive.Trigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Open navigation"
+              className="-ml-1 size-11 shrink-0 md:hidden"
+            >
+              <Menu size={16} />
+            </Button>
+          </DialogPrimitive.Trigger>
         ) : null}
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
           {eyebrow ? (

@@ -163,6 +163,9 @@ test('the desktop sidebar remembers its dragged width across collapse and reload
   await expect(sidebar).toHaveCSS('width', '336px');
   await page.reload();
   await expect(sidebar).toHaveCSS('width', '336px');
+  await expect(sidebar).toHaveCSS('transition-property', 'width');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(sidebar).toHaveCSS('transition-property', 'none');
   await handle.press('ArrowLeft');
   await expect(sidebar).toHaveCSS('width', '320px');
 
@@ -171,6 +174,62 @@ test('the desktop sidebar remembers its dragged width across collapse and reload
   const drawer = page.getByRole('dialog', { name: 'Navigation' });
   await expect(drawer).toHaveCSS('width', '256px');
   await expect(drawer.getByRole('separator', { name: 'Resize sidebar' })).toHaveCount(0);
+});
+
+test.describe('touch navigation', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 320, height: 568 } });
+
+  test('closes the drawer, restores focus, and keeps navigation usable across the breakpoint', async ({
+    page,
+    retainer: r,
+  }) => {
+    await signIn(page, r.url, r.keys.user);
+    const opener = page.getByRole('button', { name: 'Open navigation' });
+    const drawer = page.getByRole('dialog', { name: 'Navigation' });
+    const close = drawer.getByRole('button', { name: 'Close navigation' });
+    await expect(opener).toHaveAttribute('aria-expanded', 'false');
+    await expect(opener).toHaveCSS('width', '44px');
+    await opener.tap();
+    await expect(close).toBeFocused();
+    await expect(close).toHaveCSS('height', '44px');
+    await expect(drawer.getByRole('link', { name: 'People' })).toHaveCSS('height', '44px');
+    await expect(page.getByRole('main')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(opener).toBeFocused();
+
+    await opener.tap();
+    await close.tap();
+    await expect(opener).toHaveAttribute('aria-expanded', 'false');
+    await expect(opener).toBeFocused();
+
+    await opener.tap();
+    await page.touchscreen.tap(300, 150);
+    await expect(opener).toBeFocused();
+
+    await opener.tap();
+    await page.setViewportSize({ width: 800, height: 600 });
+    await expect(drawer).toHaveCount(0);
+    await expect(page.getByRole('main')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Home', exact: true })).toBeVisible();
+
+    await page.setViewportSize({ width: 667, height: 375 });
+    await opener.tap();
+    const schema = drawer.getByRole('link', { name: 'Schema' });
+    await schema.scrollIntoViewIfNeeded();
+    await expect(schema).toBeInViewport();
+    await expect(drawer.getByRole('button', { name: /^Account:/ })).toBeInViewport();
+    await drawer.getByRole('button', { name: 'Find anything' }).tap();
+    const command = page.getByRole('dialog', { name: 'Search and commands' });
+    await expect(command.getByRole('combobox')).toBeFocused();
+    await expect(command.getByRole('button', { name: 'Close search' })).toHaveCSS('height', '44px');
+    await page.keyboard.press('Escape');
+
+    await opener.tap();
+    await drawer.getByRole('link', { name: 'People' }).tap();
+    await expect(drawer).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'People', exact: true })).toBeVisible();
+    expect(await page.evaluate('document.documentElement.scrollWidth <= innerWidth')).toBe(true);
+  });
 });
 
 test('an empty workspace welcomes people, and old activity and review links still work', async ({

@@ -71,7 +71,13 @@ export function Sheet({
             </div>
             {actions}
             <DialogPrimitive.Close asChild>
-              <Button variant="ghost" size="icon" aria-label="Close" title="Close (Esc)">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close"
+                title="Close (Esc)"
+                className="pointer-coarse:size-11"
+              >
                 <X size={16} />
               </Button>
             </DialogPrimitive.Close>

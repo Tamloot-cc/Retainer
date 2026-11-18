@@ -40,8 +40,8 @@ export function isPlainClick(e: { target: EventTarget | null; currentTarget: Eve
   return !window.getSelection()?.toString();
 }
 
-/** Set by the Shell so pages can open the navigation drawer on small screens. */
-export const NavigationContext = createContext<(() => void) | null>(null);
+/** Whether the page lives inside the shell's navigation drawer root. */
+export const NavigationContext = createContext(false);
 
 export function Kbd({ children }: { children: ReactNode }) {
   return (
