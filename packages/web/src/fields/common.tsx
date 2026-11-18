@@ -19,7 +19,14 @@ import {
 import { useQueries } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
 import { Plus, Star, X } from 'lucide-react';
-import { type ComponentType, type ContextType, type ReactNode, useContext, useState } from 'react';
+import {
+  type ComponentProps,
+  type ComponentType,
+  type ContextType,
+  type ReactNode,
+  useContext,
+  useState,
+} from 'react';
 import { api, useWorkspace, WorkspaceContext } from '../api/client.js';
 import { objectByName, objectLabel, recordTitle, useDebounced } from '../routes/state.js';
 import { objectColor } from '../ui/colors.js';
@@ -61,6 +68,9 @@ export type InputProps = {
   field: FieldView;
   value: unknown;
   onChange: (value: unknown) => void;
+  /** A compact select or relation trigger for the record composer. */
+  compactTrigger?: Pick<ComponentProps<typeof SelectMenu>, 'className' | 'triggerIcon'>;
+  controlState?: ComponentProps<typeof SelectMenu>['controlState'];
   /** Labels for relation IDs the value already holds. */
   references?: Record<string, RecordReference>;
 };
@@ -432,15 +442,19 @@ function OptionsMenu({
   field,
   value,
   onChange,
+  compactTrigger,
+  controlState,
   multiple = false,
   clearable = false,
 }: InputProps & { multiple?: boolean; clearable?: boolean }) {
   return multiple ? (
     <SelectMenu
       label={field.label}
-      fill
+      fill={!compactTrigger}
+      {...compactTrigger}
+      controlState={controlState}
       multiple
-      placeholder="Choose options"
+      placeholder={compactTrigger ? field.label : 'Choose options'}
       options={selectOptions(field)}
       value={Array.isArray(value) ? (value as string[]) : []}
       onChange={onChange}
@@ -448,8 +462,10 @@ function OptionsMenu({
   ) : (
     <SelectMenu
       label={field.label}
-      fill
-      placeholder="Choose an option"
+      fill={!compactTrigger}
+      {...compactTrigger}
+      controlState={controlState}
+      placeholder={compactTrigger ? field.label : 'Choose an option'}
       options={[...clearOption(field, clearable && !!value), ...selectOptions(field)]}
       value={typeof value === 'string' && value ? value : null}
       onChange={(v) => onChange(v || null)}
@@ -693,6 +709,8 @@ function RelationInput({
   value,
   onChange,
   references,
+  compactTrigger,
+  controlState,
   multiple = isCollectionRelation(field),
 }: InputProps & { multiple?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -706,9 +724,11 @@ function RelationInput({
     return (
       <SelectMenu
         label={field.label}
-        fill
+        fill={!compactTrigger}
+        {...compactTrigger}
+        controlState={controlState}
         multiple
-        placeholder={`Choose ${field.label.toLowerCase()}`}
+        placeholder={compactTrigger ? field.label : `Choose ${field.label.toLowerCase()}`}
         options={r.options}
         value={relationIds(value)}
         onOpenChange={openChange}
@@ -724,8 +744,10 @@ function RelationInput({
   return (
     <SelectMenu
       label={field.label}
-      fill
-      placeholder={`Choose a ${field.label.toLowerCase()}`}
+      fill={!compactTrigger}
+      {...compactTrigger}
+      controlState={controlState}
+      placeholder={compactTrigger ? field.label : `Choose a ${field.label.toLowerCase()}`}
       options={[...clearOption(field, field.isNullable && !!value), ...r.options]}
       value={typeof value === 'string' ? value : null}
       fallback={r.currentLabel}
@@ -741,7 +763,7 @@ function RelationInput({
   );
 }
 
-function MoneyInput({ value, onChange }: InputProps) {
+function MoneyInput({ value, onChange, controlState }: InputProps) {
   const v = (value ?? { amountMicros: 0, currency: 'USD' }) as MoneyValue;
   const [amount, setAmount] = useState(microsToDecimal(v.amountMicros));
   const [error, setError] = useState('');
@@ -751,7 +773,8 @@ function MoneyInput({ value, onChange }: InputProps) {
         <Label quiet>
           Amount
           <Input
-            aria-invalid={!!error}
+            {...controlState}
+            aria-invalid={!!error || controlState?.['aria-invalid']}
             value={amount}
             inputMode="decimal"
             onChange={(e) => {
@@ -784,7 +807,7 @@ function MoneyInput({ value, onChange }: InputProps) {
 }
 
 const LIST_NOUN = { emails: 'email', phones: 'phone', links: 'link' } as const;
-function ListInput({ field, value, onChange }: InputProps) {
+function ListInput({ field, value, onChange, controlState }: InputProps) {
   type Item = string | { number: string; countryCode?: string } | { url: string; label?: string };
   const v = (value ?? { primary: null, additional: [] }) as {
     primary: Item | null;
@@ -802,6 +825,7 @@ function ListInput({ field, value, onChange }: InputProps) {
         <Row key={i} nowrap>
           {typeof item === 'string' ? (
             <Input
+              {...controlState}
               aria-label={`Email ${i + 1}`}
               type="email"
               placeholder="name@company.com"
@@ -811,6 +835,7 @@ function ListInput({ field, value, onChange }: InputProps) {
           ) : 'number' in item ? (
             <>
               <Input
+                {...controlState}
                 aria-label={`Phone ${i + 1}`}
                 type="tel"
                 placeholder="+1 555 000 0000"
@@ -830,6 +855,7 @@ function ListInput({ field, value, onChange }: InputProps) {
           ) : (
             <>
               <Input
+                {...controlState}
                 aria-label={`URL ${i + 1}`}
                 value={item.url}
                 placeholder="https://"
@@ -872,6 +898,7 @@ function ListInput({ field, value, onChange }: InputProps) {
         <Button
           variant="ghost"
           size="small"
+          {...(values.length === 0 ? controlState : undefined)}
           disabled={
             field.settings.maxValues !== undefined && values.length >= field.settings.maxValues
           }
@@ -900,7 +927,7 @@ const ADDRESS_PARTS = [
   ['country', 'Country'],
 ] as const;
 export function FieldInput(props: InputProps) {
-  const { field, value, onChange } = props;
+  const { field, value, onChange, controlState } = props;
   switch (field.type) {
     case 'json':
       return <FieldDisplay field={field} value={value} />;
@@ -908,6 +935,7 @@ export function FieldInput(props: InputProps) {
       return (
         <CheckLabel>
           <Input
+            {...controlState}
             type="checkbox"
             role="switch"
             aria-label={field.label}
@@ -920,6 +948,7 @@ export function FieldInput(props: InputProps) {
     case 'number':
       return (
         <Input
+          {...controlState}
           aria-label={field.label}
           type="number"
           step="any"
@@ -930,6 +959,7 @@ export function FieldInput(props: InputProps) {
     case 'text':
       return (
         <Input
+          {...controlState}
           aria-label={field.label}
           dir="auto"
           value={String(value ?? '')}
@@ -939,6 +969,7 @@ export function FieldInput(props: InputProps) {
     case 'date':
       return (
         <Input
+          {...controlState}
           aria-label={field.label}
           type="date"
           value={String(value ?? '')}
@@ -953,6 +984,7 @@ export function FieldInput(props: InputProps) {
           : '';
       return (
         <Input
+          {...controlState}
           aria-label={field.label}
           type="datetime-local"
           value={local}
@@ -970,11 +1002,19 @@ export function FieldInput(props: InputProps) {
         <Columns>
           <Label quiet>
             First name
-            <Input value={v.first} onChange={(e) => onChange({ ...v, first: e.target.value })} />
+            <Input
+              {...controlState}
+              value={v.first}
+              onChange={(e) => onChange({ ...v, first: e.target.value })}
+            />
           </Label>
           <Label quiet>
             Last name
-            <Input value={v.last} onChange={(e) => onChange({ ...v, last: e.target.value })} />
+            <Input
+              {...controlState}
+              value={v.last}
+              onChange={(e) => onChange({ ...v, last: e.target.value })}
+            />
           </Label>
         </Columns>
       );
@@ -985,6 +1025,7 @@ export function FieldInput(props: InputProps) {
         <Label quiet key={k}>
           {label}
           <Input
+            {...controlState}
             value={String(v[k] ?? '')}
             onChange={(e) => onChange({ ...v, [k]: e.target.value })}
           />

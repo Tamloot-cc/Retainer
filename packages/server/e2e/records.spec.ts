@@ -232,10 +232,17 @@ test('opens records from the list in a side sheet and edits fields inline', asyn
 test('creates a record from the list with a schema-driven form', async ({ page, retainer: r }) => {
   await signIn(page, r.url, r.keys.user);
   await page.getByRole('link', { name: 'People', exact: true }).click();
-  await page.getByRole('button', { name: 'New person', exact: true }).click();
+  const newPerson = page.getByRole('button', { name: 'New person', exact: true });
+  await newPerson.click();
   const form = page.getByRole('dialog', { name: 'New person' });
+  await expect(form.getByLabel('First name')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(form).toBeHidden();
+  await expect(newPerson).toBeFocused();
+  await newPerson.press('Enter');
   await form.getByLabel('First name').fill('Noa');
   await form.getByLabel('Last name').fill('Peretz');
+  await form.getByRole('button', { name: 'Job title', exact: true }).click();
   await form.getByRole('textbox', { name: 'Job title', exact: true }).fill('Head of Sales');
   await form.getByRole('button', { name: 'Create person', exact: true }).click();
   // The new record opens in the sheet over the list, which already shows it.
@@ -246,6 +253,31 @@ test('creates a record from the list with a schema-driven form', async ({ page, 
   expect(await r.request(`/records/${id}`)).toMatchObject({
     fields: { name: { first: 'Noa', last: 'Peretz' }, jobTitle: 'Head of Sales' },
     createdBy: { type: 'user', id: 'dana' },
+  });
+});
+
+test.describe('touch composer', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 320, height: 568 } });
+
+  test('keeps property controls tappable and the submit action visible', async ({
+    page,
+    retainer: r,
+  }) => {
+    await signIn(page, r.url, r.keys.user);
+    await page.goto(`${r.url}/app/o/task`);
+    await page.getByRole('button', { name: 'New task', exact: true }).tap();
+    const composer = page.getByRole('dialog', { name: 'New task', exact: true });
+    const dueDate = composer.getByRole('button', { name: 'Due date', exact: true });
+    await expect(dueDate).toHaveCSS('min-height', '44px');
+    await dueDate.tap();
+    const dateInput = composer
+      .getByLabel('Due date', { exact: true })
+      .and(composer.locator('input'));
+    await expect(dateInput).toBeFocused();
+    await expect(dateInput).toHaveCSS('min-height', '44px');
+    await expect(dateInput).toHaveCSS('font-size', '16px');
+    await page.setViewportSize({ width: 320, height: 380 });
+    await expect(composer.getByRole('button', { name: 'Create task' })).toBeInViewport();
   });
 });
 
@@ -270,13 +302,19 @@ test('checks required fields and shows a unique conflict on the field', async ({
   await page.getByRole('button', { name: 'New person', exact: true }).click();
   const form = page.getByRole('dialog', { name: 'New person' });
   await form.getByLabel('First name').fill('Second');
+  await form.getByRole('button', { name: 'Emails', exact: true }).click();
   await form.getByRole('button', { name: 'Add email' }).click();
   await form.getByRole('textbox', { name: 'Email 1' }).fill('taken@acme.test');
   await form.getByRole('button', { name: 'Create person', exact: true }).click();
   await expect(form.getByText('Job title is required')).toBeVisible();
   await form.getByRole('textbox', { name: 'Job title', exact: true }).fill('CFO');
+  await form.getByRole('button', { name: /^Emails/ }).click();
+  await expect(form.getByRole('textbox', { name: 'Email 1' })).toBeHidden();
   await form.getByRole('button', { name: 'Create person', exact: true }).click();
   await expect(form.getByText('Emails already belongs to another record')).toBeVisible();
+  const email = form.getByRole('textbox', { name: 'Email 1' });
+  await expect(email).toHaveValue('taken@acme.test');
+  await expect(email).toHaveAccessibleDescription('Emails already belongs to another record');
   await expect(form.getByRole('link', { name: 'View that record' })).toBeVisible();
   expect((await r.request('/objects/person/query', {})).records).toHaveLength(1);
 });

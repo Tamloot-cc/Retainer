@@ -46,10 +46,12 @@ export function Popover({
 export function Form({
   onSubmit,
   autoFocus = false,
+  className,
   children,
 }: {
   onSubmit: () => void;
   autoFocus?: boolean;
+  className?: string;
   children: ReactNode;
 }) {
   const form = useRef<HTMLFormElement>(null);
@@ -59,7 +61,7 @@ export function Form({
   return (
     <form
       ref={form}
-      className="flex flex-col gap-3"
+      className={cn('flex flex-col gap-3', className)}
       onSubmit={(e) => {
         e.preventDefault();
         onSubmit();
