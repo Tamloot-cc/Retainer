@@ -359,7 +359,7 @@ function PaletteContents({
         {searching ? (
           <Loader2
             size={16}
-            className="animate-spin text-muted-foreground"
+            className="text-muted-foreground motion-safe:animate-spin"
             aria-label="Searching"
           />
         ) : null}
