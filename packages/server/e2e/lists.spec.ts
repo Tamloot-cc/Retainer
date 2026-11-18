@@ -52,6 +52,49 @@ test('searches the workspace with the command palette and keeps list filters in 
   await expect(page.getByRole('heading', { name: 'Other person' })).toBeVisible();
 });
 
+test('a narrow records table keeps the name and data visible and preserves its place', async ({
+  page,
+  retainer: r,
+}) => {
+  await r.request('/objects/person/records', { values: { name: 'Dana Levi', jobTitle: 'CTO' } });
+  await r.request('/objects/person/records', { values: { name: 'Other person', jobTitle: 'CEO' } });
+  await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'People', exact: true }).click();
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Filter by' }).fill('job');
+  await page.getByRole('option', { name: 'Job title' }).click();
+  await page.getByLabel('Job title', { exact: true }).fill('CTO');
+  await page.getByRole('button', { name: 'Apply filter' }).click();
+  const grid = page.getByRole('region', { name: 'People' });
+  await expect(grid.getByRole('link', { name: 'Other person' })).toHaveCount(0);
+  const rowHeader = grid.getByRole('rowheader', { name: /Dana Levi/ });
+  const record = rowHeader.getByRole('link', { name: 'Dana Levi' });
+  for (const viewport of [
+    { width: 320, height: 568 },
+    { width: 667, height: 375 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const left = await grid.evaluate((el) => {
+      el.scrollLeft = 500;
+      return el.scrollLeft;
+    });
+    expect(left).toBeGreaterThan(0);
+    await expect(record).toBeInViewport();
+    const [gridBox, headerBox] = await Promise.all([grid.boundingBox(), rowHeader.boundingBox()]);
+    expect(
+      gridBox && headerBox && gridBox.x + gridBox.width - headerBox.x - headerBox.width,
+    ).toBeGreaterThanOrEqual(125);
+    await record.click();
+    const sheet = page.getByRole('dialog', { name: 'Dana Levi' });
+    await sheet.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(record).toBeFocused();
+    expect(await grid.evaluate((el) => el.scrollLeft)).toBe(left);
+    await expect(page.getByRole('button', { name: 'Remove filter Job title' })).toBeInViewport();
+    expect(await page.evaluate('document.documentElement.scrollWidth <= innerWidth')).toBe(true);
+  }
+});
+
 test('sorts from column headers, resizes columns, and collapses the sidebar', async ({
   page,
   retainer: r,

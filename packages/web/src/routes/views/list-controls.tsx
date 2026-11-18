@@ -181,7 +181,7 @@ export function FilterMenu({
         if (!next) setField('');
       }}
       trigger={
-        <Button variant="ghost" size="small">
+        <Button variant="ghost" size="small" className="pointer-coarse:min-h-11">
           <ListFilter size={14} />
           Filter
         </Button>
@@ -214,7 +214,7 @@ export function FilterMenu({
                 operator={operator}
                 onChange={setValue}
               />
-              <Button type="submit" variant="primary">
+              <Button type="submit" variant="primary" className="pointer-coarse:min-h-11">
                 Apply filter
               </Button>
             </Form>
