@@ -465,12 +465,14 @@ export function Tabs({
   value,
   onChange,
   sticky = false,
+  wrapLabels = false,
   ref,
 }: {
   items: { value: string; label: string; count?: number; hint?: string }[];
   value: string;
   onChange: (v: string) => void;
   sticky?: boolean;
+  wrapLabels?: boolean;
   ref?: Ref<HTMLElement>;
 }) {
   const bar = useRef<HTMLDivElement>(null),
@@ -507,7 +509,10 @@ export function Tabs({
             aria-current={value === i.value ? 'page' : undefined}
             onClick={() => onChange(i.value)}
             className={cn(
-              '-mb-px flex shrink-0 items-center gap-2 border-b-2 px-2.5 py-2 text-sm font-medium',
+              '-mb-px flex items-center gap-2 border-b-2 px-2.5 py-2 text-sm font-medium',
+              wrapLabels
+                ? 'sm:shrink-0 max-sm:min-w-0 max-sm:flex-1 max-sm:justify-center max-sm:px-1 max-sm:py-1 max-sm:text-center max-sm:text-xs pointer-coarse:min-h-11'
+                : 'shrink-0',
               value === i.value
                 ? 'border-primary'
                 : 'border-transparent text-muted-foreground hover:text-foreground',

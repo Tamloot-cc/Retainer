@@ -88,11 +88,17 @@ test('Home combines conversations and grouped record updates, preserves filters,
   await expect(page.locator('html')).toHaveClass('dark');
   if (process.env.RETAINER_CAPTURE_HOME)
     await page.screenshot({ path: '/tmp/retainer-home-dark.png', animations: 'disabled' });
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 320, height: 568 });
   await page.emulateMedia({ colorScheme: 'light' });
   await expect(page.locator('html')).not.toHaveClass('dark');
   await page.mouse.move(0, 0);
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+  const categories = page.getByRole('navigation', { name: 'Sections' });
+  await categories.scrollIntoViewIfNeeded();
+  expect(await categories.evaluate((el) => el.scrollWidth)).toBe(
+    await categories.evaluate((el) => el.clientWidth),
+  );
+  await expect(categories.getByRole('button', { name: 'Record updates' })).toBeInViewport();
   expect(await page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')).toBe(
     true,
   );

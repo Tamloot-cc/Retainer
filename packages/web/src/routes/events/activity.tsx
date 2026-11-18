@@ -115,6 +115,7 @@ export function ActivityPage() {
         <HomeWelcome reviewCount={reviewCount} />
         <Stack gap="small">
           <Tabs
+            wrapLabels
             items={[
               { value: 'all', label: 'Everything' },
               { value: 'events', label: 'Conversations & notes' },
