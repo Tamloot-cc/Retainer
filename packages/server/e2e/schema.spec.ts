@@ -201,9 +201,7 @@ test.describe('Schema on touch screens', () => {
       const history = page.getByRole('list', { name: 'Schema changes' });
       await expect(history.getByText(reason, { exact: false })).toBeVisible();
       expect(await history.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-        true,
-      );
+      expect(await page.evaluate('document.documentElement.scrollWidth <= innerWidth')).toBe(true);
     }
   });
 });
