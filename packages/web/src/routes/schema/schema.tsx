@@ -29,7 +29,7 @@ export function SchemaPage() {
         .join(' · ')}
       actions={
         pending ? (
-          <Button size="small" asChild>
+          <Button size="small" className="pointer-coarse:min-h-11" asChild>
             <Link to="/review" search={{ tab: 'schema' }}>
               <Clock size={14} aria-hidden />
               {pending} proposed
@@ -39,6 +39,7 @@ export function SchemaPage() {
       }
     >
       <Tabs
+        wrapLabels
         value={tab}
         onChange={(v) =>
           void setSearch({ tab: v, cursor: undefined, field: undefined, status: undefined })

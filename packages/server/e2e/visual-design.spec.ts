@@ -25,7 +25,7 @@ async function noHorizontalOverflow(page: Page) {
 for (const mode of [
   { name: 'light', colorScheme: 'light', width: 1440, height: 1000 },
   { name: 'dark', colorScheme: 'dark', width: 1440, height: 1000 },
-  { name: 'mobile', colorScheme: 'light', width: 390, height: 844 },
+  { name: 'mobile', colorScheme: 'light', width: 320, height: 568 },
 ] as const) {
   test(`record identity and wide sheet remain usable in ${mode.name}`, async ({
     page,
@@ -36,7 +36,7 @@ for (const mode of [
     const record = (
       await r.request(
         '/objects/person/records',
-        { values: { name: 'Alex Morgan', jobTitle: 'Founder' } },
+        { values: { name: 'Alex Morgan', jobTitle: 'Chief Technology Officer' } },
         r.keys.user,
       )
     ).record;
@@ -70,8 +70,15 @@ for (const mode of [
       color as string,
     );
     expect(Math.round((await sheet.boundingBox())?.width ?? 0)).toBe(
-      mode.name === 'mobile' ? 390 : 608,
+      mode.name === 'mobile' ? mode.width : 608,
     );
+    if (mode.name === 'mobile') {
+      const label = await sheet.getByText('Job title', { exact: true }).boundingBox();
+      const value = await sheet
+        .getByText('Chief Technology Officer', { exact: true })
+        .boundingBox();
+      expect(label && value && label.y + label.height <= value.y).toBe(true);
+    }
     await noHorizontalOverflow(page);
     await capture(page, `${mode.name}-record-sheet`);
     await sheet.getByRole('button', { name: 'Edit Job title', exact: true }).click();

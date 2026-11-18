@@ -52,6 +52,49 @@ test('searches the workspace with the command palette and keeps list filters in 
   await expect(page.getByRole('heading', { name: 'Other person' })).toBeVisible();
 });
 
+test('a narrow records table keeps the name and data visible and preserves its place', async ({
+  page,
+  retainer: r,
+}) => {
+  await r.request('/objects/person/records', { values: { name: 'Dana Levi', jobTitle: 'CTO' } });
+  await r.request('/objects/person/records', { values: { name: 'Other person', jobTitle: 'CEO' } });
+  await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'People', exact: true }).click();
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Filter by' }).fill('job');
+  await page.getByRole('option', { name: 'Job title' }).click();
+  await page.getByLabel('Job title', { exact: true }).fill('CTO');
+  await page.getByRole('button', { name: 'Apply filter' }).click();
+  const grid = page.getByRole('region', { name: 'People' });
+  await expect(grid.getByRole('link', { name: 'Other person' })).toHaveCount(0);
+  const rowHeader = grid.getByRole('rowheader', { name: /Dana Levi/ });
+  const record = rowHeader.getByRole('link', { name: 'Dana Levi' });
+  for (const viewport of [
+    { width: 320, height: 568 },
+    { width: 667, height: 375 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const left = await grid.evaluate((el) => {
+      el.scrollLeft = 500;
+      return el.scrollLeft;
+    });
+    expect(left).toBeGreaterThan(0);
+    await expect(record).toBeInViewport();
+    const [gridBox, headerBox] = await Promise.all([grid.boundingBox(), rowHeader.boundingBox()]);
+    expect(
+      gridBox && headerBox && gridBox.x + gridBox.width - headerBox.x - headerBox.width,
+    ).toBeGreaterThanOrEqual(125);
+    await record.click();
+    const sheet = page.getByRole('dialog', { name: 'Dana Levi' });
+    await sheet.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(record).toBeFocused();
+    expect(await grid.evaluate((el) => el.scrollLeft)).toBe(left);
+    await expect(page.getByRole('button', { name: 'Remove filter Job title' })).toBeInViewport();
+    expect(await page.evaluate('document.documentElement.scrollWidth <= innerWidth')).toBe(true);
+  }
+});
+
 test('sorts from column headers, resizes columns, and collapses the sidebar', async ({
   page,
   retainer: r,
@@ -330,6 +373,11 @@ test('saves a board view, totals its columns, and moves a card from the keyboard
       return [found.records[0].fields.stage, found.records[0].updatedBy];
     })
     .toEqual(['qualified', { type: 'user', id: 'dana' }]);
+  const card = page.getByRole('button', { name: 'Globex pilot' });
+  await card.press('Enter');
+  await expect(page.getByRole('dialog', { name: 'Globex pilot' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card).toBeFocused();
   await page.screenshot({ path: '/tmp/retainer-web-board.png' });
 
   // Coming back to the object opens the view used last.
@@ -374,9 +422,11 @@ test('places records on a calendar and moves one to another day', async ({ page,
   await expect(page.getByRole('dialog')).not.toBeVisible();
 
   // Clicking an entry opens the record; the month is in the address.
-  await page.getByRole('button', { name: 'Acme renewal' }).click();
+  const movedEntry = page.getByRole('button', { name: 'Acme renewal' });
+  await movedEntry.click();
   await expect(page.getByRole('dialog', { name: 'Acme renewal' })).toBeVisible();
   await page.keyboard.press('Escape');
+  await expect(movedEntry).toBeFocused();
   await page.getByRole('button', { name: 'Next month' }).click();
   await expect(page.getByText('April 2026')).toBeVisible();
   expect(new URL(page.url()).searchParams.get('month')).toBe('2026-04');
@@ -398,10 +448,17 @@ test('moves a record from a busy day\'s "more" panel', async ({ page, retainer: 
   const day = (label: string) =>
     page.getByRole('heading', { name: label, exact: true }).locator('..');
   // Three fit; the day shows two and "2 more".
-  await day('Wednesday, March 11').getByRole('button', { name: '2 more' }).click();
+  const more = day('Wednesday, March 11').getByRole('button', { name: '2 more' });
+  await more.click();
   const panel = page.getByRole('dialog', { name: 'Wednesday, March 11' });
   const last = panel.getByRole('button', { name: 'Delta deal' });
   await expect(last).toBeVisible();
+  await last.press('Enter');
+  await expect(page.getByRole('dialog', { name: 'Delta deal' })).toBeVisible();
+  await expect(panel).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(more).toBeFocused();
+  await more.click();
 
   // From the keyboard it starts over its own day, not the days the panel covers.
   await moveByKeyboard(page, last, 'ArrowRight', 'Wednesday, March 11', 'Thursday, March 12');

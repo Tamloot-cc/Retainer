@@ -18,6 +18,7 @@ export function Sheet({
   actions,
   avatar,
   subtitle,
+  getReturnFocus,
   children,
 }: {
   onClose: () => void;
@@ -29,9 +30,11 @@ export function Sheet({
   actions?: ReactNode;
   avatar?: ReactNode;
   subtitle?: ReactNode;
+  getReturnFocus?: (opener: Element | null) => HTMLElement | null;
   children: ReactNode;
 }) {
   const panel = useRef<HTMLDivElement>(null);
+  const opener = useRef<Element | null>(null);
   return (
     <DialogPrimitive.Root
       open
@@ -46,10 +49,20 @@ export function Sheet({
           onOpenAutoFocus={(e) => {
             // Focus the panel itself rather than its first control.
             e.preventDefault();
+            opener.current = document.activeElement;
             panel.current?.focus();
           }}
+          onCloseAutoFocus={() => {
+            // Keep focus on any page control the user moved to while the sheet was open.
+            if (document.activeElement === document.body) {
+              getReturnFocus?.(opener.current)?.focus({ preventScroll: true });
+            }
+          }}
           // Clicking the list behind opens another record; it must not close the sheet.
-          onInteractOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => {
+            if (e.detail.originalEvent.type === 'focusin') opener.current = document.activeElement;
+            e.preventDefault();
+          }}
           className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-background shadow-[-6px_0_20px_rgb(0_0_0/0.06)] outline-none sm:w-[min(38rem,92vw)] motion-safe:animate-sheet-in"
         >
           <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border pl-4 pr-2">
@@ -58,7 +71,13 @@ export function Sheet({
             </div>
             {actions}
             <DialogPrimitive.Close asChild>
-              <Button variant="ghost" size="icon" aria-label="Close" title="Close (Esc)">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close"
+                title="Close (Esc)"
+                className="pointer-coarse:size-11"
+              >
                 <X size={16} />
               </Button>
             </DialogPrimitive.Close>

@@ -115,6 +115,7 @@ export function ActivityPage() {
         <HomeWelcome reviewCount={reviewCount} />
         <Stack gap="small">
           <Tabs
+            wrapLabels
             items={[
               { value: 'all', label: 'Everything' },
               { value: 'events', label: 'Conversations & notes' },
@@ -291,7 +292,11 @@ function ActivityCard({
           {new Date(item.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
         </time>
       }
-      title={<HomeTitle onClick={onOpen}>{label}</HomeTitle>}
+      title={
+        <HomeTitle onClick={onOpen} recordId={record.id}>
+          {label}
+        </HomeTitle>
+      }
       footer={
         <>
           <ActorBadge actor={item.actor} />

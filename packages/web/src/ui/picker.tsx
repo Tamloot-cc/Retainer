@@ -224,6 +224,7 @@ type SelectMenuProps = {
   /** Names the control; its current value is read after it. */
   label: string;
   options: PickerOption[];
+  className?: string;
   placeholder?: string;
   /** Show a search box; by default when there are more than seven options. */
   searchable?: boolean;
@@ -252,6 +253,7 @@ export function SelectMenu(props: SelectMenuProps) {
   const {
     label,
     options,
+    className,
     placeholder = 'Choose…',
     fill = false,
     size = 'default',
@@ -308,6 +310,7 @@ export function SelectMenu(props: SelectMenuProps) {
             'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-input bg-background text-left outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:ring-2 data-[state=open]:ring-ring',
             size === 'small' ? 'h-7 px-2 text-xs' : 'h-8 px-2.5 text-sm',
             fill && 'w-full',
+            className,
           )}
         >
           <span id={`${id}-value`} className="flex min-w-0 flex-1 items-center truncate">

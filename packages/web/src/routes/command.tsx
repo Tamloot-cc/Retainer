@@ -17,6 +17,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  X,
 } from 'lucide-react';
 import { lazy, type ReactNode, Suspense, useRef, useState } from 'react';
 import { useAccount } from '../accounts/context.js';
@@ -359,7 +360,7 @@ function PaletteContents({
         {searching ? (
           <Loader2
             size={16}
-            className="animate-spin text-muted-foreground"
+            className="text-muted-foreground motion-safe:animate-spin"
             aria-label="Searching"
           />
         ) : null}
@@ -367,9 +368,10 @@ function PaletteContents({
           type="button"
           onClick={onClose}
           aria-label="Close search"
-          className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-hover"
+          className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-hover pointer-coarse:grid pointer-coarse:size-11 pointer-coarse:shrink-0 pointer-coarse:place-items-center"
         >
-          Esc
+          <span className="pointer-coarse:hidden">Esc</span>
+          <X size={16} className="hidden pointer-coarse:block" />
         </button>
       </div>
       <CommandList aria-label="Search results" aria-busy={searching}>

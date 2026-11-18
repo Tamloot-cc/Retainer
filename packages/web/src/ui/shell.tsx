@@ -14,6 +14,7 @@ import {
   Settings,
   Shapes,
   UserCog,
+  X,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { BrandMark } from './brand.js';
@@ -76,6 +77,7 @@ type ShellProps = {
 export function Shell({ children, ...props }: ShellProps) {
   const [collapsed, setCollapsed] = useState(readCollapsed),
     [drawer, setDrawer] = useState(false);
+  const drawerClose = useRef<HTMLButtonElement>(null);
   const toggle = () => setCollapsed((c) => !c);
   useEffect(() => {
     try {
@@ -94,16 +96,37 @@ export function Shell({ children, ...props }: ShellProps) {
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, []);
+  useEffect(() => {
+    if (!drawer) return;
+    // Match the md breakpoint where the desktop sidebar takes over.
+    const desktop = window.matchMedia('(min-width: 48rem)');
+    const dismiss = () => {
+      if (desktop.matches) setDrawer(false);
+    };
+    desktop.addEventListener('change', dismiss);
+    dismiss();
+    return () => desktop.removeEventListener('change', dismiss);
+  }, [drawer]);
   return (
-    <NavigationContext.Provider value={() => setDrawer(true)}>
-      <div className="flex min-h-dvh bg-frame text-foreground md:[--workspace-bottom-inset:0.5rem] md:[--workspace-footer-height:4rem]">
-        <DesktopSidebar collapsed={collapsed}>
-          <Sidebar {...props} collapsed={collapsed} onToggle={toggle} />
-        </DesktopSidebar>
-        <DialogPrimitive.Root open={drawer} onOpenChange={setDrawer}>
+    <NavigationContext.Provider value={true}>
+      <DialogPrimitive.Root open={drawer} onOpenChange={setDrawer}>
+        <div className="flex min-h-dvh bg-frame text-foreground md:[--workspace-bottom-inset:0.5rem] md:[--workspace-footer-height:4rem]">
+          <DesktopSidebar collapsed={collapsed}>
+            <Sidebar {...props} collapsed={collapsed} onToggle={toggle} />
+          </DesktopSidebar>
           <DialogPrimitive.Portal>
             <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/35 md:hidden" />
-            <DialogPrimitive.Content className="fixed inset-y-0 left-0 z-50 flex w-64 max-w-[85vw] flex-col border-r border-border bg-sidebar shadow-xl md:hidden">
+            <DialogPrimitive.Content
+              className="fixed inset-y-0 left-0 z-50 flex w-64 max-w-[85vw] flex-col border-r border-border bg-sidebar shadow-xl md:hidden"
+              onOpenAutoFocus={(event) => {
+                event.preventDefault();
+                drawerClose.current?.focus({ preventScroll: true });
+              }}
+              onCloseAutoFocus={(event) => {
+                // Search or another dialog may already have taken focus.
+                if (document.activeElement !== document.body) event.preventDefault();
+              }}
+            >
               <DialogPrimitive.Title className="sr-only">Navigation</DialogPrimitive.Title>
               <DialogPrimitive.Description className="sr-only">
                 Records, activity, review inbox and schema
@@ -111,6 +134,15 @@ export function Shell({ children, ...props }: ShellProps) {
               <Sidebar
                 {...props}
                 collapsed={false}
+                headerAction={
+                  <DialogPrimitive.Close
+                    ref={drawerClose}
+                    aria-label="Close navigation"
+                    className="flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  >
+                    <X size={16} />
+                  </DialogPrimitive.Close>
+                }
                 onNavigate={() => setDrawer(false)}
                 onSearch={() => {
                   setDrawer(false);
@@ -119,11 +151,11 @@ export function Shell({ children, ...props }: ShellProps) {
               />
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>
-        </DialogPrimitive.Root>
-        <main className="min-w-0 flex-1 bg-background md:mb-[var(--workspace-bottom-inset)] md:mr-2 md:overflow-clip md:rounded-b-xl md:rounded-tl-xl md:ring-1 md:ring-inset md:ring-border md:[--page-height:calc(100dvh-var(--workspace-bottom-inset))]">
-          {children}
-        </main>
-      </div>
+          <main className="min-w-0 flex-1 bg-background md:mb-[var(--workspace-bottom-inset)] md:mr-2 md:overflow-clip md:rounded-b-xl md:rounded-tl-xl md:ring-1 md:ring-inset md:ring-border md:[--page-height:calc(100dvh-var(--workspace-bottom-inset))]">
+            {children}
+          </main>
+        </div>
+      </DialogPrimitive.Root>
     </NavigationContext.Provider>
   );
 }
@@ -155,7 +187,7 @@ function DesktopSidebar({ collapsed, children }: { collapsed: boolean; children:
     <aside
       id={id}
       style={{ width: collapsed ? 52 : width }}
-      className="sticky top-0 hidden h-dvh shrink-0 flex-col bg-sidebar transition-[width] duration-150 has-[[role=separator]:active]:duration-0 md:flex"
+      className="sticky top-0 hidden h-dvh shrink-0 flex-col bg-sidebar transition-[width] duration-150 has-[[role=separator]:active]:duration-0 motion-reduce:transition-none md:flex"
     >
       {children}
       {collapsed ? null : (
@@ -213,10 +245,12 @@ function Sidebar({
   onSearch,
   collapsed,
   onToggle,
+  headerAction,
   onNavigate,
 }: Omit<ShellProps, 'children'> & {
   collapsed: boolean;
   onToggle?: () => void;
+  headerAction?: ReactNode;
   onNavigate?: () => void;
 }) {
   const toggleLabel = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
@@ -252,7 +286,7 @@ function Sidebar({
               <button
                 type="button"
                 aria-label={`Workspace: ${workspace}`}
-                className="-ml-1 flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="-ml-1 flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
               >
                 <BrandMark className="h-6 w-6" />
                 <span className="min-w-0 flex-1 truncate text-sm font-semibold">{workspace}</span>
@@ -276,7 +310,12 @@ function Sidebar({
             {accounts.onNewWorkspace ? (
               <>
                 <MenuSeparator />
-                <MenuAction onSelect={accounts.onNewWorkspace}>
+                <MenuAction
+                  onSelect={() => {
+                    onNavigate?.();
+                    accounts.onNewWorkspace?.();
+                  }}
+                >
                   <Plus size={14} />
                   New workspace
                 </MenuAction>
@@ -300,11 +339,12 @@ function Sidebar({
             {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </button>
         ) : null}
+        {headerAction}
       </div>
       <nav
         aria-label="Main navigation"
         className={cn(
-          'flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden p-2',
+          'flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden overscroll-contain p-2',
           // Keep the scrollbar clear of the desktop resize handle.
           !collapsed && 'md:mr-2 md:pr-0',
         )}
@@ -385,7 +425,7 @@ function Sidebar({
               aria-label={`Account: ${user.name}`}
               title={collapsed ? user.name : undefined}
               className={cn(
-                'flex min-w-0 items-center gap-2 rounded-md text-left hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'flex min-w-0 items-center gap-2 rounded-md text-left hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11',
                 collapsed ? 'p-0.5' : 'flex-1 p-1',
               )}
             >
@@ -409,7 +449,12 @@ function Sidebar({
         >
           {accounts ? (
             <>
-              <MenuAction onSelect={accounts.onSettings}>
+              <MenuAction
+                onSelect={() => {
+                  onNavigate?.();
+                  accounts.onSettings();
+                }}
+              >
                 <Settings size={14} />
                 Settings
               </MenuAction>
@@ -461,7 +506,7 @@ function NavGroup({
 
 const navItem = (collapsed: boolean) =>
   cn(
-    'relative flex h-8 shrink-0 items-center gap-2.5 rounded-md text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+    'relative flex h-8 shrink-0 items-center gap-2.5 rounded-md text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11',
     'data-[status=active]:bg-selection data-[status=active]:font-medium data-[status=active]:text-selection-foreground',
     collapsed ? 'mx-auto w-8 justify-center' : 'px-2',
   );

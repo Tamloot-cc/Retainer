@@ -80,7 +80,12 @@ export function DataGrid({
   const resizing = useRef(false);
   const widthOf = (c: GridColumn) => (draft?.id === c.id ? draft.width : c.width);
   const pinLeft = selection ? CHECK_WIDTH : 0;
-  const total = columns.reduce((sum, c) => sum + widthOf(c), pinLeft);
+  const pinned = columns.find((c) => c.pinned);
+  // Leave room to read scrolling cells without changing the saved column width.
+  const pinnedWidth = pinned
+    ? `min(${widthOf(pinned)}px, max(${MIN_COLUMN_WIDTH}px, 100cqi - ${pinLeft}px - 8rem))`
+    : '0px';
+  const unpinnedWidth = columns.reduce((sum, c) => sum + (c.pinned ? 0 : widthOf(c)), pinLeft);
   const all = rows.length > 0 && rows.every((r) => selection?.selected.has(r.id));
   const some = !all && rows.some((r) => selection?.selected.has(r.id));
 
@@ -125,16 +130,16 @@ export function DataGrid({
       aria-label={label}
       // biome-ignore lint/a11y/noNoninteractiveTabindex: lets keyboard users scroll a wide grid.
       tabIndex={0}
-      className="min-h-0 flex-1 overflow-auto focus-visible:outline-none"
+      className="@container min-h-0 min-w-0 flex-1 overflow-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
       <table
         className="border-separate border-spacing-0 text-sm"
-        style={{ tableLayout: 'fixed', width: `max(100%, ${total}px)` }}
+        style={{ tableLayout: 'fixed', width: `max(100%, ${unpinnedWidth}px + ${pinnedWidth})` }}
       >
         <colgroup>
           {selection ? <col style={{ width: CHECK_WIDTH }} /> : null}
           {columns.map((c) => (
-            <col key={c.id} style={{ width: widthOf(c) }} />
+            <col key={c.id} style={{ width: c.pinned ? pinnedWidth : widthOf(c) }} />
           ))}
           <col />
         </colgroup>
@@ -145,7 +150,7 @@ export function DataGrid({
                 scope="col"
                 className="sticky left-0 top-0 z-20 h-9 border-b border-border bg-sidebar p-0"
               >
-                <div className="flex h-9 items-center justify-center">
+                <div className="flex h-9 items-center justify-center pointer-coarse:h-11">
                   <input
                     type="checkbox"
                     aria-label="Select all rows on this page"
@@ -202,7 +207,7 @@ export function DataGrid({
                     over === c.id && 'shadow-[inset_2px_0_0_var(--color-primary)]',
                   )}
                 >
-                  <div className="relative flex h-9 items-center">
+                  <div className="relative flex h-9 items-center pointer-coarse:h-11">
                     {c.sortable && onSort ? (
                       <button
                         type="button"
@@ -311,7 +316,7 @@ const GridBody = memo(function GridBody({
         >
           {selection ? (
             <td className={`${CELL} sticky left-0 z-[5]`}>
-              <div className="flex h-9 items-center justify-center">
+              <div className="flex h-9 items-center justify-center pointer-coarse:h-11">
                 <input
                   type="checkbox"
                   aria-label={`Select ${r.label ?? 'row'}`}
@@ -322,23 +327,28 @@ const GridBody = memo(function GridBody({
               </div>
             </td>
           ) : null}
-          {r.cells.map((cell, i) => (
-            <td
-              key={columns[i]?.id ?? i}
-              className={columns[i]?.pinned ? PINNED_CELL : CELL}
-              style={columns[i]?.pinned ? { left: pinLeft } : undefined}
-            >
-              <div
-                className={cn(
-                  'flex items-center gap-1 overflow-hidden whitespace-nowrap px-3 [&>*]:min-w-0 [&>*]:truncate',
-                  expanded ? 'h-14' : 'h-9',
-                  i === 0 ? 'text-foreground' : 'text-secondary-foreground',
-                )}
+          {r.cells.map((cell, i) => {
+            const column = columns[i];
+            const Cell = column?.pinned ? 'th' : 'td';
+            return (
+              <Cell
+                key={column?.id ?? i}
+                scope={column?.pinned ? 'row' : undefined}
+                className={column?.pinned ? `${PINNED_CELL} text-left font-normal` : CELL}
+                style={column?.pinned ? { left: pinLeft } : undefined}
               >
-                {cell}
-              </div>
-            </td>
-          ))}
+                <div
+                  className={cn(
+                    'flex items-center gap-1 overflow-hidden whitespace-nowrap px-3 [&>*]:min-w-0 [&>*]:truncate',
+                    expanded ? 'h-14' : 'h-9 pointer-coarse:h-11',
+                    i === 0 ? 'text-foreground' : 'text-secondary-foreground',
+                  )}
+                >
+                  {cell}
+                </div>
+              </Cell>
+            );
+          })}
           <td aria-hidden className={`border-b border-border ${ROW_BG}`} />
         </tr>
       ))}

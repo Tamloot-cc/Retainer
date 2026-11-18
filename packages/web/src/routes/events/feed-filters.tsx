@@ -79,7 +79,7 @@ export function FeedFilterMenu({
         if (!next) setStep(null);
       }}
       trigger={
-        <Button variant="ghost" size="small">
+        <Button variant="ghost" size="small" className="pointer-coarse:min-h-11">
           <ListFilter size={14} />
           Filter
         </Button>

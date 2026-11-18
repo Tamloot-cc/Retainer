@@ -177,7 +177,13 @@ test('expands bounded results and removes old hits immediately when the query ch
     await response;
     await route.continue().catch(() => {});
   });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await input.fill('review');
+  const spinner = dialog.getByLabel('Searching', { exact: true });
+  await expect(spinner).toBeVisible();
+  await expect(spinner).toHaveCSS('animation-name', 'none');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await expect(spinner).toHaveCSS('animation-name', 'spin');
   await expect(hits).toHaveCount(0);
   await expect(dialog.getByRole('option').filter({ hasText: 'Review' })).toBeVisible();
   await input.press('ArrowDown');

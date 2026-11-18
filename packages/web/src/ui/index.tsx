@@ -337,7 +337,7 @@ export function Page({
   actions?: ReactNode;
   children: ReactNode;
 } & ({ layout?: 'default'; description?: string } | { layout: 'fill'; description?: never })) {
-  const openNavigation = useContext(NavigationContext);
+  const hasNavigation = useContext(NavigationContext);
   const fill = layout === 'fill';
   return (
     <section
@@ -347,16 +347,17 @@ export function Page({
       )}
     >
       <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-3 backdrop-blur md:px-5">
-        {openNavigation ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Open navigation"
-            className="-ml-1 md:hidden"
-            onClick={openNavigation}
-          >
-            <Menu size={16} />
-          </Button>
+        {hasNavigation ? (
+          <DialogPrimitive.Trigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Open navigation"
+              className="-ml-1 size-11 shrink-0 md:hidden"
+            >
+              <Menu size={16} />
+            </Button>
+          </DialogPrimitive.Trigger>
         ) : null}
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
           {eyebrow ? (
@@ -464,12 +465,14 @@ export function Tabs({
   value,
   onChange,
   sticky = false,
+  wrapLabels = false,
   ref,
 }: {
   items: { value: string; label: string; count?: number; hint?: string }[];
   value: string;
   onChange: (v: string) => void;
   sticky?: boolean;
+  wrapLabels?: boolean;
   ref?: Ref<HTMLElement>;
 }) {
   const bar = useRef<HTMLDivElement>(null),
@@ -506,7 +509,10 @@ export function Tabs({
             aria-current={value === i.value ? 'page' : undefined}
             onClick={() => onChange(i.value)}
             className={cn(
-              '-mb-px flex shrink-0 items-center gap-2 border-b-2 px-2.5 py-2 text-sm font-medium',
+              '-mb-px flex items-center gap-2 border-b-2 px-2.5 py-2 text-sm font-medium',
+              wrapLabels
+                ? 'sm:shrink-0 max-sm:min-w-0 max-sm:flex-1 max-sm:justify-center max-sm:px-1 max-sm:py-1 max-sm:text-center max-sm:text-xs pointer-coarse:min-h-11'
+                : 'shrink-0',
               value === i.value
                 ? 'border-primary'
                 : 'border-transparent text-muted-foreground hover:text-foreground',
@@ -565,6 +571,7 @@ export function RecordLink({
     <Link
       to="."
       search={(prev: Record<string, unknown>) => ({ ...prev, record: id })}
+      data-record-sheet-trigger={id}
       className={className}
     >
       {content}
@@ -693,14 +700,20 @@ export function Dialog({
 }
 /** A small static table inside a page. Record lists use `DataGrid`. */
 export function Table({
+  label,
   headers,
   children,
 }: {
+  label?: string;
   headers: { label: string; align?: 'center' }[];
   children: ReactNode;
 }) {
   return (
-    <div className="overflow-auto rounded-lg border border-border">
+    <section
+      aria-label={label}
+      tabIndex={label ? 0 : undefined}
+      className="overflow-auto rounded-lg border border-border focus-visible:outline-2 focus-visible:outline-ring"
+    >
       <table className="w-full border-separate border-spacing-0 text-sm">
         <thead className="text-left text-xs text-muted-foreground">
           <tr>
@@ -720,7 +733,7 @@ export function Table({
         </thead>
         <tbody className="[&>tr:last-child>td]:border-b-0">{children}</tbody>
       </table>
-    </div>
+    </section>
   );
 }
 /**

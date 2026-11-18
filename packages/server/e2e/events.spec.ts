@@ -207,6 +207,8 @@ test('filters all activity by type, source, date and linked record, in the addre
   const sheet = page.getByRole('dialog', { name: 'Acme budget note' });
   await expect(sheet.getByText('Activity · Memo')).toBeVisible();
   await expect(page).toHaveURL(/record=/);
+  await page.keyboard.press('Escape');
+  await expect(titles.first()).toBeFocused();
 });
 
 test('an event page has comments, claims and history, and no memory of its own', async ({

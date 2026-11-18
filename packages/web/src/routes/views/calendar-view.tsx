@@ -244,7 +244,10 @@ export function CalendarView({
                 locked={!draggable}
                 more={
                   rest.length ? (
-                    <MoreEntries count={rest.length} title={dayLabel(d)}>
+                    <MoreEntries
+                      title={dayLabel(d)}
+                      hiddenRecordIds={rest.map((record) => record.id)}
+                    >
                       {list.map((r) => entry(r, key, true))}
                     </MoreEntries>
                   ) : null

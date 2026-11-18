@@ -24,7 +24,7 @@ export function Section({ title, children }: { title: string; children: ReactNod
 }
 
 export function PropertyList({ children }: { children: ReactNode }) {
-  return <dl className="-mx-2 flex flex-col">{children}</dl>;
+  return <dl className="@container/properties -mx-2 flex flex-col">{children}</dl>;
 }
 
 /**
@@ -58,10 +58,17 @@ export function Property({
         'group/property grid items-start gap-x-3 rounded-md px-2 py-1',
         editor
           ? 'grid-cols-1 gap-y-1.5 py-2'
-          : 'grid-cols-[minmax(5rem,7rem)_minmax(0,1fr)] sm:grid-cols-[minmax(6rem,10rem)_minmax(0,1fr)]',
+          : 'grid-cols-1 @sm/properties:grid-cols-[minmax(5rem,7rem)_minmax(0,1fr)] @lg/properties:grid-cols-[minmax(6rem,10rem)_minmax(0,1fr)]',
       )}
     >
-      <dt className={cn('truncate text-sm text-secondary-foreground', !editor && 'py-1.5')}>
+      <dt
+        className={cn(
+          'text-sm text-secondary-foreground',
+          editor
+            ? 'truncate'
+            : 'px-2 [overflow-wrap:anywhere] @sm/properties:truncate @sm/properties:px-0 @sm/properties:py-1.5',
+        )}
+      >
         {label}
         {apiName ? <ApiName>{apiName}</ApiName> : null}
       </dt>
@@ -79,7 +86,7 @@ export function Property({
               {children}
             </div>
             {actions ? (
-              <div className="flex shrink-0 items-center py-0.5 transition-opacity md:opacity-0 md:focus-within:opacity-100 md:group-hover/property:opacity-100">
+              <div className="flex shrink-0 items-center py-0.5 transition-opacity pointer-coarse:[&_button]:size-11 md:pointer-fine:opacity-0 md:pointer-fine:focus-within:opacity-100 md:pointer-fine:group-hover/property:opacity-100">
                 {actions}
               </div>
             ) : null}

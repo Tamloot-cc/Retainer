@@ -379,7 +379,7 @@ export function Diagram({
       <ActionsContext.Provider value={actions}>
         <div
           style={{ height: laidOut.height }}
-          className="retainer-diagram relative max-h-[72vh] overflow-hidden rounded-lg border border-border bg-card"
+          className="retainer-diagram relative max-h-[72dvh] overflow-hidden rounded-lg border border-border bg-card"
         >
           <Markers />
           <ReactFlow

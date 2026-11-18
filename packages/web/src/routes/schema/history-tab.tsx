@@ -43,6 +43,7 @@ export function HistoryTab() {
       <Row>
         <SelectMenu
           label="Status"
+          className="pointer-coarse:min-h-11"
           value={status ?? ''}
           options={[
             { value: '', label: 'All statuses' },
@@ -82,10 +83,16 @@ export function HistoryTab() {
       {search.cursor || changes.data?.nextCursor ? (
         <Row>
           {search.cursor ? (
-            <Button onClick={() => void setSearch({ cursor: undefined })}>Newest</Button>
+            <Button
+              className="pointer-coarse:min-h-11"
+              onClick={() => void setSearch({ cursor: undefined })}
+            >
+              Newest
+            </Button>
           ) : null}
           {changes.data?.nextCursor ? (
             <Button
+              className="pointer-coarse:min-h-11"
               onClick={() => void setSearch({ cursor: changes.data?.nextCursor ?? undefined })}
             >
               Older changes
@@ -130,7 +137,7 @@ function ChangeItem({ change, canDecide }: { change: SchemaChange; canDecide: bo
       {change.error ? <Notice error>{change.error}</Notice> : null}
       {canDecide && change.status === 'proposed' ? (
         <Row>
-          <Button size="small" asChild>
+          <Button size="small" className="pointer-coarse:min-h-11" asChild>
             <Link to="/review" search={{ tab: 'schema' }}>
               Review in inbox
             </Link>
