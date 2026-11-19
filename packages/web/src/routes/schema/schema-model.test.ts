@@ -598,7 +598,7 @@ describe('groupSchemaDiff', () => {
       { label: 'Name', after: 'Deal' },
       { label: 'Plural name', after: 'Deals' },
       { label: 'API name', after: 'deal / deals', code: true },
-      { label: 'Label field', after: 'Deal name' },
+      { label: 'Label field', after: 'Deal name (title)' },
     ]);
     expect(deal?.fields.map((f) => [f.label, f.type, f.kind, f.details])).toEqual([
       [
@@ -617,7 +617,7 @@ describe('groupSchemaDiff', () => {
         [
           { label: 'API name', after: 'stage', code: true },
           { label: 'Behavior', after: 'Optional' },
-          { label: 'Options', after: 'Won, Lost' },
+          { label: 'Options', after: 'Won (won), Lost (lost)' },
         ],
       ],
       [
@@ -685,16 +685,51 @@ describe('groupSchemaDiff', () => {
       { label: 'Required', before: 'No', after: 'Yes' },
       { label: 'Unique', before: 'No', after: 'Yes' },
       { label: 'Option', before: 'To do', after: 'Open' },
-      { label: 'Removed option', before: 'To do' },
-      { label: 'New option', after: 'Done' },
+      { label: 'Removed option', before: 'To do (todo)' },
+      { label: 'New option', after: 'Done (done)' },
     ]);
     expect(groups[0]?.fields[0]?.kind).toBe('removed');
     expect(groups[0]?.details).toEqual([
-      { label: 'Label field', before: 'Name', after: 'Company' },
+      { label: 'Label field', before: 'Name (name)', after: 'Company (company)' },
     ]);
     expect(summarizeSchemaChange(groups)).toBe(
       'Delete Company from Engagement and change Status on Task',
     );
+  });
+
+  it('tells apart label fields that share a label, and uses the label the change gives', () => {
+    const twins = object({
+      nameSingular: 'account',
+      labelSingular: 'Account',
+      labelField: 'legalName',
+      fields: [
+        field({ name: 'legalName', type: 'text', label: 'Name' }),
+        field({ name: 'displayName', type: 'text', label: 'Name' }),
+      ],
+    });
+    const groups = groupSchemaDiff(
+      [
+        {
+          kind: 'update_object',
+          objectId: 'A',
+          object: 'account',
+          property: 'labelField',
+          from: 'legalName',
+          to: 'displayName',
+        },
+        {
+          kind: 'update_field',
+          ...ref('A', 'account', 'AD', 'displayName'),
+          property: 'label',
+          from: 'Name',
+          to: 'Display name',
+        },
+      ],
+      [twins],
+    );
+    expect(groups[0]?.details).toEqual([
+      { label: 'Label field', before: 'Name (legalName)', after: 'Display name (displayName)' },
+    ]);
   });
 
   it('keeps a deleted part apart from a new one with the same name', () => {

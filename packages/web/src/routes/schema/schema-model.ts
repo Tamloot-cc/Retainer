@@ -344,6 +344,13 @@ export type ObjectChange = {
 
 const yesNo = (v: boolean) => (v ? 'Yes' : 'No');
 
+/**
+ * A label with the identifier agents write, when they differ: "In progress
+ * (in_progress)", "Name (legalName)".
+ */
+const named = (label: string | undefined, id: string) =>
+  label && label !== id ? `${label} (${id})` : id;
+
 /** A new field's flags in words: "Required · Unique · Searchable". */
 function behavior(f: SchemaDiffField) {
   return [
@@ -373,7 +380,11 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[], objects: ObjectView[
   const fieldFrom = new Map<string, string>();
   const created = new Map<string, SchemaDiffObject>();
   const createdFields = new Map<string, Map<string, string>>();
+  /** Labels the change gives existing fields, by object and field name after it. */
+  const relabeled = new Map<string, string>();
   for (const op of ops) {
+    if (op.kind === 'update_field' && op.property === 'label' && typeof op.to === 'string')
+      relabeled.set(`${op.objectId}/${op.field}`, op.to);
     if (op.kind === 'rename_object') renamedFrom.set(op.to.nameSingular, op.from.nameSingular);
     if (op.kind === 'rename_field') fieldFrom.set(`${op.objectId}/${op.to}`, op.from);
     if (op.kind === 'create_object') created.set(op.object.nameSingular, op.object);
@@ -385,7 +396,6 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[], objects: ObjectView[
   }
   /** Today's object for a name after the change. */
   const view = (name: string) => byName.get(renamedFrom.get(name) ?? name);
-  /** Today's field of an object for a field name after the change. */
   /**
    * Today's field of an object, for a field name after the change, or with
    * `asToday` for a name it already has today (a deleted field's).
@@ -394,10 +404,19 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[], objects: ObjectView[
     view(object)?.fields.find(
       (f) => f.name === (asToday ? name : (fieldFrom.get(`${objectId}/${name}`) ?? name)),
     );
-  const fieldLabel = (objectId: string, object: string, name: string | null) =>
-    name
-      ? (createdFields.get(objectId)?.get(name) ?? fieldView(objectId, object, name)?.label ?? name)
-      : undefined;
+  /**
+   * A field named after the change, as "Label (apiName)": the API name tells
+   * apart fields that share a label. `after` takes the label the change gives
+   * it; otherwise it is the label it has today.
+   */
+  const fieldLabel = (objectId: string, object: string, name: string | null, after = false) => {
+    if (!name) return undefined;
+    const label =
+      (after ? relabeled.get(`${objectId}/${name}`) : undefined) ??
+      createdFields.get(objectId)?.get(name) ??
+      fieldView(objectId, object, name)?.label;
+    return named(label, name);
+  };
   /** An object's label for a name after the change: "Engagement", or "Engagements". */
   const objectLabel = (name: string, plural = false) => {
     const o = created.get(name) ?? view(name);
@@ -443,7 +462,7 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[], objects: ObjectView[
     if (s.options?.length)
       details.push({
         label: 'Options',
-        after: s.options.map((o) => o.label || o.value).join(', '),
+        after: s.options.map((o) => named(o.label, o.value)).join(', '),
       });
     const targets = s.targetObjects ?? (s.targetObject ? [s.targetObject] : []);
     if (field.type === 'relation' && targets.length) {
@@ -482,7 +501,7 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[], objects: ObjectView[
         if (o.labelField)
           g.details.push({
             label: 'Label field',
-            after: fieldLabel(o.universalId, o.nameSingular, o.labelField),
+            after: fieldLabel(o.universalId, o.nameSingular, o.labelField, true),
           });
         break;
       }
@@ -492,7 +511,7 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[], objects: ObjectView[
           g.details.push({
             label: 'Label field',
             before: fieldLabel(op.objectId, op.object, op.from),
-            after: fieldLabel(op.objectId, op.object, op.to),
+            after: fieldLabel(op.objectId, op.object, op.to, true),
           });
           break;
         }
@@ -569,7 +588,7 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[], objects: ObjectView[
       case 'add_option':
         entry(op).f.details.push({
           label: 'New option',
-          after: op.option.label || op.option.value,
+          after: named(op.option.label, op.option.value),
         });
         break;
       case 'update_option':
@@ -579,7 +598,10 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[], objects: ObjectView[
         const { f, current } = entry(op);
         f.details.push({
           label: 'Removed option',
-          before: current?.settings.options?.find((o) => o.value === op.value)?.label ?? op.value,
+          before: named(
+            current?.settings.options?.find((o) => o.value === op.value)?.label,
+            op.value,
+          ),
         });
         break;
       }
