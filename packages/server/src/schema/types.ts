@@ -157,6 +157,8 @@ export type DiffOp =
       fieldId: string;
       field: string;
       value: string;
+      /** The option's label before it was removed, so history can still name it. */
+      label: string;
     };
 
 export type Classification = 'additive' | 'destructive';

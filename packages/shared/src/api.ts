@@ -612,18 +612,18 @@ export type SchemaDiffField = {
   owner: SchemaOwner;
 };
 /**
- * The object a step of a diff touches. `object` is its API name; `objectLabel`
- * and `objectClass` are how it reads now, found by universal ID on the
- * server, so a client shows the step without matching names to its schema.
+ * The object a step of a diff touches: its API name, label and class as the
+ * change leaves them, found by universal ID on the server, so a client shows
+ * the step without matching names to its own copy of the schema.
  */
-type DiffObjectRef = {
+export type DiffObjectRef = {
   objectId: string;
   object: string;
   objectLabel: string;
   objectClass: ObjectClass;
 };
-/** The field a step touches, with its label and type now (null if unknown). */
-type DiffFieldRef = DiffObjectRef & {
+/** The field a step touches, with its label and type as the change leaves them. */
+export type DiffFieldRef = DiffObjectRef & {
   fieldId: string;
   field: string;
   fieldLabel: string;
@@ -635,12 +635,12 @@ export type DiffTargetLabel = { singular: string; plural: string };
  * One step of what a schema change does, as the engine computed it: the net
  * difference between the schema before and after, with objects and fields
  * matched by universal ID (`objectId`, `fieldId`), so a rename is a rename.
- * `object` and `field` are API names: the change's own for parts it creates
- * or renames, otherwise the current ones. `from` is the value before the
- * change and `to` the value after. Labels (`objectLabel`, `fieldLabel`,
- * `fromLabel`, `optionLabel`) are found by universal ID: a part's label now,
- * or for a field the change names as its result (a label field, a relation's
- * target), its label after the change.
+ * `from` is the value before the change and `to` the value after. Names
+ * and labels (`object`, `objectLabel`, `field`, `fieldLabel`, `fromLabel`,
+ * `toLabel`, `targetLabels`) are found by universal ID as the change leaves
+ * them: what it creates, renames or relabels, and for any other part its
+ * current name and label. `optionLabel` is a removed option's label before
+ * the change.
  */
 export type SchemaDiffOperation =
   | { kind: 'create_object'; object: SchemaDiffObject }
@@ -655,11 +655,10 @@ export type SchemaDiffOperation =
       property: 'labelField';
       from: string | null;
       to: string | null;
-      /** The old label field's label now, and the new one's after the change. */
       fromLabel: string | null;
       toLabel: string | null;
     })
-  | (Omit<DiffObjectRef, 'object'> & {
+  | (DiffObjectRef & {
       kind: 'rename_object';
       from: { nameSingular: string; namePlural: string };
       to: { nameSingular: string; namePlural: string };
@@ -668,8 +667,8 @@ export type SchemaDiffOperation =
   | (DiffObjectRef & {
       kind: 'create_field';
       field: SchemaDiffField;
-      /** What a new relation links to, in the order of its settings. */
-      targetLabels: DiffTargetLabel[];
+      /** A new relation's targets, in the order of its settings. */
+      targetLabels?: DiffTargetLabel[];
     })
   | (DiffFieldRef & {
       kind: 'update_field';
@@ -684,15 +683,14 @@ export type SchemaDiffOperation =
       from: string | boolean | null;
       to: string | boolean | null;
     })
-  | (Omit<DiffFieldRef, 'field'> & { kind: 'rename_field'; from: string; to: string })
+  | (DiffFieldRef & { kind: 'rename_field'; from: string; to: string })
   | (DiffFieldRef & { kind: 'deprecate_field' | 'protect_field' })
   | (DiffFieldRef & { kind: 'add_option'; option: SelectOption })
   | (DiffFieldRef & { kind: 'update_option'; value: string; from: string; to: string })
   | (DiffFieldRef & {
       kind: 'remove_option';
       value: string;
-      /** The option's label, while the field still lists it. */
-      optionLabel: string | null;
+      optionLabel: string;
     });
 export type SchemaChange = {
   id: string;

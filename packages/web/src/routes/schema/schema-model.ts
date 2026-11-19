@@ -1,9 +1,9 @@
 import {
+  type DiffFieldRef,
+  type DiffObjectRef,
   type DiffTargetLabel,
-  type FieldType,
   type FieldView,
   isInverseRelation,
-  type ObjectClass,
   type ObjectView,
   relationTargets,
   SCHEMA_CHANGE_STATUSES,
@@ -378,8 +378,7 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[]) {
   const groups: ObjectChange[] = [];
   const byId = new Map<string, ObjectChange>();
 
-  type Ref = { objectId: string; object: string; objectLabel: string; objectClass: ObjectClass };
-  const group = (ref: Ref) => {
+  const group = (ref: DiffObjectRef) => {
     let g = byId.get(ref.objectId);
     if (!g) {
       g = {
@@ -396,13 +395,7 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[]) {
     }
     return g;
   };
-  const entry = (
-    op: Ref & {
-      fieldId: string;
-      fieldLabel: string;
-      fieldType: FieldType | null;
-    },
-  ) => {
+  const entry = (op: DiffFieldRef) => {
     const g = group(op);
     let f = g.fields.find((x) => x.id === op.fieldId);
     if (!f) {
@@ -487,7 +480,7 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[]) {
         break;
       }
       case 'rename_object':
-        group({ ...op, object: op.to.nameSingular }).details.push({
+        group(op).details.push({
           label: 'API name',
           before: `${op.from.nameSingular} / ${op.from.namePlural}`,
           after: `${op.to.nameSingular} / ${op.to.namePlural}`,
@@ -512,7 +505,7 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[]) {
         if (field.description) f.details.push({ label: 'Description', after: field.description });
         f.details.push(
           { label: 'Behavior', after: behavior(field) },
-          ...settingDetails(field, op.targetLabels),
+          ...settingDetails(field, op.targetLabels ?? []),
         );
         group(op).fields.push(f);
         break;
@@ -557,7 +550,7 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[]) {
       case 'remove_option':
         entry(op).details.push({
           label: 'Removed option',
-          before: named(op.optionLabel ?? undefined, op.value),
+          before: named(op.optionLabel, op.value),
         });
         break;
       default: {
@@ -568,7 +561,7 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[]) {
           object: '',
           objectLabel: 'Other',
           objectClass: 'entity',
-        }).details.push({ label: describeDiffOp(unknown, []) });
+        }).details.push({ label: unknown.kind.replaceAll('_', ' ') });
       }
     }
   }

@@ -912,10 +912,11 @@ person or agent). Same pattern as Twenty's migration engine:
      so an old change still points at parts by the names they have now.
      Each step also carries the labels a client shows (`objectLabel`,
      `fieldLabel`, `fieldType`, a label field's `fromLabel` and `toLabel`,
-     a new relation's `targetLabels`, a removed option's `optionLabel`),
-     found by universal ID, so no client matches names against its own
-     copy of the schema. The schema description itself still carries no
-     universal IDs.
+     a new relation's `targetLabels`), found by universal ID the same way,
+     as the change leaves them, so no client matches names against its own
+     copy of the schema. A removed option's label is stored in the diff
+     (`optionLabel`), since no schema has it afterwards. The schema
+     description itself still carries no universal IDs.
 
 Making a field unique or required first checks existing records; if any
 violate it, the change fails with the offending record IDs. Adding a

@@ -1090,6 +1090,41 @@ describe('presentDiff', () => {
     expect(presented).toContainEqual(
       expect.objectContaining({ kind: 'remove_option', value: 'gold', optionLabel: 'Gold' }),
     );
+    // Read later against the schema it produced, the removed option keeps its label.
+    expect(presentDiff(diffSchemas(before, after), after)).toContainEqual(
+      expect.objectContaining({ kind: 'remove_option', optionLabel: 'Gold' }),
+    );
+  });
+
+  it('labels a relation target as the change leaves it', () => {
+    const after = applyValid(base, [
+      { op: 'update_object', object: 'company', labelSingular: 'Client', labelPlural: 'Clients' },
+      {
+        op: 'create_field',
+        object: 'person',
+        field: {
+          name: 'employer',
+          label: 'Employer',
+          type: 'relation',
+          settings: {
+            targetObject: 'company',
+            relationCardinality: 'many_to_one',
+            inverseField: 'staff',
+          },
+        },
+      },
+    ]);
+    const presented = presentDiff(diffSchemas(base, after), base);
+    expect(presented).toContainEqual(
+      expect.objectContaining({
+        kind: 'create_field',
+        objectLabel: 'Person',
+        targetLabels: [{ singular: 'Client', plural: 'Clients' }],
+      }),
+    );
+    expect(presented).toContainEqual(
+      expect.objectContaining({ kind: 'update_object', object: 'company', objectLabel: 'Client' }),
+    );
   });
 
   it('shows the parts a change refers to by the names they have now', () => {

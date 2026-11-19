@@ -424,19 +424,21 @@ describe('groupSchemaDiff', () => {
     }) satisfies SchemaDiffField;
 
   it('groups a rename by object and field, each property before and after', () => {
+    // Labels come as the change leaves them.
+    const project = { ...E, object: 'project', objectLabel: 'Project' };
     const groups = groupSchemaDiff([
       {
         kind: 'rename_object',
         objectId: 'E',
-        objectLabel: 'Engagement',
+        object: 'project',
+        objectLabel: 'Project',
         objectClass: 'entity',
         from: { nameSingular: 'engagement', namePlural: 'engagements' },
         to: { nameSingular: 'project', namePlural: 'projects' },
       },
       {
         kind: 'update_object',
-        ...E,
-        object: 'project',
+        ...project,
         property: 'labelSingular',
         from: 'Engagement',
         to: 'Project',
@@ -445,21 +447,22 @@ describe('groupSchemaDiff', () => {
         kind: 'rename_field',
         ...T,
         fieldId: 'TE',
-        fieldLabel: 'Engagement',
+        field: 'project',
+        fieldLabel: 'Project',
         fieldType: 'relation',
         from: 'engagement',
         to: 'project',
       },
       {
         kind: 'update_field',
-        ...ref(T, 'TE', 'project', 'Engagement', 'relation'),
+        ...ref(T, 'TE', 'project', 'Project', 'relation'),
         property: 'label',
         from: 'Engagement',
         to: 'Project',
       },
     ]);
     expect(groups.map((g) => [g.id, g.object, g.label])).toEqual([
-      ['E', 'project', 'Engagement'],
+      ['E', 'project', 'Project'],
       ['T', 'task', 'Task'],
     ]);
     expect(groups[0]?.details).toEqual([
@@ -474,7 +477,7 @@ describe('groupSchemaDiff', () => {
     expect(groups[1]?.fields).toEqual([
       {
         id: 'TE',
-        label: 'Engagement',
+        label: 'Project',
         type: 'Relation',
         kind: 'changed',
         details: [
@@ -520,7 +523,6 @@ describe('groupSchemaDiff', () => {
           isNullable: false,
           isSearchable: true,
         }),
-        targetLabels: [],
       },
       {
         kind: 'create_field',
@@ -536,7 +538,6 @@ describe('groupSchemaDiff', () => {
             ],
           },
         }),
-        targetLabels: [],
       },
       {
         kind: 'create_field',
@@ -616,7 +617,7 @@ describe('groupSchemaDiff', () => {
       { kind: 'update_field', ...status, property: 'isUnique', from: false, to: true },
       { kind: 'update_option', ...status, value: 'todo', from: 'To do', to: 'Open' },
       { kind: 'remove_option', ...status, value: 'todo', optionLabel: 'To do' },
-      { kind: 'remove_option', ...status, value: 'gone', optionLabel: null },
+      { kind: 'remove_option', ...status, value: 'gone', optionLabel: 'gone' },
       { kind: 'add_option', ...status, option: { value: 'done', label: 'Done' } },
       { kind: 'deprecate_field', ...ref(E, 'EC', 'company', 'Company', 'relation') },
       {
@@ -655,7 +656,6 @@ describe('groupSchemaDiff', () => {
         kind: 'create_field',
         ...T,
         field: newField({ name: 'status', type: 'text' }),
-        targetLabels: [],
       },
     ]);
     expect(groups[0]?.fields.map((f) => [f.id, f.type, f.kind])).toEqual([

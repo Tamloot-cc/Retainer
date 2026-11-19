@@ -7,13 +7,19 @@ import {
   FIELD_VALUE_FORMATS,
   type FieldSettings,
   type FieldType,
-  type ObjectClass,
   type ObjectView,
   type SchemaDescription,
   type SchemaDiffOperation,
 } from '@retainer/shared';
 import type { CompiledSchema } from '../schema/compiled.js';
-import type { DiffOp, FieldState, SchemaState, StoredFieldSettings } from '../schema/types.js';
+import {
+  type DiffOp,
+  type FieldState,
+  type ObjectState,
+  relationTargetIds,
+  type SchemaState,
+  type StoredFieldSettings,
+} from '../schema/types.js';
 import { PROTECTED_OPTIONS } from './protection.js';
 
 export type { FieldView, ObjectView } from '@retainer/shared';
@@ -72,145 +78,118 @@ function presentSettings(schema: CompiledSchema, field: FieldState): FieldSettin
 /**
  * A change's diff as the API shows it. The engine stores label fields and
  * relation targets by universal ID; clients know objects and fields by API
- * name, so every reference is rebuilt from its ID: parts the change creates
- * or renames get the names it gives them, any other part its name in
- * `state` (every object and field, deprecated ones too). Each step also
- * carries the labels a client shows, found the same way, so no client has
- * to match names against its own copy of the schema.
+ * name and read labels, so each step is shown with both, found by ID as the
+ * change leaves them: what the change creates, renames or relabels comes
+ * from the diff, everything else from `state` (every object and field,
+ * deprecated ones too; for an applied change, today's schema). So no client
+ * matches names against its own copy of the schema.
  */
 export function presentDiff(ops: readonly DiffOp[], state: SchemaState): SchemaDiffOperation[] {
-  const objectsNow = new Map(state.objects.map((o) => [o.universalId, o]));
-  const fieldsNow = new Map(state.objects.flatMap((o) => o.fields.map((f) => [f.universalId, f])));
-  const names = new Map([...objectsNow].map(([id, o]) => [id, o.nameSingular]));
-  const fieldNames = new Map([...fieldsNow].map(([id, f]) => [id, f.name]));
-  const created = new Map<string, { labelSingular: string; class: ObjectClass }>();
-  // Labels as the change leaves them, for the parts it names as its result.
-  const labelsAfter = new Map(
-    state.objects.map((o) => [o.universalId, { singular: o.labelSingular, plural: o.labelPlural }]),
-  );
-  const fieldLabelsAfter = new Map([...fieldsNow].map(([id, f]) => [id, f.label]));
+  const objects = new Map(state.objects.map((o) => [o.universalId, o]));
+  const fields = new Map(state.objects.flatMap((o) => o.fields.map((f) => [f.universalId, f])));
+  // What the change itself gives a part, over what `state` has.
+  const objectsAfter = new Map<string, Partial<ObjectState>>();
+  const fieldsAfter = new Map<string, Partial<FieldState>>();
+  const set = <T>(map: Map<string, Partial<T>>, id: string, values: Partial<T>) =>
+    map.set(id, { ...map.get(id), ...values });
   for (const op of ops) {
-    if (op.kind === 'create_object') {
-      const o = op.object;
-      names.set(o.universalId, o.nameSingular);
-      created.set(o.universalId, o);
-      labelsAfter.set(o.universalId, { singular: o.labelSingular, plural: o.labelPlural });
-    }
-    if (op.kind === 'rename_object') names.set(op.objectId, op.to.nameSingular);
-    if (op.kind === 'update_object' && typeof op.to === 'string') {
-      const labels = labelsAfter.get(op.objectId);
-      if (labels && op.property === 'labelSingular') labels.singular = op.to;
-      if (labels && op.property === 'labelPlural') labels.plural = op.to;
-    }
-    if (op.kind === 'create_field') {
-      fieldNames.set(op.field.universalId, op.field.name);
-      fieldLabelsAfter.set(op.field.universalId, op.field.label);
-    }
-    if (op.kind === 'rename_field') fieldNames.set(op.fieldId, op.to);
+    if (op.kind === 'create_object') set(objectsAfter, op.object.universalId, op.object);
+    if (op.kind === 'rename_object') set(objectsAfter, op.objectId, op.to);
+    if (
+      op.kind === 'update_object' &&
+      (op.property === 'labelSingular' || op.property === 'labelPlural')
+    )
+      set(objectsAfter, op.objectId, { [op.property]: op.to ?? '' });
+    if (op.kind === 'create_field') set(fieldsAfter, op.field.universalId, op.field);
+    if (op.kind === 'rename_field') set(fieldsAfter, op.fieldId, { name: op.to });
     if (op.kind === 'update_field' && op.property === 'label' && typeof op.to === 'string')
-      fieldLabelsAfter.set(op.fieldId, op.to);
+      set(fieldsAfter, op.fieldId, { label: op.to });
   }
-  const fieldName = (id: string | null) => (id ? (fieldNames.get(id) ?? null) : null);
-  const fieldLabel = (id: string | null) => (id ? (fieldLabelsAfter.get(id) ?? null) : null);
-  const objectRef = (id: string, name: string) => {
-    const o = objectsNow.get(id) ?? created.get(id);
+  const object = (id: string) => ({ ...objects.get(id), ...objectsAfter.get(id) });
+  const field = (id: string) => ({ ...fields.get(id), ...fieldsAfter.get(id) });
+  const fieldName = (id: string | null) => (id ? (field(id).name ?? null) : null);
+  const fieldLabel = (id: string | null) => (id ? (field(id).label ?? null) : null);
+
+  const objectRef = (op: { objectId: string; object: string }) => {
+    const o = object(op.objectId);
     return {
-      objectId: id,
-      object: names.get(id) ?? name,
-      objectLabel: o?.labelSingular ?? name,
-      objectClass: o?.class ?? 'entity',
+      object: o.nameSingular ?? op.object,
+      objectLabel: o.labelSingular ?? op.object,
+      objectClass: o.class ?? 'entity',
     };
   };
   const fieldRef = (op: { objectId: string; object: string; fieldId: string; field: string }) => {
-    const f = fieldsNow.get(op.fieldId);
+    const f = field(op.fieldId);
     return {
-      ...objectRef(op.objectId, op.object),
-      fieldId: op.fieldId,
-      field: fieldNames.get(op.fieldId) ?? op.field,
-      fieldLabel: f?.label ?? op.field,
-      fieldType: f?.type ?? null,
+      ...objectRef(op),
+      field: f.name ?? op.field,
+      fieldLabel: f.label ?? op.field,
+      fieldType: f.type ?? null,
     };
   };
   return ops.map((op): SchemaDiffOperation => {
     switch (op.kind) {
       case 'create_object': {
-        const { labelFieldId, ...object } = op.object;
+        const { labelFieldId, ...rest } = op.object;
         return {
           kind: op.kind,
           object: {
-            ...object,
+            ...rest,
             labelField: fieldName(labelFieldId),
             labelFieldLabel: fieldLabel(labelFieldId),
           },
         };
       }
-      case 'update_object': {
-        const ref = objectRef(op.objectId, op.object);
+      case 'update_object':
         return op.property === 'labelFieldId'
           ? {
-              ...ref,
-              kind: op.kind,
+              ...op,
+              ...objectRef(op),
               property: 'labelField',
               from: fieldName(op.from),
               to: fieldName(op.to),
-              // The old one as it reads now; the new one as the change leaves it.
-              fromLabel: op.from ? (fieldsNow.get(op.from)?.label ?? null) : null,
+              fromLabel: fieldLabel(op.from),
               toLabel: fieldLabel(op.to),
             }
-          : { ...ref, kind: op.kind, property: op.property, from: op.from, to: op.to };
-      }
-      case 'rename_object': {
-        const { object: _name, ...ref } = objectRef(op.objectId, op.to.nameSingular);
-        return { ...ref, kind: op.kind, from: op.from, to: op.to };
-      }
-      case 'deprecate_object':
-      case 'protect_object':
-        return { ...objectRef(op.objectId, op.object), kind: op.kind };
+          : { ...op, ...objectRef(op), property: op.property };
+      case 'rename_object':
+        return { ...op, ...objectRef({ objectId: op.objectId, object: op.to.nameSingular }) };
       case 'create_field': {
         const { key: _key, settings, ...rest } = op.field;
-        const targets =
-          settings.targetObjectIds ?? (settings.targetObjectId ? [settings.targetObjectId] : []);
+        const targets = relationTargetIds(settings);
         return {
-          ...objectRef(op.objectId, op.object),
-          kind: op.kind,
+          ...op,
+          ...objectRef(op),
           field: {
             ...rest,
             settings: settingsByName(
               settings,
-              (id) => names.get(id),
-              (_target, id) => fieldNames.get(id),
+              (id) => object(id).nameSingular,
+              (_target, id) => field(id).name,
             ),
           },
-          targetLabels: targets.map(
-            (id) =>
-              labelsAfter.get(id) ?? { singular: names.get(id) ?? id, plural: names.get(id) ?? id },
-          ),
+          ...(targets.length
+            ? {
+                targetLabels: targets.map((id) => {
+                  const o = object(id);
+                  return { singular: o.labelSingular ?? id, plural: o.labelPlural ?? id };
+                }),
+              }
+            : {}),
         };
       }
-      case 'rename_field': {
-        const { field: _name, ...ref } = fieldRef({ ...op, field: op.to });
-        return { ...ref, kind: op.kind, from: op.from, to: op.to };
+      case 'rename_field':
+        return { ...op, ...fieldRef({ ...op, field: op.to }) };
+      case 'remove_option': {
+        const { label, ...rest } = op;
+        return { ...rest, ...fieldRef(op), optionLabel: label };
       }
-      case 'update_field':
-        return { ...fieldRef(op), kind: op.kind, property: op.property, from: op.from, to: op.to };
-      case 'deprecate_field':
-      case 'protect_field':
-        return { ...fieldRef(op), kind: op.kind };
-      case 'add_option':
-        return { ...fieldRef(op), kind: op.kind, option: op.option };
-      case 'update_option':
-        return { ...fieldRef(op), kind: op.kind, value: op.value, from: op.from, to: op.to };
-      case 'remove_option':
-        return {
-          ...fieldRef(op),
-          kind: op.kind,
-          value: op.value,
-          optionLabel:
-            fieldsNow.get(op.fieldId)?.settings.options?.find((o) => o.value === op.value)?.label ??
-            null,
-        };
+      case 'deprecate_object':
+      case 'protect_object':
+        return { ...op, ...objectRef(op) };
       default:
-        return op satisfies never;
+        // Every other field step: the same shape, plus its labels.
+        return { ...op, ...fieldRef(op) };
     }
   });
 }
