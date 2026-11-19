@@ -394,7 +394,20 @@ export function groupSchemaChange(request: SchemaOperation[], objects: ObjectVie
       ?.fields.find((x) => x.name === fieldName)
       ?.settings.options?.find((o) => o.value === value)?.label ?? value;
 
-  for (const op of request) {
+  // The engine applies operations in order, so after a rename later ones
+  // name the part by its new name. Map those back to the current schema's
+  // names, so one object or field stays one entry.
+  const objectAlias = new Map<string, string>();
+  const fieldAlias = new Map<string, string>();
+  const resolve = (raw: SchemaOperation): SchemaOperation => {
+    if (raw.op === 'create_object') return raw;
+    const object = objectAlias.get(raw.object) ?? raw.object;
+    if (raw.op === 'create_field' || !('field' in raw)) return { ...raw, object };
+    return { ...raw, object, field: fieldAlias.get(`${object}.${raw.field}`) ?? raw.field };
+  };
+
+  for (const raw of request) {
+    const op = resolve(raw);
     switch (op.op) {
       case 'create_object': {
         const g = group(op.object.nameSingular);
@@ -439,12 +452,14 @@ export function groupSchemaChange(request: SchemaOperation[], objects: ObjectVie
       }
       case 'rename_object': {
         const o = current(op.object);
+        const named = raw.op === 'rename_object' ? raw.object : op.object;
         group(op.object).details.push({
           label: 'API name',
-          before: o ? `${o.nameSingular} / ${o.namePlural}` : op.object,
+          before: o && named === o.nameSingular ? `${o.nameSingular} / ${o.namePlural}` : named,
           after: `${op.nameSingular} / ${op.namePlural}`,
           code: true,
         });
+        objectAlias.set(op.nameSingular, op.object);
         break;
       }
       case 'delete_object':
@@ -489,10 +504,12 @@ export function groupSchemaChange(request: SchemaOperation[], objects: ObjectVie
       case 'rename_field':
         field(op.object, op.field).details.push({
           label: 'API name',
-          before: op.field,
+          // The name it had at this point in the request.
+          before: raw.op === 'rename_field' ? raw.field : op.field,
           after: op.name,
           code: true,
         });
+        fieldAlias.set(`${op.object}.${op.name}`, op.field);
         break;
       case 'delete_field':
         field(op.object, op.field, 'removed');

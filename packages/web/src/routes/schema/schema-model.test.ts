@@ -466,6 +466,38 @@ describe('groupSchemaChange', () => {
     expect(summarizeSchemaChange(groups)).toBe('Rename Engagement to Project');
   });
 
+  it('follows renames, so later operations that use the new name stay on the same part', () => {
+    const groups = groupSchemaChange(
+      [
+        { op: 'rename_object', object: 'task', nameSingular: 'todo', namePlural: 'todos' },
+        { op: 'rename_field', object: 'todo', field: 'status', name: 'state' },
+        { op: 'rename_field', object: 'todo', field: 'state', name: 'stage' },
+        { op: 'update_field', object: 'todo', field: 'stage', isUnique: true },
+        { op: 'update_object', object: 'todo', labelSingular: 'To-do' },
+      ],
+      schema,
+    );
+    expect(groups.map((g) => g.object)).toEqual(['task']);
+    expect(groups[0]?.details).toEqual([
+      { label: 'API name', before: 'task / tasks', after: 'todo / todos', code: true },
+      { label: 'Name', before: 'Task', after: 'To-do' },
+    ]);
+    expect(groups[0]?.fields).toEqual([
+      {
+        name: 'status',
+        label: 'Status',
+        type: 'Single select',
+        kind: 'changed',
+        details: [
+          { label: 'API name', before: 'status', after: 'state', code: true },
+          { label: 'API name', before: 'state', after: 'stage', code: true },
+          { label: 'Unique', before: 'No', after: 'Yes' },
+        ],
+      },
+    ]);
+    expect(summarizeSchemaChange(groups)).toBe('Rename Task to To-do');
+  });
+
   it('marks new and deleted parts, flags and options in plain words', () => {
     const groups = groupSchemaChange(
       [
