@@ -69,8 +69,8 @@ Who does what:
   stores it, decides when it fires and starts its runs. All of that is fixed
   logic. Retainer's core still never calls a model and never runs the code
   itself.
-- **The closed sandbox** runs the code. It can reach Retainer's API and
-  nothing else.
+- **The closed sandbox** runs the code. It can reach Retainer and nothing
+  else.
 - **Extensions** supply the data a routine reacts to, by writing records, and
   the **tools** a routine can call, such as "send a WhatsApp message".
 
@@ -676,9 +676,15 @@ sequenceDiagram
     only returns an answer, and the code decides which tools to call. The
     code is fixed at approval. The sandbox has no network. Writes are at
     agent rank.
-  - Beyond that, the first version adds no safeguard: no extra approval for
-    sending after a model call and no check on where a message goes. An
-    earlier draft had both, and they covered only part of the risk.
+  - Beyond that, the first version adds no safeguard. Not covered:
+    - a model's text can go out in a message with nobody reviewing it;
+    - a model's answer can influence who a message goes to;
+    - a model can be led to invent tasks or facts, which the routine then
+      writes;
+    - a yes-or-no answer can be flipped, so an action is skipped or taken.
+  - An earlier draft had two rules for sending after a model call: an
+    admin's extra approval, and a check on where a message goes. They covered
+    only part of this.
   - The product owner decided on 2026-11-19 to study the risk and its
     solutions properly for the second version (§10) instead of shipping
     partial rules.
@@ -1186,7 +1192,8 @@ Left out of the first version on purpose, with the room left for each:
    `forget`; runs and history; the MCP calls for a person's own agent; the
    Routines page. Buttons (`manual`) come here, and member tools with them.
 4. **The built-in builder.** The free-text box in the web app.
-5. **Model calls from code.** `ai.generate`, the daily cap per workspace and
+5. **Model calls from code.** `ai.generate`, the narrower list of allowed
+   requests at the model proxy (§4.5), the daily cap per workspace and
    consent on the review.
 6. **More.** `relative` triggers, suggested routines from extensions, then
    the items in §10.
@@ -1214,6 +1221,10 @@ each against real Postgres:
 - **Expiry.** A reminder whose retries outlast its expiry is never sent late.
 - **A schema change.** Removing a field the code uses pauses the routine
   before its next run.
+- **Phase 5, a plain model call.** The model proxy refuses a request that
+  carries `tools` or `mcp_servers`, or names another model, when it comes
+  with a routine's model token. The same request with an extension's token
+  passes.
 - **`forget` during a run.** Erasing a record removes every stored tool and
   model result in the workspace, and a retry does not restore them.
 - **Phase 5, the worked example** (§9.4), all seven cases.
@@ -1231,8 +1242,8 @@ each against real Postgres:
   its Lambda function, the catalog configuration and the release allowlists.
 - **A function with no public egress.** Hosted job functions reach any public
   address today, an accepted relaxation for reviewed code (`extensions.md`
-  §9.1). The routine runner's function must reach Retainer's API and nothing
-  else. That networking lives in the cloud repository.
+  §9.1). The routine runner's function must reach Retainer's API and model
+  proxy and nothing else. That networking lives in the cloud repository.
 - **Polling, not waiting.** Tool calls, checks and previews return an ID
   because the hosted API answers within 30 seconds (§8.3).
 - **Model usage.** Routine model tokens are a new kind at the `model`
@@ -1246,19 +1257,19 @@ each against real Postgres:
 Answered by recommendation on 2026-11-19. Each stands unless the product
 owner changes it.
 
-| Question                                        | Answer                                                                                                                                                                                     | Why                                                                                                                                                           |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| What does a routine write as?                   | An agent, always, in the first version                                                                                                                                                     | The leanest rule: no new actor type, nothing with a person's authority in the sandbox, and it is Macro's default. A routine rank is the first extension (§10) |
-| What runs the code?                             | A fresh restricted process per run, inside a first-party bundle, with network to Retainer's API only. Which runtime is settled by a spike: Deno, as Macro uses, or Node's permission model | The token, the API and the network are the boundary; the runtime only has to start clean and stay closed                                                      |
-| Does a retried run repeat itself?               | No. Every effect has a key and its result is recorded                                                                                                                                      | The queue delivers at least once, and the code cannot be trusted to make itself safe to repeat                                                                |
-| Can a rewrite go live without approval?         | No, never                                                                                                                                                                                  | Nothing runs without a person's approval. Macro applies some rewrites on its own; here an admin approves every version                                        |
-| Can a condition test the value before a change? | Not in the first version. "Changed to" only                                                                                                                                                | The change feed keeps which fields changed, not their earlier values, and fast edits fold into one run                                                        |
-| Which model do the builder and the code use?    | One model the operator sets. No choice per workspace                                                                                                                                       | The simplest thing that works. Code never names a model, so the model can change without touching routines                                                    |
-| Does a routine need a spend guard?              | Yes: 1,000 routine model calls per workspace per day, dry runs and builder submissions included, counted from `ai_usage`                                                                   | One workspace cap bounds every routine, loop and preview                                                                                                      |
-| May a routine send after asking a model?        | Yes, with no extra safeguard in the first version                                                                                                                                          | The product owner's decision: partial rules would cover only part of the risk. It is studied properly for the second version (§6.3, §10)                      |
-| Can a standing routine use a member's account?  | No. A member tool runs only in a manual run, as the person who pressed the button                                                                                                          | Each member's connection is theirs alone; an admin cannot lend it out                                                                                         |
-| Who may approve a routine?                      | Workspace admins only                                                                                                                                                                      | A routine acts across the whole workspace                                                                                                                     |
-| Is there a test run before going live?          | Yes, optional, on one chosen record, by an admin, with `send` tools in dry run                                                                                                             | The dry run shows what the code tries. A test shows the real result, and its writes are real                                                                  |
+| Question                                        | Answer                                                                                                                                                                               | Why                                                                                                                                                           |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| What does a routine write as?                   | An agent, always, in the first version                                                                                                                                               | The leanest rule: no new actor type, nothing with a person's authority in the sandbox, and it is Macro's default. A routine rank is the first extension (§10) |
+| What runs the code?                             | A fresh restricted process per run, inside a first-party bundle, with network to Retainer only. Which runtime is settled by a spike: Deno, as Macro uses, or Node's permission model | The token, the API and the network are the boundary; the runtime only has to start clean and stay closed                                                      |
+| Does a retried run repeat itself?               | No. Every effect has a key and its result is recorded                                                                                                                                | The queue delivers at least once, and the code cannot be trusted to make itself safe to repeat                                                                |
+| Can a rewrite go live without approval?         | No, never                                                                                                                                                                            | Nothing runs without a person's approval. Macro applies some rewrites on its own; here an admin approves every version                                        |
+| Can a condition test the value before a change? | Not in the first version. "Changed to" only                                                                                                                                          | The change feed keeps which fields changed, not their earlier values, and fast edits fold into one run                                                        |
+| Which model do the builder and the code use?    | One model the operator sets. No choice per workspace                                                                                                                                 | The simplest thing that works. Code never names a model, so the model can change without touching routines                                                    |
+| Does a routine need a spend guard?              | Yes: 1,000 routine model calls per workspace per day, dry runs and builder submissions included, counted from `ai_usage`                                                             | One workspace cap bounds every routine, loop and preview                                                                                                      |
+| May a routine send after asking a model?        | Yes, with no extra safeguard in the first version                                                                                                                                    | The product owner's decision: partial rules would cover only part of the risk. It is studied properly for the second version (§6.3, §10)                      |
+| Can a standing routine use a member's account?  | No. A member tool runs only in a manual run, as the person who pressed the button                                                                                                    | Each member's connection is theirs alone; an admin cannot lend it out                                                                                         |
+| Who may approve a routine?                      | Workspace admins only                                                                                                                                                                | A routine acts across the whole workspace                                                                                                                     |
+| Is there a test run before going live?          | Yes, optional, on one chosen record, by an admin, with `send` tools in dry run                                                                                                       | The dry run shows what the code tries. A test shows the real result, and its writes are real                                                                  |
 
 Decided by the product owner on 2026-11-19:
 
