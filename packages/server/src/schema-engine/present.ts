@@ -87,7 +87,13 @@ export function presentDiff(ops: readonly DiffOp[], state: SchemaState): SchemaD
     if (op.kind === 'rename_field') fields.set(op.fieldId, op.to);
   }
   const field = (id: string | null) => (id ? (fields.get(id) ?? null) : null);
-  return ops.map((op): SchemaDiffOperation => {
+  return ops.map((stored): SchemaDiffOperation => {
+    // Every reference by name is rebuilt from its universal ID, so a part
+    // renamed by a later change is shown by the name it has now.
+    const op = { ...stored } as DiffOp;
+    if ('objectId' in op && 'object' in op) op.object = objects.get(op.objectId) ?? op.object;
+    if ('fieldId' in op && 'field' in op && typeof op.field === 'string')
+      op.field = fields.get(op.fieldId) ?? op.field;
     switch (op.kind) {
       case 'create_object': {
         const { labelFieldId, ...object } = op.object;

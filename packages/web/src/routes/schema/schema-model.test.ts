@@ -684,7 +684,7 @@ describe('groupSchemaDiff', () => {
     expect(groups[1]?.fields[0]?.details).toEqual([
       { label: 'Required', before: 'No', after: 'Yes' },
       { label: 'Unique', before: 'No', after: 'Yes' },
-      { label: 'Option', before: 'To do', after: 'Open' },
+      { label: 'Option', before: 'To do (todo)', after: 'Open (todo)' },
       { label: 'Removed option', before: 'To do (todo)' },
       { label: 'New option', after: 'Done (done)' },
     ]);

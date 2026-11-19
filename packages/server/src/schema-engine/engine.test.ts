@@ -980,4 +980,31 @@ describe('presentDiff', () => {
       }),
     );
   });
+
+  it('shows the parts a change refers to by the names they have now', () => {
+    const before = applyValid(base, [
+      {
+        op: 'create_field',
+        object: 'company',
+        field: { name: 'tier', label: 'Tier', type: 'text' },
+      },
+    ]);
+    const after = applyValid(before, [
+      { op: 'update_field', object: 'company', field: 'tier', label: 'Level' },
+    ]);
+    const stored = diffSchemas(before, after);
+    // Later, another change renames the field and its object.
+    const now = applyValid(after, [
+      { op: 'rename_field', object: 'company', field: 'tier', name: 'level' },
+      {
+        op: 'rename_object',
+        object: 'company',
+        nameSingular: 'organization',
+        namePlural: 'organizations',
+      },
+    ]);
+    expect(presentDiff(stored, now)).toEqual([
+      expect.objectContaining({ kind: 'update_field', object: 'organization', field: 'level' }),
+    ]);
+  });
 });

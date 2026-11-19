@@ -592,7 +592,11 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[], objects: ObjectView[
         });
         break;
       case 'update_option':
-        entry(op).f.details.push({ label: 'Option', before: op.from, after: op.to });
+        entry(op).f.details.push({
+          label: 'Option',
+          before: named(op.from, op.value),
+          after: named(op.to, op.value),
+        });
         break;
       case 'remove_option': {
         const { f, current } = entry(op);
