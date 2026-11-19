@@ -1,6 +1,7 @@
 import type { RetainerApiError } from '@retainer/sdk';
 import type { AssertionView, ReviewCollection, SchemaChange } from '@retainer/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Info, MessageSquareText, Shapes, UserRoundX } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import { fields } from '../../fields/index.js';
@@ -19,24 +20,35 @@ import {
   Page,
   RecordAvatar,
   RecordLink,
+  RelativeTime,
   Row,
   Stack,
 } from '../../ui/index.js';
 import {
+  MetaDot,
+  MetaStrong,
   REVIEW_CATEGORIES,
   ReviewActions,
   ReviewCard,
+  ReviewCardBody,
+  ReviewCardFooter,
+  ReviewCardHeader,
   ReviewCategories,
   ReviewComparison,
-  ReviewDetails,
+  ReviewIcon,
   ReviewIntroduction,
   ReviewKeyboard,
+  ReviewNote,
+  ReviewReason,
   ReviewScroll,
+  ReviewSelect,
+  ReviewText,
   ReviewWelcome,
 } from '../../ui/review.js';
 import { MergeSuggestionCard } from '../records/merge.js';
 import { CandidateRecord } from '../records/record-actions.js';
-import { describeOperation, useSchemaChanges } from '../schema/schema-model.js';
+import { SchemaChangeDetails, useSchemaChangeGroups } from '../schema/change-details.js';
+import { summarizeSchemaChange, useSchemaChanges } from '../schema/schema-model.js';
 import { eventTitle, objectByName, QueryError, recordTitle, useView } from '../state.js';
 
 const reasonText = {
@@ -55,36 +67,57 @@ function SchemaChangeCard({
   allowed: boolean;
   busy: boolean;
 }) {
-  const { objects } = useWorkspace().schema;
+  const groups = useSchemaChangeGroups(change.operations);
+  const count = change.operations.length;
+  // Approval re-plans against today's schema; another change may already have done this one.
+  const done = count === 0;
   return (
     <ReviewCard>
-      <Stack>
-        <Row>
-          <Badge tone="pending">Needs approval</Badge>
-          <ActorBadge actor={change.requestedBy} />
-          <Muted>{new Date(change.createdAt).toLocaleString()}</Muted>
-        </Row>
-        {change.request.map((op, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: a change's operations never reorder.
-          <div key={i}>{describeOperation(op, objects)}</div>
-        ))}
-        {change.reason ? <Muted>{change.reason}</Muted> : null}
-        {change.error ? <Notice error>{change.error}</Notice> : null}
-        {allowed ? (
-          <ReviewActions>
-            <Button
-              variant="primary"
-              disabled={busy}
-              onClick={() => onDecision(change.id, 'approve')}
-            >
-              Approve
-            </Button>
-            <Button disabled={busy} onClick={() => onDecision(change.id, 'reject')}>
-              Reject
-            </Button>
-          </ReviewActions>
+      <ReviewCardHeader
+        leading={<ReviewIcon icon={Shapes} />}
+        title={done ? 'Already in place' : summarizeSchemaChange(groups)}
+        meta={
+          <>
+            <ActorBadge actor={change.requestedBy} />
+            <RelativeTime at={change.createdAt} />
+            <MetaDot />
+            <span>
+              {count} {count === 1 ? 'change' : 'changes'}
+            </span>
+          </>
+        }
+        status={<Badge tone="pending">Needs approval</Badge>}
+      />
+      <ReviewCardBody>
+        {change.reason ? <ReviewReason>{change.reason}</ReviewReason> : null}
+        {done ? (
+          <Notice>
+            The schema already matches this proposal. Approving it changes nothing; rejecting it
+            closes it.
+          </Notice>
+        ) : change.isDestructive ? (
+          <Notice warning>
+            This changes parts of the workspace that already hold data. Renames, deletions and new
+            rules can affect existing records and the agents that use them.
+          </Notice>
         ) : null}
-      </Stack>
+        <SchemaChangeDetails groups={groups} />
+        {change.error ? <Notice error>{change.error}</Notice> : null}
+      </ReviewCardBody>
+      {allowed ? (
+        <ReviewCardFooter>
+          <Button disabled={busy} onClick={() => onDecision(change.id, 'reject')}>
+            Reject
+          </Button>
+          <Button
+            variant="primary"
+            disabled={busy}
+            onClick={() => onDecision(change.id, 'approve')}
+          >
+            Approve
+          </Button>
+        </ReviewCardFooter>
+      ) : null}
     </ReviewCard>
   );
 }
@@ -366,31 +399,36 @@ export function ReviewPage() {
               </Stack>
             ) : null}
             {pending.map((a, index) => {
-              const field = objectByName(schema, a.object)?.fields.find((f) => f.name === a.field);
+              const object = objectByName(schema, a.object);
+              const field = object?.fields.find((f) => f.name === a.field);
               const Display = field ? fields[field.type].Display : null;
+              const conflict = a.conflictingRecord;
               return (
                 <div key={a.id} id={`review-${a.id}`}>
                   <ReviewCard active={index === focused}>
-                    <Stack>
-                      <Row>
-                        {canWrite ? (
-                          <Input
-                            type="checkbox"
-                            aria-label={`Select ${a.recordLabel ?? a.recordId} ${a.field}`}
-                            checked={selected.includes(a.id)}
-                            onChange={(e) =>
-                              setSelected((ids) =>
-                                e.target.checked ? [...ids, a.id] : ids.filter((id) => id !== a.id),
-                              )
-                            }
-                          />
-                        ) : null}
-                        <IdentityTag identity={a.object} color={objectColor(a.object)}>
-                          <ObjectIcon name={a.object} size={12} />
-                          {objectByName(schema, a.object)?.labelSingular ?? a.object}
-                        </IdentityTag>
+                    <ReviewCardHeader
+                      leading={
+                        canWrite ? (
+                          <ReviewSelect>
+                            <Input
+                              type="checkbox"
+                              aria-label={`Select ${a.recordLabel ?? a.recordId} ${a.field}`}
+                              checked={selected.includes(a.id)}
+                              onChange={(e) =>
+                                setSelected((ids) =>
+                                  e.target.checked
+                                    ? [...ids, a.id]
+                                    : ids.filter((id) => id !== a.id),
+                                )
+                              }
+                            />
+                          </ReviewSelect>
+                        ) : null
+                      }
+                      title={
                         <RecordLink
                           id={a.recordId}
+                          wrap
                           avatar={
                             <RecordAvatar
                               id={a.recordId}
@@ -401,8 +439,23 @@ export function ReviewPage() {
                         >
                           {recordTitle({ label: a.recordLabel })}
                         </RecordLink>
-                        <Muted>{field?.label ?? a.field}</Muted>
-                      </Row>
+                      }
+                      meta={
+                        <>
+                          <IdentityTag identity={a.object} color={objectColor(a.object)}>
+                            <ObjectIcon name={a.object} size={12} />
+                            {object?.labelSingular ?? a.object}
+                          </IdentityTag>
+                          <MetaStrong>{field?.label ?? a.field}</MetaStrong>
+                          <MetaDot />
+                          <ActorBadge actor={a.actor} />
+                          <span>{Math.round(a.confidence * 100)}% confident</span>
+                          <MetaDot />
+                          <RelativeTime at={a.observedAt} />
+                        </>
+                      }
+                    />
+                    <ReviewCardBody>
                       {Display && field ? (
                         <ReviewComparison
                           current={
@@ -423,40 +476,43 @@ export function ReviewPage() {
                       ) : (
                         <Muted>Field is no longer available</Muted>
                       )}
-                      {a.reason ? <Muted>{reasonText[a.reason]}</Muted> : null}
-                      <ReviewDetails>
-                        <ActorBadge actor={a.actor} />
-                        <Muted>
-                          {Math.round(a.confidence * 100)}% confidence ·{' '}
-                          {new Date(a.observedAt).toLocaleString()}
-                        </Muted>
-                      </ReviewDetails>
-                      {a.conflictingRecord ? (
-                        <RecordLink id={a.conflictingRecord.id}>
-                          Conflicts with {a.conflictingRecord.label || a.conflictingRecord.id}
-                        </RecordLink>
+                      {a.reason || conflict ? (
+                        <ReviewNote icon={Info}>
+                          {a.reason ? reasonText[a.reason] : 'Conflicts with another record'}
+                          {conflict ? (
+                            <>
+                              {': '}
+                              <RecordLink id={conflict.id} wrap>
+                                {conflict.label || conflict.id}
+                              </RecordLink>
+                            </>
+                          ) : null}
+                        </ReviewNote>
                       ) : null}
                       {a.source ? (
-                        <EventLink id={a.source.id}>
-                          {eventTitle(a.source)} ·{' '}
-                          {new Date(a.source.occurredAt).toLocaleDateString()}
-                        </EventLink>
+                        <ReviewNote icon={MessageSquareText}>
+                          From{' '}
+                          <EventLink id={a.source.id}>
+                            {eventTitle(a.source)} ·{' '}
+                            {new Date(a.source.occurredAt).toLocaleDateString()}
+                          </EventLink>
+                        </ReviewNote>
                       ) : null}
-                      {canWrite ? (
-                        <ReviewActions>
-                          <Button
-                            variant="primary"
-                            disabled={busy}
-                            onClick={() => void decide([a.id], 'accept')}
-                          >
-                            Accept
-                          </Button>
-                          <Button disabled={busy} onClick={() => void decide([a.id], 'reject')}>
-                            Reject
-                          </Button>
-                        </ReviewActions>
-                      ) : null}
-                    </Stack>
+                    </ReviewCardBody>
+                    {canWrite ? (
+                      <ReviewCardFooter>
+                        <Button disabled={busy} onClick={() => void decide([a.id], 'reject')}>
+                          Reject
+                        </Button>
+                        <Button
+                          variant="primary"
+                          disabled={busy}
+                          onClick={() => void decide([a.id], 'accept')}
+                        >
+                          Accept
+                        </Button>
+                      </ReviewCardFooter>
+                    ) : null}
                   </ReviewCard>
                 </div>
               );
@@ -505,16 +561,32 @@ export function ReviewPage() {
           <Stack>
             {review.data?.unresolvedParticipants.map((p) => (
               <ReviewCard key={`${p.eventId}:${p.position}`}>
-                <Stack>
-                  <ReviewDetails>
-                    <Badge tone="pending">Deleted record</Badge>
-                    <span>{p.handle || 'Participant without a saved name'}</span>
-                  </ReviewDetails>
-                  <Muted>We couldn’t link this participant to an active record.</Muted>
-                  <EventLink id={p.eventId}>
-                    Open activity: {eventTitle(p)} · {new Date(p.occurredAt).toLocaleDateString()}
-                  </EventLink>
-                </Stack>
+                <ReviewCardHeader
+                  leading={<ReviewIcon icon={UserRoundX} />}
+                  title={p.handle || 'Participant without a saved name'}
+                  meta={
+                    <>
+                      {p.role ? (
+                        <>
+                          <span>{p.role}</span>
+                          <MetaDot />
+                        </>
+                      ) : null}
+                      <span>
+                        In an activity <RelativeTime at={p.occurredAt} />
+                      </span>
+                    </>
+                  }
+                  status={<Badge tone="pending">Deleted record</Badge>}
+                />
+                <ReviewCardBody>
+                  <ReviewText>We couldn’t link this participant to an active record.</ReviewText>
+                  <ReviewNote icon={MessageSquareText}>
+                    <EventLink id={p.eventId}>
+                      Open activity: {eventTitle(p)} · {new Date(p.occurredAt).toLocaleDateString()}
+                    </EventLink>
+                  </ReviewNote>
+                </ReviewCardBody>
               </ReviewCard>
             ))}
             {review.data && !review.data.unresolvedParticipants.length ? (

@@ -580,10 +580,91 @@ export type DeleteRecordResult = Partial<EventRetraction> & {
   deleted: true;
   deletedRecordIds: string[];
 };
+/** A new object in a schema change's diff, with its label field by API name. */
+export type SchemaDiffObject = {
+  universalId: string;
+  nameSingular: string;
+  namePlural: string;
+  labelSingular: string;
+  labelPlural: string;
+  description: string | null;
+  labelField: string | null;
+  isProtected: boolean;
+  class: ObjectClass;
+  owner: SchemaOwner;
+};
+/** A new field in a schema change's diff, with relation settings by API name. */
+export type SchemaDiffField = {
+  universalId: string;
+  name: string;
+  label: string;
+  description: string | null;
+  type: FieldType;
+  settings: FieldSettings;
+  isNullable: boolean;
+  isUnique: boolean;
+  isFilterable: boolean;
+  isSearchable: boolean;
+  isProtected: boolean;
+  coreRole: CoreRole | null;
+  owner: SchemaOwner;
+};
+type DiffFieldRef = { objectId: string; object: string; fieldId: string; field: string };
+/**
+ * One step of what a schema change does, as the engine computed it: the net
+ * difference between the schema before and after, with objects and fields
+ * matched by universal ID (`objectId`, `fieldId`), so a rename is a rename.
+ * `object` and `field` are API names after the change; `from` is the value
+ * before it and `to` the value after.
+ */
+export type SchemaDiffOperation =
+  | { kind: 'create_object'; object: SchemaDiffObject }
+  | {
+      kind: 'update_object';
+      objectId: string;
+      object: string;
+      property: 'labelSingular' | 'labelPlural' | 'description' | 'labelField';
+      from: string | null;
+      to: string | null;
+    }
+  | {
+      kind: 'rename_object';
+      objectId: string;
+      from: { nameSingular: string; namePlural: string };
+      to: { nameSingular: string; namePlural: string };
+    }
+  | { kind: 'deprecate_object' | 'protect_object'; objectId: string; object: string }
+  | { kind: 'create_field'; objectId: string; object: string; field: SchemaDiffField }
+  | (DiffFieldRef & {
+      kind: 'update_field';
+      property:
+        | 'label'
+        | 'description'
+        | 'isNullable'
+        | 'isUnique'
+        | 'isFilterable'
+        | 'isSearchable'
+        | 'rollUpEvents';
+      from: string | boolean | null;
+      to: string | boolean | null;
+    })
+  | {
+      kind: 'rename_field';
+      objectId: string;
+      object: string;
+      fieldId: string;
+      from: string;
+      to: string;
+    }
+  | (DiffFieldRef & { kind: 'deprecate_field' | 'protect_field' })
+  | (DiffFieldRef & { kind: 'add_option'; option: SelectOption })
+  | (DiffFieldRef & { kind: 'update_option'; value: string; from: string; to: string })
+  | (DiffFieldRef & { kind: 'remove_option'; value: string });
 export type SchemaChange = {
   id: string;
   status: SchemaChangeStatus;
-  operations: { kind: string; [key: string]: unknown }[];
+  /** What the change does, as the engine computed it when it was proposed or applied. */
+  operations: SchemaDiffOperation[];
   request: SchemaOperation[];
   isDestructive: boolean;
   reason: string | null;

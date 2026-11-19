@@ -132,6 +132,32 @@ export function EntryTime({ at, label }: { at: string; label?: string }) {
   );
 }
 
+const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ['year', 31_536_000],
+  ['month', 2_592_000],
+  ['week', 604_800],
+  ['day', 86_400],
+  ['hour', 3_600],
+  ['minute', 60],
+];
+const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+/** "3 minutes ago", "yesterday", "last month". */
+export function relativeTime(iso: string, now = Date.now()) {
+  const seconds = Math.round((new Date(iso).getTime() - now) / 1000);
+  for (const [unit, size] of UNITS)
+    if (Math.abs(seconds) >= size) return relative.format(Math.round(seconds / size), unit);
+  return 'just now';
+}
+const full = new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium' });
+/** A moment as relative time ("2 hours ago"), with the full date and time on hover. */
+export function RelativeTime({ at }: { at: string }) {
+  return (
+    <time dateTime={at} title={full.format(new Date(at))}>
+      {relativeTime(at)}
+    </time>
+  );
+}
+
 /** A day's heading in a list that runs by day. */
 export function EntryDay({ children }: { children: ReactNode }) {
   return <h4 className="pt-2 text-xs font-medium text-muted-foreground">{children}</h4>;

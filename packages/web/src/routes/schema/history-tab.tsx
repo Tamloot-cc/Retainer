@@ -15,6 +15,7 @@ import {
   Muted,
   Notice,
   Panel,
+  RelativeTime,
   Row,
   SelectMenu,
   Stack,
@@ -23,7 +24,7 @@ import {
   type Tone,
 } from '../../ui/index.js';
 import { QueryError, useView } from '../state.js';
-import { describeOperation, parseStatus, relativeTime, useSchemaChanges } from './schema-model.js';
+import { describeOperation, parseStatus, useSchemaChanges } from './schema-model.js';
 
 const STATUS: Record<SchemaChangeStatus, { label: string; icon: LucideIcon; tone: Tone }> = {
   applied: { label: 'Applied', icon: CircleCheck, tone: 'success' },
@@ -114,9 +115,7 @@ function ChangeItem({ change, canDecide }: { change: SchemaChange; canDecide: bo
         {change.appliedVersion ? <Muted>v{change.appliedVersion}</Muted> : null}
         {change.isDestructive ? <Badge>Destructive</Badge> : null}
         <Muted>
-          <time dateTime={change.createdAt} title={new Date(change.createdAt).toLocaleString()}>
-            {relativeTime(change.createdAt)}
-          </time>
+          <RelativeTime at={change.createdAt} />
         </Muted>
       </Row>
       {change.request.map((op, i) => (

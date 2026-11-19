@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  ChangeLine,
   REVIEW_CATEGORIES,
   ReviewCategories,
   ReviewComparison,
@@ -39,5 +40,16 @@ describe('Review inbox explanations', () => {
     rerender(<ReviewIntroduction category="unresolvedParticipants" readOnly={false} />);
     expect(screen.getByText(/Open the related activity/)).toBeTruthy();
     expect(screen.queryByText(/can act on them/)).toBeNull();
+  });
+  it('reads a structure change as was and now, inline when short and stacked when long', () => {
+    const { container, rerender } = render(
+      <ChangeLine label="Name" before="Engagement" after="Project" />,
+    );
+    expect(container.textContent).toBe('Namewas Engagementnow Project');
+    expect(container.querySelector('svg')).toBeTruthy();
+    rerender(<ChangeLine label="Description" before={'x'.repeat(60)} after="Short" />);
+    expect(container.querySelector('svg')).toBeNull();
+    rerender(<ChangeLine label="New option" after="Done" />);
+    expect(container.textContent).toBe('New optionDone');
   });
 });

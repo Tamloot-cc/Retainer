@@ -220,6 +220,12 @@ approving a type/field change, comparing duplicates and checking a conversation
 are different decisions with different permissions. A combined feed would
 hide these distinctions.
 
+Every item is one card with the same parts: a header (an icon or the
+selection checkbox, a title, who or what it came from and when, as relative
+time with the full date on hover, and a status badge), a body (what would
+change and why), and, for people who can act, a footer holding the actions,
+with the primary one last.
+
 The inbox uses the same readable scrolling layout as Home. Current and
 proposed values have explicit labels, placed side by side on larger screens
 and stacked on phones. Actions have touch-sized targets; long values and
@@ -272,9 +278,19 @@ Categories (existing `tab` URL values remain compatible):
    keep failed pending items selected, and retry only failures. Never replay
    successful decisions automatically.
 
-2. **Structure changes** (`schema`). Changes to record types and fields. Proposed changes with their operations listed in
-   words ("Add field _Renewal date_ (date) to _Company_"), the proposing
-   actor and time. Approve and Reject for `admin` keys
+2. **Structure changes** (`schema`). Changes to record types and fields. Each proposed change is
+   titled with what it does ("Rename Engagement to Project", "Add Renewal
+   date to Company"), with the proposing actor, time and number of
+   operations. The agent's reason is quoted under "Why", and a change the
+   schema engine marks destructive carries a warning. The card is built
+   from the engine's diff (`operations`), not by replaying the request, so
+   it shows the change's net effect: objects and fields are matched by
+   universal ID, grouped by object and then by field, each marked New,
+   Edited or Deleted, and every property shows its value before the change
+   struck through beside the one after ("Name: ~~Engagement~~ → Project";
+   API names in monospace). A new field lists its API name, whether it is
+   required, unique, filterable and searchable, and its settings (options,
+   what a relation links to). Approve and Reject for `admin` keys
    (`POST /v1/schema/changes/:id/approve` · `/reject`). Approving refreshes
    the cached schema (6.3). An approval that no longer validates shows the
    engine's reason and links the records in the way (`recordIds`), such as

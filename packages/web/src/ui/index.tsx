@@ -2,7 +2,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Slot } from '@radix-ui/react-slot';
 import { Link, type LinkProps } from '@tanstack/react-router';
 import { cva } from 'class-variance-authority';
-import { ArrowUpRight, ChevronRight, Inbox, Info, Menu, X } from 'lucide-react';
+import { ArrowUpRight, ChevronRight, Inbox, Info, Menu, TriangleAlert, X } from 'lucide-react';
 import {
   type ComponentProps,
   type CSSProperties,
@@ -216,10 +216,13 @@ export function BadgedButton({
 export function Notice({
   children,
   error = false,
+  warning = false,
   onDismiss,
 }: {
   children: ReactNode;
   error?: boolean;
+  /** A caution before acting, such as a change that alters existing data. */
+  warning?: boolean;
   onDismiss?: () => void;
 }) {
   return (
@@ -229,9 +232,12 @@ export function Notice({
         'flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm',
         error
           ? 'border-destructive/30 text-destructive'
-          : 'border-border bg-muted/40 text-muted-foreground',
+          : warning
+            ? 'border-amber-300/50 bg-amber-50 text-amber-800 dark:border-amber-300/20 dark:bg-amber-300/10 dark:text-amber-200'
+            : 'border-border bg-muted/40 text-muted-foreground',
       )}
     >
+      {warning ? <TriangleAlert size={15} aria-hidden className="mt-0.5 shrink-0" /> : null}
       <div className="min-w-0 flex-1">{children}</div>
       {onDismiss ? (
         <button
@@ -868,6 +874,8 @@ export {
   EntryText,
   EntryTime,
   LoadMore,
+  RelativeTime,
+  relativeTime,
   TabPanel,
   useTabAnchor,
 } from './entry.js';

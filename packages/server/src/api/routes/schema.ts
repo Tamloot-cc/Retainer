@@ -11,6 +11,7 @@ import type { AppEnv } from '../../http/response.js';
 import {
   decideSchemaChange,
   getSchemaChange,
+  getSchemaChanges,
   type SchemaChangeResult,
 } from '../../schema-engine/engine.js';
 import {
@@ -62,8 +63,10 @@ export function schemaRoutes(app: Hono<AppEnv>, sql: Sql) {
           { count: number }[]
         >`select count(*)::int as count from schema_changes where ${where}`;
         return {
-          changes: await Promise.all(
-            result.items.map((r) => getSchemaChange(tx, workspaceId, r.id)),
+          changes: await getSchemaChanges(
+            tx,
+            workspaceId,
+            result.items.map((r) => r.id),
           ),
           total: total?.count ?? 0,
           nextCursor: result.nextCursor,

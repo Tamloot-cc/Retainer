@@ -225,6 +225,112 @@ describe('POST /v1/schema/changes', () => {
     expect(fetched.body).toMatchObject({ id: res.body.change.id, status: 'proposed' });
   });
 
+  it('shows what approving a proposal would do now, by name', async () => {
+    const proposed = await t.request('/v1/schema/changes', {
+      key: keys.agent,
+      body: {
+        operations: [
+          { op: 'update_field', object: 'company', field: 'name', label: 'Legal name' },
+          { op: 'update_field', object: 'company', field: 'name', isUnique: true },
+        ],
+      },
+    });
+    expect(proposed.status).toBe(202);
+    const id = proposed.body.change.id as string;
+    const label = (body: { operations: { property?: string }[] }) =>
+      body.operations.find((op) => op.property === 'label');
+    expect(label(proposed.body.change)).toMatchObject({ from: 'Name', to: 'Legal name' });
+
+    // The schema moves on before anyone decides; approval re-plans against it.
+    const relabel = await t.request('/v1/schema/changes', {
+      key: keys.agent,
+      body: {
+        operations: [{ op: 'update_field', object: 'company', field: 'name', label: 'Title' }],
+      },
+    });
+    expect(relabel.body.status).toBe('applied');
+
+    const fetched = await t.request(`/v1/schema/changes/${id}`, { key: keys.reader });
+    expect(label(fetched.body)).toMatchObject({ from: 'Title', to: 'Legal name' });
+    const listed = await t.request('/v1/schema/changes?status=proposed', { key: keys.reader });
+    const inList = listed.body.changes.find((c: { id: string }) => c.id === id);
+    expect(label(inList)).toMatchObject({ from: 'Title', to: 'Legal name' });
+    // Universal IDs stay inside the engine.
+    expect(JSON.stringify(listed.body)).not.toMatch(/labelFieldId|targetObjectId|inverseFieldId/);
+  });
+
+  it('shows no operations for a proposal the schema already matches', async () => {
+    const made = await t.request('/v1/schema/changes', {
+      key: keys.agent,
+      body: {
+        operations: [
+          {
+            op: 'create_field',
+            object: 'person',
+            field: { name: 'badge', label: 'Badge', type: 'text' },
+          },
+        ],
+      },
+    });
+    expect(made.body.status).toBe('applied');
+    const proposed = await t.request('/v1/schema/changes', {
+      key: keys.agent,
+      body: {
+        operations: [{ op: 'update_field', object: 'person', field: 'badge', isUnique: true }],
+      },
+    });
+    expect(proposed.status).toBe(202);
+    const applied = await t.request('/v1/schema/changes', {
+      key: keys.admin,
+      body: {
+        operations: [{ op: 'update_field', object: 'person', field: 'badge', isUnique: true }],
+      },
+    });
+    expect(applied.body.status).toBe('applied');
+    const fetched = await t.request(`/v1/schema/changes/${proposed.body.change.id}`, {
+      key: keys.reader,
+    });
+    expect(fetched.body).toMatchObject({ status: 'proposed', operations: [] });
+  });
+
+  it('stops calling a proposal destructive once another change made that part', async () => {
+    await t.request('/v1/schema/changes', {
+      key: keys.agent,
+      body: {
+        operations: [
+          {
+            op: 'create_field',
+            object: 'person',
+            field: { name: 'pin', label: 'Pin', type: 'text' },
+          },
+        ],
+      },
+    });
+    const proposed = await t.request('/v1/schema/changes', {
+      key: keys.agent,
+      body: {
+        operations: [
+          { op: 'update_field', object: 'person', field: 'pin', label: 'PIN' },
+          { op: 'update_field', object: 'person', field: 'pin', isUnique: true },
+        ],
+      },
+    });
+    expect(proposed.body.change.isDestructive).toBe(true);
+    await t.request('/v1/schema/changes', {
+      key: keys.admin,
+      body: {
+        operations: [{ op: 'update_field', object: 'person', field: 'pin', isUnique: true }],
+      },
+    });
+    const fetched = await t.request(`/v1/schema/changes/${proposed.body.change.id}`, {
+      key: keys.reader,
+    });
+    expect(fetched.body).toMatchObject({
+      isDestructive: false,
+      operations: [expect.objectContaining({ property: 'label', to: 'PIN' })],
+    });
+  });
+
   it('applies destructive changes from a user admin directly', async () => {
     const res = await t.request('/v1/schema/changes', {
       key: keys.admin,

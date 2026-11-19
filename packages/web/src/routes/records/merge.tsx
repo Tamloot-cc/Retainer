@@ -1,5 +1,6 @@
-import type { MergeSuggestion, PresentedRecord } from '@retainer/shared';
+import type { MergeSuggestion, PresentedRecord, RecordReference } from '@retainer/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Copy } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import { fields } from '../../fields/index.js';
@@ -10,12 +11,21 @@ import {
   Input,
   Muted,
   Notice,
+  RecordAvatar,
   RecordLink,
+  RelativeTime,
   Row,
   SelectMenu,
   Stack,
 } from '../../ui/index.js';
-import { ReviewActions, ReviewCard } from '../../ui/review.js';
+import {
+  ReviewCard,
+  ReviewCardBody,
+  ReviewCardFooter,
+  ReviewCardHeader,
+  ReviewIcon,
+  ReviewPair,
+} from '../../ui/review.js';
 import {
   objectByName,
   QueryError,
@@ -215,46 +225,58 @@ export function MergeDialog({
   );
 }
 
+function SuggestedRecord({ record }: { record: RecordReference | undefined }) {
+  return record ? (
+    <RecordLink
+      id={record.id}
+      wrap
+      avatar={<RecordAvatar id={record.id} name={title(record)} object={record.object} />}
+    >
+      {title(record)}
+    </RecordLink>
+  ) : (
+    <Muted>Record unavailable</Muted>
+  );
+}
+
 /** One suggested pair in the review inbox. */
 export function MergeSuggestionCard({ suggestion }: { suggestion: MergeSuggestion }) {
   const { session, schema } = useWorkspace();
   const [open, setOpen] = useState(false);
   const records = suggestion.recordIds.map((id) => suggestion.records.find((r) => r.id === id));
   const object = objectByName(schema, records[0]?.object);
+  const heading = object
+    ? `Possibly the same ${object.labelSingular.toLowerCase()}`
+    : 'Possibly the same record';
   return (
     <ReviewCard>
-      <Stack>
-        <Row>
-          <Badge tone="pending">{suggestion.reason}</Badge>
-          {object ? <Badge>{object.labelSingular}</Badge> : null}
-          <Muted>Suggested {new Date(suggestion.createdAt).toLocaleString()}</Muted>
-        </Row>
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-          {records.map((r, i) => (
-            <div key={r?.id ?? i} className="min-w-0 space-y-2 rounded-lg bg-muted/50 p-3">
-              <p className="text-xs text-muted-foreground">Record {i + 1}</p>
-              {r ? (
-                <RecordLink id={r.id} wrap>
-                  {title(r)}
-                </RecordLink>
-              ) : (
-                <Muted>Record unavailable</Muted>
-              )}
-            </div>
-          ))}
-        </div>
-        {canMutate(session) ? (
-          <ReviewActions>
-            <Button
-              variant="primary"
-              aria-label={`Compare and merge ${records.map((r) => (r ? title(r) : 'unavailable record')).join(' and ')}`}
-              onClick={() => setOpen(true)}
-            >
-              Compare and merge
-            </Button>
-          </ReviewActions>
-        ) : null}
-      </Stack>
+      <ReviewCardHeader
+        leading={<ReviewIcon icon={Copy} />}
+        title={heading}
+        meta={
+          <span>
+            Suggested <RelativeTime at={suggestion.createdAt} />
+          </span>
+        }
+        status={<Badge tone="pending">{suggestion.reason}</Badge>}
+      />
+      <ReviewCardBody>
+        <ReviewPair
+          left={<SuggestedRecord record={records[0]} />}
+          right={<SuggestedRecord record={records[1]} />}
+        />
+      </ReviewCardBody>
+      {canMutate(session) ? (
+        <ReviewCardFooter>
+          <Button
+            variant="primary"
+            aria-label={`Compare and merge ${records.map((r) => (r ? title(r) : 'unavailable record')).join(' and ')}`}
+            onClick={() => setOpen(true)}
+          >
+            Compare and merge
+          </Button>
+        </ReviewCardFooter>
+      ) : null}
       {open ? (
         <MergeDialog
           ids={suggestion.recordIds}
