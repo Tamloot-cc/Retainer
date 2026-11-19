@@ -489,7 +489,7 @@ Three ways the code can run, and what the server enforces in each:
 | Mode     | Who starts it                                                                   | Writes              | Tools                                                                                               | Model calls                       |
 | -------- | ------------------------------------------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------- |
 | Dry run  | The person building the routine, or their agent, with that person's read access | Reported, not made  | Reported, not called. That record's dry run ends there                                              | Made, and counted against the cap |
-| Test run | An admin, on one record                                                         | Made, at agent rank | `read` and `write` tools are called. A `send` tool is reported, not called, and the test ends there | Made                              |
+| Test run | An admin, on one record                                                         | Made, at agent rank | Tools declared as `read` or `write` are called. A tool declared as `send` is reported, not called, and the test ends there | Made |
 | Run      | The approved routine                                                            | Made, at agent rank | Called                                                                                              | Made                              |
 
 - A dry run needs no approval because it changes nothing. One thing leaves
@@ -618,13 +618,17 @@ history are how a person catches that.
   also avoids reading from a cursor older than the feed keeps, which is 30
   days (`db/change-cursor.ts`).
 - **Test run.** Before approving, an admin can test the routine on one record
-  they choose. Everything runs for real except `send` tools: Retainer does
-  not call them, reports the call, and the test ends there (§5.1). The run is
-  marked as a test in the history.
+  they choose. Retainer validates the proposal and issues a token for this
+  test run, limited to the tools listed in that proposal. When the code
+  calls a tool declared as `send`, Retainer reports the call and ends the
+  test before queueing the tool (§5.1). The run is marked as a test in the
+  history.
   - Its writes are real, at agent rank like any run. They enter the change
-    feed, so other routines and extensions react to them, and some of those
-    may send. The confirmation says exactly that before the admin starts it:
-    the test's own sends are held back, sends it causes elsewhere are not.
+    feed, so other routines and extensions can react and send. Before the
+    admin starts the test, the confirmation explains that Retainer blocks
+    tools declared as `send`, other tools run with their extension's access,
+    and test writes can cause other automations to send
+    (`extensions-tools.md` §4).
 
 ## 6. Running a routine
 
@@ -714,8 +718,10 @@ sequenceDiagram
   whether it arrived. Whether the outside action repeats then depends on the
   tool honouring the key (§8). A repeated model call costs money and
   changes nothing.
-- **Checked before each effect:** the routine is still active (§5.3) and the
-  run has not expired (§4.2). Past its expiry the run ends as `expired`.
+- **Checked before each effect:** the run has not expired (§4.2). In a
+  normal run, Retainer checks that the routine is still active (§5.3). In a
+  test run, it checks that the initiating person is still a workspace admin.
+  Past its expiry the run ends as `expired`.
 - A run that fails for good ends as `failed`. What it already did is not
   undone, and the history shows each call it made.
 - After repeated failed runs the routine pauses and is marked "needs
@@ -957,19 +963,20 @@ What a routine adds when it calls a tool:
 
 - **Approval.** Approving a routine shows the tools its manifest lists, and
   the run token can call no others. The version records each listed tool's
-  contract, and a change to it pauses the routine (§5.3).
+  contract, and a change to it pauses the routine (§5.3). A test run uses its
+  validated proposal's tool list (§5.3).
 - **Whose account.** A standing routine uses `workspace` connections only. A
   `member` tool runs only in a manual run, acting as the person who pressed
   the button (`extensions-tools.md` §4).
 - **A deadline, no retry.** The call gets a deadline that fits in the run's
   remaining time and is not retried by the queue: a failure goes back to the
   code as an error, and the code decides what to do. When the tool job
-  starts, Retainer checks again that the routine is still active.
+  starts, Retainer repeats the authorization and expiry checks (§6.2).
 - **The effect key.** Every call carries its effect key (§6.2), and a `send`
   tool must use it to avoid sending twice.
-- **Dry runs and test runs.** In a dry run no tool is called. In a test run
-  a `send` tool is not called. Retainer reports the call and that run ends
-  there (§5.1).
+- **Dry runs and test runs.** In a dry run no tool is called. In a test run,
+  a call to a tool declared as `send` is reported and ends the run before
+  the tool is queued (§5.1).
 - **Cause.** The call carries the routine's cause chain, so a tool's writes
   cannot trigger the routine that called it (§6.5).
 
@@ -1245,6 +1252,10 @@ each against real Postgres:
 - **A tool's contract changes.** A tool the routine lists changes from
   `read` to `send` with the same inputs. The routine pauses before its next
   run.
+- **A test before approval.** An admin starts a test for a validated,
+  unapproved proposal. A listed `write` tool runs, an unlisted tool is
+  refused, and a listed tool declared as `send` ends the test without
+  queueing a tool job.
 - **A pause mid-run.** A routine is paused while a run is between two
   writes. The second write is refused and the run ends as `stopped`.
 - **A new version.** Approving a new version discards the runs not yet
@@ -1308,7 +1319,7 @@ owner changes it.
 | May a routine send after asking a model?                         | Yes, with no extra safeguard in the first version                                                                                                                                    | The product owner's decision: partial rules would cover only part of the risk. It is studied properly for the second version (§6.3, §10)                                |
 | Can a standing routine use a member's account?                   | No. A member tool runs only in a manual run, as the person who pressed the button                                                                                                    | Each member's connection is theirs alone; an admin cannot lend it out                                                                                                   |
 | Who may approve a routine?                                       | Workspace admins only                                                                                                                                                                | A routine acts across the whole workspace                                                                                                                               |
-| Is there a test run before going live?                           | Yes, optional, on one chosen record, by an admin. Retainer does not call `send` tools, and the test ends there                                                                       | The dry run shows what the code tries. A test shows the real result; its writes are real and can make other automations send                                            |
+| Is there a test run before going live?                           | Yes, optional, on one chosen record, by an admin. A call to a tool declared as `send` ends the test before the tool is queued                                                         | The test makes real writes that can cause other automations to send, and tools that run keep their extension's access (§5.3)                                            |
 
 Decided by the product owner on 2026-11-19:
 

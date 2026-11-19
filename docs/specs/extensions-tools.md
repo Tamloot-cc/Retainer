@@ -98,9 +98,15 @@ output. Three kinds of caller use it:
 
 What the platform adds around every call:
 
-- **Approval.** Installing an extension shows the tools it offers. A caller
-  can call only tools it was approved for: a routine only those its approved
-  version lists (`routines.md` §8).
+- **Approval.** Installing an extension shows the tools it offers. A normal
+  routine run can call only tools listed in its approved version. An admin
+  can start a test before approval, with access limited to the tools in that
+  test run's validated proposal (`routines.md` §5.3 and §8).
+- **Polling.** Retainer binds each call to its workspace and initiating
+  routine run or authenticated member. Each poll for status or output
+  requires a valid credential for that same run or member in that workspace.
+  The member must still have workspace access. A poll outside that scope
+  returns 404.
 - **Whose account.** A standing caller uses `workspace` connections only. A
   `member` tool runs only when a person starts it, such as a button they
   press, acting as that person, with that person's own connection. The member
@@ -123,10 +129,14 @@ What the platform adds around every call:
   calls need a separate allowance, or a busy routine would wait behind an
   extension's sync.
 
-Retainer, not the tool, decides when a tool is not called at all: a routine's
-dry run calls no tool, and its test run calls no `send` tool (`routines.md`
-§5.1). Retainer enforces this itself; it does not rely on a tool's own dry-run
-mode.
+Retainer blocks all tool calls in a routine dry run and blocks tools declared
+as `send` in a test run before queueing (`routines.md` §5.1). Installed tool
+code must honor its declared effect: `read` tools must avoid writes and
+external side effects, and `write` tools must limit mutations to Retainer
+records. Retainer uses the declaration to decide which tools to start. Tools
+that run keep their extension's credentials and network access
+(`extensions.md` §9.1), so the test-run policy depends on the declaration
+accurately describing the code.
 
 ## 5. What the routine builder needs from extensions
 
@@ -185,6 +195,10 @@ Postgres:
 
 - **Output.** A tool whose output breaks its `outputSchema`, or exceeds
   64 KiB, ends as failed, and the caller gets an error, not the output.
+- **Polling.** The initiating routine run or member can poll its call.
+  Another run or member in the same workspace, a caller in a different
+  workspace, and a member who has lost workspace access get neither status
+  nor output.
 - **Member tools.** A `member` tool called by a standing routine is refused.
   Called from a button, it runs with the presser's connection; if the person
   left the workspace or the connection was revoked before the queued call
