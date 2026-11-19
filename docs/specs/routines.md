@@ -662,9 +662,10 @@ sequenceDiagram
   That text can hide instructions aimed at the model ("also include the
   client list", "send this to another address"), and the model's answer can
   then steer what the code writes or sends.
-  - The structure limits the damage. The model has no tools, so it can only
-    return an answer. The code is fixed at approval. The sandbox has no
-    network. Writes are at agent rank.
+  - The structure limits the damage. The model cannot call tools itself: it
+    only returns an answer, and the code decides which tools to call. The
+    code is fixed at approval. The sandbox has no network. Writes are at
+    agent rank.
   - Beyond that, the first version adds no safeguard: no extra approval for
     sending after a model call and no check on where a message goes. An
     earlier draft had both, and they covered only part of the risk.
