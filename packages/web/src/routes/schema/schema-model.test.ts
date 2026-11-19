@@ -530,6 +530,11 @@ describe('groupSchemaChange', () => {
     );
     const deal = groups.find((g) => g.object === 'deal');
     expect(deal?.kind).toBe('added');
+    expect(deal?.details).toContainEqual({
+      label: 'API name',
+      after: 'deal / deals',
+      code: true,
+    });
     expect(deal?.fields.map((f) => [f.label, f.kind, f.details])).toEqual([
       [
         'Amount',

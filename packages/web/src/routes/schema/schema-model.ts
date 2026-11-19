@@ -527,7 +527,7 @@ export function groupSchemaChange(request: SchemaOperation[], objects: ObjectVie
         g.details.push(
           { label: 'Name', after: def.labelSingular },
           { label: 'Plural name', after: def.labelPlural },
-          { label: 'API name', after: def.nameSingular, code: true },
+          { label: 'API name', after: `${def.nameSingular} / ${def.namePlural}`, code: true },
         );
         if (def.description) g.details.push({ label: 'Description', after: def.description });
         for (const field of def.fields ?? []) added(def.nameSingular, field);
