@@ -531,8 +531,15 @@ describe('groupSchemaChange', () => {
     const deal = groups.find((g) => g.object === 'deal');
     expect(deal?.kind).toBe('added');
     expect(deal?.fields.map((f) => [f.label, f.kind, f.details])).toEqual([
-      ['Amount', 'added', [{ label: 'Required', after: 'Yes' }]],
-      ['Stage', 'added', []],
+      [
+        'Amount',
+        'added',
+        [
+          { label: 'API name', after: 'amount', code: true },
+          { label: 'Required', after: 'Yes' },
+        ],
+      ],
+      ['Stage', 'added', [{ label: 'API name', after: 'stage', code: true }]],
     ]);
     const status = groups.find((g) => g.object === 'task')?.fields[0];
     expect(status?.details).toEqual([
@@ -560,7 +567,15 @@ describe('groupSchemaChange', () => {
     );
     expect(replaced[0]?.fields.map((f) => [f.label, f.type, f.kind, f.details])).toEqual([
       ['Status', 'Single select', 'removed', []],
-      ['Status', 'Text', 'added', [{ label: 'Unique', before: undefined, after: 'Yes' }]],
+      [
+        'Status',
+        'Text',
+        'added',
+        [
+          { label: 'API name', after: 'status', code: true },
+          { label: 'Unique', after: 'Yes' },
+        ],
+      ],
     ]);
     const moved = groupSchemaChange(
       [
@@ -623,12 +638,53 @@ describe('groupSchemaChange', () => {
       schema,
     );
     expect(groups[0]?.fields.map((f) => f.details)).toEqual([
-      [{ label: 'Options', after: 'High, Low' }],
       [
+        { label: 'API name', after: 'priority', code: true },
+        { label: 'Options', after: 'High, Low' },
+      ],
+      [
+        { label: 'API name', after: 'project', code: true },
         { label: 'Links to', after: 'One Engagement' },
         { label: 'If target is deleted', after: 'Delete this record too' },
       ],
     ]);
+  });
+
+  it("shows each step from the value the request left, and a new object's label field", () => {
+    const groups = groupSchemaChange(
+      [
+        { op: 'update_field', object: 'task', field: 'status', label: 'Stage' },
+        { op: 'update_field', object: 'task', field: 'status', label: 'Phase' },
+        { op: 'update_option', object: 'task', field: 'status', value: 'todo', label: 'Open' },
+        { op: 'remove_option', object: 'task', field: 'status', value: 'todo' },
+        {
+          op: 'create_object',
+          object: {
+            nameSingular: 'deal',
+            namePlural: 'deals',
+            labelSingular: 'Deal',
+            labelPlural: 'Deals',
+            labelField: 'title',
+            fields: [{ name: 'title', label: 'Deal name', type: 'text' }],
+          },
+        },
+        { op: 'update_field', object: 'deal', field: 'title', label: 'Title' },
+      ],
+      schema,
+    );
+    expect(groups[0]?.fields[0]?.details).toEqual([
+      { label: 'Label', before: 'Status', after: 'Stage' },
+      { label: 'Label', before: 'Stage', after: 'Phase' },
+      { label: 'Option', before: 'To do', after: 'Open' },
+      { label: 'Removed option', before: 'Open' },
+    ]);
+    const deal = groups[1];
+    expect(deal?.details).toContainEqual({ label: 'Label field', after: 'Deal name' });
+    expect(deal?.fields[0]?.details).toContainEqual({
+      label: 'Label',
+      before: 'Deal name',
+      after: 'Title',
+    });
   });
 
   it('names a field-only change after its field, and caps a long headline', () => {
