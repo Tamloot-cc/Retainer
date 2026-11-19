@@ -293,6 +293,44 @@ describe('POST /v1/schema/changes', () => {
     expect(fetched.body).toMatchObject({ status: 'proposed', operations: [] });
   });
 
+  it('stops calling a proposal destructive once another change made that part', async () => {
+    await t.request('/v1/schema/changes', {
+      key: keys.agent,
+      body: {
+        operations: [
+          {
+            op: 'create_field',
+            object: 'person',
+            field: { name: 'pin', label: 'Pin', type: 'text' },
+          },
+        ],
+      },
+    });
+    const proposed = await t.request('/v1/schema/changes', {
+      key: keys.agent,
+      body: {
+        operations: [
+          { op: 'update_field', object: 'person', field: 'pin', label: 'PIN' },
+          { op: 'update_field', object: 'person', field: 'pin', isUnique: true },
+        ],
+      },
+    });
+    expect(proposed.body.change.isDestructive).toBe(true);
+    await t.request('/v1/schema/changes', {
+      key: keys.admin,
+      body: {
+        operations: [{ op: 'update_field', object: 'person', field: 'pin', isUnique: true }],
+      },
+    });
+    const fetched = await t.request(`/v1/schema/changes/${proposed.body.change.id}`, {
+      key: keys.reader,
+    });
+    expect(fetched.body).toMatchObject({
+      isDestructive: false,
+      operations: [expect.objectContaining({ property: 'label', to: 'PIN' })],
+    });
+  });
+
   it('applies destructive changes from a user admin directly', async () => {
     const res = await t.request('/v1/schema/changes', {
       key: keys.admin,

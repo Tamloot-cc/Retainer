@@ -363,12 +363,14 @@ function changeDiff(row: ChangeRow, state: SchemaState): DiffOp[] {
 
 /** A stored change as the API shows it, its diff by name against `state`. */
 function toView(row: ChangeRow, state: SchemaState): SchemaChangeView {
+  const ops = changeDiff(row, state);
   return {
     id: row.id,
     status: row.status,
-    operations: presentDiff(changeDiff(row, state), state),
+    operations: presentDiff(ops, state),
     request: row.request as SchemaOperation[],
-    isDestructive: row.is_destructive,
+    // A re-planned proposal is destructive only if what approving would do now is.
+    isDestructive: ops === row.operations ? row.is_destructive : isDestructive(ops),
     reason: row.reason,
     requestedBy: row.requested_by,
     decidedBy: row.decided_by,
