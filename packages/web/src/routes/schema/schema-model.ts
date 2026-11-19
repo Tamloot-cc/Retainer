@@ -1,4 +1,5 @@
 import {
+  type FieldDefinition,
   type FieldView,
   isInverseRelation,
   type ObjectView,
@@ -9,7 +10,7 @@ import {
 } from '@retainer/shared';
 import { useQuery } from '@tanstack/react-query';
 import { api, useWorkspace } from '../../api/client.js';
-import { joinOr } from '../../fields/common.js';
+import { joinOr, joinWords } from '../../fields/common.js';
 import { fields } from '../../fields/index.js';
 import type { DiagramEdge } from '../../ui/index.js';
 import { objectByName } from '../state.js';
@@ -167,30 +168,22 @@ export function parseStatus(value: string | undefined): SchemaChangeStatus | und
   return SCHEMA_CHANGE_STATUSES.find((s) => s === value);
 }
 
-const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ['year', 31_536_000],
-  ['month', 2_592_000],
-  ['week', 604_800],
-  ['day', 86_400],
-  ['hour', 3_600],
-  ['minute', 60],
-];
-const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-/** "3 minutes ago", "yesterday", "last month". */
-export function relativeTime(iso: string, now = Date.now()) {
-  const seconds = Math.round((new Date(iso).getTime() - now) / 1000);
-  for (const [unit, size] of UNITS)
-    if (Math.abs(seconds) >= size) return relative.format(Math.round(seconds / size), unit);
-  return 'just now';
-}
+export { relativeTime } from '../../ui/entry.js';
 
-const FLAG_WORDS: Record<string, [string, string]> = {
-  isNullable: ['can be empty', 'required'],
-  isUnique: ['unique', 'not unique'],
-  isFilterable: ['filterable', 'not filterable'],
-  isSearchable: ['searchable', 'not searchable'],
-  rollUpEvents: ['roll up events', 'stop rolling up events'],
+/**
+ * Each field flag: its name as a property, and the words for turning it on
+ * and off. "Required" reads the opposite way to `isNullable`.
+ */
+const FLAGS: Record<string, { name: string; words: [string, string]; inverted?: boolean }> = {
+  isNullable: { name: 'Required', words: ['can be empty', 'required'], inverted: true },
+  isUnique: { name: 'Unique', words: ['unique', 'not unique'] },
+  isFilterable: { name: 'Filterable', words: ['filterable', 'not filterable'] },
+  isSearchable: { name: 'Searchable', words: ['searchable', 'not searchable'] },
+  rollUpEvents: { name: 'Rolls up events', words: ['roll up events', 'stop rolling up events'] },
 };
+const FLAG_WORDS = Object.fromEntries(Object.entries(FLAGS).map(([k, f]) => [k, f.words]));
+/** A field type's name in words, or the raw type when this app doesn't know it. */
+const typeLabel = (type: string) => fields[type as keyof typeof fields]?.label ?? type;
 /**
  * One schema operation in words, with labels from the current schema where
  * the object or field still exists ("Add option “Collaborator” to Person →
@@ -221,13 +214,13 @@ export function describeOperation(op: SchemaOperation, objects: ObjectView[]) {
     case 'delete_object':
       return `Delete object ${obj(op.object)}`;
     case 'create_field': {
-      const type = fields[op.field.type]?.label ?? op.field.type;
+      const type = typeLabel(op.field.type);
       return `Add field ${op.field.label || op.field.name} (${type}) to ${obj(op.object)}`;
     }
     case 'update_field': {
       const parts = [
         op.label !== undefined && `label ${quote(op.label)}`,
-        op.type !== undefined && `type ${fields[op.type]?.label ?? op.type}`,
+        op.type !== undefined && `type ${typeLabel(op.type)}`,
         op.description !== undefined &&
           (op.description ? `description ${quote(op.description)}` : 'clear description'),
         ...Object.entries(FLAG_WORDS)
@@ -295,7 +288,7 @@ export function describeDiffOp(
       return `Protect object ${obj(op.object)}`;
     case 'create_field': {
       const f = named(op.field);
-      const type = fields[s(f.type) as keyof typeof fields]?.label ?? s(f.type);
+      const type = typeLabel(s(f.type));
       return `Add field ${s(f.label || f.name)} (${type}) to ${obj(op.object)}`;
     }
     case 'rename_field':
@@ -315,4 +308,251 @@ export function describeDiffOp(
     default:
       return s(op.kind || 'Unknown change').replaceAll('_', ' ');
   }
+}
+
+/** Whether a part of the schema is new, edited or deleted by a change. */
+export type ChangeKind = 'added' | 'changed' | 'removed';
+/** One property of an object or field, before and after; either side may be absent. */
+export type ChangeDetail = { label: string; before?: string; after?: string; code?: boolean };
+export type FieldChange = {
+  /** The field's API name, which identifies it within the change. */
+  name: string;
+  label: string;
+  /** The field type in words, when known. */
+  type?: string;
+  kind: ChangeKind;
+  details: ChangeDetail[];
+};
+/** Everything one schema change does to one object: its own properties, then its fields. */
+export type ObjectChange = {
+  object: string;
+  label: string;
+  objectClass: 'entity' | 'event';
+  kind: ChangeKind;
+  /** Set when the change gives the object a new singular label. */
+  rename?: { from: string; to: string };
+  details: ChangeDetail[];
+  fields: FieldChange[];
+};
+
+const yesNo = (v: boolean) => (v ? 'Yes' : 'No');
+const text = (v: string | null | undefined) => (v ? v : undefined);
+
+/**
+ * A schema change's operations grouped by the object they touch, and within
+ * an object by field, in the order they first appear. Each property shows
+ * what it is now (from the current schema) and what the change makes it, so
+ * a reviewer sees "Name: Engagement → Project" instead of reading one
+ * sentence per operation.
+ */
+export function groupSchemaChange(request: SchemaOperation[], objects: ObjectView[]) {
+  const groups: ObjectChange[] = [];
+  const byName = new Map(objects.map((o) => [o.nameSingular, o]));
+  const current = (name: string) => byName.get(name);
+  const group = (name: string) => {
+    let g = groups.find((x) => x.object === name);
+    if (!g) {
+      const o = current(name);
+      g = {
+        object: name,
+        label: o?.labelSingular ?? name,
+        objectClass: o?.class ?? 'entity',
+        kind: 'changed',
+        details: [],
+        fields: [],
+      };
+      groups.push(g);
+    }
+    return g;
+  };
+  const field = (object: string, name: string, kind: ChangeKind = 'changed') => {
+    const g = group(object);
+    let f = g.fields.find((x) => x.name === name);
+    if (!f) {
+      const view = current(object)?.fields.find((x) => x.name === name);
+      f = {
+        name,
+        label: view?.label ?? name,
+        type: view && typeLabel(view.type),
+        kind,
+        details: [],
+      };
+      g.fields.push(f);
+    } else if (kind !== 'changed') f.kind = kind;
+    return f;
+  };
+  const added = (object: string, def: FieldDefinition) => {
+    const f = field(object, def.name, 'added');
+    f.label = def.label || def.name;
+    f.type = typeLabel(def.type);
+    if (def.description) f.details.push({ label: 'Description', after: def.description });
+    if (def.isNullable === false) f.details.push({ label: 'Required', after: 'Yes' });
+    if (def.isUnique) f.details.push({ label: 'Unique', after: 'Yes' });
+  };
+  const option = (object: string, fieldName: string, value: string) =>
+    current(object)
+      ?.fields.find((x) => x.name === fieldName)
+      ?.settings.options?.find((o) => o.value === value)?.label ?? value;
+
+  for (const op of request) {
+    switch (op.op) {
+      case 'create_object': {
+        const g = group(op.object.nameSingular);
+        g.kind = 'added';
+        g.label = op.object.labelSingular || op.object.nameSingular;
+        g.objectClass = op.object.class ?? 'entity';
+        g.details.push(
+          { label: 'Name', after: op.object.labelSingular },
+          { label: 'Plural name', after: op.object.labelPlural },
+          { label: 'API name', after: op.object.nameSingular, code: true },
+        );
+        if (op.object.description)
+          g.details.push({ label: 'Description', after: op.object.description });
+        for (const def of op.object.fields ?? []) added(op.object.nameSingular, def);
+        break;
+      }
+      case 'update_object': {
+        const g = group(op.object),
+          o = current(op.object);
+        const fieldLabel = (name: string | null | undefined) =>
+          name ? (o?.fields.find((f) => f.name === name)?.label ?? name) : undefined;
+        if (op.labelSingular !== undefined) {
+          g.details.push({ label: 'Name', before: o?.labelSingular, after: op.labelSingular });
+          if (o && o.labelSingular !== op.labelSingular)
+            g.rename = { from: o.labelSingular, to: op.labelSingular };
+        }
+        if (op.labelPlural !== undefined)
+          g.details.push({ label: 'Plural name', before: o?.labelPlural, after: op.labelPlural });
+        if (op.labelField !== undefined)
+          g.details.push({
+            label: 'Label field',
+            before: fieldLabel(o?.labelField),
+            after: fieldLabel(op.labelField),
+          });
+        if (op.description !== undefined)
+          g.details.push({
+            label: 'Description',
+            before: text(o?.description),
+            after: text(op.description),
+          });
+        break;
+      }
+      case 'rename_object': {
+        const o = current(op.object);
+        group(op.object).details.push({
+          label: 'API name',
+          before: o ? `${o.nameSingular} / ${o.namePlural}` : op.object,
+          after: `${op.nameSingular} / ${op.namePlural}`,
+          code: true,
+        });
+        break;
+      }
+      case 'delete_object':
+        group(op.object).kind = 'removed';
+        break;
+      case 'create_field':
+        added(op.object, op.field);
+        break;
+      case 'update_field': {
+        const f = field(op.object, op.field),
+          view = current(op.object)?.fields.find((x) => x.name === op.field);
+        if (op.label !== undefined)
+          f.details.push({ label: 'Label', before: view?.label, after: op.label });
+        if (op.type !== undefined)
+          f.details.push({
+            label: 'Type',
+            before: view && typeLabel(view.type),
+            after: typeLabel(op.type),
+          });
+        if (op.description !== undefined)
+          f.details.push({
+            label: 'Description',
+            before: text(view?.description),
+            after: text(op.description),
+          });
+        for (const [key, flag] of Object.entries(FLAGS)) {
+          const to = (op as Record<string, unknown>)[key];
+          if (typeof to !== 'boolean') continue;
+          const from = view
+            ? Boolean(
+                key === 'rollUpEvents' ? view.settings.rollUpEvents : view[key as keyof FieldView],
+              )
+            : undefined;
+          f.details.push({
+            label: flag.name,
+            before: from === undefined ? undefined : yesNo(from !== !!flag.inverted),
+            after: yesNo(to !== !!flag.inverted),
+          });
+        }
+        break;
+      }
+      case 'rename_field':
+        field(op.object, op.field).details.push({
+          label: 'API name',
+          before: op.field,
+          after: op.name,
+          code: true,
+        });
+        break;
+      case 'delete_field':
+        field(op.object, op.field, 'removed');
+        break;
+      case 'add_option':
+        field(op.object, op.field).details.push({
+          label: 'New option',
+          after: op.option.label || op.option.value,
+        });
+        break;
+      case 'update_option':
+        field(op.object, op.field).details.push({
+          label: 'Option',
+          before: option(op.object, op.field, op.value),
+          after: op.label,
+        });
+        break;
+      case 'remove_option':
+        field(op.object, op.field).details.push({
+          label: 'Removed option',
+          before: option(op.object, op.field, op.value),
+        });
+        break;
+      default: {
+        // A newer server's operation: keep it visible, in words.
+        const unknown = op as { object?: unknown };
+        group(typeof unknown.object === 'string' ? unknown.object : '').details.push({
+          label: describeOperation(op, objects),
+        });
+      }
+    }
+  }
+  return groups;
+}
+
+const lowerFirst = (s: string) => (s ? s[0]?.toLowerCase() + s.slice(1) : s);
+/**
+ * One line naming what a schema change does, from its grouped form: the
+ * object-level moves first ("Rename Engagement to Project"), else each
+ * field it touches ("Change Job title on Person"), two at most and a count.
+ */
+export function summarizeSchemaChange(groups: ObjectChange[]) {
+  const phrases = groups.flatMap((g) => {
+    if (g.kind === 'added') return [`Add the ${g.label} type`];
+    if (g.kind === 'removed') return [`Delete the ${g.label} type`];
+    return g.rename ? [`Rename ${g.rename.from} to ${g.rename.to}`] : [];
+  });
+  if (!phrases.length)
+    for (const g of groups) {
+      for (const f of g.fields)
+        phrases.push(
+          f.kind === 'added'
+            ? `Add ${f.label} to ${g.label}`
+            : f.kind === 'removed'
+              ? `Delete ${f.label} from ${g.label}`
+              : `Change ${f.label} on ${g.label}`,
+        );
+      if (!g.fields.length) phrases.push(`Change ${g.label}`);
+    }
+  const shown = phrases.slice(0, 2).map((p, i) => (i ? lowerFirst(p) : p));
+  const rest = phrases.length - shown.length;
+  return rest > 0 ? `${shown.join(', ')} and ${rest} more` : joinWords(shown, 'and');
 }

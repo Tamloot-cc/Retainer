@@ -97,12 +97,13 @@ export const PICKERS: Partial<Record<FieldView['type'], 'one' | 'many'>> = {
 /** How a field is picked in place, if it is: a many_to_many relation takes a set. */
 export const pickerFor = (field: Pick<FieldView, 'type' | 'settings'>) =>
   isCollectionRelation(field) ? 'many' : PICKERS[field.type];
-/** "Company", "Company or Person", "Company, Person or Deal". */
-export function joinOr(words: string[]) {
+/** "Company", "Company or Person", "Company, Person or Deal" (or with "and"). */
+export function joinWords(words: string[], conjunction: 'and' | 'or') {
   return words.length > 1
-    ? `${words.slice(0, -1).join(', ')} or ${words[words.length - 1]}`
+    ? `${words.slice(0, -1).join(', ')} ${conjunction} ${words[words.length - 1]}`
     : (words[0] ?? '');
 }
+export const joinOr = (words: string[]) => joinWords(words, 'or');
 /** The object a polymorphic relation's record belongs to, after its name. */
 function ObjectTag({ children, name }: { children: ReactNode; name: string }) {
   // Read as "Acme (Company)"; the parentheses are only for screen readers.
