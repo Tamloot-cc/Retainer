@@ -285,7 +285,9 @@ Categories (existing `tab` URL values remain compatible):
    schema engine marks destructive carries a warning. The card is built
    from the engine's diff (`operations`), not by replaying the request, so
    it shows the change's net effect: objects and fields are matched by
-   universal ID, grouped by object and then by field, each marked New,
+   universal ID, on the server, which also gives each step the labels to
+   show, so the card never matches names against the schema it has. It
+   groups the steps by object and then by field, each marked New,
    Edited or Deleted, and every property shows its value before the change
    struck through beside the one after ("Name: ~~Engagement~~ → Project";
    API names in monospace). A new field lists its API name, whether it is
@@ -683,8 +685,10 @@ changes are waiting:
   explains the dashed line; clicking either opens nothing, as neither is a
   field.
 - **Change history.** `GET /v1/schema/changes` as a timeline, filterable by
-  status (`?status=`): each change's operations in words, reason, proposer,
-  who decided, and the schema version it produced.
+  status (`?status=`): each change's summary and its steps, grouped as on
+  the review card (a failed change, which has no diff, lists its request
+  in words), reason, proposer, who decided, and the schema version it
+  produced.
 
 A workspace with no template applied shows the template list
 (`GET /v1/templates`) and an Apply button for `schema:write` keys.

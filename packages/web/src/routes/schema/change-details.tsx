@@ -1,6 +1,5 @@
 import type { SchemaDiffOperation } from '@retainer/shared';
 import { useMemo } from 'react';
-import { useWorkspace } from '../../api/client.js';
 import { ObjectIcon } from '../../ui/index.js';
 import { ChangeBadge, ChangeField, ChangeGroup, ChangeList } from '../../ui/review.js';
 import { groupSchemaDiff, type ObjectChange } from './schema-model.js';
@@ -36,8 +35,7 @@ export function SchemaChangeDetails({ groups }: { groups: ObjectChange[] }) {
   );
 }
 
-/** A change's diff grouped by object and field, labelled from the workspace's schema. */
+/** A change's diff grouped by object and field. */
 export function useSchemaChangeGroups(operations: SchemaDiffOperation[]) {
-  const { objects } = useWorkspace().schema;
-  return useMemo(() => groupSchemaDiff(operations, objects), [operations, objects]);
+  return useMemo(() => groupSchemaDiff(operations), [operations]);
 }

@@ -24,7 +24,13 @@ import {
   type Tone,
 } from '../../ui/index.js';
 import { QueryError, useView } from '../state.js';
-import { describeOperation, parseStatus, useSchemaChanges } from './schema-model.js';
+import { SchemaChangeDetails, useSchemaChangeGroups } from './change-details.js';
+import {
+  describeOperation,
+  parseStatus,
+  summarizeSchemaChange,
+  useSchemaChanges,
+} from './schema-model.js';
 
 const STATUS: Record<SchemaChangeStatus, { label: string; icon: LucideIcon; tone: Tone }> = {
   applied: { label: 'Applied', icon: CircleCheck, tone: 'success' },
@@ -107,6 +113,7 @@ export function HistoryTab() {
 
 function ChangeItem({ change, canDecide }: { change: SchemaChange; canDecide: boolean }) {
   const { objects } = useWorkspace().schema;
+  const groups = useSchemaChangeGroups(change.operations);
   const s = STATUS[change.status];
   return (
     <TimelineItem icon={s.icon} tone={s.tone}>
@@ -118,10 +125,19 @@ function ChangeItem({ change, canDecide }: { change: SchemaChange; canDecide: bo
           <RelativeTime at={change.createdAt} />
         </Muted>
       </Row>
-      {change.request.map((op, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: a change's operations never reorder.
-        <div key={i}>{describeOperation(op, objects)}</div>
-      ))}
+      {groups.length ? (
+        // What the change did (or, proposed, would do now), from the engine's diff.
+        <>
+          <div>{summarizeSchemaChange(groups)}</div>
+          <SchemaChangeDetails groups={groups} />
+        </>
+      ) : (
+        // No diff: a failed change, or one that changed nothing. Show what was asked.
+        change.request.map((op, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: a change's operations never reorder.
+          <div key={i}>{describeOperation(op, objects)}</div>
+        ))
+      )}
       {change.reason ? <Muted>“{change.reason}”</Muted> : null}
       <Row>
         <Muted>By</Muted>

@@ -592,6 +592,8 @@ export type SchemaDiffObject = {
   isProtected: boolean;
   class: ObjectClass;
   owner: SchemaOwner;
+  /** The label field's label, as the change leaves it. */
+  labelFieldLabel: string | null;
 };
 /** A new field in a schema change's diff, with relation settings by API name. */
 export type SchemaDiffField = {
@@ -609,32 +611,66 @@ export type SchemaDiffField = {
   coreRole: CoreRole | null;
   owner: SchemaOwner;
 };
-type DiffFieldRef = { objectId: string; object: string; fieldId: string; field: string };
+/**
+ * The object a step of a diff touches. `object` is its API name; `objectLabel`
+ * and `objectClass` are how it reads now, found by universal ID on the
+ * server, so a client shows the step without matching names to its schema.
+ */
+type DiffObjectRef = {
+  objectId: string;
+  object: string;
+  objectLabel: string;
+  objectClass: ObjectClass;
+};
+/** The field a step touches, with its label and type now (null if unknown). */
+type DiffFieldRef = DiffObjectRef & {
+  fieldId: string;
+  field: string;
+  fieldLabel: string;
+  fieldType: FieldType | null;
+};
+/** An object a new relation links to, with its labels as the change leaves them. */
+export type DiffTargetLabel = { singular: string; plural: string };
 /**
  * One step of what a schema change does, as the engine computed it: the net
  * difference between the schema before and after, with objects and fields
  * matched by universal ID (`objectId`, `fieldId`), so a rename is a rename.
- * `object` and `field` are API names after the change; `from` is the value
- * before it and `to` the value after.
+ * `object` and `field` are API names: the change's own for parts it creates
+ * or renames, otherwise the current ones. `from` is the value before the
+ * change and `to` the value after. Labels (`objectLabel`, `fieldLabel`,
+ * `fromLabel`, `optionLabel`) are found by universal ID: a part's label now,
+ * or for a field the change names as its result (a label field, a relation's
+ * target), its label after the change.
  */
 export type SchemaDiffOperation =
   | { kind: 'create_object'; object: SchemaDiffObject }
-  | {
+  | (DiffObjectRef & {
       kind: 'update_object';
-      objectId: string;
-      object: string;
-      property: 'labelSingular' | 'labelPlural' | 'description' | 'labelField';
+      property: 'labelSingular' | 'labelPlural' | 'description';
       from: string | null;
       to: string | null;
-    }
-  | {
+    })
+  | (DiffObjectRef & {
+      kind: 'update_object';
+      property: 'labelField';
+      from: string | null;
+      to: string | null;
+      /** The old label field's label now, and the new one's after the change. */
+      fromLabel: string | null;
+      toLabel: string | null;
+    })
+  | (Omit<DiffObjectRef, 'object'> & {
       kind: 'rename_object';
-      objectId: string;
       from: { nameSingular: string; namePlural: string };
       to: { nameSingular: string; namePlural: string };
-    }
-  | { kind: 'deprecate_object' | 'protect_object'; objectId: string; object: string }
-  | { kind: 'create_field'; objectId: string; object: string; field: SchemaDiffField }
+    })
+  | (DiffObjectRef & { kind: 'deprecate_object' | 'protect_object' })
+  | (DiffObjectRef & {
+      kind: 'create_field';
+      field: SchemaDiffField;
+      /** What a new relation links to, in the order of its settings. */
+      targetLabels: DiffTargetLabel[];
+    })
   | (DiffFieldRef & {
       kind: 'update_field';
       property:
@@ -648,18 +684,16 @@ export type SchemaDiffOperation =
       from: string | boolean | null;
       to: string | boolean | null;
     })
-  | {
-      kind: 'rename_field';
-      objectId: string;
-      object: string;
-      fieldId: string;
-      from: string;
-      to: string;
-    }
+  | (Omit<DiffFieldRef, 'field'> & { kind: 'rename_field'; from: string; to: string })
   | (DiffFieldRef & { kind: 'deprecate_field' | 'protect_field' })
   | (DiffFieldRef & { kind: 'add_option'; option: SelectOption })
   | (DiffFieldRef & { kind: 'update_option'; value: string; from: string; to: string })
-  | (DiffFieldRef & { kind: 'remove_option'; value: string });
+  | (DiffFieldRef & {
+      kind: 'remove_option';
+      value: string;
+      /** The option's label, while the field still lists it. */
+      optionLabel: string | null;
+    });
 export type SchemaChange = {
   id: string;
   status: SchemaChangeStatus;

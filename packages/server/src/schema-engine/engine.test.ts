@@ -957,7 +957,11 @@ describe('presentDiff', () => {
     expect(presented).toContainEqual(
       expect.objectContaining({
         kind: 'create_object',
-        object: expect.objectContaining({ nameSingular: 'deal', labelField: 'title' }),
+        object: expect.objectContaining({
+          nameSingular: 'deal',
+          labelField: 'title',
+          labelFieldLabel: 'Title',
+        }),
       }),
     );
     expect(presented).toContainEqual(
@@ -968,6 +972,8 @@ describe('presentDiff', () => {
           name: 'company',
           settings: expect.objectContaining({ targetObject: 'company', inverseField: 'deals' }),
         }),
+        objectLabel: 'Deal',
+        targetLabels: [{ singular: 'Company', plural: 'Companies' }],
       }),
     );
     expect(presented).toContainEqual(
@@ -978,6 +984,111 @@ describe('presentDiff', () => {
         from: 'name',
         to: 'website',
       }),
+    );
+  });
+
+  it('labels each step by universal ID, even when a deleted part gives its name away', () => {
+    const before = applyValid(base, [
+      {
+        op: 'create_object',
+        object: {
+          nameSingular: 'deal',
+          namePlural: 'deals',
+          labelSingular: 'Deal',
+          labelPlural: 'Deals',
+          labelField: 'title',
+          fields: [{ name: 'title', label: 'Title', type: 'text' }],
+        },
+      },
+      {
+        op: 'create_object',
+        object: {
+          nameSingular: 'opportunity',
+          namePlural: 'opportunities',
+          labelSingular: 'Opportunity',
+          labelPlural: 'Opportunities',
+          labelField: 'state',
+          fields: [
+            {
+              name: 'status',
+              label: 'Status',
+              type: 'select',
+              settings: { options: [{ value: 'open', label: 'Open' }] },
+            },
+            { name: 'state', label: 'State', type: 'text' },
+          ],
+        },
+      },
+    ]);
+    const after = applyValid(before, [
+      { op: 'delete_object', object: 'deal' },
+      {
+        op: 'rename_object',
+        object: 'opportunity',
+        nameSingular: 'deal',
+        namePlural: 'deals',
+      },
+      { op: 'delete_field', object: 'deal', field: 'status' },
+      { op: 'rename_field', object: 'deal', field: 'state', name: 'status' },
+    ]);
+    const presented = presentDiff(diffSchemas(before, after), before);
+    const step = (kind: string) => presented.find((op) => op.kind === kind);
+    expect(step('deprecate_object')).toMatchObject({ object: 'deal', objectLabel: 'Deal' });
+    expect(step('rename_object')).toMatchObject({ objectLabel: 'Opportunity' });
+    expect(step('deprecate_field')).toMatchObject({
+      objectLabel: 'Opportunity',
+      fieldLabel: 'Status',
+      fieldType: 'select',
+    });
+    expect(step('rename_field')).toMatchObject({ fieldLabel: 'State', fieldType: 'text' });
+  });
+
+  it('labels a label field as the change leaves it, and an option while it is listed', () => {
+    const before = applyValid(base, [
+      {
+        op: 'create_object',
+        object: {
+          nameSingular: 'account',
+          namePlural: 'accounts',
+          labelSingular: 'Account',
+          labelPlural: 'Accounts',
+          labelField: 'legalName',
+          fields: [
+            { name: 'legalName', label: 'Name', type: 'text' },
+            { name: 'displayName', label: 'Name', type: 'text' },
+            {
+              name: 'tier',
+              label: 'Tier',
+              type: 'select',
+              settings: {
+                options: [
+                  { value: 'gold', label: 'Gold' },
+                  { value: 'silver', label: 'Silver' },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ]);
+    const after = applyValid(before, [
+      { op: 'update_object', object: 'account', labelField: 'displayName' },
+      { op: 'update_field', object: 'account', field: 'displayName', label: 'Display name' },
+      { op: 'remove_option', object: 'account', field: 'tier', value: 'gold' },
+    ]);
+    const presented = presentDiff(diffSchemas(before, after), before);
+    expect(presented).toContainEqual(
+      expect.objectContaining({
+        kind: 'update_object',
+        property: 'labelField',
+        from: 'legalName',
+        to: 'displayName',
+        fromLabel: 'Name',
+        toLabel: 'Display name',
+      }),
+    );
+    expect(presented).toContainEqual(
+      expect.objectContaining({ kind: 'remove_option', value: 'gold', optionLabel: 'Gold' }),
     );
   });
 
