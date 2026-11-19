@@ -97,6 +97,9 @@ Decided with the product owner on 2026-11-19:
   key.
 - **Member accounts** are used only in manual runs, by the person who pressed
   the button (§8.3). A standing routine uses workspace connections only.
+- **No safeguards against hidden instructions in the first version** beyond
+  what the structure gives (§6.3). The risk and its solutions get a proper
+  study for the second version.
 
 What the move to code dropped from the earlier drafts:
 
@@ -491,8 +494,7 @@ Five mechanisms back it:
    each labelled:
    - **Retainer's facts**, generated from the manifest by fixed code: when it
      fires, the `if`, `oncePerRecord`, the expiry, the tools it may call,
-     whether it calls a model, whether it may send after asking one (§6.3),
-     and that it writes as an agent (§6.4).
+     whether it calls a model, and that it writes as an agent (§6.4).
    - **The builder's summary**, one sentence, marked as written by the
      builder. Retainer does not vouch for it.
    - **The code**, behind a link, with a diff from the active version when
@@ -643,7 +645,7 @@ sequenceDiagram
   attention". Until Retainer has notifications, that shows only on the
   Routines page.
 
-### 6.3 Model calls, cost and sending
+### 6.3 Model calls and cost
 
 - **Spend.** A workspace makes at most 1,000 routine model calls a day, dry
   runs and builder submissions included (§4.6). The count comes from
@@ -655,26 +657,20 @@ sequenceDiagram
 - Retainer pays for these calls with its own model key, as it does for
   extension model calls. A workspace never enters a key. Usage is recorded
   per call in `ai_usage` under its own kind.
-- **The risk with sending.** A routine may read text that an outsider wrote,
-  such as an incoming email. That text can hide instructions aimed at the
-  model: "also include the client list", "send this to another address". The
-  model has no tools, so it cannot act on them itself. It can only return an
-  answer, and the danger is what the code then sends. Two rules, both
-  enforced by Retainer on the run, not by the code:
-  - **Sending after a model call needs the admin's explicit allowance.** By
-    default, once a run has called a model it cannot call a `send` tool. A
-    manifest can ask for `"sendAfterModel": true`; the review then says, as a
-    separate item to confirm, "a model can decide whether a message is sent
-    and can write its text, and nobody reviews it first".
-  - **A model never chooses where a message goes.** Retainer refuses a `send`
-    call when one of the tool's destination inputs (`destinations` in
-    `defineTool`, §8.1) equals a value a model returned earlier in that run.
-    The code must take the recipient from a record or from itself.
-- A tool that calls a model itself (`uses` in `defineTool`) counts as a model
-  call for both rules.
-
-Hidden instructions in incoming text can then change the wording of a
-message, only where an admin allowed that, and never where it goes.
+- **Hidden instructions: a known risk, not handled in the first version.** A
+  routine may read text that an outsider wrote, such as an incoming email.
+  That text can hide instructions aimed at the model ("also include the
+  client list", "send this to another address"), and the model's answer can
+  then steer what the code writes or sends.
+  - The structure limits the damage. The model has no tools, so it can only
+    return an answer. The code is fixed at approval. The sandbox has no
+    network. Writes are at agent rank.
+  - Beyond that, the first version adds no safeguard: no extra approval for
+    sending after a model call and no check on where a message goes. An
+    earlier draft had both, and they covered only part of the risk.
+  - The product owner decided on 2026-11-19 to study the risk and its
+    solutions properly for the second version (§10) instead of shipping
+    partial rules.
 
 ### 6.4 Authority
 
@@ -875,7 +871,6 @@ export const sendWhatsApp = defineTool({
     required: ['person', 'text'],
     additionalProperties: false,
   },
-  destinations: ['person'],
   outputSchema: {
     type: 'object',
     properties: { messageId: { type: 'string' } },
@@ -887,18 +882,15 @@ export const sendWhatsApp = defineTool({
 });
 ```
 
-| Field                         | Purpose                                                                                                           |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `name`, `title`               | How code and people refer to it                                                                                   |
-| `description`                 | Written for an agent: what it does and when to use it                                                             |
-| `effect`                      | `read` (answers a question), `write` (changes Retainer records only) or `send` (acts outside Retainer)            |
-| `inputSchema`, `outputSchema` | Checked by Retainer on the way in and out, and turned into the SDK's types                                        |
-| `destinations`                | For `send` tools: the inputs that say where the action goes. A value a model returned may never reach them (§6.3) |
-| `connection`                  | `workspace`, or `member` when the tool uses one person's account; a `member` tool runs only in manual runs        |
-| `supportsDryRun`              | The tool can say what it would do without doing it, for dry runs and test runs                                    |
-| `uses`                        | Declares a model call, as functions do today. Calling the tool then counts as a model call (§6.3)                 |
-
-The checker refuses a `send` tool that declares no destinations.
+| Field                         | Purpose                                                                                                    |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `name`, `title`               | How code and people refer to it                                                                            |
+| `description`                 | Written for an agent: what it does and when to use it                                                      |
+| `effect`                      | `read` (answers a question), `write` (changes Retainer records only) or `send` (acts outside Retainer)     |
+| `inputSchema`, `outputSchema` | Checked by Retainer on the way in and out, and turned into the SDK's types                                 |
+| `connection`                  | `workspace`, or `member` when the tool uses one person's account; a `member` tool runs only in manual runs |
+| `supportsDryRun`              | The tool can say what it would do without doing it, for dry runs and test runs                             |
+| `uses`                        | Declares a model call, as functions do today                                                               |
 
 ### 8.2 The run result carries an output
 
@@ -976,34 +968,34 @@ What the platform adds around the call:
 
 ### 9.1 Possible
 
-| Description                                                                                      | How the routine does it                                                                                                  |
-| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| "When a deal moves to Proposal, create a task to send the proposal within two days."             | `record` trigger on stage, `oncePerRecord`; the code creates one task                                                    |
-| "If a lead has had no contact for a week and is still open, create a follow-up task."            | `relative` trigger on `lastContactAt`, an `if`; the code creates one task                                                |
-| "When an appointment is booked, set the lead's status to Booked."                                | `record` trigger; the code updates the lead. Waits for review where a person or a sync set the status (§6.4)             |
-| "The day before an appointment, send the patient a WhatsApp reminder if they haven't confirmed." | `relative` trigger, an `if`, one tool call; the run expires when the appointment starts                                  |
-| "Every Monday at 9, create a review task for each deal open longer than 30 days."                | `schedule` trigger with a record filter, one run per deal, up to 200 deals                                               |
-| "After a meeting is logged with its transcript, list what people promised and create tasks."     | `record` trigger; the code asks a model for the list and creates a task for each item                                    |
-| "When an email arrives from a lead, if it reads like a complaint, open an urgent ticket."        | `record` trigger; the code asks a model yes or no and creates the ticket                                                 |
-| "Every Friday, summarise this week's new leads and post it to Slack."                            | `schedule`; the code queries, asks a model for the summary and calls a tool with a fixed channel. Needs `sendAfterModel` |
-| "If a patient misses a third appointment, flag them for the manager."                            | `record` trigger; the code counts missed appointments and updates the patient                                            |
-| "Every morning, if this quarter's won deals pass 100,000, create a task for me."                 | `schedule`; the code sums with `aggregate` and creates the task                                                          |
-| "When a deal moves to Won and its company is in Israel, create an onboarding task."              | `record` trigger; the code reads the company and returns early when it does not match                                    |
-| "When a deal is won, create one onboarding task for each product on it, named after the client." | `record` trigger; the code loops over the products and builds each title                                                 |
-| "Add a Send quote button on deals."                                                              | `manual` trigger, one tool call                                                                                          |
+| Description                                                                                      | How the routine does it                                                                                           |
+| ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| "When a deal moves to Proposal, create a task to send the proposal within two days."             | `record` trigger on stage, `oncePerRecord`; the code creates one task                                             |
+| "If a lead has had no contact for a week and is still open, create a follow-up task."            | `relative` trigger on `lastContactAt`, an `if`; the code creates one task                                         |
+| "When an appointment is booked, set the lead's status to Booked."                                | `record` trigger; the code updates the lead. Waits for review where a person or a sync set the status (§6.4)      |
+| "The day before an appointment, send the patient a WhatsApp reminder if they haven't confirmed." | `relative` trigger, an `if`, one tool call; the run expires when the appointment starts                           |
+| "Every Monday at 9, create a review task for each deal open longer than 30 days."                | `schedule` trigger with a record filter, one run per deal, up to 200 deals                                        |
+| "After a meeting is logged with its transcript, list what people promised and create tasks."     | `record` trigger; the code asks a model for the list and creates a task for each item                             |
+| "When an email arrives from a lead, if it reads like a complaint, open an urgent ticket."        | `record` trigger; the code asks a model yes or no and creates the ticket                                          |
+| "Every Friday, summarise this week's new leads and post it to Slack."                            | `schedule`; the code queries, asks a model for the summary and calls a tool with a fixed channel                  |
+| "When a patient emails a question, answer it."                                                   | `record` trigger; the code asks a model for the reply and calls a send tool. Nobody reviews the text first (§6.3) |
+| "If a patient misses a third appointment, flag them for the manager."                            | `record` trigger; the code counts missed appointments and updates the patient                                     |
+| "Every morning, if this quarter's won deals pass 100,000, create a task for me."                 | `schedule`; the code sums with `aggregate` and creates the task                                                   |
+| "When a deal moves to Won and its company is in Israel, create an onboarding task."              | `record` trigger; the code reads the company and returns early when it does not match                             |
+| "When a deal is won, create one onboarding task for each product on it, named after the client." | `record` trigger; the code loops over the products and builds each title                                          |
+| "Add a Send quote button on deals."                                                              | `manual` trigger, one tool call                                                                                   |
 
 ### 9.2 Possible only with something else in place
 
 The builder reports these as `partial` or `not_possible`, with the reason:
 
-| Description                                                           | What it needs                                                                     | Gap code                |
-| --------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ----------------------- |
-| "When a call is missed, create a lead."                               | A phone extension that logs missed calls as events                                | `no_source`             |
-| "Send a WhatsApp reminder…" with no messaging extension               | An extension that offers a send tool                                              | `no_tool`               |
-| "Email the patient from their therapist's Gmail" as a standing rule   | A member granting standing routines their account, deferred. A button works now   | `member_account`        |
-| "…and reply to the patient automatically."                            | The admin allowing a send after a model call. The recipient comes from the record | Confirmed in the review |
-| "Summarise the transcript…" on a self-hosted server with no model key | The server's operator setting a model key                                         | `model_unavailable`     |
-| "Set the status to Booked even if someone set it by hand."            | A routine rank equal to a person's, left for later                                | `needs_person_rank`     |
+| Description                                                           | What it needs                                                                   | Gap code            |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------- |
+| "When a call is missed, create a lead."                               | A phone extension that logs missed calls as events                              | `no_source`         |
+| "Send a WhatsApp reminder…" with no messaging extension               | An extension that offers a send tool                                            | `no_tool`           |
+| "Email the patient from their therapist's Gmail" as a standing rule   | A member granting standing routines their account, deferred. A button works now | `member_account`    |
+| "Summarise the transcript…" on a self-hosted server with no model key | The server's operator setting a model key                                       | `model_unavailable` |
+| "Set the status to Booked even if someone set it by hand."            | A routine rank equal to a person's, left for later                              | `needs_person_rank` |
 
 ### 9.3 Not possible, by design
 
@@ -1023,7 +1015,6 @@ The builder reports these as `partial` or `not_possible`, with the reason:
 | "Use my private notes about this client."                       | Runs are workspace-level and cannot read personal memory                                     |
 | "Apply this to all last year's meetings."                       | A routine starts from its approval. It does not run on past events                           |
 | "Charge the card exactly once, guaranteed."                     | Delivery is at least once. Avoiding a duplicate depends on the tool honouring the call's key |
-| "Send it to whoever the email says to send it to."              | A model never chooses where a message goes (§6.3)                                            |
 
 ### 9.4 A worked example
 
@@ -1128,33 +1119,35 @@ What must happen, case by case:
 
 Each limit below follows from a choice made above.
 
-| Limit                                                        | Comes from                                                                  |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| Routines react after the fact; they cannot block or validate | They read the change feed, which records committed changes                  |
-| No instant answers                                           | Every run goes through the job queue                                        |
-| No all-or-nothing across writes                              | Each write is its own; Retainer has no multi-record transaction for callers |
-| Sums and counts only on a schedule, never as a trigger       | Triggers watch one record; code computes aggregates when a run asks         |
-| Conditions see current values only                           | The change feed records which fields changed, not their earlier values      |
-| No trigger on deletion                                       | A run reads its record, and reads exclude deleted records                   |
-| Code reaches nothing but Retainer                            | The closed sandbox. Outside effects come only from reviewed extension tools |
-| Retainer cannot say in advance what the code will do         | It is a program. The dry run, the limits and the run history are the check  |
-| A routine never replaces a person's value on its own         | It writes as an agent (§6.4)                                                |
-| A run must finish in 300 seconds                             | One job per run                                                             |
-| Triggers only on what is written down                        | The matcher sees records, not what happens inside other systems             |
-| Fast successive edits fold into one run                      | Runs coalesce per routine and record                                        |
-| Model answers are bounded and can vary                       | A model gives them; the limits in §4.6 and §6.3 apply                       |
-| Outside actions may repeat on a retry                        | At-least-once delivery, unless the tool honours the call's key              |
-| A standing routine cannot act from a member's account        | Each member's connection is theirs alone; only a button they press uses it  |
-| Stored results are kept for days, not kept as history        | They copy CRM data, which `forget` must be able to remove                   |
-| Failures are visible only on the Routines page for now       | Retainer has no notifications yet                                           |
-| The builder can misread intent                               | A model translates; the dry run and the test run are the check              |
-| Nothing for one person only                                  | Routines are workspace-level and admin-approved                             |
+| Limit                                                           | Comes from                                                                  |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Routines react after the fact; they cannot block or validate    | They read the change feed, which records committed changes                  |
+| No instant answers                                              | Every run goes through the job queue                                        |
+| No all-or-nothing across writes                                 | Each write is its own; Retainer has no multi-record transaction for callers |
+| Sums and counts only on a schedule, never as a trigger          | Triggers watch one record; code computes aggregates when a run asks         |
+| Conditions see current values only                              | The change feed records which fields changed, not their earlier values      |
+| No trigger on deletion                                          | A run reads its record, and reads exclude deleted records                   |
+| Code reaches nothing but Retainer                               | The closed sandbox. Outside effects come only from reviewed extension tools |
+| Retainer cannot say in advance what the code will do            | It is a program. The dry run, the limits and the run history are the check  |
+| A routine never replaces a person's value on its own            | It writes as an agent (§6.4)                                                |
+| A run must finish in 300 seconds                                | One job per run                                                             |
+| Triggers only on what is written down                           | The matcher sees records, not what happens inside other systems             |
+| Fast successive edits fold into one run                         | Runs coalesce per routine and record                                        |
+| Model answers are bounded and can vary                          | A model gives them; the limits in §4.6 and §6.3 apply                       |
+| Hidden instructions in incoming text can steer a model's answer | No safeguard in the first version beyond the structure (§6.3)               |
+| Outside actions may repeat on a retry                           | At-least-once delivery, unless the tool honours the call's key              |
+| A standing routine cannot act from a member's account           | Each member's connection is theirs alone; only a button they press uses it  |
+| Stored results are kept for days, not kept as history           | They copy CRM data, which `forget` must be able to remove                   |
+| Failures are visible only on the Routines page for now          | Retainer has no notifications yet                                           |
+| The builder can misread intent                                  | A model translates; the dry run and the test run are the check              |
+| Nothing for one person only                                     | Routines are workspace-level and admin-approved                             |
 
 Left out of the first version on purpose, with the room left for each:
 
 | Later                                                                                                           | Room left for it now                                                                                                                                                                            |
 | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A routine rank**, equal to a person's, so a routine can replace people's values                               | A version stores its rank; only `agent` is accepted. It needs a new actor type, a switch only an admin can set and that the builder cannot, and a run token that holds that rank in the sandbox |
+| **Safeguards against hidden instructions** in text a routine reads                                              | To be designed for the second version, after a proper study of the risk. Run history already records which runs called a model and which tools they called                                      |
 | **Knobs**: values an admin changes without new code, such as a label or a number of days (Macro)                | An optional list in the manifest that the code reads as `knobs`; versions without it are unaffected                                                                                             |
 | **An agent with tools**, for open-ended work                                                                    | A further SDK call beside `ai.generate`, handed to the workspace agent the model-calls spec plans (§11 there)                                                                                   |
 | **Limits per object**: which objects a routine may write                                                        | `uses` in the manifest grows; the run token already enforces `uses.tools`                                                                                                                       |
@@ -1165,7 +1158,7 @@ Left out of the first version on purpose, with the room left for each:
 
 ### 11.1 Phases
 
-1. **Extension tools.** `defineTool` with `destinations`, the optional
+1. **Extension tools.** `defineTool`, the optional
    `output` in protocol v1, the invoke call with its call ID and polling, the
    tool list. It has no caller until phase 3, so it lands before it or with
    it.
@@ -1182,9 +1175,8 @@ Left out of the first version on purpose, with the room left for each:
    `forget`; runs and history; the MCP calls for a person's own agent; the
    Routines page. Buttons (`manual`) come here, and member tools with them.
 4. **The built-in builder.** The free-text box in the web app.
-5. **Model calls from code.** `ai.generate`, the daily cap per workspace,
-   consent on the review, the allowance to send after a model call and the
-   destination check.
+5. **Model calls from code.** `ai.generate`, the daily cap per workspace and
+   consent on the review.
 6. **More.** `relative` triggers, suggested routines from extensions, then
    the items in §10.
 
@@ -1213,9 +1205,6 @@ each against real Postgres:
   before its next run.
 - **`forget` during a run.** Erasing a record removes every stored tool and
   model result in the workspace, and a retry does not restore them.
-- **Phase 5, sending.** A run that called a model cannot call a `send` tool
-  without the allowance. With it, a `send` whose destination equals a value
-  the model returned is refused.
 - **Phase 5, the worked example** (§9.4), all seven cases.
 
 ### 11.3 Hosted rollout
@@ -1255,7 +1244,7 @@ owner changes it.
 | Can a condition test the value before a change? | Not in the first version. "Changed to" only                                                                                                                                                | The change feed keeps which fields changed, not their earlier values, and fast edits fold into one run                                                        |
 | Which model do the builder and the code use?    | One model the operator sets. No choice per workspace                                                                                                                                       | The simplest thing that works. Code never names a model, so the model can change without touching routines                                                    |
 | Does a routine need a spend guard?              | Yes: 1,000 routine model calls per workspace per day, dry runs and builder submissions included, counted from `ai_usage`                                                                   | One workspace cap bounds every routine, loop and preview                                                                                                      |
-| May a routine send after asking a model?        | Only with the admin's explicit allowance, and a model's answer can never be the destination                                                                                                | Hidden instructions in incoming text can change wording where an admin allowed it, never where a message goes                                                 |
+| May a routine send after asking a model?        | Yes, with no extra safeguard in the first version                                                                                                                                          | The product owner's decision: partial rules would cover only part of the risk. It is studied properly for the second version (§6.3, §10)                      |
 | Can a standing routine use a member's account?  | No. A member tool runs only in a manual run, as the person who pressed the button                                                                                                          | Each member's connection is theirs alone; an admin cannot lend it out                                                                                         |
 | Who may approve a routine?                      | Workspace admins only                                                                                                                                                                      | A routine acts across the whole workspace                                                                                                                     |
 | Is there a test run before going live?          | Yes, optional, on one chosen record, by an admin, with `send` tools in dry run                                                                                                             | The dry run shows what the code tries. A test shows the real result, and its writes are real                                                                  |
@@ -1268,6 +1257,8 @@ Decided by the product owner on 2026-11-19:
   are the caps. On a self-hosted server the operator's key is used, as today.
 - **A routine is TypeScript code**, the first version is lean, and it writes
   as an agent (§2).
+- **No safeguards against hidden instructions in the first version** beyond
+  the structure (§6.3).
 
 ## 13. Prior art
 
