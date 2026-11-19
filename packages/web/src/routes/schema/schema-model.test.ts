@@ -453,7 +453,7 @@ describe('groupSchemaChange', () => {
     // Two operations on one field land in one entry.
     expect(groups[1]?.fields).toEqual([
       {
-        name: 'engagement',
+        id: 'object:task/engagement',
         label: 'Engagement',
         type: 'Relation',
         kind: 'changed',
@@ -484,7 +484,7 @@ describe('groupSchemaChange', () => {
     ]);
     expect(groups[0]?.fields).toEqual([
       {
-        name: 'status',
+        id: 'object:task/status',
         label: 'Status',
         type: 'Single select',
         kind: 'changed',
@@ -543,6 +543,92 @@ describe('groupSchemaChange', () => {
     ]);
     expect(groups.find((g) => g.object === 'engagement')?.fields[0]?.kind).toBe('removed');
     expect(summarizeSchemaChange(groups)).toBe('Add the Deal type');
+  });
+
+  it('keeps a deleted or renamed-away part apart from a new one that reuses its name', () => {
+    const replaced = groupSchemaChange(
+      [
+        { op: 'delete_field', object: 'task', field: 'status' },
+        {
+          op: 'create_field',
+          object: 'task',
+          field: { name: 'status', label: 'Status', type: 'text' },
+        },
+        { op: 'update_field', object: 'task', field: 'status', isUnique: true },
+      ],
+      schema,
+    );
+    expect(replaced[0]?.fields.map((f) => [f.label, f.type, f.kind, f.details])).toEqual([
+      ['Status', 'Single select', 'removed', []],
+      ['Status', 'Text', 'added', [{ label: 'Unique', before: undefined, after: 'Yes' }]],
+    ]);
+    const moved = groupSchemaChange(
+      [
+        { op: 'rename_object', object: 'task', nameSingular: 'chore', namePlural: 'chores' },
+        {
+          op: 'create_object',
+          object: {
+            nameSingular: 'task',
+            namePlural: 'tasks',
+            labelSingular: 'Task',
+            labelPlural: 'Tasks',
+            fields: [],
+          },
+        },
+        { op: 'update_object', object: 'chore', labelSingular: 'Chore' },
+      ],
+      schema,
+    );
+    expect(moved.map((g) => [g.label, g.kind])).toEqual([
+      ['Task', 'changed'],
+      ['Task', 'added'],
+    ]);
+    expect(moved[0]?.rename).toEqual({ from: 'Task', to: 'Chore' });
+    expect(new Set(moved.map((g) => g.id)).size).toBe(2);
+  });
+
+  it("shows a new field's settings: its options and what it links to", () => {
+    const groups = groupSchemaChange(
+      [
+        {
+          op: 'create_field',
+          object: 'task',
+          field: {
+            name: 'priority',
+            label: 'Priority',
+            type: 'select',
+            settings: {
+              options: [
+                { value: 'high', label: 'High' },
+                { value: 'low', label: 'Low' },
+              ],
+            },
+          },
+        },
+        {
+          op: 'create_field',
+          object: 'task',
+          field: {
+            name: 'project',
+            label: 'Project',
+            type: 'relation',
+            settings: {
+              targetObject: 'engagement',
+              relationCardinality: 'many_to_one',
+              onDelete: 'cascade',
+            },
+          },
+        },
+      ],
+      schema,
+    );
+    expect(groups[0]?.fields.map((f) => f.details)).toEqual([
+      [{ label: 'Options', after: 'High, Low' }],
+      [
+        { label: 'Links to', after: 'One Engagement' },
+        { label: 'If target is deleted', after: 'Delete this record too' },
+      ],
+    ]);
   });
 
   it('names a field-only change after its field, and caps a long headline', () => {

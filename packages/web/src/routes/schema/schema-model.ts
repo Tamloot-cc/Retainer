@@ -315,8 +315,8 @@ export type ChangeKind = 'added' | 'changed' | 'removed';
 /** One property of an object or field, before and after; either side may be absent. */
 export type ChangeDetail = { label: string; before?: string; after?: string; code?: boolean };
 export type FieldChange = {
-  /** The field's API name, which identifies it within the change. */
-  name: string;
+  /** Stable within the change, even when the field is renamed or its name reused. */
+  id: string;
   label: string;
   /** The field type in words, when known. */
   type?: string;
@@ -325,6 +325,9 @@ export type FieldChange = {
 };
 /** Everything one schema change does to one object: its own properties, then its fields. */
 export type ObjectChange = {
+  /** Stable within the change, even when the object is renamed or its name reused. */
+  id: string;
+  /** The object's API name when the change first touches it. */
   object: string;
   label: string;
   objectClass: 'entity' | 'event';
@@ -338,22 +341,64 @@ export type ObjectChange = {
 const yesNo = (v: boolean) => (v ? 'Yes' : 'No');
 const text = (v: string | null | undefined) => (v ? v : undefined);
 
+/** What a new field's settings do, in words: options, what a relation links to, limits. */
+function settingDetails(def: FieldDefinition, objects: ObjectView[]): ChangeDetail[] {
+  const s = def.settings ?? {};
+  const details: ChangeDetail[] = [];
+  if (s.options?.length)
+    details.push({ label: 'Options', after: s.options.map((o) => o.label || o.value).join(', ') });
+  if (def.type === 'relation') {
+    const links = typeDetail({ ...def, settings: s } as FieldView, objects);
+    if (links) details.push({ label: 'Links to', after: links });
+    if (s.onDelete)
+      details.push({
+        label: 'If target is deleted',
+        after: s.onDelete === 'cascade' ? 'Delete this record too' : 'Clear this link',
+      });
+    if (s.rollUpEvents) details.push({ label: 'Rolls up events', after: 'Yes' });
+  }
+  if (s.maxValues) details.push({ label: 'Most values', after: String(s.maxValues) });
+  return details;
+}
+
 /**
  * A schema change's operations grouped by the object they touch, and within
  * an object by field, in the order they first appear. Each property shows
  * what it is now (from the current schema) and what the change makes it, so
  * a reviewer sees "Name: Engagement → Project" instead of reading one
  * sentence per operation.
+ *
+ * The engine applies operations in order, so names move as the request runs:
+ * a rename moves a name, a delete frees it, a create can reuse it. Like the
+ * engine, this replays the request against a working map from each name to
+ * the part it means now, and groups by part, not by name.
  */
 export function groupSchemaChange(request: SchemaOperation[], objects: ObjectView[]) {
   const groups: ObjectChange[] = [];
-  const byName = new Map(objects.map((o) => [o.nameSingular, o]));
-  const current = (name: string) => byName.get(name);
-  const group = (name: string) => {
-    let g = groups.find((x) => x.object === name);
+  const byId = new Map<string, ObjectChange>();
+  /** The part each object name means at this point in the request. */
+  const objectNames = new Map(objects.map((o) => [o.nameSingular, `object:${o.nameSingular}`]));
+  /** The current schema's object behind each existing part. */
+  const views = new Map(objects.map((o) => [`object:${o.nameSingular}`, o]));
+  const fieldNames = new Map<string, Map<string, string>>();
+  const fieldViews = new Map<string, FieldView>();
+  let fresh = 0;
+
+  /** The object part a name means now; a name the schema doesn't know gets its own part. */
+  const objectId = (name: string) => {
+    let id = objectNames.get(name);
+    if (!id) {
+      id = `new:${fresh++}`;
+      objectNames.set(name, id);
+    }
+    return id;
+  };
+  const group = (id: string, name: string) => {
+    let g = byId.get(id);
     if (!g) {
-      const o = current(name);
+      const o = views.get(id);
       g = {
+        id,
         object: name,
         label: o?.labelSingular ?? name,
         objectClass: o?.class ?? 'entity',
@@ -361,56 +406,73 @@ export function groupSchemaChange(request: SchemaOperation[], objects: ObjectVie
         details: [],
         fields: [],
       };
+      byId.set(id, g);
       groups.push(g);
     }
     return g;
   };
-  const field = (object: string, name: string, kind: ChangeKind = 'changed') => {
-    const g = group(object);
-    let f = g.fields.find((x) => x.name === name);
+  const namesOf = (objectPart: string) => {
+    let names = fieldNames.get(objectPart);
+    if (!names) {
+      names = new Map();
+      for (const f of views.get(objectPart)?.fields ?? []) {
+        const id = `${objectPart}/${f.name}`;
+        names.set(f.name, id);
+        fieldViews.set(id, f);
+      }
+      fieldNames.set(objectPart, names);
+    }
+    return names;
+  };
+  const fieldId = (objectPart: string, name: string) => {
+    const names = namesOf(objectPart);
+    let id = names.get(name);
+    if (!id) {
+      id = `new:${fresh++}`;
+      names.set(name, id);
+    }
+    return id;
+  };
+  const entry = (g: ObjectChange, id: string, name: string) => {
+    let f = g.fields.find((x) => x.id === id);
     if (!f) {
-      const view = current(object)?.fields.find((x) => x.name === name);
-      f = {
-        name,
-        label: view?.label ?? name,
-        type: view && typeLabel(view.type),
-        kind,
-        details: [],
-      };
+      const view = fieldViews.get(id);
+      f = { id, label: view?.label ?? name, kind: 'changed', details: [] };
+      if (view) f.type = typeLabel(view.type);
       g.fields.push(f);
-    } else if (kind !== 'changed') f.kind = kind;
+    }
     return f;
   };
+  /** The field an operation names: its entry, its current view and its object's name map. */
+  const at = (object: string, field: string) => {
+    const oid = objectId(object);
+    const id = fieldId(oid, field);
+    return {
+      f: entry(group(oid, object), id, field),
+      view: fieldViews.get(id),
+      names: namesOf(oid),
+    };
+  };
   const added = (object: string, def: FieldDefinition) => {
-    const f = field(object, def.name, 'added');
+    const oid = objectId(object);
+    const id = `new:${fresh++}`;
+    namesOf(oid).set(def.name, id);
+    const f = entry(group(oid, object), id, def.name);
+    f.kind = 'added';
     f.label = def.label || def.name;
     f.type = typeLabel(def.type);
     if (def.description) f.details.push({ label: 'Description', after: def.description });
     if (def.isNullable === false) f.details.push({ label: 'Required', after: 'Yes' });
     if (def.isUnique) f.details.push({ label: 'Unique', after: 'Yes' });
-  };
-  const option = (object: string, fieldName: string, value: string) =>
-    current(object)
-      ?.fields.find((x) => x.name === fieldName)
-      ?.settings.options?.find((o) => o.value === value)?.label ?? value;
-
-  // The engine applies operations in order, so after a rename later ones
-  // name the part by its new name. Map those back to the current schema's
-  // names, so one object or field stays one entry.
-  const objectAlias = new Map<string, string>();
-  const fieldAlias = new Map<string, string>();
-  const resolve = (raw: SchemaOperation): SchemaOperation => {
-    if (raw.op === 'create_object') return raw;
-    const object = objectAlias.get(raw.object) ?? raw.object;
-    if (raw.op === 'create_field' || !('field' in raw)) return { ...raw, object };
-    return { ...raw, object, field: fieldAlias.get(`${object}.${raw.field}`) ?? raw.field };
+    f.details.push(...settingDetails(def, objects));
   };
 
-  for (const raw of request) {
-    const op = resolve(raw);
+  for (const op of request) {
     switch (op.op) {
       case 'create_object': {
-        const g = group(op.object.nameSingular);
+        const id = `new:${fresh++}`;
+        objectNames.set(op.object.nameSingular, id);
+        const g = group(id, op.object.nameSingular);
         g.kind = 'added';
         g.label = op.object.labelSingular || op.object.nameSingular;
         g.objectClass = op.object.class ?? 'entity';
@@ -425,8 +487,9 @@ export function groupSchemaChange(request: SchemaOperation[], objects: ObjectVie
         break;
       }
       case 'update_object': {
-        const g = group(op.object),
-          o = current(op.object);
+        const id = objectId(op.object),
+          g = group(id, op.object),
+          o = views.get(id);
         const fieldLabel = (name: string | null | undefined) =>
           name ? (o?.fields.find((f) => f.name === name)?.label ?? name) : undefined;
         if (op.labelSingular !== undefined) {
@@ -451,26 +514,30 @@ export function groupSchemaChange(request: SchemaOperation[], objects: ObjectVie
         break;
       }
       case 'rename_object': {
-        const o = current(op.object);
-        const named = raw.op === 'rename_object' ? raw.object : op.object;
-        group(op.object).details.push({
+        const id = objectId(op.object),
+          o = views.get(id);
+        group(id, op.object).details.push({
           label: 'API name',
-          before: o && named === o.nameSingular ? `${o.nameSingular} / ${o.namePlural}` : named,
+          before:
+            o && op.object === o.nameSingular ? `${o.nameSingular} / ${o.namePlural}` : op.object,
           after: `${op.nameSingular} / ${op.namePlural}`,
           code: true,
         });
-        objectAlias.set(op.nameSingular, op.object);
+        objectNames.delete(op.object);
+        objectNames.set(op.nameSingular, id);
         break;
       }
-      case 'delete_object':
-        group(op.object).kind = 'removed';
+      case 'delete_object': {
+        const id = objectId(op.object);
+        group(id, op.object).kind = 'removed';
+        objectNames.delete(op.object);
         break;
+      }
       case 'create_field':
         added(op.object, op.field);
         break;
       case 'update_field': {
-        const f = field(op.object, op.field),
-          view = current(op.object)?.fields.find((x) => x.name === op.field);
+        const { f, view } = at(op.object, op.field);
         if (op.label !== undefined)
           f.details.push({ label: 'Label', before: view?.label, after: op.label });
         if (op.type !== undefined)
@@ -501,44 +568,47 @@ export function groupSchemaChange(request: SchemaOperation[], objects: ObjectVie
         }
         break;
       }
-      case 'rename_field':
-        field(op.object, op.field).details.push({
-          label: 'API name',
-          // The name it had at this point in the request.
-          before: raw.op === 'rename_field' ? raw.field : op.field,
-          after: op.name,
-          code: true,
-        });
-        fieldAlias.set(`${op.object}.${op.name}`, op.field);
+      case 'rename_field': {
+        const { f, names } = at(op.object, op.field);
+        f.details.push({ label: 'API name', before: op.field, after: op.name, code: true });
+        names.delete(op.field);
+        names.set(op.name, f.id);
         break;
-      case 'delete_field':
-        field(op.object, op.field, 'removed');
+      }
+      case 'delete_field': {
+        const { f, names } = at(op.object, op.field);
+        f.kind = 'removed';
+        names.delete(op.field);
         break;
+      }
       case 'add_option':
-        field(op.object, op.field).details.push({
+        at(op.object, op.field).f.details.push({
           label: 'New option',
           after: op.option.label || op.option.value,
         });
         break;
-      case 'update_option':
-        field(op.object, op.field).details.push({
+      case 'update_option': {
+        const { f, view } = at(op.object, op.field);
+        f.details.push({
           label: 'Option',
-          before: option(op.object, op.field, op.value),
+          before: view?.settings.options?.find((o) => o.value === op.value)?.label ?? op.value,
           after: op.label,
         });
         break;
-      case 'remove_option':
-        field(op.object, op.field).details.push({
+      }
+      case 'remove_option': {
+        const { f, view } = at(op.object, op.field);
+        f.details.push({
           label: 'Removed option',
-          before: option(op.object, op.field, op.value),
+          before: view?.settings.options?.find((o) => o.value === op.value)?.label ?? op.value,
         });
         break;
+      }
       default: {
         // A newer server's operation: keep it visible, in words.
         const unknown = op as { object?: unknown };
-        group(typeof unknown.object === 'string' ? unknown.object : '').details.push({
-          label: describeOperation(op, objects),
-        });
+        const name = typeof unknown.object === 'string' ? unknown.object : '';
+        group(objectId(name), name).details.push({ label: describeOperation(op, objects) });
       }
     }
   }

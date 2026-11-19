@@ -14,7 +14,7 @@ export function SchemaChangeDetails({ groups }: { groups: ObjectChange[] }) {
     <ChangeList label="What changes">
       {groups.map((g) => (
         <ChangeGroup
-          key={g.object}
+          key={g.id}
           icon={<ObjectIcon name={g.object} objectClass={g.objectClass} size={15} />}
           title={g.label}
           badge={g.kind === 'changed' ? null : <ChangeBadge kind={g.kind} />}
@@ -22,7 +22,7 @@ export function SchemaChangeDetails({ groups }: { groups: ObjectChange[] }) {
         >
           {g.fields.map((f) => (
             <ChangeField
-              key={f.name}
+              key={f.id}
               title={f.label}
               type={f.type}
               badge={<ChangeBadge kind={f.kind} />}
