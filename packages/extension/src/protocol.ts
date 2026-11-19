@@ -23,19 +23,30 @@ export const invocationSchema = z.strictObject({
    */
   model: z.strictObject({ origin: z.url(), token: z.string().min(1).max(8192) }).optional(),
 });
-export const executionResultSchema = z.strictObject({
-  status: z.enum(['succeeded', 'retry', 'failed']),
-  code: z
-    .string()
-    .regex(/^[a-z][a-z0-9_]{0,79}$/)
-    .optional(),
-  retryAfterSeconds: z.number().int().min(0).max(3600).optional(),
-  /**
-   * Incidents where provider access may remain (Tamloot connect spec 4.7), such as
-   * `exchange:<hash>` or `release:<uuid>`. The server records each once per connection.
-   */
-  releaseIncomplete: z.array(z.string().regex(RELEASE_INCIDENT_PATTERN)).max(8).optional(),
-});
+export const executionResultSchema = z
+  .strictObject({
+    status: z.enum(['succeeded', 'retry', 'failed']),
+    code: z
+      .string()
+      .regex(/^[a-z][a-z0-9_]{0,79}$/)
+      .optional(),
+    retryAfterSeconds: z.number().int().min(0).max(3600).optional(),
+    output: z.json().optional(),
+    /**
+     * Incidents where provider access may remain (Tamloot connect spec 4.7), such as
+     * `exchange:<hash>` or `release:<uuid>`. The server records each once per connection.
+     */
+    releaseIncomplete: z.array(z.string().regex(RELEASE_INCIDENT_PATTERN)).max(8).optional(),
+  })
+  .superRefine((result, ctx) => {
+    if (result.output === undefined) return;
+    if (result.status !== 'succeeded') {
+      ctx.addIssue({ code: 'custom', path: ['output'], message: 'output requires success' });
+    }
+    if (new TextEncoder().encode(JSON.stringify(result)).length > 65536) {
+      ctx.addIssue({ code: 'custom', path: ['output'], message: 'result exceeds 64 KiB' });
+    }
+  });
 /**
  * The server-defined input of an `install` or `connect` lifecycle function: the release
  * version installed before this setup (an upgrade, re-enable or settings
