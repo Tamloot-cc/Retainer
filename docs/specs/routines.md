@@ -14,8 +14,9 @@ amends:
   optional output, and a first-party bundle may run code written inside a
   workspace in a closed process), §9.4 (routines keep their own cursor on the
   change feed) and §12 (tools an agent can call).
-- `extensions-model-calls.md` §3.4 (`ai_usage` rows name the routine and the
-  run).
+- `extensions-model-calls.md` §3.2.1 (a narrower list of allowed requests
+  for a routine's model token) and §3.4 (`ai_usage` rows name the routine
+  and the run).
 - `ARCHITECTURE.md` §2.1 (`forget` clears a routine run's stored results).
 
 The write rules and the actor types in `ARCHITECTURE.md` do not change: a
@@ -204,8 +205,9 @@ kind of run. This is the first thing to build (§11).
   process per run and gives it no files, no environment variables, no
   subprocesses and no imports beyond the bundled SDK. Nothing a run leaves
   behind is visible to the next run, including on a reused hosted function.
-- **Network to Retainer's API only.** Hosted, the runner's function has no
-  public egress. In Compose, its container's proxy allows only the API.
+- **Network to Retainer only: its API and its model proxy.** Hosted, the
+  runner's function has no public egress. In Compose, its container's proxy
+  allows only those two.
   Outside effects come only from extension tools, called through Retainer.
 - **The run token is the boundary.** It is bound to one run, expires with
   it, has agent rank, and can call only the tools the manifest lists and the
@@ -404,6 +406,14 @@ const answer = await retainer.ai.generate({
 - The code decides what to do with the answer. The model never acts.
 - One model that the operator sets, by default the one the enrichment
   extension uses. Code never names a model.
+- **The same model proxy extensions use** (`extensions-model-calls.md` §3),
+  with a model token of its own kind. It is a plain model call, one request
+  and one answer, not an agent. For a routine's token the proxy accepts only
+  that: the operator's model, with no `tools` and no `mcp_servers`. An
+  extension's token keeps the wider list. The code holds its token and could
+  call the proxy directly, so the proxy is what makes "no tools" true. It
+  also keeps the sandbox closed: a model's server-side tools, such as web
+  fetch, would otherwise be a way out.
 - A manifest must say `"model": true` for the call to work. The review then
   says that the routine sends workspace data to the model provider.
 - **No agent with tools in the first version.** An open-ended agent that
@@ -801,20 +811,20 @@ flowchart TB
   FN --> PROXY
 ```
 
-| Shared piece               | Where it lives today                                              | How routines use it                            | Change needed                                                                                                                  |
-| -------------------------- | ----------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Change feed and dispatcher | `record_changes`, `worker/changes.ts`, `queue.ts`                 | Routine matching in the same tick              | A cursor per routine, set at approval, and discovery that works with no installations (§6.1)                                   |
-| Job queue, leases, retries | `extension-runtime/queue.ts`, `worker/extensions.ts`              | Run, check, tool and builder jobs              | A job can belong to a routine run, not only an installation                                                                    |
-| Scheduler and cron parsing | `worker`, `packages/extension/src/cron.ts`                        | `schedule` and `relative` triggers             | Schedules created at approval; a workspace time zone setting and zone-aware cron, both new (cron is UTC-only today)            |
-| Executor and sandbox       | `launcher`, `worker/launch-driver.ts`, `packages/runner`          | Runs the routine runner, tools and the builder | The closed kind of run (§3.3); the result carries an optional output (§8.2)                                                    |
-| Run tokens                 | `extension-runtime/tokens.ts`, `extension-runtime/credentials.ts` | The routine's and the builder's access         | A token bound to a routine run, at agent rank, limited to the manifest's tools. A dry run uses the existing `read` scope alone |
-| Model proxy and usage      | `model/`, `extensions/usage.ts`                                   | `ai.generate` and the built-in builder         | A model-token kind for routines; `ai_usage` rows name the routine and the run                                                  |
-| Cause chain and throttles  | The dispatcher (`extensions.md` §9.4)                             | Loop prevention and budgets                    | A routine can be a member of a chain                                                                                           |
-| Record filters             | `packages/shared/src/api.ts`, `records/query.ts`                  | The `if`, and queries from code                | Field keys resolved to names                                                                                                   |
-| Aggregates                 | `records/aggregate.ts`                                            | Sums and counts from code                      | None                                                                                                                           |
-| Propose, then approve      | Schema changes; the two-step install                              | Routine versions; the built-in builder         | None; the same pattern                                                                                                         |
-| Run history screens        | `packages/web/src/routes/extensions`                              | The Routines page                              | Reuse the run list                                                                                                             |
-| `forget`                   | `privacy`                                                         | Clears stored run results                      | Delete stored results and fence in-flight runs (§6.6)                                                                          |
+| Shared piece               | Where it lives today                                              | How routines use it                            | Change needed                                                                                                                           |
+| -------------------------- | ----------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Change feed and dispatcher | `record_changes`, `worker/changes.ts`, `queue.ts`                 | Routine matching in the same tick              | A cursor per routine, set at approval, and discovery that works with no installations (§6.1)                                            |
+| Job queue, leases, retries | `extension-runtime/queue.ts`, `worker/extensions.ts`              | Run, check, tool and builder jobs              | A job can belong to a routine run, not only an installation                                                                             |
+| Scheduler and cron parsing | `worker`, `packages/extension/src/cron.ts`                        | `schedule` and `relative` triggers             | Schedules created at approval; a workspace time zone setting and zone-aware cron, both new (cron is UTC-only today)                     |
+| Executor and sandbox       | `launcher`, `worker/launch-driver.ts`, `packages/runner`          | Runs the routine runner, tools and the builder | The closed kind of run (§3.3); the result carries an optional output (§8.2)                                                             |
+| Run tokens                 | `extension-runtime/tokens.ts`, `extension-runtime/credentials.ts` | The routine's and the builder's access         | A token bound to a routine run, at agent rank, limited to the manifest's tools. A dry run uses the existing `read` scope alone          |
+| Model proxy and usage      | `model/`, `extensions/usage.ts`                                   | `ai.generate` and the built-in builder         | A model-token kind for routines; `ai_usage` rows name the routine and the run; a narrower list of allowed requests for that kind (§4.5) |
+| Cause chain and throttles  | The dispatcher (`extensions.md` §9.4)                             | Loop prevention and budgets                    | A routine can be a member of a chain                                                                                                    |
+| Record filters             | `packages/shared/src/api.ts`, `records/query.ts`                  | The `if`, and queries from code                | Field keys resolved to names                                                                                                            |
+| Aggregates                 | `records/aggregate.ts`                                            | Sums and counts from code                      | None                                                                                                                                    |
+| Propose, then approve      | Schema changes; the two-step install                              | Routine versions; the built-in builder         | None; the same pattern                                                                                                                  |
+| Run history screens        | `packages/web/src/routes/extensions`                              | The Routines page                              | Reuse the run list                                                                                                                      |
+| `forget`                   | `privacy`                                                         | Clears stored run results                      | Delete stored results and fence in-flight runs (§6.6)                                                                                   |
 
 Not shared: installations, releases, grants, settings, secrets, key-value
 storage, webhooks and source imports. A routine holds no secrets and stores
