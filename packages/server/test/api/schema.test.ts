@@ -225,6 +225,40 @@ describe('POST /v1/schema/changes', () => {
     expect(fetched.body).toMatchObject({ id: res.body.change.id, status: 'proposed' });
   });
 
+  it('shows what approving a proposal would do now, by name', async () => {
+    const proposed = await t.request('/v1/schema/changes', {
+      key: keys.agent,
+      body: {
+        operations: [
+          { op: 'update_field', object: 'company', field: 'name', label: 'Legal name' },
+          { op: 'update_field', object: 'company', field: 'name', isUnique: true },
+        ],
+      },
+    });
+    expect(proposed.status).toBe(202);
+    const id = proposed.body.change.id as string;
+    const label = (body: { operations: { property?: string }[] }) =>
+      body.operations.find((op) => op.property === 'label');
+    expect(label(proposed.body.change)).toMatchObject({ from: 'Name', to: 'Legal name' });
+
+    // The schema moves on before anyone decides; approval re-plans against it.
+    const relabel = await t.request('/v1/schema/changes', {
+      key: keys.agent,
+      body: {
+        operations: [{ op: 'update_field', object: 'company', field: 'name', label: 'Title' }],
+      },
+    });
+    expect(relabel.body.status).toBe('applied');
+
+    const fetched = await t.request(`/v1/schema/changes/${id}`, { key: keys.reader });
+    expect(label(fetched.body)).toMatchObject({ from: 'Title', to: 'Legal name' });
+    const listed = await t.request('/v1/schema/changes?status=proposed', { key: keys.reader });
+    const inList = listed.body.changes.find((c: { id: string }) => c.id === id);
+    expect(label(inList)).toMatchObject({ from: 'Title', to: 'Legal name' });
+    // Universal IDs stay inside the engine.
+    expect(JSON.stringify(listed.body)).not.toMatch(/labelFieldId|targetObjectId|inverseFieldId/);
+  });
+
   it('applies destructive changes from a user admin directly', async () => {
     const res = await t.request('/v1/schema/changes', {
       key: keys.admin,

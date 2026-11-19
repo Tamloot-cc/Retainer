@@ -386,8 +386,14 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[], objects: ObjectView[
   /** Today's object for a name after the change. */
   const view = (name: string) => byName.get(renamedFrom.get(name) ?? name);
   /** Today's field of an object for a field name after the change. */
-  const fieldView = (objectId: string, object: string, name: string) =>
-    view(object)?.fields.find((f) => f.name === (fieldFrom.get(`${objectId}/${name}`) ?? name));
+  /**
+   * Today's field of an object, for a field name after the change, or with
+   * `asToday` for a name it already has today (a deleted field's).
+   */
+  const fieldView = (objectId: string, object: string, name: string, asToday = false) =>
+    view(object)?.fields.find(
+      (f) => f.name === (asToday ? name : (fieldFrom.get(`${objectId}/${name}`) ?? name)),
+    );
   const fieldLabel = (objectId: string, object: string, name: string | null) =>
     name
       ? (createdFields.get(objectId)?.get(name) ?? fieldView(objectId, object, name)?.label ?? name)
@@ -398,10 +404,10 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[], objects: ObjectView[
     return o ? (plural ? o.labelPlural : o.labelSingular) : name;
   };
 
-  const group = (id: string, object: string) => {
+  /** An object's group; `o` is today's object, found by its name after the change unless given. */
+  const group = (id: string, object: string, o = view(object)) => {
     let g = byId.get(id);
     if (!g) {
-      const o = view(object);
       g = {
         id,
         object: o?.nameSingular ?? object,
@@ -416,16 +422,19 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[], objects: ObjectView[
     }
     return g;
   };
-  const entry = (op: { objectId: string; object: string; fieldId: string; field: string }) => {
+  const entry = (
+    op: { objectId: string; object: string; fieldId: string; field: string },
+    asToday = false,
+  ) => {
     const g = group(op.objectId, op.object);
+    const current = fieldView(op.objectId, op.object, op.field, asToday);
     let f = g.fields.find((x) => x.id === op.fieldId);
     if (!f) {
-      const current = fieldView(op.objectId, op.object, op.field);
       f = { id: op.fieldId, label: current?.label ?? op.field, kind: 'changed', details: [] };
       if (current) f.type = typeLabel(current.type);
       g.fields.push(f);
     }
-    return { f, current: fieldView(op.objectId, op.object, op.field) };
+    return { f, current };
   };
   /** What a new field's settings do: its options, what a relation links to, limits. */
   const settingDetails = (field: SchemaDiffField): ChangeDetail[] => {
@@ -505,8 +514,10 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[], objects: ObjectView[
           code: true,
         });
         break;
+      // A delete names the part as it is today, not after the change: another
+      // part may take the name it frees.
       case 'deprecate_object':
-        group(op.objectId, op.object).kind = 'removed';
+        group(op.objectId, op.object, byName.get(op.object)).kind = 'removed';
         break;
       case 'protect_object':
         group(op.objectId, op.object).details.push({ label: 'Protected', after: 'Yes' });
@@ -550,7 +561,7 @@ export function groupSchemaDiff(ops: SchemaDiffOperation[], objects: ObjectView[
         });
         break;
       case 'deprecate_field':
-        entry(op).f.kind = 'removed';
+        entry(op, true).f.kind = 'removed';
         break;
       case 'protect_field':
         entry(op).f.details.push({ label: 'Protected', after: 'Yes' });

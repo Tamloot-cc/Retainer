@@ -716,6 +716,41 @@ describe('groupSchemaDiff', () => {
     ]);
   });
 
+  it('names a deleted part as it is today when another part takes its name', () => {
+    // Delete Engagement and rename Task to "engagement"; then delete Task's
+    // Status field and rename its Engagement field to "status".
+    const groups = groupSchemaDiff(
+      [
+        { kind: 'deprecate_object', objectId: 'E', object: 'engagement' },
+        {
+          kind: 'rename_object',
+          objectId: 'T',
+          from: { nameSingular: 'task', namePlural: 'tasks' },
+          to: { nameSingular: 'engagement', namePlural: 'engagements' },
+        },
+        { kind: 'deprecate_field', ...ref('T', 'engagement', 'TS', 'status') },
+        {
+          kind: 'rename_field',
+          objectId: 'T',
+          object: 'engagement',
+          fieldId: 'TE',
+          from: 'engagement',
+          to: 'status',
+        },
+      ],
+      schema,
+    );
+    expect(groups.map((g) => [g.id, g.label, g.kind])).toEqual([
+      ['E', 'Engagement', 'removed'],
+      ['T', 'Task', 'changed'],
+    ]);
+    expect(groups[1]?.fields.map((f) => [f.id, f.label, f.type, f.kind])).toEqual([
+      ['TS', 'Status', 'Single select', 'removed'],
+      ['TE', 'Engagement', 'Relation', 'changed'],
+    ]);
+    expect(summarizeSchemaChange(groups)).toBe('Delete the Engagement type');
+  });
+
   it('names a field-only change after its field, and caps a long headline', () => {
     const unique = (objectId: string, object: string, fieldId: string, name: string) => ({
       kind: 'update_field' as const,

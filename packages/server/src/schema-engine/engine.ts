@@ -281,10 +281,27 @@ export async function getSchemaChange(
   workspaceId: string,
   changeId: string,
 ): Promise<SchemaChangeView> {
-  const [row] = await tx<ChangeRow[]>`
-    select * from schema_changes where id = ${changeId} and workspace_id = ${workspaceId}`;
-  if (!row) throw notFound('schema change');
-  return toView(row, (await getSchema(tx, workspaceId)).state);
+  const [change] = await getSchemaChanges(tx, workspaceId, [changeId]);
+  if (!change) throw notFound('schema change');
+  return change;
+}
+
+/** Several changes in the order given, read against one load of the schema; unknown IDs are left out. */
+export async function getSchemaChanges(
+  tx: Tx,
+  workspaceId: string,
+  changeIds: readonly string[],
+): Promise<SchemaChangeView[]> {
+  if (!changeIds.length) return [];
+  const rows = await tx<ChangeRow[]>`
+    select * from schema_changes
+    where workspace_id = ${workspaceId} and id = any(${changeIds as string[]}::uuid[])`;
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const { state } = await getSchema(tx, workspaceId);
+  return changeIds.flatMap((id) => {
+    const row = byId.get(id);
+    return row ? [toView(row, state)] : [];
+  });
 }
 
 export async function listSchemaChanges(
@@ -322,12 +339,34 @@ type ChangeRow = {
   decided_at: Date | null;
 };
 
+/**
+ * What a change does, against `state`. A proposal is planned again, since
+ * approving re-runs the engine against the schema as it is then; one that no
+ * longer applies, or no longer changes anything, keeps the diff it was
+ * proposed with.
+ */
+function changeDiff(row: ChangeRow, state: SchemaState): DiffOp[] {
+  const stored = row.operations as DiffOp[];
+  if (row.status !== 'proposed') return stored;
+  try {
+    const { ops } = planSchemaChange(
+      state,
+      row.request as SchemaOperation[],
+      ownerFor(row.requested_by),
+    );
+    return ops.length ? ops : stored;
+  } catch (error) {
+    if (error instanceof SchemaValidationError) return stored;
+    throw error;
+  }
+}
+
 /** A stored change as the API shows it, its diff by name against `state`. */
 function toView(row: ChangeRow, state: SchemaState): SchemaChangeView {
   return {
     id: row.id,
     status: row.status,
-    operations: presentDiff(row.operations as DiffOp[], state),
+    operations: presentDiff(changeDiff(row, state), state),
     request: row.request as SchemaOperation[],
     isDestructive: row.is_destructive,
     reason: row.reason,
