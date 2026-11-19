@@ -259,6 +259,40 @@ describe('POST /v1/schema/changes', () => {
     expect(JSON.stringify(listed.body)).not.toMatch(/labelFieldId|targetObjectId|inverseFieldId/);
   });
 
+  it('shows no operations for a proposal the schema already matches', async () => {
+    const made = await t.request('/v1/schema/changes', {
+      key: keys.agent,
+      body: {
+        operations: [
+          {
+            op: 'create_field',
+            object: 'person',
+            field: { name: 'badge', label: 'Badge', type: 'text' },
+          },
+        ],
+      },
+    });
+    expect(made.body.status).toBe('applied');
+    const proposed = await t.request('/v1/schema/changes', {
+      key: keys.agent,
+      body: {
+        operations: [{ op: 'update_field', object: 'person', field: 'badge', isUnique: true }],
+      },
+    });
+    expect(proposed.status).toBe(202);
+    const applied = await t.request('/v1/schema/changes', {
+      key: keys.admin,
+      body: {
+        operations: [{ op: 'update_field', object: 'person', field: 'badge', isUnique: true }],
+      },
+    });
+    expect(applied.body.status).toBe('applied');
+    const fetched = await t.request(`/v1/schema/changes/${proposed.body.change.id}`, {
+      key: keys.reader,
+    });
+    expect(fetched.body).toMatchObject({ status: 'proposed', operations: [] });
+  });
+
   it('applies destructive changes from a user admin directly', async () => {
     const res = await t.request('/v1/schema/changes', {
       key: keys.admin,

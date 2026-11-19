@@ -341,9 +341,9 @@ type ChangeRow = {
 
 /**
  * What a change does, against `state`. A proposal is planned again, since
- * approving re-runs the engine against the schema as it is then; one that no
- * longer applies, or no longer changes anything, keeps the diff it was
- * proposed with.
+ * approving re-runs the engine against the schema as it is then: it may now
+ * change nothing. One that no longer applies keeps the diff it was proposed
+ * with, so the reviewer sees what was asked.
  */
 function changeDiff(row: ChangeRow, state: SchemaState): DiffOp[] {
   const stored = row.operations as DiffOp[];
@@ -354,7 +354,7 @@ function changeDiff(row: ChangeRow, state: SchemaState): DiffOp[] {
       row.request as SchemaOperation[],
       ownerFor(row.requested_by),
     );
-    return ops.length ? ops : stored;
+    return ops;
   } catch (error) {
     if (error instanceof SchemaValidationError) return stored;
     throw error;

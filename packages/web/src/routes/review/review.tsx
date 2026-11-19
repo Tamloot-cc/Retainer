@@ -69,11 +69,13 @@ function SchemaChangeCard({
 }) {
   const groups = useSchemaChangeGroups(change.operations);
   const count = change.operations.length;
+  // Approval re-plans against today's schema; another change may already have done this one.
+  const done = count === 0;
   return (
     <ReviewCard>
       <ReviewCardHeader
         leading={<ReviewIcon icon={Shapes} />}
-        title={summarizeSchemaChange(groups)}
+        title={done ? 'Already in place' : summarizeSchemaChange(groups)}
         meta={
           <>
             <ActorBadge actor={change.requestedBy} />
@@ -88,7 +90,12 @@ function SchemaChangeCard({
       />
       <ReviewCardBody>
         {change.reason ? <ReviewReason>{change.reason}</ReviewReason> : null}
-        {change.isDestructive ? (
+        {done ? (
+          <Notice>
+            The schema already matches this proposal. Approving it changes nothing; rejecting it
+            closes it.
+          </Notice>
+        ) : change.isDestructive ? (
           <Notice warning>
             This changes parts of the workspace that already hold data. Renames, deletions and new
             rules can affect existing records and the agents that use them.
