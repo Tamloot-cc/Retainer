@@ -9,13 +9,14 @@ what is only proposed.
 
 Builds on the extension platform in [extensions.md](extensions.md), model calls
 in [extensions-model-calls.md](extensions-model-calls.md) and the two-step
-install in [extensions-configure.md](extensions-configure.md). If accepted it
-amends:
+install in [extensions-configure.md](extensions-configure.md). The tools
+extensions publish for routines to call have their own spec,
+[extensions-tools.md](extensions-tools.md), which amends `extensions.md` for
+them. If accepted this spec amends:
 
-- `extensions.md` §5 (a new `tool` trigger), §9.1 (the run result gains an
-  optional output, and a first-party bundle may run code written inside a
-  workspace in a closed process), §9.4 (routines keep their own cursor on the
-  change feed) and §12 (tools an agent can call).
+- `extensions.md` §9.1 (a first-party bundle may run code written inside a
+  workspace in a closed process) and §9.4 (routines keep their own cursor on
+  the change feed).
 - `extensions-model-calls.md` §3.2.1 (a narrower list of allowed requests
   for a routine's model token) and §3.4 (`ai_usage` rows name the routine
   and the run).
@@ -32,11 +33,11 @@ routines and Twenty's workflows; §13 records what was taken from each and where
 to look.
 
 The document goes top-down. Section 1 is the whole idea on one page. Sections
-3 to 6 add a layer of detail each. Sections 7 and 8 cover what routines share
-with extensions and what extensions must gain. Sections 9 and 10 show what is
-possible, where the design stops and what is left for later. Section 11 is the
-delivery order, its acceptance tests and the hosted rollout. Section 13 lists
-the prior art.
+3 to 6 add a layer of detail each. Section 7 covers what routines share with
+extensions, and section 8 how a routine calls the tools extensions publish.
+Sections 9 and 10 show what is possible, where the design stops and what is
+left for later. Section 11 is the delivery order, its acceptance tests and
+the hosted rollout. Section 13 lists the prior art.
 
 ## 1. The idea on one page
 
@@ -94,13 +95,13 @@ Decided with the product owner on 2026-11-19:
   as an agent (§6.4).
 - **The first version is lean.** What is left out is listed in §10 with the
   room left for it.
-- Scope includes the **extension upgrade** that lets extensions take part
-  (§8).
+- Scope includes the **extension upgrade** that lets extensions take part:
+  tools, specified in [extensions-tools.md](extensions-tools.md) (§8).
 - **Retainer pays for the model calls** a routine makes, with its own key, as
   it does for extension model calls. A workspace is never asked for a model
   key.
 - **Member accounts** are used only in manual runs, by the person who pressed
-  the button (§8.3). A standing routine uses workspace connections only.
+  the button (§8). A standing routine uses workspace connections only.
 - **No safeguards against hidden instructions in the first version** beyond
   what the structure gives (§6.3). The risk and its solutions get a proper
   study for the second version.
@@ -188,7 +189,7 @@ Four rules decide the placement:
 3. **The sandbox only ever holds agent-rank tokens.** A routine writes as an
    agent (§6.4), so nothing with a person's authority leaves Retainer.
 4. **Sandbox runs never talk to each other.** When routine code calls an
-   extension tool, the call goes through Retainer (§8.3), which checks it,
+   extension tool, the call goes through Retainer (§8), which checks it,
    attaches the extension's credentials and runs the tool as its own job.
    Routine code never holds an extension's secrets, and extension code never
    holds a routine's token.
@@ -480,8 +481,8 @@ Both use only the calls below. Neither can approve.
 | `propose_routine`          | Saves the description, the manifest, the code, a one-sentence summary and the builder's report as a proposal for a person   |
 
 `validate_routine` and `preview_routine` start a job in the sandbox and
-return its result, or an ID to poll when it takes longer than a request may
-(§8.3).
+return its result, or an ID to poll when it takes longer than a request may,
+as a tool call does (`extensions-tools.md` §4).
 
 Three ways the code can run, and what the server enforces in each:
 
@@ -711,7 +712,7 @@ sequenceDiagram
   database guarantees it. A tool call or model call found as started with no
   result is sent again with the same key, because Retainer cannot know
   whether it arrived. Whether the outside action repeats then depends on the
-  tool honouring the key (§8.3). A repeated model call costs money and
+  tool honouring the key (§8). A repeated model call costs money and
   changes nothing.
 - **Checked before each effect:** the routine is still active (§5.3) and the
   run has not expired (§4.2). Past its expiry the run ends as `expired`.
@@ -910,7 +911,7 @@ flowchart TB
 | Change feed and dispatcher | `record_changes`, `worker/changes.ts`, `queue.ts`                 | Routine matching in the same tick              | A cursor per routine, set at approval, and discovery that works with no installations (§6.1)                                                                                                               |
 | Job queue, leases, retries | `extension-runtime/queue.ts`, `worker/extensions.ts`              | Run, check, tool and builder jobs              | A job can belong to a routine run, not only an installation                                                                                                                                                |
 | Scheduler and cron parsing | `worker`, `packages/extension/src/cron.ts`                        | `schedule` and `relative` triggers             | Schedules created at approval; a workspace time zone setting and zone-aware cron, both new (cron is UTC-only today)                                                                                        |
-| Executor and sandbox       | `launcher`, `worker/launch-driver.ts`, `packages/runner`          | Runs the routine runner, tools and the builder | The closed kind of run (§3.3); the result carries an optional output (§8.2)                                                                                                                                |
+| Executor and sandbox       | `launcher`, `worker/launch-driver.ts`, `packages/runner`          | Runs the routine runner, tools and the builder | The closed kind of run (§3.3); the result carries an optional output (`extensions-tools.md` §3)                                                                                                            |
 | Run tokens                 | `extension-runtime/tokens.ts`, `extension-runtime/credentials.ts` | The routine's and the builder's access         | A token bound to a routine run, at agent rank, limited to the manifest's tools. A dry run uses the existing `read` scope alone. Model access is a separate token per call (§6.3)                           |
 | Model proxy and usage      | `model/`, `extensions/usage.ts`                                   | `ai.generate` and the built-in builder         | A model-token kind for routines; `ai_usage` rows name the routine and the run; a narrower list of allowed requests for that kind (§4.5); a token per call, issued by the API once it has reserved the call |
 | Cause chain and throttles  | The dispatcher (`extensions.md` §9.4)                             | Loop prevention and budgets                    | A routine can be a member of a chain                                                                                                                                                                       |
@@ -925,15 +926,15 @@ Not shared: installations, releases, grants, settings, secrets, key-value
 storage, webhooks and source imports. A routine holds no secrets and stores
 no data of its own beyond its run results.
 
-What each package gains:
+What each package gains, beyond what the tools spec adds
+(`extensions-tools.md` §7):
 
 | Package              | License | Gains                                                                                                                                                          |
 | -------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `packages/shared`    | MIT     | The manifest's schema and types, the generator that turns a workspace's schema and tools into SDK types, and the renderer for Retainer's facts                 |
-| `packages/sdk`       | MIT     | The routine-facing SDK the code calls, and client methods for routines and for calling a tool                                                                  |
-| `packages/extension` | MIT     | `defineTool`, the `tool` trigger, and the run result's optional output                                                                                         |
-| `packages/runner`    | MIT     | Tool dispatch, plus two first-party bundles: the routine runner (type-check and run) and the builder                                                           |
-| `packages/server`    | AGPL    | A `routines` module (store, manifest checker, effect keys and results), routine discovery and matching, tool invocation in the runtime, new REST and MCP calls |
+| `packages/sdk`       | MIT     | The routine-facing SDK the code calls, and client methods for routines                                                                                         |
+| `packages/runner`    | MIT     | Two first-party bundles: the routine runner (type-check and run) and the builder                                                                               |
+| `packages/server`    | AGPL    | A `routines` module (store, manifest checker, effect keys and results), routine discovery and matching, new REST and MCP calls                                 |
 | `packages/web`       | MIT     | The Routines page: describe, review, approve, runs, held runs; the workspace time zone setting                                                                 |
 
 One thing to avoid, seen in Twenty (§13.2): it has three separate trigger
@@ -942,134 +943,35 @@ condition format. Here extensions and routines read one feed, share one queue
 and use one filter grammar; they keep separate cursors on the feed only
 because their work is discovered differently.
 
-## 8. The extension upgrade
+## 8. Extension tools
 
-Extensions take part in a routine in three places:
+Extensions take part in a routine in three places: a routine reacts to what
+they write (when), and calls the **tools** they publish to answer a question
+(if) or to act (do). Tools are specified in their own spec,
+[extensions-tools.md](extensions-tools.md): how an extension declares one
+(§2 there), the output a tool returns (§3), the call that starts it and is
+polled for its result (§4), what the builder needs from extensions (§5) and
+what extensions do not get (§6).
 
-- **When.** No change. Whatever an extension writes is a record, and a
-  routine can react to it.
-- **If.** A read-only tool can answer a question, such as "is this address
-  deliverable", for the code to test.
-- **Do.** A tool performs an action, such as sending a message.
+What a routine adds when it calls a tool:
 
-So the upgrade is one new capability, **tools**, and what it needs around it.
-
-### 8.1 Declaring a tool
-
-A tool is a function with the new `tool` trigger. `extensions.md` §5 already
-reserves this as a future kind.
-
-```ts
-import { defineTool } from '@retainer/extension';
-
-export const sendWhatsApp = defineTool({
-  universalId: '…',
-  name: 'send_whatsapp_message',
-  title: 'Send a WhatsApp message',
-  description: 'Sends one WhatsApp message to a person from the clinic number.',
-  effect: 'send',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      person: { type: 'string', description: 'Record ID of the recipient' },
-      text: { type: 'string', maxLength: 1000 },
-    },
-    required: ['person', 'text'],
-    additionalProperties: false,
-  },
-  outputSchema: {
-    type: 'object',
-    properties: { messageId: { type: 'string' } },
-  },
-  connection: 'workspace',
-  secrets: ['apiToken'],
-  scopes: ['read', 'write'],
-});
-```
-
-| Field                         | Purpose                                                                                                    |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `name`, `title`               | How code and people refer to it                                                                            |
-| `description`                 | Written for an agent: what it does and when to use it                                                      |
-| `effect`                      | `read` (answers a question), `write` (changes Retainer records only) or `send` (acts outside Retainer)     |
-| `inputSchema`, `outputSchema` | Checked by Retainer on the way in and out, and turned into the SDK's types                                 |
-| `connection`                  | `workspace`, or `member` when the tool uses one person's account; a `member` tool runs only in manual runs |
-| `uses`                        | Declares a model call, as functions do today                                                               |
-
-### 8.2 The run result carries an output
-
-Today a function's result is only a status: `succeeded`, `retry` or `failed`.
-A tool has to return data, so the protocol v1 result gains an optional
-`output`, checked against the tool's `outputSchema` and held to the existing
-64 KiB limit. It is an optional field in protocol v1, the way the invocation
-gained `model` (`extensions-model-calls.md` §3.2), not a new protocol
-version; every bundle is rebuilt with the new schema.
-
-### 8.3 Calling a tool
-
-One runtime call starts a tool and returns a call ID; the caller polls it for
-the status and the output. A tool may run for 120 seconds, and the hosted API
-answers every request within 30, so the call cannot hold a request open. The
-SDK hides the polling: `retainer.tools.<name>(input)` returns the output.
-Three kinds of caller use it:
-
-| Caller            | How                                          | When                 |
-| ----------------- | -------------------------------------------- | -------------------- |
-| A routine         | `retainer.tools.<name>(input)` from its code | With routines        |
-| A person          | A button on a record                         | With manual triggers |
-| A connected agent | An MCP tool                                  | Later                |
-
-What the platform adds around the call:
-
-- **Approval.** Installing an extension shows the tools it offers. Approving a
-  routine shows the tools its manifest lists, and the run token can call no
-  others. The version records each listed tool's contract, and a change to
-  it pauses the routine (§5.3).
+- **Approval.** Approving a routine shows the tools its manifest lists, and
+  the run token can call no others. The version records each listed tool's
+  contract, and a change to it pauses the routine (§5.3).
 - **Whose account.** A standing routine uses `workspace` connections only. A
   `member` tool runs only in a manual run, acting as the person who pressed
-  the button, with that person's own connection. The member comes from the
-  credential of the person who pressed, never from the caller's payload, and
-  Retainer checks again when the queued call executes that the person is
-  still a member, the connection is still theirs and live, and the tool is
-  still installed. An admin's approval never lets a routine act from another
-  member's account, as each member's connection is theirs alone
-  (`extensions-tamloot-connect.md` §14, item 2). A member granting a standing
-  routine use of their account is deferred.
-- **Calls from routine code.** The call gets a deadline that fits in the
-  run's remaining time and is not retried by the queue: a failure goes back
-  to the code as an error, and the code decides what to do. When the tool
-  job starts, Retainer checks again that the routine is still active.
-- **Duplicates.** Every call carries its effect key (§6.2). Delivery is at
-  least once, so a `send` tool must use the key to avoid sending twice.
+  the button (`extensions-tools.md` §4).
+- **A deadline, no retry.** The call gets a deadline that fits in the run's
+  remaining time and is not retried by the queue: a failure goes back to the
+  code as an error, and the code decides what to do. When the tool job
+  starts, Retainer checks again that the routine is still active.
+- **The effect key.** Every call carries its effect key (§6.2), and a `send`
+  tool must use it to avoid sending twice.
 - **Dry runs and test runs.** In a dry run no tool is called. In a test run
   a `send` tool is not called. Retainer reports the call and that run ends
-  there (§5.1). Retainer enforces this itself; it does not rely on a tool's
-  own dry-run mode.
-- **Cause.** The call carries the cause chain, so a tool's writes cannot
-  trigger the routine that called it.
-- **Its own lane.** Installations run one job at a time by default. Tool
-  calls need a separate allowance, or a busy routine would wait behind an
-  extension's sync.
-
-### 8.4 What the builder needs from extensions
-
-- **A tool list with status.** `get_routine_capabilities` reports each tool,
-  whether its extension is healthy and whether its account is connected.
-- **Good descriptions.** Tools and contributed fields need descriptions
-  written for an agent. They are what the builder reads, and they become the
-  comments on the SDK's types.
-- **A way to tell data is complete.** Extensions that bring data in stages
-  (a meeting first, its transcript later) should write something a condition
-  can test, such as the transcript field being filled.
-- **Optional: suggested routines.** An extension may ship routine
-  descriptions, such as "after a Tamloot meeting, create a follow-up task".
-  They install switched off and go through the same builder and approval.
-
-### 8.5 What extensions do not get
-
-- No new trigger kinds for routines. Extensions make something automatable by
-  writing it down as a record or a field.
-- No way to approve, edit or start a routine on their own.
+  there (§5.1).
+- **Cause.** The call carries the routine's cause chain, so a tool's writes
+  cannot trigger the routine that called it (§6.5).
 
 ## 9. Examples
 
@@ -1282,10 +1184,10 @@ Left out of the first version on purpose, with the room left for each:
 
 ### 11.1 Phases
 
-1. **Extension tools.** `defineTool`, the optional
-   `output` in protocol v1, the invoke call with its call ID and polling, the
-   tool list. It has no caller until phase 3, so it lands before it or with
-   it.
+1. **Extension tools**, as [extensions-tools.md](extensions-tools.md) §7
+   specifies: `defineTool`, the optional `output` in protocol v1, the invoke
+   call with its call ID and polling, the tool list. It has no caller until
+   phase 3, so it lands before it or with it.
 2. **The closed sandbox.** The routine runner bundle; a fresh restricted
    process per run; no public egress, hosted and in Compose; the generator
    for the SDK's types; the type-check; the routine run token and its
@@ -1362,12 +1264,9 @@ each against real Postgres:
 
 ### 11.3 Hosted rollout
 
-- **A new trigger kind.** `tool` is a trigger kind no hosted bundle has used.
-  The hosted server refuses a catalog with a kind it does not list
-  (`extensionServices` in `extension-control/configuration.ts`), and on
-  2026-11-15 that took production down when `connect` was added. A server
-  release that accepts `tool` must be live before any bundle declaring a tool
-  enters the hosted catalog.
+- **A new trigger kind.** A server release that accepts `tool` must be live
+  before any bundle declaring a tool enters the hosted catalog
+  (`extensions-tools.md` §7).
 - **Two new first-party bundles.** The routine runner and the builder are new
   bundles. Each needs the cloud repository's steps for a brand-new bundle:
   its Lambda function, the catalog configuration and the release allowlists.
@@ -1381,7 +1280,8 @@ each against real Postgres:
   and built in `retainer-cloud` together with phase 2 here, and phase 2's
   closed-sandbox test must pass on the hosted service.
 - **Polling, not waiting.** Tool calls, checks and previews return an ID
-  because the hosted API answers within 30 seconds (§8.3).
+  because the hosted API answers within 30 seconds (`extensions-tools.md`
+  §4).
 - **Model usage.** Routine model tokens are a new kind at the `model`
   function; usage rows carry the routine and the run (§6.3). The API issues
   one per call, once it has reserved the call against the caps.
@@ -1509,8 +1409,8 @@ Taken from Twenty:
 
 - **A manual trigger that is a button on a record**, for one record or many
   (§4.2). See `twenty-server/src/engine/core-modules/workflow/`.
-- **Apps add actions, not trigger types** (§8, §8.5). An app's function can be
-  exposed as a workflow action. See
+- **Apps add actions, not trigger types** (§8; `extensions-tools.md` §6). An
+  app's function can be exposed as a workflow action. See
   `twenty-server/src/engine/metadata-modules/logic-function/logic-function.entity.ts`
   and `twenty-sdk/src/sdk/define/workflows/define-workflow.ts`.
 - **An agent can build an automation through tools** (§5). See
@@ -1540,7 +1440,8 @@ Done differently on purpose:
   Routines write as an agent (§6.4).
 - Twenty's docs warn that "record created" fires before the fields are filled
   in (`twenty-docs/user-guide/workflows/`). Here a routine watches the field
-  that completes the data and tests it in the `if` (§8.4, §9.4).
+  that completes the data and tests it in the `if` (§9.4;
+  `extensions-tools.md` §5).
 
 Two findings about Twenty were not confirmed beyond a search of the code: that
 its webhook trigger's authentication setting is not enforced, and that it has
