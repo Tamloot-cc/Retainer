@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   defineExtension,
   defineFunction,
+  defineTool,
+  executionResultSchema,
   functionScopes,
   functionSecrets,
   lifecycleInputSchema,
@@ -217,7 +219,7 @@ describe('strict extension contracts', () => {
     expect(() =>
       defineFunction({ ...fn, inputSchema: { $ref: 'https://attacker.test/schema' } }),
     ).toThrow();
-    expect(() => defineFunction({ ...fn, trigger: { kind: 'tool' } })).toThrow();
+    expect(() => defineFunction({ ...fn, trigger: { kind: 'unknown' } })).toThrow();
     expect(() => defineFunction({ ...fn, timeoutSeconds: 301 })).toThrow();
     expect(() =>
       defineExtension({
@@ -225,6 +227,55 @@ describe('strict extension contracts', () => {
         settings: { key: { type: 'string', label: 'Key', secret: true, default: 'secret' } },
       }),
     ).toThrow();
+  });
+  it('normalizes tool declarations and validates their manifest contract', () => {
+    const declaration = {
+      universalId: randomUUID(),
+      name: 'check_address',
+      title: 'Check an address',
+      description: 'Checks whether an address is deliverable.',
+      handlerDigest: 'b'.repeat(64),
+      effect: 'read',
+      connection: 'workspace',
+      inputSchema: {
+        type: 'object',
+        properties: { address: { type: 'string', description: 'Email address to check' } },
+        required: ['address'],
+        additionalProperties: false,
+      },
+      outputSchema: {
+        type: 'object',
+        properties: { deliverable: { type: 'boolean' } },
+        required: ['deliverable'],
+        additionalProperties: false,
+      },
+    };
+    const tool = defineTool(declaration);
+    expect(defineExtension({ ...fixture(), functions: [tool] }).functions).toEqual([tool]);
+    expect(tool.trigger).toEqual({
+      kind: 'tool',
+      title: declaration.title,
+      effect: declaration.effect,
+      connection: declaration.connection,
+      outputSchema: declaration.outputSchema,
+    });
+    expect(() => defineTool({ ...declaration, outputSchema: { type: 'object' } })).toThrow(
+      'reject additional properties',
+    );
+    const memberTool = defineTool({ ...declaration, connection: 'member' });
+    expect(() => defineExtension({ ...fixture(), functions: [memberTool] })).toThrow(
+      'tool connection must match the release',
+    );
+    expect(() => defineFunction({ ...tool, trigger: { kind: 'job' } })).toThrow();
+  });
+  it('accepts bounded JSON output on successful protocol v1 results', () => {
+    const result = { status: 'succeeded', output: { deliverable: false } };
+    expect(executionResultSchema.parse(result)).toEqual(result);
+    expect(executionResultSchema.parse({ status: 'succeeded' })).toEqual({ status: 'succeeded' });
+    expect(executionResultSchema.safeParse({ ...result, status: 'retry' }).success).toBe(false);
+    expect(executionResultSchema.safeParse({ ...result, output: 'é'.repeat(32768) }).success).toBe(
+      false,
+    );
   });
   it('allows optional provider-generated secrets but never treats them as required human settings', () => {
     const setting = { type: 'string', label: 'Signing secret', secret: true, generated: true };

@@ -70,6 +70,7 @@ export const contributionSchema = z.discriminatedUnion('kind', [
 // A deliberately small JSON Schema subset. No refs, arbitrary keywords or executable defaults.
 export type InputSchema = {
   type: 'object' | 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'null';
+  description?: string;
   properties?: Record<string, InputSchema>;
   required?: string[];
   additionalProperties?: false;
@@ -80,6 +81,7 @@ export type InputSchema = {
 const inputSchema: z.ZodType<InputSchema> = z.lazy(() =>
   z.strictObject({
     type: z.enum(['object', 'string', 'number', 'integer', 'boolean', 'array', 'null']),
+    description: z.string().max(2000).optional(),
     properties: z.record(name, inputSchema).optional(),
     required: z.array(name).max(100).optional(),
     additionalProperties: z.literal(false).optional(),
@@ -88,6 +90,14 @@ const inputSchema: z.ZodType<InputSchema> = z.lazy(() =>
     maxItems: z.number().int().min(1).max(1000).optional(),
   }),
 );
+const toolName = z.string().regex(/^[a-z][a-z0-9_]{0,99}$/);
+const toolTrigger = z.strictObject({
+  kind: z.literal('tool'),
+  title: label,
+  effect: z.enum(['read', 'write', 'send']),
+  connection: z.enum(['workspace', 'member']),
+  outputSchema: inputSchema,
+});
 const trigger = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('configure') }),
   z.strictObject({ kind: z.literal('install') }),
@@ -95,6 +105,7 @@ const trigger = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('connect') }),
   z.strictObject({ kind: z.literal('disconnect') }),
   z.strictObject({ kind: z.literal('job') }),
+  toolTrigger,
   z.strictObject({ kind: z.literal('route'), route: name }),
   z.strictObject({ kind: z.literal('serverRoute'), route: name }),
   z.strictObject({
@@ -128,9 +139,9 @@ const trigger = z.discriminatedUnion('kind', [
       .optional(),
   }),
 ]);
-export const functionSchema = z.strictObject({
+const functionDefinition = z.strictObject({
   universalId: uuid,
-  name,
+  name: z.string(),
   description: z.string().min(1).max(2000),
   handlerDigest: digest,
   trigger,
@@ -164,6 +175,13 @@ export const functionSchema = z.strictObject({
    */
   uses: z.array(z.enum(EXTENSION_USES)).min(1).optional(),
 });
+export const functionSchema = functionDefinition.refine(
+  (fn) => (fn.trigger.kind === 'tool' ? toolName : name).safeParse(fn.name).success,
+  { path: ['name'], message: 'invalid name for function trigger' },
+);
+const toolDefinition = functionDefinition
+  .omit({ trigger: true })
+  .extend({ ...toolTrigger.omit({ kind: true }).shape, name: toolName });
 /** Field types a mapped output can target: scalar values only in v1. */
 export const MAPPABLE_FIELD_TYPES = FIELD_TYPES.filter(
   (type) => type !== 'relation' && type !== 'files',
@@ -407,6 +425,7 @@ function checkInput(schema: InputSchema): void {
 }
 function checkFunction(fn: z.infer<typeof functionSchema>) {
   checkInput(fn.inputSchema);
+  if (fn.trigger.kind === 'tool') checkInput(fn.trigger.outputSchema);
   if (fn.trigger.kind === 'change') {
     const input = fn.inputSchema;
     if (
@@ -746,6 +765,8 @@ export function defineExtension(value: unknown): ExtensionManifest {
       throw new Error('unsupported_manifest: secrets must be strings');
   for (const fn of manifest.functions) {
     checkFunction(fn);
+    if (fn.trigger.kind === 'tool' && fn.trigger.connection !== manifest.connection)
+      throw new Error('unsupported_manifest: tool connection must match the release');
     if (
       fn.secrets &&
       (new Set(fn.secrets).size !== fn.secrets.length ||
@@ -848,6 +869,16 @@ export function defineFunction(value: unknown) {
   const fn = functionSchema.parse(value);
   checkFunction(fn);
   return fn;
+}
+export function defineTool(value: unknown) {
+  bounded(value);
+  const { title, effect, connection, outputSchema, ...fn } = toolDefinition.parse(value);
+  const tool = {
+    ...fn,
+    trigger: { kind: 'tool' as const, title, effect, connection, outputSchema },
+  };
+  checkFunction(tool);
+  return tool;
 }
 export const defineView = (value: unknown) => viewSchema.parse(value);
 

@@ -43,6 +43,7 @@ export const sendWhatsApp = defineTool({
   name: 'send_whatsapp_message',
   title: 'Send a WhatsApp message',
   description: 'Sends one WhatsApp message to a person from the clinic number.',
+  handlerDigest, // Computed by the release build, as for other hosted functions.
   effect: 'send',
   inputSchema: {
     type: 'object',
@@ -56,6 +57,8 @@ export const sendWhatsApp = defineTool({
   outputSchema: {
     type: 'object',
     properties: { messageId: { type: 'string' } },
+    required: ['messageId'],
+    additionalProperties: false,
   },
   connection: 'workspace',
   secrets: ['apiToken'],
@@ -68,19 +71,19 @@ export const sendWhatsApp = defineTool({
 | `name`, `title`               | How code and people refer to it                                                                            |
 | `description`                 | Written for an agent: what it does and when to use it                                                      |
 | `effect`                      | `read` (answers a question), `write` (changes Retainer records only) or `send` (acts outside Retainer)     |
-| `inputSchema`, `outputSchema` | Checked by Retainer on the way in and out, and turned into the routine SDK's types                         |
-| `connection`                  | `workspace`, or `member` when the tool uses one person's account; a `member` tool runs only in manual runs |
+| `inputSchema`, `outputSchema` | Use the extension platform's bounded JSON Schema subset. Retainer validates values against them and uses them to generate routine SDK types. |
+| `connection`                  | Matches the release's `workspace` or `member` connection mode; a `member` tool runs only in manual runs |
 | `secrets`, `scopes`           | As for any function (`extensions.md` §5)                                                                   |
 | `uses`                        | Declares a model call, as functions do today                                                               |
 
 ## 3. The run result carries an output
 
 Today a function's result is only a status: `succeeded`, `retry` or `failed`.
-A tool has to return data, so the protocol v1 result gains an optional
-`output`, checked against the tool's `outputSchema` and held to the existing
-64 KiB limit. It is an optional field in protocol v1, the way the invocation
-gained `model` (`extensions-model-calls.md` §3.2), not a new protocol
-version; every bundle is rebuilt with the new schema.
+A tool has to return data, so a successful protocol v1 result gains an
+optional JSON `output`, checked against the tool's `outputSchema`. The
+serialized result still has a 64 KiB limit. Every bundle is rebuilt with the
+updated v1 schema, as when the invocation gained `model`
+(`extensions-model-calls.md` §3.2).
 
 ## 4. Calling a tool
 
