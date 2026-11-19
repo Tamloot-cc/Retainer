@@ -514,7 +514,13 @@ describe('groupSchemaChange', () => {
         {
           op: 'create_field',
           object: 'deal',
-          field: { name: 'stage', label: 'Stage', type: 'text' },
+          field: {
+            name: 'stage',
+            label: 'Stage',
+            type: 'text',
+            isFilterable: false,
+            isSearchable: true,
+          },
         },
         { op: 'update_field', object: 'task', field: 'status', isUnique: true, isNullable: false },
         { op: 'remove_option', object: 'task', field: 'status', value: 'todo' },
@@ -544,7 +550,15 @@ describe('groupSchemaChange', () => {
           { label: 'Required', after: 'Yes' },
         ],
       ],
-      ['Stage', 'added', [{ label: 'API name', after: 'stage', code: true }]],
+      [
+        'Stage',
+        'added',
+        [
+          { label: 'API name', after: 'stage', code: true },
+          { label: 'Filterable', after: 'No' },
+          { label: 'Searchable', after: 'Yes' },
+        ],
+      ],
     ]);
     const status = groups.find((g) => g.object === 'task')?.fields[0];
     expect(status?.details).toEqual([

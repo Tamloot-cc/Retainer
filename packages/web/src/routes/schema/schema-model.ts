@@ -390,7 +390,6 @@ function settingDetails(def: FieldDefinition, objects: ObjectView[]): ChangeDeta
         label: 'If target is deleted',
         after: s.onDelete === 'cascade' ? 'Delete this record too' : 'Clear this link',
       });
-    if (s.rollUpEvents) details.push({ label: 'Rolls up events', after: 'Yes' });
   }
   if (s.maxValues) details.push({ label: 'Most values', after: String(s.maxValues) });
   return details;
@@ -506,8 +505,13 @@ export function groupSchemaChange(request: SchemaOperation[], objects: ObjectVie
     f.type = typeLabel(def.type);
     f.details.push({ label: 'API name', after: def.name, code: true });
     if (def.description) f.details.push({ label: 'Description', after: def.description });
-    if (def.isNullable === false) f.details.push({ label: 'Required', after: 'Yes' });
-    if (def.isUnique) f.details.push({ label: 'Unique', after: 'Yes' });
+    // Every flag the request sets, so nothing it decides is hidden from the reviewer.
+    for (const [key, flag] of Object.entries(FLAGS)) {
+      const value =
+        key === 'rollUpEvents' ? def.settings?.rollUpEvents : def[key as keyof FieldDefinition];
+      if (typeof value === 'boolean')
+        f.details.push({ label: flag.name, after: yesNo(value !== !!flag.inverted) });
+    }
     f.details.push(...settingDetails(def, objects));
   };
   const optionLabel = (state: FieldState, value: string) =>
@@ -529,6 +533,7 @@ export function groupSchemaChange(request: SchemaOperation[], objects: ObjectVie
           { label: 'Plural name', after: def.labelPlural },
           { label: 'API name', after: `${def.nameSingular} / ${def.namePlural}`, code: true },
         );
+        if (def.class === 'event') g.details.push({ label: 'Kind', after: 'Event type' });
         if (def.description) g.details.push({ label: 'Description', after: def.description });
         for (const field of def.fields ?? []) added(def.nameSingular, field);
         if (def.labelField)
