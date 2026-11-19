@@ -12,12 +12,14 @@ output) and §12 (tools an agent can call), and write rule 2 in
 [the Rapid Image feature mapping](../research/rapid-image-features.md) and
 [the earlier design page](https://claude.ai/artifact/FDjGnvenXbdHzjuBfomvXv).
 A visual version of this spec is at
-<https://claude.ai/artifact/MD4KBw6MMHr5JErEZCnXQm>.
+<https://claude.ai/artifact/MD4KBw6MMHr5JErEZCnXQm>. The design draws on Twenty's
+workflows and Macro's routines; §13 records what was taken from each and where
+to look.
 
 The document goes top-down. Section 1 is the whole idea on one page. Sections
 3 to 6 add a layer of detail each. Sections 7 and 8 cover what routines share
 with extensions and what extensions must gain. Sections 9 and 10 show what is
-possible and where the design stops.
+possible and where the design stops. Section 13 lists the prior art.
 
 ## 1. The idea on one page
 
@@ -591,7 +593,7 @@ What each package gains:
 | `packages/sdk`       | MIT     | Client methods for routines and for calling a tool                                                                                                               |
 | `packages/web`       | MIT     | The Routines page: describe, review, approve, runs                                                                                                               |
 
-One thing to avoid, seen in Twenty: it has three separate trigger systems, for
+One thing to avoid, seen in Twenty (§13): it has three separate trigger systems, for
 workflows, app functions and agents, each with its own queue and condition
 format. Here there is one feed, one dispatcher, one queue and one filter
 format for both extensions and routines.
@@ -841,3 +843,100 @@ Decided by the product owner on 2026-11-19:
   extension model calls. No workspace is ever asked for a model key. The
   200-a-day guard and the provider-side limit on Retainer's key are the caps.
   On a self-hosted server the operator's key is used, as today.
+
+## 13. Prior art
+
+This design draws on two products, read from local checkouts on 2026-11-19.
+Their code and docs were read; nothing was run. Both projects change quickly,
+so a review of this spec should check the pointers below against the current
+code before relying on them.
+
+| Product | What it calls this | Local checkout         | Commit read | Commit date |
+| ------- | ------------------ | ---------------------- | ----------- | ----------- |
+| Twenty  | Workflows          | `~/Development/twenty` | `1dd1c249a` | 2026-11-14  |
+| Macro   | Routines           | `~/Development/macro`  | `be50abb4d` | 2026-11-19  |
+
+### 13.1 Twenty
+
+Paths are under `packages/` in the Twenty repository.
+
+Taken from Twenty:
+
+- **A manual trigger that is a button on a record**, for one record or many
+  (§4.2). See `twenty-server/src/engine/core-modules/workflow/`.
+- **Apps add actions, not trigger types** (§8, §8.5). An app's function can be
+  exposed as a workflow action. See
+  `twenty-server/src/engine/metadata-modules/logic-function/logic-function.entity.ts`
+  and `twenty-sdk/src/sdk/define/workflows/define-workflow.ts`.
+- **An agent can build an automation through tools** (§5). See
+  `twenty-server/src/modules/workflow/workflow-tools/tools/`.
+- **Watched fields plus a record filter on a record-change trigger** (§4.2,
+  §4.3). See
+  `twenty-server/src/modules/workflow/workflow-trigger/automated-trigger/listeners/workflow-database-event-trigger.listener.ts`.
+- **Automations stored in their own tables, not as records** (§6.6). Twenty
+  moved its workflows out of ordinary records. See
+  `twenty-server/src/engine/core-modules/workflow/entities/workflow.entity.ts`.
+
+Done differently on purpose:
+
+- Twenty has a visual builder and about 20 step types, with branches and
+  loops (`twenty-shared/src/workflow/types/WorkflowActionType.ts`). Routines
+  have a free-text builder and four step kinds (§4.4).
+- Twenty has three trigger systems, for workflows, app functions and agents.
+  Routines and extensions share one (§7).
+- No loop detection was found in Twenty, only rate limits and a list of
+  objects automations may not write
+  (`twenty-shared/src/workflow/constants/ObjectsBlockedFromAutomation.ts`).
+  Routines use the cause chain (§6.5).
+- A Twenty workflow writes with full access and there is no ranking of
+  authors
+  (`twenty-server/src/modules/workflow/workflow-executor/services/workflow-execution-context.service.ts`).
+  Routines follow the authority rule (§6.4).
+- Twenty's docs warn that "record created" fires before the fields are filled
+  in (`twenty-docs/user-guide/workflows/`). Here a condition tests that the
+  data is complete (§8.4).
+
+### 13.2 Macro
+
+Paths are from the root of the Macro repository.
+
+Taken from Macro:
+
+- **The name.**
+- **A structured trigger followed by steps, where a step is either fixed or
+  performed by an agent** (§4). See `crates/routine_program/src/model.rs` and
+  `crates/scheduled_action/src/domain/event_trigger.rs`.
+- **Drafting from a plain-language description, checked before it is saved**
+  (§5). See `docs/agent-guide/ai-chat.md` and
+  `apps/web/src/features/routines/`.
+- **Fixed steps where they can do the job, an agent only for open-ended
+  work** (§4.4, §6.3). Stated in `docs/agent-guide/ai-chat.md`.
+- **What a model wrote cannot act with a person's identity until a person
+  reviews it** (§6.4). See `crates/scheduled_action/AGENTS.md` and
+  `crates/scheduled_action/src/domain/code_upgrade.rs`.
+- **Pausing and repairing a routine when what it depends on changes** (§5.3).
+  Same file.
+- **Limits on steps and time** (§4.6). See
+  `crates/routine_program/src/validate.rs`.
+- **Trigger content reaches the agent as data, not instructions** (§6.3). See
+  `crates/scheduled_action/`.
+
+Done differently on purpose:
+
+- Macro's steps are TypeScript that a model writes
+  (`services/agent_harness_service/src/routine_code.rs`). Here the flow is
+  data, and code steps are left for later (§4.1, §10).
+- A Macro routine belongs to one user and acts as that user. Here a routine
+  belongs to the workspace and an admin approves it (§5.3).
+- In Macro only a person's action can trigger a routine, so one routine never
+  triggers another. Here routines can chain, up to 8 hops (§6.5).
+- Macro's triggering events are a closed list in code. Here any record
+  change can trigger, including what extensions write (§4.2).
+- Macro lets a model answer a yes-or-no condition before a run. Here the
+  condition is fixed logic and judgment belongs to an agent step (§4.3).
+- Third parties cannot add triggers or actions to Macro. Here extensions
+  publish tools (§8).
+
+Two findings about Twenty were not confirmed beyond a search of the code: that
+its webhook trigger's authentication setting is not enforced, and that it has
+no loop detection.
