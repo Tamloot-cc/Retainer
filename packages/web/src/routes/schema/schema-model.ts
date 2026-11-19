@@ -372,7 +372,8 @@ function fieldStateOf(f: FieldView | FieldDefinition): FieldState {
       isSearchable: f.isSearchable,
       rollUpEvents: settings.rollUpEvents === true,
     },
-    options: settings.options ?? [],
+    // A copy: replaying options must never change the cached schema.
+    options: [...(settings.options ?? [])],
   };
 }
 
@@ -553,6 +554,8 @@ export function groupSchemaChange(request: SchemaOperation[], objects: ObjectVie
           const from = g.rename?.from ?? state.labelSingular;
           if (g.kind === 'changed' && from && from !== op.labelSingular)
             g.rename = { from, to: op.labelSingular };
+          // A type this change adds is named by its final label.
+          if (g.kind === 'added') g.label = op.labelSingular;
           state.labelSingular = op.labelSingular;
         }
         if (op.labelPlural !== undefined) {
@@ -610,6 +613,7 @@ export function groupSchemaChange(request: SchemaOperation[], objects: ObjectVie
         if (op.label !== undefined) {
           f.details.push({ label: 'Label', before: state.label, after: op.label });
           state.label = op.label;
+          if (f.kind === 'added') f.label = op.label;
         }
         if (op.type !== undefined) {
           f.details.push({

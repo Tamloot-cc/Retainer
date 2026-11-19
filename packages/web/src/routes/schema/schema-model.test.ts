@@ -706,6 +706,39 @@ describe('groupSchemaChange', () => {
     });
   });
 
+  it('never changes the schema it reads, and names new parts by their final label', () => {
+    const options = task.fields[1]?.settings.options;
+    const before = JSON.stringify(schema);
+    const groups = groupSchemaChange(
+      [
+        {
+          op: 'add_option',
+          object: 'task',
+          field: 'status',
+          option: { value: 'done', label: 'Done' },
+        },
+        {
+          op: 'create_object',
+          object: {
+            nameSingular: 'deal',
+            namePlural: 'deals',
+            labelSingular: 'Deal',
+            labelPlural: 'Deals',
+            fields: [{ name: 'size', label: 'Size', type: 'number' }],
+          },
+        },
+        { op: 'update_object', object: 'deal', labelSingular: 'Opportunity' },
+        { op: 'update_field', object: 'deal', field: 'size', label: 'Amount' },
+      ],
+      schema,
+    );
+    expect(JSON.stringify(schema)).toBe(before);
+    expect(task.fields[1]?.settings.options).toBe(options);
+    expect(groups[1]?.label).toBe('Opportunity');
+    expect(groups[1]?.fields[0]?.label).toBe('Amount');
+    expect(summarizeSchemaChange(groups)).toBe('Add the Opportunity type');
+  });
+
   it('names a field-only change after its field, and caps a long headline', () => {
     const one = groupSchemaChange(
       [{ op: 'update_field', object: 'task', field: 'status', isUnique: true }],
