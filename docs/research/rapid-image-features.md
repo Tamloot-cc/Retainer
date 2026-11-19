@@ -10,6 +10,110 @@ help. Marketing claims are recorded as the site states them and are not
 verified. About 90 SEO blog posts (titles ending in `-ai`) were not all read;
 the ones sampled repeat the product pages.
 
+## Summary: fit with Retainer's extension design
+
+This lists the Rapid features that would need code, and whether that code
+fits Retainer's extension design as of 2026-11-19
+([extensions spec](../specs/extensions.md), the manifest in
+`packages/extension`, [standalone apps](../standalone-apps.md)). "Yes" means
+an extension can be written for it now. Otherwise the last column names the
+adjustment the design might need. Nothing here judges whether a feature
+belongs in Retainer; it only says what building it would take.
+
+Features that need only schema definitions, or that the web app and core
+already provide, are left out: leads, deals and their statuses, tasks and task
+types, appointment and clinical records, the document and photo archive,
+branches and price lists, support tickets, course records, duplicate
+detection, the pipeline board and the public API.
+
+### The adjustments
+
+- **Automations:** a new primitive, named Routine and specified in
+  [routines.md](../specs/routines.md), for rules of the form "when something
+  happens, if a condition holds, then do something". A workspace writes its own
+  rules; an extension's triggers are fixed when it is built, and its settings
+  allow only string, boolean and number. Decided 2026-11-19: authority is one
+  fixed rule with nothing to configure. A fixed step, or code a person
+  reviewed, writes as the person who approved the rule, and between a rule and
+  a person the latest write wins. A step an agent performs writes as an agent,
+  so changing a person's value waits for review. The direction is rules an
+  agent performs from plain-language instructions, or that run on code an agent
+  wrote; the when and the if stay structured. A person describes a routine in
+  plain words and an agent translates it. Design page:
+  <https://claude.ai/artifact/FDjGnvenXbdHzjuBfomvXv>.
+- **Extension tools:** a function an extension publishes with a name, a
+  description and an input shape, such as "send this quote". A rule, a person
+  (a button on a record) and an agent can all call it. Functions run only on
+  triggers today; the spec names a future `tool` trigger.
+- **Request-answering routes:** a hosted function that answers a public request
+  directly. Today a route only accepts a webhook, queues a job and answers 202,
+  so a public page needs a standalone app: a separate service with its own UI
+  that installs through the same grant model.
+- **Extension screens:** UI supplied by an extension inside the web app. No
+  extension-supplied UI runs in v1.
+- **More view kinds:** extensions can contribute only table views. The web app
+  has a board view; calendar and chart views don't exist.
+- **Notifications:** a per-person inbox and a `notify` call for extensions.
+  Nothing stores a notification for a person today.
+- **Atomic multi-record writes:** commit several records or none, plus counters
+  and holds that expire. One unique field already blocks a duplicate value
+  under concurrent writes; nothing spans several records.
+- **Narrower grants:** access to chosen objects, fields or branches, for
+  extensions and for people. Grants and roles cover the whole workspace.
+- **Aggregates:** sums, averages and time series. The API has `groupBy` only.
+- **Dependent fields:** options or visibility that depend on another field.
+
+### Feature by feature
+
+| Feature                                                  | Code to write                                                    | Fits today                      | Adjustment it might require                                                                                       |
+| -------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **CRM and sales**                                        |                                                                  |                                 |                                                                                                                   |
+| Lead capture from web forms and landing pages            | Webhook extension per form source                                | Yes                             | None                                                                                                              |
+| Missed call creates a lead                               | Webhook extension per phone provider                             | Yes                             | None                                                                                                              |
+| Follow-up on stuck leads                                 | Scheduled extension that creates follow-up tasks                 | Yes                             | None                                                                                                              |
+| Automatic lead status updates                            | Extension triggered by record changes                            | Partly                          | Automations                                                                                                       |
+| Checklist tasks per stage                                | Extension triggered by a stage change                            | Yes                             | None                                                                                                              |
+| SLA targets on tasks                                     | Scheduled extension that flags overdue tasks                     | Yes                             | None                                                                                                              |
+| Custom process per clinic, automation rules              | One rules extension, configured per workspace                    | Partly                          | Automations                                                                                                       |
+| Sales reports, lead-source return, agent statistics      | Export extension to a BI tool, or in-app reports                 | Export: yes. In-app: no         | Aggregates; more view kinds (charts)                                                                              |
+| **Scheduling**                                           |                                                                  |                                 |                                                                                                                   |
+| Calendar screen by staff and room                        | A calendar view in the web app                                   | No                              | More view kinds (calendar) or extension screens                                                                   |
+| Online booking, fixed-length slots                       | Booking app with a public page                                   | Yes, as a standalone app        | Request-answering routes, to host it; narrower grants                                                             |
+| Booking engine: several resources, slot holds, waitlist  | Booking app plus reservation logic                               | Partly                          | Atomic multi-record writes; narrower grants                                                                       |
+| Shifts, room and bed assignment                          | Assignment logic that prevents conflicts                         | Partly                          | Atomic multi-record writes                                                                                        |
+| Reminders and confirmations to patients (SMS, WhatsApp)  | Scheduled extension per messaging provider, plus a reply webhook | Yes                             | None                                                                                                              |
+| Google Calendar sync                                     | Sync extension with a connection per member                      | Yes                             | None                                                                                                              |
+| **Clinical records**                                     |                                                                  |                                 |                                                                                                                   |
+| Dental chart, body and face diagram, treatment room      | Custom screens                                                   | No                              | Extension screens                                                                                                 |
+| Digital forms, consents, health declarations             | Forms app with public pages                                      | Yes, as a standalone app        | Request-answering routes, to host it                                                                              |
+| Patient self-registration                                | Registration page with a verification code                       | Yes, as a standalone app        | Request-answering routes, to host it                                                                              |
+| Digital signature                                        | Extension for a signing provider                                 | Partly                          | Extension tools                                                                                                   |
+| Digital prescriptions sent to pharmacies                 | Extension for the prescription service                           | Partly                          | Extension tools                                                                                                   |
+| Popup notes on a record                                  | Web app addition on top of comments                              | No                              | Not an extension; a web app change                                                                                |
+| **Billing and payments**                                 |                                                                  |                                 |                                                                                                                   |
+| Quote PDF, produced and sent                             | Extension that renders and sends the PDF                         | Partly                          | Extension tools                                                                                                   |
+| Invoices, receipts, credit notes                         | Extension for an accounting provider                             | Partly                          | Extension tools. Numbering documents natively also needs atomic multi-record writes (counters)                    |
+| Card payments, payment links, deposits                   | Extension for a payment provider                                 | Partly                          | Extension tools                                                                                                   |
+| Health-fund and insurer billing, doctor pay, commissions | Extension that computes and writes the amounts                   | Yes                             | Aggregates, for the reports                                                                                       |
+| Coupons and vouchers                                     | Redemption logic                                                 | Partly                          | Atomic multi-record writes, to redeem once                                                                        |
+| Inventory with reordering                                | Stock logic plus a scheduled reorder check                       | Partly                          | Atomic multi-record writes, for stock counts                                                                      |
+| **Messaging**                                            |                                                                  |                                 |                                                                                                                   |
+| Send WhatsApp, SMS or email on a trigger                 | Extension per messaging provider                                 | Yes                             | None                                                                                                              |
+| Incoming messages saved to the patient file              | Webhook extension per messaging provider                         | Yes                             | None                                                                                                              |
+| Shared team inbox, broadcasts                            | Inbox screen plus send actions                                   | No                              | Extension screens; extension tools                                                                                |
+| Reminders to staff, alerts center                        | Scheduled extension that alerts people                           | Slack or email: yes. In-app: no | Notifications                                                                                                     |
+| Patient bot on WhatsApp                                  | An agent connected through the messaging extension               | Yes                             | None                                                                                                              |
+| **Operations**                                           |                                                                  |                                 |                                                                                                                   |
+| Role permissions, per-branch access                      | Access rules for people and extensions                           | No                              | Narrower grants                                                                                                   |
+| Course capacity limits                                   | Registration logic                                               | Partly                          | Atomic multi-record writes                                                                                        |
+| In-app dashboards                                        | Dashboard screens or chart views                                 | No                              | Aggregates; more view kinds or extension screens                                                                  |
+| Outgoing webhooks                                        | Extension that posts record changes to a URL                     | Yes                             | None                                                                                                              |
+| Data migration and lead import                           | Import extension per source system                               | Yes                             | None                                                                                                              |
+| Patient portal                                           | Portal app with patient sign-in                                  | Yes, as a standalone app        | Request-answering routes, to host it; narrower grants                                                             |
+| Phone system and call center                             | Extension for a phone provider                                   | Partly                          | Extension tools (click to call). Running calls natively needs long-running functions, which no extension kind has |
+| Waiting-room queue screens                               | Display screens                                                  | No                              | Extension screens, or a standalone app                                                                            |
+| Surveys, video visits, attendance                        | Ingestion extension per provider                                 | Yes                             | None                                                                                                              |
+
 ## What it is
 
 Rapid Image is an Israeli company. Its main product, **RapidOne** (רפיד וואן),
