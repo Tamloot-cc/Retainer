@@ -152,8 +152,8 @@ export function diffSchemas(current: SchemaState, desired: SchemaState): DiffOp[
         else if (old !== label)
           ops.push({ kind: 'update_option', ...base, value, from: old, to: label });
       }
-      for (const value of before.keys()) {
-        if (!after.has(value)) ops.push({ kind: 'remove_option', ...base, value });
+      for (const [value, label] of before) {
+        if (!after.has(value)) ops.push({ kind: 'remove_option', ...base, value, label });
       }
     }
   }

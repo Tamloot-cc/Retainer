@@ -38,7 +38,7 @@ test('approves a schema proposal and refreshes the schema', async ({ page, retai
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /Change history/ }).click();
   const history = page.getByRole('list', { name: 'Schema changes' });
-  await expect(history.getByText('Change Person → Job title: unique')).toBeVisible();
+  await expect(history.getByText('Change Job title on Person')).toBeVisible();
   await page.getByRole('button', { name: 'Status All statuses' }).click();
   await page.getByRole('option', { name: 'Rejected' }).click();
   await expect(page.getByText('No rejected changes')).toBeVisible();

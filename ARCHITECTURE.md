@@ -904,12 +904,19 @@ person or agent). Same pattern as Twenty's migration engine:
      net effect without replaying the request. A proposal's diff is planned
      again each time it is read, against the schema as it is then, so it
      shows what approving would do, which may be nothing; one that no
-     longer applies keeps the diff it was proposed with. The engine stores the diff with universal
-     IDs; the API shows it by API name (`labelField`, and a new relation's
-     `targetObject` and `inverseField`). Parts the change creates or renames
-     carry the names it gives them; any other part it refers to carries its
-     current name, so an old change still points at parts by the names
-     they have now.
+     longer applies keeps the diff it was proposed with. The engine stores
+     the diff with universal IDs; the API shows it by API name
+     (`labelField`, and a new relation's `targetObject` and
+     `inverseField`). Parts the change creates or renames carry the names
+     it gives them; any other part it refers to carries its current name,
+     so an old change still points at parts by the names they have now.
+     Each step also carries the labels a client shows (`objectLabel`,
+     `fieldLabel`, `fieldType`, a label field's `fromLabel` and `toLabel`,
+     a new relation's `targetLabels`), found by universal ID the same way,
+     as the change leaves them, so no client matches names against its own
+     copy of the schema. A removed option's label is stored in the diff
+     (`optionLabel`), since no schema has it afterwards. The schema
+     description itself still carries no universal IDs.
 
 Making a field unique or required first checks existing records; if any
 violate it, the change fails with the offending record IDs. Adding a
