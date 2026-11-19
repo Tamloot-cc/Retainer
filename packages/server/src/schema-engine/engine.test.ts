@@ -12,6 +12,7 @@ import { applyOperations, coreFieldUniversalId, deriveUuid } from './apply.js';
 import { classifyOp, diffSchemas, isDestructive } from './diff.js';
 import type { FieldDefinitionInput, SchemaOperation } from './operations.js';
 import { schemaChangeKeys } from './persist.js';
+import { presentDiff } from './present.js';
 import { validateSchema } from './validate.js';
 
 const EMPTY: SchemaState = { objects: [] };
@@ -917,5 +918,66 @@ describe('diff and classify', () => {
     expect(
       diff([{ op: 'update_field', object: 'person', field: 'jobTitle', label: 'Job title' }]),
     ).toEqual([]);
+  });
+});
+
+describe('presentDiff', () => {
+  it('names label fields and relation targets by API name, after the change', () => {
+    const desired = applyValid(base, [
+      {
+        op: 'create_object',
+        object: {
+          nameSingular: 'deal',
+          namePlural: 'deals',
+          labelSingular: 'Deal',
+          labelPlural: 'Deals',
+          labelField: 'title',
+          fields: [
+            { name: 'title', label: 'Title', type: 'text' },
+            {
+              name: 'company',
+              label: 'Company',
+              type: 'relation',
+              settings: {
+                targetObject: 'company',
+                relationCardinality: 'many_to_one',
+                inverseField: 'deals',
+              },
+            },
+          ],
+        },
+      },
+      { op: 'rename_field', object: 'company', field: 'domain', name: 'website' },
+      { op: 'update_object', object: 'company', labelField: 'website' },
+    ]);
+    const presented = presentDiff(diffSchemas(base, desired), base);
+    const json = JSON.stringify(presented);
+    for (const id of ['labelFieldId', 'targetObjectId', 'inverseFieldId', '"key"'])
+      expect(json).not.toContain(id);
+    expect(presented).toContainEqual(
+      expect.objectContaining({
+        kind: 'create_object',
+        object: expect.objectContaining({ nameSingular: 'deal', labelField: 'title' }),
+      }),
+    );
+    expect(presented).toContainEqual(
+      expect.objectContaining({
+        kind: 'create_field',
+        object: 'deal',
+        field: expect.objectContaining({
+          name: 'company',
+          settings: expect.objectContaining({ targetObject: 'company', inverseField: 'deals' }),
+        }),
+      }),
+    );
+    expect(presented).toContainEqual(
+      expect.objectContaining({
+        kind: 'update_object',
+        object: 'company',
+        property: 'labelField',
+        from: 'name',
+        to: 'website',
+      }),
+    );
   });
 });

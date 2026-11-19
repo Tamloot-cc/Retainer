@@ -900,6 +900,11 @@ person or agent). Same pattern as Twenty's migration engine:
    - Approving re-runs the engine against the schema as it is then, since it
      may have changed since the proposal. If it no longer validates, the
      change is marked `failed` with the error.
+   - A change keeps its step 4 diff as `operations`. The engine stores it
+     with universal IDs; the API shows it by API name (`labelField`, and a
+     new relation's `targetObject` and `inverseField`), using the names the
+     change leaves in place, so clients read the change's net effect
+     without replaying the request.
 
 Making a field unique or required first checks existing records; if any
 violate it, the change fails with the offending record IDs. Adding a

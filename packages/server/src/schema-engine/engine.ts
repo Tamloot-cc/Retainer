@@ -3,6 +3,7 @@ import { canApproveDestructive } from '../caller.js';
 import type { ApiKeyScope, SchemaChangeStatus } from '../db/schema.js';
 import { jsonValue, lockPrivacyShared, lockSchemaExclusive, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
+import { getSchema } from '../schema/compiled.js';
 import { loadSchemaState } from '../schema/load.js';
 import {
   type DiffOp,
@@ -14,6 +15,7 @@ import { applyOperations } from './apply.js';
 import { diffSchemas, isDestructive } from './diff.js';
 import type { SchemaOperation } from './operations.js';
 import { checkExistingRecords, persistSchema, SchemaCheckError } from './persist.js';
+import { presentDiff } from './present.js';
 import { applyProtection } from './protection.js';
 import { issueKey, validateSchema } from './validate.js';
 
@@ -169,7 +171,7 @@ export async function runSchemaChange(
   };
 
   if (destructive && !request.trusted && !canApproveDestructive(actor, request.scopes)) {
-    const change = await insertChange(tx, { ...row, status: 'proposed' });
+    const change = await insertChange(tx, { ...row, status: 'proposed' }, current);
     return { status: 'proposed', change, schemaVersion: await schemaVersion(tx, workspaceId) };
   }
 
@@ -177,12 +179,11 @@ export async function runSchemaChange(
     await checkExistingRecords(tx, workspaceId, current, desired, ops);
   } catch (error) {
     if (!(error instanceof SchemaCheckError)) throw error;
-    const change = await insertChange(tx, {
-      ...row,
-      status: 'failed',
-      error: error.message,
-      decidedBy: actor,
-    });
+    const change = await insertChange(
+      tx,
+      { ...row, status: 'failed', error: error.message, decidedBy: actor },
+      current,
+    );
     return {
       status: 'failed',
       change,
@@ -192,12 +193,11 @@ export async function runSchemaChange(
   }
 
   const version = await persistSchema(tx, workspaceId, current, desired, ops, actor);
-  const change = await insertChange(tx, {
-    ...row,
-    status: 'applied',
-    appliedVersion: version,
-    decidedBy: actor,
-  });
+  const change = await insertChange(
+    tx,
+    { ...row, status: 'applied', appliedVersion: version, decidedBy: actor },
+    current,
+  );
   return { status: 'applied', change, schemaVersion: version };
 }
 
@@ -230,12 +230,17 @@ export async function decideSchemaChange(
     throw new AppError(409, 'already_decided', `this change is already ${row.status}`);
   }
 
+  const current = await loadSchemaState(tx, workspaceId);
   if (input.decision === 'reject') {
-    const change = await updateChange(tx, changeId, { status: 'rejected', decidedBy: actor });
+    const change = await updateChange(
+      tx,
+      changeId,
+      { status: 'rejected', decidedBy: actor },
+      current,
+    );
     return { status: 'rejected', change, schemaVersion: await schemaVersion(tx, workspaceId) };
   }
 
-  const current = await loadSchemaState(tx, workspaceId);
   const operations = row.request as SchemaOperation[];
   let planned: ReturnType<typeof planSchemaChange>;
   try {
@@ -244,11 +249,12 @@ export async function decideSchemaChange(
     await checkExistingRecords(tx, workspaceId, current, planned.desired, planned.ops);
   } catch (error) {
     if (!(error instanceof SchemaValidationError || error instanceof SchemaCheckError)) throw error;
-    const change = await updateChange(tx, changeId, {
-      status: 'failed',
-      decidedBy: actor,
-      error: error.message,
-    });
+    const change = await updateChange(
+      tx,
+      changeId,
+      { status: 'failed', decidedBy: actor, error: error.message },
+      current,
+    );
     return {
       status: 'failed',
       change,
@@ -261,12 +267,12 @@ export async function decideSchemaChange(
     planned.ops.length > 0
       ? await persistSchema(tx, workspaceId, current, planned.desired, planned.ops, actor)
       : await schemaVersion(tx, workspaceId);
-  const change = await updateChange(tx, changeId, {
-    status: 'applied',
-    decidedBy: actor,
-    appliedVersion: version,
-    operations: planned.ops,
-  });
+  const change = await updateChange(
+    tx,
+    changeId,
+    { status: 'applied', decidedBy: actor, appliedVersion: version, operations: planned.ops },
+    current,
+  );
   return { status: 'applied', change, schemaVersion: version };
 }
 
@@ -278,7 +284,7 @@ export async function getSchemaChange(
   const [row] = await tx<ChangeRow[]>`
     select * from schema_changes where id = ${changeId} and workspace_id = ${workspaceId}`;
   if (!row) throw notFound('schema change');
-  return toView(row);
+  return toView(row, (await getSchema(tx, workspaceId)).state);
 }
 
 export async function listSchemaChanges(
@@ -291,7 +297,8 @@ export async function listSchemaChanges(
     select * from schema_changes
     where workspace_id = ${workspaceId} ${status ? tx`and status = ${status}` : tx``}
     order by created_at desc, id desc limit ${limit}`;
-  return rows.map(toView);
+  const { state } = await getSchema(tx, workspaceId);
+  return rows.map((row) => toView(row, state));
 }
 
 async function schemaVersion(tx: Tx, workspaceId: string): Promise<number> {
@@ -315,11 +322,12 @@ type ChangeRow = {
   decided_at: Date | null;
 };
 
-function toView(row: ChangeRow): SchemaChangeView {
+/** A stored change as the API shows it, its diff by name against `state`. */
+function toView(row: ChangeRow, state: SchemaState): SchemaChangeView {
   return {
     id: row.id,
     status: row.status,
-    operations: row.operations as DiffOp[],
+    operations: presentDiff(row.operations as DiffOp[], state),
     request: row.request as SchemaOperation[],
     isDestructive: row.is_destructive,
     reason: row.reason,
@@ -346,6 +354,7 @@ async function insertChange(
     appliedVersion?: number;
     error?: string;
   },
+  state: SchemaState,
 ): Promise<SchemaChangeView> {
   const decided = change.status !== 'proposed';
   const [row] = await tx<ChangeRow[]>`
@@ -357,7 +366,7 @@ async function insertChange(
       ${change.appliedVersion ?? null}, ${change.error ?? null},
       ${decided ? tx`now()` : null})
     returning *`;
-  return toView(row as ChangeRow);
+  return toView(row as ChangeRow, state);
 }
 
 async function updateChange(
@@ -370,6 +379,7 @@ async function updateChange(
     error?: string;
     operations?: DiffOp[];
   },
+  state: SchemaState,
 ): Promise<SchemaChangeView> {
   const [row] = await tx<ChangeRow[]>`
     update schema_changes set status = ${update.status}, decided_by = ${tx.json(update.decidedBy)},
@@ -378,5 +388,5 @@ async function updateChange(
       operations = ${update.operations ? tx.json(jsonValue(update.operations)) : tx`operations`}
     where id = ${id}
     returning *`;
-  return toView(row as ChangeRow);
+  return toView(row as ChangeRow, state);
 }

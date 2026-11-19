@@ -67,8 +67,8 @@ function SchemaChangeCard({
   allowed: boolean;
   busy: boolean;
 }) {
-  const groups = useSchemaChangeGroups(change.request);
-  const count = change.request.length;
+  const groups = useSchemaChangeGroups(change.operations);
+  const count = change.operations.length;
   return (
     <ReviewCard>
       <ReviewCardHeader

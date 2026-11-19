@@ -282,10 +282,15 @@ Categories (existing `tab` URL values remain compatible):
    titled with what it does ("Rename Engagement to Project", "Add Renewal
    date to Company"), with the proposing actor, time and number of
    operations. The agent's reason is quoted under "Why", and a change the
-   schema engine marks destructive carries a warning. The operations are
-   grouped by object and then by field, each marked New, Edited or Deleted,
-   and every property shows its current value struck through beside the
-   proposed one ("Name: ~~Engagement~~ → Project"; API names in monospace). Approve and Reject for `admin` keys
+   schema engine marks destructive carries a warning. The card is built
+   from the engine's diff (`operations`), not by replaying the request, so
+   it shows the change's net effect: objects and fields are matched by
+   universal ID, grouped by object and then by field, each marked New,
+   Edited or Deleted, and every property shows its value before the change
+   struck through beside the one after ("Name: ~~Engagement~~ → Project";
+   API names in monospace). A new field lists its API name, whether it is
+   required, unique, filterable and searchable, and its settings (options,
+   what a relation links to). Approve and Reject for `admin` keys
    (`POST /v1/schema/changes/:id/approve` · `/reject`). Approving refreshes
    the cached schema (6.3). An approval that no longer validates shows the
    engine's reason and links the records in the way (`recordIds`), such as

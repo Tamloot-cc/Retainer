@@ -1,4 +1,4 @@
-import type { FieldView, ObjectView } from '@retainer/shared';
+import type { FieldView, ObjectView, SchemaDiffField } from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
 import { sortObjects } from '../state.js';
 import {
@@ -9,7 +9,7 @@ import {
   cardinality,
   describeDiffOp,
   describeOperation,
-  groupSchemaChange,
+  groupSchemaDiff,
   isManyRelation,
   matchesField,
   parseStatus,
@@ -390,17 +390,22 @@ describe('the diagram’s about lines', () => {
   });
 });
 
-describe('groupSchemaChange', () => {
+describe('groupSchemaDiff', () => {
   const engagement = object({
     nameSingular: 'engagement',
     labelSingular: 'Engagement',
     labelPlural: 'Engagements',
     description: 'Work with a portfolio company.',
-    fields: [field({ name: 'company', type: 'relation', label: 'Company' })],
+    labelField: 'name',
+    fields: [
+      field({ name: 'name', type: 'text', label: 'Name' }),
+      field({ name: 'company', type: 'relation', label: 'Company' }),
+    ],
   });
   const task = object({
     nameSingular: 'task',
     labelSingular: 'Task',
+    labelPlural: 'Tasks',
     fields: [
       field({ name: 'engagement', type: 'relation', label: 'Engagement' }),
       field({
@@ -412,237 +417,157 @@ describe('groupSchemaChange', () => {
     ],
   });
   const schema = [engagement, task];
+  const ref = (objectId: string, object: string, fieldId: string, field: string) => ({
+    objectId,
+    object,
+    fieldId,
+    field,
+  });
+  const newField = (over: Partial<SchemaDiffField> & Pick<SchemaDiffField, 'name' | 'type'>) =>
+    ({
+      universalId: `u-${over.name}`,
+      label: over.name,
+      description: null,
+      settings: {},
+      isNullable: true,
+      isUnique: false,
+      isFilterable: false,
+      isSearchable: false,
+      isProtected: false,
+      coreRole: null,
+      owner: 'agent',
+      ...over,
+    }) satisfies SchemaDiffField;
 
-  it('groups a rename by object and field, with each property before and after', () => {
-    const groups = groupSchemaChange(
+  it('groups a rename by object and field, each property before and after', () => {
+    // The engine's diff names parts after the change: "project", not "engagement".
+    const groups = groupSchemaDiff(
       [
         {
-          op: 'update_object',
-          object: 'engagement',
-          labelSingular: 'Project',
-          labelPlural: 'Projects',
-          description: 'A piece of work the AI Team runs.',
+          kind: 'rename_object',
+          objectId: 'E',
+          from: { nameSingular: 'engagement', namePlural: 'engagements' },
+          to: { nameSingular: 'project', namePlural: 'projects' },
         },
-        { op: 'update_field', object: 'task', field: 'engagement', label: 'Project' },
-        { op: 'rename_field', object: 'task', field: 'engagement', name: 'project' },
         {
-          op: 'rename_object',
-          object: 'engagement',
-          nameSingular: 'project',
-          namePlural: 'projects',
+          kind: 'update_object',
+          objectId: 'E',
+          object: 'project',
+          property: 'labelSingular',
+          from: 'Engagement',
+          to: 'Project',
+        },
+        {
+          kind: 'update_object',
+          objectId: 'E',
+          object: 'project',
+          property: 'description',
+          from: 'Work with a portfolio company.',
+          to: 'A piece of work the AI Team runs.',
+        },
+        {
+          kind: 'rename_field',
+          objectId: 'T',
+          object: 'task',
+          fieldId: 'TE',
+          from: 'engagement',
+          to: 'project',
+        },
+        {
+          kind: 'update_field',
+          ...ref('T', 'task', 'TE', 'project'),
+          property: 'label',
+          from: 'Engagement',
+          to: 'Project',
         },
       ],
       schema,
     );
-    expect(groups.map((g) => g.label)).toEqual(['Engagement', 'Task']);
+    expect(groups.map((g) => [g.id, g.object, g.label])).toEqual([
+      ['E', 'engagement', 'Engagement'],
+      ['T', 'task', 'Task'],
+    ]);
     expect(groups[0]?.details).toEqual([
-      { label: 'Name', before: 'Engagement', after: 'Project' },
-      { label: 'Plural name', before: 'Engagements', after: 'Projects' },
-      {
-        label: 'Description',
-        before: 'Work with a portfolio company.',
-        after: 'A piece of work the AI Team runs.',
-      },
       {
         label: 'API name',
         before: 'engagement / engagements',
         after: 'project / projects',
         code: true,
       },
+      { label: 'Name', before: 'Engagement', after: 'Project' },
+      {
+        label: 'Description',
+        before: 'Work with a portfolio company.',
+        after: 'A piece of work the AI Team runs.',
+      },
     ]);
-    // Two operations on one field land in one entry.
+    // The renamed field is found under its current name, with its type.
     expect(groups[1]?.fields).toEqual([
       {
-        id: 'object:task/engagement',
+        id: 'TE',
         label: 'Engagement',
         type: 'Relation',
         kind: 'changed',
         details: [
-          { label: 'Label', before: 'Engagement', after: 'Project' },
           { label: 'API name', before: 'engagement', after: 'project', code: true },
+          { label: 'Label', before: 'Engagement', after: 'Project' },
         ],
       },
     ]);
     expect(summarizeSchemaChange(groups)).toBe('Rename Engagement to Project');
   });
 
-  it('follows renames, so later operations that use the new name stay on the same part', () => {
-    const groups = groupSchemaChange(
-      [
-        { op: 'rename_object', object: 'task', nameSingular: 'todo', namePlural: 'todos' },
-        { op: 'rename_field', object: 'todo', field: 'status', name: 'state' },
-        { op: 'rename_field', object: 'todo', field: 'state', name: 'stage' },
-        { op: 'update_field', object: 'todo', field: 'stage', isUnique: true },
-        { op: 'update_object', object: 'todo', labelSingular: 'To-do' },
-      ],
-      schema,
-    );
-    expect(groups.map((g) => g.object)).toEqual(['task']);
-    expect(groups[0]?.details).toEqual([
-      { label: 'API name', before: 'task / tasks', after: 'todo / todos', code: true },
-      { label: 'Name', before: 'Task', after: 'To-do' },
-    ]);
-    expect(groups[0]?.fields).toEqual([
-      {
-        id: 'object:task/status',
-        label: 'Status',
-        type: 'Single select',
-        kind: 'changed',
-        details: [
-          { label: 'API name', before: 'status', after: 'state', code: true },
-          { label: 'API name', before: 'state', after: 'stage', code: true },
-          { label: 'Unique', before: 'No', after: 'Yes' },
-        ],
-      },
-    ]);
-    expect(summarizeSchemaChange(groups)).toBe('Rename Task to To-do');
-  });
-
-  it('marks new and deleted parts, flags and options in plain words', () => {
-    const groups = groupSchemaChange(
+  it('shows a new type with its fields, settings and label field', () => {
+    const groups = groupSchemaDiff(
       [
         {
-          op: 'create_object',
+          kind: 'create_object',
           object: {
+            universalId: 'D',
             nameSingular: 'deal',
             namePlural: 'deals',
             labelSingular: 'Deal',
             labelPlural: 'Deals',
-            fields: [{ name: 'amount', label: 'Amount', type: 'number', isNullable: false }],
+            description: null,
+            labelField: 'title',
+            isProtected: false,
+            class: 'entity',
+            owner: 'agent',
           },
         },
         {
-          op: 'create_field',
+          kind: 'create_field',
+          objectId: 'D',
           object: 'deal',
-          field: {
+          field: newField({
+            name: 'title',
+            label: 'Deal name',
+            type: 'text',
+            isNullable: false,
+            isSearchable: true,
+          }),
+        },
+        {
+          kind: 'create_field',
+          objectId: 'D',
+          object: 'deal',
+          field: newField({
             name: 'stage',
             label: 'Stage',
-            type: 'text',
-            isFilterable: false,
-            isSearchable: true,
-          },
-        },
-        { op: 'update_field', object: 'task', field: 'status', isUnique: true, isNullable: false },
-        { op: 'remove_option', object: 'task', field: 'status', value: 'todo' },
-        {
-          op: 'add_option',
-          object: 'task',
-          field: 'status',
-          option: { value: 'done', label: 'Done' },
-        },
-        { op: 'delete_field', object: 'engagement', field: 'company' },
-      ],
-      schema,
-    );
-    const deal = groups.find((g) => g.object === 'deal');
-    expect(deal?.kind).toBe('added');
-    expect(deal?.details).toContainEqual({
-      label: 'API name',
-      after: 'deal / deals',
-      code: true,
-    });
-    expect(deal?.fields.map((f) => [f.label, f.kind, f.details])).toEqual([
-      [
-        'Amount',
-        'added',
-        [
-          { label: 'API name', after: 'amount', code: true },
-          { label: 'Required', after: 'Yes' },
-        ],
-      ],
-      [
-        'Stage',
-        'added',
-        [
-          { label: 'API name', after: 'stage', code: true },
-          { label: 'Filterable', after: 'No' },
-          { label: 'Searchable', after: 'Yes' },
-        ],
-      ],
-    ]);
-    const status = groups.find((g) => g.object === 'task')?.fields[0];
-    expect(status?.details).toEqual([
-      { label: 'Required', before: 'No', after: 'Yes' },
-      { label: 'Unique', before: 'No', after: 'Yes' },
-      { label: 'Removed option', before: 'To do' },
-      { label: 'New option', after: 'Done' },
-    ]);
-    expect(groups.find((g) => g.object === 'engagement')?.fields[0]?.kind).toBe('removed');
-    expect(summarizeSchemaChange(groups)).toBe('Add the Deal type');
-  });
-
-  it('keeps a deleted or renamed-away part apart from a new one that reuses its name', () => {
-    const replaced = groupSchemaChange(
-      [
-        { op: 'delete_field', object: 'task', field: 'status' },
-        {
-          op: 'create_field',
-          object: 'task',
-          field: { name: 'status', label: 'Status', type: 'text' },
-        },
-        { op: 'update_field', object: 'task', field: 'status', isUnique: true },
-      ],
-      schema,
-    );
-    expect(replaced[0]?.fields.map((f) => [f.label, f.type, f.kind, f.details])).toEqual([
-      ['Status', 'Single select', 'removed', []],
-      [
-        'Status',
-        'Text',
-        'added',
-        [
-          { label: 'API name', after: 'status', code: true },
-          { label: 'Unique', after: 'Yes' },
-        ],
-      ],
-    ]);
-    const moved = groupSchemaChange(
-      [
-        { op: 'rename_object', object: 'task', nameSingular: 'chore', namePlural: 'chores' },
-        {
-          op: 'create_object',
-          object: {
-            nameSingular: 'task',
-            namePlural: 'tasks',
-            labelSingular: 'Task',
-            labelPlural: 'Tasks',
-            fields: [],
-          },
-        },
-        { op: 'update_object', object: 'chore', labelSingular: 'Chore' },
-      ],
-      schema,
-    );
-    expect(moved.map((g) => [g.label, g.kind])).toEqual([
-      ['Task', 'changed'],
-      ['Task', 'added'],
-    ]);
-    expect(moved[0]?.rename).toEqual({ from: 'Task', to: 'Chore' });
-    expect(new Set(moved.map((g) => g.id)).size).toBe(2);
-  });
-
-  it("shows a new field's settings: its options and what it links to", () => {
-    const groups = groupSchemaChange(
-      [
-        {
-          op: 'create_field',
-          object: 'task',
-          field: {
-            name: 'priority',
-            label: 'Priority',
             type: 'select',
             settings: {
               options: [
-                { value: 'high', label: 'High' },
-                { value: 'low', label: 'Low' },
+                { value: 'won', label: 'Won' },
+                { value: 'lost', label: 'Lost' },
               ],
             },
-          },
+          }),
         },
         {
-          op: 'create_field',
-          object: 'task',
-          field: {
+          kind: 'create_field',
+          objectId: 'D',
+          object: 'deal',
+          field: newField({
             name: 'project',
             label: 'Project',
             type: 'relation',
@@ -651,123 +576,182 @@ describe('groupSchemaChange', () => {
               relationCardinality: 'many_to_one',
               onDelete: 'cascade',
             },
-          },
+          }),
+        },
+        {
+          kind: 'create_field',
+          objectId: 'E',
+          object: 'engagement',
+          field: newField({
+            name: 'deals',
+            label: 'Deals',
+            type: 'relation',
+            settings: { targetObject: 'deal', relationCardinality: 'one_to_many', isInverse: true },
+          }),
         },
       ],
       schema,
     );
-    expect(groups[0]?.fields.map((f) => f.details)).toEqual([
+    const [deal, eng] = groups;
+    expect(deal?.kind).toBe('added');
+    expect(deal?.details).toEqual([
+      { label: 'Name', after: 'Deal' },
+      { label: 'Plural name', after: 'Deals' },
+      { label: 'API name', after: 'deal / deals', code: true },
+      { label: 'Label field', after: 'Deal name' },
+    ]);
+    expect(deal?.fields.map((f) => [f.label, f.type, f.kind, f.details])).toEqual([
       [
-        { label: 'API name', after: 'priority', code: true },
-        { label: 'Options', after: 'High, Low' },
+        'Deal name',
+        'Text',
+        'added',
+        [
+          { label: 'API name', after: 'title', code: true },
+          { label: 'Behavior', after: 'Required · Searchable' },
+        ],
       ],
       [
-        { label: 'API name', after: 'project', code: true },
-        { label: 'Links to', after: 'One Engagement' },
-        { label: 'If target is deleted', after: 'Delete this record too' },
+        'Stage',
+        'Single select',
+        'added',
+        [
+          { label: 'API name', after: 'stage', code: true },
+          { label: 'Behavior', after: 'Optional' },
+          { label: 'Options', after: 'Won, Lost' },
+        ],
+      ],
+      [
+        'Project',
+        'Relation',
+        'added',
+        [
+          { label: 'API name', after: 'project', code: true },
+          { label: 'Behavior', after: 'Optional' },
+          { label: 'Links to', after: 'One Engagement' },
+          { label: 'If target is deleted', after: 'Delete this record too' },
+        ],
       ],
     ]);
+    // The other side of the new relation, on an existing type, links to the new one.
+    expect(eng?.fields[0]?.details).toContainEqual({ label: 'Links to', after: 'Many Deals' });
+    expect(summarizeSchemaChange(groups)).toBe('Add the Deal type');
   });
 
-  it("shows each step from the value the request left, and a new object's label field", () => {
-    const groups = groupSchemaChange(
+  it('marks deleted parts and reads flags, options and the label field in plain words', () => {
+    const groups = groupSchemaDiff(
       [
-        { op: 'update_field', object: 'task', field: 'status', label: 'Stage' },
-        { op: 'update_field', object: 'task', field: 'status', label: 'Phase' },
-        { op: 'update_option', object: 'task', field: 'status', value: 'todo', label: 'Open' },
-        { op: 'remove_option', object: 'task', field: 'status', value: 'todo' },
         {
-          op: 'create_object',
-          object: {
-            nameSingular: 'deal',
-            namePlural: 'deals',
-            labelSingular: 'Deal',
-            labelPlural: 'Deals',
-            labelField: 'title',
-            fields: [{ name: 'title', label: 'Deal name', type: 'text' }],
-          },
+          kind: 'update_field',
+          ...ref('T', 'task', 'TS', 'status'),
+          property: 'isNullable',
+          from: true,
+          to: false,
         },
-        { op: 'update_field', object: 'deal', field: 'title', label: 'Title' },
-      ],
-      schema,
-    );
-    expect(groups[0]?.fields[0]?.details).toEqual([
-      { label: 'Label', before: 'Status', after: 'Stage' },
-      { label: 'Label', before: 'Stage', after: 'Phase' },
-      { label: 'Option', before: 'To do', after: 'Open' },
-      { label: 'Removed option', before: 'Open' },
-    ]);
-    const deal = groups[1];
-    expect(deal?.details).toContainEqual({ label: 'Label field', after: 'Deal name' });
-    expect(deal?.fields[0]?.details).toContainEqual({
-      label: 'Label',
-      before: 'Deal name',
-      after: 'Title',
-    });
-  });
-
-  it('never changes the schema it reads, and names new parts by their final label', () => {
-    const options = task.fields[1]?.settings.options;
-    const before = JSON.stringify(schema);
-    const groups = groupSchemaChange(
-      [
         {
-          op: 'add_option',
-          object: 'task',
-          field: 'status',
+          kind: 'update_field',
+          ...ref('T', 'task', 'TS', 'status'),
+          property: 'isUnique',
+          from: false,
+          to: true,
+        },
+        {
+          kind: 'update_option',
+          ...ref('T', 'task', 'TS', 'status'),
+          value: 'todo',
+          from: 'To do',
+          to: 'Open',
+        },
+        { kind: 'remove_option', ...ref('T', 'task', 'TS', 'status'), value: 'todo' },
+        {
+          kind: 'add_option',
+          ...ref('T', 'task', 'TS', 'status'),
           option: { value: 'done', label: 'Done' },
         },
+        { kind: 'deprecate_field', ...ref('E', 'engagement', 'EC', 'company') },
         {
-          op: 'create_object',
-          object: {
-            nameSingular: 'deal',
-            namePlural: 'deals',
-            labelSingular: 'Deal',
-            labelPlural: 'Deals',
-            fields: [{ name: 'size', label: 'Size', type: 'number' }],
-          },
+          kind: 'update_object',
+          objectId: 'E',
+          object: 'engagement',
+          property: 'labelField',
+          from: 'name',
+          to: 'company',
         },
-        { op: 'update_object', object: 'deal', labelSingular: 'Opportunity' },
-        { op: 'update_field', object: 'deal', field: 'size', label: 'Amount' },
+      ],
+      schema,
+    );
+    // The type whose own label field changes comes before one with only field changes.
+    expect(groups.map((g) => g.id)).toEqual(['E', 'T']);
+    expect(groups[1]?.fields[0]?.details).toEqual([
+      { label: 'Required', before: 'No', after: 'Yes' },
+      { label: 'Unique', before: 'No', after: 'Yes' },
+      { label: 'Option', before: 'To do', after: 'Open' },
+      { label: 'Removed option', before: 'To do' },
+      { label: 'New option', after: 'Done' },
+    ]);
+    expect(groups[0]?.fields[0]?.kind).toBe('removed');
+    expect(groups[0]?.details).toEqual([
+      { label: 'Label field', before: 'Name', after: 'Company' },
+    ]);
+    expect(summarizeSchemaChange(groups)).toBe(
+      'Delete Company from Engagement and change Status on Task',
+    );
+  });
+
+  it('keeps a deleted part apart from a new one with the same name', () => {
+    const groups = groupSchemaDiff(
+      [
+        { kind: 'deprecate_field', ...ref('T', 'task', 'TS', 'status') },
+        {
+          kind: 'create_field',
+          objectId: 'T',
+          object: 'task',
+          field: newField({ name: 'status', type: 'text' }),
+        },
+      ],
+      schema,
+    );
+    expect(groups[0]?.fields.map((f) => [f.id, f.type, f.kind])).toEqual([
+      ['TS', 'Single select', 'removed'],
+      ['u-status', 'Text', 'added'],
+    ]);
+  });
+
+  it('names a field-only change after its field, and caps a long headline', () => {
+    const unique = (objectId: string, object: string, fieldId: string, name: string) => ({
+      kind: 'update_field' as const,
+      ...ref(objectId, object, fieldId, name),
+      property: 'isUnique' as const,
+      from: false,
+      to: true,
+    });
+    expect(
+      summarizeSchemaChange(groupSchemaDiff([unique('T', 'task', 'TS', 'status')], schema)),
+    ).toBe('Change Status on Task');
+    const three = groupSchemaDiff(
+      [
+        unique('T', 'task', 'TS', 'status'),
+        unique('T', 'task', 'TE', 'engagement'),
+        unique('E', 'engagement', 'EN', 'name'),
+      ],
+      schema,
+    );
+    expect(summarizeSchemaChange(three)).toBe(
+      'Change Status on Task, change Engagement on Task and 1 more',
+    );
+  });
+
+  it('never changes the schema it reads', () => {
+    const before = JSON.stringify(schema);
+    groupSchemaDiff(
+      [
+        {
+          kind: 'add_option',
+          ...ref('T', 'task', 'TS', 'status'),
+          option: { value: 'x', label: 'X' },
+        },
       ],
       schema,
     );
     expect(JSON.stringify(schema)).toBe(before);
-    expect(task.fields[1]?.settings.options).toBe(options);
-    expect(groups[1]?.label).toBe('Opportunity');
-    expect(groups[1]?.fields[0]?.label).toBe('Amount');
-    expect(summarizeSchemaChange(groups)).toBe('Add the Opportunity type');
-  });
-
-  it('names a field-only change after its field, and caps a long headline', () => {
-    const one = groupSchemaChange(
-      [{ op: 'update_field', object: 'task', field: 'status', isUnique: true }],
-      schema,
-    );
-    expect(summarizeSchemaChange(one)).toBe('Change Status on Task');
-    const many = groupSchemaChange(
-      [
-        { op: 'update_field', object: 'task', field: 'status', isUnique: true },
-        { op: 'update_field', object: 'engagement', field: 'company', label: 'Client' },
-      ],
-      schema,
-    );
-    expect(summarizeSchemaChange(many)).toBe(
-      'Change Status on Task and change Company on Engagement',
-    );
-    const objects = groupSchemaChange(
-      ['a', 'b', 'c'].map((n) => ({
-        op: 'create_object' as const,
-        object: {
-          nameSingular: n,
-          namePlural: `${n}s`,
-          labelSingular: n.toUpperCase(),
-          labelPlural: n,
-          fields: [],
-        },
-      })),
-      schema,
-    );
-    expect(summarizeSchemaChange(objects)).toBe('Add the A type, add the B type and 1 more');
   });
 });
