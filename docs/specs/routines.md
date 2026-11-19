@@ -3,7 +3,9 @@
 Status: **proposal**, 2026-11-19. Not accepted and not built. This is the
 third draft of the day: after two reviews, the product owner decided that a
 routine is TypeScript code, not a JSON flow, and that the first version stays
-lean. Section 2 lists what is decided and what is only proposed.
+lean. A third review, of this draft, tightened the rules for retries, dry
+runs, version changes and the model cap. Section 2 lists what is decided and
+what is only proposed.
 
 Builds on the extension platform in [extensions.md](extensions.md), model calls
 in [extensions-model-calls.md](extensions-model-calls.md) and the two-step
@@ -60,8 +62,9 @@ flowchart LR
 
 Who does what:
 
-- **The person** writes the description and approves the result. Nothing runs
-  without a person's approval.
+- **The person** writes the description and approves the result. Nothing acts
+  without a person's approval: an unapproved routine can only be dry-run,
+  which changes nothing (§5.1).
 - **The builder agent** writes the manifest and the code and reports what it
   could not cover. It is either Retainer's built-in builder or the person's
   own agent connected over MCP.
@@ -130,7 +133,7 @@ for the open questions.
 | Tool           | A function an extension publishes for others to call.                                                             |
 | Run            | One execution of the code, with a record of every call it made.                                                   |
 | Effect         | A call that changes something or costs something: a write, a tool call or a model call.                           |
-| Dry run        | A run whose writes and sends are refused and only reported.                                                       |
+| Dry run        | A run of the code whose writes and tool calls are reported, not made.                                             |
 | Builder agent  | The agent that translates a description into a manifest and code.                                                 |
 
 ### 3.2 Where each part runs
@@ -205,13 +208,16 @@ kind of run. This is the first thing to build (§11).
   process per run and gives it no files, no environment variables, no
   subprocesses and no imports beyond the bundled SDK. Nothing a run leaves
   behind is visible to the next run, including on a reused hosted function.
-- **Network to Retainer only: its API and its model proxy.** Hosted, the
-  runner's function has no public egress. In Compose, its container's proxy
-  allows only those two.
-  Outside effects come only from extension tools, called through Retainer.
+- **Network to Retainer only: its API, its model proxy and its file
+  service.** Hosted, the runner's function has no public egress. In Compose,
+  its container's proxy allows only those three. Outside effects come only
+  from extension tools, called through Retainer. On the hosted service this
+  path does not exist yet and is built with `retainer-cloud` (§11.3).
 - **The run token is the boundary.** It is bound to one run, expires with
-  it, has agent rank, and can call only the tools the manifest lists and the
-  model only if the manifest says so. A dry run's token cannot write at all.
+  it, has agent rank, and can call only the tools the manifest lists. It
+  carries no model access: each model call asks the API for a short-lived
+  model token, given only if the manifest says the routine uses a model
+  (§6.3). A dry run's token cannot write at all.
 - **The type-check runs here too**, in the same bundle, without running the
   code (§5.2).
 
@@ -276,6 +282,9 @@ What Retainer checks and what it does not claim:
 - `record` can name the fields to watch. A change to any one of them fires
   it; without a list, any change does. There is no "all of these changed
   together".
+- `updated` covers two feed operations: `update`, and `supersede`, which is a
+  new revision of an event, such as a meeting logged again with its
+  transcript.
 - **An event's links.** On an event type, `on` can also take `links`: the
   routine then fires when the event's participants or `about` records change,
   such as a participant matched to a newly created person when the event is
@@ -283,8 +292,12 @@ What Retainer checks and what it does not claim:
   keys, whenever a write changes an event's links and none of its fields
   (`changes/collect.ts`). It does not say whether a participant or an `about`
   link changed, so the `if` or the code decides whether the change matters. A
-  write that changes a field and a link together is recorded as `update`, and
-  fires the routine only through its watched fields.
+  write that changes a field and a link together is recorded as `update` or
+  `supersede`, with no sign that a link changed, and fires the routine only
+  through its watched fields. A routine that must not miss a link change
+  therefore names no fields: every change to the event then starts a run, and
+  the `if` and the code decide (§9.4). A flag on the feed for changed links
+  would remove this limit; it is left for later (§10).
 - The matcher decides only whether a change concerns the routine: the object,
   the operation and the watched fields (§6.1). The `if` is evaluated when the
   run starts (§4.3), against the record as it is then.
@@ -292,13 +305,18 @@ What Retainer checks and what it does not claim:
   for each record, ever. A deal that leaves Proposal and comes back does not
   get a second task, and a corrected transcript does not create the tasks
   again. Without it, every matching change can start a run.
-  - A run counts only once it makes its first effect: a write, a tool call or
-    a model call. A run skipped by the `if`, or one whose code returns before
-    any effect, does not use up the record, so a meeting checked before its
-    lead was matched is checked again when the lead arrives.
-  - The mark is set in the same transaction that records that first effect,
-    and Retainer checks for an existing mark just before it, so two runs
+  - A record is used up by a run's first write or tool call. A model call
+    alone does not use it up. A run skipped by the `if`, one whose code
+    returns before any write or tool call, and one that fails before any,
+    all leave the record unused, so a meeting checked before its lead was
+    matched is checked again when the lead arrives.
+  - The mark is set in the same transaction as that first write, or when
+    that first tool call is handed to the tool. A tool call whose outcome is
+    unknown therefore counts: a message is not sent a second time for a new
+    trigger. Retainer checks for an existing mark just before, so two runs
     queued close together cannot both act.
+  - A run that fails after its first write or tool call leaves the record
+    used, with its work half done. The run history shows it (§6.2).
 - **No `deleted` trigger in the first version.** A run reads the triggering
   record, and the record query excludes deleted records. A merge is not a
   trigger either; §6.1 says what it does to runs and firings.
@@ -336,7 +354,8 @@ values (§12).
 
 Anything beyond the triggering record is tested in the code: a related
 record's values, a count, a sum, a tool's answer or a model's answer. Code
-that returns before its first effect leaves the record unused (§4.2).
+that returns before its first write or tool call leaves the record unused
+(§4.2).
 
 ### 4.4 The code
 
@@ -351,13 +370,14 @@ One module per version, exporting `main`. It gets:
 
 What the SDK offers:
 
-| Call                                            | Does                                                     | An effect |
-| ----------------------------------------------- | -------------------------------------------------------- | --------- |
-| `retainer.<object>.get`, `.query`, `.aggregate` | Reads records, with the API's own filters and aggregates | No        |
-| `retainer.<object>.create`, `.update`           | Writes a record                                          | Yes       |
-| `retainer.events.log`, `retainer.remember`      | Logs an event, stores a fact                             | Yes       |
-| `retainer.tools.<name>(input)`                  | Calls a tool an extension publishes (§8)                 | Yes       |
-| `retainer.ai.generate(...)`                     | Asks a model for a typed answer (§4.5)                   | Yes       |
+| Call                                            | Does                                                       | An effect |
+| ----------------------------------------------- | ---------------------------------------------------------- | --------- |
+| `retainer.<object>.get`, `.query`, `.aggregate` | Reads records, with the API's own filters and aggregates   | No        |
+| `retainer.files.text(id)`                       | Reads the text of a file attached to a record, up to 1 MiB | No        |
+| `retainer.<object>.create`, `.update`           | Writes a record                                            | Yes       |
+| `retainer.events.log`, `retainer.remember`      | Logs an event, stores a fact                               | Yes       |
+| `retainer.tools.<name>(input)`                  | Calls a tool an extension publishes (§8)                   | Yes       |
+| `retainer.ai.generate(...)`                     | Asks a model for a typed answer (§4.5)                     | Yes       |
 
 Rules for the code:
 
@@ -366,6 +386,10 @@ Rules for the code:
   keys. Code that names a missing object, field or tool, or passes a value of
   the wrong type, does not type-check and cannot be saved.
 - **No imports and no network.** The SDK is the only way out.
+- **Writes cite their source.** When the triggering record is an event, each
+  write cites it as its source unless the code names another event. The
+  values then carry the event's date, and forgetting the event removes them
+  (§6.6).
 - **`run.at`, never the clock.** Code reads "now" from `run.at`, so a dry run
   and a retried run give the same answer.
 - **It can loop, branch, count and build text.** That is the point of code:
@@ -376,31 +400,21 @@ Rules for the code:
 ### 4.5 Model calls from code
 
 ```ts
-const answer = await retainer.ai.generate({
-  instructions: 'List each thing someone promised in this meeting, who and by when.',
-  input: { transcript: record.transcript },
+const { complaint } = await retainer.ai.generate({
+  instructions: 'Does this email read like a complaint?',
+  input: { title: record.title, summary: record.summary },
   output: {
     type: 'object',
-    properties: {
-      commitments: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-            due: { type: 'string' },
-          },
-        },
-      },
-    },
+    properties: { complaint: { type: 'boolean' } },
+    required: ['complaint'],
   },
 });
 ```
 
 - **One call, one typed answer.** The model gets the instructions, the input
   the code passes and the shape to answer in. It has no tools and cannot read
-  anything else. A yes-or-no question is the same call with a boolean in the
-  shape.
+  anything else. The example asks yes or no; a list or a text is the same
+  call with another shape.
 - The instructions come from the approved code. Record content is passed as
   input and reaches the model as data.
 - The code decides what to do with the answer. The model never acts.
@@ -409,9 +423,10 @@ const answer = await retainer.ai.generate({
 - **The same model proxy extensions use** (`extensions-model-calls.md` §3),
   with a model token of its own kind. It is a plain model call, one request
   and one answer, not an agent. For a routine's token the proxy accepts only
-  that: the operator's model, with no `tools` and no `mcp_servers`. An
-  extension's token keeps the wider list. The code holds its token and could
-  call the proxy directly, so the proxy is what makes "no tools" true. It
+  that: the operator's model, an output of at most 4,096 tokens, no `tools`
+  and no `mcp_servers`. An extension's token keeps the wider list. The code
+  is handed its model token and could call the proxy directly, so the proxy
+  is what makes "no tools" true. It
   also keeps the sandbox closed: a model's server-side tools, such as web
   fetch, would otherwise be a way out.
 - A manifest must say `"model": true` for the call to work. The review then
@@ -421,21 +436,23 @@ const answer = await retainer.ai.generate({
 
 ### 4.6 Limits (proposed)
 
-| Limit                                      | Value                           | Why                                                                    |
-| ------------------------------------------ | ------------------------------- | ---------------------------------------------------------------------- |
-| Source of one routine                      | 64 KiB                          | Macro's limit; keeps a version reviewable                              |
-| One run                                    | 120 s by default, 300 s at most | The extension run limits (`extensions.md` §9.1)                        |
-| Calls of one SDK operation in a run        | 200                             | Stops a runaway loop                                                   |
-| Model calls in a run                       | 50                              | Bounds cost per run                                                    |
-| Model calls per workspace per day          | 1,000                           | Bounds spend. Dry runs and builder submissions count                   |
-| Runs one routine may queue in an hour      | 200                             | Stops a runaway or a bulk import. Further runs are held, and it pauses |
-| Records one `schedule` tick may fan out to | 200                             | Bounds a scheduled sweep. Above it the tick waits for an admin         |
-| A run's expiry                             | 24 hours after it starts        | The queue's job lifetime. A manifest can set an earlier one            |
-| One tool or model result                   | 64 KiB                          | The extension protocol limit                                           |
-| Stored results kept after a run ends       | 7 days                          | Long enough to inspect a run, short for copied CRM data (§6.6)         |
-| Shortest `schedule` interval               | 15 minutes                      | A routine is not a polling loop                                        |
-| Precision of `relative` triggers           | 5 minutes                       | They are found by a periodic scan                                      |
-| Depth of routines triggering each other    | 8 hops                          | The existing cause-chain cap                                           |
+| Limit                                      | Value                           | Why                                                                                    |
+| ------------------------------------------ | ------------------------------- | -------------------------------------------------------------------------------------- |
+| Source of one routine                      | 64 KiB                          | Macro's limit; keeps a version reviewable                                              |
+| One run                                    | 120 s by default, 300 s at most | The extension run limits (`extensions.md` §9.1)                                        |
+| Calls of one SDK operation in a run        | 200                             | Stops a runaway loop                                                                   |
+| Model calls in a run                       | 50                              | Bounds cost per run                                                                    |
+| Model calls per workspace per day          | 1,000                           | Bounds spend. Dry runs and the builder's calls count. Reserved before each call (§6.3) |
+| Output of one model call                   | 4,096 tokens                    | Makes a count of calls a real bound on spend                                           |
+| Runs one routine may queue in an hour      | 200                             | Stops a runaway or a bulk import. Further runs are held, and it pauses                 |
+| Records one `schedule` tick may fan out to | 200                             | Bounds a scheduled sweep. Above it the tick waits for an admin                         |
+| A run's expiry                             | 24 hours after it starts        | The queue's job lifetime. A manifest can set an earlier one                            |
+| One tool or model result                   | 64 KiB                          | The extension protocol limit                                                           |
+| Text read from one file                    | 1 MiB                           | Bounds what one read brings into a run                                                 |
+| Stored results kept after a run ends       | 7 days                          | Long enough to inspect a run, short for copied CRM data (§6.6)                         |
+| Shortest `schedule` interval               | 15 minutes                      | A routine is not a polling loop                                                        |
+| Precision of `relative` triggers           | 5 minutes                       | They are found by a periodic scan                                                      |
+| Depth of routines triggering each other    | 8 hops                          | The existing cause-chain cap                                                           |
 
 A self-hosted operator can change the daily model cap
 (`RETAINER_ROUTINE_MODEL_CALLS_PER_DAY`).
@@ -449,7 +466,7 @@ A self-hosted operator can change the daily model cap
   through the proxy and saves a proposal. This is the pattern `configure`
   already uses to suggest a field mapping during an extension install: code
   with read-only access and model access prepares something for a person to
-  review. Each submission counts against the daily model cap (§4.6).
+  review. Its model calls count against the daily model cap (§6.3).
 - **The person's own agent.** Any agent connected over MCP can do the same
   with the same calls, from a chat.
 
@@ -465,6 +482,22 @@ Both use only the calls below. Neither can approve.
 `validate_routine` and `preview_routine` start a job in the sandbox and
 return its result, or an ID to poll when it takes longer than a request may
 (§8.3).
+
+Three ways the code can run, and what the server enforces in each:
+
+| Mode     | Who starts it                                                                   | Writes              | Tools                                                                                               | Model calls                       |
+| -------- | ------------------------------------------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------- |
+| Dry run  | The person building the routine, or their agent, with that person's read access | Reported, not made  | Reported, not called. That record's dry run ends there                                              | Made, and counted against the cap |
+| Test run | An admin, on one record                                                         | Made, at agent rank | `read` and `write` tools are called. A `send` tool is reported, not called, and the test ends there | Made                              |
+| Run      | The approved routine                                                            | Made, at agent rank | Called                                                                                              | Made                              |
+
+- A dry run needs no approval because it changes nothing. One thing leaves
+  Retainer: record content sent to the model provider, as the builder itself
+  sends it. The build screen says so before the person starts.
+- No tool runs in a dry run, not even a `read` tool. A tool is extension
+  code with its own credentials in its own job, so the dry run's read-only
+  token cannot hold it to reading, and what follows the call may depend on
+  its answer.
 
 ```mermaid
 sequenceDiagram
@@ -511,8 +544,8 @@ Five mechanisms back it:
      there is one.
 5. **A dry run on real records.** The preview runs the actual code on up to
    five recent records the trigger would have matched, with a token that
-   cannot write. It lists every write and send the code tried, in order, and
-   what the model answered. It also counts how many recent changes would have
+   cannot write (§5.1). It lists every write and tool call the code tried, in
+   order, and what the model answered. It also counts how many recent changes would have
    matched, which is the cost estimate. Two limits, stated on the screen:
    - records are read as they are today, not as they were when they changed;
    - a model can answer differently next time.
@@ -556,17 +589,41 @@ history are how a person catches that.
   removed, a new SDK), the code is type-checked again. If it still passes,
   the new fingerprint is recorded and it runs. If it fails, the routine
   pauses and is marked "needs attention".
+- **A tool's contract is pinned too.** Types alone are not enough: a tool can
+  keep its inputs and outputs while it changes from `read` to `send`, starts
+  using a member's account or starts calling a model. A version records, for
+  each tool it lists, the extension, the effect, the connection and whether
+  it calls a model. If any of those changes, the routine pauses until an
+  admin approves it again.
 - **Repair.** The description is the lasting record of intent. The builder
   can translate it again against the current workspace, and a person approves
   the repaired version. A rewrite never goes live without approval.
 - If the approver leaves the workspace or loses the admin role, the routine
   pauses until another admin approves it.
+- **Changing version.** A run is pinned to the version that was active when
+  it was queued. When a new version is approved, runs already started finish
+  on their own version, within the run's time limit. Runs not yet started,
+  queued or held, are discarded, and the approval screen says how many.
+- **Pausing.** A routine pauses when an admin pauses or archives it, when a
+  re-check fails, when a tool's contract changes, when it keeps failing, and
+  when its approver stops being an admin. A pause takes effect at once:
+  Retainer checks that the routine is active before every effect, and again
+  when a tool job it called starts. An effect after the pause is refused and
+  the run ends as `stopped`. Runs not yet started are held for an admin to
+  run or discard.
+- **Resuming.** A resumed routine starts from the feed's head, as at
+  approval. Changes made while it was paused, and due times that passed, are
+  not handled later. The Routines page says since when it was paused. This
+  also avoids reading from a cursor older than the feed keeps, which is 30
+  days (`db/change-cursor.ts`).
 - **Test run.** Before approving, an admin can test the routine on one record
-  they choose. Everything runs for real except `send` tools, which only
-  report what they would send. The run is marked as a test in the history.
+  they choose. Everything runs for real except `send` tools: Retainer does
+  not call them, reports the call, and the test ends there (§5.1). The run is
+  marked as a test in the history.
   - Its writes are real, at agent rank like any run. They enter the change
     feed, so other routines and extensions react to them, and some of those
-    may send. The confirmation says so before the admin starts it.
+    may send. The confirmation says exactly that before the admin starts it:
+    the test's own sends are held back, sends it causes elsewhere are not.
 
 ## 6. Running a routine
 
@@ -582,10 +639,11 @@ Routines read the same change feed as extensions, with their own cursor.
   workspace with a routine and no extension would never be found. Routine
   discovery finds workspaces with an active routine whose cursor is behind
   the head, and works with no installations at all. It runs in the same
-  maintenance tick.
+  maintenance tick. A paused routine is not scanned; when it resumes, its
+  cursor is set to the head again (§5.3).
 - **What the matcher checks.** For each change it finds the active routines
-  on that object, then checks the operation (`create`, `update`, or `links`
-  for an event routine that watches its links, §4.2), the watched fields, the
+  on that object, then checks the operation (`create`; `update` or
+  `supersede`; or `links` for an event routine that watches its links, §4.2), the watched fields, the
   cause chain (§6.5) and whether a `oncePerRecord` routine has already acted
   on the record, and queues a run. It does not check the `if`; the run does,
   when it starts (§4.3).
@@ -636,19 +694,27 @@ sequenceDiagram
 
 - A run is one job on the existing queue, with its leases, retries and
   at-least-once delivery. One run at a time per routine and record.
-- **Every effect carries a key**, made from the run, the operation, its
-  arguments and how many identical calls came before it. Retainer records
-  each effect's result under its key, a write in the same transaction as the
-  write itself.
-- **A retried run does nothing twice.** When a run is retried, the code
-  starts again from the top. Each effect it repeats finds its key and gets
-  the recorded result, so a task is created once, a message is sent once and
-  a model is asked once. Effects the first attempt never reached happen
-  normally.
-- A tool gets the same key, so a `send` tool can refuse a duplicate of its
-  own (§8.3).
-- **Expiry.** Past the run's expiry (§4.2) Retainer refuses further effects
-  and the run ends as `expired`.
+- **Every effect is numbered.** The SDK issues a run's effects one at a time,
+  and Retainer records each under a key made of the run and its position: the
+  operation, a hash of its arguments and its result. A write is recorded in the same
+  transaction as the write itself. A tool call or a model call is recorded as
+  started before it leaves, and as done when its result comes back.
+- **A retried run does nothing twice.** A retry starts the code from the
+  top. Each effect that finds its position already recorded gets the
+  recorded result and is not repeated, even when its arguments differ this
+  time because a record changed in between. The history flags the
+  difference. Effects past the recorded ones happen normally.
+- **A retry that takes another path stops.** If the operation at a position
+  differs from the recorded one, the code has branched differently. The run
+  ends as `diverged` and does nothing more.
+- **What is guaranteed, and by whom.** A write to Retainer happens once: the
+  database guarantees it. A tool call or model call found as started with no
+  result is sent again with the same key, because Retainer cannot know
+  whether it arrived. Whether the outside action repeats then depends on the
+  tool honouring the key (§8.3). A repeated model call costs money and
+  changes nothing.
+- **Checked before each effect:** the routine is still active (§5.3) and the
+  run has not expired (§4.2). Past its expiry the run ends as `expired`.
 - A run that fails for good ends as `failed`. What it already did is not
   undone, and the history shows each call it made.
 - After repeated failed runs the routine pauses and is marked "needs
@@ -658,12 +724,26 @@ sequenceDiagram
 ### 6.3 Model calls and cost
 
 - **Spend.** A workspace makes at most 1,000 routine model calls a day, dry
-  runs and builder submissions included (§4.6). The count comes from
-  `ai_usage`, whose rows from a routine's model token carry the routine and
-  the run. At the cap the call is refused, the run ends as
-  `budget_exhausted`, and the Routines page shows it. The preview shows how
-  often the routine would have run recently, so the cost is visible before
-  approval.
+  runs and the builder's calls included (§4.6).
+  - **Reserved before the call, not counted after it.** `ai_usage` is written
+    after the provider answers (`model/proxy.ts`), so calls made at the same
+    time would all pass a count taken from it. Instead each model call first
+    asks the API for a model token. In one atomic step the API counts the
+    call against the run's cap and the day's cap, records it as an effect
+    (§6.2) and returns a token that lasts long enough for one request.
+  - A retried call that finds its recorded result is not counted again.
+  - At the cap the token is refused, the run ends as `budget_exhausted`, and
+    the Routines page shows it.
+  - **Each call is bounded too.** The proxy caps a routine call's output at
+    4,096 tokens and its request at the existing 6 MB, so a count of calls
+    is a real bound on spend.
+  - `ai_usage` stays the record of what was spent; its rows from a routine's
+    model token carry the routine and the run.
+  - Model calls an extension tool makes itself are that extension's usage
+    and outside this cap. The cap on calls of one operation in a run bounds
+    them.
+  - The preview shows how often the routine would have run recently, so the
+    cost is visible before approval.
 - Retainer pays for these calls with its own model key, as it does for
   extension model calls. A workspace never enters a key. Usage is recorded
   per call in `ai_usage` under its own kind.
@@ -681,7 +761,8 @@ sequenceDiagram
     - a model's answer can influence who a message goes to;
     - a model can be led to invent tasks or facts, which the routine then
       writes;
-    - a yes-or-no answer can be flipped, so an action is skipped or taken.
+    - a model's answer can decide whether an action is skipped, taken or
+      repeated.
   - An earlier draft had two rules for sending after a model call: an
     admin's extra approval, and a check on where a message goes. They covered
     only part of this.
@@ -743,13 +824,13 @@ new rank are needed.
 
 ### 6.6 Stored data
 
-| Table                 | Holds                                                                                                                              |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `routines`            | Name, description, status (`draft`, `active`, `paused`, `needs_attention`, `archived`), the active version, the feed cursor        |
-| `routine_versions`    | The manifest, the code, the summary, the types fingerprint, the rank, the builder's report, who built it, who approved it and when |
-| `routine_runs`        | The trigger, record IDs, the status, each call's operation and outcome, held, test or dry-run flags, the cause chain               |
-| `routine_run_results` | Each effect's key and result, so a retry can reuse it                                                                              |
-| `routine_firings`     | What time triggers already fired, and which records a `oncePerRecord` routine already acted on                                     |
+| Table                 | Holds                                                                                                                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `routines`            | Name, description, status (`draft`, `active`, `paused`, `needs_attention`, `archived`), the active version, the feed cursor                                            |
+| `routine_versions`    | The manifest, the code, the summary, the types fingerprint, the contract of each tool it lists, the rank, the builder's report, who built it, who approved it and when |
+| `routine_runs`        | The version it is pinned to, the trigger, record IDs, the status, each call's operation and outcome, held, test or dry-run flags, the cause chain                      |
+| `routine_run_results` | Each effect's position, operation, argument hash, state and result, so a retry can reuse it                                                                            |
+| `routine_firings`     | What time triggers already fired, and which records a `oncePerRecord` routine already acted on                                                                         |
 
 Routines are not records, so they don't appear in views or the change feed.
 
@@ -763,12 +844,19 @@ Run history copies no CRM content except in `routine_run_results`:
 - Code can read any record, and Retainer does not track reads, so it cannot
   know which records a stored result drew on. `forget` therefore deletes
   every stored tool and model result in the workspace, in the same deletion,
-  and advances the fence of each in-flight run. A retry with the old fence
-  cannot write a result back; the run ends as `erased`. This is how
+  and advances the fence of each in-flight run in the workspace. From then
+  on that run's token is refused for every effect, so content it has already
+  read cannot be written anywhere, and the run ends as `erased`. This is how
   `ARCHITECTURE.md` §2.1 already treats jobs: they carry IDs only and must
   not resurrect deleted content. `forget` is rare and admin-only and results
   live 7 days at most, so losing some inspection history is the accepted
   price.
+- **What a routine wrote from an event goes with the event.** Its writes cite
+  the triggering event as their source (§4.4), and `forget` already deletes
+  claims whose source is an erased event (`privacy/forget.ts`). Tasks created
+  from a meeting's transcript therefore lose those values when the meeting is
+  forgotten. A value written from other records carries no such link, as
+  with any agent's write; `forget`'s existing review of mentions covers it.
 
 ## 7. What routines share with extensions
 
@@ -817,20 +905,21 @@ flowchart TB
   FN --> PROXY
 ```
 
-| Shared piece               | Where it lives today                                              | How routines use it                            | Change needed                                                                                                                           |
-| -------------------------- | ----------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Change feed and dispatcher | `record_changes`, `worker/changes.ts`, `queue.ts`                 | Routine matching in the same tick              | A cursor per routine, set at approval, and discovery that works with no installations (§6.1)                                            |
-| Job queue, leases, retries | `extension-runtime/queue.ts`, `worker/extensions.ts`              | Run, check, tool and builder jobs              | A job can belong to a routine run, not only an installation                                                                             |
-| Scheduler and cron parsing | `worker`, `packages/extension/src/cron.ts`                        | `schedule` and `relative` triggers             | Schedules created at approval; a workspace time zone setting and zone-aware cron, both new (cron is UTC-only today)                     |
-| Executor and sandbox       | `launcher`, `worker/launch-driver.ts`, `packages/runner`          | Runs the routine runner, tools and the builder | The closed kind of run (§3.3); the result carries an optional output (§8.2)                                                             |
-| Run tokens                 | `extension-runtime/tokens.ts`, `extension-runtime/credentials.ts` | The routine's and the builder's access         | A token bound to a routine run, at agent rank, limited to the manifest's tools. A dry run uses the existing `read` scope alone          |
-| Model proxy and usage      | `model/`, `extensions/usage.ts`                                   | `ai.generate` and the built-in builder         | A model-token kind for routines; `ai_usage` rows name the routine and the run; a narrower list of allowed requests for that kind (§4.5) |
-| Cause chain and throttles  | The dispatcher (`extensions.md` §9.4)                             | Loop prevention and budgets                    | A routine can be a member of a chain                                                                                                    |
-| Record filters             | `packages/shared/src/api.ts`, `records/query.ts`                  | The `if`, and queries from code                | Field keys resolved to names                                                                                                            |
-| Aggregates                 | `records/aggregate.ts`                                            | Sums and counts from code                      | None                                                                                                                                    |
-| Propose, then approve      | Schema changes; the two-step install                              | Routine versions; the built-in builder         | None; the same pattern                                                                                                                  |
-| Run history screens        | `packages/web/src/routes/extensions`                              | The Routines page                              | Reuse the run list                                                                                                                      |
-| `forget`                   | `privacy`                                                         | Clears stored run results                      | Delete stored results and fence in-flight runs (§6.6)                                                                                   |
+| Shared piece               | Where it lives today                                              | How routines use it                            | Change needed                                                                                                                                                                                              |
+| -------------------------- | ----------------------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Change feed and dispatcher | `record_changes`, `worker/changes.ts`, `queue.ts`                 | Routine matching in the same tick              | A cursor per routine, set at approval, and discovery that works with no installations (§6.1)                                                                                                               |
+| Job queue, leases, retries | `extension-runtime/queue.ts`, `worker/extensions.ts`              | Run, check, tool and builder jobs              | A job can belong to a routine run, not only an installation                                                                                                                                                |
+| Scheduler and cron parsing | `worker`, `packages/extension/src/cron.ts`                        | `schedule` and `relative` triggers             | Schedules created at approval; a workspace time zone setting and zone-aware cron, both new (cron is UTC-only today)                                                                                        |
+| Executor and sandbox       | `launcher`, `worker/launch-driver.ts`, `packages/runner`          | Runs the routine runner, tools and the builder | The closed kind of run (§3.3); the result carries an optional output (§8.2)                                                                                                                                |
+| Run tokens                 | `extension-runtime/tokens.ts`, `extension-runtime/credentials.ts` | The routine's and the builder's access         | A token bound to a routine run, at agent rank, limited to the manifest's tools. A dry run uses the existing `read` scope alone. Model access is a separate token per call (§6.3)                           |
+| Model proxy and usage      | `model/`, `extensions/usage.ts`                                   | `ai.generate` and the built-in builder         | A model-token kind for routines; `ai_usage` rows name the routine and the run; a narrower list of allowed requests for that kind (§4.5); a token per call, issued by the API once it has reserved the call |
+| Cause chain and throttles  | The dispatcher (`extensions.md` §9.4)                             | Loop prevention and budgets                    | A routine can be a member of a chain                                                                                                                                                                       |
+| Record filters             | `packages/shared/src/api.ts`, `records/query.ts`                  | The `if`, and queries from code                | Field keys resolved to names                                                                                                                                                                               |
+| Aggregates                 | `records/aggregate.ts`                                            | Sums and counts from code                      | None                                                                                                                                                                                                       |
+| Files                      | `files`, `docs/files.md`                                          | Reading an attached file's text from code      | The closed run can reach the file service for downloads                                                                                                                                                    |
+| Propose, then approve      | Schema changes; the two-step install                              | Routine versions; the built-in builder         | None; the same pattern                                                                                                                                                                                     |
+| Run history screens        | `packages/web/src/routes/extensions`                              | The Routines page                              | Reuse the run list                                                                                                                                                                                         |
+| `forget`                   | `privacy`                                                         | Clears stored run results                      | Delete stored results and fence in-flight runs (§6.6)                                                                                                                                                      |
 
 Not shared: installations, releases, grants, settings, secrets, key-value
 storage, webhooks and source imports. A routine holds no secrets and stores
@@ -893,7 +982,6 @@ export const sendWhatsApp = defineTool({
     properties: { messageId: { type: 'string' } },
   },
   connection: 'workspace',
-  supportsDryRun: true,
   secrets: ['apiToken'],
   scopes: ['read', 'write'],
 });
@@ -906,7 +994,6 @@ export const sendWhatsApp = defineTool({
 | `effect`                      | `read` (answers a question), `write` (changes Retainer records only) or `send` (acts outside Retainer)     |
 | `inputSchema`, `outputSchema` | Checked by Retainer on the way in and out, and turned into the SDK's types                                 |
 | `connection`                  | `workspace`, or `member` when the tool uses one person's account; a `member` tool runs only in manual runs |
-| `supportsDryRun`              | The tool can say what it would do without doing it, for dry runs and test runs                             |
 | `uses`                        | Declares a model call, as functions do today                                                               |
 
 ### 8.2 The run result carries an output
@@ -936,7 +1023,8 @@ What the platform adds around the call:
 
 - **Approval.** Installing an extension shows the tools it offers. Approving a
   routine shows the tools its manifest lists, and the run token can call no
-  others.
+  others. The version records each listed tool's contract, and a change to
+  it pauses the routine (§5.3).
 - **Whose account.** A standing routine uses `workspace` connections only. A
   `member` tool runs only in a manual run, acting as the person who pressed
   the button, with that person's own connection. The member comes from the
@@ -949,12 +1037,14 @@ What the platform adds around the call:
   routine use of their account is deferred.
 - **Calls from routine code.** The call gets a deadline that fits in the
   run's remaining time and is not retried by the queue: a failure goes back
-  to the code as an error, and the code decides what to do.
+  to the code as an error, and the code decides what to do. When the tool
+  job starts, Retainer checks again that the routine is still active.
 - **Duplicates.** Every call carries its effect key (§6.2). Delivery is at
   least once, so a `send` tool must use the key to avoid sending twice.
-- **Dry runs.** In a dry run a `read` tool runs. A `write` or `send` tool is
-  not called: Retainer reports the call, or the tool's own dry run when it
-  supports one.
+- **Dry runs and test runs.** In a dry run no tool is called. In a test run
+  a `send` tool is not called. Retainer reports the call and that run ends
+  there (§5.1). Retainer enforces this itself; it does not rely on a tool's
+  own dry-run mode.
 - **Cause.** The call carries the cause chain, so a tool's writes cannot
   trigger the routine that called it.
 - **Its own lane.** Installations run one job at a time by default. Tool
@@ -1059,24 +1149,27 @@ proposes:
     "kind": "record",
     "object": "conversation",
     "on": ["created", "updated", "links"],
-    "fields": ["transcript"],
     "oncePerRecord": true
   },
-  "if": { "medium": { "eq": "meeting" }, "transcript": { "isNull": false } },
+  "if": { "medium": { "eq": "meeting" } },
   "uses": { "tools": [], "model": true }
 }
 ```
 
 ```ts
 export async function main({ retainer, record }: RoutineContext<'conversation'>) {
+  const [file] = record.transcript;
+  if (!file) return;
+
   const leads = await retainer.person.query({
     filter: { id: { in: record.participants }, status: { eq: 'lead' } },
   });
   if (leads.count === 0) return;
 
+  const transcript = await retainer.files.text(file);
   const { commitments } = await retainer.ai.generate({
     instructions: 'List each thing someone promised in this meeting, who and by when.',
-    input: { transcript: record.transcript },
+    input: { transcript },
     output: Commitments,
   });
 
@@ -1090,86 +1183,100 @@ export async function main({ retainer, record }: RoutineContext<'conversation'>)
 }
 ```
 
-Three things in it matter:
+Five things in it matter:
 
-- The trigger watches the links as well as the transcript. Tamloot usually
-  fills the transcript before a new lead is matched (it logs the event, gets
-  the lead back unmatched, the person is created, and the event is logged
-  again to link them).
-- The code returns before any effect when the meeting has no lead. That costs
-  no model call and does not use up the meeting, so it is checked again when
-  a lead is matched.
-- The model call is the first effect. From then on the meeting is used up,
-  and a corrected transcript does not create the tasks again.
+- **The trigger names no fields**, so every change to a conversation starts a
+  run: a transcript arriving in a new revision, a participant linked, or both
+  in one write. Tamloot usually fills the transcript before a new lead is
+  matched (it logs the event, gets the lead back unmatched, the person is
+  created, and the event is logged again to link them). The feed reports a
+  link change on its own only when nothing else changed (§4.2), so watching
+  the transcript field would miss a lead linked together with another
+  change. Each extra run costs one check of the `if`.
+- **The transcript is a file.** A `files` field cannot be filtered
+  (`docs/files.md`), so the `if` tests only the medium, and the code checks
+  that a transcript exists and reads its text.
+- **The code returns before any write** when there is no transcript or no
+  lead. That costs no model call and does not use up the meeting, so it is
+  checked again when either arrives.
+- **The first task created uses up the meeting.** From then on a corrected
+  transcript does not create the tasks again. If the model finds nothing
+  promised, nothing is written and the meeting stays unused.
+- **Each task cites the meeting as its source**, so forgetting the meeting
+  removes what the routine wrote from it (§6.6).
 
 What the person reviews:
 
-> **Retainer's facts.** Runs when a meeting is logged, its transcript changes
-> or its participants change, and it is a meeting with a transcript. Acts at
-> most once per meeting. Calls a model, so meeting content is sent to the
-> model provider. Calls no tools and sends nothing. Writes as an agent: its
-> values never replace what a person or a sync set without review.
+> **Retainer's facts.** Runs when a conversation is logged or changes in any
+> way, including its participants, and it is a meeting. Acts at most once per
+> meeting. Calls a model, so meeting content is sent to the model provider.
+> Calls no tools and sends nothing. Writes as an agent: its values never
+> replace what a person or a sync set without review.
 >
 > **The builder's summary.** After a meeting with a lead has its transcript,
 > create a task for each thing that was promised.
 >
 > **Dry run on 5 recent meetings.** Three would have created tasks (4, 2 and
 > 6 of them, listed). Two stopped because no participant is a lead. 11
-> meetings matched in the last 30 days.
+> meetings changed in the last 30 days.
 
 The person can approve the partial routine now and add the thank-you later by
 editing the description once a messaging extension is installed.
 
 What must happen, case by case:
 
-| Case                                                        | Expected                                                                                      |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| A meeting logged with its transcript and a lead             | One run, tasks created as an agent                                                            |
-| A meeting logged first, its transcript filled an hour later | Nothing at logging (the `if` fails); one run with tasks when the transcript arrives           |
-| The transcript corrected after the tasks were created       | No second run, no duplicate tasks                                                             |
-| A meeting with no lead among its participants               | A run that returns before any effect: no model call, no tasks, and the meeting is not used up |
-| A lead matched after a run that returned early              | One more run, and tasks are created                                                           |
-| A lead matched after a run that created tasks               | No second run                                                                                 |
-| A call (medium `call`) with a transcript                    | No run                                                                                        |
+| Case                                                                            | Expected                                                                                             |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| A meeting logged with its transcript and a lead                                 | One run, tasks created as an agent, each citing the meeting                                          |
+| A meeting logged first, its transcript added an hour later                      | At logging, a run that returns early (no transcript); one run with tasks when the transcript arrives |
+| The transcript corrected after the tasks were created                           | No second run, no duplicate tasks                                                                    |
+| A meeting with no lead among its participants                                   | A run that returns before any write: no model call, no tasks, and the meeting is not used up         |
+| A lead matched after a run that returned early                                  | One more run, and tasks are created                                                                  |
+| A lead linked in the same write as another field change                         | The same: one more run, and tasks are created                                                        |
+| A lead matched after a run that created tasks                                   | No second run                                                                                        |
+| A call (medium `call`) with a transcript                                        | A run skipped by the `if`; no code runs                                                              |
+| The run is retried after the second task, and the transcript changed in between | The first two tasks are not created again; the rest follow                                           |
+| The meeting is forgotten                                                        | The values its tasks took from it are removed                                                        |
 
 ## 10. Design limits and what is left for later
 
 Each limit below follows from a choice made above.
 
-| Limit                                                           | Comes from                                                                  |
-| --------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Routines react after the fact; they cannot block or validate    | They read the change feed, which records committed changes                  |
-| No instant answers                                              | Every run goes through the job queue                                        |
-| No all-or-nothing across writes                                 | Each write is its own; Retainer has no multi-record transaction for callers |
-| Sums and counts only on a schedule, never as a trigger          | Triggers watch one record; code computes aggregates when a run asks         |
-| Conditions see current values only                              | The change feed records which fields changed, not their earlier values      |
-| No trigger on deletion                                          | A run reads its record, and reads exclude deleted records                   |
-| Code reaches nothing but Retainer                               | The closed sandbox. Outside effects come only from reviewed extension tools |
-| Retainer cannot say in advance what the code will do            | It is a program. The dry run, the limits and the run history are the check  |
-| A routine never replaces a person's value on its own            | It writes as an agent (§6.4)                                                |
-| A run must finish in 300 seconds                                | One job per run                                                             |
-| Triggers only on what is written down                           | The matcher sees records, not what happens inside other systems             |
-| Fast successive edits fold into one run                         | Runs coalesce per routine and record                                        |
-| Model answers are bounded and can vary                          | A model gives them; the limits in §4.6 and §6.3 apply                       |
-| Hidden instructions in incoming text can steer a model's answer | No safeguard in the first version beyond the structure (§6.3)               |
-| Outside actions may repeat on a retry                           | At-least-once delivery, unless the tool honours the call's key              |
-| A standing routine cannot act from a member's account           | Each member's connection is theirs alone; only a button they press uses it  |
-| Stored results are kept for days, not kept as history           | They copy CRM data, which `forget` must be able to remove                   |
-| Failures are visible only on the Routines page for now          | Retainer has no notifications yet                                           |
-| The builder can misread intent                                  | A model translates; the dry run and the test run are the check              |
-| Nothing for one person only                                     | Routines are workspace-level and admin-approved                             |
+| Limit                                                           | Comes from                                                                           |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Routines react after the fact; they cannot block or validate    | They read the change feed, which records committed changes                           |
+| No instant answers                                              | Every run goes through the job queue                                                 |
+| No all-or-nothing across writes                                 | Each write is its own; Retainer has no multi-record transaction for callers          |
+| Sums and counts only on a schedule, never as a trigger          | Triggers watch one record; code computes aggregates when a run asks                  |
+| Conditions see current values only                              | The change feed records which fields changed, not their earlier values               |
+| No trigger on deletion                                          | A run reads its record, and reads exclude deleted records                            |
+| A link change is seen on its own only when nothing else changed | The feed has no flag for it. A routine that must not miss one names no fields (§4.2) |
+| Code reaches nothing but Retainer                               | The closed sandbox. Outside effects come only from reviewed extension tools          |
+| Retainer cannot say in advance what the code will do            | It is a program. The dry run, the limits and the run history are the check           |
+| A routine never replaces a person's value on its own            | It writes as an agent (§6.4)                                                         |
+| A run must finish in 300 seconds                                | One job per run                                                                      |
+| Triggers only on what is written down                           | The matcher sees records, not what happens inside other systems                      |
+| Fast successive edits fold into one run                         | Runs coalesce per routine and record                                                 |
+| Model answers are bounded and can vary                          | A model gives them; the limits in §4.6 and §6.3 apply                                |
+| Hidden instructions in incoming text can steer a model's answer | No safeguard in the first version beyond the structure (§6.3)                        |
+| Outside actions may repeat on a retry                           | At-least-once delivery, unless the tool honours the call's key                       |
+| A standing routine cannot act from a member's account           | Each member's connection is theirs alone; only a button they press uses it           |
+| Stored results are kept for days, not kept as history           | They copy CRM data, which `forget` must be able to remove                            |
+| Failures are visible only on the Routines page for now          | Retainer has no notifications yet                                                    |
+| The builder can misread intent                                  | A model translates; the dry run and the test run are the check                       |
+| Nothing for one person only                                     | Routines are workspace-level and admin-approved                                      |
 
 Left out of the first version on purpose, with the room left for each:
 
-| Later                                                                                                           | Room left for it now                                                                                                                                                                            |
-| --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **A routine rank**, equal to a person's, so a routine can replace people's values                               | A version stores its rank; only `agent` is accepted. It needs a new actor type, a switch only an admin can set and that the builder cannot, and a run token that holds that rank in the sandbox |
-| **Safeguards against hidden instructions** in text a routine reads                                              | To be designed for the second version, after a proper study of the risk. Run history already records which runs called a model and which tools they called                                      |
-| **Knobs**: values an admin changes without new code, such as a label or a number of days (Macro)                | An optional list in the manifest that the code reads as `knobs`; versions without it are unaffected                                                                                             |
-| **An agent with tools**, for open-ended work                                                                    | A further SDK call beside `ai.generate`, handed to the workspace agent the model-calls spec plans (§11 there)                                                                                   |
-| **Limits per object**: which objects a routine may write                                                        | `uses` in the manifest grows; the run token already enforces `uses.tools`                                                                                                                       |
-| **Long runs and waits**                                                                                         | Effect keys already let a run stop and start again without repeating itself                                                                                                                     |
-| Notifications for failures, a `deleted` trigger, previous values in conditions, members granting their accounts | Independent of the format                                                                                                                                                                       |
+| Later                                                                                                                                          | Room left for it now                                                                                                                                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A routine rank**, equal to a person's, so a routine can replace people's values                                                              | A version stores its rank; only `agent` is accepted. It needs a new actor type, a switch only an admin can set and that the builder cannot, and a run token that holds that rank in the sandbox |
+| **Safeguards against hidden instructions** in text a routine reads                                                                             | To be designed for the second version, after a proper study of the risk. Run history already records which runs called a model and which tools they called                                      |
+| **Knobs**: values an admin changes without new code, such as a label or a number of days (Macro)                                               | An optional list in the manifest that the code reads as `knobs`; versions without it are unaffected                                                                                             |
+| **An agent with tools**, for open-ended work                                                                                                   | A further SDK call beside `ai.generate`, handed to the workspace agent the model-calls spec plans (§11 there)                                                                                   |
+| **Limits per object**: which objects a routine may write                                                                                       | `uses` in the manifest grows; the run token already enforces `uses.tools`                                                                                                                       |
+| **Long runs and waits**                                                                                                                        | Effect keys already let a run stop and start again without repeating itself                                                                                                                     |
+| Notifications for failures, a `deleted` trigger, a feed flag for changed links, previous values in conditions, members granting their accounts | Independent of the format                                                                                                                                                                       |
 
 ## 11. Delivery order and rollout (proposed)
 
@@ -1182,19 +1289,25 @@ Left out of the first version on purpose, with the room left for each:
 2. **The closed sandbox.** The routine runner bundle; a fresh restricted
    process per run; no public egress, hosted and in Compose; the generator
    for the SDK's types; the type-check; the routine run token and its
-   read-only form for dry runs.
+   read-only form for dry runs. The hosted network path is a joint deliverable
+   with `retainer-cloud` (§11.3), and the phase is done only when the
+   closed-sandbox test passes on the hosted service as well as in Compose.
 3. **Routines without model calls.** The manifest and its checker; routine
    discovery with its own cursor, working with no installations; matching for
    `record`, `schedule` and `manual` triggers; `oncePerRecord`; the hourly
    hold and the schedule fan-out cap; the workspace time zone and zone-aware
    cron; runs with effect keys and expiry; the dry run and the test run;
-   approval, versions and the re-check when types change; stored results and
+   approval, versions, the re-check when types or a tool's contract change,
+   and the rules for changing version, pausing and resuming; stored results
+   and
    `forget`; runs and history; the MCP calls for a person's own agent; the
    Routines page. Buttons (`manual`) come here, and member tools with them.
-4. **The built-in builder.** The free-text box in the web app.
+4. **The built-in builder.** The free-text box in the web app, with the
+   per-call model token and the daily cap (§6.3): the builder is the first
+   thing that spends.
 5. **Model calls from code.** `ai.generate`, the narrower list of allowed
-   requests at the model proxy (§4.5), the daily cap per workspace and
-   consent on the review.
+   requests at the model proxy (§4.5), reading a file's text and consent on
+   the review.
 6. **More.** `relative` triggers, suggested routines from extensions, then
    the items in §10.
 
@@ -1206,7 +1319,8 @@ each against real Postgres:
 - **Phase 2, the sandbox is closed.** Routine code cannot reach a public
   address, read a file or an environment variable, start a process, or see
   anything a previous run left. Code that calls the API directly with a dry
-  run's token changes nothing.
+  run's token changes nothing. The test passes in Compose and on the hosted
+  service.
 - **Phase 3, the first routine.** "When a deal moves to Proposal, create one
   follow-up task", in a workspace with no extensions installed. The run is
   interrupted right after the task is created. The retry leaves exactly one
@@ -1216,18 +1330,35 @@ each against real Postgres:
 - **Two attempts at once.** Two attempts of the same run executing
   concurrently create each task once. This runs the competing operations
   concurrently, as the testing rules require.
+- **A retry after the data changed.** A run is interrupted after its first
+  task is created, and the record its title came from changes before the
+  retry. The retry creates no second copy of that task.
+- **A retry that branches differently** ends as `diverged` and does nothing
+  more.
 - **Rank.** A routine's write to a field a person set waits for review and
   leaves the value as it was.
 - **Expiry.** A reminder whose retries outlast its expiry is never sent late.
 - **A schema change.** Removing a field the code uses pauses the routine
   before its next run.
+- **A tool's contract changes.** A tool the routine lists changes from
+  `read` to `send` with the same inputs. The routine pauses before its next
+  run.
+- **A pause mid-run.** A routine is paused while a run is between two
+  writes. The second write is refused and the run ends as `stopped`.
+- **A new version.** Approving a new version discards the runs not yet
+  started and lets a started run finish on its own version.
+- **Phase 4, the cap under load.** With one model call left in the day's
+  cap, ten calls made at the same time get exactly one token. This runs the
+  competing operations concurrently.
 - **Phase 5, a plain model call.** The model proxy refuses a request that
   carries `tools` or `mcp_servers`, or names another model, when it comes
   with a routine's model token. The same request with an extension's token
   passes.
 - **`forget` during a run.** Erasing a record removes every stored tool and
-  model result in the workspace, and a retry does not restore them.
-- **Phase 5, the worked example** (§9.4), all seven cases.
+  model result in the workspace, and a retry does not restore them. A run in
+  flight is refused its next write. Forgetting a meeting removes the values
+  a routine's tasks cited it for.
+- **Phase 5, the worked example** (§9.4), every case.
 
 ### 11.3 Hosted rollout
 
@@ -1240,14 +1371,20 @@ each against real Postgres:
 - **Two new first-party bundles.** The routine runner and the builder are new
   bundles. Each needs the cloud repository's steps for a brand-new bundle:
   its Lambda function, the catalog configuration and the release allowlists.
-- **A function with no public egress.** Hosted job functions reach any public
-  address today, an accepted relaxation for reviewed code (`extensions.md`
-  §9.1). The routine runner's function must reach Retainer's API and model
-  proxy and nothing else. That networking lives in the cloud repository.
+- **A function with no public egress: a joint deliverable.** Hosted job
+  functions have no VPC configuration and reach any public address today, an
+  accepted relaxation for reviewed code (`extensions.md` §9.1). Only
+  verifier functions are isolated, and they have no egress at all. The model
+  proxy is a function outside the VPC, reached over the public internet. The
+  routine runner needs something neither offers: a path to Retainer's API,
+  model proxy and file service, and to nothing else. That path is designed
+  and built in `retainer-cloud` together with phase 2 here, and phase 2's
+  closed-sandbox test must pass on the hosted service.
 - **Polling, not waiting.** Tool calls, checks and previews return an ID
   because the hosted API answers within 30 seconds (§8.3).
 - **Model usage.** Routine model tokens are a new kind at the `model`
-  function; usage rows carry the routine and the run (§6.3).
+  function; usage rows carry the routine and the run (§6.3). The API issues
+  one per call, once it has reserved the call against the caps.
 - **Discovery.** Routine discovery runs where change maintenance runs today,
   with its own budget, so a workspace with many routines cannot delay
   extension dispatch.
@@ -1257,19 +1394,21 @@ each against real Postgres:
 Answered by recommendation on 2026-11-19. Each stands unless the product
 owner changes it.
 
-| Question                                        | Answer                                                                                                                                                                               | Why                                                                                                                                                           |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| What does a routine write as?                   | An agent, always, in the first version                                                                                                                                               | The leanest rule: no new actor type, nothing with a person's authority in the sandbox, and it is Macro's default. A routine rank is the first extension (§10) |
-| What runs the code?                             | A fresh restricted process per run, inside a first-party bundle, with network to Retainer only. Which runtime is settled by a spike: Deno, as Macro uses, or Node's permission model | The token, the API and the network are the boundary; the runtime only has to start clean and stay closed                                                      |
-| Does a retried run repeat itself?               | No. Every effect has a key and its result is recorded                                                                                                                                | The queue delivers at least once, and the code cannot be trusted to make itself safe to repeat                                                                |
-| Can a rewrite go live without approval?         | No, never                                                                                                                                                                            | Nothing runs without a person's approval. Macro applies some rewrites on its own; here an admin approves every version                                        |
-| Can a condition test the value before a change? | Not in the first version. "Changed to" only                                                                                                                                          | The change feed keeps which fields changed, not their earlier values, and fast edits fold into one run                                                        |
-| Which model do the builder and the code use?    | One model the operator sets. No choice per workspace                                                                                                                                 | The simplest thing that works. Code never names a model, so the model can change without touching routines                                                    |
-| Does a routine need a spend guard?              | Yes: 1,000 routine model calls per workspace per day, dry runs and builder submissions included, counted from `ai_usage`                                                             | One workspace cap bounds every routine, loop and preview                                                                                                      |
-| May a routine send after asking a model?        | Yes, with no extra safeguard in the first version                                                                                                                                    | The product owner's decision: partial rules would cover only part of the risk. It is studied properly for the second version (§6.3, §10)                      |
-| Can a standing routine use a member's account?  | No. A member tool runs only in a manual run, as the person who pressed the button                                                                                                    | Each member's connection is theirs alone; an admin cannot lend it out                                                                                         |
-| Who may approve a routine?                      | Workspace admins only                                                                                                                                                                | A routine acts across the whole workspace                                                                                                                     |
-| Is there a test run before going live?          | Yes, optional, on one chosen record, by an admin, with `send` tools in dry run                                                                                                       | The dry run shows what the code tries. A test shows the real result, and its writes are real                                                                  |
+| Question                                                         | Answer                                                                                                                                                                               | Why                                                                                                                                                                     |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| What does a routine write as?                                    | An agent, always, in the first version                                                                                                                                               | The leanest rule: no new actor type, nothing with a person's authority in the sandbox, and it is Macro's default. A routine rank is the first extension (§10)           |
+| What runs the code?                                              | A fresh restricted process per run, inside a first-party bundle, with network to Retainer only. Which runtime is settled by a spike: Deno, as Macro uses, or Node's permission model | The token, the API and the network are the boundary; the runtime only has to start clean and stay closed                                                                |
+| Does a retried run repeat itself?                                | No. Effects are numbered, and a retry gets the recorded result at each position, even if the data changed. An outside call with an unknown outcome is sent again with the same key   | The queue delivers at least once, and the code cannot be trusted to make itself safe to repeat. The database guarantees writes; a tool must honour the key for the rest |
+| Can a rewrite go live without approval?                          | No, never                                                                                                                                                                            | Nothing runs without a person's approval. Macro applies some rewrites on its own; here an admin approves every version                                                  |
+| What happens to runs when a version changes or a routine pauses? | A run is pinned to its version. A new approval discards runs not yet started. A pause is checked before every effect                                                                 | An approval needs a clear edge: nothing unapproved starts, and a pause stops work at the next effect                                                                    |
+| Who can start a dry run?                                         | The person building the routine, or their agent. It writes nothing and calls no tools; its model calls count against the cap                                                         | Nothing acts before approval, yet the builder needs to see what its code does                                                                                           |
+| Can a condition test the value before a change?                  | Not in the first version. "Changed to" only                                                                                                                                          | The change feed keeps which fields changed, not their earlier values, and fast edits fold into one run                                                                  |
+| Which model do the builder and the code use?                     | One model the operator sets. No choice per workspace                                                                                                                                 | The simplest thing that works. Code never names a model, so the model can change without touching routines                                                              |
+| Does a routine need a spend guard?                               | Yes: 1,000 routine model calls per workspace per day, dry runs and the builder's calls included. Each call is reserved before it is made and bounded in size                         | A count read from `ai_usage` afterwards would let calls made together all pass. One workspace cap bounds every routine, loop and preview                                |
+| May a routine send after asking a model?                         | Yes, with no extra safeguard in the first version                                                                                                                                    | The product owner's decision: partial rules would cover only part of the risk. It is studied properly for the second version (§6.3, §10)                                |
+| Can a standing routine use a member's account?                   | No. A member tool runs only in a manual run, as the person who pressed the button                                                                                                    | Each member's connection is theirs alone; an admin cannot lend it out                                                                                                   |
+| Who may approve a routine?                                       | Workspace admins only                                                                                                                                                                | A routine acts across the whole workspace                                                                                                                               |
+| Is there a test run before going live?                           | Yes, optional, on one chosen record, by an admin. Retainer does not call `send` tools, and the test ends there                                                                       | The dry run shows what the code tries. A test shows the real result; its writes are real and can make other automations send                                            |
 
 Decided by the product owner on 2026-11-19:
 
