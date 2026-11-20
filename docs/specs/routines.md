@@ -1397,6 +1397,14 @@ they left open:
   does. A change refuses the call (`tool_changed`) and pauses the routine.
 - **An `if` on a removed field** fails the run as `check_failed` and pauses
   the routine, as code that no longer type-checks does.
+- **A schedule or trigger whose object or filter field is removed** pauses
+  the routine as `check_failed` at its next tick or change, instead of
+  failing each tick or skipping every change in silence.
+- **Names the SDK uses.** An object named `files`, `events`, `tools`, `ai`
+  or `remember` would collide with `retainer.<service>`, so routines do not
+  list it and refuse it as a trigger (`reserved_object`). No tool may be
+  named `then`, which would make `retainer.tools` look like a promise
+  (`extensions-tools.md`).
 - **`main` must be a function.** The sandbox check also checks that the
   exported `main` is callable with the context, so `export const main = 1`
   is refused before approval, not at every run.

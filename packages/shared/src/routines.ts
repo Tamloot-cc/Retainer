@@ -164,7 +164,14 @@ export const routineManifestSchema = z.strictObject({
   /** A date field of the triggering record whose value ends the run early (§4.2). */
   expiry: z.strictObject({ field: ident }).optional(),
   uses: z.strictObject({
-    tools: z.array(z.string().regex(/^[a-z][a-z0-9_]{0,99}$/)).max(ROUTINE_LIMITS.tools),
+    tools: z
+      .array(
+        z
+          .string()
+          .regex(/^[a-z][a-z0-9_]{0,99}$/)
+          .refine((name) => name !== 'then', 'no tool is named "then"'),
+      )
+      .max(ROUTINE_LIMITS.tools),
     model: z.boolean(),
   }),
   /** The only rank in the first version (§6.4); room for a person's rank later. */
@@ -480,6 +487,13 @@ export function describeFilter(value: RoutineFilter, field: (key: string) => str
 // The SDK's types, generated from the workspace (§4.4).
 
 const RESERVED_SDK_NAMES = new Set(['files', 'events', 'tools', 'ai', 'remember']);
+
+/**
+ * Whether an object's name is taken by a built-in SDK service
+ * (`retainer.files`, `retainer.tools`, …): routine code cannot reach such an
+ * object, so routines neither list it nor trigger on it.
+ */
+export const isReservedRoutineName = (name: string) => RESERVED_SDK_NAMES.has(name);
 
 const tsString = (value: string) => JSON.stringify(value);
 const comment = (text: string | null | undefined, indent = '') =>

@@ -90,7 +90,11 @@ const inputSchema: z.ZodType<InputSchema> = z.lazy(() =>
     maxItems: z.number().int().min(1).max(1000).optional(),
   }),
 );
-const toolName = z.string().regex(/^[a-z][a-z0-9_]{0,99}$/);
+// `then` would make the routine SDK's tools object look like a promise.
+const toolName = z
+  .string()
+  .regex(/^[a-z][a-z0-9_]{0,99}$/)
+  .refine((name) => name !== 'then', 'a tool cannot be named "then"');
 const toolTrigger = z.strictObject({
   kind: z.literal('tool'),
   title: label,

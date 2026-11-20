@@ -406,6 +406,125 @@ describe('routines', () => {
     expect(routine.body).toMatchObject({ status: 'needs_attention', pausedReason: 'check_failed' });
   });
 
+  it('a schedule whose filter field or object is removed pauses instead of failing each tick', async () => {
+    const s = await setup();
+    const segment = await s.app.request('/v1/schema/changes', {
+      key: s.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_object',
+            object: {
+              nameSingular: 'site',
+              namePlural: 'sites',
+              labelSingular: 'Site',
+              labelPlural: 'Sites',
+              labelField: 'title',
+              fields: [
+                { name: 'title', label: 'Title', type: 'text' },
+                { name: 'region', label: 'Region', type: 'text' },
+              ],
+            },
+          },
+        ],
+        reason: 'Routine tests',
+      },
+    });
+    expect(segment.status).toBe(200);
+    const caps = await s.app.request('/v1/routines/capabilities', { key: s.keys.agent });
+    const site = caps.body.objects.find((o: { name: string }) => o.name === 'site');
+    const region = site.fields.find((f: { name: string }) => f.name === 'region').key;
+    const schedule = (filter?: Record<string, unknown>) =>
+      activate(s, {
+        manifest: {
+          when: {
+            kind: 'schedule',
+            cron: '0 9 * * 1',
+            object: 'site',
+            ...(filter ? { filter } : {}),
+          },
+          uses: { tools: [], model: false },
+        },
+        code: `export async function main({ record }: RoutineContext<'site'>) {
+  return record.id;
+}
+`,
+      });
+    const byFilter = await schedule({ [region]: { contains: 'EU' } });
+    const byObject = await schedule();
+    const remove = (operations: unknown[]) =>
+      s.app.request('/v1/schema/changes', {
+        key: s.keys.admin,
+        body: { operations, reason: 'gone' },
+      });
+    expect((await remove([{ op: 'delete_field', object: 'site', field: 'region' }])).status).toBe(
+      200,
+    );
+    await db.owner`update routines set next_fire_at=now()-interval '1 minute' where id=${byFilter.routineId}`;
+    await s.maintenance.maintain();
+    expect((await remove([{ op: 'delete_object', object: 'site' }])).status).toBe(200);
+    await db.owner`update routines set next_fire_at=now()-interval '1 minute' where id=${byObject.routineId}`;
+    await s.maintenance.maintain();
+    const routines = await db.owner<{ status: string; paused_reason: string }[]>`
+      select status,paused_reason from routines where id=any(${[byFilter.routineId, byObject.routineId]}::uuid[])`;
+    expect(routines).toEqual([
+      { status: 'needs_attention', paused_reason: 'check_failed' },
+      { status: 'needs_attention', paused_reason: 'check_failed' },
+    ]);
+  });
+
+  it('an object whose name the SDK uses is not offered to routines', async () => {
+    const s = await setup();
+    const created = await s.app.request('/v1/schema/changes', {
+      key: s.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_object',
+            object: {
+              nameSingular: 'tools',
+              namePlural: 'toolsList',
+              labelSingular: 'Tool',
+              labelPlural: 'Tools',
+              labelField: 'title',
+              fields: [{ name: 'title', label: 'Title', type: 'text' }],
+            },
+          },
+        ],
+        reason: 'Routine tests',
+      },
+    });
+    expect(created.status).toBe(200);
+    const caps = await s.app.request('/v1/routines/capabilities', { key: s.keys.agent });
+    expect(caps.body.objects.map((o: { name: string }) => o.name)).not.toContain('tools');
+    const res = await s.app.request('/v1/routines/validate', {
+      key: s.keys.agent,
+      body: {
+        manifest: {
+          when: { kind: 'manual', object: 'tools', label: 'Go' },
+          uses: { tools: ['then'], model: false },
+        },
+        code: 'export async function main() {}\n',
+      },
+    });
+    expect(res.body.problems.map((p: { code: string }) => p.code).sort()).toEqual([
+      'invalid_manifest',
+    ]);
+    const reserved = await s.app.request('/v1/routines/validate', {
+      key: s.keys.agent,
+      body: {
+        manifest: {
+          when: { kind: 'manual', object: 'tools', label: 'Go' },
+          uses: { tools: [], model: false },
+        },
+        code: 'export async function main() {}\n',
+      },
+    });
+    expect(reserved.body.problems.map((p: { code: string }) => p.code)).toEqual([
+      'reserved_object',
+    ]);
+  });
+
   it('removing a field the code uses pauses the routine before it acts', async () => {
     const s = await setup();
     const { routineId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));

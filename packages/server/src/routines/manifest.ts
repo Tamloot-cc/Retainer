@@ -1,4 +1,5 @@
 import {
+  isReservedRoutineName,
   ROUTINE_LIMITS,
   type RoutineFilter,
   type RoutineManifest,
@@ -87,6 +88,12 @@ export function checkManifest(
   if ('object' in when && when.object !== undefined) {
     object = objectFor(schema, when.object);
     if (!object) problem('when.object', 'unknown_object', `there is no object "${when.object}"`);
+    else if (isReservedRoutineName(object.name))
+      problem(
+        'when.object',
+        'reserved_object',
+        `routine code cannot reach "${object.name}": the SDK uses that name`,
+      );
     else when.object = object.state.universalId;
   }
   if (when.kind === 'record' && object) {

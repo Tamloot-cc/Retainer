@@ -1,4 +1,4 @@
-import { ROUTINE_LIMITS, type RoutineManifest } from '@retainer/shared';
+import { ROUTINE_LIMITS, type RoutineFilter, type RoutineManifest } from '@retainer/shared';
 import { retainedFloor } from '../db/change-cursor.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, lockPrivacyShared, lockSchemaShared, type Tx } from '../db/tx.js';
@@ -69,6 +69,18 @@ export async function matchingSince(
   return { matched: matched.length, records: live.map((row) => row.id) };
 }
 
+/** Whether a schedule's object and filter still resolve against the schema. */
+function scheduleResolves(schema: CompiledSchema, ref: string, filter?: RoutineFilter) {
+  const object = objectFor(schema, ref);
+  if (!object) return false;
+  try {
+    if (filter) mapFilter(object, filter, 'name');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The records a schedule tick would fan out to, and how many there are. */
 export async function scheduleTargets(
   tx: Tx,
@@ -135,6 +147,11 @@ export async function dispatchRoutines(sql: Sql, workspace: string, limit = 500)
         continue;
       }
       const object = objectFor(schema, when.object);
+      // Its object is gone: the routine needs repair, not silence (§5.3).
+      if (!object) {
+        await pauseRoutine(tx, routine.id, 'needs_attention', 'check_failed');
+        continue;
+      }
       let paused = false,
         from = routine.feed_position;
       // A routine that pauses holds the rest of the burst too, up to the head
@@ -232,6 +249,12 @@ export async function fireSchedule(sql: Sql, workspace: string, routineId: strin
     await tx`update routines set next_fire_at=${nextInZone(when.cron, new Date(Math.max(Date.now(), due.getTime())), zoneRow?.zone ?? 'UTC')}
       where id=${routineId}`;
     const schema = await getSchema(tx, workspace);
+    // A schedule whose object or filter no longer resolves needs repair, as
+    // code that no longer type-checks does (§5.3).
+    if (when.object && !scheduleResolves(schema, when.object, when.filter)) {
+      await pauseRoutine(tx, routineId, 'needs_attention', 'check_failed');
+      return { queued: 0 };
+    }
     const { matched, records } = await scheduleTargets(
       tx,
       workspace,

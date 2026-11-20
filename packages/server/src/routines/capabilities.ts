@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   generateRoutineTypes,
+  isReservedRoutineName,
   ROUTINE_GAP_CODES,
   ROUTINE_LIMITS,
   type RoutineCapabilities,
@@ -24,6 +25,7 @@ export type RoutineConfig = {
 export function describeObjects(schema: CompiledSchema): RoutineObjectDescription[] {
   const objects: RoutineObjectDescription[] = [];
   for (const object of schema.objectsByName.values()) {
+    if (isReservedRoutineName(object.name)) continue;
     objects.push({
       name: object.name,
       universalId: object.state.universalId,
