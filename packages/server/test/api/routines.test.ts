@@ -925,8 +925,26 @@ describe('routines', () => {
 }
 `,
     });
+    // A second routine watches a person's company: the merge repoints it, and that is no trigger either.
+    const person = s.caps.objects.find((o: { name: string }) => o.name === 'person');
+    const companyKey = person.fields.find((f: { name: string }) => f.name === 'company').key;
+    const { routineId: personRoutine } = await activate(s, {
+      manifest: {
+        when: { kind: 'record', object: 'person', on: ['updated'], fields: [companyKey] },
+        uses: { tools: [], model: false },
+      },
+      code: `export async function main({ record }: RoutineContext<'person'>) {
+  return record.id;
+}
+`,
+    });
     const survivor = await createCompany(s.app, s.keys.admin, 'Acme Survivor');
     const merged = await createCompany(s.app, s.keys.admin, 'Acme Merged');
+    const employee = await s.app.request('/v1/objects/person/records', {
+      key: s.keys.admin,
+      body: { values: { name: 'Ada Employee', company: merged } },
+    });
+    expect(employee.status).toBe(201);
     const lone = await createCompany(s.app, s.keys.admin, 'Lone Survivor');
     const other = await createCompany(s.app, s.keys.admin, 'Lone Merged');
     const rename = (id: string, name: string) =>
@@ -953,10 +971,61 @@ describe('routines', () => {
     const runs = await db.owner<{ record_id: string; status: string; code: string | null }[]>`
       select record_id,status,code from routine_runs where routine_id=${routineId} and mode='run'
       order by created_at`;
-    expect(runs).toEqual([
-      { record_id: survivor, status: 'queued', code: null },
-      { record_id: merged, status: 'discarded', code: 'merged' },
-      { record_id: lone, status: 'queued', code: null },
-    ]);
+    // Created in one transaction, so in no particular order.
+    expect(runs).toHaveLength(3);
+    expect(runs).toEqual(
+      expect.arrayContaining([
+        { record_id: survivor, status: 'queued', code: null },
+        { record_id: merged, status: 'discarded', code: 'merged' },
+        { record_id: lone, status: 'queued', code: null },
+      ]),
+    );
+    const personRuns =
+      await db.owner`select 1 from routine_runs where routine_id=${personRoutine} and mode='run'`;
+    expect(personRuns).toHaveLength(0);
+    const [repointed] = await db.owner<{ n: number }[]>`
+      select count(*)::int as n from record_changes where record_id=${employee.body.id} and merged_from_id=${merged}`;
+    expect(repointed?.n).toBe(1);
+  });
+
+  it('a run on a merged-away record and one on its survivor never run at once', async () => {
+    const s = await setup();
+    const { routineId } = await activate(s, {
+      manifest: {
+        when: { kind: 'manual', object: 'company', label: 'Go' },
+        uses: { tools: [], model: false },
+      },
+      code: `export async function main({ record }: RoutineContext<'company'>) {
+  return record.id;
+}
+`,
+    });
+    const survivor = await createCompany(s.app, s.keys.admin, 'Acme A');
+    const merged = await createCompany(s.app, s.keys.admin, 'Acme B');
+    const press = async (id: string) =>
+      (
+        await s.app.request(`/v1/routines/${routineId}/run`, {
+          key: s.keys.admin,
+          body: { recordIds: [id] },
+        })
+      ).body.runs[0] as string;
+    // X runs on B; B is merged into A while X is running, so X keeps B.
+    const x = await press(merged);
+    expect(await s.executor.claim(s.workspace, x)).not.toBe(null);
+    expect(
+      (
+        await s.app.request(`/v1/records/${survivor}/merge`, {
+          key: s.keys.admin,
+          body: { recordId: merged },
+        })
+      ).status,
+    ).toBe(200);
+    // While X runs, a run on A waits.
+    const y = await press(survivor);
+    expect(await s.executor.claim(s.workspace, y)).toBe(null);
+    // X goes back to wait for a retry; Y starts; X's retry now waits for Y.
+    await db.owner`update routine_runs set status='queued',lease_owner=null,lease_until=null where id=${x}`;
+    expect(await s.executor.claim(s.workspace, y)).not.toBe(null);
+    expect(await s.executor.claim(s.workspace, x)).toBe(null);
   });
 });

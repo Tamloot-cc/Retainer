@@ -243,9 +243,12 @@ export class RoutineExecutor {
       }
       // One run of a routine on a record at a time: this one waits for the other.
       if (run.mode === 'run' && run.routine_id && run.record_id) {
-        // A record merged into this one is the same record (§6.1).
+        // Merged records are one record (§6.1): the survivor, or any merged into it.
+        const survivor = await resolveRecordId(tx, workspace, run.record_id).catch(
+          () => run.record_id as string,
+        );
         const [busy] = await tx`select 1 from routine_runs where routine_id=${run.routine_id}
-          and (record_id=${run.record_id} or record_id in (select r.id from records r where r.merged_into_id=${run.record_id}))
+          and (record_id=${survivor} or record_id in (select r.id from records r where r.merged_into_id=${survivor}))
           and mode='run' and status='running' and id<>${id}`;
         if (busy) return null;
       }

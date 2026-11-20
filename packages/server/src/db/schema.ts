@@ -2555,7 +2555,7 @@ export const recordChanges = pgTable(
     /** Server-derived trigger hops; null means `cause.length` (see extension_jobs). */
     causeDepth: integer('cause_depth'),
     mergedIntoId: uuid('merged_into_id'),
-    /** On a merge survivor's change: the record merged into it. A merge is not a routine trigger. */
+    /** On every change a merge made: the record it merged away. A merge is not a routine trigger. */
     mergedFromId: uuid('merged_from_id'),
     createdAt: timestamptz('created_at').notNull().default(sql`clock_timestamp()`),
   },

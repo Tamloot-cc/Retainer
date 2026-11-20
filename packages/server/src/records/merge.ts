@@ -143,7 +143,7 @@ export async function mergeRecords(
   const pair = [a, b].sort() as [string, string];
   const locked = await lockRecordsForUpdate(tx, workspaceId, pair);
   for (const id of pair) await context.changes?.capture(tx, id);
-  context.changes?.markMerged(a, b);
+  context.changes?.markMerged(b);
   const survivor = locked.find((r) => r.id === a);
   const merged = locked.find((r) => r.id === b);
   if (!survivor || !merged || survivor.merged_into_id || merged.merged_into_id) {

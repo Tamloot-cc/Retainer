@@ -1358,8 +1358,9 @@ they left open:
 - **Clock changes.** A scheduled wall time that a spring-forward change
   skips runs an hour later (02:30 at 03:30); one that a fall-back change
   repeats runs the first time, in every zone.
-- **Merges** mark the survivor's change (`record_changes.merged_from_id`),
-  which dispatch skips, and move the merged-away record's queued and held
+- **Merges** mark every change they make (`record_changes.merged_from_id`):
+  the survivor's, and those of records and events that pointed at the
+  merged-away record. Dispatch and the preview skip them. A merge also moves the merged-away record's queued and held
   runs, firings and `oncePerRecord` marks to the survivor (§6.1). A run
   that a queued run of the same version on the survivor already covers is
   discarded as `merged`.

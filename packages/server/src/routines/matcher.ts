@@ -53,7 +53,7 @@ export async function matchingSince(
   const rows = await tx<ChangeRow[]>`
     select position::text,record_id,object_type_id,operation,field_keys,cause,cause_depth from record_changes
     where object_type_id=${object.id} and created_at>clock_timestamp()-${days}*interval '1 day'
-      and operation in ('create','update','supersede','links')
+      and operation in ('create','update','supersede','links') and merged_from_id is null
     order by position desc limit 5000`;
   const matched = rows.filter((row) => triggerMatches(when, object.id, row));
   const records: string[] = [];
@@ -147,7 +147,7 @@ export async function dispatchRoutines(sql: Sql, workspace: string, limit = 500)
         from record_changes where position>${from}::bigint and position<=${head}::bigint
         order by record_changes.position limit ${limit}`;
         for (const row of rows) {
-          // A merge is not a trigger (§6.1), even where it changed the survivor.
+          // A merge is not a trigger (§6.1), whatever records it changed.
           if (row.merged_from_id) continue;
           if (!object || !row.record_id || !triggerMatches(when, object.id, row)) continue;
           // A routine is never triggered by a change it caused; chains stop at 8 hops (§6.5).

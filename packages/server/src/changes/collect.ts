@@ -35,12 +35,7 @@ type Snapshot = {
     role: string | null;
   }[];
 };
-type Entry = {
-  before: Snapshot | null;
-  operation?: ChangeOperation;
-  reviewKeys: Set<string>;
-  mergedFrom?: string;
-};
+type Entry = { before: Snapshot | null; operation?: ChangeOperation; reviewKeys: Set<string> };
 const values = (snapshot: Snapshot) => ({ ...snapshot.data, ...snapshot.relations });
 const related = (snapshot: Snapshot | null) =>
   snapshot
@@ -154,10 +149,11 @@ export class ChangeCollector {
     }
     if (operation) entry.operation = operation;
   }
-  /** Marks a captured survivor's change as made by merging another record into it. */
-  markMerged(survivorId: string, mergedId: string) {
-    const entry = this.entries.get(survivorId);
-    if (entry) entry.mergedFrom = mergedId;
+  /** The record a merge in this transaction merged away: every change it makes carries it. */
+  private mergedFrom: string | null = null;
+  /** Marks this transaction's changes as made by a merge, which is not a routine trigger. */
+  markMerged(mergedId: string) {
+    this.mergedFrom = mergedId;
   }
   created(id: string) {
     if (this.published) throw new Error('cannot create records after feed publication');
@@ -228,7 +224,7 @@ export class ChangeCollector {
           origin_installation_id: this.origin,
           cause: this.cause,
           merged_into_id: null,
-          merged_from_id: null,
+          merged_from_id: this.mergedFrom,
         });
       let operation: ChangeOperation = entry.operation ?? 'update';
       if (!prior || moved) operation = 'create';
@@ -267,7 +263,7 @@ export class ChangeCollector {
         origin_installation_id: this.origin,
         cause: this.cause,
         merged_into_id: current?.merged_into_id ?? null,
-        merged_from_id: entry.mergedFrom ?? null,
+        merged_from_id: this.mergedFrom,
       });
     }
     for (const [objectTypeId, keys] of [...this.schemaChanges].sort(([a], [b]) =>
@@ -284,7 +280,7 @@ export class ChangeCollector {
         origin_installation_id: this.origin,
         cause: this.cause,
         merged_into_id: null,
-        merged_from_id: null,
+        merged_from_id: this.mergedFrom,
       });
     }
     if (!changes.length) return;
