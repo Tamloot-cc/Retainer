@@ -1,5 +1,15 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { disconnectHook, type ExtensionManifest, functionSecrets } from '@retainer/extension';
+import { disconnectHook, type ExtensionManifest } from '@retainer/extension';
+import {
+  createNangoGmailConnectSession,
+  deleteNangoGmailConnection,
+  findNangoGmailConnection,
+  GmailProviderError,
+  gmailRegistrationId,
+  nangoGmailAttemptTags,
+  nangoId,
+  verifyNangoGmailGrant,
+} from '@retainer/extension/nango-gmail';
 import { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
 import type { Sql } from '../db/client.js';
@@ -18,6 +28,8 @@ import { lockExtension, lockQueue } from '../extension-runtime/locks.js';
 import { ExtensionQueue } from '../extension-runtime/queue.js';
 import type { SecretBroker } from '../extension-runtime/secrets.js';
 import { recheckPerson } from '../memory/profiles.js';
+import { getSchema } from '../schema/compiled.js';
+import { gmailConversationSchema } from '../sources/gmail.js';
 import type { ExtensionCatalog } from './catalog.js';
 import { type ExtensionOAuthClients, oauthClientFor } from './oauth-clients.js';
 
@@ -103,6 +115,21 @@ async function assertNoConnection(tx: Tx, installationId: string, caller: Caller
       'you already have a connection; reconnect or disconnect it',
     );
 }
+function invalidGmailScope(error: unknown) {
+  return (
+    error instanceof GmailProviderError &&
+    ['provider_scope_missing', 'provider_scope_excessive'].includes(error.code)
+  );
+}
+function gmailError(error: unknown) {
+  if (invalidGmailScope(error))
+    return new AppError(422, 'gmail_scope_invalid', 'Google must grant read-only Gmail access');
+  return new AppError(
+    503,
+    'gmail_connection_failed',
+    'Nango could not verify the Gmail connection',
+  );
+}
 function human(caller: Caller) {
   if (caller.actor.type !== 'user' || caller.run || caller.installation)
     throw forbidden('only a person can manage a member connection');
@@ -122,6 +149,128 @@ export class MemberConnections {
     private readonly broker?: SecretBroker,
     private readonly oauthClients: ExtensionOAuthClients = new Map(),
   ) {}
+  private gmailConfig(
+    installation: { settings: Record<string, unknown> },
+    manifest: ExtensionManifest,
+  ) {
+    if (
+      manifest.universalId !== gmailRegistrationId ||
+      manifest.source?.provider !== 'gmail' ||
+      manifest.connection !== 'member'
+    )
+      throw notFound('Gmail installation');
+    const apiKey = process.env.RETAINER_GMAIL_NANGO_CONTROL_KEY ?? process.env.NANGO_API_KEY;
+    const integration = nangoId.safeParse(installation.settings.nangoIntegrationId);
+    const days = z.number().int().min(0).max(3650).safeParse(installation.settings.historyDays);
+    if (!days.success)
+      throw new AppError(422, 'invalid_settings', 'choose a whole number of days of email history');
+    if (!apiKey || !integration.success)
+      throw new AppError(503, 'gmail_unavailable', 'Nango Gmail is not configured');
+    return { apiKey, integrationId: integration.data, historyDays: days.data };
+  }
+
+  async startGmailAuthorization(caller: Caller, id: string, acceptedHistoryDays: number) {
+    human(caller);
+    const attemptId = randomUUID();
+    const attempt = { workspaceId: caller.workspaceId, memberId: caller.actor.id, attemptId };
+    const tags = nangoGmailAttemptTags(attempt);
+    const config = await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await lockForWrite(tx, caller.workspaceId);
+      await membership(tx, caller);
+      const i = await this.installation(tx, caller, id);
+      const manifest = this.catalog.get(i.registration_id, i.version).manifest;
+      const config = this.gmailConfig({ settings: i.settings }, manifest);
+      if (config.historyDays !== acceptedHistoryDays)
+        throw new AppError(
+          409,
+          'stale_plan',
+          'The Gmail history limit changed. Refresh and review it before connecting.',
+        );
+      gmailConversationSchema(await getSchema(tx, caller.workspaceId));
+      await assertNoConnection(tx, id, caller);
+      await tx`delete from extension_authorizations where installation_id=${id} and owner_id=${caller.actor.id}
+        and verifier_ref is null and consumed_at is null`;
+      await tx`delete from extension_authorizations where verifier_ref is null and expires_at<clock_timestamp()-interval '1 hour'`;
+      await tx`insert into extension_authorizations
+        (id,workspace_id,installation_id,connection_id,owner_id,state_hash,expected_generation,settings,expires_at)
+        values(${attemptId},${caller.workspaceId},${id},${randomUUID()},${caller.actor.id},${sha256(attemptId)},
+          ${i.generation},${tx.json({ shareGmail: true, consentHistoryDays: config.historyDays, boundNangoIntegrationId: config.integrationId })},clock_timestamp()+interval '30 minutes')`;
+      // Persist cleanup before starting the vendor session, including if its response is lost.
+      await tx`insert into gmail_authorization_cleanups
+        (attempt_id,workspace_id,member_tag,integration_id,next_attempt_at,final_check_at)
+        values(${attemptId},${caller.workspaceId},${tags.end_user_id},${config.integrationId},
+          clock_timestamp()+interval '1 hour',clock_timestamp()+interval '24 hours')`;
+      return config;
+    });
+    try {
+      const session = await createNangoGmailConnectSession(
+        config,
+        attempt,
+        AbortSignal.timeout(20000),
+      );
+      return { ...session, attemptId };
+    } catch (error) {
+      throw gmailError(error);
+    }
+  }
+
+  async finishGmailAuthorization(caller: Caller, id: string, attemptId: string) {
+    human(caller);
+    const config = await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await lockForWrite(tx, caller.workspaceId);
+      await membership(tx, caller);
+      const i = await this.installation(tx, caller, id);
+      const config = this.gmailConfig(
+        { settings: i.settings },
+        this.catalog.get(i.registration_id, i.version).manifest,
+      );
+      const [request] = await tx`select 1 from extension_authorizations where id=${attemptId}
+        and installation_id=${id} and owner_id=${caller.actor.id} and verifier_ref is null
+        and expected_generation=${i.generation} and settings->>'boundNangoIntegrationId'=${config.integrationId} and consumed_at is null and expires_at>clock_timestamp()`;
+      if (!request) throw expired();
+      return config;
+    });
+    const attempt = { workspaceId: caller.workspaceId, memberId: caller.actor.id, attemptId };
+    let connectionId: string | null = null;
+    try {
+      connectionId = await findNangoGmailConnection(config, attempt, AbortSignal.timeout(20000));
+      if (!connectionId) return { pending: true as const };
+      await verifyNangoGmailGrant({ ...config, connectionId, attempt }, AbortSignal.timeout(20000));
+    } catch (error) {
+      if (connectionId && invalidGmailScope(error)) {
+        // Prevent a racing completion from claiming the grant before deleting it.
+        const rejected = await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+          const [row] = await tx`update extension_authorizations set consumed_at=clock_timestamp()
+            where id=${attemptId} and installation_id=${id} and owner_id=${caller.actor.id}
+              and verifier_ref is null and consumed_at is null returning id`;
+          return !!row;
+        });
+        if (rejected) {
+          try {
+            await deleteNangoGmailConnection(
+              { ...config, connectionId },
+              AbortSignal.timeout(20000),
+            );
+          } catch (cleanupError) {
+            if (!(cleanupError instanceof GmailProviderError)) throw cleanupError;
+            // The persisted cleanup will retry, even if the member leaves this screen.
+          }
+        }
+      }
+      throw gmailError(error);
+    }
+    return this.connect(
+      caller,
+      id,
+      { settings: { nangoConnectionId: connectionId }, secretRefs: {} },
+      undefined,
+      {
+        credential: 'key',
+        authorizationId: attemptId,
+        gmail: { integrationId: config.integrationId },
+      },
+    );
+  }
   private oauthClient(manifest: ExtensionManifest) {
     return oauthClientFor(manifest, this.oauthClients, !!this.broker);
   }
@@ -338,7 +487,13 @@ export class MemberConnections {
     id: string,
     input: Input,
     reconnect?: string,
-    method: { credential: ConnectionCredential; authorizationId?: string } = { credential: 'key' },
+    method: {
+      credential: ConnectionCredential;
+      authorizationId?: string;
+      gmail?: { integrationId: string };
+    } = {
+      credential: 'key',
+    },
   ) {
     human(caller);
     const { credential } = method;
@@ -350,11 +505,24 @@ export class MemberConnections {
       // `installation` holds: clock_timestamp, since a lock wait can cross the expiry.
       const [request] = method.authorizationId
         ? await tx<
-            { created_at: Date }[]
+            { created_at: Date; connection_id: string; settings: { consentHistoryDays?: number } }[]
           >`update extension_authorizations set consumed_at=clock_timestamp() where id=${method.authorizationId}
-            and consumed_at is null and expires_at>clock_timestamp() returning created_at`
+            and installation_id=${id} and owner_id=${caller.actor.id}
+            and (${!!method.gmail} = (verifier_ref is null))
+            and (${!method.gmail} or (expected_generation=${i.generation}
+              and settings->>'boundNangoIntegrationId'=${method.gmail?.integrationId ?? null}
+              and settings->>'boundNangoIntegrationId'=${i.settings.nangoIntegrationId ?? null}))
+            and consumed_at is null and expires_at>clock_timestamp() returning created_at,connection_id,settings`
         : [];
       if (method.authorizationId && !request) throw expired();
+      if (method.gmail) {
+        const connectionId = nangoId.parse(input.settings.nangoConnectionId);
+        const [cleanup] = await tx`update gmail_authorization_cleanups
+          set bound_connection_id=${connectionId}
+          where attempt_id=${method.authorizationId ?? null} and fence=0 and bound_connection_id is null
+          returning attempt_id`;
+        if (!cleanup) throw expired();
+      }
       const manifest = this.catalog.get(i.registration_id, i.version).manifest;
       if (manifest.connection !== 'member')
         throw new AppError(
@@ -362,6 +530,8 @@ export class MemberConnections {
           'invalid_connection',
           'this installation connects at workspace level',
         );
+      if ((manifest.source?.provider === 'gmail') !== !!method.gmail)
+        throw new AppError(422, 'invalid_connection', 'use the Gmail authorization flow');
       validateConnectionSettings(manifest, input.settings);
       const refs = Object.values(input.secretRefs);
       const pending = refs.length
@@ -373,7 +543,11 @@ export class MemberConnections {
           'connection_required',
           'a member secret reference is invalid or expired',
         );
-      const cid = reconnect ?? pending[0]?.connection_id ?? randomUUID();
+      const cid =
+        reconnect ??
+        pending[0]?.connection_id ??
+        (method.gmail ? request?.connection_id : undefined) ??
+        randomUUID();
       const [prior] =
         await tx`select * from extension_connections where id=${cid} and installation_id=${id}`;
       if (
@@ -449,9 +623,17 @@ export class MemberConnections {
           disconnect_secrets=${disconnectSecrets}::text[],
           authorization_started_at=coalesce(${request?.created_at ?? null}::timestamptz,authorization_started_at) where id=${cid}`;
       } else {
+        const settings = method.gmail
+          ? {
+              ...input.settings,
+              consentHistoryDays: request?.settings.consentHistoryDays ?? null,
+              boundNangoIntegrationId: method.gmail.integrationId,
+              gmailConnectionStartedAt: new Date().toISOString(),
+            }
+          : input.settings;
         await tx`insert into extension_connections(id,workspace_id,installation_id,owner,owner_id,settings,disconnect_function_id,
           disconnect_secrets,credential,authorization_started_at)
-          values(${cid},${caller.workspaceId},${id},${tx.json(caller.actor)},${caller.actor.id},${tx.json(input.settings)},${disconnect},
+          values(${cid},${caller.workspaceId},${id},${tx.json(caller.actor)},${caller.actor.id},${tx.json(settings)},${disconnect},
           ${disconnectSecrets}::text[],${credential},${request?.created_at ?? null})`;
       }
       for (const [name, ref] of Object.entries(input.secretRefs)) {
@@ -498,7 +680,8 @@ export class MemberConnections {
       const all = canApproveDestructive(caller.actor, caller.scopes);
       const rows =
         await tx`select c.*,retainer_connection_secret_names(c.installation_id,c.id) as secret_names,
-        s.last_successful_scan_at,
+        coalesce(s.last_successful_scan_at, (select (k.value->>'lastScan')::timestamptz from extension_kv k
+          where i.registration_id=${gmailRegistrationId} and k.installation_id=i.id and k.connection_id=c.id and k.key='gmail-history')) as last_successful_scan_at,
         exists(select 1 from source_bindings b join source_items si on si.account_id=b.account_id and si.workspace_id=b.workspace_id
           where b.connection_id=c.id and b.installation_id=c.installation_id and si.state<>'reserved') as has_imported_items,
         (select count(*)::int from extension_jobs j where j.connection_id=c.id and j.connection_generation=c.generation and j.generation=i.generation and j.source_item_id is not null and j.status='failed') as failed_items

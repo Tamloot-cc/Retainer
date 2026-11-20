@@ -120,7 +120,7 @@ export async function forgetRecord(
   const sourceErasure = await prepareSourceErasure(
     tx,
     workspaceId,
-    events.map((r) => r.id),
+    events.map((event) => event.id),
     handleValues,
     recordIds,
   );

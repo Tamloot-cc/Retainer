@@ -820,6 +820,34 @@
       "when": 1794898376209,
       "tag": "0116_hosted_onboarding",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1795142657471,
+      "tag": "0117_gmail_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1795142658655,
+      "tag": "0118_gmail_extension_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1795150551797,
+      "tag": "0119_gmail_authorization_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1795150584196,
+      "tag": "0120_gmail_authorization_cleanup_grants",
+      "breakpoints": true
     }
   ]
 }

@@ -549,6 +549,17 @@ export function currentSourceEvidence(tx: Tx, event: Fragment): Fragment {
   return tx`not exists(select 1 from source_revisions revision where revision.event_id=${event} and not revision.is_current)`;
 }
 
+/** Gmail messages remain citable, while activity shows the newest message per thread. */
+export function currentActivityEvidence(tx: Tx, event: Fragment): Fragment {
+  return tx`${currentSourceEvidence(tx, event)}
+    and not exists(
+      select 1 from gmail_messages m
+      join gmail_messages newer on newer.workspace_id=m.workspace_id
+        and newer.thread_group_id=m.thread_group_id and (newer.occurred_at,newer.event_id)>(m.occurred_at,m.event_id)
+      where m.event_id=${event}
+    )`;
+}
+
 /**
  * The live, visible event a claim cites, as callers see it (6.4), from a
  * row that left-joined it: null when it is gone or hidden (an internal note).
@@ -622,7 +633,7 @@ export function directAttachments(
     from (${union}) a
     join records ev on ev.id = a.event_id and ev.deleted_at is null
       and ev.object_type_id = any(${eventTypeIds}::uuid[])
-    where ${currentSourceEvidence(tx, tx`ev.id`)}
+    where ${currentActivityEvidence(tx, tx`ev.id`)}
     order by a.event_id, a.rank, a.field_id)`;
 }
 

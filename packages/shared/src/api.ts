@@ -391,6 +391,8 @@ export type Participant = MatchedParticipant | UnmatchedParticipant;
 export type Participants = { matched: MatchedParticipant[]; unmatched: UnmatchedParticipant[] };
 /** An event record's built-in columns and links (1.3), beside its fields. */
 export type EventDetails = {
+  /** This event is immutable message evidence in an imported Gmail conversation. */
+  gmail?: true;
   /** Managed evidence is immutable; explicit reads preserve superseded citations. */
   source?: {
     sourceItemId: string;

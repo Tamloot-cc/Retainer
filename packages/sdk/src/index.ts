@@ -650,6 +650,68 @@ export class RetainerClient {
       signal,
     );
   }
+  gmailImportWindow(installationId: string) {
+    return this.get<{ from: number; through?: number }>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/runtime/gmail/window`,
+    );
+  }
+  gmailTarget(installationId: string, additionId: string | null, complete = false) {
+    return this.post<{
+      target: { id: string; email: string; from: number; through: number } | null;
+    }>(`/v1/extensions/${encodeURIComponent(installationId)}/runtime/gmail/target`, {
+      additionId,
+      complete,
+    });
+  }
+  releaseGmailConnection(installationId: string) {
+    return this.post<{ released: true }>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/runtime/gmail/release`,
+      {},
+    );
+  }
+  prepareGmailMessage(
+    installationId: string,
+    input: {
+      from: string[];
+      to: string[];
+      occurredAt: string;
+      messageId: string;
+      sourceItemId: string;
+    },
+  ) {
+    return this.post<{ prepared: boolean }>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/runtime/gmail/prepare`,
+      input,
+    );
+  }
+  appendGmailMessage(
+    installationId: string,
+    input: {
+      sourceItemId: string;
+      from: string[];
+      to: string[];
+      messageId: string;
+      threadId: string;
+      rfcMessageId?: string;
+      occurredAt: string;
+      originalDate?: string;
+      subject: string;
+      body: string;
+      targetEmail?: string;
+      targetPersonId?: string;
+    },
+  ) {
+    return this.post<
+      | { kind: 'imported'; messageId: string; eventId: string; created: boolean }
+      | { kind: 'no_match' | 'removed' }
+    >(`/v1/extensions/${encodeURIComponent(installationId)}/runtime/gmail/messages`, input);
+  }
+  gmailMessages(eventId: string, after?: string, signal?: AbortSignal) {
+    return this.get<{
+      messages: { id: string; occurredAt: string; originalDate: string | null; body: string }[];
+      nextAfter: string | null;
+    }>(`/v1/events/${encodeURIComponent(eventId)}/gmail-messages`, { after }, signal);
+  }
   prepareSourceItem(installationId: string, itemId: string, participants: string[]) {
     return this.post<{ prepared: true }>(
       `/v1/extensions/${encodeURIComponent(installationId)}/source-items/${encodeURIComponent(itemId)}/prepare`,
@@ -724,6 +786,18 @@ export class RetainerClient {
       `/v1/extensions/${encodeURIComponent(id)}/connections`,
       {},
       signal,
+    );
+  }
+  authorizeGmail(id: string, historyDays: number) {
+    return this.post<{ attemptId: string; connectLink: string; expiresAt: string }>(
+      `/v1/extensions/${encodeURIComponent(id)}/connections/gmail/authorize`,
+      { shareGmail: true, historyDays },
+    );
+  }
+  finishGmailAuthorization(id: string, attemptId: string) {
+    return this.post<{ pending: true } | { id: string; state: 'connecting' }>(
+      `/v1/extensions/${encodeURIComponent(id)}/connections/gmail/complete`,
+      { attemptId },
     );
   }
   stageExtensionConnectionSecret(

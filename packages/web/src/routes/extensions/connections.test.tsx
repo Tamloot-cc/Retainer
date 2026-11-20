@@ -69,7 +69,7 @@ const connection: ExtensionConnection = {
   lastSuccessfulScanAt: null,
   failedItems: 0,
 };
-function mount(admin = false) {
+function mount(admin = false, installed = installation, listed = release) {
   const client = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     }),
@@ -90,8 +90,8 @@ function mount(admin = false) {
         }
       >
         <MemberConnectionPanel
-          installation={installation}
-          release={release}
+          installation={installed}
+          release={listed}
           admin={admin}
           onChanged={onChanged}
           onRuns={onRuns}
@@ -106,6 +106,36 @@ afterEach(() => {
   sessionStorage.clear();
 });
 describe('member connection controls', () => {
+  it('requires Gmail sharing consent before authorizing and lets the member check completion', async () => {
+    vi.spyOn(api, 'extensionConnections').mockResolvedValue({ connections: [] });
+    const authorize = vi.spyOn(api, 'authorizeGmail').mockResolvedValue({
+      attemptId: 'attempt',
+      connectLink: 'https://connect.nango.dev/example',
+      expiresAt: '2026-11-20T12:00:00Z',
+    });
+    const finish = vi.spyOn(api, 'finishGmailAuthorization').mockResolvedValue({ pending: true });
+    const { user } = mount(
+      false,
+      { ...installation, settings: { historyDays: 2 } },
+      {
+        manifest: { ...release.manifest, name: 'gmail' },
+      },
+    );
+    const button = await screen.findByRole('button', { name: 'Connect Gmail' });
+    expect(screen.getByText(/up to 2 days of email history/)).toBeTruthy();
+    await user.click(button);
+    expect(authorize).not.toHaveBeenCalled();
+    await user.click(
+      screen.getByRole('checkbox', { name: 'I agree to share qualifying Gmail messages' }),
+    );
+    await user.click(button);
+    const link = await screen.findByRole('link', { name: /Authorize Gmail/ });
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(authorize).toHaveBeenCalledWith('installation', 2);
+    await user.click(screen.getByRole('button', { name: 'Finish connecting Gmail' }));
+    expect(await screen.findByText('Gmail authorization is still pending.')).toBeTruthy();
+    expect(finish).toHaveBeenCalledWith('installation', 'attempt');
+  });
   it('stages a private key and connects with only member settings, then disconnects without an admin role', async () => {
     let rows: ExtensionConnection[] = [];
     vi.spyOn(api, 'extensionConnections').mockImplementation(async () => ({ connections: rows }));

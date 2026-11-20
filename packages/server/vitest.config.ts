@@ -9,6 +9,13 @@ if (existsSync(envFile) && !process.env.CI) process.loadEnvFile(envFile);
 // Tests import the MIT packages from source so they never run against a
 // stale build.
 const alias = {
+  '@retainer/runner/gmail-contract': fileURLToPath(
+    new URL('../runner/src/gmail-contract.ts', import.meta.url),
+  ),
+  '@retainer/runner/gmail': fileURLToPath(new URL('../runner/src/gmail.ts', import.meta.url)),
+  '@retainer/extension/nango-gmail': fileURLToPath(
+    new URL('../extension/src/nango-gmail.ts', import.meta.url),
+  ),
   '@retainer/runner/tamloot-contract': fileURLToPath(
     new URL('../runner/src/tamloot-contract.ts', import.meta.url),
   ),
