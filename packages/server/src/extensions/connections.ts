@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { disconnectHook, type ExtensionManifest } from '@retainer/extension';
 import {
   createNangoGmailConnectSession,
+  deleteNangoGmailConnection,
   findNangoGmailConnection,
   GmailProviderError,
   gmailRegistrationId,
@@ -112,11 +113,14 @@ async function assertNoConnection(tx: Tx, installationId: string, caller: Caller
       'you already have a connection; reconnect or disconnect it',
     );
 }
-function gmailError(error: unknown) {
-  if (
+function invalidGmailScope(error: unknown) {
+  return (
     error instanceof GmailProviderError &&
     ['provider_scope_missing', 'provider_scope_excessive'].includes(error.code)
-  )
+  );
+}
+function gmailError(error: unknown) {
+  if (invalidGmailScope(error))
     return new AppError(422, 'gmail_scope_invalid', 'Google must grant read-only Gmail access');
   return new AppError(
     503,
@@ -222,12 +226,26 @@ export class MemberConnections {
       return config;
     });
     const attempt = { workspaceId: caller.workspaceId, memberId: caller.actor.id, attemptId };
-    let connectionId: string | null;
+    let connectionId: string | null = null;
     try {
       connectionId = await findNangoGmailConnection(config, attempt, AbortSignal.timeout(20000));
       if (!connectionId) return { pending: true as const };
       await verifyNangoGmailGrant({ ...config, connectionId, attempt }, AbortSignal.timeout(20000));
     } catch (error) {
+      if (connectionId && invalidGmailScope(error)) {
+        // Only scope errors follow successful verification of the current attempt's owner tags.
+        // Leave the attempt usable if Nango cannot delete its rejected credential yet.
+        try {
+          await deleteNangoGmailConnection({ ...config, connectionId }, AbortSignal.timeout(20000));
+        } catch (cleanupError) {
+          throw gmailError(cleanupError);
+        }
+        await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+          await tx`update extension_authorizations set consumed_at=clock_timestamp()
+            where id=${attemptId} and installation_id=${id} and owner_id=${caller.actor.id}
+              and verifier_ref is null and consumed_at is null`;
+        });
+      }
       throw gmailError(error);
     }
     return this.connect(

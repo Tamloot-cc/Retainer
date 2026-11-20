@@ -119,6 +119,7 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
       body: { values: { name: email, emails: email } },
     });
     expect(response.status, JSON.stringify(response.body)).toBe(201);
+    return response.body.id as string;
   };
   await addPerson('existing@example.test');
   let tags: Record<string, string> = {};
@@ -126,7 +127,9 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
   let staleHistory = false;
   let revoked = false;
   let profileReads = 0;
-  let deleted = false;
+  const deleted: string[] = [];
+  let nangoConnectionId = 'rejected-test';
+  let failCleanup = true;
   const fullReads: string[] = [];
   const messageDate = Date.now() - 3_600_000;
   const from = {
@@ -157,17 +160,21 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
       });
     }
     const connection = {
-      connection_id: 'dedicated-test',
+      connection_id: nangoConnectionId,
       provider: 'google-mail',
       provider_config_key: 'google-mail',
       tags,
     };
     if (pathname === '/connections') return Response.json({ connections: [connection] });
-    if (pathname === '/connections/dedicated-test') {
+    if (pathname === `/connections/${nangoConnectionId}`) {
       expect(headers.get('authorization')).toBe('Bearer control-test');
       expect(searchParams.get('provider_config_key')).toBe('google-mail');
       if (init.method === 'DELETE') {
-        deleted = true;
+        if (failCleanup) {
+          failCleanup = false;
+          return Response.json({ error: { code: 'unavailable' } }, { status: 503 });
+        }
+        deleted.push(nangoConnectionId);
         return Response.json({ success: true });
       }
       return Response.json({ ...connection, credentials: { type: 'OAUTH2', raw: { scope } } });
@@ -206,7 +213,10 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
       payload: {
         headers: [
           { name: 'From', value: from[message] },
-          { name: 'To', value: 'mailbox@example.test' },
+          {
+            name: 'To',
+            value: message === 'eligible' ? 'late@example.test' : 'mailbox@example.test',
+          },
           { name: 'Cc', value: 'existing@example.test' },
           { name: 'Subject', value: 'Fixture conversation' },
           { name: 'Message-ID', value: `<${message}@example.test>` },
@@ -241,12 +251,23 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
     end_user_id: 'member',
     retainer_attempt_id: attempt.body.attemptId,
   });
-  const body = { attemptId: attempt.body.attemptId };
-  expect((await t.request(complete, { key: keys.other, body })).status).toBe(409);
-  expect((await t.request(complete, { key: keys.member, body })).body.error.code).toBe(
+  const rejected = { attemptId: attempt.body.attemptId };
+  expect((await t.request(complete, { key: keys.other, body: rejected })).status).toBe(409);
+  expect((await t.request(complete, { key: keys.member, body: rejected })).status).toBe(503);
+  expect(deleted).toEqual([]);
+  expect((await t.request(complete, { key: keys.member, body: rejected })).body.error.code).toBe(
     'gmail_scope_invalid',
   );
+  expect(deleted).toEqual(['rejected-test']);
+  expect((await t.request(complete, { key: keys.member, body: rejected })).status).toBe(409);
+
   scope = gmailReadonly;
+  nangoConnectionId = 'dedicated-test';
+  const accepted = await t.request(authorize, {
+    key: keys.member,
+    body: { shareGmail: true, historyDays: 2 },
+  });
+  const body = { attemptId: accepted.body.attemptId };
   const connection = await t.request(complete, { key: keys.member, body });
   expect(connection.status, JSON.stringify(connection.body)).toBe(200);
   expect((await t.request(complete, { key: keys.member, body })).status).toBe(409);
@@ -302,12 +323,14 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
   });
   expect(disconnected.status).toBe(200);
   await runWorker('disconnect');
-  expect(deleted).toBe(true);
+  expect(deleted).toEqual(['rejected-test', 'dedicated-test']);
   expect(
     (await t.request(`/v1/events/${evidence?.id}/gmail-messages`, { key: keys.member })).body
       .messages,
   ).toHaveLength(2);
-  const forgotten = await t.request(`/v1/records/${evidence?.id}/forget`, {
+  const latePerson = await addPerson('late@example.test');
+  expect(await db.owner`select 1 from event_links where record_id=${latePerson}`).toHaveLength(0);
+  const forgotten = await t.request(`/v1/records/${latePerson}/forget`, {
     key: keys.admin,
     body: {},
   });

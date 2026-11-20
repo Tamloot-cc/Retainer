@@ -117,14 +117,10 @@ export async function forgetRecord(
     where r.id = any(${recordIds}::uuid[])
       and r.object_type_id = any(${schema.eventTypeIds}::uuid[])
     order by 1`;
-  // A Conversation can be reached from every immutable message in its Gmail thread.
-  const gmailEvents = await tx<{ id: string }[]>`
-    select m.event_id as id from gmail_messages m where m.workspace_id=${workspaceId}
-      and m.thread_group_id in (select thread_group_id from gmail_messages where event_id=any(${events.map((r) => r.id)}::uuid[]))`;
   const sourceErasure = await prepareSourceErasure(
     tx,
     workspaceId,
-    [...new Set([...events, ...gmailEvents].map((r) => r.id))],
+    events.map((event) => event.id),
     handleValues,
     recordIds,
   );

@@ -11,6 +11,24 @@ export async function prepareSourceErasure(
   handles: string[],
   recordIds: string[],
 ) {
+  // Either an event or a staged envelope can identify a Gmail Conversation.
+  // Expand its entire thread before collecting the source items to erase.
+  const gmailEvents = await tx<{ event_id: string }[]>`
+    with gmail_groups as (
+      select m.thread_group_id from gmail_messages m
+      where m.workspace_id=${workspace} and m.event_id=any(${eventIds}::uuid[])
+      union
+      select m.thread_group_id from source_participants p
+      join source_items s on s.workspace_id=p.workspace_id and s.id=p.item_id
+      join extension_connections c on c.workspace_id=s.workspace_id and c.source_account_id=s.account_id
+      join gmail_deliveries d on d.workspace_id=c.workspace_id and d.connection_id=c.id
+        and d.provider_message_id=s.external_id
+      join gmail_messages m on m.workspace_id=d.workspace_id and m.event_id=d.message_id
+      where p.workspace_id=${workspace} and p.email=any(${handles}::text[])
+    )
+    select m.event_id from gmail_messages m join gmail_groups g on g.thread_group_id=m.thread_group_id
+    where m.workspace_id=${workspace}`;
+  const gmailEventIds = gmailEvents.map((message) => message.event_id);
   const items = await tx<
     {
       id: string;
@@ -27,7 +45,7 @@ export async function prepareSourceErasure(
       or exists(select 1 from gmail_deliveries d
         join extension_connections c on c.workspace_id=d.workspace_id and c.id=d.connection_id
         where d.workspace_id=s.workspace_id and c.source_account_id=s.account_id
-          and d.provider_message_id=s.external_id and d.message_id=any(${eventIds}::uuid[]))
+          and d.provider_message_id=s.external_id and d.message_id=any(${gmailEventIds}::uuid[]))
       or exists(select 1 from source_participants p where p.item_id=s.id and p.email=any(${handles}::text[]))) order by s.id`;
   const ids = items.map((i) => i.id),
     accounts = [...new Set(items.map((i) => i.account_id))];
@@ -36,7 +54,9 @@ export async function prepareSourceErasure(
         { event_id: string }[]
       >`select event_id from source_revisions where item_id=any(${ids}::uuid[])`
     : [];
-  const allEvents = [...new Set([...eventIds, ...revisions.map((v) => v.event_id)])];
+  const allEvents = [
+    ...new Set([...eventIds, ...gmailEventIds, ...revisions.map((v) => v.event_id)]),
+  ];
   // A forgotten task suppresses that identity; erasing its meeting also erases detached copies.
   let tasks = await tx<
     {
