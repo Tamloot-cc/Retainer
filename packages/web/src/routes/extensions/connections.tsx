@@ -5,7 +5,7 @@ import type {
 } from '@retainer/extension';
 import { RetainerApiError } from '@retainer/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useAccount } from '../../accounts/context.js';
 import { api, useWorkspace } from '../../api/client.js';
 import { Button, Muted, Notice, Panel, Row, Stack } from '../../ui/index.js';
@@ -81,11 +81,14 @@ export function MemberConnectionPanel({
     client = useQueryClient();
   // The manifest decides how connections and notices look; the offered
   // methods only decide which connect actions are shown (spec 4.8, 6.2).
+  const gmail = release.manifest.name === 'gmail';
   const oauthRelease = !!release.manifest.oauth,
     oauth = oauthRelease && !!installation.connectionMethods?.includes('oauth'),
-    keyMethod = installation.connectionMethods
-      ? installation.connectionMethods.includes('key')
-      : !oauthRelease,
+    keyMethod =
+      !gmail &&
+      (installation.connectionMethods
+        ? installation.connectionMethods.includes('key')
+        : !oauthRelease),
     provider = label(release.manifest.name);
   const key = [session.workspace.id, 'extension-connections', installation.id];
   const connections = useQuery({
@@ -183,6 +186,9 @@ export function MemberConnectionPanel({
           />
         ) : own ? (
           <>
+            {gmail && typeof own.settings.gmailAddress === 'string' ? (
+              <p>{own.settings.gmailAddress}</p>
+            ) : null}
             <p>
               {label(own.state)} · {label(own.health)}
             </p>
@@ -190,7 +196,13 @@ export function MemberConnectionPanel({
               Last completed scan: {date(own.lastSuccessfulScanAt)}. Failed imports:{' '}
               {own.failedItems}.
             </Muted>
-            {own.lastError ? <Notice>{connectionError(own.lastError)}</Notice> : null}
+            {own.lastError ? (
+              <Notice>
+                {gmail && own.lastError === 'provider_unauthorized'
+                  ? 'Gmail access ended. Disconnect this account and connect it again.'
+                  : connectionError(own.lastError)}
+              </Notice>
+            ) : null}
             <Row>
               {human && keyMethod ? (
                 <Button disabled={!enabled} onClick={() => setForm({ connection: own })}>
@@ -212,6 +224,13 @@ export function MemberConnectionPanel({
                 ? 'Connect your own account to share its data with this workspace.'
                 : 'A person must connect their account. Sign in with a user key or a person’s session.'}
             </Muted>
+            {human && gmail ? (
+              <GmailAuthorization
+                installation={installation}
+                onChanged={refresh}
+                enabled={enabled}
+              />
+            ) : null}
             {human && oauth ? (
               <OAuthStart
                 installation={installation}
@@ -243,9 +262,11 @@ export function MemberConnectionPanel({
           </Muted>
         ) : null}
         <Muted small>
-          {ownOAuth
-            ? `Disconnecting stops imports now and keeps imported records in the workspace. Retainer then gives up this workspace's access in ${provider}, retrying for up to a day.`
-            : 'Disconnecting keeps imported records in the workspace. A completed scan can still have pending or failed imports.'}
+          {gmail
+            ? 'Disconnecting stops future Gmail imports. Previously imported messages remain in this workspace until removed.'
+            : ownOAuth
+              ? `Disconnecting stops imports now and keeps imported records in the workspace. Retainer then gives up this workspace's access in ${provider}, retrying for up to a day.`
+              : 'Disconnecting keeps imported records in the workspace. A completed scan can still have pending or failed imports.'}
         </Muted>
       </section>
       {form ? (
@@ -435,10 +456,98 @@ function keyRequired(release: Release): Release {
   };
 }
 const CLEANUP_RUNNING = 'Retainer is finishing an earlier attempt. Try again in a moment.';
-/**
- * The non-secret connection settings and **Connect with <name>**: starts the
- * provider's authorization and leaves for it (Tamloot connect spec 6.1).
- */
+/** Explicit workspace-sharing consent before opening the read-only Google grant. */
+function GmailAuthorization({
+  installation,
+  onChanged,
+  enabled,
+}: {
+  installation: ExtensionInstallation;
+  onChanged: () => Promise<unknown>;
+  enabled: boolean;
+}) {
+  const id = useId();
+  const [pendingMessage, setPendingMessage] = useState('');
+  const days = Number(installation.settings.historyDays);
+  const start = useMutation({ mutationFn: () => api.authorizeGmail(installation.id, days) });
+  const finish = useMutation({
+    mutationFn: (attemptId: string) => api.finishGmailAuthorization(installation.id, attemptId),
+    onSuccess: async (result) => {
+      if ('pending' in result) setPendingMessage('Gmail authorization is still pending.');
+      else await onChanged();
+    },
+  });
+  if (start.data)
+    return (
+      <Stack>
+        <a
+          className="underline"
+          href={start.data.connectLink}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Authorize Gmail (opens a new tab)
+        </a>
+        <Row>
+          <Button
+            type="button"
+            disabled={!enabled || finish.isPending}
+            onClick={() => finish.mutate(start.data.attemptId)}
+          >
+            Finish connecting Gmail
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              start.reset();
+              finish.reset();
+              setPendingMessage('');
+            }}
+          >
+            Start over
+          </Button>
+        </Row>
+        <p role="status">{pendingMessage}</p>
+        {finish.error ? <Notice error>{finish.error.message}</Notice> : null}
+      </Stack>
+    );
+  return (
+    <form
+      aria-label="Connect Gmail"
+      method="post"
+      onSubmit={(event) => {
+        event.preventDefault();
+        start.mutate();
+      }}
+      className="flex flex-col items-start gap-3"
+    >
+      <p id={`${id}-description`} className="text-sm">
+        {days === 0
+          ? 'This connection starts with new mail.'
+          : `This connection starts with up to ${days} days of email history.`}{' '}
+        Qualifying message text is shared with workspace members and agents that can read
+        Conversations. History for newly added addresses follows the workspace limit at the time
+        they are added.
+      </p>
+      <div className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          id={id}
+          name="shareGmail"
+          required
+          aria-describedby={`${id}-description`}
+        />
+        <label htmlFor={id}>I agree to share qualifying Gmail messages</label>
+      </div>
+      <Button type="submit" disabled={!enabled || start.isPending}>
+        Connect Gmail
+      </Button>
+      {start.error ? <Notice error>{start.error.message}</Notice> : null}
+    </form>
+  );
+}
+
 function OAuthStart({
   installation,
   release,

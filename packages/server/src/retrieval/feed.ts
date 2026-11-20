@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
 import { AppError } from '../errors.js';
+import { currentActivityEvidence } from '../memory/events.js';
 import { presentRecords, RECORD_COLUMNS, type RecordRow } from '../records/read.js';
 import { relationReferences } from '../records/references.js';
 import { withRead } from '../records/service.js';
@@ -90,7 +91,7 @@ export async function workspaceFeed(
     // Shared records only. Personal profiles/internal notes must never become workspace activity,
     // even when the caller's RLS context can see their own personal memory.
     const visible = tx`r.workspace_id = ${caller.workspaceId} and r.deleted_at is null
-      and not exists(select 1 from source_revisions v where v.event_id=r.id and not v.is_current)
+      and ${currentActivityEvidence(tx, tx`r.id`)}
       and r.private_to_user is null and r.object_type_id = any(${typeIds}::uuid[])`;
     const sourceFilter = (source: ReturnType<typeof tx>) =>
       input.channel

@@ -327,6 +327,7 @@ type EventColumnsRow = {
   channel: string | null;
   external_id: string | null;
   source: EventDetails['source'] | null;
+  gmail: boolean;
 };
 
 /**
@@ -344,6 +345,7 @@ export async function eventDetails(
   const [columns, links] = await Promise.all([
     tx<EventColumnsRow[]>`
       select e.record_id,e.occurred_at,e.channel,e.external_id,
+        exists(select 1 from gmail_messages m where m.workspace_id=e.workspace_id and m.event_id=e.record_id) as gmail,
         case when v.id is null then null else json_build_object('sourceItemId',v.item_id,'revisionId',v.id,'current',v.is_current,'previousEventId',v.previous_event_id) end as source
       from event_records e left join source_revisions v on v.workspace_id=e.workspace_id and v.event_id=e.record_id
       where e.workspace_id = ${workspaceId} and e.record_id = any(${ids}::uuid[])`,
@@ -372,6 +374,7 @@ export async function eventDetails(
       participants: presentParticipants(rows, live, candidates),
       about: aboutOf(rows, live),
       ...(row.source ? { source: row.source } : {}),
+      ...(row.gmail ? { gmail: true as const } : {}),
     });
   }
   return details;

@@ -465,6 +465,8 @@ export class Sources {
       async (tx) => {
         const binding = await this.binding(tx, caller),
           { policy } = await this.release(tx, caller);
+        if (policy.provider === 'gmail')
+          throw forbidden('use the Gmail message eligibility check to prepare body retrieval');
         await this.ingestionJob(tx, caller, policy, itemId);
         const [item] = await tx<Item[]>`select * from source_items where id=${itemId} for update`;
         if (!item) throw notFound('source item');

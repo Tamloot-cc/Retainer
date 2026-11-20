@@ -1,6 +1,6 @@
 {
-  "id": "881a8cc5-6063-4ca7-b9cd-3631a971dc66",
-  "prevId": "dfe41e09-2765-4d2f-bf76-ee872a84e093",
+  "id": "1797f404-6ef2-4dc8-888c-ae90c43be46e",
+  "prevId": "d43009d9-4222-4fde-85d9-e3250fd6459d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -31,49 +31,37 @@
           "name": "installation_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "registration_id": {
           "name": "registration_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "release_digest": {
           "name": "release_digest",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "function_id": {
           "name": "function_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "job_id": {
           "name": "job_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "attempt": {
           "name": "attempt",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
-        },
-        "routine_id": {
-          "name": "routine_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "routine_run_id": {
-          "name": "routine_run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         },
         "model": {
           "name": "model",
@@ -173,33 +161,6 @@
           "with": {},
           "method": "btree",
           "concurrently": false
-        },
-        "ai_usage_routine_idx": {
-          "name": "ai_usage_routine_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "routine_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
         }
       },
       "foreignKeys": {
@@ -234,11 +195,7 @@
       "checkConstraints": {
         "ai_usage_kind": {
           "name": "ai_usage_kind",
-          "value": "\"ai_usage\".\"kind\" in ('model', 'agent', 'routine')"
-        },
-        "ai_usage_caller": {
-          "name": "ai_usage_caller",
-          "value": "(\"ai_usage\".\"kind\" = 'routine' and \"ai_usage\".\"routine_run_id\" is not null) or (\"ai_usage\".\"kind\" <> 'routine' and \"ai_usage\".\"installation_id\" is not null and \"ai_usage\".\"registration_id\" is not null and \"ai_usage\".\"release_digest\" is not null and \"ai_usage\".\"function_id\" is not null and \"ai_usage\".\"job_id\" is not null)"
+          "value": "\"ai_usage\".\"kind\" in ('model', 'agent')"
         },
         "ai_usage_tokens": {
           "name": "ai_usage_tokens",
@@ -2097,7 +2054,7 @@
           "name": "verifier_ref",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "settings": {
           "name": "settings",
@@ -3325,24 +3282,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "output": {
-          "name": "output",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "caller_run_id": {
-          "name": "caller_run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "caller_user_id": {
-          "name": "caller_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3378,7 +3317,7 @@
           "isUnique": true,
           "with": {},
           "method": "btree",
-          "where": "\"extension_jobs\".\"status\" = 'running' and \"extension_jobs\".\"connection_id\" is null and \"extension_jobs\".\"trigger_kind\" <> 'tool'",
+          "where": "\"extension_jobs\".\"status\" = 'running' and \"extension_jobs\".\"connection_id\" is null",
           "concurrently": false
         },
         "extension_jobs_one_running_connection_uq": {
@@ -3406,57 +3345,7 @@
           "isUnique": true,
           "with": {},
           "method": "btree",
-          "where": "\"extension_jobs\".\"status\" = 'running' and \"extension_jobs\".\"connection_id\" is not null and \"extension_jobs\".\"trigger_kind\" <> 'tool'",
-          "concurrently": false
-        },
-        "extension_jobs_one_running_tool_uq": {
-          "name": "extension_jobs_one_running_tool_uq",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "installation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "with": {},
-          "method": "btree",
-          "where": "\"extension_jobs\".\"status\" = 'running' and \"extension_jobs\".\"connection_id\" is null and \"extension_jobs\".\"trigger_kind\" = 'tool'",
-          "concurrently": false
-        },
-        "extension_jobs_one_running_tool_connection_uq": {
-          "name": "extension_jobs_one_running_tool_connection_uq",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "installation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "connection_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "with": {},
-          "method": "btree",
-          "where": "\"extension_jobs\".\"status\" = 'running' and \"extension_jobs\".\"connection_id\" is not null and \"extension_jobs\".\"trigger_kind\" = 'tool'",
+          "where": "\"extension_jobs\".\"status\" = 'running' and \"extension_jobs\".\"connection_id\" is not null",
           "concurrently": false
         },
         "extension_jobs_due_idx": {
@@ -3699,10 +3588,6 @@
         }
       },
       "checkConstraints": {
-        "extension_jobs_tool_caller": {
-          "name": "extension_jobs_tool_caller",
-          "value": "\"extension_jobs\".\"trigger_kind\" = 'tool' or (\"extension_jobs\".\"output\" is null and \"extension_jobs\".\"caller_run_id\" is null and \"extension_jobs\".\"caller_user_id\" is null)"
-        },
         "extension_jobs_connection_generation": {
           "name": "extension_jobs_connection_generation",
           "value": "(\"extension_jobs\".\"connection_id\" is null and \"extension_jobs\".\"connection_generation\" is null) or (\"extension_jobs\".\"connection_id\" is not null and \"extension_jobs\".\"connection_generation\" is not null and \"extension_jobs\".\"connection_generation\">0)"
@@ -6024,6 +5909,711 @@
           "value": "\"files\".\"bytes\">0 and \"files\".\"bytes\"<=26214400"
         }
       },
+      "isRLSEnabled": true
+    },
+    "public.gmail_authorization_cleanups": {
+      "name": "gmail_authorization_cleanups",
+      "schema": "",
+      "columns": {
+        "attempt_id": {
+          "name": "attempt_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "member_tag": {
+          "name": "member_tag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "integration_id": {
+          "name": "integration_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bound_connection_id": {
+          "name": "bound_connection_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "final_check_at": {
+          "name": "final_check_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fence": {
+          "name": "fence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "gmail_authorization_cleanups_due_idx": {
+          "name": "gmail_authorization_cleanups_due_idx",
+          "columns": [
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "attempt_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "gmail_authorization_cleanups_workspace": {
+          "name": "gmail_authorization_cleanups_workspace",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "retainer_app"
+          ],
+          "using": "\"gmail_authorization_cleanups\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid",
+          "withCheck": "\"gmail_authorization_cleanups\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid"
+        },
+        "gmail_authorization_cleanups_executor": {
+          "name": "gmail_authorization_cleanups_executor",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "retainer_executor"
+          ],
+          "using": "true",
+          "withCheck": "true"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.gmail_contact_additions": {
+      "name": "gmail_contact_additions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "record_id": {
+          "name": "record_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "clock_timestamp()"
+        },
+        "history_days": {
+          "name": "history_days",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "gmail_contact_additions_at_idx": {
+          "name": "gmail_contact_additions_at_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "gmail_contact_additions_record_idx": {
+          "name": "gmail_contact_additions_record_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "record_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "gmail_contact_additions_workspace_id_workspaces_id_fk": {
+          "name": "gmail_contact_additions_workspace_id_workspaces_id_fk",
+          "tableFrom": "gmail_contact_additions",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "tableTo": "workspaces",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "gmail_contact_additions_record_fk": {
+          "name": "gmail_contact_additions_record_fk",
+          "tableFrom": "gmail_contact_additions",
+          "columnsFrom": [
+            "workspace_id",
+            "record_id"
+          ],
+          "tableTo": "records",
+          "columnsTo": [
+            "workspace_id",
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "gmail_contact_additions_workspace_id_uq": {
+          "name": "gmail_contact_additions_workspace_id_uq",
+          "columns": [
+            "workspace_id",
+            "id"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {
+        "gmail_contact_additions_workspace": {
+          "name": "gmail_contact_additions_workspace",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "retainer_app"
+          ],
+          "using": "\"gmail_contact_additions\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid",
+          "withCheck": "\"gmail_contact_additions\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.gmail_contact_scans": {
+      "name": "gmail_contact_scans",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "installation_id": {
+          "name": "installation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "addition_id": {
+          "name": "addition_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "gmail_contact_scans_connection_idx": {
+          "name": "gmail_contact_scans_connection_idx",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "gmail_contact_scans_addition_idx": {
+          "name": "gmail_contact_scans_addition_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "addition_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "gmail_contact_scans_workspace_id_workspaces_id_fk": {
+          "name": "gmail_contact_scans_workspace_id_workspaces_id_fk",
+          "tableFrom": "gmail_contact_scans",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "tableTo": "workspaces",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "gmail_contact_scans_connection_fk": {
+          "name": "gmail_contact_scans_connection_fk",
+          "tableFrom": "gmail_contact_scans",
+          "columnsFrom": [
+            "workspace_id",
+            "installation_id",
+            "connection_id"
+          ],
+          "tableTo": "extension_connections",
+          "columnsTo": [
+            "workspace_id",
+            "installation_id",
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "gmail_contact_scans_addition_fk": {
+          "name": "gmail_contact_scans_addition_fk",
+          "tableFrom": "gmail_contact_scans",
+          "columnsFrom": [
+            "workspace_id",
+            "addition_id"
+          ],
+          "tableTo": "gmail_contact_additions",
+          "columnsTo": [
+            "workspace_id",
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "gmail_contact_scans_workspace_id_connection_id_addition_id_pk": {
+          "name": "gmail_contact_scans_workspace_id_connection_id_addition_id_pk",
+          "columns": [
+            "workspace_id",
+            "connection_id",
+            "addition_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "gmail_contact_scans_workspace": {
+          "name": "gmail_contact_scans_workspace",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "retainer_app"
+          ],
+          "using": "\"gmail_contact_scans\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid",
+          "withCheck": "\"gmail_contact_scans\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.gmail_deliveries": {
+      "name": "gmail_deliveries",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "installation_id": {
+          "name": "installation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_message_id": {
+          "name": "provider_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_thread_id": {
+          "name": "provider_thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "gmail_deliveries_connection_idx": {
+          "name": "gmail_deliveries_connection_idx",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "gmail_deliveries_thread_idx": {
+          "name": "gmail_deliveries_thread_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "provider_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "gmail_deliveries_message_idx": {
+          "name": "gmail_deliveries_message_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "gmail_deliveries_workspace_id_workspaces_id_fk": {
+          "name": "gmail_deliveries_workspace_id_workspaces_id_fk",
+          "tableFrom": "gmail_deliveries",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "tableTo": "workspaces",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "gmail_deliveries_connection_fk": {
+          "name": "gmail_deliveries_connection_fk",
+          "tableFrom": "gmail_deliveries",
+          "columnsFrom": [
+            "workspace_id",
+            "installation_id",
+            "connection_id"
+          ],
+          "tableTo": "extension_connections",
+          "columnsTo": [
+            "workspace_id",
+            "installation_id",
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "gmail_deliveries_message_fk": {
+          "name": "gmail_deliveries_message_fk",
+          "tableFrom": "gmail_deliveries",
+          "columnsFrom": [
+            "workspace_id",
+            "message_id"
+          ],
+          "tableTo": "gmail_messages",
+          "columnsTo": [
+            "workspace_id",
+            "event_id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "gmail_deliveries_pk": {
+          "name": "gmail_deliveries_pk",
+          "columns": [
+            "workspace_id",
+            "connection_id",
+            "provider_message_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "gmail_deliveries_workspace": {
+          "name": "gmail_deliveries_workspace",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "retainer_app"
+          ],
+          "using": "\"gmail_deliveries\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid",
+          "withCheck": "\"gmail_deliveries\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.gmail_messages": {
+      "name": "gmail_messages",
+      "schema": "",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thread_group_id": {
+          "name": "thread_group_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_date": {
+          "name": "original_date",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "gmail_messages_thread_idx": {
+          "name": "gmail_messages_thread_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "thread_group_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "gmail_messages_workspace_id_workspaces_id_fk": {
+          "name": "gmail_messages_workspace_id_workspaces_id_fk",
+          "tableFrom": "gmail_messages",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "tableTo": "workspaces",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "gmail_messages_event_fk": {
+          "name": "gmail_messages_event_fk",
+          "tableFrom": "gmail_messages",
+          "columnsFrom": [
+            "workspace_id",
+            "event_id"
+          ],
+          "tableTo": "records",
+          "columnsTo": [
+            "workspace_id",
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "gmail_messages_ws_id_uq": {
+          "name": "gmail_messages_ws_id_uq",
+          "columns": [
+            "workspace_id",
+            "event_id"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {
+        "gmail_messages_workspace": {
+          "name": "gmail_messages_workspace",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "retainer_app"
+          ],
+          "using": "\"gmail_messages\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid",
+          "withCheck": "\"gmail_messages\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid"
+        }
+      },
+      "checkConstraints": {},
       "isRLSEnabled": true
     },
     "public.idempotency_keys": {
@@ -9269,1345 +9859,6 @@
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
-    },
-    "public.routine_firings": {
-      "name": "routine_firings",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "routine_id": {
-          "name": "routine_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "record_id": {
-          "name": "record_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "due_at": {
-          "name": "due_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "routine_firings_record_idx": {
-          "name": "routine_firings_record_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "record_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        }
-      },
-      "foreignKeys": {
-        "routine_firings_workspace_id_workspaces_id_fk": {
-          "name": "routine_firings_workspace_id_workspaces_id_fk",
-          "tableFrom": "routine_firings",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "tableTo": "workspaces",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        },
-        "routine_firings_routine_fk": {
-          "name": "routine_firings_routine_fk",
-          "tableFrom": "routine_firings",
-          "columnsFrom": [
-            "workspace_id",
-            "routine_id"
-          ],
-          "tableTo": "routines",
-          "columnsTo": [
-            "workspace_id",
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {
-        "routine_firings_routine_id_kind_record_id_due_at_pk": {
-          "name": "routine_firings_routine_id_kind_record_id_due_at_pk",
-          "columns": [
-            "routine_id",
-            "kind",
-            "record_id",
-            "due_at"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {
-        "routine_firings_workspace": {
-          "name": "routine_firings_workspace",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "retainer_app"
-          ],
-          "using": "\"routine_firings\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid",
-          "withCheck": "\"routine_firings\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid"
-        }
-      },
-      "checkConstraints": {
-        "routine_firings_kind": {
-          "name": "routine_firings_kind",
-          "value": "\"routine_firings\".\"kind\" in ('once', 'schedule')"
-        }
-      },
-      "isRLSEnabled": true
-    },
-    "public.routine_model_days": {
-      "name": "routine_model_days",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "day": {
-          "name": "day",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "count": {
-          "name": "count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "routine_model_days_workspace_id_workspaces_id_fk": {
-          "name": "routine_model_days_workspace_id_workspaces_id_fk",
-          "tableFrom": "routine_model_days",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "tableTo": "workspaces",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {
-        "routine_model_days_workspace_id_day_pk": {
-          "name": "routine_model_days_workspace_id_day_pk",
-          "columns": [
-            "workspace_id",
-            "day"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {
-        "routine_model_days_workspace": {
-          "name": "routine_model_days_workspace",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "retainer_app"
-          ],
-          "using": "\"routine_model_days\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid",
-          "withCheck": "\"routine_model_days\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid"
-        }
-      },
-      "checkConstraints": {
-        "routine_model_days_count": {
-          "name": "routine_model_days_count",
-          "value": "\"routine_model_days\".\"count\" >= 0"
-        }
-      },
-      "isRLSEnabled": true
-    },
-    "public.routine_run_results": {
-      "name": "routine_run_results",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "operation": {
-          "name": "operation",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "args_hash": {
-          "name": "args_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "result": {
-          "name": "result",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "code": {
-          "name": "code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "differs": {
-          "name": "differs",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "tool_job_id": {
-          "name": "tool_job_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "record_id": {
-          "name": "record_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "routine_run_results_workspace_idx": {
-          "name": "routine_run_results_workspace_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        }
-      },
-      "foreignKeys": {
-        "routine_run_results_workspace_id_workspaces_id_fk": {
-          "name": "routine_run_results_workspace_id_workspaces_id_fk",
-          "tableFrom": "routine_run_results",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "tableTo": "workspaces",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        },
-        "routine_run_results_run_fk": {
-          "name": "routine_run_results_run_fk",
-          "tableFrom": "routine_run_results",
-          "columnsFrom": [
-            "workspace_id",
-            "run_id"
-          ],
-          "tableTo": "routine_runs",
-          "columnsTo": [
-            "workspace_id",
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {
-        "routine_run_results_run_id_position_pk": {
-          "name": "routine_run_results_run_id_position_pk",
-          "columns": [
-            "run_id",
-            "position"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {
-        "routine_run_results_workspace": {
-          "name": "routine_run_results_workspace",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "retainer_app"
-          ],
-          "using": "\"routine_run_results\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid",
-          "withCheck": "\"routine_run_results\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid"
-        }
-      },
-      "checkConstraints": {
-        "routine_run_results_state": {
-          "name": "routine_run_results_state",
-          "value": "\"routine_run_results\".\"state\" in ('started', 'done', 'failed', 'reported')"
-        }
-      },
-      "isRLSEnabled": true
-    },
-    "public.routine_runs": {
-      "name": "routine_runs",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "uuidv7()"
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "routine_id": {
-          "name": "routine_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "version_id": {
-          "name": "version_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source_id": {
-          "name": "source_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "mode": {
-          "name": "mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "trigger_kind": {
-          "name": "trigger_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "record_id": {
-          "name": "record_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "preview_id": {
-          "name": "preview_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "input": {
-          "name": "input",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "output": {
-          "name": "output",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'queued'"
-        },
-        "code": {
-          "name": "code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_owner": {
-          "name": "lease_owner",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "fence": {
-          "name": "fence",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "lease_until": {
-          "name": "lease_until",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attempt": {
-          "name": "attempt",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "available_at": {
-          "name": "available_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "run_at": {
-          "name": "run_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "finished_at": {
-          "name": "finished_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "change_position": {
-          "name": "change_position",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cause": {
-          "name": "cause",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "cause_depth": {
-          "name": "cause_depth",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "initiated_by": {
-          "name": "initiated_by",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "initiator_user_id": {
-          "name": "initiator_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "model_calls": {
-          "name": "model_calls",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "routine_runs_routine_idx": {
-          "name": "routine_runs_routine_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "routine_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        },
-        "routine_runs_due_idx": {
-          "name": "routine_runs_due_idx",
-          "columns": [
-            {
-              "expression": "available_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "where": "\"routine_runs\".\"status\" in ('queued', 'running')",
-          "concurrently": false
-        },
-        "routine_runs_record_idx": {
-          "name": "routine_runs_record_idx",
-          "columns": [
-            {
-              "expression": "routine_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "record_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "where": "\"routine_runs\".\"status\" in ('queued', 'held', 'running')",
-          "concurrently": false
-        },
-        "routine_runs_preview_idx": {
-          "name": "routine_runs_preview_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "preview_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        },
-        "routine_runs_version_idx": {
-          "name": "routine_runs_version_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "version_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        },
-        "routine_runs_source_idx": {
-          "name": "routine_runs_source_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "source_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        },
-        "routine_runs_retention_idx": {
-          "name": "routine_runs_retention_idx",
-          "columns": [
-            {
-              "expression": "finished_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "where": "\"routine_runs\".\"finished_at\" is not null",
-          "concurrently": false
-        },
-        "routine_runs_one_running_uq": {
-          "name": "routine_runs_one_running_uq",
-          "columns": [
-            {
-              "expression": "routine_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "record_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "with": {},
-          "method": "btree",
-          "where": "\"routine_runs\".\"status\" = 'running' and \"routine_runs\".\"mode\" = 'run' and \"routine_runs\".\"record_id\" is not null",
-          "concurrently": false
-        }
-      },
-      "foreignKeys": {
-        "routine_runs_workspace_id_workspaces_id_fk": {
-          "name": "routine_runs_workspace_id_workspaces_id_fk",
-          "tableFrom": "routine_runs",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "tableTo": "workspaces",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        },
-        "routine_runs_routine_fk": {
-          "name": "routine_runs_routine_fk",
-          "tableFrom": "routine_runs",
-          "columnsFrom": [
-            "workspace_id",
-            "routine_id"
-          ],
-          "tableTo": "routines",
-          "columnsTo": [
-            "workspace_id",
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        },
-        "routine_runs_version_fk": {
-          "name": "routine_runs_version_fk",
-          "tableFrom": "routine_runs",
-          "columnsFrom": [
-            "workspace_id",
-            "version_id"
-          ],
-          "tableTo": "routine_versions",
-          "columnsTo": [
-            "workspace_id",
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        },
-        "routine_runs_source_fk": {
-          "name": "routine_runs_source_fk",
-          "tableFrom": "routine_runs",
-          "columnsFrom": [
-            "workspace_id",
-            "source_id"
-          ],
-          "tableTo": "routine_sources",
-          "columnsTo": [
-            "workspace_id",
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "routine_runs_ws_id_uq": {
-          "name": "routine_runs_ws_id_uq",
-          "columns": [
-            "workspace_id",
-            "id"
-          ],
-          "nullsNotDistinct": false
-        }
-      },
-      "policies": {
-        "routine_runs_workspace": {
-          "name": "routine_runs_workspace",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "retainer_app"
-          ],
-          "using": "\"routine_runs\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid",
-          "withCheck": "\"routine_runs\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid"
-        }
-      },
-      "checkConstraints": {
-        "routine_runs_mode": {
-          "name": "routine_runs_mode",
-          "value": "\"routine_runs\".\"mode\" in ('run', 'test', 'dry', 'check', 'build')"
-        },
-        "routine_runs_status": {
-          "name": "routine_runs_status",
-          "value": "\"routine_runs\".\"status\" in ('queued', 'held', 'running', 'succeeded', 'failed', 'skipped', 'expired', 'stopped', 'diverged', 'budget_exhausted', 'erased', 'discarded')"
-        },
-        "routine_runs_trigger_kind": {
-          "name": "routine_runs_trigger_kind",
-          "value": "\"routine_runs\".\"trigger_kind\" in ('record', 'schedule', 'manual', 'test', 'preview', 'check', 'build')"
-        },
-        "routine_runs_pinned": {
-          "name": "routine_runs_pinned",
-          "value": "\"routine_runs\".\"mode\" not in ('run', 'test') or (\"routine_runs\".\"routine_id\" is not null and \"routine_runs\".\"source_id\" is not null)"
-        }
-      },
-      "isRLSEnabled": true
-    },
-    "public.routine_sources": {
-      "name": "routine_sources",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "uuidv7()"
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "hash": {
-          "name": "hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "manifest": {
-          "name": "manifest",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "code": {
-          "name": "code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "routine_sources_workspace_id_workspaces_id_fk": {
-          "name": "routine_sources_workspace_id_workspaces_id_fk",
-          "tableFrom": "routine_sources",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "tableTo": "workspaces",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "routine_sources_ws_id_uq": {
-          "name": "routine_sources_ws_id_uq",
-          "columns": [
-            "workspace_id",
-            "id"
-          ],
-          "nullsNotDistinct": false
-        },
-        "routine_sources_hash_uq": {
-          "name": "routine_sources_hash_uq",
-          "columns": [
-            "workspace_id",
-            "hash"
-          ],
-          "nullsNotDistinct": false
-        }
-      },
-      "policies": {
-        "routine_sources_workspace": {
-          "name": "routine_sources_workspace",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "retainer_app"
-          ],
-          "using": "\"routine_sources\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid",
-          "withCheck": "\"routine_sources\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid"
-        }
-      },
-      "checkConstraints": {
-        "routine_sources_hash": {
-          "name": "routine_sources_hash",
-          "value": "\"routine_sources\".\"hash\" ~ '^[a-f0-9]{64}$'"
-        },
-        "routine_sources_code_size": {
-          "name": "routine_sources_code_size",
-          "value": "octet_length(\"routine_sources\".\"code\") <= 65536"
-        }
-      },
-      "isRLSEnabled": true
-    },
-    "public.routine_versions": {
-      "name": "routine_versions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "uuidv7()"
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "routine_id": {
-          "name": "routine_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_id": {
-          "name": "source_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "number": {
-          "name": "number",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'proposed'"
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "report": {
-          "name": "report",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "rank": {
-          "name": "rank",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'agent'"
-        },
-        "types_fingerprint": {
-          "name": "types_fingerprint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "tool_contracts": {
-          "name": "tool_contracts",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "built_by": {
-          "name": "built_by",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "approved_by": {
-          "name": "approved_by",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "approver_user_id": {
-          "name": "approver_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "approved_at": {
-          "name": "approved_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "routine_versions_source_idx": {
-          "name": "routine_versions_source_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "source_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        }
-      },
-      "foreignKeys": {
-        "routine_versions_workspace_id_workspaces_id_fk": {
-          "name": "routine_versions_workspace_id_workspaces_id_fk",
-          "tableFrom": "routine_versions",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "tableTo": "workspaces",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        },
-        "routine_versions_routine_fk": {
-          "name": "routine_versions_routine_fk",
-          "tableFrom": "routine_versions",
-          "columnsFrom": [
-            "workspace_id",
-            "routine_id"
-          ],
-          "tableTo": "routines",
-          "columnsTo": [
-            "workspace_id",
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        },
-        "routine_versions_source_fk": {
-          "name": "routine_versions_source_fk",
-          "tableFrom": "routine_versions",
-          "columnsFrom": [
-            "workspace_id",
-            "source_id"
-          ],
-          "tableTo": "routine_sources",
-          "columnsTo": [
-            "workspace_id",
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "routine_versions_ws_id_uq": {
-          "name": "routine_versions_ws_id_uq",
-          "columns": [
-            "workspace_id",
-            "id"
-          ],
-          "nullsNotDistinct": false
-        },
-        "routine_versions_number_uq": {
-          "name": "routine_versions_number_uq",
-          "columns": [
-            "routine_id",
-            "number"
-          ],
-          "nullsNotDistinct": false
-        }
-      },
-      "policies": {
-        "routine_versions_workspace": {
-          "name": "routine_versions_workspace",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "retainer_app"
-          ],
-          "using": "\"routine_versions\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid",
-          "withCheck": "\"routine_versions\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid"
-        }
-      },
-      "checkConstraints": {
-        "routine_versions_state": {
-          "name": "routine_versions_state",
-          "value": "\"routine_versions\".\"state\" in ('proposed', 'approved', 'superseded', 'rejected')"
-        },
-        "routine_versions_rank": {
-          "name": "routine_versions_rank",
-          "value": "\"routine_versions\".\"rank\" = 'agent'"
-        }
-      },
-      "isRLSEnabled": true
-    },
-    "public.routines": {
-      "name": "routines",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "uuidv7()"
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'draft'"
-        },
-        "paused_reason": {
-          "name": "paused_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "paused_at": {
-          "name": "paused_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "active_version_id": {
-          "name": "active_version_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "feed_position": {
-          "name": "feed_position",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "next_fire_at": {
-          "name": "next_fire_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "failures": {
-          "name": "failures",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "routines_status_idx": {
-          "name": "routines_status_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "concurrently": false
-        },
-        "routines_schedule_idx": {
-          "name": "routines_schedule_idx",
-          "columns": [
-            {
-              "expression": "next_fire_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "btree",
-          "where": "\"routines\".\"status\" = 'active' and \"routines\".\"next_fire_at\" is not null",
-          "concurrently": false
-        }
-      },
-      "foreignKeys": {
-        "routines_workspace_id_workspaces_id_fk": {
-          "name": "routines_workspace_id_workspaces_id_fk",
-          "tableFrom": "routines",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "tableTo": "workspaces",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "routines_ws_id_uq": {
-          "name": "routines_ws_id_uq",
-          "columns": [
-            "workspace_id",
-            "id"
-          ],
-          "nullsNotDistinct": false
-        }
-      },
-      "policies": {
-        "routines_workspace": {
-          "name": "routines_workspace",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "retainer_app"
-          ],
-          "using": "\"routines\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid",
-          "withCheck": "\"routines\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid"
-        }
-      },
-      "checkConstraints": {
-        "routines_status": {
-          "name": "routines_status",
-          "value": "\"routines\".\"status\" in ('draft', 'active', 'paused', 'needs_attention', 'archived')"
-        },
-        "routines_name_length": {
-          "name": "routines_name_length",
-          "value": "char_length(\"routines\".\"name\") between 1 and 200"
-        },
-        "routines_description_length": {
-          "name": "routines_description_length",
-          "value": "char_length(\"routines\".\"description\") between 1 and 10000"
-        }
-      },
-      "isRLSEnabled": true
     },
     "public.schema_changes": {
       "name": "schema_changes",

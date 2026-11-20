@@ -1,1 +1,0 @@
-ALTER TABLE "routine_runs" ADD COLUMN "read_calls" jsonb DEFAULT '{}'::jsonb NOT NULL;

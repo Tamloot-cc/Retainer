@@ -6,7 +6,7 @@ import type {
   UnmatchedReason,
   Via,
 } from '@retainer/shared';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CornerDownRight, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { api, useWorkspace } from '../../api/client.js';
@@ -177,7 +177,7 @@ export function EventDetailsView({
   const { session } = useWorkspace(),
     client = useQueryClient(),
     apiName = useApiName();
-  const editable = allowEditing && !event.source;
+  const editable = allowEditing && !event.source && !event.gmail;
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   /** Runs one link change and refreshes; true when it succeeded. */
@@ -225,6 +225,7 @@ export function EventDetailsView({
         </Notice>
       ) : null}
       {error ? <Notice error>{error}</Notice> : null}
+      {event.gmail ? <GmailMessages eventId={id} /> : null}
       <PropertyList>
         <Property label="Occurred" apiName={apiName('occurredAt')}>
           {new Date(event.occurredAt).toLocaleString()}
@@ -421,6 +422,44 @@ export function AddAbout({
           Cancel
         </Button>
       </Row>
+    </Stack>
+  );
+}
+
+function GmailMessages({ eventId }: { eventId: string }) {
+  const { session } = useWorkspace();
+  const messages = useInfiniteQuery({
+    queryKey: [session.workspace.id, 'gmail-messages', eventId],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) => api.gmailMessages(eventId, pageParam ?? undefined, signal),
+    getNextPageParam: (page) => page.nextAfter ?? undefined,
+  });
+  if (messages.error) return <Notice error>{messages.error.message}</Notice>;
+  if (!messages.data) return <Muted>Loading email messages…</Muted>;
+  return (
+    <Stack>
+      <h3 className="font-medium">Email messages</h3>
+      <ol className="space-y-4">
+        {messages.data.pages
+          .flatMap((page) => page.messages)
+          .map((message) => (
+            <li key={message.id} className="rounded-md border p-3">
+              <time dateTime={message.originalDate ?? message.occurredAt} className="text-sm">
+                {new Date(message.originalDate ?? message.occurredAt).toLocaleString()}
+              </time>
+              <p className="mt-2 whitespace-pre-wrap break-words text-sm">{message.body}</p>
+            </li>
+          ))}
+      </ol>
+      {messages.hasNextPage ? (
+        <Button
+          type="button"
+          disabled={messages.isFetchingNextPage}
+          onClick={() => void messages.fetchNextPage()}
+        >
+          Load more messages
+        </Button>
+      ) : null}
     </Stack>
   );
 }

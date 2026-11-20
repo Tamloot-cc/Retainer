@@ -1748,7 +1748,8 @@ export const extensionAuthorizations = pgTable(
     connectionId: uuid('connection_id').notNull(),
     ownerId: text('owner_id').notNull(),
     stateHash: text('state_hash').notNull(),
-    verifierRef: uuid('verifier_ref').notNull(),
+    /** Nango performs its own OAuth exchange. */
+    verifierRef: uuid('verifier_ref'),
     settings: jsonb('settings')
       .$type<Record<string, string | boolean | number>>()
       .notNull()
@@ -1774,6 +1775,37 @@ export const extensionAuthorizations = pgTable(
       to: 'retainer_app',
       using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
       withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+/** An OAuth session may outlive its member, installation or workspace. Keep only its exact
+ * Nango lookup tags and claimed connection ID until cleanup has confirmed completion. */
+export const gmailAuthorizationCleanups = pgTable(
+  'gmail_authorization_cleanups',
+  {
+    attemptId: uuid('attempt_id').primaryKey(),
+    workspaceId: uuid('workspace_id').notNull(),
+    memberTag: text('member_tag').notNull(),
+    integrationId: text('integration_id').notNull(),
+    boundConnectionId: text('bound_connection_id'),
+    nextAttemptAt: timestamptz('next_attempt_at').notNull(),
+    finalCheckAt: timestamptz('final_check_at').notNull(),
+    fence: integer('fence').notNull().default(0),
+  },
+  (t) => [
+    index('gmail_authorization_cleanups_due_idx').on(t.nextAttemptAt, t.attemptId),
+    pgPolicy('gmail_authorization_cleanups_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+    pgPolicy('gmail_authorization_cleanups_executor', {
+      for: 'all',
+      to: 'retainer_executor',
+      using: sql`true`,
+      withCheck: sql`true`,
     }),
   ],
 ).enableRLS();
@@ -2472,6 +2504,141 @@ export const sourceRevisions = pgTable(
     }),
   ],
 ).enableRLS();
+/** Immutable Gmail message evidence. Messages in a thread have one activity entry. */
+export const gmailMessages = pgTable(
+  'gmail_messages',
+  {
+    eventId: uuid('event_id').primaryKey(),
+    workspaceId: workspaceId(),
+    threadGroupId: uuid('thread_group_id').notNull(),
+    occurredAt: timestamptz('occurred_at').notNull(),
+    originalDate: timestamptz('original_date'),
+    body: text('body').notNull(),
+  },
+  (t) => [
+    unique('gmail_messages_ws_id_uq').on(t.workspaceId, t.eventId),
+    tenantFk(
+      'gmail_messages_event_fk',
+      [t.workspaceId, t.eventId],
+      [records.workspaceId, records.id],
+    ),
+    index('gmail_messages_thread_idx').on(t.workspaceId, t.threadGroupId, t.occurredAt, t.eventId),
+    pgPolicy('gmail_messages_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+/** One copy of a Gmail message in a verified member mailbox. */
+export const gmailDeliveries = pgTable(
+  'gmail_deliveries',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    connectionId: uuid('connection_id').notNull(),
+    messageId: uuid('message_id').notNull(),
+    providerMessageId: text('provider_message_id').notNull(),
+    providerThreadId: text('provider_thread_id').notNull(),
+  },
+  (t) => [
+    primaryKey({
+      name: 'gmail_deliveries_pk',
+      columns: [t.workspaceId, t.connectionId, t.providerMessageId],
+    }),
+    foreignKey({
+      name: 'gmail_deliveries_connection_fk',
+      columns: [t.workspaceId, t.installationId, t.connectionId],
+      foreignColumns: [
+        extensionConnections.workspaceId,
+        extensionConnections.installationId,
+        extensionConnections.id,
+      ],
+    }).onDelete('cascade'),
+    tenantFk(
+      'gmail_deliveries_message_fk',
+      [t.workspaceId, t.messageId],
+      [gmailMessages.workspaceId, gmailMessages.eventId],
+    ),
+    index('gmail_deliveries_connection_idx').on(t.connectionId),
+    index('gmail_deliveries_thread_idx').on(t.workspaceId, t.connectionId, t.providerThreadId),
+    index('gmail_deliveries_message_idx').on(t.workspaceId, t.messageId),
+    pgPolicy('gmail_deliveries_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+/** An exact Person email added while Gmail is installed, with the history limit at that write. */
+export const gmailContactAdditions = pgTable(
+  'gmail_contact_additions',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    recordId: uuid('record_id').notNull(),
+    email: text('email').notNull(),
+    createdAt: timestamptz('created_at').notNull().default(sql`clock_timestamp()`),
+    historyDays: integer('history_days').notNull(),
+  },
+  (t) => [
+    unique('gmail_contact_additions_workspace_id_uq').on(t.workspaceId, t.id),
+    tenantFk(
+      'gmail_contact_additions_record_fk',
+      [t.workspaceId, t.recordId],
+      [records.workspaceId, records.id],
+    ),
+    index('gmail_contact_additions_at_idx').on(t.workspaceId, t.createdAt, t.id),
+    index('gmail_contact_additions_record_idx').on(t.workspaceId, t.recordId),
+    pgPolicy('gmail_contact_additions_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+/** Per-mailbox acknowledgements avoid skipping additions from concurrent Person writes. */
+export const gmailContactScans = pgTable(
+  'gmail_contact_scans',
+  {
+    workspaceId: workspaceId(),
+    installationId: uuid('installation_id').notNull(),
+    connectionId: uuid('connection_id').notNull(),
+    additionId: uuid('addition_id').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.connectionId, t.additionId] }),
+    foreignKey({
+      name: 'gmail_contact_scans_connection_fk',
+      columns: [t.workspaceId, t.installationId, t.connectionId],
+      foreignColumns: [
+        extensionConnections.workspaceId,
+        extensionConnections.installationId,
+        extensionConnections.id,
+      ],
+    }).onDelete('cascade'),
+    tenantFk(
+      'gmail_contact_scans_addition_fk',
+      [t.workspaceId, t.additionId],
+      [gmailContactAdditions.workspaceId, gmailContactAdditions.id],
+    ),
+    index('gmail_contact_scans_connection_idx').on(t.connectionId),
+    index('gmail_contact_scans_addition_idx').on(t.workspaceId, t.additionId),
+    pgPolicy('gmail_contact_scans_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+  ],
+).enableRLS();
+
 export const sourceReceipts = pgTable(
   'source_receipts',
   {

@@ -68,6 +68,7 @@ CREATE TABLE "routine_runs" (
 	"initiated_by" jsonb,
 	"initiator_user_id" text,
 	"model_calls" integer DEFAULT 0 NOT NULL,
+	"read_calls" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "routine_runs_ws_id_uq" UNIQUE("workspace_id","id"),
@@ -139,6 +140,8 @@ CREATE TABLE "routines" (
 --> statement-breakpoint
 ALTER TABLE "routines" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "ai_usage" DROP CONSTRAINT "ai_usage_kind";--> statement-breakpoint
+DROP INDEX "extension_jobs_one_running_uq";--> statement-breakpoint
+DROP INDEX "extension_jobs_one_running_connection_uq";--> statement-breakpoint
 ALTER TABLE "ai_usage" ALTER COLUMN "installation_id" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "ai_usage" ALTER COLUMN "registration_id" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "ai_usage" ALTER COLUMN "release_digest" DROP NOT NULL;--> statement-breakpoint
@@ -146,6 +149,10 @@ ALTER TABLE "ai_usage" ALTER COLUMN "function_id" DROP NOT NULL;--> statement-br
 ALTER TABLE "ai_usage" ALTER COLUMN "job_id" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "ai_usage" ADD COLUMN "routine_id" uuid;--> statement-breakpoint
 ALTER TABLE "ai_usage" ADD COLUMN "routine_run_id" uuid;--> statement-breakpoint
+ALTER TABLE "extension_jobs" ADD COLUMN "output" jsonb;--> statement-breakpoint
+ALTER TABLE "extension_jobs" ADD COLUMN "caller_run_id" uuid;--> statement-breakpoint
+ALTER TABLE "extension_jobs" ADD COLUMN "caller_user_id" text;--> statement-breakpoint
+ALTER TABLE "record_changes" ADD COLUMN "merged_from_id" uuid;--> statement-breakpoint
 ALTER TABLE "routine_firings" ADD CONSTRAINT "routine_firings_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "routine_firings" ADD CONSTRAINT "routine_firings_routine_fk" FOREIGN KEY ("workspace_id","routine_id") REFERENCES "public"."routines"("workspace_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "routine_model_days" ADD CONSTRAINT "routine_model_days_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -174,8 +181,13 @@ CREATE INDEX "routine_versions_source_idx" ON "routine_versions" USING btree ("w
 CREATE INDEX "routines_status_idx" ON "routines" USING btree ("workspace_id","status");--> statement-breakpoint
 CREATE INDEX "routines_schedule_idx" ON "routines" USING btree ("next_fire_at") WHERE "routines"."status" = 'active' and "routines"."next_fire_at" is not null;--> statement-breakpoint
 CREATE INDEX "ai_usage_routine_idx" ON "ai_usage" USING btree ("workspace_id","routine_id","created_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "extension_jobs_one_running_tool_uq" ON "extension_jobs" USING btree ("workspace_id","installation_id") WHERE "extension_jobs"."status" = 'running' and "extension_jobs"."connection_id" is null and "extension_jobs"."trigger_kind" = 'tool';--> statement-breakpoint
+CREATE UNIQUE INDEX "extension_jobs_one_running_tool_connection_uq" ON "extension_jobs" USING btree ("workspace_id","installation_id","connection_id") WHERE "extension_jobs"."status" = 'running' and "extension_jobs"."connection_id" is not null and "extension_jobs"."trigger_kind" = 'tool';--> statement-breakpoint
+CREATE UNIQUE INDEX "extension_jobs_one_running_uq" ON "extension_jobs" USING btree ("workspace_id","installation_id") WHERE "extension_jobs"."status" = 'running' and "extension_jobs"."connection_id" is null and "extension_jobs"."trigger_kind" <> 'tool';--> statement-breakpoint
+CREATE UNIQUE INDEX "extension_jobs_one_running_connection_uq" ON "extension_jobs" USING btree ("workspace_id","installation_id","connection_id") WHERE "extension_jobs"."status" = 'running' and "extension_jobs"."connection_id" is not null and "extension_jobs"."trigger_kind" <> 'tool';--> statement-breakpoint
 ALTER TABLE "ai_usage" ADD CONSTRAINT "ai_usage_caller" CHECK (("ai_usage"."kind" = 'routine' and "ai_usage"."routine_run_id" is not null) or ("ai_usage"."kind" <> 'routine' and "ai_usage"."installation_id" is not null and "ai_usage"."registration_id" is not null and "ai_usage"."release_digest" is not null and "ai_usage"."function_id" is not null and "ai_usage"."job_id" is not null));--> statement-breakpoint
 ALTER TABLE "ai_usage" ADD CONSTRAINT "ai_usage_kind" CHECK ("ai_usage"."kind" in ('model', 'agent', 'routine'));--> statement-breakpoint
+ALTER TABLE "extension_jobs" ADD CONSTRAINT "extension_jobs_tool_caller" CHECK ("extension_jobs"."trigger_kind" = 'tool' or ("extension_jobs"."output" is null and "extension_jobs"."caller_run_id" is null and "extension_jobs"."caller_user_id" is null));--> statement-breakpoint
 CREATE POLICY "routine_firings_workspace" ON "routine_firings" AS PERMISSIVE FOR ALL TO "retainer_app" USING ("routine_firings"."workspace_id" = nullif(current_setting('app.workspace_id', true), '')::uuid) WITH CHECK ("routine_firings"."workspace_id" = nullif(current_setting('app.workspace_id', true), '')::uuid);--> statement-breakpoint
 CREATE POLICY "routine_model_days_workspace" ON "routine_model_days" AS PERMISSIVE FOR ALL TO "retainer_app" USING ("routine_model_days"."workspace_id" = nullif(current_setting('app.workspace_id', true), '')::uuid) WITH CHECK ("routine_model_days"."workspace_id" = nullif(current_setting('app.workspace_id', true), '')::uuid);--> statement-breakpoint
 CREATE POLICY "routine_run_results_workspace" ON "routine_run_results" AS PERMISSIVE FOR ALL TO "retainer_app" USING ("routine_run_results"."workspace_id" = nullif(current_setting('app.workspace_id', true), '')::uuid) WITH CHECK ("routine_run_results"."workspace_id" = nullif(current_setting('app.workspace_id', true), '')::uuid);--> statement-breakpoint

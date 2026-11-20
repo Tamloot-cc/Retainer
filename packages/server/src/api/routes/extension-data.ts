@@ -4,6 +4,7 @@ import { AppError } from '../../errors.js';
 import type { ExtensionCatalog } from '../../extensions/catalog.js';
 import type { AppEnv } from '../../http/response.js';
 import { Sources } from '../../sources/service.js';
+import { gmailRuntimeRoutes } from './gmail.js';
 import { lastContactRoutes } from './last-contact.js';
 import { sourceRoutes } from './sources.js';
 
@@ -14,6 +15,7 @@ import { sourceRoutes } from './sources.js';
  */
 export function extensionDataRoutes(v1: Hono<AppEnv>, sql: Sql, catalog: ExtensionCatalog) {
   lastContactRoutes(v1, sql, catalog);
+  gmailRuntimeRoutes(v1, sql, catalog);
   sourceRoutes(
     v1,
     new Sources(sql, (registration, version, digest) => {

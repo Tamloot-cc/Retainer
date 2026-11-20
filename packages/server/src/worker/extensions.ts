@@ -7,6 +7,7 @@ import {
 import { z } from 'zod';
 import type { Sql } from '../db/client.js';
 import { AppError } from '../errors.js';
+import { cleanGmailAuthorizations } from '../extension-runtime/gmail-cleanup.js';
 import { type ClaimedJob, ExtensionQueue } from '../extension-runtime/queue.js';
 import { MODEL_PROXY_PATH, type RunTokens } from '../extension-runtime/tokens.js';
 import type { ExtensionCatalog } from '../extensions/catalog.js';
@@ -304,8 +305,7 @@ export class ExtensionExecutor {
     const maintain = () => {
       if (maintaining || Date.now() - maintainedAt < maintenanceMs) return;
       maintainedAt = Date.now();
-      maintaining = this.queue
-        .maintain(this.options.discoverySql)
+      maintaining = this.maintain()
         .then(() => this.upgrade(upgradeMs))
         .catch(report)
         .finally(() => {
@@ -397,11 +397,17 @@ export class ExtensionExecutor {
     this.upgradedAt = Date.now();
     await this.options.upgrades.upgradeDue(this.options.discoverySql);
   }
+  private async maintain() {
+    await Promise.all([
+      this.queue.maintain(this.options.discoverySql),
+      cleanGmailAuthorizations(this.options.discoverySql),
+    ]);
+  }
   async tick(limit = 1000) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
       throw new Error('executor pass limit must be 1–1000');
     if (this.stopped || this.draining) return { executed: 0, fenced: 0 };
-    await this.queue.maintain(this.options.discoverySql);
+    await this.maintain();
     await this.upgrade();
     const due = await this.queue.discover(this.options.discoverySql, limit);
     let next = 0,

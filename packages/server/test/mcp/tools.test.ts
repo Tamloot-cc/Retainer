@@ -35,6 +35,7 @@ const TOOLS = [
   'get_context',
   'get_extension',
   'get_file',
+  'get_gmail_messages',
   'get_guide',
   'get_record',
   'get_routine',

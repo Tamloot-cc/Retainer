@@ -7,6 +7,7 @@ import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineExtension } from '../packages/extension/dist/index.js';
 import { enrichmentManifest } from '../packages/runner/dist/enrichment-contract.js';
+import { gmailManifest } from '../packages/runner/dist/gmail-contract.js';
 import { granolaManifest } from '../packages/runner/dist/granola-contract.js';
 import { lastContactManifest } from '../packages/runner/dist/last-contact.js';
 import { tamlootManifest } from '../packages/runner/dist/tamloot-contract.js';
@@ -499,3 +500,48 @@ writeRoutine('executables.json', [
     driverTarget: 'routine-runner',
   },
 ]);
+// Gmail is available to development catalogs while hosted access is being reviewed.
+if (development) {
+  const gmail = gmailManifest({
+    version,
+    packageDigest,
+    handlerDigest: hash(readFileSync(resolve(root, 'packages/runner/dist/gmail.js'))),
+    serverRange: extensionServerRange(
+      JSON.parse(readFileSync(resolve(root, 'packages/server/package.json'))).version,
+    ),
+  });
+  const digest = hash(stableJson(gmail));
+  const directory = resolve(root, 'artifacts/extensions/gmail');
+  mkdirSync(directory, { recursive: true });
+  const write = (name, value) =>
+    writeFileSync(
+      resolve(directory, name),
+      `${JSON.stringify(value, null, 2)}
+`,
+    );
+  write('manifest.json', gmail);
+  write('catalog.json', [{ manifest: gmail, actorCeiling: 'integration', runtimeEnabled: true }]);
+  write('metadata.json', {
+    commit,
+    version,
+    development,
+    releaseDigest: digest,
+    contentDigest: contentDigest(gmail),
+    handlerDigest: gmail.functions[0].handlerDigest,
+    packageDigest,
+    bundleId: 'gmail',
+    functionIds: gmail.functions.map((fn) => fn.universalId),
+  });
+  write(
+    'executables.json',
+    gmail.functions.map((fn) => ({
+      registrationId: gmail.universalId,
+      releaseDigest: digest,
+      functionId: fn.universalId,
+      handlerDigest: fn.handlerDigest,
+      packageDigest,
+      runtimeVersion: 'node24',
+      driverTarget: 'gmail',
+    })),
+  );
+}

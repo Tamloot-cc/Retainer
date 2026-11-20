@@ -1,5 +1,5 @@
 {
-  "id": "88c91556-25ac-4d6a-8cf1-b862e5ca8393",
+  "id": "b26a797f-bc3a-426a-8c3e-2ede753862d5",
   "prevId": "cc34dc33-5dd8-4b8c-9fa3-53511c045e14",
   "version": "7",
   "dialect": "postgresql",
@@ -2054,7 +2054,7 @@
           "name": "verifier_ref",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "settings": {
           "name": "settings",
@@ -3282,24 +3282,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "output": {
-          "name": "output",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "caller_run_id": {
-          "name": "caller_run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "caller_user_id": {
-          "name": "caller_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3333,7 +3315,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"extension_jobs\".\"status\" = 'running' and \"extension_jobs\".\"connection_id\" is null and \"extension_jobs\".\"trigger_kind\" <> 'tool'",
+          "where": "\"extension_jobs\".\"status\" = 'running' and \"extension_jobs\".\"connection_id\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3361,57 +3343,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"extension_jobs\".\"status\" = 'running' and \"extension_jobs\".\"connection_id\" is not null and \"extension_jobs\".\"trigger_kind\" <> 'tool'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "extension_jobs_one_running_tool_uq": {
-          "name": "extension_jobs_one_running_tool_uq",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "installation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"extension_jobs\".\"status\" = 'running' and \"extension_jobs\".\"connection_id\" is null and \"extension_jobs\".\"trigger_kind\" = 'tool'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "extension_jobs_one_running_tool_connection_uq": {
-          "name": "extension_jobs_one_running_tool_connection_uq",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "installation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "connection_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"extension_jobs\".\"status\" = 'running' and \"extension_jobs\".\"connection_id\" is not null and \"extension_jobs\".\"trigger_kind\" = 'tool'",
+          "where": "\"extension_jobs\".\"status\" = 'running' and \"extension_jobs\".\"connection_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3656,10 +3588,6 @@
         }
       },
       "checkConstraints": {
-        "extension_jobs_tool_caller": {
-          "name": "extension_jobs_tool_caller",
-          "value": "\"extension_jobs\".\"trigger_kind\" = 'tool' or (\"extension_jobs\".\"output\" is null and \"extension_jobs\".\"caller_run_id\" is null and \"extension_jobs\".\"caller_user_id\" is null)"
-        },
         "extension_jobs_connection_generation": {
           "name": "extension_jobs_connection_generation",
           "value": "(\"extension_jobs\".\"connection_id\" is null and \"extension_jobs\".\"connection_generation\" is null) or (\"extension_jobs\".\"connection_id\" is not null and \"extension_jobs\".\"connection_generation\" is not null and \"extension_jobs\".\"connection_generation\">0)"
@@ -5981,6 +5909,606 @@
           "value": "\"files\".\"bytes\">0 and \"files\".\"bytes\"<=26214400"
         }
       },
+      "isRLSEnabled": true
+    },
+    "public.gmail_contact_additions": {
+      "name": "gmail_contact_additions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "record_id": {
+          "name": "record_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "clock_timestamp()"
+        },
+        "history_days": {
+          "name": "history_days",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "gmail_contact_additions_at_idx": {
+          "name": "gmail_contact_additions_at_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "gmail_contact_additions_record_idx": {
+          "name": "gmail_contact_additions_record_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "record_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "gmail_contact_additions_workspace_id_workspaces_id_fk": {
+          "name": "gmail_contact_additions_workspace_id_workspaces_id_fk",
+          "tableFrom": "gmail_contact_additions",
+          "tableTo": "workspaces",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "gmail_contact_additions_record_fk": {
+          "name": "gmail_contact_additions_record_fk",
+          "tableFrom": "gmail_contact_additions",
+          "tableTo": "records",
+          "columnsFrom": [
+            "workspace_id",
+            "record_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "gmail_contact_additions_workspace_id_uq": {
+          "name": "gmail_contact_additions_workspace_id_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "workspace_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {
+        "gmail_contact_additions_workspace": {
+          "name": "gmail_contact_additions_workspace",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "retainer_app"
+          ],
+          "using": "\"gmail_contact_additions\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid",
+          "withCheck": "\"gmail_contact_additions\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.gmail_contact_scans": {
+      "name": "gmail_contact_scans",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "installation_id": {
+          "name": "installation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "addition_id": {
+          "name": "addition_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "gmail_contact_scans_connection_idx": {
+          "name": "gmail_contact_scans_connection_idx",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "gmail_contact_scans_addition_idx": {
+          "name": "gmail_contact_scans_addition_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "addition_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "gmail_contact_scans_workspace_id_workspaces_id_fk": {
+          "name": "gmail_contact_scans_workspace_id_workspaces_id_fk",
+          "tableFrom": "gmail_contact_scans",
+          "tableTo": "workspaces",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "gmail_contact_scans_connection_fk": {
+          "name": "gmail_contact_scans_connection_fk",
+          "tableFrom": "gmail_contact_scans",
+          "tableTo": "extension_connections",
+          "columnsFrom": [
+            "workspace_id",
+            "installation_id",
+            "connection_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "installation_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "gmail_contact_scans_addition_fk": {
+          "name": "gmail_contact_scans_addition_fk",
+          "tableFrom": "gmail_contact_scans",
+          "tableTo": "gmail_contact_additions",
+          "columnsFrom": [
+            "workspace_id",
+            "addition_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "gmail_contact_scans_workspace_id_connection_id_addition_id_pk": {
+          "name": "gmail_contact_scans_workspace_id_connection_id_addition_id_pk",
+          "columns": [
+            "workspace_id",
+            "connection_id",
+            "addition_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "gmail_contact_scans_workspace": {
+          "name": "gmail_contact_scans_workspace",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "retainer_app"
+          ],
+          "using": "\"gmail_contact_scans\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid",
+          "withCheck": "\"gmail_contact_scans\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.gmail_deliveries": {
+      "name": "gmail_deliveries",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "installation_id": {
+          "name": "installation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_message_id": {
+          "name": "provider_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_thread_id": {
+          "name": "provider_thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "gmail_deliveries_connection_idx": {
+          "name": "gmail_deliveries_connection_idx",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "gmail_deliveries_thread_idx": {
+          "name": "gmail_deliveries_thread_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "provider_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "gmail_deliveries_message_idx": {
+          "name": "gmail_deliveries_message_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "gmail_deliveries_workspace_id_workspaces_id_fk": {
+          "name": "gmail_deliveries_workspace_id_workspaces_id_fk",
+          "tableFrom": "gmail_deliveries",
+          "tableTo": "workspaces",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "gmail_deliveries_connection_fk": {
+          "name": "gmail_deliveries_connection_fk",
+          "tableFrom": "gmail_deliveries",
+          "tableTo": "extension_connections",
+          "columnsFrom": [
+            "workspace_id",
+            "installation_id",
+            "connection_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "installation_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "gmail_deliveries_message_fk": {
+          "name": "gmail_deliveries_message_fk",
+          "tableFrom": "gmail_deliveries",
+          "tableTo": "gmail_messages",
+          "columnsFrom": [
+            "workspace_id",
+            "message_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "event_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "gmail_deliveries_pk": {
+          "name": "gmail_deliveries_pk",
+          "columns": [
+            "workspace_id",
+            "connection_id",
+            "provider_message_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "gmail_deliveries_workspace": {
+          "name": "gmail_deliveries_workspace",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "retainer_app"
+          ],
+          "using": "\"gmail_deliveries\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid",
+          "withCheck": "\"gmail_deliveries\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.gmail_messages": {
+      "name": "gmail_messages",
+      "schema": "",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thread_group_id": {
+          "name": "thread_group_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_date": {
+          "name": "original_date",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "gmail_messages_thread_idx": {
+          "name": "gmail_messages_thread_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "thread_group_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "gmail_messages_workspace_id_workspaces_id_fk": {
+          "name": "gmail_messages_workspace_id_workspaces_id_fk",
+          "tableFrom": "gmail_messages",
+          "tableTo": "workspaces",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "gmail_messages_event_fk": {
+          "name": "gmail_messages_event_fk",
+          "tableFrom": "gmail_messages",
+          "tableTo": "records",
+          "columnsFrom": [
+            "workspace_id",
+            "event_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "gmail_messages_ws_id_uq": {
+          "name": "gmail_messages_ws_id_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "workspace_id",
+            "event_id"
+          ]
+        }
+      },
+      "policies": {
+        "gmail_messages_workspace": {
+          "name": "gmail_messages_workspace",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "retainer_app"
+          ],
+          "using": "\"gmail_messages\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid",
+          "withCheck": "\"gmail_messages\".\"workspace_id\"=nullif(current_setting('app.workspace_id',true),'')::uuid"
+        }
+      },
+      "checkConstraints": {},
       "isRLSEnabled": true
     },
     "public.idempotency_keys": {
