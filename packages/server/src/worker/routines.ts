@@ -428,6 +428,10 @@ export class RoutineMaintenance {
           and output is not null`;
         await tx`update routine_run_results x set result=null from routine_runs r
           where r.id=x.run_id and r.finished_at<clock_timestamp()-interval '7 days' and x.result is not null`;
+        // A tool call's input and output are stored results too.
+        await tx`update extension_jobs j set input='{}'::jsonb,output=null,input_hash='' from routine_runs r
+          where r.id=j.caller_run_id and r.finished_at<clock_timestamp()-interval '7 days'
+            and j.status in ('succeeded','failed','cancelled') and (j.input<>'{}'::jsonb or j.output is not null)`;
         await tx`delete from routine_runs where id in(select id from routine_runs
           where finished_at<clock_timestamp()-interval '30 days' order by finished_at limit 1000)`;
       });

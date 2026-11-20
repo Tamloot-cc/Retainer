@@ -38,14 +38,22 @@ function offset(zone: string, at: Date): number {
 /**
  * The next occurrence of a five-field cron after `after`, read in a time
  * zone (routines spec §4.2, §7). The cron is matched against the zone's wall
- * clock; a wall time a clock change skips runs at the instant it maps to.
+ * clock. A wall time a clock change skips runs that much later (02:30 on a
+ * spring-forward night runs at 03:30); a repeated one runs the first time.
  */
 export function nextInZone(cron: string, after: Date, zone: string): Date {
   let wallAfter = new Date(after.getTime() + offset(zone, after));
   for (let guard = 0; guard < 8; guard++) {
     const wall = nextOccurrence(cron, wallAfter);
-    let instant = new Date(wall.getTime() - offset(zone, wall));
-    instant = new Date(wall.getTime() - offset(zone, instant));
+    // The instants the wall time could be, under the offsets either side of
+    // a change: the earliest that reads back as this wall time, or, in a
+    // skipped hour, the later one, so a schedule never fires early.
+    const first = new Date(wall.getTime() - offset(zone, wall));
+    const second = new Date(wall.getTime() - offset(zone, first));
+    const exact = [first, second]
+      .filter((c) => c.getTime() + offset(zone, c) === wall.getTime())
+      .sort((a, b) => a.getTime() - b.getTime());
+    const instant = exact[0] ?? (first > second ? first : second);
     if (instant > after) return instant;
     wallAfter = wall;
   }

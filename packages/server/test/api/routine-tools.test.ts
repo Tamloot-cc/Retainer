@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import type { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
-import { RoutineExecutor } from '../../src/worker/routines.js';
+import { RoutineExecutor, RoutineMaintenance } from '../../src/worker/routines.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
@@ -261,5 +261,62 @@ describe('routine tool calls', () => {
     const [job] = await db.owner<{ status: string; code: string }[]>`
       select status,code from extension_jobs where id=${started.body.tool.callId}`;
     expect(job).toEqual({ status: 'cancelled', code: 'caller_stopped' });
+  });
+
+  it("forget redacts a routine's tool jobs, and retention clears them after 7 days", async () => {
+    const s = await setup();
+    const { runId, token } = await s.press();
+    const call = (position: number, address: string) =>
+      s.app.request('/v1/routines/runtime/effects', {
+        key: token,
+        body: { position, operation: 'tool', args: { name: 'check_address', input: { address } } },
+      });
+    const done = await call(1, 'done@example.com');
+    const lease = await s.queue.claim(s.workspace, done.body.tool.callId, 'tool-runner');
+    if (!lease) throw new Error('tool job not claimed');
+    await s.queue.complete(lease, { status: 'succeeded', output: { deliverable: true } });
+    const waiting = await call(2, 'waiting@example.com');
+    const doomed = await s.another();
+    const forgot = await s.app.request(`/v1/records/${doomed}/forget`, {
+      key: s.keys.admin,
+      method: 'POST',
+    });
+    expect(forgot.status).toBe(200);
+    const jobs = await db.owner<
+      { id: string; status: string; code: string | null; input: unknown; output: unknown }[]
+    >`
+      select id,status,code,input,output from extension_jobs where caller_run_id=${runId}`;
+    const byId = Object.fromEntries(jobs.map(({ id, ...rest }) => [id, rest]));
+    expect(byId).toEqual({
+      [done.body.tool.callId]: { status: 'succeeded', code: null, input: {}, output: null },
+      [waiting.body.tool.callId]: {
+        status: 'cancelled',
+        code: 'privacy_erased',
+        input: {},
+        output: null,
+      },
+    });
+    // Retention: a finished run's tool payloads go after 7 days.
+    const second = await s.press(await s.another());
+    const kept = await s.app.request('/v1/routines/runtime/effects', {
+      key: second.token,
+      body: {
+        position: 1,
+        operation: 'tool',
+        args: { name: 'check_address', input: { address: 'k@x.y' } },
+      },
+    });
+    const keptLease = await s.queue.claim(s.workspace, kept.body.tool.callId, 'tool-runner');
+    if (!keptLease) throw new Error('tool job not claimed');
+    await s.queue.complete(keptLease, { status: 'succeeded', output: { deliverable: false } });
+    await db.owner`update routine_runs set status='succeeded',lease_owner=null,lease_until=null,
+      finished_at=now()-interval '8 days' where id=${second.runId}`;
+    await new RoutineMaintenance(
+      s.app.sql,
+      db.connect({ role: 'retainer_executor', max: 1 }),
+    ).maintain();
+    const [cleared] = await db.owner<{ input: unknown; output: unknown }[]>`
+      select input,output from extension_jobs where id=${kept.body.tool.callId}`;
+    expect(cleared).toEqual({ input: {}, output: null });
   });
 });

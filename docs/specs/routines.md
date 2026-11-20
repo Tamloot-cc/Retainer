@@ -1350,7 +1350,14 @@ they left open:
 - **A refused call keeps its position.** Code may catch a refused effect (a
   missing record, an unlisted tool) and go on, so the refusal is recorded as
   a failed call at its position and a retry gets the same error. A 429 or a
-  server error is not recorded.
+  server error is not recorded; a server without a model or tool catalog
+  answers 409 (`model_unavailable`, `tool_unavailable`), so those are.
+- **A tool call's payloads are routine content.** `forget` redacts the input
+  and output of every routine tool job in the workspace and cancels the
+  unfinished ones; retention clears them 7 days after the run ends.
+- **Clock changes.** A scheduled wall time that a spring-forward change
+  skips runs an hour later (02:30 at 03:30); one that a fall-back change
+  repeats runs the first time.
 - **Reads count per attempt.** Each read operation is capped at 200 calls,
   counted atomically on the run and reset when an attempt starts, since
   reads are not replayed. Effects count across attempts.

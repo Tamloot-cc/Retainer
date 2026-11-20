@@ -101,7 +101,9 @@ export async function admitRoutine(
  * each run in flight is fenced and ends as `erased`: its token is refused
  * from then on, so nothing it already read can be written anywhere. A run
  * waiting to retry with recorded calls ends too: its replay would hand the
- * code nulls in place of the results it saw.
+ * code nulls in place of the results it saw. A tool call's input and output
+ * are routine content too: those jobs are redacted, and cancelled unless
+ * finished. Extension erasure has already requeued the running ones.
  */
 export async function eraseRoutineContent(tx: Tx, workspaceId: string) {
   await tx`update routine_run_results set result=null,updated_at=clock_timestamp()
@@ -110,4 +112,10 @@ export async function eraseRoutineContent(tx: Tx, workspaceId: string) {
   await tx`update routine_runs r set status='erased',code='run_erased',fence=fence+1,finished_at=clock_timestamp(),
     lease_owner=null,lease_until=null where r.workspace_id=${workspaceId} and (r.status='running'
       or (r.status in ('queued','held') and exists(select 1 from routine_run_results x where x.run_id=r.id)))`;
+  await tx`update extension_jobs set input='{}'::jsonb,output=null,input_hash='',
+    code=case when status in ('queued','running') then 'privacy_erased' else code end,
+    status=case when status in ('queued','running') then 'cancelled' else status end,
+    lease_owner=null,lease_until=null,run_until=null,updated_at=clock_timestamp()
+    where workspace_id=${workspaceId} and caller_run_id is not null
+      and (input<>'{}'::jsonb or output is not null or status in ('queued','running'))`;
 }

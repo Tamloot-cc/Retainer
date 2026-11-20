@@ -23,6 +23,17 @@ describe('routine schedules', () => {
     );
   });
 
+  it('never fires a skipped wall time early, and a repeated one once', () => {
+    // 02:30 does not exist in New York on 2026-03-08; it runs at 03:30 EDT, 07:30 UTC.
+    expect(nextInZone('30 2 * * *', new Date('2026-03-08T00:00:00Z'), 'America/New_York')).toEqual(
+      new Date('2026-03-08T07:30:00Z'),
+    );
+    // 01:30 happens twice on 2026-11-01; it runs the first time, 01:30 EDT.
+    expect(nextInZone('30 1 * * *', new Date('2026-11-01T00:00:00Z'), 'America/New_York')).toEqual(
+      new Date('2026-11-01T05:30:00Z'),
+    );
+  });
+
   it('refuses invalid crons and ones more frequent than every 15 minutes', () => {
     expect(cronProblem('*/15 * * * *')).toBeUndefined();
     expect(cronProblem('0 9 * * 1-5')).toBeUndefined();

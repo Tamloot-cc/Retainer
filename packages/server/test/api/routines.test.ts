@@ -751,6 +751,18 @@ describe('routines', () => {
     const codes = results.map((r) => (r.status === 200 ? 'ok' : r.body.error.code));
     expect(codes.filter((c) => c === 'ok')).toHaveLength(200);
     expect(codes.filter((c) => c === 'operation_limit')).toHaveLength(10);
+    // Aggregates name fields by key, as the code does.
+    const tier = s.key('tier');
+    const aggregate = await s.app.request('/v1/routines/runtime/read', {
+      key: token,
+      body: {
+        operation: 'record.aggregate',
+        args: { object: 'company', aggregates: [{ field: tier, op: 'countEmpty' }] },
+      },
+    });
+    expect(aggregate.body.result.values).toEqual([
+      expect.objectContaining({ field: tier, op: 'countEmpty' }),
+    ]);
     // Another operation has its own count.
     const query = await s.app.request('/v1/routines/runtime/read', {
       key: token,

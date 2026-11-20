@@ -339,7 +339,15 @@ export class RoutineRuntime {
             field: fieldFor(object, a.field)?.name ?? a.field,
           })),
         });
-        return aggregateRecords(tx, caller.workspaceId, schema, object, input);
+        // Code names fields by key, so the result does too.
+        const result = await aggregateRecords(tx, caller.workspaceId, schema, object, input);
+        return {
+          ...result,
+          values: result.values.map((v) => ({
+            ...v,
+            field: object.fieldsByName.get(v.field)?.key ?? v.field,
+          })),
+        };
       }
       throw new AppError(400, 'invalid_request', `unknown read ${operation}`);
     });
@@ -692,7 +700,7 @@ export class RoutineRuntime {
         `the routine's manifest does not list the tool "${name}"`,
       );
     if (!this.config.catalog || !this.config.queue)
-      throw new AppError(503, 'tool_unavailable', 'tool calls are not available on this server');
+      throw new AppError(409, 'tool_unavailable', 'tool calls are not available on this server');
     const tool = (await installedTools(tx, this.config.catalog)).find((t) => t.name === name);
     if (!tool || tool.status === 'conflict')
       throw new AppError(409, 'tool_unavailable', `the tool "${name}" is not installed`);
@@ -757,7 +765,7 @@ export class RoutineRuntime {
     started: ResultRow | null,
   ): Promise<RoutineEffectResponse> {
     if (!this.config.modelAvailable || !this.config.modelOrigin)
-      throw new AppError(503, 'model_unavailable', 'this server has no model');
+      throw new AppError(409, 'model_unavailable', 'this server has no model');
     if (run.mode !== 'build' && !run.manifest?.uses.model)
       throw new AppError(
         403,
