@@ -61,7 +61,8 @@ Fence old jobs with the Retainer connection generation.
   that predates the connection is covered by the connection's catch-up. At
   zero days, only messages from the relevant connection or address addition
   onward qualify for that import. A limit change affects future imports and
-  leaves previously accepted messages and existing scan bounds intact.
+  leaves previously accepted messages and existing scan bounds intact. The
+  address's history limit applies to ordinary sync and reconciliation too.
 - Evaluate each message independently. At least one address in the top-level
   **From** or **To** headers must resolve to exactly one live Person in the
   workspace. Trim and lowercase for exact comparison. CC and BCC confer no

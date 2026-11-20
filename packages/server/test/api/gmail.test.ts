@@ -135,6 +135,9 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
   let tags: Record<string, string> = {};
   let scope = `${gmailReadonly} https://mail.google.com/`;
   let staleHistory = false;
+  let olderMessageAt = 0;
+  let reportOldLabelChange = false;
+  let inspectedOldLabel = false;
   let revoked = false;
   let profileReads = 0;
   const deleted: string[] = [];
@@ -149,6 +152,7 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
     eligible: 'existing@example.test',
     ccOnly: 'unknown@example.test',
     targeted: 'new@example.test',
+    olderTarget: 'new@example.test',
   } as const;
   vi.stubEnv('RETAINER_GMAIL_NANGO_CONTROL_KEY', 'control-test');
   vi.stubEnv('RETAINER_GMAIL_NANGO_PROXY_KEY', 'proxy-test');
@@ -234,7 +238,12 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
         staleHistory = false;
         return Response.json({ error: { code: 404 } }, { status: 404 });
       }
-      return Response.json({ historyId: '9007199254741002' });
+      return Response.json({
+        historyId: '9007199254741002',
+        ...(reportOldLabelChange
+          ? { history: [{ labelsAdded: [{ message: { id: 'olderTarget' } }] }] }
+          : {}),
+      });
     }
     if (path === 'messages') {
       const ids = searchParams.get('q')?.includes('new@example.test')
@@ -246,11 +255,14 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
     expect(from[message]).toBeDefined();
     const full = searchParams.get('format') === 'FULL';
     if (full) fullReads.push(message);
+    if (!full && message === 'olderTarget') inspectedOldLabel = true;
     return Response.json({
       id: message,
       threadId: 'thread',
       labelIds: ['INBOX'],
-      internalDate: String(messageDate + (message === 'targeted' ? 1 : 0)),
+      internalDate: String(
+        message === 'olderTarget' ? olderMessageAt : messageDate + (message === 'targeted' ? 1 : 0),
+      ),
       payload: {
         headers: [
           { name: 'From', value: from[message] },
@@ -387,7 +399,18 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
   await poll();
   expect(fullReads).toEqual(['eligible']);
   await addPerson('new@example.test');
+  const [bounds] = await db.owner<{ mailbox_start: Date; contact_start: Date }[]>`
+    select (c.settings->>'gmailConnectionStartedAt')::timestamptz - interval '48 hours' as mailbox_start,
+      a.created_at - a.history_days * interval '24 hours' as contact_start
+    from extension_connections c join gmail_contact_additions a on a.workspace_id=c.workspace_id
+    where c.id=${connection.body.id} and a.email='new@example.test'`;
+  if (!bounds) throw new Error('missing Gmail history bounds');
+  olderMessageAt = bounds.mailbox_start.getTime();
+  expect(olderMessageAt).toBeLessThan(bounds.contact_start.getTime());
+  reportOldLabelChange = true;
   await poll();
+  reportOldLabelChange = false;
+  expect(inspectedOldLabel).toBe(true);
   expect(fullReads).toEqual(['eligible', 'targeted']);
   await poll();
   expect(fullReads).toEqual(['eligible', 'targeted']);

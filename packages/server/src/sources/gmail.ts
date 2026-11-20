@@ -89,7 +89,9 @@ export async function matchGmailPeople(
           where a.workspace_id=${context.workspaceId} and a.record_id=min(r.id::text)::uuid
             and a.email=i.value and a.created_at>=c.created_at
           order by a.created_at desc,a.id desc limit 1
-        ) latest where latest.history_days=0 and latest.created_at>${mailbox?.occurredAt ?? null}::timestamptz
+        ) latest
+        where latest.created_at - latest.history_days * interval '24 hours'
+          > ${mailbox?.occurredAt ?? null}::timestamptz
       ))
     order by i.value`;
   return rows.map(({ email, record_id }) => ({ handle: email, recordId: record_id }));
