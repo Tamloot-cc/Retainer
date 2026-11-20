@@ -33,3 +33,13 @@ SOFTWARE.
 from the local Twenty website's font distribution. Inter is an independent font
 project by Rasmus Andersson. The full license is in `public/fonts/OFL.txt`.
 No Twenty component implementation was copied.
+
+## Extension logos
+
+The extension logos identify their respective products and are trademarks of
+their owners.
+
+- Exa square icon from the [Exa brand assets](https://exa.ai/brand).
+- Gmail icon from the [Google Brand Resource Center](https://about.google/brand-resource-center/products-and-services/).
+- Granola favicon from the [Granola website](https://www.granola.ai/favicon/favicon.svg).
+- Tamloot favicon from the Tamloot landing page source.

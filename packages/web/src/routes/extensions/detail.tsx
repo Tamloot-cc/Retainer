@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { Ellipsis, Puzzle } from 'lucide-react';
+import { Ellipsis } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAccount } from '../../accounts/context.js';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
@@ -10,7 +10,6 @@ import {
   CopyButton,
   Dialog,
   Empty,
-  IdentityTag,
   Input,
   Label,
   Loading,
@@ -26,6 +25,7 @@ import {
   Tabs,
 } from '../../ui/index.js';
 import { QueryError, useView } from '../state.js';
+import { ExtensionIcon, extensionName } from './branding.js';
 import { MemberConnectionPanel } from './connections.js';
 import { MappingBindings } from './mapping.js';
 import {
@@ -130,7 +130,10 @@ function InstalledExtension({
     },
   });
   const manifest = release?.manifest;
-  const name = manifest?.name ?? 'Unavailable extension';
+  const name = extensionName(
+    installation.registrationId,
+    manifest?.name ?? 'Unavailable extension',
+  );
   const gone = isGone(installation);
   const tabs: { value: Tab; label: string; hint?: string }[] = [
     { value: 'overview', label: 'Overview' },
@@ -181,11 +184,7 @@ function InstalledExtension({
     <Page
       {...CRUMB}
       title={name}
-      avatar={
-        <IdentityTag identity={installation.registrationId}>
-          <Puzzle size={24} aria-hidden />
-        </IdentityTag>
-      }
+      avatar={<ExtensionIcon registrationId={installation.registrationId} />}
       {...(manifest ? { description: manifest.description } : {})}
       actions={
         <>
@@ -325,8 +324,7 @@ function InstalledExtension({
             {manifest?.oauth && installation.connectionMethods?.includes('oauth') ? (
               <p className="text-sm">
                 Retainer will try for up to a day to give up each member's access in{' '}
-                {stateLabel(manifest.name)}. Members can check {stateLabel(manifest.name)}'s
-                Connected apps.
+                {stateLabel(name)}. Members can check {stateLabel(name)}'s Connected apps.
               </p>
             ) : null}
             <Row>
