@@ -192,13 +192,13 @@ describe('routines', () => {
           when: { kind: 'schedule', cron: '* * * * *', object: 'nothing' },
           uses: { tools: ['send_email'], model: false },
         },
-        code: "import fs from 'node:fs';\nexport const x = 1;\n",
+        code: 'export const x = 1;\n',
       },
     });
     expect(res.status).toBe(200);
     expect(res.body.valid).toBe(false);
     expect(res.body.problems.map((p: { code: string }) => p.code).sort()).toEqual(
-      ['import_not_allowed', 'missing_main', 'no_tool', 'over_limit', 'unknown_object'].sort(),
+      ['missing_main', 'no_tool', 'over_limit', 'unknown_object'].sort(),
     );
   });
 
@@ -902,6 +902,38 @@ describe('routines', () => {
       expect(routine).toEqual({ status: 'needs_attention', paused_reason: 'schedule_too_large' });
     } finally {
       Object.assign(limits, saved);
+    }
+  });
+
+  it('the hourly cap counts scheduled runs: past it the tick holds them and pauses', async () => {
+    const s = await setup();
+    const limits = ROUTINE_LIMITS as { runsPerHour: number };
+    const saved = limits.runsPerHour;
+    limits.runsPerHour = 2;
+    try {
+      for (const name of ['Acme A', 'Acme B', 'Acme C'])
+        await createCompany(s.app, s.keys.admin, name);
+      const { routineId } = await activate(s, {
+        manifest: {
+          when: { kind: 'schedule', cron: '0 9 * * 1', object: 'company' },
+          uses: { tools: [], model: false },
+        },
+        code: `export async function main({ record }: RoutineContext<'company'>) {
+  return record.id;
+}
+`,
+      });
+      await db.owner`update routines set next_fire_at=now()-interval '1 minute' where id=${routineId}`;
+      await s.maintenance.maintain();
+      const runs = await db.owner<{ status: string }[]>`
+        select status from routine_runs where routine_id=${routineId} and mode='run'`;
+      // The third run is over the cap; the pause holds the tick's others too.
+      expect(runs.map((r) => r.status)).toEqual(['held', 'held', 'held']);
+      const [routine] = await db.owner<{ status: string; paused_reason: string }[]>`
+        select status,paused_reason from routines where id=${routineId}`;
+      expect(routine).toEqual({ status: 'needs_attention', paused_reason: 'runs_held' });
+    } finally {
+      limits.runsPerHour = saved;
     }
   });
 

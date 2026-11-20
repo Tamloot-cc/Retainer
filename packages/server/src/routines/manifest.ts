@@ -166,72 +166,11 @@ export function checkManifest(
 }
 
 /**
- * The code with comments and the text of strings and templates blanked,
- * keeping lines and columns, so a check reads only syntax: `"import(x)"` in
- * a string or a comment is not an import. A template's `${…}` stays code.
+ * Checks done on the code without running it. Imports are refused by the
+ * sandbox's type-check, which parses the code (no module resolves there),
+ * and by its loader at run time; a text scan cannot tell syntax from a
+ * string, a comment or a member named `import`.
  */
-export function syntaxOnly(code: string): string {
-  const out: string[] = [];
-  // Code at the top or inside a template's `${…}` (with its brace depth), or a template's text.
-  const frames: ({ kind: 'template' } | { kind: 'code'; depth: number })[] = [
-    { kind: 'code', depth: 0 },
-  ];
-  const blank = (c: string) => out.push(c === '\n' ? '\n' : ' ');
-  let i = 0;
-  while (i < code.length) {
-    const c = code[i] as string;
-    const frame = frames[frames.length - 1] as (typeof frames)[number];
-    if (frame.kind === 'template') {
-      if (c === '\\') {
-        blank(c);
-        if (i + 1 < code.length) blank(code[i + 1] as string);
-        i += 2;
-      } else if (c === '`') {
-        frames.pop();
-        out.push(c);
-        i++;
-      } else if (c === '$' && code[i + 1] === '{') {
-        frames.push({ kind: 'code', depth: 0 });
-        out.push('${');
-        i += 2;
-      } else {
-        blank(c);
-        i++;
-      }
-      continue;
-    }
-    const next = code[i + 1];
-    if (c === '/' && (next === '/' || next === '*')) {
-      const end = next === '/' ? code.indexOf('\n', i) : code.indexOf('*/', i + 2);
-      const stop = end < 0 ? code.length : next === '/' ? end : end + 2;
-      while (i < stop) blank(code[i++] as string);
-    } else if (c === '"' || c === "'") {
-      out.push(c);
-      i++;
-      while (i < code.length && code[i] !== c && code[i] !== '\n') {
-        if (code[i] === '\\' && i + 1 < code.length) blank(code[i++] as string);
-        blank(code[i++] as string);
-      }
-      if (code[i] === c) {
-        out.push(c);
-        i++;
-      }
-    } else if (c === '`') {
-      frames.push({ kind: 'template' });
-      out.push(c);
-      i++;
-    } else {
-      if (c === '{') frame.depth++;
-      else if (c === '}' && frame.depth === 0 && frames.length > 1) frames.pop();
-      else if (c === '}') frame.depth = Math.max(0, frame.depth - 1);
-      out.push(c);
-      i++;
-    }
-  }
-  return out.join('');
-}
-
-/** Checks done on the code without running it; the type-check happens in the sandbox. */
 export function checkCode(code: string): RoutineProblem[] {
   const problems: RoutineProblem[] = [];
   if (Buffer.byteLength(code) > ROUTINE_LIMITS.sourceBytes)
@@ -240,18 +179,7 @@ export function checkCode(code: string): RoutineProblem[] {
       code: 'over_limit',
       message: `the code is larger than ${ROUTINE_LIMITS.sourceBytes / 1024} KiB`,
     });
-  const syntax = syntaxOnly(code);
-  const lines = syntax.split('\n');
-  lines.forEach((line, index) => {
-    if (/^\s*import\b|\bimport\s*\(|\brequire\s*\(/.test(line))
-      problems.push({
-        part: 'code',
-        at: `${index + 1}:1`,
-        code: 'import_not_allowed',
-        message: "routine code has no imports; the SDK in main's arguments is the only way out",
-      });
-  });
-  if (!/export\s+(async\s+)?function\s+main\s*\(|export\s+const\s+main\s*=/.test(syntax))
+  if (!/export\s+(async\s+)?function\s+main\s*\(|export\s+const\s+main\s*=/.test(code))
     problems.push({ part: 'code', code: 'missing_main', message: 'export a function named main' });
   return problems;
 }

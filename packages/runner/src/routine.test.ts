@@ -101,6 +101,30 @@ describe('routine type-check', () => {
     expect(checked.js).toContain('export async function main');
   });
 
+  it('refuses imports and require as syntax, and nothing that only looks like one', async () => {
+    const check = async (code: string) =>
+      (await typeCheck(TYPES, code, true, AbortSignal.timeout(30000))).problems.map((p) => p.at);
+    // No module resolves in the sandbox, so every real import fails the check.
+    expect(
+      await check(`import fs from 'fs';\nexport async function main() { return fs; }`),
+    ).toEqual(['1:16']);
+    expect(await check(`export async function main() { return await import('fs'); }`)).toEqual([
+      '1:52',
+    ]);
+    expect(await check(`export async function main() { return require('fs'); }`)).toEqual(['1:39']);
+    // Strings, comments, a member named import and a regex literal are not imports.
+    expect(
+      await check(`const helper = { import: (v: number) => v };
+const trim = (u: string) => u.replace(/\\/*$/, '');
+const tick = /\`/g;
+// import('fs')
+export async function main() {
+  return [helper.import(1), trim('a//'), tick.source, "Never call import(...) or require(x)"];
+}
+`),
+    ).toEqual([]);
+  });
+
   it('parses continuation lines into the problem message', () => {
     expect(
       parseProblems("routine.ts(3,9): error TS2322: Type 'a' is wrong.\n  Type 'b' is not 'c'.\n"),

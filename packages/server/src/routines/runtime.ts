@@ -38,7 +38,7 @@ import { getSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
 import { capabilities, type RoutineConfig } from './capabilities.js';
 import { fieldFor, mapFilter, objectFor } from './manifest.js';
-import { queueRun, useUp } from './runs.js';
+import { queueRun, RUN_GRACE_SECONDS, useUp } from './runs.js';
 import {
   insertProposal,
   proposeInputSchema,
@@ -70,6 +70,8 @@ type RunState = {
   record_id: string | null;
   run_at: Date;
   expires_at: Date | null;
+  /** When this attempt ends: its deadline, or the run's expiry if sooner. */
+  deadline: Date | null;
   attempt: number;
   cause: string[];
   cause_depth: number;
@@ -154,6 +156,7 @@ export class RoutineRuntime {
   private async run(tx: Tx, runId: string, lock = false): Promise<RunState> {
     const [run] = await tx<RunState[]>`
       select r.id,r.routine_id,r.version_id,r.source_id,r.mode,r.trigger_kind,r.record_id,r.run_at,r.expires_at,
+        least(r.expires_at,r.lease_until-${RUN_GRACE_SECONDS}*interval '1 second') as deadline,
         r.attempt,r.cause,r.cause_depth,r.initiator_user_id,r.initiated_by,r.model_calls,r.input,
         s.manifest,s.code,v.types_fingerprint
       from routine_runs r left join routine_sources s on s.id=r.source_id
@@ -731,7 +734,8 @@ export class RoutineRuntime {
       throw new AppError(409, 'tool_not_connected', `the tool "${name}" is not connected`);
     await this.useRecord(tx, caller.workspaceId, run);
     const self = run.routine_id ?? run.id;
-    const expiresAt = run.expires_at ?? new Date(Date.now() + ROUTINE_LIMITS.maxRunSeconds * 1000);
+    // The call must end within this attempt (§8): past its deadline the run has ended.
+    const expiresAt = run.deadline ?? new Date(Date.now() + ROUTINE_LIMITS.maxRunSeconds * 1000);
     const jobId = await this.config.queue.enqueueTool(tx, caller.workspaceId, {
       installationId: tool.installationId,
       connectionId,
@@ -791,7 +795,7 @@ export class RoutineRuntime {
       await tx`update routine_runs set model_calls=model_calls+1 where id=${run.id}`;
       await this.record(tx, caller.workspaceId, run.id, request, hash, { state: 'started' });
     }
-    const until = run.expires_at ?? new Date(Date.now() + ROUTINE_LIMITS.maxRunSeconds * 1000);
+    const until = run.deadline ?? new Date(Date.now() + ROUTINE_LIMITS.maxRunSeconds * 1000);
     const token = await this.config.tokens.issueRoutineModel(
       {
         kind: 'routine',

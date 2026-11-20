@@ -1379,6 +1379,18 @@ they left open:
   survivor had a run of the same routine running: both started before the
   merge, so it keeps the old ID until it ends, and the claim's check counts
   it.
+- **A tool call ends with its attempt.** The tool job expires at the
+  attempt's deadline, not the run's 24-hour expiry, and a job claimed late
+  gets only the time left, so no tool acts after its run has timed out. A
+  model call's token ends at the same deadline.
+- **The hourly cap counts scheduled runs.** A schedule tick that would queue
+  more than 200 runs of the routine in the last hour holds the rest and
+  pauses it, as a burst of record changes does.
+- **Imports are refused by the type-check.** No module resolves in the
+  sandbox, so an `import`, a dynamic `import()` or `require()` fails the
+  check, and the loader refuses one at run time. The server does not scan
+  the text, which cannot tell syntax from a string or a member named
+  `import`.
 - **Routines see older Gmail messages.** Lists show only a thread's newest
   message; a routine's start check and a schedule's targets match every live
   record that no newer revision replaced.

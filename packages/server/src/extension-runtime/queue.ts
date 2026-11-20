@@ -1135,10 +1135,15 @@ export class ExtensionQueue {
       await tx`update extension_attempts set status='expired',code='lease_expired',finished_at=now() where job_id=${id} and finished_at is null`;
       // The handler gets exactly its timeout; the lease keeps a short grace after it so the
       // coordinator can still record a timeout as an ordinary retry instead of being fenced.
+      // A routine's tool call ends by its caller's deadline, its expiry (routines spec §8).
+      const runUntil =
+        job.trigger_kind === 'tool' && callerRun
+          ? tx`least(clock_timestamp()+${timeout + RUN_GRACE_SECONDS}*interval '1 second',expires_at+${RUN_GRACE_SECONDS}*interval '1 second')`
+          : tx`clock_timestamp()+${timeout + RUN_GRACE_SECONDS}*interval '1 second'`;
       const [claimed] = await tx<
         (Job & { handler_deadline: Date })[]
       >`update extension_jobs set status='running',lease_owner=${owner},run_secrets=${secrets}::text[],
-        fence=fence+1,lease_until=clock_timestamp()+least(60,${timeout + RUN_GRACE_SECONDS})*interval '1 second',run_until=clock_timestamp()+${timeout + RUN_GRACE_SECONDS}*interval '1 second',attempt=attempt+1,cycle_attempt=cycle_attempt+1,updated_at=now()
+        fence=fence+1,lease_until=least(clock_timestamp()+least(60,${timeout + RUN_GRACE_SECONDS})*interval '1 second',${runUntil}),run_until=${runUntil},attempt=attempt+1,cycle_attempt=cycle_attempt+1,updated_at=now()
         where id=${id} returning *,run_until-${RUN_GRACE_SECONDS}*interval '1 second' as handler_deadline`;
       if (!claimed) throw new Error('claim returned no row');
       if (job.trigger_kind === 'configure')

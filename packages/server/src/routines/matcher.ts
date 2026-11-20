@@ -260,7 +260,9 @@ export async function fireSchedule(sql: Sql, workspace: string, routineId: strin
           ).records
         : records;
     if (over) await pauseRoutine(tx, routineId, 'needs_attention', 'schedule_over_limit');
-    let queued = 0;
+    let queued = 0,
+      held = 0,
+      paused = over;
     for (const recordId of targets) {
       const real = recordId === NO_RECORD ? null : recordId;
       if (real && when.oncePerRecord && (await usedUp(tx, routineId, real))) continue;
@@ -268,6 +270,8 @@ export async function fireSchedule(sql: Sql, workspace: string, routineId: strin
         await tx`insert into routine_firings(workspace_id,routine_id,kind,record_id,due_at)
         values(${workspace},${routineId},'schedule',${recordId},${due}) on conflict do nothing returning 1`;
       if (!fresh) continue;
+      // The hourly cap counts scheduled runs too (§4.6): past it the rest are held.
+      const allowed = !paused && (await hourlyAllowance(tx, routineId));
       await queueRun(tx, workspace, {
         mode: 'run',
         triggerKind: 'schedule',
@@ -276,10 +280,15 @@ export async function fireSchedule(sql: Sql, workspace: string, routineId: strin
         sourceId: routine.source_id,
         recordId: real,
         runAt: due,
-        held: over,
+        held: !allowed,
       });
-      queued++;
+      if (allowed) queued++;
+      else {
+        held++;
+        if (!paused) await pauseRoutine(tx, routineId, 'needs_attention', 'runs_held');
+        paused = true;
+      }
     }
-    return over ? { queued: 0, held: queued, matched } : { queued, matched };
+    return held ? { queued, held, matched } : { queued, matched };
   });
 }

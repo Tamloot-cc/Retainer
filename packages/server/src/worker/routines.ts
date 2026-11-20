@@ -17,7 +17,7 @@ import { stillAdmin } from '../routine-runtime/admission.js';
 import type { RoutineConfig } from '../routines/capabilities.js';
 import { mapFilter, objectFor } from '../routines/manifest.js';
 import { dispatchRoutines, fireSchedule } from '../routines/matcher.js';
-import { pauseRoutine, usedUp } from '../routines/runs.js';
+import { RUN_GRACE_SECONDS as GRACE_SECONDS, pauseRoutine, usedUp } from '../routines/runs.js';
 import { getSchema } from '../schema/compiled.js';
 import type { Executable } from './extensions.js';
 
@@ -30,8 +30,6 @@ export type RoutineDriver = {
   ) => Promise<ExecutionResult>;
 };
 
-/** A run's lease: the handler's time, plus a grace to record the outcome. */
-const GRACE_SECONDS = 15;
 /** Failed runs in a row before the routine pauses (§6.2). */
 const FAILURES_BEFORE_PAUSE = 3;
 

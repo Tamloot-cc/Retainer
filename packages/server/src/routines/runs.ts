@@ -1,6 +1,9 @@
 import { type Actor, ROUTINE_LIMITS, type RoutineRunMode } from '@retainer/shared';
 import { jsonValue, type Tx } from '../db/tx.js';
 
+/** A run's lease outlasts its deadline by this much, to record the outcome. */
+export const RUN_GRACE_SECONDS = 15;
+
 /** The nil UUID: the record of a schedule tick that has none. */
 export const NO_RECORD = '00000000-0000-0000-0000-000000000000';
 /** The time of a `once` mark: it has no due time. */

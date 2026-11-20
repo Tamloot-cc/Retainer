@@ -245,6 +245,32 @@ describe('routine tool calls', () => {
     expect(result).toEqual({ state: 'failed', code: 'invalid_output' });
   });
 
+  it("a tool called near the end of an attempt ends by the attempt's deadline", async () => {
+    const s = await setup();
+    const { runId, token } = await s.press();
+    // Five seconds of this attempt are left (the lease runs 15 s past its deadline).
+    await db.owner`update routine_runs set lease_until=clock_timestamp()+interval '20 seconds' where id=${runId}`;
+    const started = await s.app.request('/v1/routines/runtime/effects', {
+      key: token,
+      body: {
+        position: 1,
+        operation: 'tool',
+        args: { name: 'check_address', input: { address: 'x@y.z' } },
+      },
+    });
+    const [bounds] = await db.owner<{ expires_at: Date; deadline: Date; run_expires_at: Date }[]>`
+      select j.expires_at,r.lease_until-interval '15 seconds' as deadline,r.expires_at as run_expires_at
+      from extension_jobs j join routine_runs r on r.id=j.caller_run_id where j.id=${started.body.tool.callId}`;
+    // Not the run's 24-hour expiry: this attempt's deadline.
+    expect(bounds?.expires_at.getTime()).toBe(bounds?.deadline.getTime());
+    expect(bounds?.expires_at.getTime()).toBeLessThan(bounds?.run_expires_at.getTime() ?? 0);
+    // Claimed now, the handler gets the time left, not its full timeout.
+    const lease = await s.queue.claim(s.workspace, started.body.tool.callId, 'tool-runner');
+    if (!lease) throw new Error('tool job not claimed');
+    expect(lease.deadline.getTime()).toBeLessThanOrEqual(bounds?.expires_at.getTime() ?? 0);
+    expect(lease.deadline.getTime() - Date.now()).toBeLessThan(6000);
+  });
+
   it("a tool job does not start once its caller's routine is paused", async () => {
     const s = await setup();
     const { token } = await s.press();
