@@ -1397,6 +1397,13 @@ they left open:
   check, and the loader refuses one at run time. The server does not scan
   the text, which cannot tell syntax from a string or a member named
   `import`.
+- **Values are typed by the field's rules.** A create's values require
+  every non-nullable field and take null only where the field is nullable
+  (an update takes any subset with the same nulls), and a JSON field takes a
+  JSON value, so code the API would refuse with `invalid_values` fails its
+  type-check instead.
+- **Resuming for an approver who left is a fresh approval.** The admin who
+  resumes becomes the approver, with the time they resumed.
 - **The approver is checked at every effect.** An approver who stops being
   an admin refuses the run's next effect as `routine_paused` and cancels a
   tool job it has not started, as a test run's initiator does; the next

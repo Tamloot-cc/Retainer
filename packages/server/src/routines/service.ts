@@ -486,7 +486,8 @@ export class Routines {
           'this routine paused because something it depends on changed; repair it and approve the new version',
         );
       if (!(await stillAdmin(tx, caller.workspaceId, version.approver_user_id)))
-        await tx`update routine_versions set approver_user_id=${who},approved_by=${tx.json(jsonValue(caller.actor))} where id=${version.id}`;
+        await tx`update routine_versions set approver_user_id=${who},approved_by=${tx.json(jsonValue(caller.actor))},
+          approved_at=clock_timestamp() where id=${version.id}`;
       const zone = await workspaceZone(tx);
       await this.activate(tx, caller.workspaceId, routineId, version.manifest, zone);
       return { routineId, status: 'active' };

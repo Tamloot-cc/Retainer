@@ -583,6 +583,8 @@ function valueType(field: RoutineFieldDescription): string {
       return field.many ? 'RecordId[]' : 'RecordId';
     case 'files':
       return 'FileId[]';
+    case 'json':
+      return 'JsonValue';
     default:
       return 'unknown';
   }
@@ -722,9 +724,15 @@ export function generateRoutineTypes(input: {
           `${comment(`${field.label}${field.description ? `: ${field.description}` : ''}`, '  ')}  ${propertyKey(field.key)}: ${valueType(field)}${field.nullable || field.type === 'files' || field.type === 'relation' ? ' | null' : ''};`,
       )
       .join('\n');
+    // A create must set every required field, and only a nullable one (or a
+    // relation or file list, which null clears) takes null; an update takes
+    // any of them (Partial), with the same nulls.
     const write = fields
       .filter((field) => !field.readOnly)
-      .map((field) => `  ${propertyKey(field.key)}?: ${valueType(field)} | null;`)
+      .map((field) => {
+        const nulls = field.nullable || field.type === 'files' || field.type === 'relation';
+        return `  ${propertyKey(field.key)}${field.nullable ? '?' : ''}: ${valueType(field)}${nulls ? ' | null' : ''};`;
+      })
       .join('\n');
     out.push(
       `${comment(`${object.label}${object.description ? `: ${object.description}` : ''}`)}type ${name}Record = ${object.isEvent ? 'EventRecord' : 'BaseRecord'} & {\n${read}\n};`,

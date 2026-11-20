@@ -1060,6 +1060,29 @@ describe('routines', () => {
     expect(first?.record_id).toBe(survivor);
   });
 
+  it('an admin who resumes for an approver who left records a fresh approval', async () => {
+    const s = await setup();
+    const { routineId, versionId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    const paused = await s.app.request(`/v1/routines/${routineId}/pause`, {
+      key: s.keys.admin,
+      body: {},
+    });
+    expect(paused.status).toBe(200);
+    // The original approver is no longer an admin, and approved long ago.
+    await db.owner`update routine_versions set approver_user_id='someone-who-left',
+      approved_at=now()-interval '10 days' where id=${versionId}`;
+    const resumed = await s.app.request(`/v1/routines/${routineId}/resume`, {
+      key: s.keys.admin,
+      body: {},
+    });
+    expect(resumed.status).toBe(200);
+    const [version] = await db.owner<{ approver_user_id: string; fresh: boolean }[]>`
+      select approver_user_id,approved_at>now()-interval '1 minute' as fresh
+      from routine_versions where id=${versionId}`;
+    expect(version?.approver_user_id).not.toBe('someone-who-left');
+    expect(version?.fresh).toBe(true);
+  });
+
   it('a preview samples distinct records, however busy the newest one is', async () => {
     const s = await setup();
     for (const name of ['Acme One', 'Acme Two', 'Acme Three'])

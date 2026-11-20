@@ -219,6 +219,24 @@ describe('generated workspace types', () => {
             target: 'company',
             many: false,
           },
+          {
+            key: 'title',
+            name: 'title',
+            label: 'Title',
+            type: 'text',
+            description: null,
+            filterable: true,
+            nullable: false,
+          },
+          {
+            key: 'meta',
+            name: 'meta',
+            label: 'Meta',
+            type: 'json',
+            description: null,
+            filterable: false,
+            nullable: true,
+          },
         ],
       },
       {
@@ -275,7 +293,8 @@ describe('generated workspace types', () => {
   const stats = await retainer.deal.aggregate({ aggregates: [{ field: 'stage', op: 'countEmpty' }, { field: 'amount_k', op: 'sum' }] });
   await retainer.meeting.query({ sort: [{ field: 'occurredAt', direction: 'desc' }, { field: 'id' }] });
   const sent = await retainer.tools.send_email({ to: 'a@b.c', body: tone + run.at + stats.total });
-  await retainer.deal.update(record.id, { stage: 'lead' });
+  await retainer.deal.update(record.id, { stage: 'lead', meta: null });
+  await retainer.deal.create({ title: record.title + ' renewal', meta: { tags: ['a'], n: 1 } });
   return sent.id;
 }
 `,
@@ -293,6 +312,9 @@ describe('generated workspace types', () => {
   await retainer.deal.query({ filter: { stage: { gt: 'won' }, amount_k: { gt: { amountMicros: 1, currency: 'USD' } } } });
   await retainer.meeting.query({ sort: [{ field: 'notes' }] });
   await retainer.deal.aggregate({ aggregates: [{ field: 'stage', op: 'sum' }] });
+  await retainer.deal.create({ stage: 'won' });
+  await retainer.deal.update(record.id, { title: null });
+  await retainer.deal.update(record.id, { meta: () => 1 });
   return retainer.invoice.get('x');
 }
 `,
@@ -301,7 +323,8 @@ describe('generated workspace types', () => {
     );
     // The aggregate operators are the API's own names. Filters take only
     // filterable fields, the operators the API allows for each type, and its
-    // operand (money compares amountMicros).
+    // operand (money compares amountMicros). A create sets every required
+    // field, null clears only a nullable one, and a JSON field takes JSON.
     expect(bad.problems.map((p) => p.at)).toEqual([
       '2:43',
       '3:35',
@@ -311,7 +334,10 @@ describe('generated workspace types', () => {
       expect.stringMatching(/^6:/),
       expect.stringMatching(/^7:/),
       expect.stringMatching(/^8:/),
-      '9:19',
+      expect.stringMatching(/^9:/),
+      expect.stringMatching(/^10:/),
+      expect.stringMatching(/^11:/),
+      '12:19',
     ]);
   });
 });
