@@ -320,9 +320,18 @@ export class RoutineExecutor {
         select status,fence::text,attempt,routine_id,version_id from routine_runs where id=${run.runId} for update`;
       if (!row || row.status !== 'running' || row.fence !== run.fence) return;
       const output = (result.output ?? null) as Record<string, unknown> | null;
-      const code = result.code ?? null;
+      // The runner always answers `succeeded` with the routine's own outcome;
+      // a platform failure (the runner never ran) comes back as retry or failed.
+      const outcome = result.status === 'succeeded' ? output?.outcome : undefined;
+      const code =
+        (outcome && outcome !== 'succeeded' && typeof output?.code === 'string'
+          ? output.code
+          : result.code) ?? null;
       let status: string;
-      if (result.status === 'succeeded') status = 'succeeded';
+      if (result.status === 'succeeded' && (outcome === 'succeeded' || outcome === undefined))
+        status = 'succeeded';
+      else if (code === 'lease_expired' || code === 'unauthorized')
+        status = row.attempt < ROUTINE_LIMITS.attempts ? 'queued' : 'failed';
       else if (code && Object.hasOwn(ROUTINE_STOP_CODES, code))
         status = ROUTINE_STOP_CODES[code as keyof typeof ROUTINE_STOP_CODES];
       else if (code === 'record_used_up') status = 'skipped';

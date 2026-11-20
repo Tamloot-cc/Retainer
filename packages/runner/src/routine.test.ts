@@ -1,0 +1,274 @@
+import type { RoutineInvocation, RoutineRunContext } from '@retainer/shared';
+import { describe, expect, it } from 'vitest';
+import { executeRoutine, parseProblems, typeCheck } from './routine.js';
+
+const TYPES = `
+type RecordId = string;
+type DealRecord = { id: RecordId; createdAt: string; updatedAt: string; stage: 'lead' | 'won'; amount: number | null };
+type Retainer = {
+  deal: {
+    get(id: RecordId): Promise<DealRecord | null>;
+    update(id: RecordId, values: { stage?: 'lead' | 'won' }): Promise<{ id: RecordId }>;
+  };
+  tools: { notify(input: { text: string }): Promise<{ sent: boolean }> };
+  ai: { generate(input: { instructions: string; input: unknown; output: unknown }): Promise<any> };
+};
+type RunInfo = { id: string; at: string; timezone: string; dryRun: boolean };
+type RoutineContext<O = undefined> = { retainer: Retainer; record: O extends 'deal' ? DealRecord : undefined; run: RunInfo; trigger: { kind: string } };
+`;
+
+const invocation: RoutineInvocation = {
+  kind: 'routine',
+  protocolVersion: 1,
+  runId: '00000000-0000-4000-8000-000000000001',
+  attempt: 1,
+  releaseDigest: 'a'.repeat(64),
+  apiOrigin: 'http://api.test/',
+  runToken: 'rt_routine_test',
+  deadline: new Date(Date.now() + 60000).toISOString(),
+};
+
+function context(code: string, mode: RoutineRunContext['run']['mode'] = 'run'): RoutineRunContext {
+  return {
+    run: {
+      id: invocation.runId,
+      mode,
+      at: '2026-11-20T10:00:00.000Z',
+      timezone: 'UTC',
+      dryRun: mode === 'dry',
+      attempt: 1,
+    },
+    trigger: { kind: 'record' },
+    code,
+    types: TYPES,
+    typesFingerprint: 'f'.repeat(64),
+    check: false,
+    record: {
+      id: 'deal-1',
+      object: 'deal',
+      createdAt: 'x',
+      updatedAt: 'x',
+      stage: 'lead',
+      amount: 5,
+    },
+  } as RoutineRunContext;
+}
+
+/** A fake routine API: only the HTTP edge is faked; it records what the runner asked. */
+function fakeApi(
+  ctx: RoutineRunContext,
+  answer: (path: string, body: any) => unknown = (path) =>
+    path === 'effects' ? { state: 'done', result: { ok: true }, replayed: false } : undefined,
+) {
+  const calls: { path: string; body: any; auth: string | null }[] = [];
+  const transport = (async (url: URL | string, init?: RequestInit) => {
+    const path = new URL(String(url)).pathname.replace('/v1/routines/runtime/', '');
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    calls.push({ path, body, auth: new Headers(init?.headers).get('authorization') });
+    if (path === 'run') return Response.json(ctx);
+    const result = answer(path, body);
+    if (result instanceof Response) return result;
+    if (path === 'read')
+      return Response.json({ result: result ?? { id: body.args.id, stage: 'lead' } });
+    return Response.json(result);
+  }) as typeof fetch;
+  return { calls, transport };
+}
+
+const run = (ctx: RoutineRunContext, answer?: (path: string, body: any) => unknown) => {
+  const api = fakeApi(ctx, answer);
+  return executeRoutine(invocation, AbortSignal.timeout(30000), api.transport).then((result) => ({
+    result,
+    calls: api.calls,
+  }));
+};
+
+describe('routine type-check', () => {
+  it('reports type errors with their position, and emits JavaScript', async () => {
+    const checked = await typeCheck(
+      TYPES,
+      `export async function main({ record }: RoutineContext<'deal'>) {\n  const n: string = record.amount;\n  return n;\n}\n`,
+      true,
+      AbortSignal.timeout(30000),
+    );
+    expect(checked.problems).toEqual([
+      expect.objectContaining({ part: 'code', at: '2:9', code: 'TS2322' }),
+    ]);
+    expect(checked.js).toContain('export async function main');
+  });
+
+  it('parses continuation lines into the problem message', () => {
+    expect(
+      parseProblems("routine.ts(3,9): error TS2322: Type 'a' is wrong.\n  Type 'b' is not 'c'.\n"),
+    ).toEqual([
+      {
+        part: 'code',
+        at: '3:9',
+        code: 'TS2322',
+        message: "Type 'a' is wrong.\nType 'b' is not 'c'.",
+      },
+    ]);
+  });
+});
+
+describe('routine sandbox', () => {
+  it('runs the code with the record, reads through the runner and returns its result', async () => {
+    const { result, calls } = await run(
+      context(`export async function main({ retainer, record, run }: RoutineContext<'deal'>) {
+        const deal = await retainer.deal.get(record.id);
+        console.log('stage', deal?.stage);
+        return { stage: deal?.stage, at: run.at };
+      }`),
+    );
+    expect(result).toEqual({
+      status: 'succeeded',
+      output: {
+        outcome: 'succeeded',
+        result: { stage: 'lead', at: '2026-11-20T10:00:00.000Z' },
+        logs: ['stage lead'],
+      },
+    });
+    expect(calls.find((c) => c.path === 'read')?.body).toEqual({
+      operation: 'record.get',
+      args: { object: 'deal', id: 'deal-1' },
+    });
+    // Only the runner holds the token.
+    expect(calls.every((c) => c.auth === 'Bearer rt_routine_test')).toBe(true);
+  });
+
+  it('numbers effects in call order and sends them one after another, even when started together', async () => {
+    const seen: number[] = [];
+    const { result } = await run(
+      context(`export async function main({ retainer, record }: RoutineContext<'deal'>) {
+        await Promise.all([1, 2, 3, 4].map(() => retainer.deal.update(record.id, { stage: 'won' })));
+        return 'ok';
+      }`),
+      (path, body) => {
+        if (path === 'effects') seen.push(body.position);
+        return { state: 'done', result: { id: 'deal-1' }, replayed: false };
+      },
+    );
+    expect(result.status).toBe('succeeded');
+    expect(seen).toEqual([1, 2, 3, 4]);
+  });
+
+  it('closes the sandbox: no network, modules, process, file system or eval', async () => {
+    const { result } = await run(
+      context(`export async function main() {
+        const g = globalThis as any;
+        const out: Record<string, string> = {};
+        out.fetch = typeof g.fetch;
+        out.process = typeof g.process;
+        out.WebSocket = typeof g.WebSocket;
+        try { await (0, eval)('1'); out.eval = 'ran'; } catch { out.eval = 'blocked'; }
+        try { new Function('return 1')(); out.fn = 'ran'; } catch { out.fn = 'blocked'; }
+        const load = 'im' + 'port';
+        out.importGlobal = typeof g[load];
+        return out;
+      }`),
+    );
+    expect(result).toMatchObject({
+      status: 'succeeded',
+      output: {
+        outcome: 'succeeded',
+        result: {
+          fetch: 'undefined',
+          process: 'undefined',
+          WebSocket: 'undefined',
+          eval: 'blocked',
+          fn: 'blocked',
+          importGlobal: 'undefined',
+        },
+      },
+    });
+  });
+
+  it('refuses dynamic imports at the loader, however they are written', async () => {
+    const { result } = await run(
+      context(`export async function main() {
+        try { await import /* hidden */ ('node:fs'); return 'loaded'; } catch (e) { return (e as Error).message; }
+      }`),
+    );
+    expect(result).toMatchObject({
+      output: { outcome: 'succeeded', result: 'routine code cannot import modules' },
+    });
+  });
+
+  it('throws API refusals into the code, and ends the run on a stop code', async () => {
+    const caught = await run(
+      context(`export async function main({ retainer, record }: RoutineContext<'deal'>) {
+        try { await retainer.deal.update(record.id, { stage: 'won' }); } catch (e: any) { return e.code; }
+      }`),
+      () => Response.json({ error: { code: 'pending_review', message: 'no' } }, { status: 422 }),
+    );
+    expect(caught.result).toMatchObject({
+      output: { outcome: 'succeeded', result: 'pending_review' },
+    });
+
+    const stopped = await run(
+      context(`export async function main({ retainer, record }: RoutineContext<'deal'>) {
+        try { await retainer.deal.update(record.id, { stage: 'won' }); } catch { return 'swallowed'; }
+      }`),
+      () =>
+        Response.json({ error: { code: 'routine_paused', message: 'paused' } }, { status: 409 }),
+    );
+    expect(stopped.result).toMatchObject({
+      output: { outcome: 'stopped', code: 'routine_paused' },
+    });
+  });
+
+  it('ends a dry run at the first tool call', async () => {
+    const { result, calls } = await run(
+      context(
+        `export async function main({ retainer }: RoutineContext<'deal'>) {
+          await retainer.tools.notify({ text: 'hi' });
+          await retainer.tools.notify({ text: 'again' });
+          return 'never';
+        }`,
+        'dry',
+      ),
+      () => ({ state: 'reported', stop: true }),
+    );
+    expect(result).toMatchObject({ output: { outcome: 'succeeded', stoppedAt: 1 } });
+    expect(calls.filter((c) => c.path === 'effects')).toHaveLength(1);
+  });
+
+  it('polls a tool call until it ends', async () => {
+    let polls = 0;
+    const { result } = await run(
+      context(`export async function main({ retainer }: RoutineContext<'deal'>) {
+        return retainer.tools.notify({ text: 'hi' });
+      }`),
+      (path) => {
+        if (path === 'effects') return { state: 'pending', tool: { callId: 'job-1' } };
+        polls++;
+        return polls < 2
+          ? { state: 'pending', tool: { callId: 'job-1' } }
+          : { state: 'done', result: { sent: true }, replayed: false };
+      },
+    );
+    expect(result).toMatchObject({ output: { outcome: 'succeeded', result: { sent: true } } });
+  });
+
+  it('a check run reports problems instead of running', async () => {
+    const { result, calls } = await run(
+      context(
+        `export async function main({ record }: RoutineContext<'deal'>) { return record.missing; }`,
+        'check',
+      ),
+    );
+    expect(result).toMatchObject({
+      output: { outcome: 'succeeded', valid: false, typesFingerprint: 'f'.repeat(64) },
+    });
+    expect(calls.map((c) => c.path)).toEqual(['run']);
+  });
+
+  it('fails a run whose code throws', async () => {
+    const { result } = await run(
+      context(`export async function main() { throw new Error('boom'); }`),
+    );
+    expect(result).toMatchObject({
+      output: { outcome: 'failed', code: 'routine_error', error: 'boom' },
+    });
+  });
+});
