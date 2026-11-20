@@ -43,6 +43,7 @@ function context(code: string, mode: RoutineRunContext['run']['mode'] = 'run'): 
       id: invocation.runId,
       mode,
       at: '2026-11-20T10:00:00.000Z',
+      startedAt: '2026-11-20T10:01:00.000Z',
       timezone: 'UTC',
       dryRun: mode === 'dry',
       attempt: 1,
@@ -91,6 +92,37 @@ const run = (ctx: RoutineRunContext, answer?: (path: string, body: any) => unkno
     calls: api.calls,
   }));
 };
+
+it('holds the sandbox clock fixed during module evaluation and across attempts', async () => {
+  const ctx = context(`
+    const moduleTime = Date.now();
+    export function main() {
+      return {
+        moduleTime,
+        now: Date.now(),
+        noArgs: new Date().toISOString(),
+        explicit: new Date(0).toISOString(),
+        called: Date() === new Date().toString(),
+      };
+    }
+  `);
+  const first = await run(ctx);
+  const second = await run({ ...ctx, run: { ...ctx.run, attempt: 2 } });
+  expect(first.result).toMatchObject({
+    status: 'succeeded',
+    output: {
+      outcome: 'succeeded',
+      result: {
+        moduleTime: Date.parse(ctx.run.startedAt),
+        now: Date.parse(ctx.run.startedAt),
+        noArgs: ctx.run.startedAt,
+        explicit: '1970-01-01T00:00:00.000Z',
+        called: true,
+      },
+    },
+  });
+  expect(second).toEqual(first);
+});
 
 describe('routine type-check', () => {
   it('reports type errors with their position, and emits JavaScript', async () => {

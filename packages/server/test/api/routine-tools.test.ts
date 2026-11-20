@@ -76,7 +76,7 @@ async function setup() {
     extensionCatalog: catalog,
     extensionActivation: new Set([release.digest]),
     runTokens: tokens,
-    routines: { modelAvailable: false },
+    routines: { available: true, modelAvailable: false },
   });
   const { workspace, keys } = await app.setupWorkspace(
     { name: `Routine tools ${randomUUID()}` },

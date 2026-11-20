@@ -492,6 +492,7 @@ export async function runSandboxed(
   reply({
     kind: 'start',
     context: {
+      startedAt: context.run.startedAt,
       record: context.record,
       run: {
         id: context.run.id,

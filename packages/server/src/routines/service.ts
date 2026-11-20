@@ -399,18 +399,19 @@ export class Routines {
         const tool = caps.installed.find((t) => t.name === name);
         if (tool) contracts[name] = toolContract(tool);
       }
-      const [discarded] = await tx<{ count: number }[]>`
-        with gone as (update routine_runs set status='discarded',code='new_version',finished_at=clock_timestamp()
-          where routine_id=${routineId} and mode='run' and status in ('queued','held') returning 1)
-        select count(*)::int as count from gone`;
-      await tx`update routine_versions set state='superseded' where routine_id=${routineId} and state='approved' and id<>${versionId}`;
+      const sourceId = await saveSource(tx, caller.workspaceId, manifest, version.code);
+      const approvedId =
+        version.state === 'proposed'
+          ? version.id
+          : await this.copyVersionForApproval(tx, caller.workspaceId, version, sourceId);
+      const discardedRuns = await this.discardUnstarted(tx, routineId);
+      await tx`update routine_versions set state='superseded' where routine_id=${routineId} and state='approved'`;
       await tx`update routine_versions set state='approved',approved_by=${tx.json(jsonValue(caller.actor))},
         approver_user_id=${who},approved_at=clock_timestamp(),types_fingerprint=${caps.typesFingerprint},
-        tool_contracts=${tx.json(jsonValue(contracts))},
-        source_id=${await saveSource(tx, caller.workspaceId, manifest, version.code)}
-        where id=${versionId}`;
-      await this.activate(tx, caller.workspaceId, routineId, manifest, caps.timezone, versionId);
-      return { routineId, versionId, discardedRuns: discarded?.count ?? 0 };
+        tool_contracts=${tx.json(jsonValue(contracts))},source_id=${sourceId}
+        where id=${approvedId}`;
+      await this.activate(tx, caller.workspaceId, routineId, manifest, caps.timezone, approvedId);
+      return { routineId, versionId: approvedId, discardedRuns };
     });
     if ('checkRequired' in approved)
       throw new AppError(
@@ -420,6 +421,31 @@ export class Routines {
         { jobId: approved.checkRequired },
       );
     return approved;
+  }
+
+  private async copyVersionForApproval(
+    tx: Tx,
+    workspace: string,
+    version: VersionRow,
+    sourceId: string,
+  ) {
+    // Approve and resume hold the routine row, serializing version numbers with proposals.
+    const [copy] = await tx<{ id: string }[]>`
+      insert into routine_versions(workspace_id,routine_id,source_id,number,summary,report,rank,types_fingerprint,tool_contracts,built_by)
+      select ${workspace},v.routine_id,${sourceId},
+        (select max(number)+1 from routine_versions where routine_id=v.routine_id),
+        v.summary,v.report,v.rank,v.types_fingerprint,v.tool_contracts,v.built_by
+      from routine_versions v where v.id=${version.id} returning id`;
+    if (!copy) throw notFound('routine version');
+    return copy.id;
+  }
+
+  private async discardUnstarted(tx: Tx, routineId: string) {
+    const [discarded] = await tx<{ count: number }[]>`
+      with gone as (update routine_runs set status='discarded',code='new_version',finished_at=clock_timestamp()
+        where routine_id=${routineId} and mode='run' and attempt=0 and status in ('queued','held') returning 1)
+      select count(*)::int as count from gone`;
+    return discarded?.count ?? 0;
   }
 
   /** Active from now: the feed's head, the next schedule occurrence (§5.3, §6.1). */
@@ -485,11 +511,21 @@ export class Routines {
           'approval_required',
           'this routine paused because something it depends on changed; repair it and approve the new version',
         );
-      if (!(await stillAdmin(tx, caller.workspaceId, version.approver_user_id)))
-        await tx`update routine_versions set approver_user_id=${who},approved_by=${tx.json(jsonValue(caller.actor))},
-          approved_at=clock_timestamp() where id=${version.id}`;
+      let activeVersion = version.id;
+      if (!(await stillAdmin(tx, caller.workspaceId, version.approver_user_id))) {
+        activeVersion = await this.copyVersionForApproval(
+          tx,
+          caller.workspaceId,
+          version,
+          version.source_id,
+        );
+        await this.discardUnstarted(tx, routineId);
+        await tx`update routine_versions set state='superseded' where id=${version.id}`;
+        await tx`update routine_versions set state='approved',approver_user_id=${who},
+          approved_by=${tx.json(jsonValue(caller.actor))},approved_at=clock_timestamp() where id=${activeVersion}`;
+      }
       const zone = await workspaceZone(tx);
-      await this.activate(tx, caller.workspaceId, routineId, version.manifest, zone);
+      await this.activate(tx, caller.workspaceId, routineId, version.manifest, zone, activeVersion);
       return { routineId, status: 'active' };
     });
   }

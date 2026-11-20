@@ -15,7 +15,7 @@ export function RoutineButtons({ object, recordId }: { object: string; recordId:
   const { session } = useWorkspace();
   const client = useQueryClient();
   const report = useReport();
-  const allowed = canMutate(session);
+  const allowed = session.routinesAvailable === true && canMutate(session);
   const buttons = useQuery({
     queryKey: [...routinesKey(session.workspace.id), 'buttons', object],
     queryFn: ({ signal }) => api.routineButtons(object, signal),

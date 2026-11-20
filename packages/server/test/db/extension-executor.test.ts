@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { decodeJwt, generateKeyPair } from 'jose';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
@@ -506,6 +506,46 @@ describe('trusted executor protocol with an explicitly in-process test driver', 
       finish.resolve({ status: 'succeeded' });
       for (const executor of executors) executor.drain();
       await Promise.all(passes);
+    }
+  });
+  it('keeps polling for extension jobs while a Routine is active', async () => {
+    const h = await setup();
+    const invoked = deferred<void>();
+    const finishRoutine = deferred<void>();
+    await db.owner`update extension_jobs set available_at=now()+interval '200 milliseconds' where id=${h.jobId}`;
+    const executor = h.executor({
+      invoke: async (_target, invocation) => {
+        if (invocation.runId === h.jobId) invoked.resolve();
+        return { status: 'succeeded' };
+      },
+    });
+    const tick = vi.fn(async () => {
+      await finishRoutine.promise;
+      return { executed: 1 };
+    });
+    const pass = runExecutorLeader(
+      db.connect({ max: 1, keepConnections: true }),
+      executor,
+      400000,
+      {
+        idleTimeoutMs: 50,
+        idleMs: 10,
+        routines: { tick, stop: () => {} },
+      },
+    );
+    try {
+      await expect.poll(() => tick.mock.calls.length).toBeGreaterThan(0);
+      await expect
+        .poll(
+          async () =>
+            (await db.owner`select status from extension_jobs where id=${h.jobId}`)[0]?.status,
+        )
+        .toBe('succeeded');
+      await invoked.promise;
+    } finally {
+      finishRoutine.resolve();
+      executor.drain();
+      await pass;
     }
   });
   it('hands off the leader at the claim deadline while its older run still acknowledges normally', async () => {

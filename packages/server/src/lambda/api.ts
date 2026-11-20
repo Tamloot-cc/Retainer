@@ -24,6 +24,7 @@ export function createApiHandler(
     AppDeps,
     'extensionCatalog' | 'runTokens' | 'extensionActivation' | 'fileStorage' | 'fileQuota'
   > = {},
+  routinesAvailable = false,
 ) {
   setLogLevel(config.LOG_LEVEL);
   const app = createApp({
@@ -37,6 +38,7 @@ export function createApiHandler(
     clientIp: (c) => clientIpOf((c.env as { event?: unknown }).event, config.RETAINER_EDGE_SECRET),
     // The hosted `model` function holds the key; its origin says it exists.
     routines: {
+      available: routinesAvailable,
       modelAvailable: !!config.RETAINER_MODEL_ORIGIN,
       modelOrigin: config.RETAINER_MODEL_ORIGIN,
       modelName: config.RETAINER_ROUTINE_MODEL,
@@ -53,13 +55,18 @@ export const handler = async (event: LambdaEvent, context: LambdaContext) => {
     const config = loadConfig(),
       sql = createApiSql(config, { max: config.RETAINER_DB_POOL_MAX });
     const extensions = await extensionServices(config);
-    return createApiHandler(config, sql, {
-      fileStorage: extensions.fileStorage,
-      fileQuota: config.RETAINER_FILE_QUOTA_BYTES,
-      extensionCatalog: extensions.catalog,
-      extensionActivation: extensions.activationReady,
-      ...(extensions.tokens ? { runTokens: extensions.tokens } : {}),
-    });
+    return createApiHandler(
+      config,
+      sql,
+      {
+        fileStorage: extensions.fileStorage,
+        fileQuota: config.RETAINER_FILE_QUOTA_BYTES,
+        extensionCatalog: extensions.catalog,
+        extensionActivation: extensions.activationReady,
+        ...(extensions.tokens ? { runTokens: extensions.tokens } : {}),
+      },
+      extensions.routinesAvailable,
+    );
   })();
   return (await cached)(event, context);
 };

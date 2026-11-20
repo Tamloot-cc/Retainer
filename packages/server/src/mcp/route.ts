@@ -8,6 +8,7 @@ import type { ExtensionCatalog } from '../extensions/catalog.js';
 import type { FileStorage } from '../file-storage/contract.js';
 import type { AppEnv } from '../http/response.js';
 import { log } from '../log.js';
+import type { RoutineConfig } from '../routines/capabilities.js';
 import { createMcpServer } from './server.js';
 
 /**
@@ -24,7 +25,7 @@ export function mcpRoute(
     extensionActivation?: ReadonlySet<string> | undefined;
     fileStorage?: FileStorage | undefined;
     fileQuota?: number | undefined;
-    routineModel?: boolean | undefined;
+    routines?: RoutineConfig | undefined;
     publicOrigin?: string | undefined;
     /** Accepts MCP OAuth access tokens too (accounts spec 4.7). */
     oauth?: OAuthSettings | undefined;

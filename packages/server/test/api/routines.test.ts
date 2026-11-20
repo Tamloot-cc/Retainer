@@ -41,6 +41,7 @@ async function setup(
   const app = startTestApp(db, {
     runTokens: tokens,
     routines: {
+      available: true,
       modelAvailable: true,
       modelOrigin: 'http://model.test/',
       modelName: 'claude-opus-5-5',
@@ -775,7 +776,10 @@ describe('routines', () => {
     expect(run).toEqual({ status: 'failed', code: 'check_failed' });
   });
 
-  it('replays a recorded effect instead of repeating it, and diverges on another operation', async () => {
+  it.each([
+    ['different arguments', 'record.update'],
+    ['a different operation', 'remember'],
+  ])('replays matching effects and diverges on %s', async (_label, changedOperation) => {
     const s = await setup();
     const tier = s.key('tier');
     const { routineId, versionId } = await activate(s, TIER_ROUTINE(tier, s.key('name')));
@@ -811,11 +815,11 @@ describe('routines', () => {
       select count(*)::int as n from field_assertions a join fields f on f.id=a.field_id
       where a.record_id=${acme} and f.name='tier'`;
     expect(writes?.n).toBe(1);
-    // Different arguments at a recorded position are not repeated; they are flagged.
-    const changed = await effect(1, 'record.update', { ...update, values: { [tier]: 'bronze' } });
-    expect(changed.body).toMatchObject({ state: 'done', replayed: true, differs: true });
-    // Another operation at a recorded position ends the run.
-    const diverged = await effect(1, 'remember', { about: acme, text: 'x' });
+    const changed =
+      changedOperation === 'record.update'
+        ? { ...update, values: { [tier]: 'bronze' } }
+        : { about: acme, text: 'x' };
+    const diverged = await effect(1, changedOperation, changed);
     expect(diverged.body.error.code).toBe('run_diverged');
     const [run] = await db.owner<
       { status: string }[]
@@ -825,6 +829,113 @@ describe('routines', () => {
     expect((await effect(2, 'record.update', update)).status).toBeGreaterThanOrEqual(400);
     // The routine token reaches nothing outside the runtime.
     expect((await s.app.request(`/v1/records/${acme}`, { key: token })).status).toBe(403);
+  });
+
+  it('advertises Routines through REST and MCP only with the runner enabled', async () => {
+    const s = await setup();
+    const disabled = startTestApp(db, { runTokens: tokens });
+    const enabledSession = await s.app.request('/v1/me', { key: s.keys.agent });
+    const disabledSession = await disabled.request('/v1/me', { key: s.keys.agent });
+    expect(enabledSession.body.routinesAvailable).toBe(true);
+    expect(disabledSession.body.routinesAvailable).toBeUndefined();
+    expect(
+      (await disabled.request('/v1/routines/capabilities', { key: s.keys.agent })).status,
+    ).toBe(404);
+
+    const enabledMcp = await s.app.mcpClient(s.keys.agent);
+    const disabledMcp = await disabled.mcpClient(s.keys.agent);
+    try {
+      expect((await enabledMcp.listTools()).tools.map((tool) => tool.name)).toContain(
+        'validate_routine',
+      );
+      expect((await disabledMcp.listTools()).tools.map((tool) => tool.name)).not.toContain(
+        'validate_routine',
+      );
+    } finally {
+      await Promise.all([enabledMcp.close(), disabledMcp.close()]);
+    }
+  });
+
+  it('retries after the first effect consumes the firing and changes the condition', async () => {
+    const s = await setup();
+    const name = s.key('name');
+    const source = TIER_ROUTINE(s.key('tier'), name);
+    const { routineId } = await activate(s, {
+      ...source,
+      manifest: { ...source.manifest, when: { ...source.manifest.when, oncePerRecord: true } },
+    });
+    const recordId = await createCompany(s.app, s.keys.agent, 'Acme Retry');
+    await dispatchRoutines(s.app.sql, s.workspace);
+    const [run] = await db.owner<{ id: string }[]>`
+      select id from routine_runs where routine_id=${routineId} and mode='run'`;
+    if (!run) throw new Error('run not queued');
+    const first = await s.executor.claim(s.workspace, run.id);
+    if (!first) throw new Error('run not claimed');
+
+    const effect = async (claim: typeof first, position: number, value: string) => {
+      const token = await tokens.issueRoutine(
+        s.workspace,
+        { runId: run.id, routineId, fence: claim.fence, mode: claim.mode, tools: [] },
+        new Date(Date.now() + 60_000),
+      );
+      return s.app.request('/v1/routines/runtime/effects', {
+        key: token,
+        body: {
+          position,
+          operation: 'record.update',
+          args: {
+            object: 'company',
+            id: recordId,
+            values: { [name]: value },
+          },
+        },
+      });
+    };
+
+    expect((await effect(first, 1, 'No longer matches')).status).toBe(200);
+    const record = await s.app.request(`/v1/records/${recordId}`, { key: s.keys.admin });
+    expect(record.body.fields.name).toBe('No longer matches');
+    await db.owner`update routine_runs set lease_until=clock_timestamp()-interval '1 second' where id=${run.id}`;
+    const retry = await s.executor.claim(s.workspace, run.id);
+    expect(retry?.attempt).toBe(2);
+    if (!retry) throw new Error('retry not claimed');
+    expect((await effect(retry, 1, 'No longer matches')).body).toMatchObject({ replayed: true });
+    expect((await effect(retry, 2, 'Follow-up write')).body).toMatchObject({ replayed: false });
+  });
+
+  it('an older run cannot pause an active replacement after reapproval', async () => {
+    const s = await setup();
+    const { routineId, versionId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    await createCompany(s.app, s.keys.admin, 'Acme Old Run');
+    await dispatchRoutines(s.app.sql, s.workspace);
+    const [run] = await db.owner<{ id: string }[]>`
+      select id from routine_runs where routine_id=${routineId} and mode='run'`;
+    if (!run) throw new Error('run not queued');
+    const claimed = await s.executor.claim(s.workspace, run.id);
+    if (!claimed) throw new Error('run not claimed');
+
+    const reapproved = await s.app.request(
+      `/v1/routines/${routineId}/versions/${versionId}/approve`,
+      {
+        key: s.keys.admin,
+        body: {},
+      },
+    );
+    expect(reapproved.status).toBe(200);
+    expect(reapproved.body.versionId).not.toBe(versionId);
+    await s.executor.complete(claimed, {
+      status: 'succeeded',
+      output: { outcome: 'failed', code: 'check_failed' },
+    });
+    const [routine] =
+      await db.owner`select status,active_version_id from routines where id=${routineId}`;
+    expect(routine).toMatchObject({
+      status: 'active',
+      active_version_id: reapproved.body.versionId,
+    });
+    const [oldRun] =
+      await db.owner`select status,code,version_id from routine_runs where id=${run.id}`;
+    expect(oldRun).toMatchObject({ status: 'failed', code: 'check_failed', version_id: versionId });
   });
 
   it('two executors claiming one run at once: exactly one gets it', async () => {
@@ -1076,11 +1187,17 @@ describe('routines', () => {
       body: {},
     });
     expect(resumed.status).toBe(200);
-    const [version] = await db.owner<{ approver_user_id: string; fresh: boolean }[]>`
-      select approver_user_id,approved_at>now()-interval '1 minute' as fresh
-      from routine_versions where id=${versionId}`;
-    expect(version?.approver_user_id).not.toBe('someone-who-left');
-    expect(version?.fresh).toBe(true);
+    const versions = await db.owner<
+      { id: string; approver_user_id: string; fresh: boolean; state: string }[]
+    >`
+      select id,approver_user_id,approved_at>now()-interval '1 minute' as fresh,state
+      from routine_versions where routine_id=${routineId} order by number`;
+    expect(versions).toMatchObject([
+      { id: versionId, approver_user_id: 'someone-who-left', fresh: false, state: 'superseded' },
+      { approver_user_id: 'key:admin', fresh: true, state: 'approved' },
+    ]);
+    const [active] = await db.owner`select active_version_id from routines where id=${routineId}`;
+    expect(active?.active_version_id).toBe(versions[1]?.id);
   });
 
   it('a preview samples distinct records, however busy the newest one is', async () => {
@@ -1430,6 +1547,35 @@ describe('routines', () => {
       expect(runs.map((r) => r.status)).toEqual(['held', 'held', 'held', 'held', 'held']);
     } finally {
       limits.runsPerHour = saved;
+    }
+  });
+
+  it('caps held record runs and continues other routines in the workspace', async () => {
+    const s = await setup();
+    const limits = ROUTINE_LIMITS as { runsPerHour: number; recordHeldMax: number };
+    const saved = { ...limits };
+    try {
+      limits.runsPerHour = 1;
+      limits.recordHeldMax = 3;
+      const source = TIER_ROUTINE(s.key('tier'), s.key('name'));
+      const first = await activate(s, source);
+      const second = await activate(s, source);
+      for (let i = 0; i < 5; i++) await createCompany(s.app, s.keys.admin, `Acme Cap ${i}`);
+      await dispatchRoutines(s.app.sql, s.workspace, 2);
+
+      for (const { routineId } of [first, second]) {
+        const [state] =
+          await db.owner`select status,paused_reason from routines where id=${routineId}`;
+        expect(state).toEqual({
+          status: 'needs_attention',
+          paused_reason: 'record_backlog_over_limit',
+        });
+        const [held] = await db.owner`select count(*)::int as n from routine_runs
+          where routine_id=${routineId} and status='held'`;
+        expect(held?.n).toBe(3);
+      }
+    } finally {
+      Object.assign(limits, saved);
     }
   });
 

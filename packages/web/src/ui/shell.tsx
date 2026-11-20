@@ -67,6 +67,7 @@ type ShellProps = {
   /** Entities are listed under Records, event types under Activity. */
   objects: ShellObject[];
   inboxCount?: number;
+  routinesAvailable?: boolean;
   /** Developer view, switched from the account menu. */
   developer: boolean;
   onDeveloperChange: (on: boolean) => void;
@@ -240,6 +241,7 @@ function Sidebar({
   accounts,
   objects,
   inboxCount,
+  routinesAvailable,
   developer,
   onDeveloperChange,
   onSignOut,
@@ -396,13 +398,15 @@ function Sidebar({
           {objectLinks('event')}
         </NavGroup>
         <div className="flex-1" />
-        <NavLink
-          to="/routines"
-          icon={Workflow}
-          label="Routines"
-          collapsed={collapsed}
-          onNavigate={onNavigate}
-        />
+        {routinesAvailable ? (
+          <NavLink
+            to="/routines"
+            icon={Workflow}
+            label="Routines"
+            collapsed={collapsed}
+            onNavigate={onNavigate}
+          />
+        ) : null}
         <NavLink
           to="/extensions"
           icon={Puzzle}

@@ -54,11 +54,17 @@ export async function pauseRoutine(
   routineId: string,
   status: 'paused' | 'needs_attention',
   reason: string,
+  versionId?: string | null,
 ) {
-  await tx`update routines set status=${status},paused_reason=${reason},paused_at=clock_timestamp()
-    where id=${routineId} and status='active'`;
+  const [paused] =
+    await tx`update routines set status=${status},paused_reason=${reason},paused_at=clock_timestamp()
+    where id=${routineId} and status='active'
+      ${versionId === undefined ? tx`` : tx`and active_version_id=${versionId}`}
+    returning id`;
+  if (!paused) return false;
   await tx`update routine_runs set status='held',code=${reason}
     where routine_id=${routineId} and mode='run' and status='queued'`;
+  return true;
 }
 
 /**

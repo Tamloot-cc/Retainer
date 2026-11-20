@@ -120,10 +120,22 @@ proc.on('uncaughtException', fail);
 try { Object.defineProperty(globalThis, 'process', { value: undefined, configurable: false, writable: false }); } catch {}
 
 try {
+  const context = await start;
+  // Freeze the clock before module evaluation as well as inside main.
+  const NativeDate = Date;
+  const startTime = NativeDate.parse(context.startedAt);
+  const frozenNow = () => startTime;
+  const RunDate = new Proxy(NativeDate, {
+    apply: () => new NativeDate(startTime).toString(),
+    construct: (target, args, newTarget) =>
+      Reflect.construct(target, args.length ? args : [startTime], newTarget),
+    get: (target, key, receiver) => key === 'now' ? frozenNow : Reflect.get(target, key, receiver),
+  });
+  Object.defineProperty(NativeDate.prototype, 'constructor', { value: RunDate });
+  globalThis.Date = RunDate;
   const routine = await import('./routine.mjs');
   routineLoaded = true;
   if (typeof routine.main !== 'function') throw new Error('the routine does not export main');
-  const context = await start;
   const result = await routine.main({ retainer, record: context.record, run: context.run, trigger: context.trigger });
   send({ kind: 'done', result: result === undefined ? null : result });
 } catch (error) {

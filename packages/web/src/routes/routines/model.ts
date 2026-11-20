@@ -46,6 +46,8 @@ export function pausedText(routine: Pick<RoutineView, 'status' | 'pausedReason'>
   switch (routine.pausedReason) {
     case 'paused':
       return 'An admin paused it.';
+    case 'record_backlog_over_limit':
+      return 'The record backlog exceeded the limit. Only the runs shown here were held.';
     case 'runs_held':
       return `It started more than 200 runs in an hour, so Retainer paused it and held the extra runs. Nothing was done for them. Resume it, then run or discard them.`;
     case 'schedule_over_limit':

@@ -1,4 +1,4 @@
-import { ROUTINE_RUNNER_REGISTRATION_ID } from '@retainer/shared';
+import { ROUTINE_RUNNER_FUNCTION_ID, ROUTINE_RUNNER_REGISTRATION_ID } from '@retainer/shared';
 import { importJWK } from 'jose';
 import { z } from 'zod';
 import { type Config, EXECUTOR_ROLE, ownerDatabaseUrl, SECRET_BROKER_ROLE } from '../config.js';
@@ -110,11 +110,18 @@ export async function extensionServices(
       fileStorage && options.workerSql && discovery
         ? new FileMaintenance(options.workerSql, discovery, fileStorage)
         : undefined;
+    const executableEntries: unknown = config.RETAINER_EXTENSION_EXECUTABLES
+      ? JSON.parse(config.RETAINER_EXTENSION_EXECUTABLES)
+      : undefined;
+    if (executableEntries !== undefined && !Array.isArray(executableEntries))
+      throw new Error('invalid executable registry');
+    const registry = executableEntries
+      ? new ExecutionRegistry(executableEntries as Executable[])
+      : undefined;
+    const routineRunner = registry?.find(ROUTINE_RUNNER_REGISTRATION_ID);
+    const routinesAvailable = !!tokens && routineRunner?.functionId === ROUTINE_RUNNER_FUNCTION_ID;
     const activationReady = new Set<string>();
-    if (tokens && config.RETAINER_EXTENSION_EXECUTABLES) {
-      const entries: unknown = JSON.parse(config.RETAINER_EXTENSION_EXECUTABLES);
-      if (!Array.isArray(entries)) throw new Error('invalid executable registry');
-      const registry = new ExecutionRegistry(entries as Executable[]);
+    if (tokens && registry) {
       for (const release of catalog.list()) {
         if (!release.runtimeEnabled || release.manifest.execution !== 'hosted') continue;
         for (const fn of release.manifest.functions) {
@@ -211,17 +218,13 @@ export async function extensionServices(
       });
     }
     let executor: ExtensionExecutor | undefined;
-    if (options.workerSql && config.RETAINER_EXTENSION_EXECUTABLES) {
+    if (options.workerSql && registry) {
       if (
         !tokens ||
         !config.RETAINER_EXTENSION_RUN_PRIVATE_KEY ||
         (!lambda && (!config.RETAINER_EXTENSION_LAUNCHER_ORIGIN || !config.RETAINER_LAUNCHER_TOKEN))
       )
         throw new Error('executor configuration is incomplete');
-      const entries: unknown = JSON.parse(config.RETAINER_EXTENSION_EXECUTABLES);
-      if (!Array.isArray(entries)) throw new Error('executor registry must be an array');
-      // ExecutionRegistry performs strict per-entry validation and defensive copies.
-      const registry = new ExecutionRegistry(entries as Executable[]);
       const discoverySql = discovery as Sql;
       const apiOrigin = config.RETAINER_EXTENSION_API_ORIGIN ?? config.RETAINER_PUBLIC_ORIGIN;
       if (!apiOrigin) throw new Error('executor API origin is required');
@@ -249,17 +252,13 @@ export async function extensionServices(
     // Routines (routines spec §6.1): matching runs in change maintenance; the
     // runs execute only where the routine runner bundle is deployed.
     const routineMaintenance =
-      options.workerSql && discovery
+      options.workerSql && discovery && routinesAvailable
         ? new RoutineMaintenance(options.workerSql, discovery)
         : undefined;
     let routineExecutor: RoutineExecutor | undefined;
-    if (options.workerSql && discovery && tokens && config.RETAINER_EXTENSION_EXECUTABLES) {
-      const entries: unknown = JSON.parse(config.RETAINER_EXTENSION_EXECUTABLES);
-      const runner = Array.isArray(entries)
-        ? new ExecutionRegistry(entries as Executable[]).find(ROUTINE_RUNNER_REGISTRATION_ID)
-        : undefined;
+    if (options.workerSql && discovery && tokens && routinesAvailable) {
       const apiOrigin = config.RETAINER_EXTENSION_API_ORIGIN ?? config.RETAINER_PUBLIC_ORIGIN;
-      if (runner && apiOrigin && config.RETAINER_EXTENSION_RUN_PRIVATE_KEY)
+      if (apiOrigin && config.RETAINER_EXTENSION_RUN_PRIVATE_KEY)
         routineExecutor = new RoutineExecutor({
           sql: options.workerSql,
           discoverySql: discovery,
@@ -270,7 +269,7 @@ export async function extensionServices(
                 config.RETAINER_EXTENSION_LAUNCHER_ORIGIN as string,
                 config.RETAINER_LAUNCHER_TOKEN as string,
               ),
-          executable: runner,
+          executable: routineRunner,
           apiOrigin,
           owner: `routines-${crypto.randomUUID()}`,
           config: {
@@ -304,6 +303,7 @@ export async function extensionServices(
       fileMaintenance,
       changeMaintenance,
       routineExecutor,
+      routinesAvailable,
       close,
     };
   } catch {

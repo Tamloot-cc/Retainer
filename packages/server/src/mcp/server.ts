@@ -5,6 +5,7 @@ import { ExtensionCatalog } from '../extensions/catalog.js';
 import { Extensions } from '../extensions/service.js';
 import type { FileStorage } from '../file-storage/contract.js';
 import { Files } from '../files/service.js';
+import type { RoutineConfig } from '../routines/capabilities.js';
 import { Routines } from '../routines/service.js';
 import { VERSION } from '../version.js';
 import { SERVER_ICON } from './icon.js';
@@ -34,8 +35,7 @@ export function createMcpServer(
     fileStorage?: FileStorage | undefined;
     fileQuota?: number | undefined;
     extensionActivation?: ReadonlySet<string> | undefined;
-    /** Whether routine code and the builder can call a model (routines spec §4.5). */
-    routineModel?: boolean | undefined;
+    routines?: RoutineConfig | undefined;
   } = {},
 ): McpServer {
   const server = new McpServer(
@@ -60,11 +60,7 @@ export function createMcpServer(
   registerReadTools(server, sql, caller);
   registerChangeTools(server, sql, caller);
   registerWriteTools(server, sql, caller);
-  registerRoutineTools(
-    server,
-    new Routines(sql, { catalog: catalog.runtime, modelAvailable: options.routineModel ?? false }),
-    caller,
-  );
+  if (options.routines) registerRoutineTools(server, new Routines(sql, options.routines), caller);
 
   return server;
 }

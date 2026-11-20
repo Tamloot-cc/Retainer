@@ -93,7 +93,7 @@ export class RoutineExecutor {
   }
 
   /** One pass: claims due runs and executes them, a few at a time. */
-  async tick(limit = 100) {
+  async tick(limit = 100, claimDeadline = Number.POSITIVE_INFINITY) {
     if (this.stopped) return { executed: 0 };
     const due = await this.options.discoverySql<{ workspace_id: string; run_id: string }[]>`
       select * from retainer_routine_runs_due(${limit})`;
@@ -101,7 +101,7 @@ export class RoutineExecutor {
       executed = 0;
     const worker = async () => {
       for (;;) {
-        if (this.stopped) return;
+        if (this.stopped || Date.now() >= claimDeadline) return;
         const item = due[next++];
         if (!item) return;
         const claimed = await this.claim(item.workspace_id, item.run_id).catch((e) => {
@@ -141,6 +141,8 @@ export class RoutineExecutor {
   private async claimIn(workspace: string, id: string): Promise<ClaimedRun | null> {
     return inWorkspace(this.options.sql, workspace, async (tx) => {
       await lockSchemaShared(tx, workspace);
+      await tx`select rt.id from routines rt join routine_runs r on r.routine_id=rt.id
+        where r.id=${id} and r.mode='run' for update of rt`;
       const [run] = await tx<ClaimRow[]>`
         select r.id,r.routine_id,r.version_id,r.mode,r.status,r.record_id,r.attempt,r.initiator_user_id,r.expires_at,
           coalesce(r.expires_at<=clock_timestamp(),false) as expired,s.manifest,rt.status as routine_status,
@@ -183,12 +185,17 @@ export class RoutineExecutor {
         });
         const approver = await stillAdmin(tx, workspace, run.approver_user_id);
         if (changed || !approver) {
-          await pauseRoutine(
+          const paused = await pauseRoutine(
             tx,
             run.routine_id,
             'needs_attention',
             changed ? 'tool_changed' : 'approver_left',
+            run.version_id,
           );
+          if (!paused) {
+            await this.end(tx, id, 'stopped', changed ? 'tool_changed' : 'approver_left');
+            return null;
+          }
           await tx`update routine_runs set status='held',code=${changed ? 'tool_changed' : 'approver_left'},
             lease_owner=null,lease_until=null where id=${id}`;
           return null;
@@ -224,7 +231,7 @@ export class RoutineExecutor {
       ) {
         await this.end(tx, id, 'failed', 'check_failed');
         if (run.mode === 'run' && run.routine_id)
-          await pauseRoutine(tx, run.routine_id, 'needs_attention', 'check_failed');
+          await pauseRoutine(tx, run.routine_id, 'needs_attention', 'check_failed', run.version_id);
         return null;
       }
       if (run.record_id && run.manifest && ['run', 'test', 'dry'].includes(run.mode)) {
@@ -235,6 +242,7 @@ export class RoutineExecutor {
           return null;
         }
         if (
+          run.attempt === 0 &&
           run.mode === 'run' &&
           when.oncePerRecord &&
           run.routine_id &&
@@ -243,20 +251,20 @@ export class RoutineExecutor {
           await this.end(tx, id, 'skipped', 'record_used_up');
           return null;
         }
-        const filter = run.manifest.if ? mapFilter(object, run.manifest.if, 'name') : undefined;
+        // A retry has already earned admission. Its own writes may have changed the condition.
+        const filter =
+          run.attempt === 0 && run.manifest.if
+            ? mapFilter(object, run.manifest.if, 'name')
+            : undefined;
         const [hit] = await tx<{ data: Record<string, unknown> }[]>`
           select r.data from records r where r.id=${recordId}
             and ${matchingRecords(tx, workspace, schema, object, filter ? { filter } : {}, 'source')}`;
         // The `if` is checked against the record as it is now (§4.3); no code runs when it fails.
-        if (!hit && run.mode !== 'dry') {
+        if (!hit) {
           await this.end(tx, id, 'skipped', filter ? 'condition_false' : 'record_gone');
           return null;
         }
-        if (!hit) {
-          await this.end(tx, id, 'skipped', 'condition_false');
-          return null;
-        }
-        if (run.manifest.expiry && !expiry) {
+        if (run.attempt === 0 && run.manifest.expiry && !expiry) {
           const value = hit.data[run.manifest.expiry.field];
           const at = typeof value === 'string' ? new Date(value) : null;
           if (at && Number.isFinite(at.getTime())) {
@@ -349,6 +357,8 @@ export class RoutineExecutor {
   /** Records how a run ended (§6.2); a run already ended by an effect keeps its status. */
   async complete(run: ClaimedRun, result: ExecutionResult) {
     await inWorkspace(this.options.sql, run.workspaceId, async (tx) => {
+      if (run.mode === 'run' && run.routineId)
+        await tx`select id from routines where id=${run.routineId} for update`;
       const [row] = await tx<
         {
           status: string;
@@ -392,16 +402,16 @@ export class RoutineExecutor {
       if (typeof output?.typesFingerprint === 'string' && row.version_id && status !== 'failed')
         await tx`update routine_versions set types_fingerprint=${output.typesFingerprint} where id=${row.version_id}`;
       if (code === 'check_failed') {
-        await pauseRoutine(tx, row.routine_id, 'needs_attention', 'check_failed');
+        await pauseRoutine(tx, row.routine_id, 'needs_attention', 'check_failed', row.version_id);
         return;
       }
       if (status === 'failed') {
         const [routine] = await tx<{ failures: number }[]>`
-          update routines set failures=failures+1 where id=${row.routine_id} returning failures`;
+          update routines set failures=failures+1 where id=${row.routine_id} and active_version_id=${row.version_id} returning failures`;
         if ((routine?.failures ?? 0) >= FAILURES_BEFORE_PAUSE)
-          await pauseRoutine(tx, row.routine_id, 'needs_attention', 'failing');
+          await pauseRoutine(tx, row.routine_id, 'needs_attention', 'failing', row.version_id);
       } else if (status === 'succeeded')
-        await tx`update routines set failures=0 where id=${row.routine_id}`;
+        await tx`update routines set failures=0 where id=${row.routine_id} and active_version_id=${row.version_id}`;
     });
   }
 }
@@ -430,7 +440,9 @@ export class RoutineMaintenance {
     for (const { workspace_id: workspace } of changes) {
       if (this.stopped || Date.now() >= deadline) break;
       try {
-        queued += (await dispatchRoutines(this.sql, workspace)).queued;
+        const dispatched = await dispatchRoutines(this.sql, workspace, 500, deadline);
+        queued += dispatched.queued;
+        failed += dispatched.failed;
       } catch {
         failed++;
       }

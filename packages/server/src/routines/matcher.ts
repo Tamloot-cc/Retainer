@@ -2,6 +2,7 @@ import { ROUTINE_LIMITS, type RoutineManifest } from '@retainer/shared';
 import { retainedFloor } from '../db/change-cursor.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, lockPrivacyShared, lockSchemaShared, type Tx } from '../db/tx.js';
+import { log } from '../log.js';
 import { matchingRecords } from '../records/query.js';
 import { type CompiledSchema, getSchema } from '../schema/compiled.js';
 import { nextInZone } from './cron.js';
@@ -111,17 +112,60 @@ type ActiveRoutine = {
  * its cursor commit together. The `if` is not checked here; the run checks
  * it when it starts.
  */
-export async function dispatchRoutines(sql: Sql, workspace: string, limit = 500) {
+export async function dispatchRoutines(
+  sql: Sql,
+  workspace: string,
+  limit = 500,
+  deadline = Number.POSITIVE_INFINITY,
+) {
+  const routines = await inWorkspace(
+    sql,
+    workspace,
+    (tx) => tx<{ id: string }[]>`
+    select id from routines where status='active' and feed_position is not null
+      and feed_position<(select position from change_counters where workspace_id=${workspace})
+    order by feed_position,id`,
+  );
+  const result = { queued: 0, held: 0, blocked: 0, failed: 0 };
+  for (const { id } of routines) {
+    if (Date.now() >= deadline) break;
+    try {
+      const dispatched = await dispatchRoutine(sql, workspace, id, limit, deadline);
+      if (!dispatched) continue;
+      result.queued += dispatched.queued;
+      result.held += dispatched.held;
+      result.blocked += dispatched.blocked;
+      if (dispatched.cursorExpired)
+        log.warn('Routine change cursor expired; resumed at the retained floor', {
+          workspace,
+          routineId: id,
+        });
+    } catch {
+      result.failed++;
+      log.error('Routine change dispatch failed', { workspace, routineId: id });
+    }
+  }
+  return result;
+}
+
+async function dispatchRoutine(
+  sql: Sql,
+  workspace: string,
+  id: string,
+  limit: number,
+  deadline: number,
+) {
   return inWorkspace(sql, workspace, async (tx) => {
     await lockPrivacyShared(tx, workspace);
     await lockSchemaShared(tx, workspace);
+    const [routine] = await tx<ActiveRoutine[]>`
+      select r.id,r.feed_position::text,v.id as version_id,v.source_id,s.manifest
+      from routines r join routine_versions v on v.id=r.active_version_id
+      join routine_sources s on s.id=v.source_id
+      where r.id=${id} and r.status='active' and r.feed_position is not null
+      for update of r skip locked`;
+    if (!routine) return;
     const schema = await getSchema(tx, workspace);
-    const routines = await tx<ActiveRoutine[]>`
-      select r.id,r.feed_position::text,v.id as version_id,v.source_id,s.manifest from routines r
-      join routine_versions v on v.id=r.active_version_id join routine_sources s on s.id=v.source_id
-      where r.status='active' and r.feed_position is not null
-        and r.feed_position<(select position from change_counters where workspace_id=${workspace})
-      order by r.id for update of r skip locked`;
     const [counter] = await tx<{ position: string; retained_after: string }[]>`
       select position::text,retained_after::text from change_counters where workspace_id=${workspace}`;
     const head = counter?.position ?? '0';
@@ -129,91 +173,109 @@ export async function dispatchRoutines(sql: Sql, workspace: string, limit = 500)
     let queued = 0,
       held = 0,
       blocked = 0;
-    for (const routine of routines) {
-      const when = routine.manifest.when;
-      if (when.kind !== 'record') {
-        await tx`update routines set feed_position=null where id=${routine.id}`;
-        continue;
-      }
-      // History older than the feed keeps is gone: the routine goes on from the head.
-      if (BigInt(routine.feed_position) < BigInt(floor)) {
-        await tx`update routines set feed_position=${head}::bigint where id=${routine.id}`;
-        continue;
-      }
-      const object = objectFor(schema, when.object);
-      // Its object or a watched field is gone: the routine needs repair, not silence (§5.3).
-      if (!object || !manifestResolves(tx, schema, routine.manifest)) {
-        await pauseRoutine(tx, routine.id, 'needs_attention', 'check_failed');
-        continue;
-      }
-      let paused = false,
-        from = routine.feed_position;
-      // A routine that pauses holds the rest of the burst too, up to the head
-      // this pass began at: paused, it is not discovered again, and resuming
-      // starts from the head.
-      for (;;) {
-        const rows = await tx<ChangeRow[]>`
-        select position::text,record_id,object_type_id,operation,field_keys,cause,cause_depth,merged_from_id
-        from record_changes where position>${from}::bigint and position<=${head}::bigint
-        order by record_changes.position limit ${limit}`;
-        for (const row of rows) {
-          // A merge is not a trigger (§6.1), whatever records it changed.
-          if (row.merged_from_id) continue;
-          if (!object || !row.record_id || !triggerMatches(when, object.id, row)) continue;
-          // A routine is never triggered by a change it caused; chains stop at 8 hops (§6.5).
-          if (
-            row.cause.includes(routine.id) ||
-            (row.cause_depth ?? row.cause.length) >= ROUTINE_LIMITS.chainDepth
-          ) {
-            blocked++;
-            continue;
-          }
-          // A change made before a merge runs on the survivor, as every run does (§6.1).
-          const [record] = await tx<{ id: string }[]>`
-          select coalesce(merged_into_id,id) as id from records where id=${row.record_id}`;
-          const recordId = record?.id ?? row.record_id;
-          if (when.oncePerRecord && (await usedUp(tx, routine.id, recordId))) continue;
-          // Rapid edits fold into the queued, unstarted run for the same record (§6.1).
-          const [pending] = await tx<{ id: string; cause: string[]; cause_depth: number }[]>`
-          select id,cause,cause_depth from routine_runs where routine_id=${routine.id} and record_id=${recordId}
-            and mode='run' and status in ('queued','held') and attempt=0 and version_id=${routine.version_id}
-          order by created_at desc limit 1 for update`;
-          if (pending) {
-            await tx`update routine_runs set change_position=${row.position}::bigint,
-            cause=${tx.json([...new Set([...pending.cause, ...row.cause])])},
-            cause_depth=greatest(cause_depth,${row.cause_depth ?? row.cause.length}),run_at=clock_timestamp()
-            where id=${pending.id}`;
-            continue;
-          }
-          const allowed = !paused && (await hourlyAllowance(tx, routine.id));
-          await queueRun(tx, workspace, {
-            mode: 'run',
-            triggerKind: 'record',
-            routineId: routine.id,
-            versionId: routine.version_id,
-            sourceId: routine.source_id,
-            recordId,
-            changePosition: Number(row.position),
-            cause: row.cause,
-            causeDepth: row.cause_depth ?? row.cause.length,
-            held: !allowed,
-          });
-          if (allowed) queued++;
-          else {
-            held++;
-            if (!paused) await pauseRoutine(tx, routine.id, 'needs_attention', 'runs_held');
-            paused = true;
-          }
-        }
-        const last = rows.at(-1)?.position;
-        if (last) {
-          await tx`update routines set feed_position=${last}::bigint where id=${routine.id}`;
-          from = last;
-        }
-        if (!paused || rows.length < limit) break;
-      }
+    const when = routine.manifest.when;
+    if (when.kind !== 'record') {
+      await tx`update routines set feed_position=null where id=${routine.id}`;
+      return { queued, held, blocked, cursorExpired: false };
     }
-    return { queued, held, blocked };
+    const cursorExpired = BigInt(routine.feed_position) < BigInt(floor);
+    if (cursorExpired) {
+      await tx`update routines set feed_position=${floor}::bigint where id=${routine.id}`;
+    }
+    const object = objectFor(schema, when.object);
+    // Its object or a watched field is gone: the routine needs repair, not silence (§5.3).
+    if (!object || !manifestResolves(tx, schema, routine.manifest)) {
+      await pauseRoutine(tx, routine.id, 'needs_attention', 'check_failed');
+      return { queued, held, blocked, cursorExpired };
+    }
+    let paused = false,
+      from = cursorExpired ? floor : routine.feed_position;
+    const [outstanding] = await tx<{ count: number }[]>`
+      select count(*)::int as count from routine_runs where routine_id=${routine.id}
+        and mode='run' and status in ('queued','held')`;
+    let remaining = ROUTINE_LIMITS.recordHeldMax - (outstanding?.count ?? 0);
+    let scannedAfterPause = 0;
+    // Once paused, keep collecting the burst up to the held and scan limits.
+    // Resuming starts from the head.
+    pages: for (;;) {
+      const rows = await tx<ChangeRow[]>`
+      select position::text,record_id,object_type_id,operation,field_keys,cause,cause_depth,merged_from_id
+      from record_changes where position>${from}::bigint and position<=${head}::bigint
+      order by record_changes.position limit ${limit}`;
+      for (const row of rows) {
+        if (
+          paused &&
+          (scannedAfterPause++ >= ROUTINE_LIMITS.recordHeldMax || Date.now() >= deadline)
+        ) {
+          await tx`update routines set paused_reason='record_backlog_over_limit',
+            feed_position=${from}::bigint where id=${routine.id}`;
+          break pages;
+        }
+        const previousPosition = from;
+        from = row.position;
+        // A merge is not a trigger (§6.1), whatever records it changed.
+        if (row.merged_from_id) continue;
+        if (!object || !row.record_id || !triggerMatches(when, object.id, row)) continue;
+        // A routine is never triggered by a change it caused; chains stop at 8 hops (§6.5).
+        if (
+          row.cause.includes(routine.id) ||
+          (row.cause_depth ?? row.cause.length) >= ROUTINE_LIMITS.chainDepth
+        ) {
+          blocked++;
+          continue;
+        }
+        // A change made before a merge runs on the survivor, as every run does (§6.1).
+        const [record] = await tx<{ id: string }[]>`
+        select coalesce(merged_into_id,id) as id from records where id=${row.record_id}`;
+        const recordId = record?.id ?? row.record_id;
+        if (when.oncePerRecord && (await usedUp(tx, routine.id, recordId))) continue;
+        // Rapid edits fold into the queued, unstarted run for the same record (§6.1).
+        const [pending] = await tx<{ id: string; cause: string[]; cause_depth: number }[]>`
+        select id,cause,cause_depth from routine_runs where routine_id=${routine.id} and record_id=${recordId}
+          and mode='run' and status in ('queued','held') and attempt=0 and version_id=${routine.version_id}
+        order by created_at desc limit 1 for update`;
+        if (pending) {
+          await tx`update routine_runs set change_position=${row.position}::bigint,
+          cause=${tx.json([...new Set([...pending.cause, ...row.cause])])},
+          cause_depth=greatest(cause_depth,${row.cause_depth ?? row.cause.length}),run_at=clock_timestamp()
+          where id=${pending.id}`;
+          continue;
+        }
+        if (remaining <= 0) {
+          if (!paused)
+            await pauseRoutine(tx, routine.id, 'needs_attention', 'record_backlog_over_limit');
+          await tx`update routines set paused_reason='record_backlog_over_limit',
+            feed_position=${previousPosition}::bigint where id=${routine.id}`;
+          break pages;
+        }
+        if (!paused && !(await hourlyAllowance(tx, routine.id))) {
+          await pauseRoutine(tx, routine.id, 'needs_attention', 'runs_held');
+          paused = true;
+        }
+        await queueRun(tx, workspace, {
+          mode: 'run',
+          triggerKind: 'record',
+          routineId: routine.id,
+          versionId: routine.version_id,
+          sourceId: routine.source_id,
+          recordId,
+          changePosition: Number(row.position),
+          cause: row.cause,
+          causeDepth: row.cause_depth ?? row.cause.length,
+          held: paused,
+        });
+        remaining--;
+        if (paused) held++;
+        else queued++;
+      }
+      const last = rows.at(-1)?.position;
+      if (last) {
+        await tx`update routines set feed_position=${last}::bigint where id=${routine.id}`;
+        from = last;
+      }
+      if (!paused || rows.length < limit) break;
+    }
+    return { queued, held, blocked, cursorExpired };
   });
 }
 

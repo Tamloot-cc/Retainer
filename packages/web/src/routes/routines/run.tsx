@@ -145,8 +145,7 @@ function Call({ call }: { call: RoutineRunCall }) {
       </span>
       {call.differs ? (
         <Muted small>
-          A retry asked for something different here. The first answer was kept and nothing was done
-          twice.
+          The replay stopped here because this call changed. The original effect is shown above.
         </Muted>
       ) : null}
       {call.result !== undefined ? (

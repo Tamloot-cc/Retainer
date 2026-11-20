@@ -14,6 +14,7 @@ import {
   type WorkspaceKey,
   workspaceHref,
 } from '../api/account.js';
+import { useWorkspace } from '../api/client.js';
 import { TimeZoneSetting } from '../routes/routines/time-zone.js';
 import { QueryError, useView } from '../routes/state.js';
 import {
@@ -675,6 +676,7 @@ function Instructions({ title, children }: { title: string; children: string }) 
 // ---------------------------------------------------------------------------
 
 function WorkspaceTab({ state }: { state: AccountState }) {
+  const { session } = useWorkspace();
   const [error, setError] = useState('');
   const canDelete = isOrganizationManager(state.organization.role);
   async function rename(e: FormEvent<HTMLFormElement>) {
@@ -717,9 +719,11 @@ function WorkspaceTab({ state }: { state: AccountState }) {
           </Stack>
         </form>
       </Panel>
-      <Panel title="Time zone">
-        <TimeZoneSetting />
-      </Panel>
+      {session.routinesAvailable ? (
+        <Panel title="Time zone">
+          <TimeZoneSetting />
+        </Panel>
+      ) : null}
       {canDelete ? <DeleteWorkspace state={state} /> : null}
     </Stack>
   );

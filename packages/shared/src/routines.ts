@@ -36,6 +36,7 @@ export const ROUTINE_LIMITS = {
   /** Records one schedule tick may fan out to. */
   scheduleFanOut: 200,
   /** Runs an over-limit tick may hold for an admin; above it the tick holds none. */
+  recordHeldMax: 2000,
   scheduleHeldMax: 2000,
   /** A run's default expiry, in hours after it starts. */
   expiryHours: 24,
@@ -297,6 +298,8 @@ export type RoutineRunContext = {
     mode: RoutineRunMode;
     /** When the run counts as happening; code reads "now" from here. */
     at: string;
+    /** Start of the first attempt, used as the sandbox clock. */
+    startedAt: string;
     timezone: string;
     dryRun: boolean;
     attempt: number;

@@ -70,6 +70,7 @@ type RunState = {
   trigger_kind: string;
   record_id: string | null;
   run_at: Date;
+  started_at: Date | null;
   expires_at: Date | null;
   /** When this attempt ends: when the runner stops it, or the run's expiry if sooner. */
   deadline: Date | null;
@@ -93,7 +94,6 @@ type ResultRow = {
   state: 'started' | 'done' | 'failed' | 'reported';
   result: unknown;
   code: string | null;
-  differs: boolean;
   tool_job_id: string | null;
 };
 
@@ -156,7 +156,7 @@ export class RoutineRuntime {
   /** The run's row, its source and its version's fingerprint. */
   private async run(tx: Tx, runId: string, lock = false): Promise<RunState> {
     const [run] = await tx<RunState[]>`
-      select r.id,r.routine_id,r.version_id,r.source_id,r.mode,r.trigger_kind,r.record_id,r.run_at,r.expires_at,
+      select r.id,r.routine_id,r.version_id,r.source_id,r.mode,r.trigger_kind,r.record_id,r.run_at,r.started_at,r.expires_at,
         least(r.expires_at,r.lease_until-${RUN_GRACE_SECONDS}*interval '1 second'
           -${ROUTINE_LIMITS.reportMarginMs}*interval '1 millisecond') as deadline,
         r.attempt,r.cause,r.cause_depth,r.initiator_user_id,r.initiated_by,r.model_calls,r.input,
@@ -185,6 +185,7 @@ export class RoutineRuntime {
           id: run.id,
           mode: run.mode,
           at: run.run_at.toISOString(),
+          startedAt: (run.started_at ?? run.run_at).toISOString(),
           timezone: await workspaceZone(tx),
           dryRun: run.mode === 'dry',
           attempt: run.attempt,
@@ -429,7 +430,7 @@ export class RoutineRuntime {
     hash: string,
   ): Promise<RoutineEffectResponse | ResultRow | null> {
     const [existing] = await tx<ResultRow[]>`
-      select position,operation,args_hash,state,result,code,differs,tool_job_id from routine_run_results
+      select position,operation,args_hash,state,result,code,tool_job_id from routine_run_results
       where run_id=${runId} and position=${request.position}`;
     if (!existing) {
       const [last] = await tx<{ max: number | null }[]>`
@@ -446,17 +447,13 @@ export class RoutineRuntime {
         );
       return null;
     }
-    if (existing.operation !== request.operation)
-      throw new AppError(409, 'run_diverged', 'the retry took another path; the run stops');
-    const differs = existing.args_hash !== hash;
-    if (differs && !existing.differs)
-      await tx`update routine_run_results set differs=true where run_id=${runId} and position=${request.position}`;
+    if (existing.operation !== request.operation || existing.args_hash !== hash)
+      throw new AppError(409, 'run_diverged', 'the effect no longer matches its recorded call');
     if (existing.state === 'done')
       return {
         state: 'done',
         result: existing.result,
         replayed: true,
-        ...(differs ? { differs } : {}),
       };
     if (existing.state === 'reported') return { state: 'reported', stop: existing.code === 'stop' };
     if (existing.state === 'failed')
@@ -521,23 +518,37 @@ export class RoutineRuntime {
         await this.recordRefusal(caller, request, error.code).catch(() => {});
       // A changed tool pauses the routine (§5.3), in a transaction of its own.
       if (error instanceof AppError && error.code === 'tool_changed') {
-        const runId = this.binding(caller).runId;
+        const { runId, fence } = this.binding(caller);
         await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
-          const [row] = await tx<{ routine_id: string | null; mode: string }[]>`
-            select routine_id,mode from routine_runs where id=${runId}`;
+          const [row] = await tx<
+            { routine_id: string | null; version_id: string | null; mode: string }[]
+          >`
+            select routine_id,version_id,mode from routine_runs
+            where id=${runId} and fence=${fence}::bigint and status='running'`;
           if (row?.routine_id && row.mode === 'run')
-            await pauseRoutine(tx, row.routine_id, 'needs_attention', 'tool_changed');
+            await pauseRoutine(
+              tx,
+              row.routine_id,
+              'needs_attention',
+              'tool_changed',
+              row.version_id,
+            );
         }).catch(() => {});
       }
       // The refusal rolls its transaction back; the run ends in one of its own.
       if (error instanceof AppError && error.code === 'run_diverged') {
-        const runId = this.binding(caller).runId;
+        const { runId, fence } = this.binding(caller);
         await inWorkspace(
           this.sql,
           caller.workspaceId,
           (tx) =>
-            tx`update routine_runs set status='diverged',code='run_diverged',finished_at=clock_timestamp(),
-            lease_owner=null,lease_until=null where id=${runId} and status='running'`,
+            tx`with stopped as (
+              update routine_runs set status='diverged',code='run_diverged',finished_at=clock_timestamp(),
+                lease_owner=null,lease_until=null where id=${runId} and fence=${fence}::bigint and status='running'
+              returning id
+            )
+            update routine_run_results x set differs=true from stopped where x.run_id=stopped.id
+              and x.position=${request.position}`,
         );
       }
       throw error;

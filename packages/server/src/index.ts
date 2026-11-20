@@ -124,6 +124,7 @@ if (role === 'api' || role === 'all' || role === 'control' || role === 'extensio
           },
           modelUsageSecret: config.RETAINER_MODEL_USAGE_SECRET,
           routines: {
+            available: extensions.routinesAvailable,
             modelAvailable: !!(config.RETAINER_MODEL_API_KEY || config.RETAINER_MODEL_ORIGIN),
             modelOrigin: config.RETAINER_MODEL_ORIGIN,
             modelName: config.RETAINER_ROUTINE_MODEL,

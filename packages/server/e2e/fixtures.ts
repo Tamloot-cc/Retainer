@@ -241,6 +241,7 @@ export const browserOAuthManifest = manifestFixture({
 export const BROWSER_OAUTH_AUTHORIZE = 'https://provider.test/oauth/start';
 export const test = base.extend<
   {
+    routineFixture: boolean;
     retainer: {
       url: string;
       keys: { user: string; writer: string; agent: string; reader: string; other: string };
@@ -272,6 +273,7 @@ export const test = base.extend<
     configureSecretFixture: boolean;
   }
 >({
+  routineFixture: [false, { option: true }],
   extensionFixture: [false, { option: true, scope: 'worker' }],
   standaloneFixture: [false, { option: true, scope: 'worker' }],
   fileStorage: [false, { option: true, scope: 'worker' }],
@@ -285,6 +287,7 @@ export const test = base.extend<
     {
       browserName: _browserName,
       extensionFixture,
+      routineFixture,
       standaloneFixture,
       fileStorage: withFiles,
       sourceFixture,
@@ -405,6 +408,7 @@ export const test = base.extend<
         )
       : undefined;
     const pair =
+      routineFixture ||
       sourceFixture ||
       memberFixture ||
       oauthMemberFixture ||
@@ -431,6 +435,7 @@ export const test = base.extend<
     fileOrigins.push(url);
     const app = createApp({
       sql,
+      ...(routineFixture && runTokens ? { routines: { available: true }, runTokens } : {}),
       ...(oauthMemberFixture && catalog
         ? {
             extensionOAuthClients: parseOAuthClients(

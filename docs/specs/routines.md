@@ -713,12 +713,12 @@ sequenceDiagram
   started before it leaves, and as done when its result comes back.
 - **A retried run does nothing twice.** A retry starts the code from the
   top. Each effect that finds its position already recorded gets the
-  recorded result and is not repeated, even when its arguments differ this
-  time because a record changed in between. The history flags the
-  difference. Effects past the recorded ones happen normally.
-- **A retry that takes another path stops.** If the operation at a position
-  differs from the recorded one, the code has branched differently. The run
-  ends as `diverged` and does nothing more.
+  recorded result when both its operation and arguments match. Effects past
+  the recorded ones happen normally. A retry keeps its initial trigger
+  eligibility, including the `if` and its own once-per-record firing.
+- **A retry that takes another path stops.** If the operation or arguments
+  differ at a recorded position, the run ends as `diverged`. Committed
+  effects remain visible in the run history.
 - **What is guaranteed, and by whom.** A write to Retainer happens once: the
   database guarantees it. A tool call or model call found as started with no
   result is sent again with the same key, because Retainer cannot know
@@ -1248,7 +1248,8 @@ each against real Postgres:
   concurrently, as the testing rules require.
 - **A retry after the data changed.** A run is interrupted after its first
   task is created, and the record its title came from changes before the
-  retry. The retry creates no second copy of that task.
+  retry. If the effect arguments changed, the run diverges and creates no
+  second copy of that task.
 - **A retry that branches differently** ends as `diverged` and does nothing
   more.
 - **Rank.** A routine's write to a field a person set waits for review and
@@ -1410,8 +1411,10 @@ they left open:
   the routine.
 - **`then` is reserved** for objects as for tools: the sandbox keeps
   `retainer` from being thenable.
-- **Resuming for an approver who left is a fresh approval.** The admin who
-  resumes becomes the approver, with the time they resumed.
+- **Re-approval creates a version.** Approving an already approved version,
+  including resuming on behalf of an approver who has left, records a new
+  version and preserves the prior approval. Only the active version's runs
+  can change the Routine's health.
 - **The approver is checked at every effect.** An approver who stops being
   an admin refuses the run's next effect as `routine_paused` and cancels a
   tool job it has not started, as a test run's initiator does; the next
@@ -1461,15 +1464,19 @@ they left open:
 - **Routines see older Gmail messages.** Lists show only a thread's newest
   message; a routine's start check and a schedule's targets match every live
   record that no newer revision replaced.
-- **A routine paused mid-burst** holds the rest of the burst in the same
-  pass, up to the feed head the pass began at; changes after that are not
-  run, as for any paused routine.
+- **Record dispatch commits separately per routine.** A paused burst
+  collects up to 2,000 held runs per routine and bounds the remaining scan.
+  The pause reason reports overflow. If the cursor expired, dispatch logs
+  the gap and starts at the retained floor.
 - **Reads count per attempt.** Each read operation is capped at 200 calls,
   counted atomically on the run and reset when an attempt starts, since
   reads are not replayed. Effects count across attempts.
 - **An over-limit schedule tick holds at most 2,000 runs.** Above that it
   holds none, rather than some, and pauses the routine as
   `schedule_too_large`: the filter must be narrowed.
+- **The sandbox clock** (`Date.now()`, `new Date()` and `Date()`) is frozen
+  to the first attempt's start. `run.at` remains the trigger's effective time,
+  which can be earlier for a scheduled run.
 - **Run output** (the value `main` returns and up to 50 log lines) is kept
   on the run, cleared after 7 days and by `forget`, like stored results.
 - **Configuration.** `RETAINER_ROUTINE_MODEL` (default `claude-opus-5-5`) and
@@ -1477,8 +1484,10 @@ they left open:
   an entry of `RETAINER_EXTENSION_EXECUTABLES` with the registration and
   function IDs in `ROUTINE_RUNNER_REGISTRATION_ID` and
   `ROUTINE_RUNNER_FUNCTION_ID`; `scripts/build-extension-artifacts.mjs`
-  writes it under `artifacts/extensions/routine-runner`. Without it, routines
-  can be proposed and approved but no run starts.
+  writes it under `artifacts/extensions/routine-runner`. Web, REST, MCP and
+  background dispatch are enabled when the deployment registers that runner
+  and provides its run verification key. Hosted execution also needs the
+  isolated runner deployment.
 
 Acceptance tests (§11.2) not yet automated: expiry, a tool's contract
 changing, a test run reaching a `send` tool, the worked example (§9.4), and
@@ -1497,7 +1506,7 @@ owner changes it.
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | What does a routine write as?                                    | An agent, always, in the first version                                                                                                                                               | The leanest rule: no new actor type, nothing with a person's authority in the sandbox, and it is Macro's default. A routine rank is the first extension (§10)           |
 | What runs the code?                                              | A fresh restricted process per run, inside a first-party bundle, with network to Retainer only. Which runtime is settled by a spike: Deno, as Macro uses, or Node's permission model | The token, the API and the network are the boundary; the runtime only has to start clean and stay closed                                                                |
-| Does a retried run repeat itself?                                | No. Effects are numbered, and a retry gets the recorded result at each position, even if the data changed. An outside call with an unknown outcome is sent again with the same key   | The queue delivers at least once, and the code cannot be trusted to make itself safe to repeat. The database guarantees writes; a tool must honour the key for the rest |
+| Does a retried run repeat itself?                                | No. Effects are numbered, and a retry gets the recorded result when the operation and arguments match at that position. An outside call with an unknown outcome is sent again with the same key   | The queue delivers at least once, and the code cannot be trusted to make itself safe to repeat. The database guarantees writes; a tool must honour the key for the rest |
 | Can a rewrite go live without approval?                          | No, never                                                                                                                                                                            | Nothing runs without a person's approval. Macro applies some rewrites on its own; here an admin approves every version                                                  |
 | What happens to runs when a version changes or a routine pauses? | A run is pinned to its version. A new approval discards runs not yet started. A pause is checked before every effect                                                                 | An approval needs a clear edge: nothing unapproved starts, and a pause stops work at the next effect                                                                    |
 | Who can start a dry run?                                         | The person building the routine, or their agent. It writes nothing and calls no tools; its model calls count against the cap                                                         | Nothing acts before approval, yet the builder needs to see what its code does                                                                                           |

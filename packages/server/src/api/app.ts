@@ -79,6 +79,7 @@ export type AppDeps = {
    * origin is set.
    */
   routines?: {
+    available?: boolean;
     modelAvailable?: boolean;
     modelOrigin?: string | undefined;
     modelName?: string;
@@ -107,7 +108,8 @@ export function createApp(deps: AppDeps) {
 
   webhookIngress(app, deps.webhooks, deps.clientIp);
   mountModelRoutes(app, deps);
-  if (!deps.accountsSecret) sessionRoutes(app, deps.sql, publicOrigin);
+  const routinesAvailable = deps.routines?.available === true && !!deps.runTokens;
+  if (!deps.accountsSecret) sessionRoutes(app, deps.sql, publicOrigin, routinesAvailable);
   const v1 = new Hono<AppEnv>();
   const limit = rateLimit(deps.sql, deps.rateLimit ?? { limit: 0 });
   v1.use(
@@ -122,7 +124,7 @@ export function createApp(deps: AppDeps) {
     }),
   );
   v1.use('*', limit);
-  meRoute(v1, deps.sql);
+  meRoute(v1, deps.sql, routinesAvailable);
   webReadRoutes(v1, deps.sql);
   schemaRoutes(v1, deps.sql);
   templateRoutes(v1, deps.sql);
@@ -149,8 +151,8 @@ export function createApp(deps: AppDeps) {
     catalog: extensions.catalog.runtime,
     modelAvailable: deps.routines?.modelAvailable ?? !!deps.model?.apiKey,
   };
-  routineRoutes(v1, new Routines(deps.sql, routineConfig));
-  if (deps.runTokens)
+  if (routinesAvailable && deps.runTokens) {
+    routineRoutes(v1, new Routines(deps.sql, routineConfig));
     routineRuntimeRoutes(
       v1,
       new RoutineRuntime(deps.sql, {
@@ -164,6 +166,7 @@ export function createApp(deps: AppDeps) {
         modelCallsPerDay: deps.routines?.modelCallsPerDay ?? ROUTINE_LIMITS.modelCallsPerDay,
       }),
     );
+  }
   app.route('/v1', v1);
 
   // Accounts mode: apps connect to /mcp over OAuth as well as with API keys
@@ -228,7 +231,7 @@ export function createApp(deps: AppDeps) {
     extensionActivation: deps.extensionActivation,
     fileStorage: deps.fileStorage,
     fileQuota: deps.fileQuota,
-    routineModel: deps.routines?.modelAvailable ?? !!deps.model?.apiKey,
+    routines: routinesAvailable ? routineConfig : undefined,
   });
 
   if (deps.webDir) {

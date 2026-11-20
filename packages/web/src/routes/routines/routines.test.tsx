@@ -117,6 +117,7 @@ function mount(element: ReactNode, admin = true, report = vi.fn()) {
         value={{
           session: {
             actor: { type: 'user', id: admin ? 'admin' : 'member' },
+            routinesAvailable: true,
             scopes: admin ? ['admin'] : ['read', 'write'],
             workspace: { id: 'workspace' },
           } as Session,
@@ -487,6 +488,7 @@ describe('routine buttons on a record', () => {
           value={{
             session: {
               actor: { type: 'user', id: 'reader' },
+              routinesAvailable: true,
               scopes: ['read'],
               workspace: { id: 'workspace' },
             } as Session,

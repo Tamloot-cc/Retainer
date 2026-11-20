@@ -28,6 +28,8 @@ export type Session = {
    * created with "This agent works for me".
    */
   person: boolean;
+  /** Present when this deployment can execute Routines. */
+  routinesAvailable?: true;
 };
 export type FieldView = Omit<FieldDefinition, 'description' | 'settings'> & {
   description: string | null;
