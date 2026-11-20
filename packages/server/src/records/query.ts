@@ -18,7 +18,11 @@ import type { Fragment } from 'postgres';
 import { z } from 'zod';
 import { jsonValue, type Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
-import { currentActivityEvidence, directAttachments } from '../memory/events.js';
+import {
+  currentActivityEvidence,
+  currentSourceEvidence,
+  directAttachments,
+} from '../memory/events.js';
 import { type CompiledObject, type CompiledSchema, objectNamed } from '../schema/compiled.js';
 import type { FieldState } from '../schema/types.js';
 import { normalizeDomain, normalizeEmail, normalizePhone } from './derive.js';
@@ -475,6 +479,10 @@ function decodeCursor(cursor: string | undefined): number {
  * The live records of one object that a filter and keyword search match, as
  * a `where` clause over `records r`. The list and its totals share it, so
  * they always count the same records.
+ *
+ * Lists show activity: an older message of a Gmail thread is left out. A
+ * routine acts on every live record (routines spec §4.3), so it passes
+ * `evidence: 'source'`, which leaves out only superseded revisions.
  */
 export function matchingRecords(
   tx: Tx,
@@ -482,10 +490,15 @@ export function matchingRecords(
   schema: CompiledSchema,
   object: CompiledObject,
   input: Pick<QueryInput, 'filter' | 'search' | 'linked'>,
+  evidence: 'activity' | 'source' = 'activity',
 ): Fragment {
   const where = input.filter ? compileFilter(tx, object, input.filter) : tx`true`;
+  const current =
+    evidence === 'activity'
+      ? currentActivityEvidence(tx, tx`r.id`)
+      : currentSourceEvidence(tx, tx`r.id`);
   return tx`r.workspace_id = ${workspaceId} and r.object_type_id = ${object.id}
-    and r.deleted_at is null and ${currentActivityEvidence(tx, tx`r.id`)} and ${where}
+    and r.deleted_at is null and ${current} and ${where}
     ${input.search ? tx`and r.search @@ ${plainPrefixQuery(tx, input.search)}` : tx``}
     ${input.linked ? tx`and ${linkedTo(tx, workspaceId, schema, object, input.linked)}` : tx``}`;
 }

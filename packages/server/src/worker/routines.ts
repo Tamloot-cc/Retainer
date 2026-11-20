@@ -140,6 +140,15 @@ export class RoutineExecutor {
    * (§4.3, §5.3): a run whose `if` fails is skipped without starting any code.
    */
   async claim(workspace: string, id: string): Promise<ClaimedRun | null> {
+    return this.claimIn(workspace, id).catch((e) => {
+      // Another claim started this routine on the same record first (§6.2).
+      if ((e as { constraint_name?: string }).constraint_name === 'routine_runs_one_running_uq')
+        return null;
+      throw e;
+    });
+  }
+
+  private async claimIn(workspace: string, id: string): Promise<ClaimedRun | null> {
     return inWorkspace(this.options.sql, workspace, async (tx) => {
       await lockSchemaShared(tx, workspace);
       const [run] = await tx<ClaimRow[]>`
@@ -200,10 +209,25 @@ export class RoutineExecutor {
         return null;
       }
       let expiry: Date | null = run.expires_at;
+      // A run is always on the surviving record (§6.1): a merged ID resolves
+      // here, and the claim stores it, so the unique index on running runs
+      // keeps one run of a routine on a record at a time.
+      let recordId: string | null = null;
+      if (run.record_id) {
+        recordId = await resolveRecordId(tx, workspace, run.record_id).catch(() => null);
+        if (recordId) {
+          // The lock makes a merge wait for this claim. A merge takes the
+          // record before its runs and a claim the run first, so a record a
+          // merge holds is skipped, not waited for; a merge that already got
+          // in leaves the run for the next tick, which resolves it again.
+          const [locked] = await tx<{ merged_into_id: string | null }[]>`
+            select merged_into_id from records where id=${recordId} for key share skip locked`;
+          if (!locked || locked.merged_into_id) return null;
+        }
+      }
       if (run.record_id && run.manifest && ['run', 'test', 'dry'].includes(run.mode)) {
         const when = run.manifest.when;
         const object = 'object' in when && when.object ? objectFor(schema, when.object) : undefined;
-        const recordId = await resolveRecordId(tx, workspace, run.record_id).catch(() => null);
         if (!object || !recordId) {
           await this.end(tx, id, 'skipped', 'record_gone');
           return null;
@@ -219,7 +243,8 @@ export class RoutineExecutor {
         }
         const filter = run.manifest.if ? mapFilter(object, run.manifest.if, 'name') : undefined;
         const [hit] = await tx<{ data: Record<string, unknown> }[]>`
-          select r.data from records r where r.id=${recordId} and ${matchingRecords(tx, workspace, schema, object, filter ? { filter } : {})}`;
+          select r.data from records r where r.id=${recordId}
+            and ${matchingRecords(tx, workspace, schema, object, filter ? { filter } : {}, 'source')}`;
         // The `if` is checked against the record as it is now (§4.3); no code runs when it fails.
         if (!hit && run.mode !== 'dry') {
           await this.end(tx, id, 'skipped', filter ? 'condition_false' : 'record_gone');
@@ -241,20 +266,20 @@ export class RoutineExecutor {
           }
         }
       }
-      // One run of a routine on a record at a time: this one waits for the other.
-      if (run.mode === 'run' && run.routine_id && run.record_id) {
-        // Merged records are one record (§6.1): the survivor, or any merged into it.
-        const survivor = await resolveRecordId(tx, workspace, run.record_id).catch(
-          () => run.record_id as string,
-        );
+      // One run of a routine on a record at a time: this one waits for the
+      // other. The index decides a race; this check only spares the error. A
+      // run that was already running on the merged-away record when another
+      // ran on the survivor keeps that ID until it ends, so it counts too.
+      if (run.mode === 'run' && run.routine_id && recordId) {
         const [busy] = await tx`select 1 from routine_runs where routine_id=${run.routine_id}
-          and (record_id=${survivor} or record_id in (select r.id from records r where r.merged_into_id=${survivor}))
+          and (record_id=${recordId} or record_id in (select r.id from records r where r.merged_into_id=${recordId}))
           and mode='run' and status='running' and id<>${id}`;
         if (busy) return null;
       }
       const timeout = timeoutFor(run.mode);
       const [claimed] = await tx<{ fence: string; attempt: number; deadline: Date }[]>`
         update routine_runs set status='running',lease_owner=${this.options.owner},fence=fence+1,attempt=attempt+1,read_calls='{}',
+          record_id=coalesce(${recordId}::uuid,record_id),
           lease_until=clock_timestamp()+${timeout + GRACE_SECONDS}*interval '1 second',
           started_at=coalesce(started_at,clock_timestamp()),
           expires_at=coalesce(expires_at,least(clock_timestamp()+${ROUTINE_LIMITS.expiryHours}*interval '1 hour',${expiry}::timestamptz)),

@@ -83,7 +83,7 @@ export async function scheduleTargets(
   const object = objectFor(schema, when.object);
   if (!object) return { matched: 0, records: [] as string[] };
   const filter = when.filter ? mapFilter(object, when.filter, 'name') : undefined;
-  const where = matchingRecords(tx, workspace, schema, object, filter ? { filter } : {});
+  const where = matchingRecords(tx, workspace, schema, object, filter ? { filter } : {}, 'source');
   const [count] = await tx<
     { count: number }[]
   >`select count(*)::int as count from records r where ${where}`;
@@ -158,10 +158,14 @@ export async function dispatchRoutines(sql: Sql, workspace: string, limit = 500)
             blocked++;
             continue;
           }
-          if (when.oncePerRecord && (await usedUp(tx, routine.id, row.record_id))) continue;
+          // A change made before a merge runs on the survivor, as every run does (§6.1).
+          const [record] = await tx<{ id: string }[]>`
+          select coalesce(merged_into_id,id) as id from records where id=${row.record_id}`;
+          const recordId = record?.id ?? row.record_id;
+          if (when.oncePerRecord && (await usedUp(tx, routine.id, recordId))) continue;
           // Rapid edits fold into the queued, unstarted run for the same record (§6.1).
           const [pending] = await tx<{ id: string; cause: string[]; cause_depth: number }[]>`
-          select id,cause,cause_depth from routine_runs where routine_id=${routine.id} and record_id=${row.record_id}
+          select id,cause,cause_depth from routine_runs where routine_id=${routine.id} and record_id=${recordId}
             and mode='run' and status in ('queued','held') and attempt=0 and version_id=${routine.version_id}
           order by created_at desc limit 1 for update`;
           if (pending) {
@@ -178,7 +182,7 @@ export async function dispatchRoutines(sql: Sql, workspace: string, limit = 500)
             routineId: routine.id,
             versionId: routine.version_id,
             sourceId: routine.source_id,
-            recordId: row.record_id,
+            recordId,
             changePosition: Number(row.position),
             cause: row.cause,
             causeDepth: row.cause_depth ?? row.cause.length,

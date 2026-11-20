@@ -1009,7 +1009,7 @@ describe('routines', () => {
           body: { recordIds: [id] },
         })
       ).body.runs[0] as string;
-    // X runs on B; B is merged into A while X is running, so X keeps B.
+    // X runs on B; B is merged into A while X is running, so X moves to A.
     const x = await press(merged);
     expect(await s.executor.claim(s.workspace, x)).not.toBe(null);
     expect(
@@ -1020,6 +1020,10 @@ describe('routines', () => {
         })
       ).status,
     ).toBe(200);
+    const [moved] = await db.owner<
+      { record_id: string }[]
+    >`select record_id from routine_runs where id=${x}`;
+    expect(moved?.record_id).toBe(survivor);
     // While X runs, a run on A waits.
     const y = await press(survivor);
     expect(await s.executor.claim(s.workspace, y)).toBe(null);
@@ -1027,5 +1031,106 @@ describe('routines', () => {
     await db.owner`update routine_runs set status='queued',lease_owner=null,lease_until=null where id=${x}`;
     expect(await s.executor.claim(s.workspace, y)).not.toBe(null);
     expect(await s.executor.claim(s.workspace, x)).toBe(null);
+  });
+  it('runs on both sides of a merge claimed at once: exactly one starts', async () => {
+    const s = await setup();
+    const { routineId } = await activate(s, {
+      manifest: {
+        when: { kind: 'manual', object: 'company', label: 'Go' },
+        uses: { tools: [], model: false },
+      },
+      code: `export async function main({ record }: RoutineContext<'company'>) {
+  return record.id;
+}
+`,
+    });
+    const press = async (id: string) =>
+      (
+        await s.app.request(`/v1/routines/${routineId}/run`, {
+          key: s.keys.admin,
+          body: { recordIds: [id] },
+        })
+      ).body.runs[0] as string;
+    for (let i = 0; i < 5; i++) {
+      const survivor = await createCompany(s.app, s.keys.admin, `Race A ${i}`);
+      const merged = await createCompany(s.app, s.keys.admin, `Race B ${i}`);
+      // X runs on B and W on A when B is merged into A: both started before
+      // the merge, so X keeps B until it ends.
+      const x = await press(merged);
+      const w = await press(survivor);
+      expect(await s.executor.claim(s.workspace, x)).not.toBe(null);
+      expect(await s.executor.claim(s.workspace, w)).not.toBe(null);
+      const merge = await s.app.request(`/v1/records/${survivor}/merge`, {
+        key: s.keys.admin,
+        body: { recordId: merged },
+      });
+      expect(merge.status).toBe(200);
+      const [kept] = await db.owner<
+        { record_id: string }[]
+      >`select record_id from routine_runs where id=${x}`;
+      expect(kept?.record_id).toBe(merged);
+      // X waits for a retry on B; W ends; Y is queued on A. X and Y are claimed at once.
+      await db.owner`update routine_runs set status='queued',lease_owner=null,lease_until=null where id=${x}`;
+      await db.owner`update routine_runs set status='succeeded',finished_at=clock_timestamp(),
+        lease_owner=null,lease_until=null where id=${w}`;
+      const y = await press(survivor);
+      const claims = await Promise.all([
+        s.executor.claim(s.workspace, x),
+        s.executor.claim(s.workspace, y),
+      ]);
+      expect(claims.filter(Boolean)).toHaveLength(1);
+      const running = await db.owner<{ record_id: string }[]>`
+        select record_id from routine_runs where id=any(${[x, y]}::uuid[]) and status='running'`;
+      expect(running).toEqual([{ record_id: survivor }]);
+    }
+  });
+
+  it('a routine runs on an older message of a Gmail thread, which lists leave out', async () => {
+    const s = await setup();
+    const { routineId } = await activate(s, {
+      manifest: {
+        when: { kind: 'manual', object: 'conversation', label: 'Go' },
+        uses: { tools: [], model: false },
+      },
+      code: `export async function main({ record }: RoutineContext<'conversation'>) {
+  return { seen: record.id };
+}
+`,
+    });
+    const log = async (title: string, occurredAt: string) => {
+      const event = await s.app.request('/v1/events', {
+        key: s.keys.admin,
+        body: { type: 'conversation', channel: 'gmail', occurredAt, title },
+      });
+      expect(event.status).toBe(201);
+      return event.body.id as string;
+    };
+    const first = await log('First message', '2026-11-10T10:00:00Z');
+    const reply = await log('Reply', '2026-11-10T11:00:00Z');
+    // Both messages are in one Gmail thread; activity shows only the newest.
+    const thread = randomUUID();
+    for (const [id, at] of [
+      [first, '2026-11-10T10:00:00Z'],
+      [reply, '2026-11-10T11:00:00Z'],
+    ] as const)
+      await db.owner`insert into gmail_messages(event_id,workspace_id,thread_group_id,occurred_at,body)
+        values(${id},${s.workspace},${thread},${at},'')`;
+    const listed = await s.app.request('/v1/objects/conversation/query', {
+      key: s.keys.admin,
+      body: {},
+    });
+    expect(listed.status).toBe(200);
+    expect(listed.body.records.map((r: { id: string }) => r.id)).not.toContain(first);
+    const ran = await s.app.request(`/v1/routines/${routineId}/run`, {
+      key: s.keys.admin,
+      body: { recordIds: [first] },
+    });
+    const run = ran.body.runs[0] as string;
+    const claimed = await s.executor.claim(s.workspace, run);
+    expect(claimed).not.toBe(null);
+    await s.executor.execute(claimed as NonNullable<typeof claimed>);
+    const [row] = await db.owner<{ status: string; code: string | null }[]>`
+      select status,code from routine_runs where id=${run}`;
+    expect(row).toEqual({ status: 'succeeded', code: null });
   });
 });

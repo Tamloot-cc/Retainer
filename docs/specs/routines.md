@@ -349,6 +349,9 @@ query: the checker refuses any other, and the builder reports
 The `if` is checked when the run starts, by running the ordinary record query
 for that one record. A run whose `if` fails ends at once as `skipped`, and no
 code runs. That makes the `if` the cheap first test: it costs no sandbox run.
+Routines act on every live record: an older message of a Gmail thread, which
+lists and the feed leave out to show only the newest, still runs and matches
+a schedule's filter.
 
 A condition sees the record's current values. "The stage changed to
 Proposal" works: watch the field and test its value. "Changed from Lead" does
@@ -659,9 +662,11 @@ Routines read the same change feed as extensions, with their own cursor.
   already do: a queued, unstarted run for the same routine and record absorbs
   the later change.
 - A write that loses on precedence changes nothing, so it triggers nothing.
-- **Merges.** A merge is not a trigger. A queued run on the merged-away
-  record runs on the survivor, because reads of a merged record return the
-  survivor. Its firings and its `oncePerRecord` marks move to the survivor;
+- **Merges.** A merge is not a trigger. A run is always on the surviving
+  record: the merge moves the merged-away record's unfinished runs to the
+  survivor, and a run's start resolves its record again. So "one run at a
+  time per routine and record" (§6.2) holds across a merge, and the database
+  enforces it. Its firings and its `oncePerRecord` marks move to the survivor;
   where both records have one, the survivor keeps it, so the merge does not
   fire the routine a second time. `relative` due times are worked out again
   from the survivor's values.
@@ -1361,10 +1366,22 @@ they left open:
 - **Merges** mark every change they make (`record_changes.merged_from_id`):
   the survivor's, and those of records and events that pointed at the
   merged-away record. Dispatch and the preview skip them. A merge also
-  moves the merged-away record's queued and held runs, firings and
-  `oncePerRecord` marks to the survivor (§6.1). A run that a queued run of
-  the same version on the survivor already covers is discarded as
-  `merged`. The executor treats a record and those merged into it as one.
+  moves the merged-away record's unfinished runs, firings and
+  `oncePerRecord` marks to the survivor (§6.1). A queued run that a queued
+  run of the same version on the survivor already covers is discarded as
+  `merged`.
+- **One running run per routine and record** is a unique index on running
+  runs. Every run is on the surviving record: a claim resolves a merged ID
+  and stores the survivor, and a change made before a merge queues on the
+  survivor. The claim takes a key-share lock on the record, so a merge waits
+  for it; it skips a record a merge holds and tries on the next tick. The one
+  exception is a run that was running on the merged-away record while the
+  survivor had a run of the same routine running: both started before the
+  merge, so it keeps the old ID until it ends, and the claim's check counts
+  it.
+- **Routines see older Gmail messages.** Lists show only a thread's newest
+  message; a routine's start check and a schedule's targets match every live
+  record that no newer revision replaced.
 - **A routine paused mid-burst** holds the rest of the burst in the same
   pass, up to the feed head the pass began at; changes after that are not
   run, as for any paused routine.
