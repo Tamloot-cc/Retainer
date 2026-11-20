@@ -574,6 +574,31 @@ describe('routine sandbox', () => {
     expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(64 * 1024);
   });
 
+  it('ends quietly when an answer arrives after its process died', async () => {
+    // The code asks for a read, then exhausts its heap. The API holds the
+    // runner's event loop until the process is dead, then answers before the
+    // runner has seen the exit: writing that answer to the closed pipe must
+    // not raise an unhandled EPIPE, which would crash the runner.
+    const ctx = context(`export async function main({ retainer, record }: RoutineContext<'deal'>) {
+      void retainer.deal.get(record.id);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const hog: number[][] = [];
+      for (;;) hog.push(new Array(1_000_000).fill(1));
+    }`);
+    const transport = (async (url: URL | string) => {
+      const path = new URL(String(url)).pathname.replace('/v1/routines/runtime/', '');
+      if (path === 'run') return Response.json(ctx);
+      const until = Date.now() + 4000;
+      while (Date.now() < until);
+      return Response.json({ result: { id: 'deal-1', stage: 'lead' } });
+    }) as typeof fetch;
+    const result = await executeRoutine(invocation, AbortSignal.timeout(30000), transport);
+    expect(result).toMatchObject({
+      output: { outcome: 'failed', code: expect.stringMatching(/^routine_(killed|crashed)$/) },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }, 20000);
+
   it('fails a run whose code throws', async () => {
     const { result } = await run(
       context(`export async function main() { throw new Error('boom'); }`),
