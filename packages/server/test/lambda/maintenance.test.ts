@@ -25,5 +25,7 @@ it('serves self-refreshing HTML for browser navigation and enforces the edge sec
   );
   expect(response.statusCode).toBe(503);
   expect(response.body).toContain('http-equiv="refresh"');
-  expect(response.body).toContain('Updating, back in a moment');
+  expect(response.body).toContain('Retainer is updating');
+  expect(response.body).toContain('a few minutes');
+  expect(response.body).not.toContain('5 seconds');
 });
