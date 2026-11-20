@@ -192,7 +192,9 @@ export async function dispatchRoutines(sql: Sql, workspace: string, limit = 500)
 /**
  * Fires one routine's due schedule tick (§4.2, §6.5): each record matching
  * its filter gets a run, up to 200; above that the tick queues nothing and
- * the routine pauses until an admin decides. Each tick fires once.
+ * the routine pauses until an admin decides. Above 2,000 it holds nothing
+ * either, rather than some of them: the filter must be narrowed. Each tick
+ * fires once.
  */
 export async function fireSchedule(sql: Sql, workspace: string, routineId: string) {
   return inWorkspace(sql, workspace, async (tx) => {
@@ -223,10 +225,22 @@ export async function fireSchedule(sql: Sql, workspace: string, routineId: strin
     // Over the cap the tick starts nothing: its runs are held and the routine
     // pauses, so an admin runs the tick once, over the cap, or discards it.
     const over = !!when.object && matched > ROUTINE_LIMITS.scheduleFanOut;
+    if (over && matched > ROUTINE_LIMITS.scheduleHeldMax) {
+      await pauseRoutine(tx, routineId, 'needs_attention', 'schedule_too_large');
+      return { queued: 0, held: 0, matched };
+    }
     const targets = !when.object
       ? [NO_RECORD]
       : over
-        ? (await scheduleTargets(tx, workspace, schema, routine.manifest, 2000)).records
+        ? (
+            await scheduleTargets(
+              tx,
+              workspace,
+              schema,
+              routine.manifest,
+              ROUTINE_LIMITS.scheduleHeldMax,
+            )
+          ).records
         : records;
     if (over) await pauseRoutine(tx, routineId, 'needs_attention', 'schedule_over_limit');
     let queued = 0;

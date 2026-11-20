@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { executeRoutine } from '@retainer/runner/routine';
+import { ROUTINE_LIMITS } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
@@ -157,6 +158,27 @@ async function createCompany(app: TestApp, key: string, name: string) {
   });
   expect(created.status).toBe(201);
   return created.body.id as string;
+}
+
+/** Starts a test run on one record and returns its token, to drive the runtime by hand. */
+async function drive(s: Setup, routineId: string, versionId: string, recordId: string) {
+  const tested = await s.app.request(`/v1/routines/${routineId}/versions/${versionId}/test`, {
+    key: s.keys.admin,
+    body: { recordId },
+  });
+  const claimed = await s.executor.claim(s.workspace, tested.body.runId);
+  if (!claimed) throw new Error('run not claimed');
+  const token = await tokens.issueRoutine(
+    s.workspace,
+    { runId: claimed.runId, routineId, fence: claimed.fence, mode: 'test', tools: [] },
+    new Date(Date.now() + 60000),
+  );
+  const effect = (position: number, operation: string, args: Record<string, unknown>) =>
+    s.app.request('/v1/routines/runtime/effects', {
+      key: token,
+      body: { position, operation, args },
+    });
+  return { runId: claimed.runId, token, effect };
 }
 
 describe('routines', () => {
@@ -511,6 +533,32 @@ describe('routines', () => {
         },
       });
     expect((await effect(1)).body.state).toBe('done');
+    // Another run made a call and is waiting to retry; one that made none is left to run.
+    const retrying = await s.app.request(`/v1/routines/${routineId}/versions/${versionId}/test`, {
+      key: s.keys.admin,
+      body: { recordId: acme },
+    });
+    const second = await s.executor.claim(s.workspace, retrying.body.runId);
+    if (!second) throw new Error('run not claimed');
+    const secondToken = await tokens.issueRoutine(
+      s.workspace,
+      { runId: second.runId, routineId, fence: second.fence, mode: 'test', tools: [] },
+      new Date(Date.now() + 60000),
+    );
+    const call = await s.app.request('/v1/routines/runtime/effects', {
+      key: secondToken,
+      body: {
+        position: 1,
+        operation: 'record.update',
+        args: { object: 'company', id: acme, values: { [tier]: 'gold' } },
+      },
+    });
+    expect(call.body.state).toBe('done');
+    await db.owner`update routine_runs set status='queued',lease_owner=null,lease_until=null where id=${second.runId}`;
+    const untouched = await s.app.request(`/v1/routines/${routineId}/versions/${versionId}/test`, {
+      key: s.keys.admin,
+      body: { recordId: acme },
+    });
     const forgot = await s.app.request(`/v1/records/${doomed}/forget`, {
       key: s.keys.admin,
       method: 'POST',
@@ -524,6 +572,12 @@ describe('routines', () => {
     >`select status from routine_runs where id=${claimed.runId}`;
     expect(run?.status).toBe('erased');
     expect((await effect(2)).body.error.code).toMatch(/run_erased|lease_expired/);
+    const statuses = await db.owner<{ id: string; status: string }[]>`
+      select id,status from routine_runs where id in (${second.runId},${untouched.body.runId})`;
+    expect(Object.fromEntries(statuses.map((r) => [r.id, r.status]))).toEqual({
+      [second.runId]: 'erased',
+      [untouched.body.runId]: 'queued',
+    });
   });
 
   it('a schedule fires once per matching record per due time, in the workspace time zone', async () => {
@@ -653,5 +707,178 @@ describe('routines', () => {
     const [day] = await db.owner<{ count: number }[]>`
       select count from routine_model_days where workspace_id=${s.workspace}`;
     expect(day?.count).toBe(3);
+  });
+  it('a refused call keeps its position, so code that catches it goes on', async () => {
+    const s = await setup();
+    const tier = s.key('tier');
+    const { routineId, versionId } = await activate(s, TIER_ROUTINE(tier, s.key('name')));
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Refused');
+    const { runId, effect } = await drive(s, routineId, versionId, acme);
+    const missing = { object: 'company', id: randomUUID(), values: { [tier]: 'gold' } };
+    const refused = await effect(1, 'record.update', missing);
+    expect(refused.status).toBe(404);
+    const next = await effect(2, 'record.update', {
+      object: 'company',
+      id: acme,
+      values: { [tier]: 'gold' },
+    });
+    expect(next.body).toMatchObject({ state: 'done', replayed: false });
+    const rows = await db.owner<{ position: number; state: string; code: string | null }[]>`
+      select position,state,code from routine_run_results where run_id=${runId} order by position`;
+    expect(rows).toEqual([
+      { position: 1, state: 'failed', code: 'not_found' },
+      { position: 2, state: 'done', code: null },
+    ]);
+    // A retry gets the same refusal at that position.
+    expect((await effect(1, 'record.update', missing)).body.error.code).toBe('not_found');
+    const [run] = await db.owner<
+      { status: string }[]
+    >`select status from routine_runs where id=${runId}`;
+    expect(run?.status).toBe('running');
+  });
+
+  it('caps each read operation per run, atomically under concurrent reads', async () => {
+    const s = await setup();
+    const { routineId, versionId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Reads');
+    const { token } = await drive(s, routineId, versionId, acme);
+    const read = () =>
+      s.app.request('/v1/routines/runtime/read', {
+        key: token,
+        body: { operation: 'record.get', args: { object: 'company', id: acme } },
+      });
+    const results = await Promise.all(Array.from({ length: 210 }, read));
+    const codes = results.map((r) => (r.status === 200 ? 'ok' : r.body.error.code));
+    expect(codes.filter((c) => c === 'ok')).toHaveLength(200);
+    expect(codes.filter((c) => c === 'operation_limit')).toHaveLength(10);
+    // Another operation has its own count.
+    const query = await s.app.request('/v1/routines/runtime/read', {
+      key: token,
+      body: { operation: 'record.query', args: { object: 'company' } },
+    });
+    expect(query.status).toBe(200);
+  });
+
+  it('approving after the workspace changed queues one committed recheck', async () => {
+    const s = await setup();
+    const source = TIER_ROUTINE(s.key('tier'), s.key('name'));
+    const validated = await s.app.request('/v1/routines/validate', {
+      key: s.keys.agent,
+      body: source,
+    });
+    await s.executor.tick();
+    expect(
+      (await s.app.request(`/v1/routines/jobs/${validated.body.jobId}`, { key: s.keys.agent })).body
+        .valid,
+    ).toBe(true);
+    const proposed = await s.app.request('/v1/routines', {
+      key: s.keys.agent,
+      body: {
+        ...source,
+        name: 'Tier',
+        description: 'Tier Acme.',
+        summary: 'Tiers Acme.',
+        report: { verdict: 'full', gaps: [] },
+      },
+    });
+    const { routineId, versionId } = proposed.body;
+    // A new field changes the types the code is checked against.
+    const changed = await s.app.request('/v1/schema/changes', {
+      key: s.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_field',
+            object: 'company',
+            field: { name: 'size', label: 'Size', type: 'text' },
+          },
+        ],
+        reason: 'Recheck test',
+      },
+    });
+    expect(changed.status).toBe(200);
+    const approve = () =>
+      s.app.request(`/v1/routines/${routineId}/versions/${versionId}/approve`, {
+        key: s.keys.admin,
+        body: {},
+      });
+    const first = await approve();
+    expect(first.body.error.code).toBe('check_required');
+    const jobId = first.body.error.details.jobId;
+    expect((await s.app.request(`/v1/routines/jobs/${jobId}`, { key: s.keys.admin })).status).toBe(
+      200,
+    );
+    // Asking again while it runs reuses the same check.
+    expect((await approve()).body.error.details.jobId).toBe(jobId);
+    await s.executor.tick();
+    expect((await approve()).status).toBe(200);
+  });
+
+  it('a daily cap of 0 allows no model call', async () => {
+    const s = await setup({ modelCallsPerDay: 0 });
+    const { routineId, versionId } = await activate(s, {
+      manifest: {
+        when: { kind: 'manual', object: 'company', label: 'Ask' },
+        uses: { tools: [], model: true },
+      },
+      code: `export async function main({ retainer }: RoutineContext<'company'>) {
+  return retainer.ai.generate({ instructions: 'Say hi', input: null, output: { type: 'string' } });
+}
+`,
+    });
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Zero');
+    const { effect } = await drive(s, routineId, versionId, acme);
+    const asked = await effect(1, 'ai.generate', {
+      instructions: 'Say hi',
+      input: null,
+      output: { type: 'string' },
+    });
+    expect(asked.body.error.code).toBe('budget_exhausted');
+    const days = await db.owner`select 1 from routine_model_days where workspace_id=${s.workspace}`;
+    expect(days).toHaveLength(0);
+  });
+
+  it('a schedule tick matching more than can be held holds none and pauses', async () => {
+    const s = await setup();
+    const limits = ROUTINE_LIMITS as { scheduleFanOut: number; scheduleHeldMax: number };
+    const saved = { ...limits };
+    limits.scheduleFanOut = 1;
+    limits.scheduleHeldMax = 2;
+    try {
+      for (const name of ['Acme A', 'Acme B', 'Acme C'])
+        await createCompany(s.app, s.keys.admin, name);
+      const { routineId } = await activate(s, {
+        manifest: {
+          when: { kind: 'schedule', cron: '0 9 * * 1', object: 'company' },
+          uses: { tools: [], model: false },
+        },
+        code: `export async function main({ record }: RoutineContext<'company'>) {
+  return record.id;
+}
+`,
+      });
+      await db.owner`update routines set next_fire_at=now()-interval '1 minute' where id=${routineId}`;
+      await s.maintenance.maintain();
+      const runs =
+        await db.owner`select 1 from routine_runs where routine_id=${routineId} and mode='run'`;
+      expect(runs).toHaveLength(0);
+      const [routine] = await db.owner<{ status: string; paused_reason: string }[]>`
+        select status,paused_reason from routines where id=${routineId}`;
+      expect(routine).toEqual({ status: 'needs_attention', paused_reason: 'schedule_too_large' });
+    } finally {
+      Object.assign(limits, saved);
+    }
+  });
+
+  it('clears a run output after 7 days even when the run made no calls', async () => {
+    const s = await setup();
+    const [run] = await db.owner<{ id: string }[]>`
+      insert into routine_runs(workspace_id,mode,trigger_kind,status,output,finished_at)
+      values(${s.workspace},'check','check','succeeded','{"copied":"crm data"}'::jsonb,now()-interval '8 days')
+      returning id`;
+    await s.maintenance.maintain();
+    const [after] = await db.owner<{ output: unknown }[]>`
+      select output from routine_runs where id=${run?.id as string}`;
+    expect(after?.output).toBe(null);
   });
 });

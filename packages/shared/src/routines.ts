@@ -29,6 +29,8 @@ export const ROUTINE_LIMITS = {
   runsPerHour: 200,
   /** Records one schedule tick may fan out to. */
   scheduleFanOut: 200,
+  /** Runs an over-limit tick may hold for an admin; above it the tick holds none. */
+  scheduleHeldMax: 2000,
   /** A run's default expiry, in hours after it starts. */
   expiryHours: 24,
   /** One tool or model result, in bytes. */
@@ -582,7 +584,7 @@ type Operators<V> = { eq?: V; neq?: V; in?: V[]; contains?: V extends (infer E)[
 type Filter<F> = { [K in keyof F]?: Operators<NonNullable<F[K]>> } & { and?: Filter<F>[]; or?: Filter<F>[]; not?: Filter<F> };
 type Sort<F> = { field: (keyof F & string) | 'createdAt' | 'updatedAt'; direction?: 'asc' | 'desc' }[];
 type Page<R> = { records: R[]; count: number; nextCursor: string | null };
-type AggregateOp = 'count' | 'count_empty' | 'count_not_empty' | 'count_unique' | 'percent_empty' | 'percent_not_empty' | 'sum' | 'avg' | 'min' | 'max';
+type AggregateOp = 'countEmpty' | 'countNotEmpty' | 'percentEmpty' | 'percentNotEmpty' | 'countUnique' | 'sum' | 'avg' | 'min' | 'max';
 type AggregateResult = { total: number; values: { field: string; op: AggregateOp; value: number | string | Money | null }[] };
 type BaseRecord = { id: RecordId; createdAt: string; updatedAt: string };
 type EventRecord = BaseRecord & { occurredAt: string; participants: RecordId[]; about: RecordId[] };

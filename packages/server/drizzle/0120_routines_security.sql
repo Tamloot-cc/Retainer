@@ -46,13 +46,13 @@ REVOKE ALL ON FUNCTION public.retainer_routine_schedules_due(integer) FROM PUBLI
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.retainer_routine_schedules_due(integer) TO retainer_executor;
 --> statement-breakpoint
--- Workspaces with stored results past their 7 days, or finished runs past 30.
+-- Workspaces with stored results or run output past their 7 days, or finished runs past 30.
 CREATE FUNCTION public.retainer_routine_retention_due(batch_limit integer)
 RETURNS TABLE(workspace_id uuid) LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
   SELECT DISTINCT r.workspace_id FROM public.routine_runs r
   WHERE r.finished_at<now()-interval '7 days'
-    AND (r.finished_at<now()-interval '30 days' OR EXISTS(SELECT 1 FROM public.routine_run_results x
-      WHERE x.run_id=r.id AND x.result IS NOT NULL))
+    AND (r.finished_at<now()-interval '30 days' OR r.output IS NOT NULL
+      OR EXISTS(SELECT 1 FROM public.routine_run_results x WHERE x.run_id=r.id AND x.result IS NOT NULL))
   LIMIT least(greatest(batch_limit,1),1000)
 $$;
 --> statement-breakpoint

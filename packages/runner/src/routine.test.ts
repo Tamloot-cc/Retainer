@@ -208,7 +208,8 @@ describe('generated workspace types', () => {
     input: { count: meetings.count },
     output: { type: 'object', properties: { tone: { type: 'string', enum: ['warm', 'formal'] } }, required: ['tone'] },
   });
-  const sent = await retainer.tools.send_email({ to: 'a@b.c', body: tone + run.at });
+  const stats = await retainer.deal.aggregate({ aggregates: [{ field: 'stage', op: 'countEmpty' }] });
+  const sent = await retainer.tools.send_email({ to: 'a@b.c', body: tone + run.at + stats.total });
   await retainer.deal.update(record.id, { stage: 'lead' });
   return sent.id;
 }
@@ -222,13 +223,20 @@ describe('generated workspace types', () => {
       `export async function main({ retainer, record }: RoutineContext<'deal'>) {
   await retainer.deal.update(record.id, { stage: 'lost' });
   await retainer.tools.send_email({ to: 'a@b.c' });
+  await retainer.deal.aggregate({ aggregates: [{ field: 'stage', op: 'count_empty' }] });
   return retainer.invoice.get('x');
 }
 `,
       true,
       AbortSignal.timeout(30000),
     );
-    expect(bad.problems.map((p) => p.at)).toEqual(['2:43', '3:35', '4:19']);
+    // The aggregate operators are the API's own names.
+    expect(bad.problems.map((p) => p.at)).toEqual([
+      '2:43',
+      '3:35',
+      expect.stringMatching(/^4:/),
+      '5:19',
+    ]);
   });
 });
 

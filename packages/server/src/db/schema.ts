@@ -2881,7 +2881,7 @@ export const routines = pgTable(
     /** The person's plain-language text: the lasting record of intent (§5.3). */
     description: text('description').notNull(),
     status: text('status').notNull().default('draft'),
-    /** Why it paused, as a code: `paused`, `check_failed`, `tool_changed`, `failing`, `approver_left`, `runs_held`, `schedule_over_limit`. */
+    /** Why it paused, as a code: `paused`, `check_failed`, `tool_changed`, `failing`, `approver_left`, `runs_held`, `schedule_over_limit`, `schedule_too_large`. */
     pausedReason: text('paused_reason'),
     pausedAt: timestamptz('paused_at'),
     activeVersionId: uuid('active_version_id'),
@@ -3012,6 +3012,8 @@ export const routineRuns = pgTable(
     initiatorUserId: text('initiator_user_id'),
     /** Model calls this run reserved (§6.3). */
     modelCalls: integer('model_calls').notNull().default(0),
+    /** Reads this attempt made, by operation, against the per-operation cap (§4.6). */
+    readCalls: jsonb('read_calls').$type<Record<string, number>>().notNull().default({}),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

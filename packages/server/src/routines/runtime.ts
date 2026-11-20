@@ -291,7 +291,7 @@ export class RoutineRuntime {
 
   /** Reads by field key: get, query, aggregate and a file's text (§4.4). */
   async read(caller: Caller, operation: string, args: Record<string, unknown>) {
-    this.binding(caller);
+    await this.countRead(caller, operation);
     if (operation === 'files.text') return this.fileText(caller, z.uuid().parse(args.id));
     return withRead(this.sql, caller, async (tx, schema) => {
       const object = objectFor(schema, String(args.object ?? ''));
@@ -342,6 +342,31 @@ export class RoutineRuntime {
         return aggregateRecords(tx, caller.workspaceId, schema, object, input);
       }
       throw new AppError(400, 'invalid_request', `unknown read ${operation}`);
+    });
+  }
+
+  /**
+   * Counts one read against the per-operation cap (§4.6), atomically, in its
+   * own transaction: concurrent reads cannot pass it together. Reads are not
+   * replayed, so each attempt starts from zero.
+   */
+  private async countRead(caller: Caller, operation: string) {
+    const { runId } = this.binding(caller);
+    const cap = ROUTINE_LIMITS.callsPerOperation;
+    await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      // The row lock first: admission's share lock, taken first, would deadlock
+      // concurrent reads upgrading it.
+      const [counted] = await tx`
+        update routine_runs set read_calls=jsonb_set(read_calls,array[${operation}::text],
+          to_jsonb(coalesce((read_calls->>${operation}::text)::int,0)+1))
+        where id=${runId} and coalesce((read_calls->>${operation}::text)::int,0)<${cap} returning 1`;
+      await admitCaller(tx, caller);
+      if (!counted)
+        throw new AppError(
+          429,
+          'operation_limit',
+          `a run makes at most ${cap} calls of ${operation}`,
+        );
     });
   }
 
@@ -451,7 +476,23 @@ export class RoutineRuntime {
   async effect(caller: Caller, request: RoutineEffectRequest): Promise<RoutineEffectResponse> {
     try {
       return await this.numbered(caller, request);
-    } catch (error) {
+    } catch (thrown) {
+      const error =
+        thrown instanceof z.ZodError
+          ? new AppError(400, 'invalid_request', 'the call does not match the expected shape', {
+              issues: thrown.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+            })
+          : thrown;
+      // A refused call is the code's to catch, so it keeps its position: it
+      // is recorded as failed, and a retry gets the same error. Transient
+      // refusals (a 429, or a server error) are not recorded.
+      if (
+        error instanceof AppError &&
+        error.code !== 'run_diverged' &&
+        ((error.status >= 400 && error.status < 500 && error.status !== 429) ||
+          error.code === 'operation_limit')
+      )
+        await this.recordRefusal(caller, request, error.code).catch(() => {});
       // The refusal rolls its transaction back; the run ends in one of its own.
       if (error instanceof AppError && error.code === 'run_diverged') {
         const runId = this.binding(caller).runId;
@@ -465,6 +506,23 @@ export class RoutineRuntime {
       }
       throw error;
     }
+  }
+
+  /** Records a refused effect at its position, if the run still holds it and it is the next one. */
+  private async recordRefusal(caller: Caller, request: RoutineEffectRequest, code: string) {
+    const { runId } = this.binding(caller);
+    await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await admitCaller(tx, caller);
+      const run = await this.run(tx, runId, true);
+      const [last] = await tx<{ max: number | null; taken: boolean | null }[]>`
+        select max(position) as max,bool_or(position=${request.position}) as taken
+        from routine_run_results where run_id=${run.id}`;
+      if (last?.taken || request.position !== (last?.max ?? 0) + 1) return;
+      await this.record(tx, caller.workspaceId, run.id, request, requestHash(request.args), {
+        state: 'failed',
+        code,
+      });
+    });
   }
 
   private async numbered(
@@ -707,6 +765,8 @@ export class RoutineRuntime {
         'the manifest does not say the routine uses a model',
       );
     if (!started) {
+      if (this.config.modelCallsPerDay <= 0)
+        throw refused('budget_exhausted', 'this server allows no routine model calls');
       if (run.model_calls >= ROUTINE_LIMITS.modelCallsPerRun)
         throw refused(
           'budget_exhausted',
@@ -773,32 +833,39 @@ export class RoutineRuntime {
    */
   async poll(caller: Caller, position: number): Promise<RoutineEffectResponse> {
     const binding = this.binding(caller);
-    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
-      await lockSchemaShared(tx, caller.workspaceId);
-      await admitCaller(tx, caller);
-      const [row] = await tx<ResultRow[]>`
+    // A failed call is recorded, then thrown once its transaction commits.
+    const polled = await inWorkspace(
+      this.sql,
+      caller.workspaceId,
+      async (tx): Promise<RoutineEffectResponse | { failed: string }> => {
+        await lockSchemaShared(tx, caller.workspaceId);
+        await admitCaller(tx, caller);
+        const [row] = await tx<ResultRow[]>`
         select * from routine_run_results where run_id=${binding.runId} and position=${position} for update`;
-      if (!row || row.operation !== 'tool') throw notFound('tool call');
-      if (row.state === 'done') return { state: 'done', result: row.result, replayed: true };
-      if (row.state === 'failed')
-        throw new AppError(422, row.code ?? 'tool_failed', 'the tool call failed');
-      if (row.state === 'reported') return { state: 'reported', stop: row.code === 'stop' };
-      const [job] = await tx<{ status: string; code: string | null; output: unknown }[]>`
+        if (!row || row.operation !== 'tool') throw notFound('tool call');
+        if (row.state === 'done') return { state: 'done', result: row.result, replayed: true };
+        if (row.state === 'failed')
+          throw new AppError(422, row.code ?? 'tool_failed', 'the tool call failed');
+        if (row.state === 'reported') return { state: 'reported', stop: row.code === 'stop' };
+        const [job] = await tx<{ status: string; code: string | null; output: unknown }[]>`
         select status,code,output from extension_jobs where id=${row.tool_job_id} and caller_run_id=${binding.runId}`;
-      if (!job) throw notFound('tool call');
-      if (job.status === 'succeeded') {
-        await tx`update routine_run_results set state='done',result=${tx.json(jsonValue(job.output ?? null))},updated_at=clock_timestamp()
+        if (!job) throw notFound('tool call');
+        if (job.status === 'succeeded') {
+          await tx`update routine_run_results set state='done',result=${tx.json(jsonValue(job.output ?? null))},updated_at=clock_timestamp()
           where run_id=${binding.runId} and position=${position}`;
-        return { state: 'done', result: job.output ?? null, replayed: false };
-      }
-      if (job.status === 'failed' || job.status === 'cancelled') {
-        const code = job.code ?? 'tool_failed';
-        await tx`update routine_run_results set state='failed',code=${code},updated_at=clock_timestamp()
+          return { state: 'done', result: job.output ?? null, replayed: false };
+        }
+        if (job.status === 'failed' || job.status === 'cancelled') {
+          const code = job.code ?? 'tool_failed';
+          await tx`update routine_run_results set state='failed',code=${code},updated_at=clock_timestamp()
           where run_id=${binding.runId} and position=${position}`;
-        throw new AppError(422, code, 'the tool call failed');
-      }
-      return { state: 'pending', tool: { callId: row.tool_job_id as string } };
-    });
+          return { failed: code };
+        }
+        return { state: 'pending', tool: { callId: row.tool_job_id as string } };
+      },
+    );
+    if ('failed' in polled) throw new AppError(422, polled.failed, 'the tool call failed');
+    return polled;
   }
 }
 

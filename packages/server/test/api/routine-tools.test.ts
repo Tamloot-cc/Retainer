@@ -185,8 +185,9 @@ describe('routine tool calls', () => {
       args: { name: 'send_email', input: {} },
     });
     expect(notListed.body.error.code).toBe('tool_not_listed');
+    // The refusal keeps position 1, so the call is the second.
     const call = {
-      position: 1,
+      position: 2,
       operation: 'tool',
       args: { name: 'check_address', input: { address: 'ada@example.com' } },
     };
@@ -203,22 +204,22 @@ describe('routine tool calls', () => {
         id: started.body.tool.callId,
         trigger_kind: 'tool',
         caller_run_id: runId,
-        dedupe_key: `routine:${runId}:1`,
+        dedupe_key: `routine:${runId}:2`,
       },
     ]);
-    expect((await s.app.request('/v1/routines/runtime/effects/1', { key: token })).body.state).toBe(
+    expect((await s.app.request('/v1/routines/runtime/effects/2', { key: token })).body.state).toBe(
       'pending',
     );
     // The extension runs it and answers within its output schema.
     const lease = await s.queue.claim(s.workspace, started.body.tool.callId, 'tool-runner');
     if (!lease) throw new Error('tool job not claimed');
     await s.queue.complete(lease, { status: 'succeeded', output: { deliverable: true } });
-    const polled = await s.app.request('/v1/routines/runtime/effects/1', { key: token });
+    const polled = await s.app.request('/v1/routines/runtime/effects/2', { key: token });
     expect(polled.body).toEqual({ state: 'done', result: { deliverable: true }, replayed: false });
     // Another run cannot read this call's output.
     const other = await s.press(await s.another());
     expect(
-      (await s.app.request('/v1/routines/runtime/effects/1', { key: other.token })).status,
+      (await s.app.request('/v1/routines/runtime/effects/2', { key: other.token })).status,
     ).toBe(404);
   });
 
@@ -238,6 +239,10 @@ describe('routine tool calls', () => {
     await s.queue.complete(lease, { status: 'succeeded', output: { deliverable: 'yes' } });
     const polled = await s.app.request('/v1/routines/runtime/effects/1', { key: token });
     expect(polled.body.error.code).toBe('invalid_output');
+    // The failure is recorded, so a retry gets it without reading the job again.
+    const [result] = await db.owner<{ state: string; code: string }[]>`
+      select state,code from routine_run_results where tool_job_id=${started.body.tool.callId}`;
+    expect(result).toEqual({ state: 'failed', code: 'invalid_output' });
   });
 
   it("a tool job does not start once its caller's routine is paused", async () => {

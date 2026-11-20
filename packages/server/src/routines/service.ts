@@ -349,7 +349,8 @@ export class Routines {
    */
   async approve(caller: Caller, routineId: string, versionId: string) {
     const who = requireAdmin(caller);
-    return this.tx(caller, async (tx) => {
+    // A recheck is queued and committed before the 409, so its job exists.
+    const approved = await this.tx(caller, async (tx) => {
       const [routine] = await tx<
         RoutineRow[]
       >`select * from routines where id=${routineId} for update`;
@@ -373,19 +374,21 @@ export class Routines {
       if (version.types_fingerprint !== caps.typesFingerprint) {
         const passed = await this.checkPassed(tx, version.source_id, caps.typesFingerprint);
         if (!passed) {
-          const jobId = await queueRun(tx, caller.workspaceId, {
-            mode: 'check',
-            triggerKind: 'check',
-            sourceId: version.source_id,
-            initiatedBy: caller.actor,
-            input: { typesFingerprint: caps.typesFingerprint },
-          });
-          throw new AppError(
-            409,
-            'check_required',
-            'the workspace changed since this code was checked; a new check is running, approve again when it passes',
-            { jobId },
-          );
+          const [pending] = await tx<{ id: string }[]>`
+            select id from routine_runs where source_id=${version.source_id} and mode='check'
+              and status in ('queued','running') and input->>'typesFingerprint'=${caps.typesFingerprint}
+            limit 1`;
+          return {
+            checkRequired:
+              pending?.id ??
+              (await queueRun(tx, caller.workspaceId, {
+                mode: 'check',
+                triggerKind: 'check',
+                sourceId: version.source_id,
+                initiatedBy: caller.actor,
+                input: { typesFingerprint: caps.typesFingerprint },
+              })),
+          };
         }
       }
       const contracts: Record<string, ToolContract> = {};
@@ -406,6 +409,14 @@ export class Routines {
       await this.activate(tx, caller.workspaceId, routineId, manifest, caps.timezone, versionId);
       return { routineId, versionId, discardedRuns: discarded?.count ?? 0 };
     });
+    if ('checkRequired' in approved)
+      throw new AppError(
+        409,
+        'check_required',
+        'the workspace changed since this code was checked; a new check is running, approve again when it passes',
+        { jobId: approved.checkRequired },
+      );
+    return approved;
   }
 
   /** Active from now: the feed's head, the next schedule occurrence (§5.3, §6.1). */

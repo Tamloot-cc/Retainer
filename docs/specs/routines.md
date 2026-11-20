@@ -1347,6 +1347,16 @@ they left open:
   buttons, and the workspace time zone under workspace settings. It does
   not yet show a dry run or a diff against the approved version on the
   review (§5.2), or which tool each call named.
+- **A refused call keeps its position.** Code may catch a refused effect (a
+  missing record, an unlisted tool) and go on, so the refusal is recorded as
+  a failed call at its position and a retry gets the same error. A 429 or a
+  server error is not recorded.
+- **Reads count per attempt.** Each read operation is capped at 200 calls,
+  counted atomically on the run and reset when an attempt starts, since
+  reads are not replayed. Effects count across attempts.
+- **An over-limit schedule tick holds at most 2,000 runs.** Above that it
+  holds none, rather than some, and pauses the routine as
+  `schedule_too_large`: the filter must be narrowed.
 - **Run output** (the value `main` returns and up to 50 log lines) is kept
   on the run, cleared after 7 days and by `forget`, like stored results.
 - **Configuration.** `RETAINER_ROUTINE_MODEL` (default `claude-opus-5-5`) and

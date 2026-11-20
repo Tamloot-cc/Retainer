@@ -249,7 +249,7 @@ export class RoutineExecutor {
       }
       const timeout = timeoutFor(run.mode);
       const [claimed] = await tx<{ fence: string; attempt: number; deadline: Date }[]>`
-        update routine_runs set status='running',lease_owner=${this.options.owner},fence=fence+1,attempt=attempt+1,
+        update routine_runs set status='running',lease_owner=${this.options.owner},fence=fence+1,attempt=attempt+1,read_calls='{}',
           lease_until=clock_timestamp()+${timeout + GRACE_SECONDS}*interval '1 second',
           started_at=coalesce(started_at,clock_timestamp()),
           expires_at=coalesce(expires_at,least(clock_timestamp()+${ROUTINE_LIMITS.expiryHours}*interval '1 hour',${expiry}::timestamptz)),

@@ -50,6 +50,8 @@ export function pausedText(routine: Pick<RoutineView, 'status' | 'pausedReason'>
       return `It started more than 200 runs in an hour, so Retainer paused it and held the extra runs. Nothing was done for them. Resume it, then run or discard them.`;
     case 'schedule_over_limit':
       return 'A scheduled run matched more than 200 records, so Retainer paused it and held those runs. Nothing was done for them. Resume it, then run or discard them. Narrowing which records it runs on is the lasting fix.';
+    case 'schedule_too_large':
+      return 'A scheduled run matched more than 2,000 records, too many to hold, so Retainer paused it and did nothing. Describe it again with fewer records to run on, then approve the new version.';
     case 'tool_changed':
       return 'A tool it uses changed what it does or how it connects. An admin needs to approve it again before it runs.';
     case 'approver_left':
