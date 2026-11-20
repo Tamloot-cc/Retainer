@@ -183,3 +183,101 @@ it('gives verifiers their own slots and reuses a passing health check', async ()
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+it('passes the deployment Exa key only to the enrichment job container', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'retainer-engine-'));
+  const socketPath = join(directory, 'docker.sock');
+  const releaseDigest = 'a'.repeat(64);
+  const network = 'b'.repeat(64);
+  const functionId = '0d6c3c43-4a3f-4f0c-8f0b-3c1b6f9f4a11';
+  const bundles = ['enrichment', 'fixture'].map((id, index) => ({
+    id,
+    image: `sha256:${String(index).repeat(64)}`,
+    releaseDigest,
+    functionIds: [functionId],
+  }));
+  const environments: string[][] = [];
+  const engine = createServer(async (req, res) => {
+    res.setHeader('content-type', 'application/json');
+    if (req.url === '/v1.47/version') {
+      res.end(JSON.stringify({ Version: '28.0.4' }));
+    } else if (req.url === '/v1.47/containers/trusted-proxy/json') {
+      res.end(JSON.stringify({ State: { Running: true } }));
+    } else if (req.url?.startsWith('/v1.47/images/')) {
+      const bundle = bundles.find((b) => req.url?.includes(encodeURIComponent(b.image)));
+      res.end(
+        JSON.stringify({
+          Config: {
+            Labels: {
+              'retainer.extension.protocol': '1',
+              'retainer.extension.runtime': 'node24',
+              'retainer.extension.release': releaseDigest,
+              'retainer.extension.bundle': bundle?.id,
+            },
+          },
+        }),
+      );
+    } else if (req.url === '/v1.47/networks/create') {
+      res.end(JSON.stringify({ Id: network }));
+    } else if (req.url === `/v1.47/networks/${network}/connect`) {
+      res.end('{}');
+    } else if (req.method === 'GET' && req.url === `/v1.47/networks/${network}`) {
+      res.end(
+        JSON.stringify({
+          Internal: true,
+          EnableIPv6: false,
+          Options: { 'com.docker.network.bridge.gateway_mode_ipv4': 'isolated' },
+        }),
+      );
+    } else {
+      if (req.url?.startsWith('/v1.47/containers/create?')) {
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(chunk);
+        environments.push(JSON.parse(Buffer.concat(chunks).toString()).Env);
+      }
+      // Stop at container creation so only the launch configuration is tested.
+      res.writeHead(500);
+      res.end('{}');
+    }
+  });
+  await new Promise<void>((resolve) => engine.listen(socketPath, resolve));
+  try {
+    const sandbox = new DockerSandbox({
+      socketPath,
+      networkPrefix: 'exa-proof',
+      apiContainer: '',
+      apiOrigin: 'https://api.example',
+      proxyContainer: 'trusted-proxy',
+      proxyOrigin: 'http://proxy:3128',
+      exaApiKey: 'fixture-deployment-key',
+      bundles,
+    });
+    for (const { id } of bundles) {
+      await expect(
+        sandbox.run(
+          id,
+          {
+            protocolVersion: 1,
+            runId: '7e4b0c55-8a2d-4c1e-9b3f-6d5e4c3b2a10',
+            attempt: 1,
+            installationId: '1f2e3d4c-5b6a-4978-8a9b-0c1d2e3f4a5b',
+            releaseDigest,
+            functionId,
+            input: {},
+            apiOrigin: 'https://api.example',
+            runToken: 'rt_run_proof',
+            deadline: new Date(Date.now() + 60000).toISOString(),
+          },
+          new AbortController().signal,
+        ),
+      ).rejects.toThrow('Docker operation failed');
+    }
+    expect(
+      environments.map((env) => env.filter((value) => value.startsWith('EXA_API_KEY='))),
+    ).toEqual([['EXA_API_KEY=fixture-deployment-key'], []]);
+  } finally {
+    engine.closeAllConnections();
+    await new Promise<void>((resolve) => engine.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});

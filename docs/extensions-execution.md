@@ -441,9 +441,12 @@ material and never reaches a provider account.
 The artifact builder also emits `artifacts/extensions/enrichment/`. Build the
 Node 24 runner image with that directory's digest and `BUNDLE_ID=enrichment`,
 and select its catalog and executables as for Granola. It has no webhook
-verifier. Runs need outbound HTTPS to `api.exa.ai` only.
+verifier. Exa requests go to `api.exa.ai` over HTTPS. Set `EXA_API_KEY` in the
+Compose operator environment before starting the launcher. The launcher passes
+it only to Company Enrichment job containers. On the hosted service, Retainer
+configures the key on the dedicated enrichment Lambda and covers Exa usage.
 
-An admin supplies an Exa API key, approves sending company domains to Exa, and
+A workspace admin approves sending company names and domains to Exa and
 maps each output (employee count, LinkedIn URL, headquarters) to an existing
 company field, a suggested new field, or nothing. An agent can propose that
 mapping with `preview_extension`; only an admin approves it. When a company is
@@ -452,12 +455,14 @@ search and fills only mapped fields that have no value and were not cleared.
 Values people or other agents set are never replaced, and existing companies are
 not backfilled. **Edit mapping** on the installation reviews a new mapping; it
 applies to later changes only. Each lookup is one Exa search (about $0.008).
+Existing installations switch to the deployment key when an admin updates to
+the new release. The update carries forward consent and compatible mappings.
 
 The adapter's Exa transport, matching and lifecycle have deterministic fixtures,
-and the API integration tests use real RLS Postgres and the secret broker. They
-do not call a real Exa account: staging acceptance with a real key remains
-launch evidence (see `docs/specs/extensions-company-enrichment-implementation.md`
-§4.3).
+and the API integration tests use real RLS Postgres. They verify installation
+without a workspace secret and an upgrade from the workspace-key release.
+Staging acceptance with a real Exa key is covered in
+`docs/specs/extensions-company-enrichment-implementation.md` §4.3.
 
 ## Standalone app keys in key mode
 

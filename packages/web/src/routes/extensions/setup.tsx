@@ -28,6 +28,7 @@ import {
 } from '../../ui/index.js';
 import { describeDiffOp } from '../schema/schema-model.js';
 import { QueryError } from '../state.js';
+import { extensionName } from './branding.js';
 import {
   choicesFromView,
   defaultChoices,
@@ -426,7 +427,7 @@ function BasicExtensionSetup({
       </Button>
     </StepActions>
   );
-  const name = release.manifest.name;
+  const name = extensionName(release.manifest.universalId, release.manifest.name);
   let body: ReactNode;
   if (current === 'settings')
     body = (
@@ -707,18 +708,19 @@ export function ExtensionInstallPage() {
         />
       </SetupPage>
     );
+  const name = extensionName(release.manifest.universalId, release.manifest.name);
   if (!canMutate(session, 'admin'))
     return (
-      <SetupPage title={TITLES.install(release.manifest.name)}>
+      <SetupPage title={TITLES.install(name)}>
         <Notice>A workspace admin can set up this extension.</Notice>
       </SetupPage>
     );
   if (existing && !['configuring', 'uninstalled'].includes(existing.state))
     return (
-      <SetupPage title={TITLES.install(release.manifest.name)}>
+      <SetupPage title={TITLES.install(name)}>
         <Notice>
           <Row>
-            {release.manifest.name} is already installed.
+            {name} is already installed.
             <Link to="/extensions/$id" params={{ id: existing.id }} className="underline">
               Open it
             </Link>
@@ -727,7 +729,7 @@ export function ExtensionInstallPage() {
       </SetupPage>
     );
   return (
-    <SetupPage title={TITLES.install(release.manifest.name)}>
+    <SetupPage title={TITLES.install(name)}>
       <ExtensionSetup
         release={release}
         {...(existing ? { installation: existing } : {})}
@@ -754,8 +756,9 @@ function ChangePage({ mode }: { mode: Exclude<SetupMode, 'install'> }) {
     enabled: mode === 'mapping' || mode === 'upgrade',
   });
   const installation = data?.installed.find((i) => i.id === id);
+  const currentRelease = installation && installedRelease(data?.releases ?? [], installation);
   const name = installation
-    ? (installedRelease(data?.releases ?? [], installation)?.manifest.name ?? 'extension')
+    ? extensionName(installation.registrationId, currentRelease?.manifest.name ?? 'extension')
     : 'extension';
   const title = TITLES[mode](name);
   const fail = error ?? detail.error;
@@ -781,7 +784,7 @@ function ChangePage({ mode }: { mode: Exclude<SetupMode, 'install'> }) {
     ? undefined
     : mode === 'upgrade'
       ? upgradeFor(data.newest, installation)
-      : installedRelease(data.releases, installation);
+      : currentRelease;
   const toDetail = () => void navigate({ to: '/extensions/$id', params: { id } });
   const problem = !installation
     ? 'This extension is not installed in this workspace.'

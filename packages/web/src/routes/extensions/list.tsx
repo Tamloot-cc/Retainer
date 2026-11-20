@@ -1,11 +1,9 @@
 import { Link } from '@tanstack/react-router';
-import { Puzzle } from 'lucide-react';
 import { canMutate, useWorkspace } from '../../api/client.js';
 import {
   Badge,
   Button,
   Empty,
-  IdentityTag,
   ItemCard,
   ItemCards,
   Loading,
@@ -14,6 +12,7 @@ import {
   Stack,
 } from '../../ui/index.js';
 import { QueryError } from '../state.js';
+import { ExtensionIcon, extensionName } from './branding.js';
 import { installedRelease, status, upgradeFor, useExtensions } from './model.js';
 
 /**
@@ -57,12 +56,11 @@ export function ExtensionsPage() {
             return (
               <ItemCard
                 key={installation.id}
-                icon={
-                  <IdentityTag identity={installation.registrationId}>
-                    <Puzzle size={18} />
-                  </IdentityTag>
-                }
-                title={release?.manifest.name ?? 'Unavailable extension'}
+                icon={<ExtensionIcon registrationId={installation.registrationId} />}
+                title={extensionName(
+                  installation.registrationId,
+                  release?.manifest.name ?? 'Unavailable extension',
+                )}
                 status={
                   <>
                     <Badge tone={tone}>{label}</Badge>
@@ -78,32 +76,32 @@ export function ExtensionsPage() {
       ) : null}
       {available.length ? (
         <ItemCards label="Available" columns={2}>
-          {available.map((release) => (
-            <ItemCard
-              key={release.manifest.universalId}
-              icon={
-                <IdentityTag identity={release.manifest.universalId}>
-                  <Puzzle size={18} />
-                </IdentityTag>
-              }
-              title={release.manifest.name}
-              status={<Muted small>{release.manifest.version}</Muted>}
-              description={release.manifest.description}
-              action={
-                admin ? (
-                  <Button size="small" asChild>
-                    <Link
-                      to="/extensions/new/$registration"
-                      params={{ registration: release.manifest.universalId }}
-                      aria-label={`Set up ${release.manifest.name}`}
-                    >
-                      Set up
-                    </Link>
-                  </Button>
-                ) : null
-              }
-            />
-          ))}
+          {available.map(({ manifest }) => {
+            const registrationId = manifest.universalId;
+            const name = extensionName(registrationId, manifest.name);
+            return (
+              <ItemCard
+                key={registrationId}
+                icon={<ExtensionIcon registrationId={registrationId} />}
+                title={name}
+                status={<Muted small>{manifest.version}</Muted>}
+                description={manifest.description}
+                action={
+                  admin ? (
+                    <Button size="small" asChild>
+                      <Link
+                        to="/extensions/new/$registration"
+                        params={{ registration: registrationId }}
+                        aria-label={`Set up ${name}`}
+                      >
+                        Set up
+                      </Link>
+                    </Button>
+                  ) : null
+                }
+              />
+            );
+          })}
         </ItemCards>
       ) : null}
       {available.length && !admin ? (

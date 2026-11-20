@@ -3,7 +3,7 @@ import type { ServerResponse } from 'node:http';
 import { executeEnrichment } from '@retainer/runner/enrichment';
 import { ENRICHMENT, enrichmentManifest } from '@retainer/runner/enrichment-contract';
 import { generateKeyPair } from 'jose';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ClaimedJob, ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
@@ -13,7 +13,7 @@ import { useTestDatabase } from '../helpers/db.js';
 import { answer, fakeAnthropic, type Received, type Upstream } from '../helpers/model.js';
 
 const db = useTestDatabase();
-let tokens: RunTokens, broker: SecretBroker, upstream: Upstream;
+let tokens: RunTokens, upstream: Upstream;
 beforeAll(async () => {
   upstream = await fakeAnthropic();
   const pair = await generateKeyPair('EdDSA');
@@ -23,11 +23,10 @@ beforeAll(async () => {
     signingKey: pair.privateKey,
     verificationKey: pair.publicKey,
   });
-  broker = new SecretBroker(
-    db.connect({ role: 'retainer_secret_broker' }),
-    new SecretCipher('test', new Map([['test', randomBytes(32)]])),
-  );
 });
+
+beforeEach(() => vi.stubEnv('EXA_API_KEY', 'exa-fixture-key'));
+afterEach(() => vi.unstubAllEnvs());
 
 /** A synthetic company search result shaped like Exa's response, with no real company data. */
 function exaCompany(
@@ -88,18 +87,46 @@ const messages = () =>
     .filter((r) => r.url === '/v1/messages')
     .map((r) => ({ headers: r.headers, body: JSON.parse(r.body) }));
 
-async function setup(key = 'exa-fixture-key', options: { modelKey?: boolean } = {}) {
+async function setup(options: { modelKey?: boolean; legacy?: boolean } = {}) {
   const manifest = enrichmentManifest({
     packageDigest: 'a'.repeat(64),
     handlerDigest: 'b'.repeat(64),
     serverRange: '>=0.1.0 <0.2.0',
   });
-  const catalog = new ExtensionCatalog([{ manifest, actorCeiling: 'agent', runtimeEnabled: true }]);
+  const legacy = {
+    ...manifest,
+    version: '1.0.0',
+    settings: {
+      ...manifest.settings,
+      apiKey: {
+        type: 'string' as const,
+        label: 'Exa API key',
+        secret: true,
+        required: true,
+        reconnect: true,
+      },
+    },
+    functions: manifest.functions.map((fn) => ({ ...fn, secrets: ['apiKey'] })),
+  };
+  const current = { ...manifest, version: '1.0.1' };
+  const catalog = new ExtensionCatalog(
+    (options.legacy ? [legacy, current] : [current]).map((release) => ({
+      manifest: release,
+      actorCeiling: 'agent',
+      runtimeEnabled: true,
+    })),
+  );
+  const extensionSecrets = options.legacy
+    ? new SecretBroker(
+        db.connect({ role: 'retainer_secret_broker' }),
+        new SecretCipher('test', new Map([['test', randomBytes(32)]])),
+      )
+    : undefined;
   const app = startTestApp(db, {
     extensionCatalog: catalog,
     extensionActivation: new Set(catalog.list().map((r) => r.digest)),
     runTokens: tokens,
-    extensionSecrets: broker,
+    extensionSecrets,
     model: {
       apiKey: options.modelKey === false ? undefined : 'sk-model-fixture',
       upstream: upstream.origin,
@@ -109,28 +136,31 @@ async function setup(key = 'exa-fixture-key', options: { modelKey?: boolean } = 
     { name: `Enrichment ${randomUUID()}` },
     { admin: { actor: { type: 'user', id: 'admin' }, scopes: ['admin'] } },
   );
-  const stage = await app.request('/v1/extensions/secrets', {
-    key: keys.admin,
-    body: {
-      registrationId: manifest.universalId,
-      version: manifest.version,
-      name: 'apiKey',
-      value: key,
-    },
-  });
-  expect(stage.status).toBe(201);
+  let secretRefs: { apiKey: string } | undefined;
+  if (options.legacy) {
+    const staged = await app.request('/v1/extensions/secrets', {
+      key: keys.admin,
+      body: {
+        registrationId: legacy.universalId,
+        version: legacy.version,
+        name: 'apiKey',
+        value: 'legacy-workspace-key',
+      },
+    });
+    expect(staged.status).toBe(201);
+    secretRefs = { apiKey: staged.body.pendingSecretId };
+  }
   const input = {
-    registrationId: manifest.universalId,
-    version: manifest.version,
+    registrationId: current.universalId,
+    version: options.legacy ? legacy.version : current.version,
     settings: { shareDomains: true },
-    secretRefs: { apiKey: stage.body.pendingSecretId },
     mapping: {
       employee_count: { action: 'create' },
       linkedin_url: { action: 'create' },
       headquarters: { action: 'create' },
     },
   };
-  const { mapping: _mapping, ...access } = input;
+  const { mapping: _mapping, ...access } = { ...input, secretRefs };
   const accessPreview = await app.request('/v1/extensions/preview', {
     key: keys.admin,
     body: access,
@@ -143,7 +173,6 @@ async function setup(key = 'exa-fixture-key', options: { modelKey?: boolean } = 
   expect(configuring.status).toBe(201);
   const finalInput = {
     ...input,
-    secretRefs: undefined,
     installationId: configuring.body.id,
     turnOn: true,
   };
@@ -160,6 +189,9 @@ async function setup(key = 'exa-fixture-key', options: { modelKey?: boolean } = 
   expect(installed.status).toBe(200);
   const id = installed.body.id as string;
   const queue = new ExtensionQueue(app.sql, catalog.runtime);
+  const legacyDigest = options.legacy
+    ? catalog.get(legacy.universalId, legacy.version).digest
+    : null;
 
   /** The fake Exa: answers by path and by the query's domain, its last word. */
   const exa = {
@@ -182,6 +214,7 @@ async function setup(key = 'exa-fixture-key', options: { modelKey?: boolean } = 
       return exa.search(String(body.query).split(' ').at(-1) ?? '');
     }
     expect(target.origin).toBe('https://retainer.test');
+    expect(target.pathname).not.toContain('/runtime/secrets/');
     if (init?.body && !target.pathname.startsWith('/v1/extensions/runtime/model'))
       apiBodies.push(String(init.body));
     if (failNext && target.pathname.endsWith(failNext)) {
@@ -193,6 +226,14 @@ async function setup(key = 'exa-fixture-key', options: { modelKey?: boolean } = 
   /** Answers the next Retainer API request whose path ends so with a 502 page. */
   let failNext: string | undefined;
   async function execute(job: ClaimedJob) {
+    // The old release runs its own code in production. Complete its one setup
+    // job so the test can exercise the supported upgrade from an active install.
+    if (job.releaseDigest === legacyDigest) {
+      expect(job.functionId).toBe(ENRICHMENT.setup);
+      const result = { status: 'succeeded' as const };
+      await queue.complete(job, result);
+      return result;
+    }
     const token = await tokens.issue(app.sql, job, manifest.universalId, job.scopes);
     const model = job.uses.includes('model')
       ? {
@@ -264,6 +305,7 @@ async function setup(key = 'exa-fixture-key', options: { modelKey?: boolean } = 
     detail,
     queue,
     workspace: workspace.id,
+    currentVersion: current.version,
   };
 }
 
@@ -271,7 +313,7 @@ describe('company enrichment through a fake Exa', () => {
   it('checks the key at setup and fills a new company from its domain', async () => {
     const h = await setup();
     expect(await h.drain()).toEqual([{ status: 'succeeded' }]);
-    expect((await h.detail()).state).toBe('active');
+    expect(await h.detail()).toMatchObject({ state: 'active', secrets: {} });
     expect(h.exa.requests).toEqual([
       { path: '/websets/v0/teams/me', body: null, key: 'exa-fixture-key' },
     ]);
@@ -309,6 +351,42 @@ describe('company enrichment through a fake Exa', () => {
     expect(h.exa.requests).toHaveLength(2);
     // Nothing the provider returned is copied into Retainer requests beyond the values.
     expect(h.apiBodies.join('\n')).not.toContain('Fixture Co');
+  });
+
+  it('upgrades a workspace-key installation without asking for a key or changing its mapping', async () => {
+    const h = await setup({ legacy: true });
+    await h.drain();
+    const previous = await h.detail();
+    expect(previous).toMatchObject({ state: 'active', secrets: { apiKey: true } });
+    const input = {
+      registrationId: ENRICHMENT.registration,
+      version: h.currentVersion,
+      installationId: h.id,
+      settings: { shareDomains: true },
+    };
+    const preview = await h.app.request('/v1/extensions/preview', {
+      key: h.keys.admin,
+      body: input,
+    });
+    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+    const upgraded = await h.app.request(`/v1/extensions/${h.id}/upgrade`, {
+      key: h.keys.admin,
+      body: { ...input, planDigest: preview.body.planDigest },
+      headers: { 'Idempotency-Key': randomUUID() },
+    });
+    expect(upgraded.status, JSON.stringify(upgraded.body)).toBe(200);
+    await h.drain();
+    expect(await h.detail()).toMatchObject({
+      state: 'active',
+      version: h.currentVersion,
+      settings: previous.settings,
+      mapping: { outputs: previous.mapping.outputs },
+    });
+    expect(h.exa.requests[0]).toMatchObject({ key: 'exa-fixture-key' });
+    const company = await h.company({ name: 'Acme', domain: 'acme.example' });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
+    expect(h.exa.requests.at(-1)).toMatchObject({ key: 'exa-fixture-key' });
+    expect((await h.fields(company)).employeeCount).toBe(12);
   });
 
   it('makes no request for a blank domain and enriches once one is added', async () => {
@@ -386,15 +464,17 @@ describe('company enrichment through a fake Exa', () => {
     expect(JSON.stringify(runs.body)).not.toContain('busy.example');
   });
 
-  it('asks for a reconnect when Exa rejects the key, and reports exhausted credits', async () => {
-    const rejected = await setup('bad-key');
+  it('reports a deployment credential failure and exhausted credits without requesting reconnect', async () => {
+    const rejected = await setup();
     rejected.exa.team = () => new Response('{}', { status: 401 });
     rejected.exa.search = () => new Response('{}', { status: 401 });
-    expect(await rejected.drain()).toEqual([{ status: 'failed', code: 'provider_unauthorized' }]);
+    expect(await rejected.drain()).toEqual([
+      { status: 'failed', code: 'provider_credentials_rejected' },
+    ]);
     expect(rejected.exa.requests.map((r) => r.path)).toEqual(['/websets/v0/teams/me', '/search']);
     expect(await rejected.detail()).toMatchObject({
       state: 'setup_failed',
-      connectionHealth: 'needs_reconnect',
+      connectionHealth: 'degraded',
     });
     const broke = await setup();
     broke.exa.team = () => new Response('{}', { status: 402 });
@@ -624,7 +704,7 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
   });
 
   it('ends without a match when the server has no model key', async () => {
-    const h = await setup('exa-fixture-key', { modelKey: false });
+    const h = await setup({ modelKey: false });
     await h.drain();
     h.exa.search = (domain) => twoResults('https://redirect.example/', domain);
     const acme = await h.company({ name: 'Acme', domain: 'acme.example' });
@@ -711,7 +791,7 @@ describe('enrichment configure and backfill', () => {
   });
 
   it('falls back to API-name suggestions when the server has no model key', async () => {
-    const h = await setup('exa-fixture-key', { modelKey: false });
+    const h = await setup({ modelKey: false });
     await h.drain();
     const { results, mapping } = await requestSuggestions(h);
     expect(results).toEqual([{ status: 'succeeded', code: 'suggestions_ready_without_model' }]);

@@ -165,14 +165,6 @@ export function enrichmentManifest(build: {
     createPeople: 'never',
     onSourceDelete: 'keep',
     settings: {
-      apiKey: {
-        type: 'string',
-        label: 'Exa API key',
-        required: true,
-        secret: true,
-        reconnect: true,
-        description: 'Each lookup is one Exa search for up to five companies, billed to this key.',
-      },
       shareDomains: {
         type: 'boolean',
         label: 'Send company names and domains to Exa to look up company details',
@@ -182,7 +174,7 @@ export function enrichmentManifest(build: {
         reconnect: true,
         secret: false,
         description:
-          "Only the company's name and website domain are sent, never other record data. Exa keeps queries unless your Exa team has Zero Data Retention, which Exa offers on its Enterprise plan.",
+          "Only the company's name and website domain are sent, never other record data. Exa keeps queries unless Retainer’s Exa account has Zero Data Retention, which Exa offers on its Enterprise plan.",
       },
     },
     schema: [],
@@ -193,13 +185,12 @@ export function enrichmentManifest(build: {
         universalId: ENRICHMENT.configure,
         name: 'configure',
         description:
-          'Check the Exa key and suggest company fields, using a model and a sample of companies.',
+          'Check the provider connection and suggest company fields, using a model and a sample of companies.',
         handlerDigest: build.handlerDigest,
         timeoutSeconds: 120,
         trigger: { kind: 'configure' },
         inputSchema: { type: 'object', additionalProperties: false },
         scopes: ['read'],
-        secrets: ['apiKey'],
         uses: ['model'],
       },
       {
@@ -215,19 +206,17 @@ export function enrichmentManifest(build: {
           properties: { cursor: { type: 'string', maxLength: 4096 } },
         },
         scopes: ['read', 'write'],
-        secrets: ['apiKey'],
         mappedWrite: true,
         uses: ['model'],
       },
       {
         universalId: ENRICHMENT.setup,
         name: 'setup',
-        description: 'Check the Exa API key.',
+        description: 'Check the Exa connection.',
         handlerDigest: build.handlerDigest,
         timeoutSeconds: 30,
         trigger: { kind: 'install' },
         inputSchema: { type: 'object', additionalProperties: false },
-        secrets: ['apiKey'],
         scopes: ['read'],
       },
       {
@@ -245,7 +234,6 @@ export function enrichmentManifest(build: {
           operations: ['create', 'update'],
         },
         inputSchema: changeInput,
-        secrets: ['apiKey'],
         scopes: ['read', 'write'],
         mappedWrite: true,
         uses: ['model'],

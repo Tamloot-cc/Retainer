@@ -10,7 +10,7 @@ For example, the provider returns `employee_count: 52` and `linkedin_url` for `a
 
 ## 2. V1 scope
 
-- One reviewed HTTPS provider with structured JSON and a workspace-supplied API key. The fields below are the proposed launch contract.
+- One reviewed HTTPS provider with structured JSON and a deployment-owned API key. The fields below are the proposed launch contract.
 - One installation per workspace, targeting the base **Company** object and its **Domain** field by stable IDs. The lookup uses the primary domain link. Preview reports a schema conflict if that field is missing or incompatible.
 - Run on Company creation and when its domain changes. A company created without a domain is eligible once someone adds one. The trigger can queue a creation with a blank domain, which the handler skips before making a provider request.
 - Fill only unset fields. An unset field has no effective value or explicit clear. A value such as `0` counts as populated. If the domain changes later, fill any remaining unset fields using the new domain. Refreshing already populated values is deferred.
@@ -28,11 +28,11 @@ The reviewed bundle defines the source keys, their meanings, how to parse them, 
 
 ## 3. Install and review
 
-1. In **Extensions**, the admin selects **Company Enrichment**, enters the provider key, and sees that the extension will send company domains to the provider. The existing secret broker stages the key for approval.
+1. In **Extensions**, the admin selects **Company Enrichment** and approves sending company names and domains to Exa. The deployment operator configures the Exa key.
 2. For each supported output, the admin chooses an existing compatible field, creates the suggested field, or skips it. At least one output must be mapped. The form shows the source definition, destination field, and any field additions.
 3. Optionally, an external agent reads the workspace schema and the bundle’s published output definitions. It proposes a draft using the same three choices. The admin imports the draft into the mapping form and can change every choice. The agent only needs schema and catalog metadata. The provider key and company records stay outside the suggestion step. The form also works by itself.
 4. Retainer previews the mapping, any schema additions, the `agent` write authority, and the approved read/write scopes. The admin approves that exact preview. Retainer applies the selected additions and saves the approved mapping in the same transaction that records the installation and queues setup.
-5. The setup handler validates the connection using the provider’s supported credential check. The installation activates after setup succeeds. Setup failures use the existing redacted status, retry, and reconnect flows.
+5. The setup handler validates the connection using the provider’s supported credential check. The installation activates after setup succeeds. Setup failures use the existing redacted status and retry flow.
 
 An admin can edit the mapping from the installation using the same preview and approval flow. Changing a mapping advances the execution generation, so work based on the old mapping loses write access. The new mapping applies to future triggers. The mapping screen tells the admin that changing it does not backfill existing companies.
 
@@ -53,7 +53,7 @@ The platform already supplies reviewed manifests, install previews, human approv
 1. A Company change queues a job for the active installation. The TypeScript handler resolves the change position to a record ID through Retainer’s API, then reads the current Company and approved mapping. It skips a company with an empty or unusable primary domain or with every mapped field already populated or explicitly cleared.
 2. The runner extracts the hostname from the primary domain link and calls the fixed provider HTTPS endpoint. It sends the normalized domain and the authentication required by the provider. The runner bounds time and response size and validates the returned company details before using them. Retainer and the runner make zero model calls. (Since the enrichment release of [extensions-model-calls.md](extensions-model-calls.md) §6, the search also sends the company's name, and the bundle calls a model through Retainer's model proxy to pick the result when the domain alone doesn't settle it. Retainer's core still calls no model.)
 3. The runner submits valid, mapped results to Retainer. Retainer applies the guarded write as assertions attributed to the installation’s `agent` actor. Existing assertion rules and audit history apply. The change trigger watches Domain and the base name field, so enrichment field updates cause no additional lookup.
-4. A no-match or a valid response with no usable values completes as a skip. Transient network errors, throttling, and provider 5xx use bounded job retries and honor `Retry-After` when present. Invalid credentials produce a reconnect diagnostic. The existing run list uses safe outcome codes to distinguish applied results, skips, and actionable failures. Keep provider responses and credentials out of job payloads, diagnostics, and logs.
+4. A no-match or a valid response with no usable values completes as a skip. Transient network errors, throttling, and provider 5xx use bounded job retries and honor `Retry-After` when present. Missing or rejected credentials produce a diagnostic for the deployment operator. The existing run list uses safe outcome codes to distinguish applied results, skips, and actionable failures. Keep provider responses and credentials out of job payloads, diagnostics, and logs.
 
 ## 6. Delivery and acceptance
 

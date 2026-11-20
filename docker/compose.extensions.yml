@@ -60,6 +60,7 @@ services:
       RETAINER_EXECUTION_NETWORK_PREFIX: "${RETAINER_EXECUTION_NETWORK_PREFIX:-retainer-extension-run}"
       RETAINER_EXECUTION_API_ORIGIN: http://retainer:8787
       RETAINER_EXECUTION_PROXY: http://extension-egress:3128
+      EXA_API_KEY: "${EXA_API_KEY:-}"
       RETAINER_EXTENSION_BUNDLES: "${RETAINER_EXTENSION_BUNDLES:?set immutable first-party bundle metadata}"
     volumes:
       - "${RETAINER_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock"
