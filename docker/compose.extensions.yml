@@ -18,6 +18,9 @@ services:
       # Extension model calls (docs/extensions-execution.md); unset answers 503 model_unavailable.
       RETAINER_MODEL_API_KEY: "${RETAINER_MODEL_API_KEY:-}"
       RETAINER_MODEL_UPSTREAM_ORIGIN: "${RETAINER_MODEL_UPSTREAM_ORIGIN:-}"
+      # Routine model calls (docs/extensions-execution.md, Routines).
+      RETAINER_ROUTINE_MODEL: "${RETAINER_ROUTINE_MODEL:-}"
+      RETAINER_ROUTINE_MODEL_CALLS_PER_DAY: "${RETAINER_ROUTINE_MODEL_CALLS_PER_DAY:-}"
     networks: [default, extension-control]
     healthcheck:
       test:

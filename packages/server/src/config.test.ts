@@ -212,3 +212,23 @@ describe('accounts mode', () => {
     ).toThrow(`log in as ${CONTROL_ROLE}`);
   });
 });
+
+describe('routine settings', () => {
+  it('default when unset or empty, as Compose passes them', () => {
+    const env = { DATABASE_URL: 'postgres://localhost/test' };
+    for (const value of [undefined, '']) {
+      const config = loadConfig({
+        ...env,
+        ...(value === undefined
+          ? {}
+          : { RETAINER_ROUTINE_MODEL: value, RETAINER_ROUTINE_MODEL_CALLS_PER_DAY: value }),
+      });
+      expect(config.RETAINER_ROUTINE_MODEL).toBe('claude-opus-5-5');
+      expect(config.RETAINER_ROUTINE_MODEL_CALLS_PER_DAY).toBe(1000);
+    }
+    expect(
+      loadConfig({ ...env, RETAINER_ROUTINE_MODEL_CALLS_PER_DAY: '5' })
+        .RETAINER_ROUTINE_MODEL_CALLS_PER_DAY,
+    ).toBe(5);
+  });
+});
