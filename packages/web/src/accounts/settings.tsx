@@ -14,6 +14,7 @@ import {
   type WorkspaceKey,
   workspaceHref,
 } from '../api/account.js';
+import { TimeZoneSetting } from '../routes/routines/time-zone.js';
 import { QueryError, useView } from '../routes/state.js';
 import {
   Button,
@@ -98,8 +99,8 @@ export function SettingsPage() {
             value: 'workspace',
             label: 'Workspace',
             hint: isOrganizationManager(state.organization.role)
-              ? "This workspace's name, and deleting it"
-              : "This workspace's name",
+              ? "This workspace's name and time zone, and deleting it"
+              : "This workspace's name and time zone",
           },
         ] as const)
       : []),
@@ -715,6 +716,9 @@ function WorkspaceTab({ state }: { state: AccountState }) {
             </div>
           </Stack>
         </form>
+      </Panel>
+      <Panel title="Time zone">
+        <TimeZoneSetting />
       </Panel>
       {canDelete ? <DeleteWorkspace state={state} /> : null}
     </Stack>

@@ -212,6 +212,20 @@ export function JsonBlock({ value, label }: { value: unknown; label: string }) {
   );
 }
 
+/** Source code, folded away behind `summary` until opened; monospace and scrolling on its own. */
+export function CodeBlock({ code, summary }: { code: string; summary: string }) {
+  return (
+    <details className="group rounded-lg border border-border">
+      <summary className="cursor-pointer rounded-lg px-3 py-2 text-sm font-medium hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        {summary}
+      </summary>
+      <pre className="max-h-[70vh] overflow-auto border-t border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed">
+        <code>{code}</code>
+      </pre>
+    </details>
+  );
+}
+
 /** A yes/no cell: a check mark or a faint dash. */
 export function Check({ value }: { value: boolean }) {
   return value ? (

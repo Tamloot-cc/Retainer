@@ -79,3 +79,15 @@ $$;
 REVOKE ALL ON FUNCTION public.retainer_routine_admin(uuid,text) FROM PUBLIC;
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.retainer_routine_admin(uuid,text) TO retainer_app;
+--> statement-breakpoint
+-- The workspace time zone (routines spec §7): the runtime role may set this
+-- one key of its own workspace's settings, and nothing else in them.
+CREATE FUNCTION public.retainer_set_workspace_time_zone(zone text) RETURNS void
+LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+  UPDATE public.workspaces SET settings=settings||jsonb_build_object('timeZone',zone),updated_at=clock_timestamp()
+  WHERE id=nullif(current_setting('app.workspace_id',true),'')::uuid AND length(zone) BETWEEN 1 AND 100
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.retainer_set_workspace_time_zone(text) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.retainer_set_workspace_time_zone(text) TO retainer_app;

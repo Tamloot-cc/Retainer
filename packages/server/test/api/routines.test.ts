@@ -526,6 +526,56 @@ describe('routines', () => {
     expect((await effect(2)).body.error.code).toMatch(/run_erased|lease_expired/);
   });
 
+  it('a schedule fires once per matching record per due time, in the workspace time zone', async () => {
+    const s = await setup();
+    const tier = s.key('tier');
+    const zone = await s.app.request('/v1/workspace/time-zone', {
+      key: s.keys.admin,
+      method: 'PUT',
+      body: { timeZone: 'Asia/Jerusalem' },
+    });
+    expect(zone.status).toBe(200);
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Weekly');
+    await createCompany(s.app, s.keys.admin, 'Other Weekly');
+    const { routineId } = await activate(s, {
+      manifest: {
+        when: {
+          kind: 'schedule',
+          cron: '0 9 * * 1',
+          object: 'company',
+          filter: { [s.key('name')]: { contains: 'Acme' } },
+        },
+        uses: { tools: [], model: false },
+      },
+      code: `export async function main({ retainer, record }: RoutineContext<'company'>) {
+  await retainer.company.update(record.id, { ${JSON.stringify(tier)}: 'weekly' });
+}
+`,
+    });
+    const [scheduled] = await db.owner<{ next_fire_at: Date }[]>`
+      select next_fire_at from routines where id=${routineId}`;
+    // Monday 09:00 in Jerusalem is 07:00 or 06:00 UTC.
+    expect(scheduled?.next_fire_at.getUTCDay()).toBe(1);
+    expect([6, 7]).toContain(scheduled?.next_fire_at.getUTCHours());
+    await db.owner`update routines set next_fire_at=now()-interval '1 minute' where id=${routineId}`;
+    await s.maintenance.maintain();
+    await s.maintenance.maintain();
+    await s.executor.tick();
+    const runs = await db.owner<{ record_id: string; status: string; trigger_kind: string }[]>`
+      select record_id,status,trigger_kind from routine_runs where routine_id=${routineId}`;
+    expect(runs).toEqual([{ record_id: acme, status: 'succeeded', trigger_kind: 'schedule' }]);
+    const [next] = await db.owner<{ next_fire_at: Date }[]>`
+      select next_fire_at from routines where id=${routineId}`;
+    expect(next?.next_fire_at.getTime()).toBeGreaterThan(Date.now());
+    // Held runs of a paused routine wait for it to be resumed.
+    await s.app.request(`/v1/routines/${routineId}/pause`, { key: s.keys.admin, body: {} });
+    const held = await s.app.request(`/v1/routines/${routineId}/held`, {
+      key: s.keys.admin,
+      body: { action: 'run' },
+    });
+    expect(held.body.error.code).toBe('routine_not_active');
+  });
+
   it('a preview dry-runs the code on recent matches and writes nothing', async () => {
     const s = await setup();
     const acme = await createCompany(s.app, s.keys.admin, 'Acme Preview');

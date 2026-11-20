@@ -358,6 +358,21 @@ const routeTree = rootRoute.addChildren([
   }),
   createRoute({
     getParentRoute: () => rootRoute,
+    path: '/routines',
+    component: lazyRouteComponent(() => import('./routes/routines/list.js'), 'RoutinesPage'),
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/routines/$id',
+    component: lazyRouteComponent(() => import('./routes/routines/detail.js'), 'RoutinePage'),
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/routines/$id/runs/$run',
+    component: lazyRouteComponent(() => import('./routes/routines/run.js'), 'RoutineRunPage'),
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
     path: '/settings',
     component: lazyRouteComponent(() => import('./accounts/settings.js'), 'SettingsPage'),
   }),

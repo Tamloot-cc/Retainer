@@ -359,6 +359,7 @@ describe('SECURITY DEFINER functions', () => {
     retainer_routine_runs_due: 'retainer_executor',
     retainer_routine_schedules_due: 'retainer_executor',
     retainer_session_access: RUNTIME_ROLE,
+    retainer_set_workspace_time_zone: RUNTIME_ROLE,
     retainer_token_access: RUNTIME_ROLE,
     retainer_token_keys: RUNTIME_ROLE,
     retainer_workspaces_due: RUNTIME_ROLE,

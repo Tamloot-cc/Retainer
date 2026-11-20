@@ -287,6 +287,7 @@ export class Routines {
         rows.map((r) => r.active_version_id).filter(Boolean) as string[],
       );
       return {
+        timeZone: caps.timezone,
         routines: rows.map((row) =>
           presentRoutine(row, versions.get(row.active_version_id ?? ''), caps),
         ),
@@ -497,6 +498,19 @@ export class Routines {
   async releaseHeld(caller: Caller, routineId: string, action: 'run' | 'discard') {
     requireAdmin(caller);
     return this.tx(caller, async (tx) => {
+      // A paused routine refuses every effect, so its held runs would only be
+      // held again: running them needs the routine on first.
+      if (action === 'run') {
+        const [routine] = await tx<{ status: string }[]>`
+          select status from routines where id=${routineId} for update`;
+        if (!routine) throw notFound('routine');
+        if (routine.status !== 'active')
+          throw new AppError(
+            409,
+            'routine_not_active',
+            'resume the routine before running its held runs',
+          );
+      }
       const rows = await tx<{ id: string }[]>`
         update routine_runs set status=${action === 'run' ? 'queued' : 'discarded'},
           code=${action === 'run' ? null : 'discarded_by_admin'},available_at=clock_timestamp(),
@@ -607,8 +621,7 @@ export class Routines {
   async setTimeZone(caller: Caller, zone: string) {
     requireAdmin(caller);
     return this.tx(caller, async (tx) => {
-      await tx`update workspaces set settings=settings||${tx.json({ timeZone: zone })}
-        where id=${caller.workspaceId}`;
+      await tx`select retainer_set_workspace_time_zone(${zone})`;
       // Each schedule's next time is read in the new zone.
       const rows = await tx<{ id: string; manifest: RoutineManifest }[]>`
         select r.id,s.manifest from routines r join routine_versions v on v.id=r.active_version_id

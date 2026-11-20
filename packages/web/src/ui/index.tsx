@@ -888,6 +888,7 @@ export {
   CardGrid,
   Check,
   Code,
+  CodeBlock,
   CopyButton,
   EntityHeader,
   JsonBlock,

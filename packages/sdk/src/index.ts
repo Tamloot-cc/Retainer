@@ -1185,7 +1185,7 @@ export class RetainerClient {
     );
   }
   routines(signal?: AbortSignal) {
-    return this.get<{ routines: RoutineView[] }>('/v1/routines', {}, signal);
+    return this.get<{ timeZone: string; routines: RoutineView[] }>('/v1/routines', {}, signal);
   }
   routine(id: string, signal?: AbortSignal) {
     return this.get<RoutineDetail>(`/v1/routines/${encodeURIComponent(id)}`, {}, signal);
@@ -1198,7 +1198,13 @@ export class RetainerClient {
     );
   }
   decideRoutineVersion(id: string, versionId: string, decision: 'approve' | 'reject') {
-    return this.post<{ routineId: string; versionId: string; state?: string; status?: string }>(
+    return this.post<{
+      routineId: string;
+      versionId: string;
+      state?: string;
+      status?: string;
+      discardedRuns?: number;
+    }>(
       `/v1/routines/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/${decision}`,
       {},
     );

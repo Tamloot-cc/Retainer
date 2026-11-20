@@ -14,6 +14,7 @@ import {
   Settings,
   Shapes,
   UserCog,
+  Workflow,
   X,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
@@ -396,6 +397,13 @@ function Sidebar({
         </NavGroup>
         <div className="flex-1" />
         <NavLink
+          to="/routines"
+          icon={Workflow}
+          label="Routines"
+          collapsed={collapsed}
+          onNavigate={onNavigate}
+        />
+        <NavLink
           to="/extensions"
           icon={Puzzle}
           label="Extensions"
@@ -522,7 +530,7 @@ function NavLink({
   onNavigate,
   children,
 }: {
-  to: '/' | '/review' | '/o/$object' | '/schema' | '/activity' | '/extensions';
+  to: '/' | '/review' | '/o/$object' | '/schema' | '/activity' | '/extensions' | '/routines';
   params?: { object: string };
   icon: LucideIcon;
   color?: CategoryColor;

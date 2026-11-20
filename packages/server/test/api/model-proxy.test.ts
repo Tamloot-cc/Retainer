@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import postgres from 'postgres';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { ModelClaims, RunTokens } from '../../src/extension-runtime/tokens.js';
+import type { ExtensionModelClaims, RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { MAX_REQUEST_BYTES } from '../../src/model/proxy.js';
 import { recordDirectly } from '../../src/model/routes.js';
@@ -39,7 +39,7 @@ let run: {
   id: string;
   key: string;
   token: string;
-  claims: ModelClaims;
+  claims: ExtensionModelClaims;
   runToken: string;
 };
 
@@ -62,7 +62,7 @@ beforeAll(async () => {
     id: installed.id,
     key: installed.key,
     token,
-    claims: await tokens.verifyModel(token),
+    claims: (await tokens.verifyModel(token)) as ExtensionModelClaims,
     runToken: await tokens.issue(t.sql, job, release.universalId, job.scopes),
   };
 });

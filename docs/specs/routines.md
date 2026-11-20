@@ -1336,6 +1336,17 @@ they left open:
   Its model calls are numbered effects of its run, so they count against the
   daily cap; their recorded arguments say only what the call was for, since
   the prompt carries the whole SDK.
+- **Held runs of a paused routine** run only after it is resumed: a paused
+  routine refuses every effect, so "run them" answers `409
+  routine_not_active` until then. An admin who wants one over-limit schedule
+  tick resumes, runs the held runs, and pauses again (§6.5 meant this to be
+  one step).
+- **The Routines page** (`packages/web/src/routes/routines`) has the
+  describe box, the review (facts, summary, report, code), approve, reject,
+  test, pause, resume, archive, held runs, runs with their calls, record
+  buttons, and the workspace time zone under workspace settings. It does
+  not yet show a dry run or a diff against the approved version on the
+  review (§5.2), or which tool each call named.
 - **Run output** (the value `main` returns and up to 50 log lines) is kept
   on the run, cleared after 7 days and by `forget`, like stored results.
 - **Configuration.** `RETAINER_ROUTINE_MODEL` (default `claude-opus-5-5`) and
