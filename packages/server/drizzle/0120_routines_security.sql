@@ -78,4 +78,4 @@ $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION public.retainer_routine_admin(uuid,text) FROM PUBLIC;
 --> statement-breakpoint
-GRANT EXECUTE ON FUNCTION public.retainer_routine_admin(uuid,text) TO retainer_app,retainer_executor;
+GRANT EXECUTE ON FUNCTION public.retainer_routine_admin(uuid,text) TO retainer_app;

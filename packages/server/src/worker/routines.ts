@@ -114,7 +114,10 @@ export class RoutineExecutor {
         if (this.stopped) return;
         const item = due[next++];
         if (!item) return;
-        const claimed = await this.claim(item.workspace_id, item.run_id).catch(() => null);
+        const claimed = await this.claim(item.workspace_id, item.run_id).catch((e) => {
+          if (process.env.ROUTINE_DEBUG) console.error('claim failed', e);
+          return null;
+        });
         if (!claimed) continue;
         await this.execute(claimed);
         executed++;
@@ -238,12 +241,18 @@ export class RoutineExecutor {
           }
         }
       }
+      // One run of a routine on a record at a time: this one waits for the other.
+      if (run.mode === 'run' && run.routine_id && run.record_id) {
+        const [busy] = await tx`select 1 from routine_runs where routine_id=${run.routine_id}
+          and record_id=${run.record_id} and mode='run' and status='running' and id<>${id}`;
+        if (busy) return null;
+      }
       const timeout = timeoutFor(run.mode);
       const [claimed] = await tx<{ fence: string; attempt: number; deadline: Date }[]>`
         update routine_runs set status='running',lease_owner=${this.options.owner},fence=fence+1,attempt=attempt+1,
           lease_until=clock_timestamp()+${timeout + GRACE_SECONDS}*interval '1 second',
           started_at=coalesce(started_at,clock_timestamp()),
-          expires_at=coalesce(expires_at,least(clock_timestamp()+${ROUTINE_LIMITS.expiryHours}*interval '1 hour',${expiry ?? new Date(8.64e15)}::timestamptz)),
+          expires_at=coalesce(expires_at,least(clock_timestamp()+${ROUTINE_LIMITS.expiryHours}*interval '1 hour',${expiry}::timestamptz)),
           updated_at=clock_timestamp()
         where id=${id} returning fence::text,attempt,clock_timestamp()+${timeout}*interval '1 second' as deadline`;
       if (!claimed) return null;
@@ -415,6 +424,8 @@ export class RoutineMaintenance {
     for (const { workspace_id: workspace } of due) {
       if (this.stopped || Date.now() >= deadline) return;
       await inWorkspace(this.sql, workspace, async (tx) => {
+        await tx`update routine_runs set output=null where finished_at<clock_timestamp()-interval '7 days'
+          and output is not null`;
         await tx`update routine_run_results x set result=null from routine_runs r
           where r.id=x.run_id and r.finished_at<clock_timestamp()-interval '7 days' and x.result is not null`;
         await tx`delete from routine_runs where id in(select id from routine_runs

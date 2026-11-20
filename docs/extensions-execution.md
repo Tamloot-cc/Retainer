@@ -138,6 +138,23 @@ recorded whole, and stops at the model token's expiry at the latest.
   proxy, which refuses private addresses other than the API's.
 - `RETAINER_MODEL_UPSTREAM_ORIGIN`: where the proxy forwards requests.
   Defaults to `https://api.anthropic.com/`.
+
+## Routines
+
+Routine code runs in the routine runner, a first-party bundle of the runner
+image ([routines.md](specs/routines.md) §3.3, §11.4). Add its entry from
+`artifacts/extensions/routine-runner/executables.json` to
+`RETAINER_EXTENSION_EXECUTABLES`, and its bundle from `metadata.json` (bundle
+`routine-runner`) to the launcher's `RETAINER_EXTENSION_BUNDLES`. The launcher
+gives each routine run a network with only the API on it, without the egress
+proxy; inside the container the code runs in a child process with no file
+system, environment, processes or token of its own. Without the entry,
+routines can be proposed and approved, but no run starts.
+
+- `RETAINER_ROUTINE_MODEL`: the one model routine code and the builder call.
+  Defaults to `claude-opus-5-5`.
+- `RETAINER_ROUTINE_MODEL_CALLS_PER_DAY`: routine model calls per workspace
+  per UTC day, the builder and dry runs included. Defaults to 1000.
 - `RETAINER_MODEL_USAGE_SECRET`: hosted service only, set on the `model` and
   `extensions` functions. It mounts the internal usage route the `model`
   function reports to; self-hosting writes usage directly.

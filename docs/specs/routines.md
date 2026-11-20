@@ -1,11 +1,13 @@
 # Routines: spec
 
-Status: **proposal**, 2026-11-19. Not accepted and not built. This is the
-third draft of the day: after two reviews, the product owner decided that a
-routine is TypeScript code, not a JSON flow, and that the first version stays
-lean. A third review, of this draft, tightened the rules for retries, dry
-runs, version changes and the model cap. Section 2 lists what is decided and
-what is only proposed.
+Status: **building**, 2026-11-20. Phases 1 to 5 (§11.1) are implemented on
+the `routines` branch, except `relative` triggers and the hosted network path
+(§11.3), which lives in `retainer-cloud`. §11.4 records where the build
+differs from this spec. Before that, the proposal of 2026-11-19 went through
+three drafts: after two reviews, the product owner decided that a routine is
+TypeScript code, not a JSON flow, and that the first version stays lean. A
+third review tightened the rules for retries, dry runs, version changes and
+the model cap. Section 2 lists what is decided and what is only proposed.
 
 Builds on the extension platform in [extensions.md](extensions.md), model calls
 in [extensions-model-calls.md](extensions-model-calls.md) and the two-step
@@ -1299,6 +1301,56 @@ each against real Postgres:
 - **Discovery.** Routine discovery runs where change maintenance runs today,
   with its own budget, so a workspace with many routines cannot delay
   extension dispatch.
+
+### 11.4 As built
+
+Where the implementation differs from the sections above, or settles what
+they left open:
+
+- **Runs have their own queue.** Routine runs, checks, dry runs, tests and
+  builder runs are rows of `routine_runs`, with their own lease, fence and
+  attempts, claimed through `retainer_routine_runs_due`; they are not
+  `extension_jobs`. A tool call is an extension job (`trigger_kind = 'tool'`)
+  in its own lane, so it never waits behind the extension's other jobs, and
+  its claim checks again that the calling run is running, its routine active
+  and a test's initiator still an admin.
+- **The runner's answer.** Protocol v1 carries output only on success, so
+  the routine runner always answers `succeeded` with the routine's
+  `outcome` (`succeeded`, `failed` or `stopped`), its code and, for a check,
+  the problems. The executor maps it to the run's status.
+- **The sandbox** (`packages/runner/src/routine*.ts`). The runner type-checks
+  with TypeScript's own compiler on a temporary directory, then runs the
+  emitted JavaScript in a child process under Node's permission model (no
+  file system beyond that directory, no child processes, workers or addons),
+  with code generation from strings disallowed. A loader hook refuses every
+  import after the routine's own module, however it is written; `fetch`,
+  `WebSocket`, `process.getBuiltinModule`, `process.binding` and `process`
+  itself are removed. The child holds no token: it asks the runner, which
+  calls the API. In Compose the launcher gives a routine run a network with
+  only the API container on it and no egress proxy. The routine's own model
+  calls reach the self-hosted proxy on the API origin.
+- **The builder** is a `build` run of the same runner: it reads the
+  capabilities, asks the model for name, summary, report, manifest and
+  code, checks the draft (the manifest at the server, then a full
+  type-check), retries up to three times with the problems, and proposes.
+  Its model calls are numbered effects of its run, so they count against the
+  daily cap; their recorded arguments say only what the call was for, since
+  the prompt carries the whole SDK.
+- **Run output** (the value `main` returns and up to 50 log lines) is kept
+  on the run, cleared after 7 days and by `forget`, like stored results.
+- **Configuration.** `RETAINER_ROUTINE_MODEL` (default `claude-opus-5-5`) and
+  `RETAINER_ROUTINE_MODEL_CALLS_PER_DAY` (default 1000). The routine runner is
+  an entry of `RETAINER_EXTENSION_EXECUTABLES` with the registration and
+  function IDs in `ROUTINE_RUNNER_REGISTRATION_ID` and
+  `ROUTINE_RUNNER_FUNCTION_ID`; `scripts/build-extension-artifacts.mjs`
+  writes it under `artifacts/extensions/routine-runner`. Without it, routines
+  can be proposed and approved but no run starts.
+
+Acceptance tests (§11.2) not yet automated: expiry, a tool's contract
+changing, a test run reaching a `send` tool, the worked example (§9.4), and
+the closed-sandbox test on the hosted service. The others run in
+`packages/server/test/api/routine*.test.ts` and
+`packages/runner/src/routine.test.ts`.
 
 ## 12. Open questions, answered
 

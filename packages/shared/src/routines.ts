@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { FieldType } from './field-types.js';
+import type { Actor } from './actor.js';
 
 /**
  * Routines (docs/specs/routines.md): a standing instruction for a workspace,
@@ -708,3 +709,90 @@ type RoutineContext<O extends keyof RoutineRecords | undefined = undefined> = {
  */
 export const ROUTINE_RUNNER_REGISTRATION_ID = '6f1d7c52-9a3e-4b8f-a2d4-1c0e5b7f9a31';
 export const ROUTINE_RUNNER_FUNCTION_ID = 'b3e0a9d4-27c6-4f15-8e2b-9d4c1a6f0e72';
+
+// ---------------------------------------------------------------------------
+// What the routine API answers with (§5, §6).
+
+/** One version of a routine: what a person reviews and approves. */
+export type RoutineVersionView = {
+  id: string;
+  number: number;
+  state: 'proposed' | 'approved' | 'superseded' | 'rejected';
+  summary: string;
+  report: RoutineReport;
+  rank: string | null;
+  manifest: RoutineManifest;
+  code: string;
+  /** Retainer's own sentences about the manifest, generated, never by a model. */
+  facts: string[];
+  builtBy: Actor;
+  approvedBy: Actor | null;
+  approvedAt: string | null;
+  createdAt: string;
+};
+
+export type RoutineView = {
+  id: string;
+  name: string;
+  description: string;
+  status: RoutineStatus;
+  pausedReason: string | null;
+  pausedAt: string | null;
+  nextFireAt: string | null;
+  heldRuns: number;
+  proposals: number;
+  activeVersion: RoutineVersionView | null;
+  createdBy: Actor;
+  createdAt: string;
+};
+
+/** One numbered call a run made, and how it ended; its result while it is kept. */
+export type RoutineRunCall = {
+  position: number;
+  operation: string;
+  state: 'started' | 'done' | 'failed' | 'reported';
+  code: string | null;
+  differs: boolean;
+  recordId: string | null;
+  result?: unknown;
+};
+
+export type RoutineRunView = {
+  id: string;
+  routineId: string | null;
+  versionId: string | null;
+  mode: RoutineRunMode;
+  trigger: string;
+  recordId: string | null;
+  status: RoutineRunStatus;
+  code: string | null;
+  attempt: number;
+  at: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  expiresAt: string | null;
+  initiatedBy: Actor | null;
+  modelCalls: number;
+  output: Record<string, unknown> | null;
+  calls: RoutineRunCall[];
+};
+
+export type RoutineDetail = RoutineView & {
+  versions: RoutineVersionView[];
+  runs: RoutineRunView[];
+};
+
+export type RoutineCheckResult = {
+  valid: boolean | null;
+  problems: RoutineProblem[];
+  jobId?: string;
+  status?: string;
+};
+
+export type RoutinePreview = {
+  previewId: string;
+  done: boolean;
+  runs: RoutineRunView[];
+};
+
+export type RoutineButton = { routineId: string; name: string; label: string };

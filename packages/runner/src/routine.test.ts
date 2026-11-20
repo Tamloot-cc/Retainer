@@ -1,4 +1,8 @@
-import type { RoutineInvocation, RoutineRunContext } from '@retainer/shared';
+import {
+  generateRoutineTypes,
+  type RoutineInvocation,
+  type RoutineRunContext,
+} from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
 import { executeRoutine, parseProblems, typeCheck } from './routine.js';
 
@@ -108,6 +112,123 @@ describe('routine type-check', () => {
         message: "Type 'a' is wrong.\nType 'b' is not 'c'.",
       },
     ]);
+  });
+});
+
+describe('generated workspace types', () => {
+  const types = generateRoutineTypes({
+    model: true,
+    objects: [
+      {
+        name: 'deal',
+        universalId: 'u-deal',
+        label: 'Deal',
+        description: 'A sale in progress',
+        isEvent: false,
+        fields: [
+          {
+            key: 'stage',
+            name: 'stage',
+            label: 'Stage',
+            type: 'select',
+            description: null,
+            filterable: true,
+            nullable: true,
+            options: ['lead', 'won'],
+          },
+          {
+            key: 'amount_k',
+            name: 'amount',
+            label: 'Amount',
+            type: 'money',
+            description: null,
+            filterable: true,
+            nullable: true,
+          },
+          {
+            key: 'company',
+            name: 'company',
+            label: 'Company',
+            type: 'relation',
+            description: null,
+            filterable: true,
+            nullable: true,
+            target: 'company',
+            many: false,
+          },
+        ],
+      },
+      {
+        name: 'meeting',
+        universalId: 'u-meeting',
+        label: 'Meeting',
+        description: null,
+        isEvent: true,
+        fields: [
+          {
+            key: 'notes',
+            name: 'notes',
+            label: 'Notes',
+            type: 'text',
+            description: null,
+            filterable: false,
+            nullable: true,
+          },
+        ],
+      },
+    ],
+    tools: [
+      {
+        name: 'send_email',
+        title: 'Send an email',
+        description: 'Sends one email.',
+        effect: 'send',
+        connection: 'workspace',
+        model: false,
+        extension: 'Mailer',
+        status: 'ready',
+        inputSchema: {
+          type: 'object',
+          properties: { to: { type: 'string' }, body: { type: 'string' } },
+          required: ['to', 'body'],
+        },
+        outputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      },
+    ],
+  } as never);
+
+  it('compile, and check real routine code against the workspace', async () => {
+    const good = await typeCheck(
+      types,
+      `export async function main({ retainer, record, run }: RoutineContext<'deal'>) {
+  if (record.stage !== 'won') return null;
+  const meetings = await retainer.meeting.query({ filter: { notes: { contains: 'quote' } }, limit: 5 });
+  const { tone } = await retainer.ai.generate({
+    instructions: 'Pick a tone',
+    input: { count: meetings.count },
+    output: { type: 'object', properties: { tone: { type: 'string', enum: ['warm', 'formal'] } }, required: ['tone'] },
+  });
+  const sent = await retainer.tools.send_email({ to: 'a@b.c', body: tone + run.at });
+  await retainer.deal.update(record.id, { stage: 'lead' });
+  return sent.id;
+}
+`,
+      true,
+      AbortSignal.timeout(30000),
+    );
+    expect(good.problems).toEqual([]);
+    const bad = await typeCheck(
+      types,
+      `export async function main({ retainer, record }: RoutineContext<'deal'>) {
+  await retainer.deal.update(record.id, { stage: 'lost' });
+  await retainer.tools.send_email({ to: 'a@b.c' });
+  return retainer.invoice.get('x');
+}
+`,
+      true,
+      AbortSignal.timeout(30000),
+    );
+    expect(bad.problems.map((p) => p.at)).toEqual(['2:43', '3:35', '4:19']);
   });
 });
 

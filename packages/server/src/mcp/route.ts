@@ -24,6 +24,7 @@ export function mcpRoute(
     extensionActivation?: ReadonlySet<string> | undefined;
     fileStorage?: FileStorage | undefined;
     fileQuota?: number | undefined;
+    routineModel?: boolean | undefined;
     publicOrigin?: string | undefined;
     /** Accepts MCP OAuth access tokens too (accounts spec 4.7). */
     oauth?: OAuthSettings | undefined;

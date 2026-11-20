@@ -93,3 +93,18 @@ export async function admitRoutine(
     scopes: writes ? ['read', 'write'] : ['read'],
   };
 }
+
+/**
+ * `forget` and routines (routines spec §6.6): code can read any record and
+ * reads are not tracked, so every stored tool and model result and every
+ * run's output in the workspace is deleted, in the same transaction, and
+ * each run in flight is fenced and ends as `erased`: its token is refused
+ * from then on, so nothing it already read can be written anywhere.
+ */
+export async function eraseRoutineContent(tx: Tx, workspaceId: string) {
+  await tx`update routine_run_results set result=null,updated_at=clock_timestamp()
+    where workspace_id=${workspaceId} and result is not null`;
+  await tx`update routine_runs set output=null where workspace_id=${workspaceId} and output is not null`;
+  await tx`update routine_runs set status='erased',code='run_erased',fence=fence+1,finished_at=clock_timestamp(),
+    lease_owner=null,lease_until=null where workspace_id=${workspaceId} and status='running'`;
+}

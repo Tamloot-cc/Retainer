@@ -226,6 +226,7 @@ export function createApp(deps: AppDeps) {
     extensionActivation: deps.extensionActivation,
     fileStorage: deps.fileStorage,
     fileQuota: deps.fileQuota,
+    routineModel: deps.routines?.modelAvailable ?? !!deps.model?.apiKey,
   });
 
   if (deps.webDir) {

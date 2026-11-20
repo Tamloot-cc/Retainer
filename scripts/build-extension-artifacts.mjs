@@ -11,6 +11,10 @@ import { granolaManifest } from '../packages/runner/dist/granola-contract.js';
 import { lastContactManifest } from '../packages/runner/dist/last-contact.js';
 import { tamlootManifest } from '../packages/runner/dist/tamloot-contract.js';
 import { stableJson } from '../packages/server/dist/stable-json.js';
+import {
+  ROUTINE_RUNNER_FUNCTION_ID,
+  ROUTINE_RUNNER_REGISTRATION_ID,
+} from '../packages/shared/dist/index.js';
 import { extensionRelease, extensionServerRange } from './extension-release.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -453,3 +457,45 @@ writeTamloot(
     driverTarget: 'tamloot',
   })),
 );
+
+// The routine runner (routines spec §3.3): first-party code that runs routine
+// code in a closed sandbox. It is not an extension, so it has no catalog
+// entry, only an executable the routine executor finds by its registration ID.
+const routineHandlerDigest = hash(
+  ['routine.js', 'routine-sandbox.js', 'routine-builder.js']
+    .map((file) => readFileSync(resolve(root, 'packages/runner/dist', file), 'utf8'))
+    .join('\n'),
+);
+const routineRunnerDigest = hash(
+  stableJson({
+    registrationId: ROUTINE_RUNNER_REGISTRATION_ID,
+    functionId: ROUTINE_RUNNER_FUNCTION_ID,
+    version,
+    handlerDigest: routineHandlerDigest,
+    packageDigest,
+  }),
+);
+const routineOut = resolve(root, 'artifacts/extensions/routine-runner');
+mkdirSync(routineOut, { recursive: true });
+const writeRoutine = (name, value) =>
+  writeFileSync(resolve(routineOut, name), `${JSON.stringify(value, null, 2)}\n`);
+writeRoutine('metadata.json', {
+  commit,
+  version,
+  development,
+  releaseDigest: routineRunnerDigest,
+  packageDigest,
+  bundleId: 'routine-runner',
+  functionIds: [ROUTINE_RUNNER_FUNCTION_ID],
+});
+writeRoutine('executables.json', [
+  {
+    registrationId: ROUTINE_RUNNER_REGISTRATION_ID,
+    releaseDigest: routineRunnerDigest,
+    functionId: ROUTINE_RUNNER_FUNCTION_ID,
+    handlerDigest: routineHandlerDigest,
+    packageDigest,
+    runtimeVersion: 'node24',
+    driverTarget: 'routine-runner',
+  },
+]);

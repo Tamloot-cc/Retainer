@@ -395,11 +395,8 @@ export class RoutineRuntime {
         );
       return null;
     }
-    if (existing.operation !== request.operation) {
-      await tx`update routine_runs set status='diverged',code='run_diverged',finished_at=clock_timestamp(),
-        lease_owner=null,lease_until=null where id=${runId} and status='running'`;
+    if (existing.operation !== request.operation)
       throw new AppError(409, 'run_diverged', 'the retry took another path; the run stops');
-    }
     const differs = existing.args_hash !== hash;
     if (differs && !existing.differs)
       await tx`update routine_run_results set differs=true where run_id=${runId} and position=${request.position}`;
@@ -452,6 +449,28 @@ export class RoutineRuntime {
 
   /** `POST /v1/routines/runtime/effects`: one numbered effect (§6.2). */
   async effect(caller: Caller, request: RoutineEffectRequest): Promise<RoutineEffectResponse> {
+    try {
+      return await this.numbered(caller, request);
+    } catch (error) {
+      // The refusal rolls its transaction back; the run ends in one of its own.
+      if (error instanceof AppError && error.code === 'run_diverged') {
+        const runId = this.binding(caller).runId;
+        await inWorkspace(
+          this.sql,
+          caller.workspaceId,
+          (tx) =>
+            tx`update routine_runs set status='diverged',code='run_diverged',finished_at=clock_timestamp(),
+            lease_owner=null,lease_until=null where id=${runId} and status='running'`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async numbered(
+    caller: Caller,
+    request: RoutineEffectRequest,
+  ): Promise<RoutineEffectResponse> {
     const binding = this.binding(caller);
     const hash = requestHash(request.args);
     if (Buffer.byteLength(stableJson(request.args)) > ROUTINE_LIMITS.resultBytes)
