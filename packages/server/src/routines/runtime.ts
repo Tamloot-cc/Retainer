@@ -107,6 +107,14 @@ export function keyed(schema: CompiledSchema, record: PresentedRecord): RoutineR
     const field = object?.fieldsByName.get(name);
     values[field?.key ?? name] = value;
   }
+  // The generated types say every field is present (`T | null`), so a value
+  // never written reads as null and a relation with no members as [], not
+  // as a missing property.
+  for (const field of object?.activeFields ?? []) {
+    if (Object.hasOwn(values, field.key)) continue;
+    const many = field.type === 'relation' && field.settings.relationCardinality !== 'many_to_one';
+    values[field.key] = many ? [] : null;
+  }
   return {
     ...values,
     id: record.id,

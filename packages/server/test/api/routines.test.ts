@@ -1627,6 +1627,16 @@ describe('routines', () => {
       body: { operation: 'record.query', args: { object: 'company' } },
     });
     expect(query.status).toBe(200);
+    // Every field the generated types declare is present on a record that
+    // never set it: null, or [] for a relation that holds several records.
+    const company = s.caps.objects.find((o: { name: string }) => o.name === 'company');
+    const [unset] = query.body.result.records.filter((r: { id: string }) => r.id === acme);
+    expect(unset[tier]).toBeNull();
+    for (const field of company.fields as { key: string; type: string; many?: boolean }[]) {
+      expect(Object.hasOwn(unset, field.key), field.key).toBe(true);
+      if (field.type === 'relation' && field.many)
+        expect(Array.isArray(unset[field.key])).toBe(true);
+    }
   });
 
   it('approving after the workspace changed queues one committed recheck', async () => {
