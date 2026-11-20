@@ -19,6 +19,7 @@ const sandbox = new DockerSandbox({
   proxyContainer: process.env.RETAINER_EXECUTION_PROXY_CONTAINER ?? '',
   proxyOrigin: process.env.RETAINER_EXECUTION_PROXY ?? '',
   apiOrigin: process.env.RETAINER_EXECUTION_API_ORIGIN ?? '',
+  exaApiKey: process.env.EXA_API_KEY,
   bundles: z.array(bundleSchema).parse(JSON.parse(process.env.RETAINER_EXTENSION_BUNDLES ?? '[]')),
 });
 const configurationDigest = process.env.RETAINER_LAUNCHER_CONFIGURATION_SHA256;

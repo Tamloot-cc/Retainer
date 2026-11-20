@@ -1,7 +1,7 @@
 import type { Invocation } from '@retainer/extension';
 import { RetainerClient } from '@retainer/sdk';
 import { BASE_OBJECT_IDS } from '@retainer/shared';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeEnrichment, lookUp, MEDIUM_CONFIDENCE } from './enrichment.js';
 import {
   ENRICHMENT,
@@ -418,19 +418,23 @@ describe('configure (spec 6.1)', () => {
       },
     ],
   };
+  beforeEach(() => vi.stubEnv('EXA_API_KEY', 'deployment-key'));
+  afterEach(() => vi.unstubAllEnvs());
+
   function configure(answer: Answer, reason = 'install') {
     const saved: unknown[] = [];
     const prompts: string[] = [];
-    const transport: typeof fetch = async (url, init) => {
+    const transport = vi.fn<typeof fetch>(async (url, init) => {
       const target = new URL(String(url));
       const body = init?.body ? JSON.parse(String(init.body)) : null;
-      if (target.origin === 'https://api.exa.ai') return json({ id: 'team' });
+      if (target.origin === 'https://api.exa.ai') {
+        expect(new Headers(init?.headers).get('x-api-key')).toBe('deployment-key');
+        return json({ id: 'team' });
+      }
       if (target.origin === 'https://model.test') {
         prompts.push(JSON.stringify(body));
         return answer({ body });
       }
-      if (target.pathname.endsWith('/runtime/secrets/apiKey'))
-        return json({ value: 'k', revision: 1 });
       if (target.pathname === '/v1/schema') return json(schema);
       if (target.pathname === '/v1/objects/company/query')
         return json({
@@ -452,7 +456,7 @@ describe('configure (spec 6.1)', () => {
         return json({ saved: true });
       }
       throw new Error(`unexpected request ${target}`);
-    };
+    });
     const invocation: Invocation = {
       protocolVersion: 1,
       runId: 'run',
@@ -469,6 +473,7 @@ describe('configure (spec 6.1)', () => {
     return {
       saved,
       prompts,
+      transport,
       run: () => executeEnrichment(invocation, new AbortController().signal, transport),
     };
   }
@@ -476,6 +481,15 @@ describe('configure (spec 6.1)', () => {
     action,
     field,
     reason,
+  });
+
+  it('fails without making any requests when the deployment key is blank', async () => {
+    vi.stubEnv('EXA_API_KEY', ' ');
+    const c = configure(() => {
+      throw new Error('unexpected model request');
+    });
+    expect(await c.run()).toEqual({ status: 'failed', code: 'provider_not_configured' });
+    expect(c.transport).not.toHaveBeenCalled();
   });
 
   it('saves the model’s choices, sampling compatible fields only', async () => {
@@ -575,14 +589,15 @@ describe('enrichment manifest', () => {
     const enrich = manifest.functions.find((f) => f.universalId === ENRICHMENT.enrich);
     expect(enrich).toMatchObject({
       mappedWrite: true,
-      secrets: ['apiKey'],
       trigger: {
         fieldIds: [ENRICHMENT.domainField, ENRICHMENT.nameField],
         related: false,
         operations: ['create', 'update'],
       },
     });
+    expect(Object.keys(manifest.settings)).toEqual(['shareDomains']);
     expect(manifest.settings.shareDomains).toMatchObject({ consent: true, required: true });
+    expect(manifest.functions.every((fn) => !fn.secrets?.length)).toBe(true);
   });
   it('uses the model in configure and the lookups, and not in setup', () => {
     expect(Object.fromEntries(manifest.functions.map((f) => [f.name, f.uses ?? []]))).toEqual({

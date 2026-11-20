@@ -159,6 +159,7 @@ export class DockerSandbox {
       proxyContainer: string;
       proxyOrigin: string;
       apiOrigin: string;
+      exaApiKey?: string;
       bundles: readonly z.input<typeof bundleSchema>[];
       /** Concurrent launches per kind; defaults to 32 runs and 8 verifiers. */
       capacity?: { run?: number; verify?: number };
@@ -262,7 +263,9 @@ export class DockerSandbox {
       throw new Error('runner image does not match registered release/protocol');
     if (
       image.Config.Env?.some((entry) =>
-        /(TOKEN|SECRET|PASSWORD|DATABASE|AWS_ACCESS_KEY)/i.test(entry.split('=')[0] ?? ''),
+        /(TOKEN|SECRET|PASSWORD|DATABASE|AWS_ACCESS_KEY|^EXA_API_KEY$)/i.test(
+          entry.split('=')[0] ?? '',
+        ),
       )
     )
       throw new Error('runner image contains forbidden credential environment');
@@ -392,6 +395,9 @@ export class DockerSandbox {
                 `HTTPS_PROXY=${this.options.proxyOrigin}`,
                 'NO_PROXY=',
                 'NODE_USE_ENV_PROXY=1',
+                ...(bundle.id === 'enrichment' && this.options.exaApiKey
+                  ? [`EXA_API_KEY=${this.options.exaApiKey}`]
+                  : []),
               ],
           Labels: {
             'retainer.extension.run': '1',

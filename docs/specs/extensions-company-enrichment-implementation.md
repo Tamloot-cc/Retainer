@@ -253,8 +253,7 @@ Manifest essentials:
 
 - `requestedActor: 'agent'`, `scopes: ['read', 'write']`, catalog `actorCeiling: 'agent'`.
 - `settings`:
-  - `apiKey`: a string with `secret`, `required` and `reconnect` set.
-  - `shareDomains`: a boolean with `consent: true`. Its label is "Send company domains to Exa to look up company details". Its description says that Exa keeps queries unless the Exa team has Zero Data Retention, which only Exa Enterprise offers.
+  - `shareDomains`: a boolean with `consent: true`. It asks the admin to approve sending company names and domains to Exa. Its description identifies Retainer’s Exa account as the one whose retention policy applies.
 - `schema: []`. All field additions come through the mapping.
 - `mapping.objectId` is the base Company object. `mapping.lookup` is `{ fieldId: bf87f1cd-…, type: 'links' }`.
 - `mapping.outputs`. These replace the PRD's draft launch contract with what Exa returns (§4.3). A sample Exa response for a real company, from 2026-11-12, shaped these choices.
@@ -271,8 +270,8 @@ Manifest essentials:
 
 | Function | Trigger                                                                                             | Settings and scopes                                                     | Timeout |
 | -------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------- |
-| `setup`  | `install`                                                                                           | `secrets: ['apiKey']`, no scopes                                        |         |
-| `enrich` | `change` on Company with `fieldIds: [domain]`, `operations: ['create', 'update']`, `related: false` | `secrets: ['apiKey']`, `scopes: ['read', 'write']`, `mappedWrite: true` | 60 s    |
+| `setup`  | `install`                                                                                           | `scopes: ['read']`                                        |         |
+| `enrich` | `change` on Company with `fieldIds: [domain]`, `operations: ['create', 'update']`, `related: false` | `scopes: ['read', 'write']`, `mappedWrite: true` | 60 s    |
 
 ### 4.2 Domain normalization
 
@@ -335,10 +334,10 @@ The sample confirmed that `auto` with `category: "company"` returns `entities`. 
 
 ### 4.4 `setup`
 
-1. Read `apiKey` through the runtime secret endpoint.
+1. Read `EXA_API_KEY` from the enrichment runner’s deployment environment. If it is missing, report `provider_not_configured`.
 2. Call the credential check (§4.3).
-   - A 401 or 403 from the fallback search means a bad key: return `failed` with `provider_unauthorized`. `failInstallation` marks it `needs_reconnect`.
-   - A 402 means the Exa team is out of credits: return `failed` with `provider_payment_required`, which marks the installation `degraded`. The admin adds credits in Exa and retries setup.
+   - A 401 or 403 from the fallback search means a bad key: return `failed` with `provider_credentials_rejected`. The installation is marked `degraded`.
+   - A 402 means the Exa team is out of credits: return `failed` with `provider_payment_required`, which marks the installation `degraded`. The deployment operator replenishes credits before setup is retried.
    - A network error, 429 or 5xx is transient: retry.
    - Success: return `succeeded`, which activates the installation.
 
@@ -360,7 +359,7 @@ Setup reads no records, as lifecycle runs cannot.
 Provider outcomes:
 
 - No match: `succeeded`, `no_match`.
-- 401 or 403: `failed`, `provider_unauthorized`, which marks the installation `needs_reconnect`.
+- 401 or 403: `failed`, `provider_credentials_rejected`, which marks the installation `degraded`.
 - 402: `failed`, `provider_payment_required`, which marks it `degraded`.
 - 429: `retry`, `provider_rate_limited`, passing `Retry-After` through as `retryAfterSeconds`. The cap is 3600 (`protocol.ts:24`).
 - 5xx, a network error or a timeout: `retry`, `provider_unavailable`.
@@ -390,7 +389,7 @@ All tests that touch the database run against real Postgres with a fresh clone p
 | Mapping edit                       | Remap advances generation, fences a running attempt, restamps queued change jobs, and the next trigger writes the new target. A rename keeps the binding. Deleting a referenced field produces a field-specific `schema_binding_conflict`.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Trigger                            | Create with a domain queues a job. Create without a domain queues a job that makes zero provider requests. Adding a domain later queues a job. Updating a mapped field queues nothing. Linking a person to the company queues nothing (`related: false`).                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Mapped write races                 | Hold the fake provider while a competing request does each of these: fills a target, clears it explicitly, changes the domain, deletes the record, merges it away. The stale write never changes protected values or another company. Run the write and the competing change in parallel. Replay produces no new assertions.                                                                                                                                                                                                                                                                                                                                                              |
-| Failures                           | Partial results, no match, a malformed body, 429 with `Retry-After`, 5xx, invalid key at setup and at run time (`needs_reconnect`), disable during a run, admin retry. No secret, domain or body appears in diagnostics or logs.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Failures                           | Partial results, no match, a malformed body, 429 with `Retry-After`, 5xx, invalid deployment key at setup and at run time (`degraded`), disable during a run, admin retry. No secret, domain or body appears in diagnostics or logs.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Bundle                             | Unit tests for the provider adapter and `normalizeDomain`. A `test-enrichment-bundle.mjs` like Granola's runs the built bundle through the isolated runner against a fake Exa origin that serves recorded `SearchCompanyEntityOutput` responses, injected the same way Granola's tests inject theirs. The fixtures are synthetic: they copy the sample's shape and never its people or company data. Cases: an exact match through `www.`, a result on another domain (`no_match`), a `Homepage:` line naming another domain (`no_match`), a profile without a LinkedIn line, a malformed LinkedIn line, null `workforce`, a locality-only headquarters, 402, and 429 with `Retry-After`. |
 | Web                                | The Playwright flows in §3.8.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 

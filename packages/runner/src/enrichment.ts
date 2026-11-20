@@ -323,11 +323,14 @@ export async function executeEnrichment(
     client ??= enrichmentModel(invocation, transport);
     return client;
   };
-  const exa = async () =>
-    new ExaProvider((await sdk.extensionSecret(id, 'apiKey')).value, signal, transport);
+  const exa = () => {
+    const key = process.env.EXA_API_KEY?.trim();
+    if (!key) throw new ExaError('provider_not_configured');
+    return new ExaProvider(key, signal, transport);
+  };
   try {
     if (invocation.functionId === ENRICHMENT.configure) {
-      await (await exa()).check();
+      await exa().check();
       const schema = await sdk.schema();
       const company = schema.objects.find((o) => o.baseObject === 'company');
       const outputs = ENRICHMENT_MAPPING.outputs;
@@ -361,7 +364,7 @@ export async function executeEnrichment(
       if (mapping?.lookup?.status !== 'ok')
         return { status: 'failed', code: 'schema_binding_conflict' };
       const lookupField = mapping.lookup.name;
-      const run: Lookup = { sdk, installationId: id, exa: await exa(), model, signal };
+      const run: Lookup = { sdk, installationId: id, exa: exa(), model, signal };
       await eachLimited(page.records, BACKFILL_CONCURRENCY, async (row) => {
         let record: Awaited<ReturnType<typeof sdk.record>>;
         try {
@@ -398,7 +401,7 @@ export async function executeEnrichment(
       return done('backfill_page');
     }
     if (invocation.functionId === ENRICHMENT.setup) {
-      await (await exa()).check();
+      await exa().check();
       const input = invocation.input as { previousVersion?: string | null };
       const mapping = (await sdk.extension(id)).mapping;
       const previous = await sdk.extensionKv(id, 'mappedOutputs');
@@ -457,7 +460,7 @@ export async function executeEnrichment(
     const company = (await sdk.schema()).objects.find((o) => o.baseObject === 'company');
     return done(
       await fill(
-        { sdk, installationId: id, exa: await exa(), model, signal },
+        { sdk, installationId: id, exa: exa(), model, signal },
         mapping,
         { ...record, name: companyName(company, record) },
         domain,
@@ -465,12 +468,20 @@ export async function executeEnrichment(
       ),
     );
   } catch (error) {
-    if (error instanceof ExaError)
+    if (error instanceof ExaError) {
+      // Exa's credential belongs to the deployment, so workspace reconnect cannot fix it.
+      const code =
+        error.code === 'provider_unauthorized'
+          ? 'provider_credentials_rejected'
+          : error.code === 'provider_not_found'
+            ? 'provider_invalid_request'
+            : error.code;
       return {
         status: error.retry ? 'retry' : 'failed',
-        code: error.code === 'provider_not_found' ? 'provider_invalid_request' : error.code,
+        code,
         ...(error.retry ? { retryAfterSeconds: error.retryAfterSeconds } : {}),
       };
+    }
     if (error instanceof ModelRequestFailed) return { status: 'failed', code: error.message };
     if (error instanceof RetainerApiError && error.code === 'schema_binding_conflict')
       return { status: 'failed', code: 'schema_binding_conflict' };
