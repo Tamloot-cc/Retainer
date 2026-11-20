@@ -40,6 +40,7 @@ import {
 } from './mapping.js';
 import {
   accessText,
+  canSuggest,
   detailKey,
   hasInstallationSettings,
   type Installation,
@@ -105,7 +106,12 @@ const STEP_LABELS: Record<Step, string> = {
  */
 export function ExtensionSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
   const configure = props.release.manifest.functions.some((fn) => fn.trigger.kind === 'configure');
-  if (!configure || props.mode === 'reconnect') return <BasicExtensionSetup {...props} />;
+  // Suggestions run only for an active installation. A disabled one, such as
+  // after a failed upgrade, upgrades with its approved mapping carried over.
+  const inactiveUpgrade =
+    props.mode === 'upgrade' && !canSuggest(props.release, props.installation);
+  if (!configure || props.mode === 'reconnect' || inactiveUpgrade)
+    return <BasicExtensionSetup {...props} />;
   return <ConfigureSetup {...props} />;
 }
 

@@ -91,6 +91,8 @@ function scope(caller: Caller, required: 'read' | 'schema:write') {
     throw forbidden(`extension operation requires ${required}`);
 }
 const conflict = (code: string, message: string) => new AppError(409, code, message);
+/** Configure runs only for an installation being set up or turned on. */
+const configurable = (state: string) => state === 'configuring' || state === 'active';
 const sameScopes = (a: readonly string[], b: readonly string[]) =>
   a.length === b.length && a.every((scope) => b.includes(scope));
 
@@ -619,13 +621,19 @@ export class Extensions {
         !manifest.functions.some((fn) => fn.trigger.kind === 'configure') ||
         input.mapping ||
         input.reconnect ||
-        input.mappingChange ||
-        (existing && existing.state !== 'uninstalled' && existing.state !== 'active')
+        input.mappingChange
       )
         throw new AppError(
           400,
           'invalid_request',
           'review access separately from schema and credential changes',
+        );
+      // Configure runs only for an active installation. A disabled one (turned
+      // off, or after a failed upgrade) upgrades through the full review.
+      if (existing && existing.state !== 'uninstalled' && !configurable(existing.state))
+        throw conflict(
+          'installation_disabled',
+          'suggestions need an active installation; review the upgrade without them',
         );
       const preview: ExtensionPreview = {
         planDigest: hash({
@@ -1419,7 +1427,7 @@ export class Extensions {
 
   private async configureInTransaction(tx: Tx, caller: Caller, row: Row, version: string) {
     const target = this.catalog.get(row.registration_id, version);
-    if (!['configuring', 'active'].includes(row.state))
+    if (!configurable(row.state))
       throw conflict('installation_disabled', 'configure requires active or configuring');
     if (row.state === 'configuring' && target.digest !== row.release_digest)
       throw conflict('grant_required', 'cancel and approve access to the new release first');

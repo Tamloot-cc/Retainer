@@ -187,7 +187,10 @@ Preview and commit keep their endpoints (`POST /v1/extensions/preview`,
 For a release with `configure` and no installation:
 
 - The request carries settings and pending secret references, and no
-  `mapping`. An explicit `accessOnly: true` selects the same plan for upgrades.
+  `mapping`. An explicit `accessOnly: true` selects the same plan for upgrades
+  of an active installation. A disabled one (turned off, or after a failed
+  upgrade setup) is refused with `installation_disabled`; it upgrades through
+  the full review, which carries its mapping over, with no suggestions.
 - The preview shows the access only: the scopes, the actor, the secrets and
   the sharing consent. It plans no schema operations. Its plan
   digest covers those.
