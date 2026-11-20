@@ -35,7 +35,12 @@ type Snapshot = {
     role: string | null;
   }[];
 };
-type Entry = { before: Snapshot | null; operation?: ChangeOperation; reviewKeys: Set<string> };
+type Entry = {
+  before: Snapshot | null;
+  operation?: ChangeOperation;
+  reviewKeys: Set<string>;
+  mergedFrom?: string;
+};
 const values = (snapshot: Snapshot) => ({ ...snapshot.data, ...snapshot.relations });
 const related = (snapshot: Snapshot | null) =>
   snapshot
@@ -149,6 +154,11 @@ export class ChangeCollector {
     }
     if (operation) entry.operation = operation;
   }
+  /** Marks a captured survivor's change as made by merging another record into it. */
+  markMerged(survivorId: string, mergedId: string) {
+    const entry = this.entries.get(survivorId);
+    if (entry) entry.mergedFrom = mergedId;
+  }
   created(id: string) {
     if (this.published) throw new Error('cannot create records after feed publication');
     if (!this.entries.has(id)) this.entries.set(id, { before: null, reviewKeys: new Set() });
@@ -185,6 +195,7 @@ export class ChangeCollector {
       origin_installation_id: string | null;
       cause: string[];
       merged_into_id: string | null;
+      merged_from_id: string | null;
     }[] = [];
     for (const [id, entry] of [...this.entries].sort(([a], [b]) => a.localeCompare(b))) {
       const current = await this.snapshot(tx, id),
@@ -217,6 +228,7 @@ export class ChangeCollector {
           origin_installation_id: this.origin,
           cause: this.cause,
           merged_into_id: null,
+          merged_from_id: null,
         });
       let operation: ChangeOperation = entry.operation ?? 'update';
       if (!prior || moved) operation = 'create';
@@ -255,6 +267,7 @@ export class ChangeCollector {
         origin_installation_id: this.origin,
         cause: this.cause,
         merged_into_id: current?.merged_into_id ?? null,
+        merged_from_id: entry.mergedFrom ?? null,
       });
     }
     for (const [objectTypeId, keys] of [...this.schemaChanges].sort(([a], [b]) =>
@@ -271,6 +284,7 @@ export class ChangeCollector {
         origin_installation_id: this.origin,
         cause: this.cause,
         merged_into_id: null,
+        merged_from_id: null,
       });
     }
     if (!changes.length) return;
@@ -307,10 +321,11 @@ export class ChangeCollector {
       cause: jsonValue(change.cause),
       cause_depth: this.depth,
       merged_into_id: change.merged_into_id,
+      merged_from_id: change.merged_from_id,
     }));
-    await tx`insert into record_changes(workspace_id,position,record_id,object_type_id,operation,field_keys,related_record_ids,origin_installation_id,cause,cause_depth,merged_into_id)
-      select ${this.workspace}::uuid,r.position,r.record_id,r.object_type_id,r.operation,r.field_keys,r.related_record_ids,r.origin_installation_id,r.cause,r.cause_depth,r.merged_into_id
+    await tx`insert into record_changes(workspace_id,position,record_id,object_type_id,operation,field_keys,related_record_ids,origin_installation_id,cause,cause_depth,merged_into_id,merged_from_id)
+      select ${this.workspace}::uuid,r.position,r.record_id,r.object_type_id,r.operation,r.field_keys,r.related_record_ids,r.origin_installation_id,r.cause,r.cause_depth,r.merged_into_id,r.merged_from_id
       from jsonb_to_recordset(${tx.json(rows)}::jsonb) as r(position bigint,record_id uuid,object_type_id uuid,operation text,
-        field_keys jsonb,related_record_ids jsonb,origin_installation_id uuid,cause jsonb,cause_depth int,merged_into_id uuid)`;
+        field_keys jsonb,related_record_ids jsonb,origin_installation_id uuid,cause jsonb,cause_depth int,merged_into_id uuid,merged_from_id uuid)`;
   }
 }

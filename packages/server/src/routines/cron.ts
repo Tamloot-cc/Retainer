@@ -45,15 +45,17 @@ export function nextInZone(cron: string, after: Date, zone: string): Date {
   let wallAfter = new Date(after.getTime() + offset(zone, after));
   for (let guard = 0; guard < 8; guard++) {
     const wall = nextOccurrence(cron, wallAfter);
-    // The instants the wall time could be, under the offsets either side of
-    // a change: the earliest that reads back as this wall time, or, in a
-    // skipped hour, the later one, so a schedule never fires early.
-    const first = new Date(wall.getTime() - offset(zone, wall));
-    const second = new Date(wall.getTime() - offset(zone, first));
-    const exact = [first, second]
+    // The instants the wall time could be, under the offsets a day either
+    // side of it: the earliest that reads back as this wall time, or, in a
+    // skipped hour, the one under the earlier offset, which is later, so a
+    // schedule never fires early.
+    const day = 86400000;
+    const early = new Date(wall.getTime() - offset(zone, new Date(wall.getTime() - day)));
+    const late = new Date(wall.getTime() - offset(zone, new Date(wall.getTime() + day)));
+    const exact = [early, late]
       .filter((c) => c.getTime() + offset(zone, c) === wall.getTime())
       .sort((a, b) => a.getTime() - b.getTime());
-    const instant = exact[0] ?? (first > second ? first : second);
+    const instant = exact[0] ?? early;
     if (instant > after) return instant;
     wallAfter = wall;
   }

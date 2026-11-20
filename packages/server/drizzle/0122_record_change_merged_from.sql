@@ -1,0 +1,1 @@
+ALTER TABLE "record_changes" ADD COLUMN "merged_from_id" uuid;

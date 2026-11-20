@@ -32,6 +32,22 @@ describe('routine schedules', () => {
     expect(nextInZone('30 1 * * *', new Date('2026-11-01T00:00:00Z'), 'America/New_York')).toEqual(
       new Date('2026-11-01T05:30:00Z'),
     );
+    // East of UTC too: Berlin repeats 02:30 on 2026-10-25 (CEST first, 00:30 UTC)
+    // and skips it on 2026-03-29 (03:30 CEST, 01:30 UTC).
+    expect(nextInZone('30 2 * * *', new Date('2026-10-24T12:00:00Z'), 'Europe/Berlin')).toEqual(
+      new Date('2026-10-25T00:30:00Z'),
+    );
+    expect(nextInZone('30 2 * * *', new Date('2026-03-28T12:00:00Z'), 'Europe/Berlin')).toEqual(
+      new Date('2026-03-29T01:30:00Z'),
+    );
+    // Sydney repeats 02:30 on 2026-04-05: the first is AEDT, 15:30 UTC the day before.
+    expect(nextInZone('30 2 * * *', new Date('2026-04-04T00:00:00Z'), 'Australia/Sydney')).toEqual(
+      new Date('2026-04-04T15:30:00Z'),
+    );
+    // Hourly in Berlin keeps both 02:00s.
+    expect(nextInZone('0 * * * *', new Date('2026-10-24T23:30:00Z'), 'Europe/Berlin')).toEqual(
+      new Date('2026-10-25T00:00:00Z'),
+    );
   });
 
   it('refuses invalid crons and ones more frequent than every 15 minutes', () => {

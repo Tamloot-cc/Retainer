@@ -1357,7 +1357,15 @@ they left open:
   unfinished ones; retention clears them 7 days after the run ends.
 - **Clock changes.** A scheduled wall time that a spring-forward change
   skips runs an hour later (02:30 at 03:30); one that a fall-back change
-  repeats runs the first time.
+  repeats runs the first time, in every zone.
+- **Merges** mark the survivor's change (`record_changes.merged_from_id`),
+  which dispatch skips, and move the merged-away record's queued and held
+  runs, firings and `oncePerRecord` marks to the survivor (§6.1). A run
+  that a queued run of the same version on the survivor already covers is
+  discarded as `merged`.
+- **A routine paused mid-burst** holds the rest of the burst in the same
+  pass, up to the feed head the pass began at; changes after that are not
+  run, as for any paused routine.
 - **Reads count per attempt.** Each read operation is capped at 200 calls,
   counted atomically on the run and reset when an attempt starts, since
   reads are not replayed. Effects count across attempts.

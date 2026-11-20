@@ -243,8 +243,10 @@ export class RoutineExecutor {
       }
       // One run of a routine on a record at a time: this one waits for the other.
       if (run.mode === 'run' && run.routine_id && run.record_id) {
+        // A record merged into this one is the same record (§6.1).
         const [busy] = await tx`select 1 from routine_runs where routine_id=${run.routine_id}
-          and record_id=${run.record_id} and mode='run' and status='running' and id<>${id}`;
+          and (record_id=${run.record_id} or record_id in (select r.id from records r where r.merged_into_id=${run.record_id}))
+          and mode='run' and status='running' and id<>${id}`;
         if (busy) return null;
       }
       const timeout = timeoutFor(run.mode);

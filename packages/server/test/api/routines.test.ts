@@ -4,6 +4,7 @@ import { ROUTINE_LIMITS } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
+import { dispatchRoutines } from '../../src/routines/matcher.js';
 import {
   type RoutineDriver,
   RoutineExecutor,
@@ -892,5 +893,70 @@ describe('routines', () => {
     const [after] = await db.owner<{ output: unknown }[]>`
       select output from routine_runs where id=${run?.id as string}`;
     expect(after?.output).toBe(null);
+  });
+  it('a routine paused mid-burst holds the rest of the burst, past one page', async () => {
+    const s = await setup();
+    const limits = ROUTINE_LIMITS as { runsPerHour: number };
+    const saved = limits.runsPerHour;
+    limits.runsPerHour = 1;
+    try {
+      const { routineId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+      for (let i = 0; i < 5; i++) await createCompany(s.app, s.keys.admin, `Acme Burst ${i}`);
+      // Two changes a page: the routine pauses on the first page and must go on.
+      await dispatchRoutines(s.app.sql, s.workspace, 2);
+      // Every record of the burst has a run; pausing holds the one it queued too.
+      const runs = await db.owner<{ status: string }[]>`
+        select status from routine_runs where routine_id=${routineId} and mode='run'`;
+      expect(runs.map((r) => r.status)).toEqual(['held', 'held', 'held', 'held', 'held']);
+    } finally {
+      limits.runsPerHour = saved;
+    }
+  });
+
+  it('a merge triggers nothing, and the merged-away record’s queued run moves or folds', async () => {
+    const s = await setup();
+    const { routineId } = await activate(s, {
+      manifest: {
+        when: { kind: 'record', object: 'company', on: ['updated'], fields: [s.key('name')] },
+        uses: { tools: [], model: false },
+      },
+      code: `export async function main({ record }: RoutineContext<'company'>) {
+  return record.id;
+}
+`,
+    });
+    const survivor = await createCompany(s.app, s.keys.admin, 'Acme Survivor');
+    const merged = await createCompany(s.app, s.keys.admin, 'Acme Merged');
+    const lone = await createCompany(s.app, s.keys.admin, 'Lone Survivor');
+    const other = await createCompany(s.app, s.keys.admin, 'Lone Merged');
+    const rename = (id: string, name: string) =>
+      s.app.request(`/v1/records/${id}`, {
+        key: s.keys.admin,
+        method: 'PATCH',
+        body: { values: { name } },
+      });
+    for (const [id, name] of [
+      [survivor, 'Acme Survivor 2'],
+      [merged, 'Acme Merged 2'],
+      [other, 'Lone Merged 2'],
+    ] as const)
+      expect((await rename(id, name)).status).toBe(200);
+    await s.maintenance.maintain();
+    const merge = (into: string, from: string) =>
+      s.app.request(`/v1/records/${into}/merge`, {
+        key: s.keys.admin,
+        body: { recordId: from, values: { name: 'Merged name' } },
+      });
+    expect((await merge(survivor, merged)).status).toBe(200);
+    expect((await merge(lone, other)).status).toBe(200);
+    await s.maintenance.maintain();
+    const runs = await db.owner<{ record_id: string; status: string; code: string | null }[]>`
+      select record_id,status,code from routine_runs where routine_id=${routineId} and mode='run'
+      order by created_at`;
+    expect(runs).toEqual([
+      { record_id: survivor, status: 'queued', code: null },
+      { record_id: merged, status: 'discarded', code: 'merged' },
+      { record_id: lone, status: 'queued', code: null },
+    ]);
   });
 });

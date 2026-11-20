@@ -16,6 +16,7 @@ type ChangeRow = {
   field_keys: string[];
   cause: string[];
   cause_depth: number | null;
+  merged_from_id?: string | null;
 };
 
 /** Whether a change concerns a `record` trigger: object, operation, watched fields (§6.1). */
@@ -135,55 +136,68 @@ export async function dispatchRoutines(sql: Sql, workspace: string, limit = 500)
         continue;
       }
       const object = objectFor(schema, when.object);
-      const rows = await tx<ChangeRow[]>`
-        select position::text,record_id,object_type_id,operation,field_keys,cause,cause_depth from record_changes
-        where position>${routine.feed_position}::bigint order by record_changes.position limit ${limit}`;
-      let paused = false;
-      for (const row of rows) {
-        if (!object || !row.record_id || !triggerMatches(when, object.id, row)) continue;
-        // A routine is never triggered by a change it caused; chains stop at 8 hops (§6.5).
-        if (
-          row.cause.includes(routine.id) ||
-          (row.cause_depth ?? row.cause.length) >= ROUTINE_LIMITS.chainDepth
-        ) {
-          blocked++;
-          continue;
-        }
-        if (when.oncePerRecord && (await usedUp(tx, routine.id, row.record_id))) continue;
-        // Rapid edits fold into the queued, unstarted run for the same record (§6.1).
-        const [pending] = await tx<{ id: string; cause: string[]; cause_depth: number }[]>`
+      let paused = false,
+        from = routine.feed_position;
+      // A routine that pauses holds the rest of the burst too, up to the head
+      // this pass began at: paused, it is not discovered again, and resuming
+      // starts from the head.
+      for (;;) {
+        const rows = await tx<ChangeRow[]>`
+        select position::text,record_id,object_type_id,operation,field_keys,cause,cause_depth,merged_from_id
+        from record_changes where position>${from}::bigint and position<=${head}::bigint
+        order by record_changes.position limit ${limit}`;
+        for (const row of rows) {
+          // A merge is not a trigger (§6.1), even where it changed the survivor.
+          if (row.merged_from_id) continue;
+          if (!object || !row.record_id || !triggerMatches(when, object.id, row)) continue;
+          // A routine is never triggered by a change it caused; chains stop at 8 hops (§6.5).
+          if (
+            row.cause.includes(routine.id) ||
+            (row.cause_depth ?? row.cause.length) >= ROUTINE_LIMITS.chainDepth
+          ) {
+            blocked++;
+            continue;
+          }
+          if (when.oncePerRecord && (await usedUp(tx, routine.id, row.record_id))) continue;
+          // Rapid edits fold into the queued, unstarted run for the same record (§6.1).
+          const [pending] = await tx<{ id: string; cause: string[]; cause_depth: number }[]>`
           select id,cause,cause_depth from routine_runs where routine_id=${routine.id} and record_id=${row.record_id}
             and mode='run' and status in ('queued','held') and attempt=0 and version_id=${routine.version_id}
           order by created_at desc limit 1 for update`;
-        if (pending) {
-          await tx`update routine_runs set change_position=${row.position}::bigint,
+          if (pending) {
+            await tx`update routine_runs set change_position=${row.position}::bigint,
             cause=${tx.json([...new Set([...pending.cause, ...row.cause])])},
             cause_depth=greatest(cause_depth,${row.cause_depth ?? row.cause.length}),run_at=clock_timestamp()
             where id=${pending.id}`;
-          continue;
+            continue;
+          }
+          const allowed = !paused && (await hourlyAllowance(tx, routine.id));
+          await queueRun(tx, workspace, {
+            mode: 'run',
+            triggerKind: 'record',
+            routineId: routine.id,
+            versionId: routine.version_id,
+            sourceId: routine.source_id,
+            recordId: row.record_id,
+            changePosition: Number(row.position),
+            cause: row.cause,
+            causeDepth: row.cause_depth ?? row.cause.length,
+            held: !allowed,
+          });
+          if (allowed) queued++;
+          else {
+            held++;
+            if (!paused) await pauseRoutine(tx, routine.id, 'needs_attention', 'runs_held');
+            paused = true;
+          }
         }
-        const allowed = !paused && (await hourlyAllowance(tx, routine.id));
-        await queueRun(tx, workspace, {
-          mode: 'run',
-          triggerKind: 'record',
-          routineId: routine.id,
-          versionId: routine.version_id,
-          sourceId: routine.source_id,
-          recordId: row.record_id,
-          changePosition: Number(row.position),
-          cause: row.cause,
-          causeDepth: row.cause_depth ?? row.cause.length,
-          held: !allowed,
-        });
-        if (allowed) queued++;
-        else {
-          held++;
-          if (!paused) await pauseRoutine(tx, routine.id, 'needs_attention', 'runs_held');
-          paused = true;
+        const last = rows.at(-1)?.position;
+        if (last) {
+          await tx`update routines set feed_position=${last}::bigint where id=${routine.id}`;
+          from = last;
         }
+        if (!paused || rows.length < limit) break;
       }
-      const last = rows.at(-1)?.position;
-      if (last) await tx`update routines set feed_position=${last}::bigint where id=${routine.id}`;
     }
     return { queued, held, blocked };
   });
