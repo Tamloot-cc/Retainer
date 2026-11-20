@@ -71,6 +71,15 @@ export async function installedTools(tx: Tx, catalog: RuntimeCatalog): Promise<I
   return tools;
 }
 
+/** Whether an installed tool still matches what a version pinned (routines spec §5.3). */
+export const sameContract = (a: ToolContract | undefined, b: ToolContract | undefined) =>
+  !!a &&
+  !!b &&
+  a.registrationId === b.registrationId &&
+  a.effect === b.effect &&
+  a.connection === b.connection &&
+  a.model === b.model;
+
 /** What a version pins about a tool (routines spec §5.3): a change pauses the routine. */
 export const toolContract = (tool: InstalledTool): ToolContract => ({
   registrationId: tool.registrationId,

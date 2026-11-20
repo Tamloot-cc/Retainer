@@ -6,6 +6,7 @@ import {
   type RoutineManifest,
   type RoutineRecord,
   type RoutineRunContext,
+  type ToolContract,
 } from '@retainer/shared';
 import { z } from 'zod';
 import type { Caller, RoutineCaller } from '../caller.js';
@@ -15,7 +16,7 @@ import { AppError, forbidden, notFound } from '../errors.js';
 import { admitCaller } from '../extension-runtime/admission.js';
 import type { ExtensionQueue } from '../extension-runtime/queue.js';
 import type { RunTokens } from '../extension-runtime/tokens.js';
-import { installedTools } from '../extensions/tools.js';
+import { installedTools, sameContract, toolContract } from '../extensions/tools.js';
 import type { Files } from '../files/service.js';
 import { requestHash } from '../idempotency.js';
 import { lockSource, logEvent, logEventInputSchema } from '../memory/events.js';
@@ -38,7 +39,7 @@ import { getSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
 import { capabilities, type RoutineConfig } from './capabilities.js';
 import { fieldFor, mapFilter, objectFor } from './manifest.js';
-import { queueRun, RUN_GRACE_SECONDS, useUp } from './runs.js';
+import { pauseRoutine, queueRun, RUN_GRACE_SECONDS, useUp } from './runs.js';
 import {
   insertProposal,
   proposeInputSchema,
@@ -72,6 +73,7 @@ type RunState = {
   expires_at: Date | null;
   /** When this attempt ends: its deadline, or the run's expiry if sooner. */
   deadline: Date | null;
+  tool_contracts: Record<string, ToolContract> | null;
   attempt: number;
   cause: string[];
   cause_depth: number;
@@ -158,7 +160,7 @@ export class RoutineRuntime {
       select r.id,r.routine_id,r.version_id,r.source_id,r.mode,r.trigger_kind,r.record_id,r.run_at,r.expires_at,
         least(r.expires_at,r.lease_until-${RUN_GRACE_SECONDS}*interval '1 second') as deadline,
         r.attempt,r.cause,r.cause_depth,r.initiator_user_id,r.initiated_by,r.model_calls,r.input,
-        s.manifest,s.code,v.types_fingerprint
+        s.manifest,s.code,v.types_fingerprint,v.tool_contracts
       from routine_runs r left join routine_sources s on s.id=r.source_id
       left join routine_versions v on v.id=r.version_id
       where r.id=${runId} ${lock ? tx`for update of r` : tx``}`;
@@ -504,6 +506,16 @@ export class RoutineRuntime {
           error.code === 'operation_limit')
       )
         await this.recordRefusal(caller, request, error.code).catch(() => {});
+      // A changed tool pauses the routine (§5.3), in a transaction of its own.
+      if (error instanceof AppError && error.code === 'tool_changed') {
+        const runId = this.binding(caller).runId;
+        await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+          const [row] = await tx<{ routine_id: string | null; mode: string }[]>`
+            select routine_id,mode from routine_runs where id=${runId}`;
+          if (row?.routine_id && row.mode === 'run')
+            await pauseRoutine(tx, row.routine_id, 'needs_attention', 'tool_changed');
+        }).catch(() => {});
+      }
       // The refusal rolls its transaction back; the run ends in one of its own.
       if (error instanceof AppError && error.code === 'run_diverged') {
         const runId = this.binding(caller).runId;
@@ -707,6 +719,10 @@ export class RoutineRuntime {
     const tool = (await installedTools(tx, this.config.catalog)).find((t) => t.name === name);
     if (!tool || tool.status === 'conflict')
       throw new AppError(409, 'tool_unavailable', `the tool "${name}" is not installed`);
+    // The tool may have changed since the run started: what the version
+    // pinned is checked again before the call is made (§5.3).
+    if (!sameContract(run.tool_contracts?.[name], toolContract(tool)))
+      throw new AppError(409, 'tool_changed', `the tool "${name}" changed since it was approved`);
     if (run.mode === 'test' && tool.effect === 'send') {
       await this.record(tx, caller.workspaceId, run.id, request, hash, {
         state: 'reported',

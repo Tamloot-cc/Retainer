@@ -1391,6 +1391,15 @@ they left open:
   check, and the loader refuses one at run time. The server does not scan
   the text, which cannot tell syntax from a string or a member named
   `import`.
+- **A tool is checked again when it is called.** An extension upgraded
+  after a run started could change a tool's contract mid-run, so the call
+  compares the installed tool with the version's pin, as the run's start
+  does. A change refuses the call (`tool_changed`) and pauses the routine.
+- **An `if` on a removed field** fails the run as `check_failed` and pauses
+  the routine, as code that no longer type-checks does.
+- **`main` must be a function.** The sandbox check also checks that the
+  exported `main` is callable with the context, so `export const main = 1`
+  is refused before approval, not at every run.
 - **Routines see older Gmail messages.** Lists show only a thread's newest
   message; a routine's start check and a schedule's targets match every live
   record that no newer revision replaced.

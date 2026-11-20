@@ -10,7 +10,7 @@ import {
 import type { Sql } from '../db/client.js';
 import { inWorkspace, jsonValue, lockSchemaShared, type Tx } from '../db/tx.js';
 import type { RunTokens } from '../extension-runtime/tokens.js';
-import { installedTools, toolContract } from '../extensions/tools.js';
+import { installedTools, sameContract, toolContract } from '../extensions/tools.js';
 import { matchingRecords } from '../records/query.js';
 import { resolveRecordId } from '../records/write.js';
 import { stillAdmin } from '../routine-runtime/admission.js';
@@ -65,14 +65,6 @@ type ClaimRow = {
 /** Seconds a run of this mode may take (§4.6). The builder makes several model calls. */
 const timeoutFor = (mode: RoutineRunMode) =>
   mode === 'build' ? ROUTINE_LIMITS.maxRunSeconds : ROUTINE_LIMITS.runSeconds;
-
-const sameContract = (a: ToolContract | undefined, b: ToolContract | undefined) =>
-  !!a &&
-  !!b &&
-  a.registrationId === b.registrationId &&
-  a.effect === b.effect &&
-  a.connection === b.connection &&
-  a.model === b.model;
 
 /**
  * The trusted side of routine runs (§6.2): it claims due runs, checks what
@@ -239,7 +231,17 @@ export class RoutineExecutor {
           await this.end(tx, id, 'skipped', 'record_used_up');
           return null;
         }
-        const filter = run.manifest.if ? mapFilter(object, run.manifest.if, 'name') : undefined;
+        let filter: ReturnType<typeof mapFilter> | undefined;
+        try {
+          filter = run.manifest.if ? mapFilter(object, run.manifest.if, 'name') : undefined;
+        } catch {
+          // The `if` names a field that is gone: the version no longer fits the
+          // workspace, as when its code no longer type-checks (§5.3).
+          await this.end(tx, id, 'failed', 'check_failed');
+          if (run.mode === 'run' && run.routine_id)
+            await pauseRoutine(tx, run.routine_id, 'needs_attention', 'check_failed');
+          return null;
+        }
         const [hit] = await tx<{ data: Record<string, unknown> }[]>`
           select r.data from records r where r.id=${recordId}
             and ${matchingRecords(tx, workspace, schema, object, filter ? { filter } : {}, 'source')}`;

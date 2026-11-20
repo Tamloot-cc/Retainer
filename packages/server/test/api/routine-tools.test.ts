@@ -271,6 +271,28 @@ describe('routine tool calls', () => {
     expect(lease.deadline.getTime() - Date.now()).toBeLessThan(6000);
   });
 
+  it('a tool changed after the run started is refused, and the routine pauses', async () => {
+    const s = await setup();
+    const { runId, token } = await s.press();
+    // The extension was upgraded mid-run: the installed tool no longer matches the pin.
+    await db.owner`update routine_versions v set tool_contracts=jsonb_set(v.tool_contracts,'{check_address,effect}','"send"')
+      from routine_runs r where r.id=${runId} and v.id=r.version_id`;
+    const refused = await s.app.request('/v1/routines/runtime/effects', {
+      key: token,
+      body: {
+        position: 1,
+        operation: 'tool',
+        args: { name: 'check_address', input: { address: 'x@y.z' } },
+      },
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.code).toBe('tool_changed');
+    const jobs = await db.owner`select 1 from extension_jobs where caller_run_id=${runId}`;
+    expect(jobs).toHaveLength(0);
+    const routine = await s.app.request(`/v1/routines/${s.routineId}`, { key: s.keys.admin });
+    expect(routine.body).toMatchObject({ status: 'needs_attention', pausedReason: 'tool_changed' });
+  });
+
   it("a tool job does not start once its caller's routine is paused", async () => {
     const s = await setup();
     const { token } = await s.press();

@@ -370,6 +370,42 @@ describe('routines', () => {
     expect(runs.map((r) => r.status)).toEqual(['discarded']);
   });
 
+  it('removing a field only the `if` uses fails the run and pauses the routine', async () => {
+    const s = await setup();
+    const { routineId } = await activate(s, {
+      manifest: {
+        when: { kind: 'manual', object: 'company', label: 'Go' },
+        if: { [s.key('tier')]: { contains: 'gold' } },
+        uses: { tools: [], model: false },
+      },
+      code: `export async function main({ record }: RoutineContext<'company'>) {
+  return record.id;
+}
+`,
+    });
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme If');
+    const removed = await s.app.request('/v1/schema/changes', {
+      key: s.keys.admin,
+      body: {
+        operations: [{ op: 'delete_field', object: 'company', field: 'tier' }],
+        reason: 'gone',
+      },
+    });
+    expect(removed.status).toBe(200);
+    const pressed = await s.app.request(`/v1/routines/${routineId}/run`, {
+      key: s.keys.admin,
+      body: { recordIds: [acme] },
+    });
+    expect(pressed.status).toBe(202);
+    // The claim does not throw and leave the run queued: it fails it once.
+    expect(await s.executor.claim(s.workspace, pressed.body.runs[0])).toBe(null);
+    const [run] = await db.owner<{ status: string; code: string }[]>`
+      select status,code from routine_runs where id=${pressed.body.runs[0]}`;
+    expect(run).toEqual({ status: 'failed', code: 'check_failed' });
+    const routine = await s.app.request(`/v1/routines/${routineId}`, { key: s.keys.admin });
+    expect(routine.body).toMatchObject({ status: 'needs_attention', pausedReason: 'check_failed' });
+  });
+
   it('removing a field the code uses pauses the routine before it acts', async () => {
     const s = await setup();
     const { routineId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));

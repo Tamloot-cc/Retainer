@@ -221,6 +221,12 @@ export async function typeCheck(
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'routine-')));
   await writeFile(join(dir, 'retainer.d.ts'), `${types}\n${SANDBOX_GLOBALS}`);
   await writeFile(join(dir, 'routine.ts'), code);
+  // The exported `main` must be a function the runner can call with the context.
+  if (check)
+    await writeFile(
+      join(dir, MAIN_CHECK),
+      `import { main } from './routine.js';\nexport const routineMain: (context: never) => unknown = main;\n`,
+    );
   await writeFile(
     join(dir, 'tsconfig.json'),
     JSON.stringify({
@@ -238,7 +244,7 @@ export async function typeCheck(
         pretty: false,
         ...(check ? {} : { noCheck: true }),
       },
-      files: ['retainer.d.ts', 'routine.ts'],
+      files: ['retainer.d.ts', 'routine.ts', ...(check ? [MAIN_CHECK] : [])],
     }),
   );
   const output = await new Promise<string>((resolve, reject) => {
@@ -270,6 +276,9 @@ export async function typeCheck(
   return { problems, ...(js ? { js } : {}), dir };
 }
 
+/** The file that checks the exported `main` is callable; its errors are `missing_main`. */
+const MAIN_CHECK = 'main-check.ts';
+
 /** `routine.ts(3,9): error TS2322: message` lines, with their continuation lines. */
 export function parseProblems(output: string): RoutineProblem[] {
   const problems: RoutineProblem[] = [];
@@ -277,12 +286,20 @@ export function parseProblems(output: string): RoutineProblem[] {
     const match = /^(.+?)\((\d+),(\d+)\): error (TS\d+): (.*)$/.exec(line);
     if (match) {
       const [, file, row, column, code, message] = match;
-      problems.push({
-        part: 'code',
-        ...(file?.endsWith('routine.ts') ? { at: `${row}:${column}` } : {}),
-        code: code as string,
-        message: message as string,
-      });
+      problems.push(
+        file?.endsWith(MAIN_CHECK)
+          ? {
+              part: 'code',
+              code: 'missing_main',
+              message: `export a function named main: ${message}`,
+            }
+          : {
+              part: 'code',
+              ...(file?.endsWith('routine.ts') ? { at: `${row}:${column}` } : {}),
+              code: code as string,
+              message: message as string,
+            },
+      );
     } else if (/^\s+\S/.test(line) && problems.length) {
       const last = problems[problems.length - 1] as RoutineProblem;
       if (last.message.length < 2000) last.message += `\n${line.trim()}`;

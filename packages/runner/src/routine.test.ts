@@ -125,6 +125,13 @@ export async function main() {
     ).toEqual([]);
   });
 
+  it('refuses an exported main that is not a function', async () => {
+    const codes = async (code: string) =>
+      (await typeCheck(TYPES, code, true, AbortSignal.timeout(30000))).problems.map((p) => p.code);
+    expect(await codes('export const main = 1;\n')).toEqual(['missing_main']);
+    expect(await codes('export const main = async () => 1;\n')).toEqual([]);
+  });
+
   it('parses continuation lines into the problem message', () => {
     expect(
       parseProblems("routine.ts(3,9): error TS2322: Type 'a' is wrong.\n  Type 'b' is not 'c'.\n"),
