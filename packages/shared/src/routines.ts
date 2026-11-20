@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Actor } from './actor.js';
+import { FILTER_OPERATORS } from './api.js';
 import type { FieldType } from './field-types.js';
 
 /**
@@ -294,6 +295,8 @@ export type RoutineRunContext = {
   code?: string;
   /** The SDK declarations for this workspace and the check to run. */
   types: string;
+  /** The type `main`'s argument must accept, such as `RoutineContext<'company'>`. */
+  contextType?: string;
   typesFingerprint: string;
   /** Type-check before running: the workspace changed since the version was checked. */
   check: boolean;
@@ -500,6 +503,43 @@ const comment = (text: string | null | undefined, indent = '') =>
   text ? `${indent}/** ${text.replaceAll('*/', '* /').replaceAll('\n', ' ')} */\n` : '';
 const propertyKey = (key: string) => (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? key : tsString(key));
 
+/**
+ * What one field takes in a query filter, from the operators the API allows
+ * for its type (`FILTER_OPERATORS`), with the operand the API reads: money
+ * compares `amountMicros`, emails, phones and links one value, a name or an
+ * address text. A field that is not filterable takes none.
+ */
+function filterOperators(field: RoutineFieldDescription): string | null {
+  if (!field.filterable) return null;
+  if (field.type === 'relation' && field.many)
+    return '{ containsAny?: RecordId[]; containsAll?: RecordId[]; isEmpty?: boolean }';
+  const operand =
+    field.type === 'money'
+      ? 'number'
+      : field.type === 'relation'
+        ? 'RecordId'
+        : [
+              'emails',
+              'phones',
+              'links',
+              'full_name',
+              'address',
+              'text',
+              'date',
+              'date_time',
+            ].includes(field.type)
+          ? 'string'
+          : field.type === 'multi_select'
+            ? field.options?.length
+              ? field.options.map(tsString).join(' | ')
+              : 'string'
+            : valueType(field);
+  const ops = FILTER_OPERATORS[field.type].map((op) =>
+    op === 'in' ? `in?: (${operand})[]` : `${op}?: ${operand}`,
+  );
+  return `{ ${[...ops, 'isNull?: boolean'].join('; ')} }`;
+}
+
 function valueType(field: RoutineFieldDescription): string {
   switch (field.type) {
     case 'text':
@@ -594,8 +634,10 @@ type Infer<S> = S extends { type: 'object'; properties: infer P; required: reado
               : S extends { type: 'null' }
                 ? null
                 : unknown;
-type Operators<V> = { eq?: V; neq?: V; in?: V[]; contains?: V extends (infer E)[] ? E : string; gt?: V; gte?: V; lt?: V; lte?: V; isNull?: boolean };
-type Filter<F> = { [K in keyof F]?: Operators<NonNullable<F[K]>> } & { and?: Filter<F>[]; or?: Filter<F>[]; not?: Filter<F> };
+/** Filters on the built-in columns every record has. */
+type BaseFilter = { id?: { eq?: RecordId; neq?: RecordId; in?: RecordId[] } } & { [K in 'createdAt' | 'updatedAt']?: { eq?: string; neq?: string; in?: string[]; gt?: string; gte?: string; lt?: string; lte?: string } };
+type EventFilter = BaseFilter & { occurredAt?: { eq?: string; neq?: string; in?: string[]; gt?: string; gte?: string; lt?: string; lte?: string } } & { [K in 'channel' | 'externalId']?: { eq?: string; neq?: string; in?: string[] } };
+type Filter<F> = F & { and?: Filter<F>[]; or?: Filter<F>[]; not?: Filter<F> };
 type Sort<F> = { field: (keyof F & string) | 'createdAt' | 'updatedAt'; direction?: 'asc' | 'desc' }[];
 type Page<R> = { records: R[]; count: number; nextCursor: string | null };
 type AggregateOp = 'countEmpty' | 'countNotEmpty' | 'percentEmpty' | 'percentNotEmpty' | 'countUnique' | 'sum' | 'avg' | 'min' | 'max';
@@ -603,21 +645,21 @@ type AggregateResult = { total: number; values: { field: string; op: AggregateOp
 type BaseRecord = { id: RecordId; createdAt: string; updatedAt: string };
 type EventRecord = BaseRecord & { occurredAt: string; participants: RecordId[]; about: RecordId[] };
 type WriteResult = { id: RecordId; fields: Record<string, 'applied' | 'pending_review' | 'superseded'> };
-type ObjectClient<R, W> = {
+type ObjectClient<R, W, F> = {
   /** One record by ID, or null. */
   get(id: RecordId): Promise<R | null>;
   /** Records matching an exact filter, at most 100 a page. */
-  query(input?: { filter?: Filter<W>; sort?: Sort<W>; limit?: number; cursor?: string }): Promise<Page<R>>;
+  query(input?: { filter?: Filter<F>; sort?: Sort<W>; limit?: number; cursor?: string }): Promise<Page<R>>;
   /** Counts, sums and other aggregates over matching records. */
-  aggregate(input: { filter?: Filter<W>; aggregates: { field: keyof W & string; op: AggregateOp }[] }): Promise<AggregateResult>;
+  aggregate(input: { filter?: Filter<F>; aggregates: { field: keyof W & string; op: AggregateOp }[] }): Promise<AggregateResult>;
 };
-type EntityClient<R, W> = ObjectClient<R, W> & {
+type EntityClient<R, W, F> = ObjectClient<R, W, F> & {
   /** Creates a record. When the run was triggered by an event, the values cite it. */
   create(values: W & { source?: RecordId }): Promise<WriteResult>;
   /** Updates a record. A value a person or a sync set waits for review. */
   update(id: RecordId, values: Partial<W> & { source?: RecordId }): Promise<WriteResult>;
 };
-type EventClient<R, W> = ObjectClient<R, W> & {
+type EventClient<R, W, F> = ObjectClient<R, W, F> & {
   /** Updates an event's fields. */
   update(id: RecordId, values: Partial<W> & { source?: RecordId }): Promise<WriteResult>;
 };
@@ -676,6 +718,15 @@ export function generateRoutineTypes(input: {
       `${comment(`${object.label}${object.description ? `: ${object.description}` : ''}`)}type ${name}Record = ${object.isEvent ? 'EventRecord' : 'BaseRecord'} & {\n${read}\n};`,
     );
     out.push(`type ${name}Values = {\n${write}\n};`);
+    const filters = fields
+      .flatMap((field) => {
+        const ops = filterOperators(field);
+        return ops ? [`  ${propertyKey(field.key)}?: ${ops};`] : [];
+      })
+      .join('\n');
+    out.push(
+      `type ${name}Filter = ${object.isEvent ? 'EventFilter' : 'BaseFilter'} & {\n${filters}\n};`,
+    );
   }
   out.push(
     `type RoutineRecords = {\n${objects.map((object) => `  ${tsString(object.name)}: ${typeName(object)}Record;`).join('\n')}\n};`,
@@ -693,7 +744,7 @@ export function generateRoutineTypes(input: {
 ${objects
   .map(
     (object) =>
-      `${comment(object.label, '  ')}  ${propertyKey(object.name)}: ${object.isEvent ? 'EventClient' : 'EntityClient'}<${typeName(object)}Record, ${typeName(object)}Values>;`,
+      `${comment(object.label, '  ')}  ${propertyKey(object.name)}: ${object.isEvent ? 'EventClient' : 'EntityClient'}<${typeName(object)}Record, ${typeName(object)}Values, ${typeName(object)}Filter>;`,
   )
   .join('\n')}
   files: {

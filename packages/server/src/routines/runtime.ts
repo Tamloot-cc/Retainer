@@ -180,6 +180,10 @@ export class RoutineRuntime {
         record = keyed(schema, await getRecord(tx, caller.workspaceId, schema, id));
       }
       const pinned = run.types_fingerprint ?? (run.input?.typesFingerprint as string | undefined);
+      // `main` is called with the context of its trigger's object, or none.
+      const when = run.manifest?.when;
+      const target =
+        when && 'object' in when && when.object ? objectFor(schema, when.object) : undefined;
       return {
         run: {
           id: run.id,
@@ -200,6 +204,13 @@ export class RoutineRuntime {
         ...(run.manifest ? { manifest: run.manifest } : {}),
         ...(run.code !== null ? { code: run.code } : {}),
         types: caps.types,
+        ...(run.manifest
+          ? {
+              contextType: target
+                ? `RoutineContext<${JSON.stringify(target.name)}>`
+                : 'RoutineContext',
+            }
+          : {}),
         typesFingerprint: caps.typesFingerprint,
         check: run.mode === 'check' || (pinned !== undefined && pinned !== caps.typesFingerprint),
         ...(record ? { record } : {}),

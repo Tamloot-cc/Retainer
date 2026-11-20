@@ -1401,20 +1401,27 @@ they left open:
   does. A change refuses the call (`tool_changed`) and pauses the routine.
 - **An `if` on a removed field** fails the run as `check_failed` and pauses
   the routine, as code that no longer type-checks does.
-- **A stored filter that no longer runs** pauses the routine as
-  `check_failed`: an `if` at the run's start, a schedule's filter at its
-  tick, and a record trigger whose object is gone at its next change. One
-  check compiles the filter exactly as the query will, so a removed field,
-  one made non-filterable and a removed object all count, instead of
-  failing each pass or skipping every change in silence.
+- **A manifest the schema no longer fits** pauses the routine as
+  `check_failed`. One check (`manifestResolves`) covers every schema
+  reference: the object, watched fields, the schedule's filter, the `if` and
+  the expiry field, and it compiles each filter exactly as the query will.
+  The matcher asks it before reading changes, the schedule tick before
+  fanning out and a run before it starts, so a removed field, one made
+  non-filterable or a removed object never leaves a routine failing each
+  pass or silently deaf.
+- **Query filters are typed from the API's operators.** The generated SDK
+  gives each object a filter type with its filterable fields only, each
+  with the operators `FILTER_OPERATORS` allows for its type and the operand
+  the API reads (money compares `amountMicros`). Making a field
+  non-filterable changes the types, so the next run rechecks the code.
+- **`main` takes its trigger's context.** The sandbox check requires the
+  exported `main` to accept `RoutineContext<'<object>'>` (or `RoutineContext`
+  without an object), as Macro checks a step's `main` against its context.
 - **Names the SDK uses.** An object named `files`, `events`, `tools`, `ai`
   or `remember` would collide with `retainer.<service>`, so routines do not
   list it and refuse it as a trigger (`reserved_object`). No tool may be
   named `then`, which would make `retainer.tools` look like a promise
   (`extensions-tools.md`).
-- **`main` must be a function.** The sandbox check also checks that the
-  exported `main` is callable with the context, so `export const main = 1`
-  is refused before approval, not at every run.
 - **Routines see older Gmail messages.** Lists show only a thread's newest
   message; a routine's start check and a schedule's targets match every live
   record that no newer revision replaced.

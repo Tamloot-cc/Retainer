@@ -202,6 +202,30 @@ describe('routines', () => {
     );
   });
 
+  it("the sandbox check refuses a main typed for another object than the trigger's", async () => {
+    const s = await setup();
+    const validated = await s.app.request('/v1/routines/validate', {
+      key: s.keys.agent,
+      body: {
+        manifest: {
+          when: { kind: 'manual', object: 'company', label: 'Go' },
+          uses: { tools: [], model: false },
+        },
+        code: `export async function main({ record }: RoutineContext<'person'>) {
+  return record.id;
+}
+`,
+      },
+    });
+    expect(validated.body.valid).toBe(null);
+    await s.executor.tick();
+    const job = await s.app.request(`/v1/routines/jobs/${validated.body.jobId}`, {
+      key: s.keys.agent,
+    });
+    expect(job.body.valid).toBe(false);
+    expect(job.body.problems.map((p: { code: string }) => p.code)).toEqual(['missing_main']);
+  });
+
   it('a type error fails the sandbox check, with its position', async () => {
     const s = await setup();
     const res = await s.app.request('/v1/routines/validate', {
@@ -587,6 +611,32 @@ describe('routines', () => {
     });
     expect(res.status).toBe(200);
     expect(res.body.matched).toBeGreaterThan(5100);
+  });
+
+  it('removing a watched field pauses a record routine instead of leaving it deaf', async () => {
+    const s = await setup();
+    const { routineId } = await activate(s, {
+      manifest: {
+        when: { kind: 'record', object: 'company', on: ['updated'], fields: [s.key('tier')] },
+        uses: { tools: [], model: false },
+      },
+      code: `export async function main({ record }: RoutineContext<'company'>) {
+  return record.id;
+}
+`,
+    });
+    const removed = await s.app.request('/v1/schema/changes', {
+      key: s.keys.admin,
+      body: {
+        operations: [{ op: 'delete_field', object: 'company', field: 'tier' }],
+        reason: 'gone',
+      },
+    });
+    expect(removed.status).toBe(200);
+    await createCompany(s.app, s.keys.admin, 'Acme Deaf');
+    await s.maintenance.maintain();
+    const routine = await s.app.request(`/v1/routines/${routineId}`, { key: s.keys.admin });
+    expect(routine.body).toMatchObject({ status: 'needs_attention', pausedReason: 'check_failed' });
   });
 
   it('removing a field the code uses pauses the routine before it acts', async () => {

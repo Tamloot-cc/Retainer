@@ -74,6 +74,27 @@ export function filterResolves(tx: Tx, object: CompiledObject, filter: RoutineFi
   }
 }
 
+/**
+ * Whether every schema reference a stored manifest makes still resolves:
+ * its object, watched fields, filters and expiry field (§5.3). A schema
+ * change can break any of them after approval; the matcher, the schedule
+ * tick and a run's start all ask this one check, and pause the routine as
+ * `check_failed` when it fails, instead of failing or skipping in silence.
+ */
+export function manifestResolves(tx: Tx, schema: CompiledSchema, manifest: RoutineManifest) {
+  const when = manifest.when;
+  if (!('object' in when) || !when.object) return true;
+  const object = objectFor(schema, when.object);
+  if (!object) return false;
+  const active = (key: string) => object.activeFields.some((field) => field.key === key);
+  if (when.kind === 'record' && when.fields?.some((key) => !active(key))) return false;
+  if (when.kind === 'schedule' && when.filter && !filterResolves(tx, object, when.filter))
+    return false;
+  if (manifest.if && !filterResolves(tx, object, manifest.if)) return false;
+  if (manifest.expiry && !active(manifest.expiry.field)) return false;
+  return true;
+}
+
 export type CheckedManifest = { manifest: RoutineManifest; problems: RoutineProblem[] };
 
 /**

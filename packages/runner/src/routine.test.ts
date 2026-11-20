@@ -130,6 +130,14 @@ export async function main() {
       (await typeCheck(TYPES, code, true, AbortSignal.timeout(30000))).problems.map((p) => p.code);
     expect(await codes('export const main = 1;\n')).toEqual(['missing_main']);
     expect(await codes('export const main = async () => 1;\n')).toEqual([]);
+    // Typed for a record when the routine has none, `main` cannot take its context.
+    const deal = `export async function main({ record }: RoutineContext<'deal'>) {\n  return record.id;\n}\n`;
+    const against = async (contextType: string) =>
+      (await typeCheck(TYPES, deal, true, AbortSignal.timeout(30000), contextType)).problems.map(
+        (p) => p.code,
+      );
+    expect(await against("RoutineContext<'deal'>")).toEqual([]);
+    expect(await against('RoutineContext')).toEqual(['missing_main']);
   });
 
   it('parses continuation lines into the problem message', () => {
@@ -233,10 +241,11 @@ describe('generated workspace types', () => {
       types,
       `export async function main({ retainer, record, run }: RoutineContext<'deal'>) {
   if (record.stage !== 'won') return null;
-  const meetings = await retainer.meeting.query({ filter: { notes: { contains: 'quote' } }, limit: 5 });
+  const meetings = await retainer.meeting.query({ filter: { occurredAt: { gt: run.at } }, limit: 5 });
+  const big = await retainer.deal.query({ filter: { amount_k: { gte: 5000000 }, stage: { in: ['won'] } } });
   const { tone } = await retainer.ai.generate({
     instructions: 'Pick a tone',
-    input: { count: meetings.count },
+    input: { count: meetings.count + big.count },
     output: { type: 'object', properties: { tone: { type: 'string', enum: ['warm', 'formal'] } }, required: ['tone'] },
   });
   const stats = await retainer.deal.aggregate({ aggregates: [{ field: 'stage', op: 'countEmpty' }] });
@@ -255,18 +264,25 @@ describe('generated workspace types', () => {
   await retainer.deal.update(record.id, { stage: 'lost' });
   await retainer.tools.send_email({ to: 'a@b.c' });
   await retainer.deal.aggregate({ aggregates: [{ field: 'stage', op: 'count_empty' }] });
+  await retainer.meeting.query({ filter: { notes: { contains: 'quote' } } });
+  await retainer.deal.query({ filter: { stage: { gt: 'won' }, amount_k: { gt: { amountMicros: 1, currency: 'USD' } } } });
   return retainer.invoice.get('x');
 }
 `,
       true,
       AbortSignal.timeout(30000),
     );
-    // The aggregate operators are the API's own names.
+    // The aggregate operators are the API's own names. Filters take only
+    // filterable fields, the operators the API allows for each type, and its
+    // operand (money compares amountMicros).
     expect(bad.problems.map((p) => p.at)).toEqual([
       '2:43',
       '3:35',
       expect.stringMatching(/^4:/),
-      '5:19',
+      expect.stringMatching(/^5:/),
+      expect.stringMatching(/^6:/),
+      expect.stringMatching(/^6:/),
+      '7:19',
     ]);
   });
 });

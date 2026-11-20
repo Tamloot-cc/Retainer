@@ -216,16 +216,18 @@ export async function typeCheck(
   code: string,
   check: boolean,
   signal: AbortSignal,
+  contextType = 'never',
 ): Promise<Checked> {
   // The permission model matches real paths; macOS's tmpdir is a symlink.
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'routine-')));
   await writeFile(join(dir, 'retainer.d.ts'), `${types}\n${SANDBOX_GLOBALS}`);
   await writeFile(join(dir, 'routine.ts'), code);
-  // The exported `main` must be a function the runner can call with the context.
+  // The exported `main` must take the context this routine is called with,
+  // as Macro checks a step's `main` against its `StepContext`.
   if (check)
     await writeFile(
       join(dir, MAIN_CHECK),
-      `import { main } from './routine.js';\nexport const routineMain: (context: never) => unknown = main;\n`,
+      `import { main } from './routine.js';\nexport const routineMain: (context: ${contextType}) => unknown = main;\n`,
     );
   await writeFile(
     join(dir, 'tsconfig.json'),
@@ -578,7 +580,13 @@ export async function executeRoutine(
     else if (!context.code) outcome = { outcome: 'failed', code: 'no_code' };
     else {
       const checking = context.run.mode === 'check' || context.check;
-      const checked = await typeCheck(context.types, context.code, checking, signal);
+      const checked = await typeCheck(
+        context.types,
+        context.code,
+        checking,
+        signal,
+        context.contextType,
+      );
       dir = checked.dir;
       const fingerprint = checking ? { typesFingerprint: context.typesFingerprint } : {};
       if (context.run.mode === 'check')

@@ -1,11 +1,11 @@
-import { ROUTINE_LIMITS, type RoutineFilter, type RoutineManifest } from '@retainer/shared';
+import { ROUTINE_LIMITS, type RoutineManifest } from '@retainer/shared';
 import { retainedFloor } from '../db/change-cursor.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, lockPrivacyShared, lockSchemaShared, type Tx } from '../db/tx.js';
 import { matchingRecords } from '../records/query.js';
 import { type CompiledSchema, getSchema } from '../schema/compiled.js';
 import { nextInZone } from './cron.js';
-import { filterResolves, mapFilter, objectFor } from './manifest.js';
+import { manifestResolves, mapFilter, objectFor } from './manifest.js';
 import { hourlyAllowance, NO_RECORD, pauseRoutine, queueRun, usedUp } from './runs.js';
 
 type ChangeRow = {
@@ -79,12 +79,6 @@ export async function matchingSince(
   return { matched: count?.n ?? 0, records: live.map((row) => row.id) };
 }
 
-/** Whether a schedule's object and filter still resolve against the schema. */
-function scheduleResolves(tx: Tx, schema: CompiledSchema, ref: string, filter?: RoutineFilter) {
-  const object = objectFor(schema, ref);
-  return !!object && (!filter || filterResolves(tx, object, filter));
-}
-
 /** The records a schedule tick would fan out to, and how many there are. */
 export async function scheduleTargets(
   tx: Tx,
@@ -151,8 +145,8 @@ export async function dispatchRoutines(sql: Sql, workspace: string, limit = 500)
         continue;
       }
       const object = objectFor(schema, when.object);
-      // Its object is gone: the routine needs repair, not silence (§5.3).
-      if (!object) {
+      // Its object or a watched field is gone: the routine needs repair, not silence (§5.3).
+      if (!object || !manifestResolves(tx, schema, routine.manifest)) {
         await pauseRoutine(tx, routine.id, 'needs_attention', 'check_failed');
         continue;
       }
@@ -255,7 +249,7 @@ export async function fireSchedule(sql: Sql, workspace: string, routineId: strin
     const schema = await getSchema(tx, workspace);
     // A schedule whose object or filter no longer resolves needs repair, as
     // code that no longer type-checks does (§5.3).
-    if (when.object && !scheduleResolves(tx, schema, when.object, when.filter)) {
+    if (!manifestResolves(tx, schema, routine.manifest)) {
       await pauseRoutine(tx, routineId, 'needs_attention', 'check_failed');
       return { queued: 0 };
     }

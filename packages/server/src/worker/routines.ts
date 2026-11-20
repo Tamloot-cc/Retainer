@@ -15,7 +15,7 @@ import { matchingRecords } from '../records/query.js';
 import { resolveRecordId } from '../records/write.js';
 import { stillAdmin } from '../routine-runtime/admission.js';
 import type { RoutineConfig } from '../routines/capabilities.js';
-import { filterResolves, mapFilter, objectFor } from '../routines/manifest.js';
+import { manifestResolves, mapFilter, objectFor } from '../routines/manifest.js';
 import { dispatchRoutines, fireSchedule } from '../routines/matcher.js';
 import { RUN_GRACE_SECONDS as GRACE_SECONDS, pauseRoutine, usedUp } from '../routines/runs.js';
 import { getSchema } from '../schema/compiled.js';
@@ -215,6 +215,18 @@ export class RoutineExecutor {
           if (!locked || locked.merged_into_id) return null;
         }
       }
+      // A manifest the schema no longer fits fails the run and pauses the
+      // routine, as code that no longer type-checks does (§5.3).
+      if (
+        run.manifest &&
+        ['run', 'test', 'dry'].includes(run.mode) &&
+        !manifestResolves(tx, schema, run.manifest)
+      ) {
+        await this.end(tx, id, 'failed', 'check_failed');
+        if (run.mode === 'run' && run.routine_id)
+          await pauseRoutine(tx, run.routine_id, 'needs_attention', 'check_failed');
+        return null;
+      }
       if (run.record_id && run.manifest && ['run', 'test', 'dry'].includes(run.mode)) {
         const when = run.manifest.when;
         const object = 'object' in when && when.object ? objectFor(schema, when.object) : undefined;
@@ -229,14 +241,6 @@ export class RoutineExecutor {
           (await usedUp(tx, run.routine_id, recordId))
         ) {
           await this.end(tx, id, 'skipped', 'record_used_up');
-          return null;
-        }
-        // An `if` that no longer runs against the schema means the version no
-        // longer fits the workspace, as when its code no longer type-checks (§5.3).
-        if (run.manifest.if && !filterResolves(tx, object, run.manifest.if)) {
-          await this.end(tx, id, 'failed', 'check_failed');
-          if (run.mode === 'run' && run.routine_id)
-            await pauseRoutine(tx, run.routine_id, 'needs_attention', 'check_failed');
           return null;
         }
         const filter = run.manifest.if ? mapFilter(object, run.manifest.if, 'name') : undefined;
