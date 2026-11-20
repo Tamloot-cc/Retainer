@@ -591,14 +591,15 @@ export async function executeRoutine(
   return { status: 'succeeded', output: fit(outcome) };
 }
 
-/** Keeps the outcome within the protocol's 64 KiB. */
+/** Keeps the outcome within the protocol's 64 KiB, counted in serialized bytes. */
 function fit(outcome: RoutineOutcome) {
+  const fits = (text: string) => Buffer.byteLength(text) < 60000;
   let text = JSON.stringify(outcome);
-  if (text.length < 60000) return JSON.parse(text);
+  if (fits(text)) return JSON.parse(text);
   const { logs: _logs, result: _result, ...rest } = outcome;
   text = JSON.stringify({ ...rest, problems: rest.problems?.slice(0, 20) });
   return JSON.parse(
-    text.length < 60000 ? text : JSON.stringify({ outcome: outcome.outcome, code: outcome.code }),
+    fits(text) ? text : JSON.stringify({ outcome: outcome.outcome, code: outcome.code }),
   );
 }
 

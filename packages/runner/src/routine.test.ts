@@ -392,6 +392,15 @@ describe('routine sandbox', () => {
     expect(calls.map((c) => c.path)).toEqual(['run']);
   });
 
+  it('keeps a multibyte result within the protocol limit, counted in bytes', async () => {
+    // 25,000 CJK characters are under 60,000 code units but about 75 KB of UTF-8.
+    const { result } = await run(
+      context(`export async function main() { return '漢'.repeat(25000); }`),
+    );
+    expect(result).toEqual({ status: 'succeeded', output: { outcome: 'succeeded' } });
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(64 * 1024);
+  });
+
   it('fails a run whose code throws', async () => {
     const { result } = await run(
       context(`export async function main() { throw new Error('boom'); }`),
