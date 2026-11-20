@@ -194,6 +194,32 @@ describe('extension pages and human approval', () => {
     expect(screen.getByText(/Pending work is saved/)).toBeTruthy();
     expect(screen.queryByText(/Needs attention:/)).toBeNull();
   });
+  it('uses product names and decorative logos on installed and available cards', async () => {
+    const granola = '9e427713-3c8a-4981-872c-c8db69703113';
+    const exa = '9796c2c7-46f3-4006-8f35-059d5ef3553e';
+    vi.spyOn(api, 'extensionCatalog').mockResolvedValue({
+      releases: [
+        { ...release, manifest: { ...release.manifest, universalId: granola, name: 'granola' } },
+        {
+          ...release,
+          manifest: { ...release.manifest, universalId: exa, name: 'company-enrichment' },
+        },
+      ],
+    });
+    vi.spyOn(api, 'extensions').mockResolvedValue({
+      installations: [{ ...installation, registrationId: granola }],
+    });
+    mount(<ExtensionsPage />);
+
+    const installedCard = await screen.findByRole('link', { name: /^Granola/ });
+    expect(within(installedCard).getByText('Granola')).toBeTruthy();
+    expect(installedCard.getAttribute('href')).toBe('/extensions/installation');
+    expect(installedCard.querySelector('img[alt=""]')?.getAttribute('src')).toContain('granola');
+    const setup = screen.getByRole('link', { name: 'Set up Exa' });
+    expect(setup.getAttribute('href')).toBe(`/extensions/new/${exa}`);
+    expect(setup.closest('li')?.querySelector('img[alt=""]')?.getAttribute('src')).toContain('exa');
+  });
+
   it('marks an update on the installed card and offers it on the extension page', async () => {
     const upgraded = { ...release, manifest: { ...release.manifest, version: '1.0.10' } };
     vi.spyOn(api, 'extensionCatalog').mockResolvedValue({ releases: [upgraded, release] });
