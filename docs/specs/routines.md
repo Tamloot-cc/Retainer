@@ -1409,14 +1409,23 @@ they left open:
   fanning out and a run before it starts, so a removed field, one made
   non-filterable or a removed object never leaves a routine failing each
   pass or silently deaf.
-- **Query filters are typed from the API's operators.** The generated SDK
-  gives each object a filter type with its filterable fields only, each
-  with the operators `FILTER_OPERATORS` allows for its type and the operand
-  the API reads (money compares `amountMicros`). Making a field
-  non-filterable changes the types, so the next run rechecks the code.
+- **Queries are typed from the API's own rules.** Capabilities describe
+  each field's filter operators (`filterOperatorsFor`), whether it sorts and
+  its aggregates (`aggregateOps`), and the generated SDK types filters,
+  sorts and aggregates from them, with the operand the API reads (money
+  compares `amountMicros`) and the built-in columns (an event's
+  `occurredAt`, `channel` and `externalId` too, which the read path now
+  takes). Making a field non-filterable changes the types, so the next run
+  rechecks the code.
+- **A write's citation is an option, not a value.** `create(values,
+  { source })` and `update(id, values, { source })` keep the citation apart
+  from the values, so a field keyed `source` is written like any other.
+- **A preview with nothing to dry-run** answers `previewId: null` and
+  `done: true` at once, rather than an ID that has no runs to poll.
 - **`main` takes its trigger's context.** The sandbox check requires the
   exported `main` to accept `RoutineContext<'<object>'>` (or `RoutineContext`
-  without an object), as Macro checks a step's `main` against its context.
+  without an object), as Macro checks a step's `main` against its context. The builder's own check of a
+  draft uses the same type.
 - **Names the SDK uses.** An object named `files`, `events`, `tools`, `ai`
   or `remember` would collide with `retainer.<service>`, so routines do not
   list it and refuse it as a trigger (`reserved_object`). No tool may be

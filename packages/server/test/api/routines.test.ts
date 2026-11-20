@@ -639,6 +639,109 @@ describe('routines', () => {
     expect(routine.body).toMatchObject({ status: 'needs_attention', pausedReason: 'check_failed' });
   });
 
+  it('code filters and sorts on event columns, and writes a field keyed source', async () => {
+    const s = await setup();
+    const added = await s.app.request('/v1/schema/changes', {
+      key: s.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_field',
+            object: 'company',
+            field: { name: 'source', label: 'Source', type: 'text' },
+          },
+        ],
+        reason: 'Routine tests',
+      },
+    });
+    expect(added.status).toBe(200);
+    expect(s.key('tier')).toBeTruthy();
+    const caps = await s.app.request('/v1/routines/capabilities', { key: s.keys.agent });
+    const company = caps.body.objects.find((o: { name: string }) => o.name === 'company');
+    expect(company.fields.map((f: { key: string }) => f.key)).toContain('source');
+    const { routineId } = await activate(s, {
+      manifest: {
+        when: { kind: 'manual', object: 'company', label: 'Go' },
+        uses: { tools: [], model: false },
+      },
+      code: `export async function main({ retainer, record }: RoutineContext<'company'>) {
+  const recent = await retainer.conversation.query({
+    filter: { occurredAt: { gt: '2000-01-01T00:00:00Z' }, channel: { eq: 'gmail' } },
+    sort: [{ field: 'occurredAt', direction: 'desc' }],
+  });
+  await retainer.company.update(record.id, { source: 'web' });
+  return recent.count;
+}
+`,
+    });
+    await s.app.request('/v1/events', {
+      key: s.keys.admin,
+      body: {
+        type: 'conversation',
+        channel: 'gmail',
+        occurredAt: '2026-11-10T10:00:00Z',
+        title: 'Hi',
+      },
+    });
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Source');
+    const ran = await s.app.request(`/v1/routines/${routineId}/run`, {
+      key: s.keys.admin,
+      body: { recordIds: [acme] },
+    });
+    const claimed = await s.executor.claim(s.workspace, ran.body.runs[0]);
+    await s.executor.execute(claimed as NonNullable<typeof claimed>);
+    const [run] = await db.owner<{ status: string; output: { result: unknown } }[]>`
+      select status,output from routine_runs where id=${ran.body.runs[0]}`;
+    expect(run).toMatchObject({ status: 'succeeded', output: { result: 1 } });
+    const record = await s.app.request(`/v1/records/${acme}`, { key: s.keys.admin });
+    expect(record.body.fields.source).toBe('web');
+  });
+
+  it('a preview with nothing to dry-run is done at once, with no ID to poll', async () => {
+    const s = await setup();
+    const res = await s.app.request('/v1/routines/preview', {
+      key: s.keys.agent,
+      body: TIER_ROUTINE(s.key('tier'), s.key('name')),
+    });
+    expect(res.body).toMatchObject({
+      valid: true,
+      previewId: null,
+      matched: 0,
+      runs: [],
+      done: true,
+    });
+  });
+
+  it("the builder's draft check returns the context its main must take", async () => {
+    const s = await setup();
+    const [build] = await db.owner<{ id: string; fence: string }[]>`
+      insert into routine_runs(workspace_id,mode,trigger_kind,status,fence,lease_until)
+      values(${s.workspace},'build','build','running',1,clock_timestamp()+interval '1 minute')
+      returning id,fence::text`;
+    const token = await tokens.issueRoutine(
+      s.workspace,
+      {
+        runId: build?.id as string,
+        routineId: null,
+        fence: build?.fence as string,
+        mode: 'build',
+        tools: [],
+      },
+      new Date(Date.now() + 60000),
+    );
+    const checked = await s.app.request('/v1/routines/runtime/build/check', {
+      key: token,
+      body: {
+        manifest: {
+          when: { kind: 'manual', object: 'company', label: 'Go' },
+          uses: { tools: [], model: false },
+        },
+        code: 'export async function main() {}\n',
+      },
+    });
+    expect(checked.body).toMatchObject({ problems: [], contextType: 'RoutineContext<"company">' });
+  });
+
   it('removing a field the code uses pauses the routine before it acts', async () => {
     const s = await setup();
     const { routineId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));

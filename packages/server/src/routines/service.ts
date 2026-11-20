@@ -219,6 +219,9 @@ export class Routines {
             initiatorUserId: caller.userId ?? caller.person?.id ?? null,
           }),
         );
+      // Nothing to dry-run: the preview is done now, with no ID to poll.
+      if (!runs.length)
+        return { valid: true as const, problems: [], previewId: null, matched, runs, done: true };
       return { valid: true as const, problems: [], previewId, matched, runs };
     });
   }

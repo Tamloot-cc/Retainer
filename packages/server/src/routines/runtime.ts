@@ -38,7 +38,7 @@ import type { CompiledObject, CompiledSchema } from '../schema/compiled.js';
 import { getSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
 import { capabilities, type RoutineConfig } from './capabilities.js';
-import { fieldFor, mapFilter, objectFor } from './manifest.js';
+import { contextTypeFor, fieldFor, mapFilter, objectFor } from './manifest.js';
 import { pauseRoutine, queueRun, RUN_GRACE_SECONDS, useUp } from './runs.js';
 import {
   insertProposal,
@@ -127,7 +127,6 @@ export function keyed(schema: CompiledSchema, record: PresentedRecord): RoutineR
 function named(object: CompiledObject, values: Record<string, unknown>) {
   const out: Record<string, unknown> = {};
   for (const [ref, value] of Object.entries(values)) {
-    if (ref === 'source') continue;
     const field = fieldFor(object, ref);
     if (!field) throw new AppError(422, 'unknown_field', `${object.name} has no field "${ref}"`);
     out[field.name] = value;
@@ -180,10 +179,6 @@ export class RoutineRuntime {
         record = keyed(schema, await getRecord(tx, caller.workspaceId, schema, id));
       }
       const pinned = run.types_fingerprint ?? (run.input?.typesFingerprint as string | undefined);
-      // `main` is called with the context of its trigger's object, or none.
-      const when = run.manifest?.when;
-      const target =
-        when && 'object' in when && when.object ? objectFor(schema, when.object) : undefined;
       return {
         run: {
           id: run.id,
@@ -204,13 +199,7 @@ export class RoutineRuntime {
         ...(run.manifest ? { manifest: run.manifest } : {}),
         ...(run.code !== null ? { code: run.code } : {}),
         types: caps.types,
-        ...(run.manifest
-          ? {
-              contextType: target
-                ? `RoutineContext<${JSON.stringify(target.name)}>`
-                : 'RoutineContext',
-            }
-          : {}),
+        ...(run.manifest ? { contextType: contextTypeFor(schema, run.manifest) } : {}),
         typesFingerprint: caps.typesFingerprint,
         check: run.mode === 'check' || (pinned !== undefined && pinned !== caps.typesFingerprint),
         ...(record ? { record } : {}),
@@ -233,14 +222,20 @@ export class RoutineRuntime {
   async buildCheck(caller: Caller, input: { manifest: unknown; code: string }) {
     const binding = this.binding(caller);
     if (binding.mode !== 'build') throw forbidden('only the builder checks drafts here');
-    return withRead(this.sql, caller, async (tx) => {
+    return withRead(this.sql, caller, async (tx, schema) => {
       const { manifest, problems, caps } = await staticCheck(
         tx,
         caller.workspaceId,
         this.config,
         input,
       );
-      return { manifest, problems, typesFingerprint: caps.typesFingerprint };
+      return {
+        manifest,
+        problems,
+        typesFingerprint: caps.typesFingerprint,
+        // The builder checks `main` against it, as a validation's check does.
+        contextType: contextTypeFor(schema, manifest),
+      };
     });
   }
 
@@ -646,7 +641,9 @@ export class RoutineRuntime {
       const object = objectFor(schema, String(args.object ?? ''));
       if (!object) throw notFound(`object "${String(args.object)}"`);
       const values = (args.values ?? {}) as Record<string, unknown>;
-      const sourceId = await this.defaultSource(tx, context, run, values.source ?? args.source);
+      // The citation comes in the call's options, apart from the values, so a
+      // field keyed `source` is written like any other.
+      const sourceId = await this.defaultSource(tx, context, run, args.source);
       const cited = sourceId ? await lockSource(tx, context, sourceId) : undefined;
       const options = cited ? { sourceRecordId: cited.id, observedAt: cited.occurredAt } : {};
       if (request.operation === 'record.create') {

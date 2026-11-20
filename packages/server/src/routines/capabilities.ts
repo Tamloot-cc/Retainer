@@ -1,11 +1,14 @@
 import { createHash } from 'node:crypto';
 import {
+  aggregateOps,
+  filterOperatorsFor,
   generateRoutineTypes,
   isReservedRoutineName,
   ROUTINE_GAP_CODES,
   ROUTINE_LIMITS,
   type RoutineCapabilities,
   type RoutineObjectDescription,
+  SORTABLE_TYPES,
 } from '@retainer/shared';
 import type { WorkspaceSettings } from '../db/schema.js';
 import type { Tx } from '../db/tx.js';
@@ -43,6 +46,10 @@ export function describeObjects(schema: CompiledSchema): RoutineObjectDescriptio
           type: field.type,
           description: field.description,
           filterable: field.isFilterable,
+          // What the API takes, from the same rules its validators use.
+          operators: field.isFilterable ? [...filterOperatorsFor(field)] : [],
+          sortable: field.isFilterable && SORTABLE_TYPES.includes(field.type),
+          aggregates: aggregateOps(field),
           nullable: field.isNullable,
           ...(field.settings.options
             ? { options: field.settings.options.map((o) => o.value) }

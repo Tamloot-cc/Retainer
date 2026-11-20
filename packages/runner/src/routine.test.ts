@@ -1,7 +1,11 @@
 import {
+  aggregateOps,
+  type FieldType,
+  filterOperatorsFor,
   generateRoutineTypes,
   type RoutineInvocation,
   type RoutineRunContext,
+  SORTABLE_TYPES,
 } from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
 import { executeRoutine, parseProblems, typeCheck } from './routine.js';
@@ -154,10 +158,30 @@ export async function main() {
   });
 });
 
+/** A fixture field with what the API takes for it, from the API's own rules. */
+const withRules = (
+  objects: { fields: { type: string; filterable: boolean; many?: boolean }[] }[],
+) =>
+  objects.map((object) => ({
+    ...object,
+    fields: object.fields.map((field) => {
+      const rules = {
+        type: field.type as FieldType,
+        settings: { relationCardinality: field.many ? 'many_to_many' : 'many_to_one' },
+      };
+      return {
+        ...field,
+        operators: field.filterable ? [...filterOperatorsFor(rules)] : [],
+        sortable: field.filterable && SORTABLE_TYPES.includes(rules.type),
+        aggregates: aggregateOps(rules),
+      };
+    }),
+  }));
+
 describe('generated workspace types', () => {
   const types = generateRoutineTypes({
     model: true,
-    objects: [
+    objects: withRules([
       {
         name: 'deal',
         universalId: 'u-deal',
@@ -215,7 +239,7 @@ describe('generated workspace types', () => {
           },
         ],
       },
-    ],
+    ]),
     tools: [
       {
         name: 'send_email',
@@ -248,7 +272,8 @@ describe('generated workspace types', () => {
     input: { count: meetings.count + big.count },
     output: { type: 'object', properties: { tone: { type: 'string', enum: ['warm', 'formal'] } }, required: ['tone'] },
   });
-  const stats = await retainer.deal.aggregate({ aggregates: [{ field: 'stage', op: 'countEmpty' }] });
+  const stats = await retainer.deal.aggregate({ aggregates: [{ field: 'stage', op: 'countEmpty' }, { field: 'amount_k', op: 'sum' }] });
+  await retainer.meeting.query({ sort: [{ field: 'occurredAt', direction: 'desc' }, { field: 'id' }] });
   const sent = await retainer.tools.send_email({ to: 'a@b.c', body: tone + run.at + stats.total });
   await retainer.deal.update(record.id, { stage: 'lead' });
   return sent.id;
@@ -266,6 +291,8 @@ describe('generated workspace types', () => {
   await retainer.deal.aggregate({ aggregates: [{ field: 'stage', op: 'count_empty' }] });
   await retainer.meeting.query({ filter: { notes: { contains: 'quote' } } });
   await retainer.deal.query({ filter: { stage: { gt: 'won' }, amount_k: { gt: { amountMicros: 1, currency: 'USD' } } } });
+  await retainer.meeting.query({ sort: [{ field: 'notes' }] });
+  await retainer.deal.aggregate({ aggregates: [{ field: 'stage', op: 'sum' }] });
   return retainer.invoice.get('x');
 }
 `,
@@ -282,7 +309,9 @@ describe('generated workspace types', () => {
       expect.stringMatching(/^5:/),
       expect.stringMatching(/^6:/),
       expect.stringMatching(/^6:/),
-      '7:19',
+      expect.stringMatching(/^7:/),
+      expect.stringMatching(/^8:/),
+      '9:19',
     ]);
   });
 });

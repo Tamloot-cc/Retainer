@@ -86,12 +86,14 @@ const effect = (operation, args) => {
 };
 const read = (operation, args) => ask({ kind: 'read', operation, args: plain(args) });
 
+const cite = (options) => (options && options.source !== undefined ? { source: options.source } : {});
 const objectClient = (object) => Object.freeze({
   get: (id) => read('record.get', { object, id }),
   query: (input) => read('record.query', { object, ...plain(input) }),
   aggregate: (input) => read('record.aggregate', { object, ...plain(input) }),
-  create: (values) => effect('record.create', { object, values }),
-  update: (id, values) => effect('record.update', { object, id, values }),
+  // The citation travels beside the values, so a field keyed "source" is a value.
+  create: (values, options) => effect('record.create', { object, values, ...cite(options) }),
+  update: (id, values, options) => effect('record.update', { object, id, values, ...cite(options) }),
 });
 const tools = new Proxy({}, {
   get: (_, name) => (typeof name === 'string' && name !== 'then'

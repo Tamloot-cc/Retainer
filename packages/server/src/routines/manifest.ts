@@ -8,7 +8,7 @@ import {
 } from '@retainer/shared';
 import type { Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
-import { BUILT_IN_COLUMNS, compileFilter } from '../records/query.js';
+import { builtInNames, compileFilter } from '../records/query.js';
 import type { CompiledObject, CompiledSchema } from '../schema/compiled.js';
 import type { FieldState } from '../schema/types.js';
 import type { Capabilities } from './capabilities.js';
@@ -47,7 +47,7 @@ export function mapFilter(
       out[ref] = condition.map((child) => mapFilter(object, child as RoutineFilter, to, depth + 1));
     } else if (ref === 'not')
       out.not = mapFilter(object, condition as RoutineFilter, to, depth + 1);
-    else if (Object.hasOwn(BUILT_IN_COLUMNS, ref)) out[ref] = condition;
+    else if (builtInNames(object).includes(ref)) out[ref] = condition;
     else {
       const field = fieldFor(object, ref);
       if (!field)
@@ -93,6 +93,13 @@ export function manifestResolves(tx: Tx, schema: CompiledSchema, manifest: Routi
   if (manifest.if && !filterResolves(tx, object, manifest.if)) return false;
   if (manifest.expiry && !active(manifest.expiry.field)) return false;
   return true;
+}
+
+/** The type `main`'s argument must accept: its trigger object's context, or none. */
+export function contextTypeFor(schema: CompiledSchema, manifest: RoutineManifest): string {
+  const when = manifest.when;
+  const object = 'object' in when && when.object ? objectFor(schema, when.object) : undefined;
+  return object ? `RoutineContext<${JSON.stringify(object.name)}>` : 'RoutineContext';
 }
 
 export type CheckedManifest = { manifest: RoutineManifest; problems: RoutineProblem[] };

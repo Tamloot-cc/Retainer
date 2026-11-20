@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Actor } from './actor.js';
-import { FILTER_OPERATORS } from './api.js';
+import type { AggregateOp, FilterOperator } from './api.js';
 import type { FieldType } from './field-types.js';
 
 /**
@@ -197,6 +197,10 @@ export type RoutineFieldDescription = {
   type: FieldType;
   description: string | null;
   filterable: boolean;
+  /** What the API takes for this field, from its own rules: the generated types follow them. */
+  operators: FilterOperator[];
+  sortable: boolean;
+  aggregates: AggregateOp[];
   nullable: boolean;
   /** For `select` and `multi_select`: the option values. */
   options?: string[];
@@ -504,15 +508,13 @@ const comment = (text: string | null | undefined, indent = '') =>
 const propertyKey = (key: string) => (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? key : tsString(key));
 
 /**
- * What one field takes in a query filter, from the operators the API allows
- * for its type (`FILTER_OPERATORS`), with the operand the API reads: money
- * compares `amountMicros`, emails, phones and links one value, a name or an
- * address text. A field that is not filterable takes none.
+ * What one field takes in a query filter: the operators the API allows for
+ * it (`operators`, from `filterOperatorsFor`), each with the operand the API
+ * reads: money compares `amountMicros`, emails, phones and links one value,
+ * a name or an address text, a relation record IDs.
  */
 function filterOperators(field: RoutineFieldDescription): string | null {
-  if (!field.filterable) return null;
-  if (field.type === 'relation' && field.many)
-    return '{ containsAny?: RecordId[]; containsAll?: RecordId[]; isEmpty?: boolean }';
+  if (!field.operators.length) return null;
   const operand =
     field.type === 'money'
       ? 'number'
@@ -534,10 +536,16 @@ function filterOperators(field: RoutineFieldDescription): string | null {
               ? field.options.map(tsString).join(' | ')
               : 'string'
             : valueType(field);
-  const ops = FILTER_OPERATORS[field.type].map((op) =>
-    op === 'in' ? `in?: (${operand})[]` : `${op}?: ${operand}`,
+  const ops = field.operators.map((op) =>
+    op === 'isNull' || op === 'isEmpty'
+      ? `${op}?: boolean`
+      : op === 'containsAny' || op === 'containsAll'
+        ? `${op}?: RecordId[]`
+        : op === 'in'
+          ? `in?: (${operand})[]`
+          : `${op}?: ${operand}`,
   );
-  return `{ ${[...ops, 'isNull?: boolean'].join('; ')} }`;
+  return `{ ${ops.join('; ')} }`;
 }
 
 function valueType(field: RoutineFieldDescription): string {
@@ -638,30 +646,29 @@ type Infer<S> = S extends { type: 'object'; properties: infer P; required: reado
 type BaseFilter = { id?: { eq?: RecordId; neq?: RecordId; in?: RecordId[] } } & { [K in 'createdAt' | 'updatedAt']?: { eq?: string; neq?: string; in?: string[]; gt?: string; gte?: string; lt?: string; lte?: string } };
 type EventFilter = BaseFilter & { occurredAt?: { eq?: string; neq?: string; in?: string[]; gt?: string; gte?: string; lt?: string; lte?: string } } & { [K in 'channel' | 'externalId']?: { eq?: string; neq?: string; in?: string[] } };
 type Filter<F> = F & { and?: Filter<F>[]; or?: Filter<F>[]; not?: Filter<F> };
-type Sort<F> = { field: (keyof F & string) | 'createdAt' | 'updatedAt'; direction?: 'asc' | 'desc' }[];
 type Page<R> = { records: R[]; count: number; nextCursor: string | null };
 type AggregateOp = 'countEmpty' | 'countNotEmpty' | 'percentEmpty' | 'percentNotEmpty' | 'countUnique' | 'sum' | 'avg' | 'min' | 'max';
 type AggregateResult = { total: number; values: { field: string; op: AggregateOp; value: number | string | Money | null }[] };
 type BaseRecord = { id: RecordId; createdAt: string; updatedAt: string };
 type EventRecord = BaseRecord & { occurredAt: string; participants: RecordId[]; about: RecordId[] };
 type WriteResult = { id: RecordId; fields: Record<string, 'applied' | 'pending_review' | 'superseded'> };
-type ObjectClient<R, W, F> = {
+type ObjectClient<R, W, F, S, A> = {
   /** One record by ID, or null. */
   get(id: RecordId): Promise<R | null>;
   /** Records matching an exact filter, at most 100 a page. */
-  query(input?: { filter?: Filter<F>; sort?: Sort<W>; limit?: number; cursor?: string }): Promise<Page<R>>;
+  query(input?: { filter?: Filter<F>; sort?: { field: S; direction?: 'asc' | 'desc' }[]; limit?: number; cursor?: string }): Promise<Page<R>>;
   /** Counts, sums and other aggregates over matching records. */
-  aggregate(input: { filter?: Filter<F>; aggregates: { field: keyof W & string; op: AggregateOp }[] }): Promise<AggregateResult>;
+  aggregate(input: { filter?: Filter<F>; aggregates: A[] }): Promise<AggregateResult>;
 };
-type EntityClient<R, W, F> = ObjectClient<R, W, F> & {
+type EntityClient<R, W, F, S, A> = ObjectClient<R, W, F, S, A> & {
   /** Creates a record. When the run was triggered by an event, the values cite it. */
-  create(values: W & { source?: RecordId }): Promise<WriteResult>;
+  create(values: W, options?: { source?: RecordId }): Promise<WriteResult>;
   /** Updates a record. A value a person or a sync set waits for review. */
-  update(id: RecordId, values: Partial<W> & { source?: RecordId }): Promise<WriteResult>;
+  update(id: RecordId, values: Partial<W>, options?: { source?: RecordId }): Promise<WriteResult>;
 };
-type EventClient<R, W, F> = ObjectClient<R, W, F> & {
+type EventClient<R, W, F, S, A> = ObjectClient<R, W, F, S, A> & {
   /** Updates an event's fields. */
-  update(id: RecordId, values: Partial<W> & { source?: RecordId }): Promise<WriteResult>;
+  update(id: RecordId, values: Partial<W>, options?: { source?: RecordId }): Promise<WriteResult>;
 };
 type LogEventInput = {
   type: string;
@@ -727,6 +734,19 @@ export function generateRoutineTypes(input: {
     out.push(
       `type ${name}Filter = ${object.isEvent ? 'EventFilter' : 'BaseFilter'} & {\n${filters}\n};`,
     );
+    // Sorts and aggregates take what the API's own checks allow for each field.
+    const columns = [
+      'id',
+      'createdAt',
+      'updatedAt',
+      ...(object.isEvent ? ['occurredAt', 'channel', 'externalId'] : []),
+    ];
+    const sorts = [...columns, ...fields.filter((f) => f.sortable).map((f) => f.key)];
+    out.push(`type ${name}Sort = ${sorts.map(tsString).join(' | ')};`);
+    const aggregates = fields
+      .filter((f) => f.aggregates.length)
+      .map((f) => `{ field: ${tsString(f.key)}; op: ${f.aggregates.map(tsString).join(' | ')} }`);
+    out.push(`type ${name}Aggregate = ${aggregates.join(' | ') || 'never'};`);
   }
   out.push(
     `type RoutineRecords = {\n${objects.map((object) => `  ${tsString(object.name)}: ${typeName(object)}Record;`).join('\n')}\n};`,
@@ -744,7 +764,7 @@ export function generateRoutineTypes(input: {
 ${objects
   .map(
     (object) =>
-      `${comment(object.label, '  ')}  ${propertyKey(object.name)}: ${object.isEvent ? 'EventClient' : 'EntityClient'}<${typeName(object)}Record, ${typeName(object)}Values, ${typeName(object)}Filter>;`,
+      `${comment(object.label, '  ')}  ${propertyKey(object.name)}: ${object.isEvent ? 'EventClient' : 'EntityClient'}<${typeName(object)}Record, ${typeName(object)}Values, ${typeName(object)}Filter, ${typeName(object)}Sort, ${typeName(object)}Aggregate>;`,
   )
   .join('\n')}
   files: {

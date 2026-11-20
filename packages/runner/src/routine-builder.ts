@@ -151,10 +151,11 @@ export async function buildRoutine(
       manifest: unknown;
       problems: RoutineProblem[];
       typesFingerprint: string;
+      contextType?: string;
     }>('POST', 'build/check', { manifest, code: draft.code });
     let problems = checked.problems;
     if (!problems.length) {
-      const typed = await typeCheck(types, draft.code, true, signal);
+      const typed = await typeCheck(types, draft.code, true, signal, checked.contextType);
       await rm(typed.dir, { recursive: true, force: true }).catch(() => {});
       problems = typed.problems;
     }

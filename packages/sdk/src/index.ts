@@ -1219,8 +1219,10 @@ export class RetainerClient {
     return this.post<{
       valid: boolean;
       problems: RoutineProblem[];
-      previewId?: string;
+      /** Null when nothing matched recently: there is nothing to dry-run or poll. */
+      previewId?: string | null;
       matched?: number;
+      done?: boolean;
     }>('/v1/routines/preview', input);
   }
   routinePreview(previewId: string, signal?: AbortSignal) {
