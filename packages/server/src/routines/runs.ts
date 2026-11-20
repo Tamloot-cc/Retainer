@@ -18,7 +18,7 @@ export type QueueRun = {
   recordId?: string | null;
   previewId?: string | null;
   input?: Record<string, unknown> | null;
-  changePosition?: number | null;
+  changePosition?: string | null;
   cause?: string[];
   causeDepth?: number;
   initiatedBy?: Actor | null;
@@ -35,7 +35,7 @@ export async function queueRun(tx: Tx, workspace: string, run: QueueRun): Promis
       input,change_position,cause,cause_depth,initiated_by,initiator_user_id,run_at,status)
     values(${workspace},${run.routineId ?? null},${run.versionId ?? null},${run.sourceId ?? null},${run.mode},
       ${run.triggerKind},${run.recordId ?? null},${run.previewId ?? null},
-      ${run.input ? tx.json(jsonValue(run.input)) : null},${run.changePosition ?? null},
+      ${run.input ? tx.json(jsonValue(run.input)) : null},${run.changePosition ?? null}::bigint,
       ${tx.json(run.cause ?? [])},${run.causeDepth ?? 0},
       ${run.initiatedBy ? tx.json(jsonValue(run.initiatedBy)) : null},${run.initiatorUserId ?? null},
       ${run.runAt ?? new Date()},${run.held ? 'held' : 'queued'})
@@ -47,7 +47,9 @@ export async function queueRun(tx: Tx, workspace: string, run: QueueRun): Promis
 /**
  * Pauses a routine at once (§5.3). Started runs are fenced permanently so
  * a later resume cannot reactivate their credentials. Unstarted runs wait
- * for an admin to release or discard them.
+ * for an admin to release or discard them. Lifecycle callers use FOR NO
+ * KEY UPDATE on the routine so an effect holding a run can insert its
+ * firing and acquire the routine's foreign-key lock before the pause.
  */
 export async function pauseRoutine(
   tx: Tx,

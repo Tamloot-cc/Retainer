@@ -163,7 +163,7 @@ async function dispatchRoutine(
       from routines r join routine_versions v on v.id=r.active_version_id
       join routine_sources s on s.id=v.source_id
       where r.id=${id} and r.status='active' and r.feed_position is not null
-      for update of r skip locked`;
+      for no key update of r skip locked`;
     if (!routine) return;
     const schema = await getSchema(tx, workspace);
     const [counter] = await tx<{ position: string; retained_after: string }[]>`
@@ -259,7 +259,7 @@ async function dispatchRoutine(
           versionId: routine.version_id,
           sourceId: routine.source_id,
           recordId,
-          changePosition: Number(row.position),
+          changePosition: row.position,
           cause: row.cause,
           causeDepth: row.cause_depth ?? row.cause.length,
           held: paused,
@@ -292,7 +292,7 @@ export async function fireSchedule(sql: Sql, workspace: string, routineId: strin
     const [routine] = await tx<(ActiveRoutine & { next_fire_at: Date })[]>`
       select r.id,r.next_fire_at,v.id as version_id,v.source_id,s.manifest from routines r
       join routine_versions v on v.id=r.active_version_id join routine_sources s on s.id=v.source_id
-      where r.id=${routineId} and r.status='active' and r.next_fire_at<=clock_timestamp() for update of r skip locked`;
+      where r.id=${routineId} and r.status='active' and r.next_fire_at<=clock_timestamp() for no key update of r skip locked`;
     if (!routine) return { queued: 0 };
     const when = routine.manifest.when;
     if (when.kind !== 'schedule') {

@@ -1018,6 +1018,70 @@ describe('routines', () => {
     expect(row).toMatchObject({ status: 'stopped', input: null, fence: '2' });
   });
 
+  it('pauses without deadlocking a concurrent once-per-record write', async () => {
+    const s = await setup();
+    const { routineId } = await activate(s, {
+      manifest: {
+        when: { kind: 'manual', object: 'company', oncePerRecord: true },
+        uses: { tools: [], model: false },
+      },
+      code: TIER_ROUTINE(s.key('tier'), s.key('name')).code,
+    });
+    const recordId = await createCompany(s.app, s.keys.admin, 'Acme Pause');
+    const pressed = await s.app.request(`/v1/routines/${routineId}/run`, {
+      key: s.keys.admin,
+      body: { recordIds: [recordId] },
+    });
+    const claimed = await s.executor.claim(s.workspace, pressed.body.runs[0]);
+    if (!claimed) throw new Error('run not claimed');
+    const token = await tokens.issueRoutine(
+      s.workspace,
+      { runId: claimed.runId, routineId, fence: claimed.fence, mode: 'run', tools: [] },
+      new Date(Date.now() + 60_000),
+    );
+
+    // Stop the effect at the firing insert, after it has locked its run.
+    const blocker = await db.owner.reserve();
+    await blocker`begin`;
+    await blocker`lock table routine_firings in share mode`;
+    const effect = s.app.request('/v1/routines/runtime/effects', {
+      key: token,
+      body: {
+        position: 1,
+        operation: 'record.update',
+        args: { object: 'company', id: recordId, values: { [s.key('tier')]: 'gold' } },
+      },
+    });
+    let pause: ReturnType<typeof s.app.request> | undefined;
+    try {
+      await expect
+        .poll(async () => {
+          const [waiting] = await db.owner`select exists(select 1 from pg_locks
+          where relation='routine_firings'::regclass and mode='RowExclusiveLock' and not granted) as waiting`;
+          return waiting?.waiting;
+        })
+        .toBe(true);
+
+      pause = s.app.request(`/v1/routines/${routineId}/pause`, { key: s.keys.admin, body: {} });
+      await expect
+        .poll(async () => {
+          const [waiting] = await db.owner`select exists(select 1 from pg_stat_activity
+          where datname=current_database() and wait_event_type='Lock'
+            and query like 'update routine_runs set status=''stopped''%') as waiting`;
+          return waiting?.waiting;
+        })
+        .toBe(true);
+    } finally {
+      await blocker`rollback`;
+      blocker.release();
+      await Promise.allSettled([effect, pause]);
+    }
+    expect((await effect).status).toBe(200);
+    expect(await pause).toMatchObject({ status: 200, body: { status: 'paused' } });
+    const [row] = await db.owner`select status from routine_runs where id=${claimed.runId}`;
+    expect(row?.status).toBe('stopped');
+  });
+
   it('forget erases stored results and ends runs in flight as erased', async () => {
     const s = await setup();
     const tier = s.key('tier');
@@ -1578,6 +1642,29 @@ describe('routines', () => {
     } finally {
       limits.runsPerHour = saved;
     }
+  });
+
+  it('keeps feed and queued change positions at bigint precision', async () => {
+    const s = await setup();
+    await createCompany(s.app, s.keys.admin, 'Acme Before');
+    const head = 9_007_199_254_740_995n;
+    await db.owner`update change_counters set position=${head.toString()}::bigint where workspace_id=${s.workspace}`;
+    const { routineId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    const position = async () =>
+      (await db.owner`select feed_position::text as head from routines where id=${routineId}`)[0]
+        ?.head;
+    expect(await position()).toBe(head.toString());
+
+    await createCompany(s.app, s.keys.admin, 'Acme One');
+    await createCompany(s.app, s.keys.admin, 'Acme Two');
+    await dispatchRoutines(s.app.sql, s.workspace);
+    const runs = await db.owner`select change_position::text as position from routine_runs
+      where routine_id=${routineId} and status='queued' order by change_position`;
+    expect(runs.map((run) => run.position)).toEqual([
+      (head + 1n).toString(),
+      (head + 2n).toString(),
+    ]);
+    expect(await position()).toBe((head + 2n).toString());
   });
 
   it('caps held record runs and continues other routines in the workspace', async () => {

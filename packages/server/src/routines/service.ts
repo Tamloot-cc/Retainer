@@ -41,10 +41,10 @@ const sourceHash = (manifest: RoutineManifest, code: string) =>
   createHash('sha256').update(stableJson({ manifest, code })).digest('hex');
 
 /** The head of the workspace's change feed: a routine starts from here (§6.1). */
-export async function feedHead(tx: Tx, workspace: string): Promise<number> {
+export async function feedHead(tx: Tx, workspace: string): Promise<string> {
   const [row] = await tx<{ position: string }[]>`
     select position::text from change_counters where workspace_id=${workspace}`;
-  return Number(row?.position ?? 0);
+  return row?.position ?? '0';
 }
 
 export async function saveSource(
@@ -356,7 +356,7 @@ export class Routines {
     const approved = await this.tx(caller, async (tx) => {
       const [routine] = await tx<
         RoutineRow[]
-      >`select * from routines where id=${routineId} for update`;
+      >`select * from routines where id=${routineId} for no key update`;
       if (!routine) throw notFound('routine');
       if (routine.status === 'archived')
         throw new AppError(409, 'routine_archived', 'this routine is archived');
@@ -461,7 +461,7 @@ export class Routines {
     const next =
       manifest.when.kind === 'schedule' ? nextInZone(manifest.when.cron, new Date(), zone) : null;
     await tx`update routines set status='active',paused_reason=null,paused_at=null,failures=0,
-      feed_position=${manifest.when.kind === 'record' ? head : null},next_fire_at=${next},
+      feed_position=${manifest.when.kind === 'record' ? head : null}::bigint,next_fire_at=${next},
       active_version_id=coalesce(${versionId ?? null}::uuid,active_version_id) where id=${routineId}`;
   }
 
@@ -480,7 +480,7 @@ export class Routines {
     return this.tx(caller, async (tx) => {
       const [routine] = await tx<
         RoutineRow[]
-      >`select * from routines where id=${routineId} for update`;
+      >`select * from routines where id=${routineId} for no key update`;
       if (!routine) throw notFound('routine');
       if (routine.status !== 'active') return { routineId, status: routine.status };
       await pauseRoutine(tx, routineId, 'paused', 'paused');
@@ -497,7 +497,7 @@ export class Routines {
     return this.tx(caller, async (tx) => {
       const [routine] = await tx<
         RoutineRow[]
-      >`select * from routines where id=${routineId} for update`;
+      >`select * from routines where id=${routineId} for no key update`;
       if (!routine) throw notFound('routine');
       if (!['paused', 'needs_attention'].includes(routine.status))
         throw new AppError(409, 'not_paused', 'only a paused routine can be resumed');
@@ -553,7 +553,7 @@ export class Routines {
       // held again: running them needs the routine on first.
       if (action === 'run') {
         const [routine] = await tx<{ status: string }[]>`
-          select status from routines where id=${routineId} for update`;
+          select status from routines where id=${routineId} for no key update`;
         if (!routine) throw notFound('routine');
         if (routine.status !== 'active')
           throw new AppError(
@@ -617,7 +617,9 @@ export class Routines {
     if (!caller.scopes.includes('write') && !caller.scopes.includes('admin'))
       throw forbidden('running a routine needs write access');
     return this.tx(caller, async (tx) => {
-      const [routine] = await tx<RoutineRow[]>`select * from routines where id=${routineId}`;
+      // Enqueue before a competing pause, or observe the pause and refuse.
+      const [routine] = await tx<RoutineRow[]>`
+        select * from routines where id=${routineId} for no key update`;
       if (!routine || !routine.active_version_id) throw notFound('routine');
       if (routine.status !== 'active')
         throw new AppError(409, 'routine_paused', 'the routine is not active');
@@ -698,7 +700,7 @@ export async function insertProposal(
   let routineId = input.routineId;
   if (routineId) {
     const [routine] = await tx<{ id: string; status: string }[]>`
-      select id,status from routines where id=${routineId} for update`;
+      select id,status from routines where id=${routineId} for no key update`;
     if (!routine) throw notFound('routine');
     if (routine.status === 'archived')
       throw new AppError(409, 'routine_archived', 'this routine is archived');

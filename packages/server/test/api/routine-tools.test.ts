@@ -5,6 +5,12 @@ import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import type { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { RoutineExecutor, RoutineMaintenance } from '../../src/worker/routines.js';
+import {
+  createOrganization,
+  moveWorkspace,
+  setOrganizationMember,
+} from '../../src/workspaces/organizations.js';
+import { AUTH_SECRET, ORIGIN, startAccountsApp } from '../helpers/accounts.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
@@ -26,12 +32,26 @@ afterEach(async () => {
     await db.owner`delete from workspaces where id=any(${workspaces.splice(0)}::uuid[])`;
 });
 
-async function setup() {
+async function setup(connection: 'workspace' | 'member' = 'workspace') {
   const installId = randomUUID(),
     toolId = randomUUID();
   const manifest = extensionFixture({
+    connection,
     scopes: ['read'],
     functions: [
+      ...(connection === 'member'
+        ? [
+            {
+              universalId: randomUUID(),
+              name: 'connect',
+              description: 'Connects the member tool fixture',
+              handlerDigest: 'b'.repeat(64),
+              timeoutSeconds: 60,
+              trigger: { kind: 'connect' as const },
+              inputSchema: { type: 'object', additionalProperties: false } as const,
+            },
+          ]
+        : []),
       {
         universalId: installId,
         name: 'setup',
@@ -51,7 +71,7 @@ async function setup() {
           kind: 'tool',
           title: 'Check an address',
           effect: 'read',
-          connection: 'workspace',
+          connection,
           outputSchema: {
             type: 'object',
             properties: { deliverable: { type: 'boolean' } },
@@ -170,10 +190,80 @@ async function setup() {
         body: { values: { name: 'Globex' } },
       })
     ).body.id as string;
-  return { app, workspace: workspace.id, keys, queue, routineId, press, another };
+  return {
+    app,
+    workspace: workspace.id,
+    keys,
+    queue,
+    routineId,
+    versionId,
+    press,
+    another,
+    catalog,
+    executor,
+    installationId: installed.body.id as string,
+  };
 }
 
 describe('routine tool calls', () => {
+  it('tests a manual member tool with the initiating admin’s own connection', async () => {
+    const s = await setup('member');
+    const email = `admin-${randomUUID()}@example.com`;
+    const { userId, cookie } = await startAccountsApp(db).signIn({ email, name: 'Routine Admin' });
+    const organization = await createOrganization(db.owner, { name: 'Member tools' });
+    await setOrganizationMember(db.owner, { organization: organization.id, role: 'owner', email });
+    await moveWorkspace(db.owner, { workspace: s.workspace, organization: organization.id });
+    const [connection] = await db.owner<{ id: string }[]>`
+      insert into extension_connections(workspace_id,installation_id,owner,owner_id,state)
+      values(${s.workspace},${s.installationId},
+        ${db.owner.json({ type: 'user', id: userId })},${userId},'active') returning id`;
+    const accountsApp = startTestApp(db, {
+      accountsSecret: AUTH_SECRET,
+      publicOrigin: ORIGIN,
+      extensionCatalog: s.catalog,
+      runTokens: tokens,
+      routines: { available: true },
+    });
+    const tested = await accountsApp.request(
+      `/v1/routines/${s.routineId}/versions/${s.versionId}/test`,
+      {
+        headers: {
+          cookie,
+          origin: ORIGIN,
+          'X-Retainer-Client': 'web',
+          'X-Retainer-Workspace': s.workspace,
+        },
+        body: { recordId: await s.another() },
+      },
+    );
+    expect(tested.status).toBe(202);
+    const claimed = await s.executor.claim(s.workspace, tested.body.runId);
+    if (!claimed) throw new Error('test run not claimed');
+    const key = await tokens.issueRoutine(
+      s.workspace,
+      {
+        runId: claimed.runId,
+        routineId: s.routineId,
+        fence: claimed.fence,
+        mode: 'test',
+        tools: claimed.tools,
+      },
+      new Date(Date.now() + 60_000),
+    );
+    const result = await accountsApp.request('/v1/routines/runtime/effects', {
+      key,
+      body: {
+        position: 1,
+        operation: 'tool',
+        args: { name: 'check_address', input: { address: 'test@example.com' } },
+      },
+    });
+    expect(result.body).toMatchObject({ state: 'pending' });
+    const [job] = await db.owner`select connection_id,caller_user_id from extension_jobs
+      where id=${result.body.tool.callId}`;
+    expect(job).toEqual({ connection_id: connection?.id, caller_user_id: userId });
+  });
+
   it('queues the tool as its own job, and only the calling run polls its output', async () => {
     const s = await setup();
     const { runId, token } = await s.press();

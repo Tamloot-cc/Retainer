@@ -146,7 +146,7 @@ export class RoutineExecutor {
       await lockPrivacyShared(tx, workspace);
       await lockSchemaShared(tx, workspace);
       await tx`select rt.id from routines rt join routine_runs r on r.routine_id=rt.id
-        where r.id=${id} and r.mode='run' for update of rt`;
+        where r.id=${id} and r.mode='run' for no key update of rt`;
       const [run] = await tx<ClaimRow[]>`
         select r.id,r.routine_id,r.version_id,r.mode,r.status,r.record_id,r.attempt,r.initiator_user_id,r.expires_at,
           r.input ? 'triggerRecord' as has_trigger_record,coalesce(r.expires_at<=clock_timestamp(),false) as expired,s.manifest,rt.status as routine_status,
@@ -373,7 +373,7 @@ export class RoutineExecutor {
   async complete(run: ClaimedRun, result: ExecutionResult) {
     await inWorkspace(this.options.sql, run.workspaceId, async (tx) => {
       if (run.mode === 'run' && run.routineId)
-        await tx`select id from routines where id=${run.routineId} for update`;
+        await tx`select id from routines where id=${run.routineId} for no key update`;
       const [row] = await tx<
         {
           status: string;

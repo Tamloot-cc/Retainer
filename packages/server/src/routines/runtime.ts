@@ -756,16 +756,19 @@ export class RoutineRuntime {
     }
     let connectionId: string | null = null;
     if (tool.connection === 'member') {
-      // A member tool runs only from a button, as the person who pressed it.
-      if (run.trigger_kind !== 'manual' || !run.initiator_user_id)
+      // A manual routine uses the account of the person who runs or tests it.
+      const owner = run.initiator_user_id;
+      const memberTest =
+        run.mode === 'test' && run.manifest?.when.kind === 'manual' && !owner?.startsWith('key:');
+      if (!owner || (run.trigger_kind !== 'manual' && !memberTest))
         throw new AppError(
           403,
           'member_account',
-          'a member tool runs only from a button its owner presses',
+          'a member tool needs a person to start a manual routine or its test',
         );
       const [connection] = await tx<{ id: string }[]>`
         select id from extension_connections where installation_id=${tool.installationId}
-          and owner_id=${run.initiator_user_id} and state='active'`;
+          and owner_id=${owner} and state='active'`;
       if (!connection)
         throw new AppError(409, 'tool_not_connected', 'connect your account to use this tool');
       connectionId = connection.id;

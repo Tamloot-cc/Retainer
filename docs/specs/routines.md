@@ -973,8 +973,9 @@ What a routine adds when it calls a tool:
   contract, and a change to it pauses the routine (§5.3). A test run uses its
   validated proposal's tool list (§5.3).
 - **Whose account.** A standing routine uses `workspace` connections only. A
-  `member` tool runs only in a manual run, acting as the person who pressed
-  the button (`extensions-tools.md` §4).
+  `member` tool uses the connection of the person who presses the routine
+  button or the admin who tests a manual routine. The test still reports
+  send calls before queueing them (`extensions-tools.md` §4).
 - **A deadline, no retry.** The call gets a deadline that fits in the run's
   remaining time and is not retried by the queue: a failure goes back to the
   code as an error, and the code decides what to do. When the tool job
