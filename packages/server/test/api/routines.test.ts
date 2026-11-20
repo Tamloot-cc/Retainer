@@ -1060,6 +1060,25 @@ describe('routines', () => {
     expect(first?.record_id).toBe(survivor);
   });
 
+  it('a preview samples distinct records, however busy the newest one is', async () => {
+    const s = await setup();
+    for (const name of ['Acme One', 'Acme Two', 'Acme Three'])
+      await createCompany(s.app, s.keys.admin, name);
+    const hot = await createCompany(s.app, s.keys.admin, 'Acme Hot');
+    // 1,200 newer matching changes, all to one record.
+    await db.owner`insert into record_changes(workspace_id,position,record_id,object_type_id,operation,field_keys,cause,cause_depth,created_at)
+      select c.workspace_id,c.position+1000000+g,c.record_id,c.object_type_id,'create',c.field_keys,c.cause,c.cause_depth,c.created_at
+      from record_changes c, generate_series(1,1200) g where c.record_id=${hot} and c.operation='create'`;
+    const res = await s.app.request('/v1/routines/preview', {
+      key: s.keys.agent,
+      body: TIER_ROUTINE(s.key('tier'), s.key('name')),
+    });
+    expect(res.body.runs).toHaveLength(4);
+    const [first] = await db.owner<{ record_id: string }[]>`
+      select record_id from routine_runs where id=${res.body.runs[0]}`;
+    expect(first?.record_id).toBe(hot);
+  });
+
   it('a preview type-checks its code in full, even before any validation', async () => {
     const s = await setup();
     await createCompany(s.app, s.keys.admin, 'Acme Unchecked');

@@ -478,7 +478,7 @@ export async function runSandboxed(
   );
   const timer = setTimeout(
     () => end({ outcome: 'failed', code: 'run_timeout' }),
-    Math.max(0, deadline - Date.now() - 2000),
+    Math.max(0, deadline - Date.now() - ROUTINE_LIMITS.reportMarginMs),
   );
   parent.addEventListener('abort', () => end({ outcome: 'failed', code: 'run_timeout' }), {
     once: true,

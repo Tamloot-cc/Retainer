@@ -1362,8 +1362,9 @@ they left open:
   unfinished ones; retention clears them 7 days after the run ends, and
   cancels one the run left unfinished.
 - **A preview counts every match.** The cost estimate counts all matching
-  changes of the window in SQL; only the sample records come from a bounded
-  read.
+  changes of the window in SQL, and the sample is the five live records
+  (survivors of any merge) with the most recent matches, so one busy record
+  takes one slot.
 - **Clock changes.** A scheduled wall time that a spring-forward change
   skips runs an hour later (02:30 at 03:30); one that a fall-back change
   repeats runs the first time, in every zone.
@@ -1383,10 +1384,11 @@ they left open:
   survivor had a run of the same routine running: both started before the
   merge, so it keeps the old ID until it ends, and the claim's check counts
   it.
-- **A tool call ends with its attempt.** The tool job expires at the
-  attempt's deadline, not the run's 24-hour expiry, and a job claimed late
-  gets only the time left, so no tool acts after its run has timed out. A
-  model call's token ends at the same deadline.
+- **A tool call ends with its attempt.** The tool job expires when the
+  runner stops the attempt (its deadline less the 2 s the runner keeps to
+  report), not at the run's 24-hour expiry, and a job claimed late gets only
+  the time left, so no tool acts after its run has timed out. A model call's
+  token ends at the same moment.
 - **The hourly cap counts scheduled runs.** A schedule tick that would queue
   more than 200 runs of the routine in the last hour holds the rest and
   pauses it, as a burst of record changes does.

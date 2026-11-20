@@ -248,7 +248,8 @@ describe('routine tool calls', () => {
   it("a tool called near the end of an attempt ends by the attempt's deadline", async () => {
     const s = await setup();
     const { runId, token } = await s.press();
-    // Five seconds of this attempt are left (the lease runs 15 s past its deadline).
+    // Five seconds of this attempt are left (the lease runs 15 s past its deadline,
+    // and the runner stops 2 s before it).
     await db.owner`update routine_runs set lease_until=clock_timestamp()+interval '20 seconds' where id=${runId}`;
     const started = await s.app.request('/v1/routines/runtime/effects', {
       key: token,
@@ -259,7 +260,7 @@ describe('routine tool calls', () => {
       },
     });
     const [bounds] = await db.owner<{ expires_at: Date; deadline: Date; run_expires_at: Date }[]>`
-      select j.expires_at,r.lease_until-interval '15 seconds' as deadline,r.expires_at as run_expires_at
+      select j.expires_at,r.lease_until-interval '17 seconds' as deadline,r.expires_at as run_expires_at
       from extension_jobs j join routine_runs r on r.id=j.caller_run_id where j.id=${started.body.tool.callId}`;
     // Not the run's 24-hour expiry: this attempt's deadline.
     expect(bounds?.expires_at.getTime()).toBe(bounds?.deadline.getTime());

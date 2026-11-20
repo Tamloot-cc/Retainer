@@ -18,6 +18,11 @@ export const ROUTINE_LIMITS = {
   /** One run's default and longest duration, in seconds. */
   runSeconds: 120,
   maxRunSeconds: 300,
+  /**
+   * The runner ends a run this long before its deadline, to report it; a
+   * tool or model call the run makes must end by then too.
+   */
+  reportMarginMs: 2000,
   /** Calls of one SDK operation in a run. */
   callsPerOperation: 200,
   /** Model calls in one run. */

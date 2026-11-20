@@ -63,19 +63,15 @@ export async function matchingSince(
   const [count] = await tx<
     { n: number }[]
   >`select count(*)::int as n from record_changes where ${where}`;
-  const rows = await tx<{ record_id: string }[]>`
-    select record_id from record_changes where ${where} and record_id is not null
-    order by position desc limit 1000`;
-  const ids = [...new Set(rows.map((row) => row.record_id))];
-  // A record merged since its change counts as its survivor (§6.1), and a
-  // deleted one takes no slot: the five most recent live records.
-  const live = ids.length
-    ? await tx<{ id: string }[]>`
-        select s.id from unnest(${ids}::uuid[]) with ordinality as c(id,n)
-        join records r on r.id=c.id join records s on s.id=coalesce(r.merged_into_id,r.id)
-        where s.deleted_at is null and s.merged_into_id is null
-        group by s.id order by min(c.n) limit 5`
-    : [];
+  // The five live records with the most recent matches: a record merged
+  // since its change counts as its survivor (§6.1), and a deleted one or
+  // repeated changes to one record take no extra slot.
+  const live = await tx<{ id: string }[]>`
+    with m as (select record_id,position from record_changes where ${where} and record_id is not null)
+    select s.id from m join records r on r.id=m.record_id
+    join records s on s.id=coalesce(r.merged_into_id,r.id)
+    where s.deleted_at is null and s.merged_into_id is null
+    group by s.id order by max(m.position) desc limit 5`;
   return { matched: count?.n ?? 0, records: live.map((row) => row.id) };
 }
 

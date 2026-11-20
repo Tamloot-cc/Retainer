@@ -71,7 +71,7 @@ type RunState = {
   record_id: string | null;
   run_at: Date;
   expires_at: Date | null;
-  /** When this attempt ends: its deadline, or the run's expiry if sooner. */
+  /** When this attempt ends: when the runner stops it, or the run's expiry if sooner. */
   deadline: Date | null;
   tool_contracts: Record<string, ToolContract> | null;
   attempt: number;
@@ -157,7 +157,8 @@ export class RoutineRuntime {
   private async run(tx: Tx, runId: string, lock = false): Promise<RunState> {
     const [run] = await tx<RunState[]>`
       select r.id,r.routine_id,r.version_id,r.source_id,r.mode,r.trigger_kind,r.record_id,r.run_at,r.expires_at,
-        least(r.expires_at,r.lease_until-${RUN_GRACE_SECONDS}*interval '1 second') as deadline,
+        least(r.expires_at,r.lease_until-${RUN_GRACE_SECONDS}*interval '1 second'
+          -${ROUTINE_LIMITS.reportMarginMs}*interval '1 millisecond') as deadline,
         r.attempt,r.cause,r.cause_depth,r.initiator_user_id,r.initiated_by,r.model_calls,r.input,
         s.manifest,s.code,v.types_fingerprint,v.tool_contracts
       from routine_runs r left join routine_sources s on s.id=r.source_id
