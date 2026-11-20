@@ -51,6 +51,13 @@ export class ExecutionRegistry {
       );
     return structuredClone(value);
   }
+  /** The one entry a first-party registration has, such as the routine runner. */
+  find(registrationId: string) {
+    const value = [...this.entries.values()].find(
+      (entry) => entry.registrationId === registrationId,
+    );
+    return value ? structuredClone(value) : undefined;
+  }
   get(job: ClaimedJob) {
     return this.lookup(job.registrationId, job.releaseDigest, job.functionId);
   }
@@ -280,6 +287,8 @@ export class ExtensionExecutor {
       upgradeMs?: number;
       onError?: (error: unknown) => void;
       idleTimeoutMs?: number;
+      /** Other running work can still enqueue extension tool jobs. */
+      hasDependentWork?: () => boolean;
       /** Runs after the last claim settles, before waiting for executions to acknowledge. */
       onClaimingStopped?: () => Promise<void>;
     } = {},
@@ -329,7 +338,7 @@ export class ExtensionExecutor {
           // which only claim enforces. A wide window keeps a capped workspace's older jobs from
           // hiding every other workspace's work.
           const due = await this.queue.discover(this.options.discoverySql, DISCOVERY_WINDOW);
-          if (due.length) idleSince = undefined;
+          if (due.length || options.hasDependentWork?.()) idleSince = undefined;
           else idleSince ??= Date.now();
           if (
             options.idleTimeoutMs !== undefined &&

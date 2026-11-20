@@ -93,6 +93,17 @@ export class ChangeCollector {
       chain = change.cause;
       depth = 0;
     }
+    if (caller.routine) {
+      // A routine joins the cause chain like an installation (routines spec
+      // §6.5): its writes never trigger it again, and chains stop at 8 hops.
+      const [run] = await tx<
+        { cause: string[]; cause_depth: number }[]
+      >`select cause,cause_depth from routine_runs where id=${caller.routine.runId}`;
+      chain = run?.cause ?? [];
+      depth = (run?.cause_depth ?? 0) + 1;
+      const self = caller.routine.routineId ?? caller.routine.runId;
+      if (!chain.includes(self)) chain = [...chain, self];
+    }
     if (origin && !chain.includes(origin)) chain = [...chain, origin];
     if (origin) depth = causedBy && !caller.run ? 1 : depth + (job?.cause.includes(origin) ? 0 : 1);
     const collector = new ChangeCollector(caller.workspaceId, schema, origin, chain, depth);
@@ -138,6 +149,12 @@ export class ChangeCollector {
     }
     if (operation) entry.operation = operation;
   }
+  /** The record a merge in this transaction merged away: every change it makes carries it. */
+  private mergedFrom: string | null = null;
+  /** Marks this transaction's changes as made by a merge, which is not a routine trigger. */
+  markMerged(mergedId: string) {
+    this.mergedFrom = mergedId;
+  }
   created(id: string) {
     if (this.published) throw new Error('cannot create records after feed publication');
     if (!this.entries.has(id)) this.entries.set(id, { before: null, reviewKeys: new Set() });
@@ -174,6 +191,7 @@ export class ChangeCollector {
       origin_installation_id: string | null;
       cause: string[];
       merged_into_id: string | null;
+      merged_from_id: string | null;
     }[] = [];
     for (const [id, entry] of [...this.entries].sort(([a], [b]) => a.localeCompare(b))) {
       const current = await this.snapshot(tx, id),
@@ -206,6 +224,7 @@ export class ChangeCollector {
           origin_installation_id: this.origin,
           cause: this.cause,
           merged_into_id: null,
+          merged_from_id: this.mergedFrom,
         });
       let operation: ChangeOperation = entry.operation ?? 'update';
       if (!prior || moved) operation = 'create';
@@ -244,6 +263,7 @@ export class ChangeCollector {
         origin_installation_id: this.origin,
         cause: this.cause,
         merged_into_id: current?.merged_into_id ?? null,
+        merged_from_id: this.mergedFrom,
       });
     }
     for (const [objectTypeId, keys] of [...this.schemaChanges].sort(([a], [b]) =>
@@ -260,6 +280,7 @@ export class ChangeCollector {
         origin_installation_id: this.origin,
         cause: this.cause,
         merged_into_id: null,
+        merged_from_id: this.mergedFrom,
       });
     }
     if (!changes.length) return;
@@ -296,10 +317,11 @@ export class ChangeCollector {
       cause: jsonValue(change.cause),
       cause_depth: this.depth,
       merged_into_id: change.merged_into_id,
+      merged_from_id: change.merged_from_id,
     }));
-    await tx`insert into record_changes(workspace_id,position,record_id,object_type_id,operation,field_keys,related_record_ids,origin_installation_id,cause,cause_depth,merged_into_id)
-      select ${this.workspace}::uuid,r.position,r.record_id,r.object_type_id,r.operation,r.field_keys,r.related_record_ids,r.origin_installation_id,r.cause,r.cause_depth,r.merged_into_id
+    await tx`insert into record_changes(workspace_id,position,record_id,object_type_id,operation,field_keys,related_record_ids,origin_installation_id,cause,cause_depth,merged_into_id,merged_from_id)
+      select ${this.workspace}::uuid,r.position,r.record_id,r.object_type_id,r.operation,r.field_keys,r.related_record_ids,r.origin_installation_id,r.cause,r.cause_depth,r.merged_into_id,r.merged_from_id
       from jsonb_to_recordset(${tx.json(rows)}::jsonb) as r(position bigint,record_id uuid,object_type_id uuid,operation text,
-        field_keys jsonb,related_record_ids jsonb,origin_installation_id uuid,cause jsonb,cause_depth int,merged_into_id uuid)`;
+        field_keys jsonb,related_record_ids jsonb,origin_installation_id uuid,cause jsonb,cause_depth int,merged_into_id uuid,merged_from_id uuid)`;
   }
 }

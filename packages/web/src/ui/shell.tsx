@@ -14,6 +14,7 @@ import {
   Settings,
   Shapes,
   UserCog,
+  Workflow,
   X,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
@@ -66,6 +67,7 @@ type ShellProps = {
   /** Entities are listed under Records, event types under Activity. */
   objects: ShellObject[];
   inboxCount?: number;
+  routinesAvailable?: boolean;
   /** Developer view, switched from the account menu. */
   developer: boolean;
   onDeveloperChange: (on: boolean) => void;
@@ -239,6 +241,7 @@ function Sidebar({
   accounts,
   objects,
   inboxCount,
+  routinesAvailable,
   developer,
   onDeveloperChange,
   onSignOut,
@@ -395,6 +398,15 @@ function Sidebar({
           {objectLinks('event')}
         </NavGroup>
         <div className="flex-1" />
+        {routinesAvailable ? (
+          <NavLink
+            to="/routines"
+            icon={Workflow}
+            label="Routines"
+            collapsed={collapsed}
+            onNavigate={onNavigate}
+          />
+        ) : null}
         <NavLink
           to="/extensions"
           icon={Puzzle}
@@ -522,7 +534,7 @@ function NavLink({
   onNavigate,
   children,
 }: {
-  to: '/' | '/review' | '/o/$object' | '/schema' | '/activity' | '/extensions';
+  to: '/' | '/review' | '/o/$object' | '/schema' | '/activity' | '/extensions' | '/routines';
   params?: { object: string };
   icon: LucideIcon;
   color?: CategoryColor;

@@ -1,11 +1,13 @@
 # Routines: spec
 
-Status: **proposal**, 2026-11-19. Not accepted and not built. This is the
-third draft of the day: after two reviews, the product owner decided that a
-routine is TypeScript code, not a JSON flow, and that the first version stays
-lean. A third review, of this draft, tightened the rules for retries, dry
-runs, version changes and the model cap. Section 2 lists what is decided and
-what is only proposed.
+Status: **building**, 2026-11-20. Phases 1 to 5 (§11.1) are implemented on
+the `routines` branch, except `relative` triggers and the hosted network path
+(§11.3), which lives in `retainer-cloud`. §11.4 records where the build
+differs from this spec. Before that, the proposal of 2026-11-19 went through
+three drafts: after two reviews, the product owner decided that a routine is
+TypeScript code, not a JSON flow, and that the first version stays lean. A
+third review tightened the rules for retries, dry runs, version changes and
+the model cap. Section 2 lists what is decided and what is only proposed.
 
 Builds on the extension platform in [extensions.md](extensions.md), model calls
 in [extensions-model-calls.md](extensions-model-calls.md) and the two-step
@@ -347,6 +349,9 @@ query: the checker refuses any other, and the builder reports
 The `if` is checked when the run starts, by running the ordinary record query
 for that one record. A run whose `if` fails ends at once as `skipped`, and no
 code runs. That makes the `if` the cheap first test: it costs no sandbox run.
+Routines act on every live record: an older message of a Gmail thread, which
+lists and the feed leave out to show only the newest, still runs and matches
+a schedule's filter.
 
 A condition sees the record's current values. "The stage changed to
 Proposal" works: watch the field and test its value. "Changed from Lead" does
@@ -609,9 +614,9 @@ history are how a person catches that.
   re-check fails, when a tool's contract changes, when it keeps failing, and
   when its approver stops being an admin. A pause takes effect at once:
   Retainer checks that the routine is active before every effect, and again
-  when a tool job it called starts. An effect after the pause is refused and
-  the run ends as `stopped`. Runs not yet started are held for an admin to
-  run or discard.
+  when a tool job it called starts. Pausing permanently fences started
+  runs and marks them `stopped`. Resuming leaves those runs stopped.
+  Runs not yet started are held for an admin to run or discard.
 - **Resuming.** A resumed routine starts from the feed's head, as at
   approval. Changes made while it was paused, and due times that passed, are
   not handled later. The Routines page says since when it was paused. This
@@ -657,9 +662,11 @@ Routines read the same change feed as extensions, with their own cursor.
   already do: a queued, unstarted run for the same routine and record absorbs
   the later change.
 - A write that loses on precedence changes nothing, so it triggers nothing.
-- **Merges.** A merge is not a trigger. A queued run on the merged-away
-  record runs on the survivor, because reads of a merged record return the
-  survivor. Its firings and its `oncePerRecord` marks move to the survivor;
+- **Merges.** A merge is not a trigger. A run is always on the surviving
+  record: the merge moves the merged-away record's unfinished runs to the
+  survivor, and a run's start resolves its record again. So "one run at a
+  time per routine and record" (§6.2) holds across a merge, and the database
+  enforces it. Its firings and its `oncePerRecord` marks move to the survivor;
   where both records have one, the survivor keeps it, so the merge does not
   fire the routine a second time. `relative` due times are worked out again
   from the survivor's values.
@@ -706,12 +713,12 @@ sequenceDiagram
   started before it leaves, and as done when its result comes back.
 - **A retried run does nothing twice.** A retry starts the code from the
   top. Each effect that finds its position already recorded gets the
-  recorded result and is not repeated, even when its arguments differ this
-  time because a record changed in between. The history flags the
-  difference. Effects past the recorded ones happen normally.
-- **A retry that takes another path stops.** If the operation at a position
-  differs from the recorded one, the code has branched differently. The run
-  ends as `diverged` and does nothing more.
+  recorded result when both its operation and arguments match. Effects past
+  the recorded ones happen normally. A retry keeps its initial trigger
+  eligibility, including the `if` and its own once-per-record firing.
+- **A retry that takes another path stops.** If the operation or arguments
+  differ at a recorded position, the run ends as `diverged`. Committed
+  effects remain visible in the run history.
 - **What is guaranteed, and by whom.** A write to Retainer happens once: the
   database guarantees it. A tool call or model call found as started with no
   result is sent again with the same key, because Retainer cannot know
@@ -966,8 +973,9 @@ What a routine adds when it calls a tool:
   contract, and a change to it pauses the routine (§5.3). A test run uses its
   validated proposal's tool list (§5.3).
 - **Whose account.** A standing routine uses `workspace` connections only. A
-  `member` tool runs only in a manual run, acting as the person who pressed
-  the button (`extensions-tools.md` §4).
+  `member` tool uses the connection of the person who presses the routine
+  button or the admin who tests a manual routine. The test still reports
+  send calls before queueing them (`extensions-tools.md` §4).
 - **A deadline, no retry.** The call gets a deadline that fits in the run's
   remaining time and is not retried by the queue: a failure goes back to the
   code as an error, and the code decides what to do. When the tool job
@@ -1241,7 +1249,8 @@ each against real Postgres:
   concurrently, as the testing rules require.
 - **A retry after the data changed.** A run is interrupted after its first
   task is created, and the record its title came from changes before the
-  retry. The retry creates no second copy of that task.
+  retry. If the effect arguments changed, the run diverges and creates no
+  second copy of that task.
 - **A retry that branches differently** ends as `diverged` and does nothing
   more.
 - **Rank.** A routine's write to a field a person set waits for review and
@@ -1300,6 +1309,204 @@ each against real Postgres:
   with its own budget, so a workspace with many routines cannot delay
   extension dispatch.
 
+### 11.4 As built
+
+Where the implementation differs from the sections above, or settles what
+they left open:
+
+- **Runs have their own queue.** Routine runs, checks, dry runs, tests and
+  builder runs are rows of `routine_runs`, with their own lease, fence and
+  attempts, claimed through `retainer_routine_runs_due`; they are not
+  `extension_jobs`. A tool call is an extension job (`trigger_kind = 'tool'`)
+  in its own lane, so it never waits behind the extension's other jobs, and
+  its claim checks again that the calling run is running, its routine active
+  and a test's initiator still an admin.
+- **The runner's answer.** Protocol v1 carries output only on success, so
+  the routine runner always answers `succeeded` with the routine's
+  `outcome` (`succeeded`, `failed` or `stopped`), its code and, for a check,
+  the problems. The executor maps it to the run's status.
+- **The sandbox** (`packages/runner/src/routine*.ts`). The runner type-checks
+  with TypeScript's own compiler on a temporary directory, then runs the
+  emitted JavaScript in a child process under Node's permission model (no
+  file system beyond that directory, no child processes, workers or addons),
+  with code generation from strings disallowed. A loader hook refuses every
+  import after the routine's own module, however it is written; `fetch`,
+  `WebSocket`, `process.getBuiltinModule`, `process.binding` and `process`
+  itself are removed. The child holds no token: it asks the runner, which
+  calls the API. In Compose the launcher gives a routine run a network with
+  only the API container on it and no egress proxy. The routine's own model
+  calls reach the self-hosted proxy on the API origin.
+- **The builder** is a `build` run of the same runner: it reads the
+  capabilities, asks the model for name, summary, report, manifest and
+  code, checks the draft (the manifest at the server, then a full
+  type-check), retries up to three times with the problems, and proposes.
+  Its model calls are numbered effects of its run, so they count against the
+  daily cap; their recorded arguments say only what the call was for, since
+  the prompt carries the whole SDK.
+- **Held runs of a paused routine** run only after it is resumed: a paused
+  routine refuses every effect, so "run them" answers `409
+  routine_not_active` until then. An admin who wants one over-limit schedule
+  tick resumes, runs the held runs, and pauses again (§6.5 meant this to be
+  one step).
+- **The Routines page** (`packages/web/src/routes/routines`) has the
+  describe box, the review (facts, summary, report, code), approve, reject,
+  test, pause, resume, archive, held runs, runs with their calls, record
+  buttons, and the workspace time zone under workspace settings. It does
+  not yet show a dry run or a diff against the approved version on the
+  review (§5.2), or which tool each call named.
+- **A refused call keeps its position.** Code may catch a refused effect (a
+  missing record, an unlisted tool) and go on, so the refusal is recorded as
+  a failed call at its position and a retry gets the same error. A 429 or a
+  server error is not recorded; a server without a model or tool catalog
+  answers 409 (`model_unavailable`, `tool_unavailable`), so those are.
+- **A tool call's payloads are routine content.** `forget` redacts the input
+  and output of every routine tool job in the workspace and cancels the
+  unfinished ones; retention clears them 7 days after the run ends, and
+  cancels one the run left unfinished.
+- **A preview counts every match.** The cost estimate counts all matching
+  changes of the window in SQL, and the sample is the five live records
+  (survivors of any merge) with the most recent matches, so one busy record
+  takes one slot.
+- **Clock changes.** A scheduled wall time that a spring-forward change
+  skips runs an hour later (02:30 at 03:30); one that a fall-back change
+  repeats runs the first time, in every zone.
+- **Merges** mark every change they make (`record_changes.merged_from_id`):
+  the survivor's, and those of records and events that pointed at the
+  merged-away record. Dispatch and the preview skip them. A merge also
+  moves the merged-away record's unfinished runs, firings and
+  `oncePerRecord` marks to the survivor (§6.1). A queued run that a queued
+  run of the same version on the survivor already covers is discarded as
+  `merged`.
+- **One running run per routine and record** is a unique index on running
+  runs. Every run is on the surviving record: a claim resolves a merged ID
+  and stores the survivor, and a change made before a merge queues on the
+  survivor. The claim takes a key-share lock on the record, so a merge waits
+  for it; it skips a record a merge holds and tries on the next tick. The one
+  exception is a run that was running on the merged-away record while the
+  survivor had a run of the same routine running: both started before the
+  merge, so it keeps the old ID until it ends, and the claim's check counts
+  it.
+- **A tool call ends with its attempt.** The tool job expires when the
+  runner stops the attempt (its deadline less the 2 s the runner keeps to
+  report), not at the run's 24-hour expiry, and a job claimed late gets only
+  the time left, so no tool acts after its run has timed out. A model call's
+  token ends at the same moment.
+- **The hourly cap counts scheduled runs.** A schedule tick that would queue
+  more than 200 runs of the routine in the last hour holds the rest and
+  pauses it, as a burst of record changes does.
+- **Imports are refused by the type-check.** No module resolves in the
+  sandbox, so an `import`, a dynamic `import()` or `require()` fails the
+  check, and the loader refuses one at run time. The server does not scan
+  the text, which cannot tell syntax from a string or a member named
+  `import`.
+- **Values are typed by the API's write rules.** One function in `shared`
+  (`writeRules`) says whether a create must set a field and whether a write
+  takes null; the API's value validation and the generated types both read
+  it, as filters, sorts and aggregates read the API's own rules. So a create
+  requires every non-nullable field, null clears only a nullable
+  single-value field (a many-to-many relation is cleared with `[]`), an
+  update is any subset, and a JSON field takes a JSON value. Code the API
+  would refuse with `invalid_values` fails its type-check instead.
+- **No import resolves, the routine's own file included.** The code is
+  checked under a file name it cannot know, as the sandbox loads nothing but
+  the routine.
+- **`then` is reserved** for objects as for tools: the sandbox keeps
+  `retainer` from being thenable.
+- **Name and description follow the approved version.** Proposals carry
+  their own name and description. Approval makes that version's name and
+  description the routine's live metadata.
+- **Re-approval creates a version.** Approving an already approved version,
+  including resuming on behalf of an approver who has left, records a new
+  version and preserves the prior approval. Only the active version's runs
+  can change the Routine's health.
+- **The approver is checked at every effect.** An approver who stops being
+  an admin refuses the run's next effect as `routine_paused` and cancels a
+  tool job it has not started, as a test run's initiator does; the next
+  run's start records the pause (`approver_left`).
+- **A tool is checked again when it is called.** An extension upgraded
+  after a run started could change a tool's contract mid-run, so the call
+  compares the installed tool with the version's pin, as the run's start
+  does. A change refuses the call (`tool_changed`) and pauses the routine.
+- **An `if` on a removed field** fails the run as `check_failed` and pauses
+  the routine, as code that no longer type-checks does.
+- **A manifest the schema no longer fits** pauses the routine as
+  `check_failed`. One check (`manifestResolves`) covers every schema
+  reference: the object, watched fields, the schedule's filter, the `if` and
+  the expiry field, and it compiles each filter exactly as the query will.
+  The matcher asks it before reading changes, the schedule tick before
+  fanning out and a run before it starts, so a removed field, one made
+  non-filterable or a removed object never leaves a routine failing each
+  pass or silently deaf.
+- **Queries are typed from the API's own rules.** Capabilities describe
+  each field's filter operators (`filterOperatorsFor`), whether it sorts and
+  its aggregates (`aggregateOps`), and the generated SDK types filters,
+  sorts and aggregates from them, with the operand the API reads (money
+  compares `amountMicros`) and the built-in columns (an event's
+  `occurredAt`, `channel` and `externalId` too, which the read path now
+  takes). Making a field non-filterable changes the types, so the next run
+  rechecks the code.
+- **A write's citation is an option, not a value.** `create(values,
+  { source })` and `update(id, values, { source })` keep the citation apart
+  from the values, so a field keyed `source` is written like any other.
+- **A preview with nothing to dry-run** answers `previewId: null` and
+  `done: true` at once, rather than an ID that has no runs to poll.
+- **A preview type-checks in full.** It may come before any validation, so
+  its dry runs check the code as a check run does: code that would never
+  pass validation fails as `check_failed` instead of previewing.
+- **Sources go with their runs.** A source only validations or previews
+  used is deleted once its runs are, 30 days on; a version's source stays,
+  and a source saved again counts from then.
+- **`main` takes its trigger's context.** The sandbox check requires the
+  exported `main` to accept `RoutineContext<'<object>'>` (or `RoutineContext`
+  without an object), as Macro checks a step's `main` against its context. The builder's own check of a
+  draft uses the same type.
+- **Names the SDK uses.** An object named `files`, `events`, `tools`, `ai`
+  or `remember` would collide with `retainer.<service>`, so routines do not
+  list it and refuse it as a trigger (`reserved_object`). No tool may be
+  named `then`, which would make `retainer.tools` look like a promise
+  (`extensions-tools.md`).
+- **Routines see older Gmail messages.** Lists show only a thread's newest
+  message; a routine's start check and a schedule's targets match every live
+  record that no newer revision replaced.
+- **Record dispatch commits separately per routine.** A paused burst
+  collects up to 2,000 held runs per routine and bounds the remaining scan.
+  Discovery prioritizes the workspaces least recently dispatched. The
+  maintenance pass reserves time for scheduled runs and retention. The
+  pause reason reports overflow. If the cursor expired, dispatch logs
+  the gap and starts at the retained floor.
+- **Reads count per attempt.** Each read operation is capped at 200 calls,
+  counted atomically on the run and reset when an attempt starts, since
+  reads are not replayed. Effects count across attempts.
+- **An over-limit schedule tick holds at most 2,000 runs.** Above that it
+  holds none, rather than some, and pauses the routine as
+  `schedule_too_large`: the filter must be narrowed.
+- **The sandbox clock** (`Date.now()`, `new Date()` and `Date()`) is frozen
+  to the first attempt's start. `run.at` remains the trigger's effective time,
+  which can be earlier for a scheduled run. The runner also receives the
+  trigger record as it was when first claimed. This snapshot is retained
+  for retries and cleared when the run ends or on `forget`. Explicit reads
+  by the code still fetch current records.
+- **Run output** (the value `main` returns and up to 50 log lines) is kept
+  on the run, cleared after 7 days and by `forget`, like stored results.
+- **Configuration.** `RETAINER_ROUTINE_MODEL` (default `claude-opus-5-5`) and
+  `RETAINER_ROUTINE_MODEL_CALLS_PER_DAY` (default 1000). The routine runner is
+  an entry of `RETAINER_EXTENSION_EXECUTABLES` with the registration and
+  function IDs in `ROUTINE_RUNNER_REGISTRATION_ID` and
+  `ROUTINE_RUNNER_FUNCTION_ID`; `scripts/build-extension-artifacts.mjs`
+  writes it under `artifacts/extensions/routine-runner`. Web, REST, MCP and
+  background dispatch are enabled when the deployment registers that runner
+  and provides its run verification key. Retention keeps running when the
+  runner is unavailable. Hosted execution also needs the isolated runner
+  deployment.
+
+Acceptance tests (§11.2) not yet automated: expiry, a tool's contract
+changing, a test run reaching a `send` tool, the worked example (§9.4), and
+the closed-sandbox test on the hosted service. The others run in
+`packages/server/test/api/routine*.test.ts` and
+`packages/runner/src/routine.test.ts`. `pnpm test:routines:compose` (part of
+`pnpm test:docker`) runs a routine's type-check and run in Compose and checks
+that each run network held only the API and the runner.
+
 ## 12. Open questions, answered
 
 Answered by recommendation on 2026-11-19. Each stands unless the product
@@ -1309,7 +1516,7 @@ owner changes it.
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | What does a routine write as?                                    | An agent, always, in the first version                                                                                                                                               | The leanest rule: no new actor type, nothing with a person's authority in the sandbox, and it is Macro's default. A routine rank is the first extension (§10)           |
 | What runs the code?                                              | A fresh restricted process per run, inside a first-party bundle, with network to Retainer only. Which runtime is settled by a spike: Deno, as Macro uses, or Node's permission model | The token, the API and the network are the boundary; the runtime only has to start clean and stay closed                                                                |
-| Does a retried run repeat itself?                                | No. Effects are numbered, and a retry gets the recorded result at each position, even if the data changed. An outside call with an unknown outcome is sent again with the same key   | The queue delivers at least once, and the code cannot be trusted to make itself safe to repeat. The database guarantees writes; a tool must honour the key for the rest |
+| Does a retried run repeat itself?                                | No. Effects are numbered, and a retry gets the recorded result when the operation and arguments match at that position. An outside call with an unknown outcome is sent again with the same key   | The queue delivers at least once, and the code cannot be trusted to make itself safe to repeat. The database guarantees writes; a tool must honour the key for the rest |
 | Can a rewrite go live without approval?                          | No, never                                                                                                                                                                            | Nothing runs without a person's approval. Macro applies some rewrites on its own; here an admin approves every version                                                  |
 | What happens to runs when a version changes or a routine pauses? | A run is pinned to its version. A new approval discards runs not yet started. A pause is checked before every effect                                                                 | An approval needs a clear edge: nothing unapproved starts, and a pause stops work at the next effect                                                                    |
 | Who can start a dry run?                                         | The person building the routine, or their agent. It writes nothing and calls no tools; its model calls count against the cap                                                         | Nothing acts before approval, yet the builder needs to see what its code does                                                                                           |

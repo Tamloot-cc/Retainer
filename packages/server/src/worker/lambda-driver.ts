@@ -5,6 +5,7 @@ import {
   type VerificationInvocation,
   verificationResultSchema,
 } from '@retainer/extension';
+import type { RoutineInvocation } from '@retainer/shared';
 import type { Executable, ExecutionDriver } from './extensions.js';
 import type { VerificationDriver } from './verifier-driver.js';
 
@@ -62,7 +63,12 @@ export class LambdaDriver implements ExecutionDriver {
     if (result.Payload.byteLength > cap) throw new Error('Lambda result exceeds size limit');
     return JSON.parse(Buffer.from(result.Payload).toString('utf8')) as unknown;
   }
-  async invoke(executable: Executable, invocation: Invocation, signal: AbortSignal) {
+  /** An extension run, or a routine run of the routine runner bundle (routines spec §3.3). */
+  async invoke(
+    executable: Executable,
+    invocation: Invocation | RoutineInvocation,
+    signal: AbortSignal,
+  ) {
     return executionResultSchema.parse(
       await this.request(executable.driverTarget, invocation, signal, 65536),
     );

@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { serveStatic } from '@hono/node-server/serve-static';
-import { OAUTH_SCOPES } from '@retainer/shared';
+import { OAUTH_SCOPES, ROUTINE_LIMITS } from '@retainer/shared';
 import { type Context, Hono } from 'hono';
 import { authenticate } from '../auth/middleware.js';
 import { installationOAuthSettings, oauthSettings } from '../auth/oauth-token.js';
@@ -8,17 +8,22 @@ import { meRoute, sessionRoutes } from '../auth/session.js';
 import { publicOriginSchema } from '../config.js';
 import type { Sql } from '../db/client.js';
 import { AppError } from '../errors.js';
+import { ExtensionQueue } from '../extension-runtime/queue.js';
 import type { SecretBroker } from '../extension-runtime/secrets.js';
 import type { RunTokens } from '../extension-runtime/tokens.js';
+import { MODEL_PROXY_PATH } from '../extension-runtime/tokens.js';
 import type { ExtensionCatalog } from '../extensions/catalog.js';
 import type { ExtensionOAuthClients } from '../extensions/oauth-clients.js';
 import { Extensions } from '../extensions/service.js';
 import type { FileStorage } from '../file-storage/contract.js';
+import { Files } from '../files/service.js';
 import { type RateLimit, rateLimit } from '../http/rate-limit.js';
 import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
 import { hostedSetup } from '../mcp/hosted-setup.js';
 import { mcpRoute } from '../mcp/route.js';
 import { mountModelRoutes } from '../model/mount.js';
+import { RoutineRuntime } from '../routines/runtime.js';
+import { Routines } from '../routines/service.js';
 import { VERSION } from '../version.js';
 import type { Webhooks } from '../webhooks/service.js';
 import { changeRoutes } from './routes/changes.js';
@@ -31,6 +36,7 @@ import { gmailReadRoutes } from './routes/gmail.js';
 import { memoryRoutes } from './routes/memory.js';
 import { recordRoutes } from './routes/records.js';
 import { retrievalRoutes } from './routes/retrieval.js';
+import { routineRoutes, routineRuntimeRoutes } from './routes/routines.js';
 import { schemaRoutes } from './routes/schema.js';
 import { templateRoutes } from './routes/templates.js';
 import { viewRoutes } from './routes/views.js';
@@ -67,6 +73,18 @@ export type AppDeps = {
   model?: { apiKey: string | undefined; upstream: string };
   /** RETAINER_MODEL_USAGE_SECRET: mounts the hosted `model` function's usage report. */
   modelUsageSecret?: string | undefined;
+  /**
+   * Routine model calls (routines spec §4.5, §6.3). Available when this
+   * process serves the model proxy with a key, or a hosted `model` function's
+   * origin is set.
+   */
+  routines?: {
+    available?: boolean;
+    modelAvailable?: boolean;
+    modelOrigin?: string | undefined;
+    modelName?: string;
+    modelCallsPerDay?: number;
+  };
 };
 
 export function createApp(deps: AppDeps) {
@@ -90,7 +108,8 @@ export function createApp(deps: AppDeps) {
 
   webhookIngress(app, deps.webhooks, deps.clientIp);
   mountModelRoutes(app, deps);
-  if (!deps.accountsSecret) sessionRoutes(app, deps.sql, publicOrigin);
+  const routinesAvailable = deps.routines?.available === true && !!deps.runTokens;
+  if (!deps.accountsSecret) sessionRoutes(app, deps.sql, publicOrigin, routinesAvailable);
   const v1 = new Hono<AppEnv>();
   const limit = rateLimit(deps.sql, deps.rateLimit ?? { limit: 0 });
   v1.use(
@@ -105,7 +124,7 @@ export function createApp(deps: AppDeps) {
     }),
   );
   v1.use('*', limit);
-  meRoute(v1, deps.sql);
+  meRoute(v1, deps.sql, routinesAvailable);
   webReadRoutes(v1, deps.sql);
   schemaRoutes(v1, deps.sql);
   templateRoutes(v1, deps.sql);
@@ -128,6 +147,26 @@ export function createApp(deps: AppDeps) {
   gmailReadRoutes(v1, deps.sql);
   webhookRuntime(v1, deps.webhooks);
   fileRoutes(v1, deps.sql, deps.fileStorage, deps.fileQuota);
+  const routineConfig = {
+    catalog: extensions.catalog.runtime,
+    modelAvailable: deps.routines?.modelAvailable ?? !!deps.model?.apiKey,
+  };
+  if (routinesAvailable && deps.runTokens) {
+    routineRoutes(v1, new Routines(deps.sql, routineConfig));
+    routineRuntimeRoutes(
+      v1,
+      new RoutineRuntime(deps.sql, {
+        ...routineConfig,
+        tokens: deps.runTokens,
+        queue: new ExtensionQueue(deps.sql, extensions.catalog.runtime),
+        files: new Files(deps.sql, deps.fileStorage, deps.fileQuota),
+        // Relative: the runner resolves it against the API origin it reaches.
+        modelOrigin: deps.routines?.modelOrigin ?? MODEL_PROXY_PATH,
+        modelName: deps.routines?.modelName ?? 'claude-opus-5-5',
+        modelCallsPerDay: deps.routines?.modelCallsPerDay ?? ROUTINE_LIMITS.modelCallsPerDay,
+      }),
+    );
+  }
   app.route('/v1', v1);
 
   // Accounts mode: apps connect to /mcp over OAuth as well as with API keys
@@ -192,6 +231,7 @@ export function createApp(deps: AppDeps) {
     extensionActivation: deps.extensionActivation,
     fileStorage: deps.fileStorage,
     fileQuota: deps.fileQuota,
+    routines: routinesAvailable ? routineConfig : undefined,
   });
 
   if (deps.webDir) {

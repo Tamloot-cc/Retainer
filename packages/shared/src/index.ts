@@ -6,6 +6,7 @@ export * from './field-types.js';
 export * from './hosted-onboarding.js';
 export * from './mapping.js';
 export * from './roles.js';
+export * from './routines.js';
 export * from './schema.js';
 export * from './sign-in.js';
 export * from './sources.js';

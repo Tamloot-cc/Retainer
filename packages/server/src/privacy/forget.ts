@@ -13,6 +13,7 @@ import {
   resolveRecordId,
   type WriteContext,
 } from '../records/write.js';
+import { eraseRoutineContent } from '../routine-runtime/admission.js';
 import type { CompiledSchema } from '../schema/compiled.js';
 import { prepareSourceErasure } from '../sources/erasure.js';
 import {
@@ -128,6 +129,7 @@ export async function forgetRecord(
   const eventIds = sourceErasure.eventIds;
   const erased = [...new Set([...recordIds, ...eventIds])];
   context.changes?.erase(erased);
+  await eraseRoutineContent(tx, workspaceId);
   const fileErasure = await collectFileErasure(tx, erased, eventIds, sourceErasure.fileIds);
 
   const reviewCandidates = await findMentions(

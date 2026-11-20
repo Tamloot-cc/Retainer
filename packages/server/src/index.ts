@@ -123,6 +123,13 @@ if (role === 'api' || role === 'all' || role === 'control' || role === 'extensio
             upstream: config.RETAINER_MODEL_UPSTREAM_ORIGIN,
           },
           modelUsageSecret: config.RETAINER_MODEL_USAGE_SECRET,
+          routines: {
+            available: extensions.routinesAvailable,
+            modelAvailable: !!(config.RETAINER_MODEL_API_KEY || config.RETAINER_MODEL_ORIGIN),
+            modelOrigin: config.RETAINER_MODEL_ORIGIN,
+            modelName: config.RETAINER_ROUTINE_MODEL,
+            modelCallsPerDay: config.RETAINER_ROUTINE_MODEL_CALLS_PER_DAY,
+          },
         });
   const fetch = (request: Request, env: Record<string, unknown>) => {
     if (accounts) {
@@ -191,6 +198,29 @@ if (extensions.fileMaintenance) {
   stops.push(async () => {
     clearInterval(timer);
     extensions.fileMaintenance?.stop();
+    await running;
+  });
+}
+
+if (extensions.routineExecutor) {
+  const routines = extensions.routineExecutor;
+  let running = Promise.resolve(),
+    busy = false;
+  const tick = () => {
+    if (busy) return;
+    busy = true;
+    running = routines
+      .tick()
+      .then(() => {})
+      .catch(() => log.error('Routine executor pass failed.'))
+      .finally(() => {
+        busy = false;
+      });
+  };
+  const timer = setInterval(tick, 1000);
+  stops.push(async () => {
+    clearInterval(timer);
+    routines.stop();
     await running;
   });
 }

@@ -794,6 +794,13 @@ participant checks suppression in the same serialization boundary as
 only, and must not resurrect deleted content. Delete idempotency responses
 and error text containing erased content too.
 
+Routines need more: a routine's code can read
+any record, and reads are not tracked, so `forget` deletes every stored tool
+and model result and every run's output in the workspace, in the same
+transaction, and fences each routine run in flight so its next effect is
+refused and it ends as `erased` (`routine-runtime/admission.ts`,
+[routines.md](docs/specs/routines.md) §6.6).
+
 How this is built:
 
 - **Who.** `forget` needs the `admin` scope and a `user` actor; an agent
@@ -2000,14 +2007,14 @@ a pool of its own.
 Each server module in `packages/server/src` belongs to a layer and imports only
 from its own layer and the ones below it:
 
-| Layer      | Modules                                                                                                                           | Holds                                                                             |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Entry      | `index`, `cli`, `lambda`, `egress-proxy`, `extension-launcher`, `file-server`                                                     | Starting the server, the CLI and the Lambda functions                             |
-| Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`, `egress`, `model`, `launcher`, `extension-control`, `webhooks`    | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
-| Admin      | `schema-engine`, `templates`, `workspaces`, `extensions`                                                                          | Changing a schema and creating workspaces                                         |
-| Features   | `views`, `comments`, `retrieval`, `reads`                                                                                         | Built on records and memory                                                       |
-| Core       | `records`, `memory`, `privacy`, `files`, `sources`, `changes`                                                                     | The write rules                                                                   |
-| Foundation | `db`, `schema`, `caller`, `idempotency`, `stable-json`, `config`, `errors`, `log`, `version`, `extension-runtime`, `file-storage` | The database and reading a schema                                                 |
+| Layer      | Modules                                                                                                                                              | Holds                                                                             |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Entry      | `index`, `cli`, `lambda`, `egress-proxy`, `extension-launcher`, `file-server`                                                                        | Starting the server, the CLI and the Lambda functions                             |
+| Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`, `egress`, `model`, `launcher`, `extension-control`, `webhooks`                       | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
+| Admin      | `schema-engine`, `templates`, `workspaces`, `extensions`, `routines`                                                                                 | Changing a schema, creating workspaces, extensions and routines                   |
+| Features   | `views`, `comments`, `retrieval`, `reads`                                                                                                            | Built on records and memory                                                       |
+| Core       | `records`, `memory`, `privacy`, `files`, `sources`, `changes`                                                                                        | The write rules                                                                   |
+| Foundation | `db`, `schema`, `caller`, `idempotency`, `stable-json`, `config`, `errors`, `log`, `version`, `extension-runtime`, `routine-runtime`, `file-storage` | The database and reading a schema                                                 |
 
 The schema engine sits above the records because a schema change rewrites
 records and views, while records only need to read a schema: `schema` holds the

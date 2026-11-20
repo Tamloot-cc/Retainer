@@ -294,13 +294,27 @@ export function normalizeFieldValue(field: ValueField, value: unknown): unknown 
   }
 }
 
+/**
+ * How a write may set a field: whether a create must set it, and whether it
+ * takes null. Every write's validation and the routine SDK's generated types
+ * both read these, so the two cannot disagree.
+ */
+export function writeRules(field: ValueField): { required: boolean; acceptsNull: boolean } {
+  return {
+    required: !field.isNullable,
+    // A many-to-many relation is cleared with [], never null.
+    acceptsNull: !!field.isNullable && !isCollectionRelation(field),
+  };
+}
+
 /** Validates an editor value, including clearing a nullable field. */
 export function validateFieldValue(field: ValueField, value: unknown): unknown {
   const collection = isCollectionRelation(field);
   if (value === null) {
-    if (collection) throw new FieldValueError('takes an array of record IDs; [] clears it');
-    if (!field.isNullable) throw new FieldValueError('is required and cannot be null');
-    return null;
+    if (writeRules(field).acceptsNull) return null;
+    throw new FieldValueError(
+      collection ? 'takes an array of record IDs; [] clears it' : 'is required and cannot be null',
+    );
   }
   const normalized = normalizeFieldValue(field, value);
   if (

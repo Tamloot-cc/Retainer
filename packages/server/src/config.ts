@@ -188,6 +188,16 @@ const configSchema = z
       emptyToUndefined,
       publicOriginSchema.default('https://api.anthropic.com/'),
     ),
+    /** The one model routine code and the routine builder call (routines spec §4.5). */
+    RETAINER_ROUTINE_MODEL: z.preprocess(
+      emptyToUndefined,
+      z.string().min(1).max(200).default('claude-opus-5-5'),
+    ),
+    /** Routine model calls per workspace per UTC day, dry runs and the builder's included (§6.3). */
+    RETAINER_ROUTINE_MODEL_CALLS_PER_DAY: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().min(0).max(1000000).default(1000),
+    ),
     RETAINER_WEBHOOK_RATE_LIMIT: z.coerce.number().int().min(1).max(10000).default(100),
     /** New change-trigger jobs per installation per minute; the excess waits (extensions §9.4). */
     RETAINER_TRIGGER_ENQUEUES_PER_MINUTE: z.coerce.number().int().min(1).max(100000).default(500),

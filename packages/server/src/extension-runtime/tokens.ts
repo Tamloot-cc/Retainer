@@ -38,7 +38,7 @@ const modelAudience = 'retainer:extension-model';
 export const MODEL_PROXY_PATH = '/v1/extensions/runtime/model';
 const modelPrefix = 'rt_model_';
 export const isModelToken = (token: string) => token.startsWith(modelPrefix);
-const modelClaims = z.strictObject({
+const extensionModelClaims = z.strictObject({
   kind: z.enum(['model', 'agent']),
   workspaceId: z.uuid(),
   installationId: z.uuid(),
@@ -48,8 +48,43 @@ const modelClaims = z.strictObject({
   jobId: z.uuid(),
   attempt: z.number().int().positive(),
 });
+/**
+ * A routine's model token (routines spec §4.5, §6.3): one per call, issued by
+ * the API once it has reserved the call against the caps. The proxy accepts
+ * only a plain call with it: this model, a bounded output, no tools.
+ */
+const routineModelClaims = z.strictObject({
+  kind: z.literal('routine'),
+  workspaceId: z.uuid(),
+  routineId: z.uuid().nullable(),
+  runId: z.uuid(),
+  position: z.number().int().positive(),
+  attempt: z.number().int().positive(),
+  model: z.string().min(1).max(200),
+  maxTokens: z.number().int().positive().max(4096),
+});
+const modelClaims = z.discriminatedUnion('kind', [extensionModelClaims, routineModelClaims]);
 /** Who a model call is for, taken from its token and never from the request. */
 export type ModelClaims = z.infer<typeof modelClaims>;
+export type ExtensionModelClaims = z.infer<typeof extensionModelClaims>;
+export type RoutineModelClaims = z.infer<typeof routineModelClaims>;
+
+/**
+ * A routine run's credential (routines spec §3.3): bound to one run and its
+ * fence, agent rank, limited to the tools its manifest lists. A dry run's
+ * binding has no write scope. It carries no model access.
+ */
+const routineBinding = z.strictObject({
+  runId: z.uuid(),
+  routineId: z.uuid().nullable(),
+  fence: z.string().regex(/^[1-9][0-9]{0,18}$/),
+  mode: z.enum(['run', 'test', 'dry', 'check', 'build']),
+  tools: z.array(z.string().regex(/^[a-z][a-z0-9_]{0,99}$/)).max(20),
+});
+export type RoutineBinding = z.infer<typeof routineBinding>;
+const routineAudience = 'retainer:routine-run';
+const routinePrefix = 'rt_routine_';
+export const isRoutineToken = (token: string) => token.startsWith(routinePrefix);
 /** A verified model token: its claims, and when it expires (seconds since the epoch). */
 export type VerifiedModelToken = ModelClaims & { expiresAt: number };
 
@@ -138,7 +173,7 @@ export class RunTokens {
     );
     if (expiry <= Math.floor(Date.now() / 1000))
       throw new AppError(409, 'lease_expired', 'run deadline passed');
-    const claims: ModelClaims = {
+    const claims: ExtensionModelClaims = {
       kind: 'model',
       workspaceId: job.workspaceId,
       installationId: job.installationId,
@@ -148,7 +183,7 @@ export class RunTokens {
       jobId: job.jobId,
       attempt: job.attempt,
     };
-    const token = await new SignJWT({ model: modelClaims.parse(claims) })
+    const token = await new SignJWT({ model: extensionModelClaims.parse(claims) })
       .setProtectedHeader({ alg: 'EdDSA', typ: 'retainer-model+jwt', kid: this.options.keyId })
       .setIssuer(this.options.issuer)
       .setAudience(modelAudience)
@@ -157,6 +192,83 @@ export class RunTokens {
       .setJti(randomUUID())
       .sign(key);
     return modelPrefix + token;
+  }
+  /**
+   * A routine model call's token, after the API reserved the call. It lasts
+   * one request: at most five minutes, and never past the run's expiry.
+   */
+  async issueRoutineModel(claims: RoutineModelClaims, until: Date) {
+    const key = this.options.signingKey;
+    if (!key) throw new Error('run signing key is unavailable');
+    const expiry = Math.min(
+      Math.floor(Date.now() / 1000) + 300,
+      Math.floor(until.getTime() / 1000),
+    );
+    if (expiry <= Math.floor(Date.now() / 1000))
+      throw new AppError(409, 'run_expired', 'the run has expired');
+    const token = await new SignJWT({ model: routineModelClaims.parse(claims) })
+      .setProtectedHeader({ alg: 'EdDSA', typ: 'retainer-model+jwt', kid: this.options.keyId })
+      .setIssuer(this.options.issuer)
+      .setAudience(modelAudience)
+      .setIssuedAt()
+      .setExpirationTime(expiry)
+      .setJti(randomUUID())
+      .sign(key);
+    return modelPrefix + token;
+  }
+  /** A routine run's token, valid until `until` and at most five minutes. */
+  async issueRoutine(workspaceId: string, binding: RoutineBinding, until: Date) {
+    const key = this.options.signingKey;
+    if (!key) throw new Error('run signing key is unavailable');
+    const expiry = Math.min(
+      Math.floor(Date.now() / 1000) + 300,
+      Math.floor(until.getTime() / 1000),
+    );
+    if (expiry <= Math.floor(Date.now() / 1000))
+      throw new AppError(409, 'lease_expired', 'run deadline passed');
+    const token = await new SignJWT({
+      routine: routineBinding.parse(binding),
+      workspace: workspaceId,
+    })
+      .setProtectedHeader({ alg: 'EdDSA', typ: 'retainer-routine+jwt', kid: this.options.keyId })
+      .setIssuer(this.options.issuer)
+      .setAudience(routineAudience)
+      .setIssuedAt()
+      .setExpirationTime(expiry)
+      .setJti(randomUUID())
+      .sign(key);
+    return routinePrefix + token;
+  }
+  /** Verifies a routine token's signature and lifetime; admission checks the run itself. */
+  async verifyRoutine(token: string): Promise<{ workspaceId: string; binding: RoutineBinding }> {
+    try {
+      if (!isRoutineToken(token)) throw new Error('wrong credential type');
+      const { payload, protectedHeader } = await jwtVerify(
+        token.slice(routinePrefix.length),
+        this.options.verificationKey,
+        {
+          algorithms: ['EdDSA'],
+          issuer: this.options.issuer,
+          audience: routineAudience,
+          maxTokenAge: '5m',
+          requiredClaims: ['iat', 'exp', 'jti'],
+        },
+      );
+      if (
+        protectedHeader.typ !== 'retainer-routine+jwt' ||
+        protectedHeader.kid !== this.options.keyId ||
+        typeof payload.iat !== 'number' ||
+        typeof payload.exp !== 'number' ||
+        payload.exp - payload.iat > 300
+      )
+        throw new Error('invalid routine token header or lifetime');
+      return {
+        workspaceId: z.uuid().parse(payload.workspace),
+        binding: routineBinding.parse(payload.routine),
+      };
+    } catch {
+      throw new AppError(401, 'unauthorized', 'routine credential is invalid or expired');
+    }
   }
   /**
    * Checks a model token's signature, audience and expiry, without the

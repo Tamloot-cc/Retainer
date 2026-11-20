@@ -17,6 +17,7 @@ import {
   boolean,
   check,
   customType,
+  date,
   doublePrecision,
   foreignKey,
   index,
@@ -77,6 +78,8 @@ export type AppliedTemplate = { name: string; version: number; appliedAt: string
 export type WorkspaceSettings = {
   /** Agent assertions below this confidence wait for review (rule 2.3). */
   confidenceThreshold?: number;
+  /** An IANA time zone; routine schedules are read in it (routines spec §7). UTC when unset. */
+  timeZone?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -1847,6 +1850,15 @@ export const extensionJobs = pgTable(
     availableAt: timestamptz('available_at').notNull().defaultNow(),
     expiresAt: timestamptz('expires_at').notNull().default(sql`now() + interval '24 hours'`),
     code: text('code'),
+    /**
+     * A tool call's output, checked against the tool's `outputSchema` when the
+     * run succeeds (extensions-tools spec 3). Null for every other job.
+     */
+    output: jsonb('output'),
+    /** The routine run that called this tool; polls must come from the same run (spec 4). */
+    callerRunId: uuid('caller_run_id'),
+    /** The member who started this tool from a button; polls must come from them (spec 4). */
+    callerUserId: text('caller_user_id'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1871,12 +1883,32 @@ export const extensionJobs = pgTable(
         t.dedupeKey,
       )
       .nullsNotDistinct(),
+    // Tool calls have a lane of their own, so a call never waits behind a
+    // long sync of the same installation (extensions-tools spec 4).
     uniqueIndex('extension_jobs_one_running_uq')
       .on(t.workspaceId, t.installationId)
-      .where(sql`${t.status} = 'running' and ${t.connectionId} is null`),
+      .where(
+        sql`${t.status} = 'running' and ${t.connectionId} is null and ${t.triggerKind} <> 'tool'`,
+      ),
     uniqueIndex('extension_jobs_one_running_connection_uq')
       .on(t.workspaceId, t.installationId, t.connectionId)
-      .where(sql`${t.status} = 'running' and ${t.connectionId} is not null`),
+      .where(
+        sql`${t.status} = 'running' and ${t.connectionId} is not null and ${t.triggerKind} <> 'tool'`,
+      ),
+    uniqueIndex('extension_jobs_one_running_tool_uq')
+      .on(t.workspaceId, t.installationId)
+      .where(
+        sql`${t.status} = 'running' and ${t.connectionId} is null and ${t.triggerKind} = 'tool'`,
+      ),
+    uniqueIndex('extension_jobs_one_running_tool_connection_uq')
+      .on(t.workspaceId, t.installationId, t.connectionId)
+      .where(
+        sql`${t.status} = 'running' and ${t.connectionId} is not null and ${t.triggerKind} = 'tool'`,
+      ),
+    check(
+      'extension_jobs_tool_caller',
+      sql`${t.triggerKind} = 'tool' or (${t.output} is null and ${t.callerRunId} is null and ${t.callerUserId} is null)`,
+    ),
     check(
       'extension_jobs_connection_generation',
       sql`(${t.connectionId} is null and ${t.connectionGeneration} is null) or (${t.connectionId} is not null and ${t.connectionGeneration} is not null and ${t.connectionGeneration}>0)`,
@@ -2690,6 +2722,8 @@ export const recordChanges = pgTable(
     /** Server-derived trigger hops; null means `cause.length` (see extension_jobs). */
     causeDepth: integer('cause_depth'),
     mergedIntoId: uuid('merged_into_id'),
+    /** On every change a merge made: the record it merged away. A merge is not a routine trigger. */
+    mergedFromId: uuid('merged_from_id'),
     createdAt: timestamptz('created_at').notNull().default(sql`clock_timestamp()`),
   },
   (t) => [
@@ -2927,12 +2961,16 @@ export const aiUsage = pgTable(
     id: id(),
     workspaceId: workspaceId(),
     kind: text('kind').notNull(),
-    installationId: uuid('installation_id').notNull(),
-    registrationId: uuid('registration_id').notNull(),
-    releaseDigest: text('release_digest').notNull(),
-    functionId: uuid('function_id').notNull(),
-    jobId: uuid('job_id').notNull(),
+    /** Extension calls: the run that made it. Null for a routine's call. */
+    installationId: uuid('installation_id'),
+    registrationId: uuid('registration_id'),
+    releaseDigest: text('release_digest'),
+    functionId: uuid('function_id'),
+    jobId: uuid('job_id'),
     attempt: integer('attempt').notNull(),
+    /** Routine calls (routines spec §6.3): the routine and the run that made it. */
+    routineId: uuid('routine_id'),
+    routineRunId: uuid('routine_run_id'),
     /** The model named in the response, which can differ from the one requested. */
     model: text('model').notNull(),
     inputTokens: bigint('input_tokens', { mode: 'number' }).notNull(),
@@ -2949,7 +2987,12 @@ export const aiUsage = pgTable(
   (t) => [
     index('ai_usage_installation_idx').on(t.workspaceId, t.installationId, t.createdAt),
     index('ai_usage_created_idx').on(t.createdAt),
-    check('ai_usage_kind', sql`${t.kind} in ('model', 'agent')`),
+    check('ai_usage_kind', sql`${t.kind} in ('model', 'agent', 'routine')`),
+    check(
+      'ai_usage_caller',
+      sql`(${t.kind} = 'routine' and ${t.routineRunId} is not null) or (${t.kind} <> 'routine' and ${t.installationId} is not null and ${t.registrationId} is not null and ${t.releaseDigest} is not null and ${t.functionId} is not null and ${t.jobId} is not null)`,
+    ),
+    index('ai_usage_routine_idx').on(t.workspaceId, t.routineId, t.createdAt),
     check(
       'ai_usage_tokens',
       sql`${t.inputTokens} >= 0 and ${t.outputTokens} >= 0 and ${t.cacheReadTokens} >= 0 and ${t.cacheWriteTokens} >= 0`,
@@ -2960,5 +3003,326 @@ export const aiUsage = pgTable(
       using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
       withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
     }),
+  ],
+).enableRLS();
+
+// ---------------------------------------------------------------------------
+// Routines (docs/specs/routines.md §6.6). Not records: they are not in views
+// or the change feed. Run history copies no CRM content outside
+// `routine_run_results`, whose results `forget` clears.
+// ---------------------------------------------------------------------------
+
+const tenantPolicy = (name: string, column: AnyPgColumn) =>
+  pgPolicy(name, {
+    for: 'all',
+    to: 'retainer_app',
+    using: sql`${column} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    withCheck: sql`${column} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+  });
+
+/** A routine's manifest and code, stored once by hash; versions and dry runs point at it. */
+export const routineSources = pgTable(
+  'routine_sources',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    hash: text('hash').notNull(),
+    /** Canonical: objects by universal ID, fields by key. */
+    manifest: jsonb('manifest').notNull(),
+    code: text('code').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('routine_sources_ws_id_uq').on(t.workspaceId, t.id),
+    unique('routine_sources_hash_uq').on(t.workspaceId, t.hash),
+    check('routine_sources_hash', sql`${t.hash} ~ '^[a-f0-9]{64}$'`),
+    check('routine_sources_code_size', sql`octet_length(${t.code}) <= 65536`),
+    tenantPolicy('routine_sources_workspace', t.workspaceId),
+  ],
+).enableRLS();
+
+export const routines = pgTable(
+  'routines',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    name: text('name').notNull(),
+    /** The person's plain-language text: the lasting record of intent (§5.3). */
+    description: text('description').notNull(),
+    status: text('status').notNull().default('draft'),
+    /** Why it paused, as a code: `paused`, `check_failed`, `tool_changed`, `failing`, `approver_left`, `runs_held`, `schedule_over_limit`, `schedule_too_large`. */
+    pausedReason: text('paused_reason'),
+    pausedAt: timestamptz('paused_at'),
+    activeVersionId: uuid('active_version_id'),
+    /** The change feed position this routine has matched up to (§6.1). */
+    feedPosition: bigint('feed_position', { mode: 'number' }),
+    /** The next schedule occurrence, for `schedule` triggers. */
+    nextFireAt: timestamptz('next_fire_at'),
+    /** Failed runs in a row; repeated failures pause the routine. */
+    failures: integer('failures').notNull().default(0),
+    createdBy: jsonb('created_by').$type<Actor>().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('routines_ws_id_uq').on(t.workspaceId, t.id),
+    index('routines_status_idx').on(t.workspaceId, t.status),
+    index('routines_schedule_idx')
+      .on(t.nextFireAt)
+      .where(sql`${t.status} = 'active' and ${t.nextFireAt} is not null`),
+    check(
+      'routines_status',
+      sql`${t.status} in ('draft', 'active', 'paused', 'needs_attention', 'archived')`,
+    ),
+    check('routines_name_length', sql`char_length(${t.name}) between 1 and 200`),
+    check('routines_description_length', sql`char_length(${t.description}) between 1 and 10000`),
+    tenantPolicy('routines_workspace', t.workspaceId),
+  ],
+).enableRLS();
+
+/**
+ * A proposal and, once an admin approves it, a version (§5.3). Approval
+ * creates a new version each time; editing proposes a new one.
+ */
+export const routineVersions = pgTable(
+  'routine_versions',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    routineId: uuid('routine_id').notNull(),
+    sourceId: uuid('source_id').notNull(),
+    /** Counts the routine's versions, from 1. */
+    number: integer('number').notNull(),
+    state: text('state').notNull().default('proposed'),
+    /** The name and intent reviewed with this version. Older versions may lack both. */
+    name: text('name'),
+    description: text('description'),
+    /** The builder's one-sentence summary; Retainer does not vouch for it. */
+    summary: text('summary').notNull(),
+    /** The builder's verdict and gaps (§5.2). */
+    report: jsonb('report').notNull(),
+    /** Only `agent` in the first version (§6.4). */
+    rank: text('rank').notNull().default('agent'),
+    /** The SDK types it was last checked against (§5.3). */
+    typesFingerprint: text('types_fingerprint').notNull(),
+    /** Each listed tool's contract when it was checked: a change pauses the routine. */
+    toolContracts: jsonb('tool_contracts').notNull().default({}),
+    builtBy: jsonb('built_by').$type<Actor>().notNull(),
+    approvedBy: jsonb('approved_by').$type<Actor>(),
+    /** The approver's user ID, so their leaving or losing the admin role pauses it. */
+    approverUserId: text('approver_user_id'),
+    approvedAt: timestamptz('approved_at'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('routine_versions_ws_id_uq').on(t.workspaceId, t.id),
+    unique('routine_versions_number_uq').on(t.routineId, t.number),
+    tenantFk(
+      'routine_versions_routine_fk',
+      [t.workspaceId, t.routineId],
+      [routines.workspaceId, routines.id],
+    ),
+    tenantFk(
+      'routine_versions_source_fk',
+      [t.workspaceId, t.sourceId],
+      [routineSources.workspaceId, routineSources.id],
+    ),
+    index('routine_versions_source_idx').on(t.workspaceId, t.sourceId),
+    check(
+      'routine_versions_state',
+      sql`${t.state} in ('proposed', 'approved', 'superseded', 'rejected')`,
+    ),
+    check('routine_versions_rank', sql`${t.rank} = 'agent'`),
+    tenantPolicy('routine_versions_workspace', t.workspaceId),
+  ],
+).enableRLS();
+
+/**
+ * One execution of a routine's code, and the sandbox jobs around it: a type
+ * check, a dry run, a test run or the built-in builder (§5.1, §6.2). This is
+ * also the runs' queue: a lease, a fence and attempts, as extension jobs have.
+ */
+export const routineRuns = pgTable(
+  'routine_runs',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    routineId: uuid('routine_id'),
+    /** The version a run is pinned to; null for checks, dry runs and builds before a proposal. */
+    versionId: uuid('version_id'),
+    sourceId: uuid('source_id'),
+    mode: text('mode').notNull(),
+    /** `record`, `schedule`, `manual`, `test` or `preview`. */
+    triggerKind: text('trigger_kind').notNull(),
+    recordId: uuid('record_id'),
+    /** Groups the dry runs of one preview. */
+    previewId: uuid('preview_id'),
+    /** Build input (the description), never record content. */
+    input: jsonb('input'),
+    /** A check's problems or a build's proposal ID: no record content. */
+    output: jsonb('output'),
+    status: text('status').notNull().default('queued'),
+    code: text('code'),
+    leaseOwner: text('lease_owner'),
+    fence: bigint('fence', { mode: 'number' }).notNull().default(0),
+    leaseUntil: timestamptz('lease_until'),
+    attempt: integer('attempt').notNull().default(0),
+    availableAt: timestamptz('available_at').notNull().defaultNow(),
+    /** When the run counts as happening (`run.at`). */
+    runAt: timestamptz('run_at').notNull().defaultNow(),
+    /** Set when it starts: 24 hours later, or earlier from the manifest's expiry field. */
+    expiresAt: timestamptz('expires_at'),
+    startedAt: timestamptz('started_at'),
+    finishedAt: timestamptz('finished_at'),
+    /** The change the run reacts to, for coalescing and history. */
+    changePosition: bigint('change_position', { mode: 'number' }),
+    cause: jsonb('cause').$type<string[]>().notNull().default([]),
+    causeDepth: integer('cause_depth').notNull().default(0),
+    /** Who started a manual run, test, dry run or build. */
+    initiatedBy: jsonb('initiated_by').$type<Actor>(),
+    /** The person behind it, re-checked before each effect of a test and for member tools. */
+    initiatorUserId: text('initiator_user_id'),
+    /** Model calls this run reserved (§6.3). */
+    modelCalls: integer('model_calls').notNull().default(0),
+    /** Reads this attempt made, by operation, against the per-operation cap (§4.6). */
+    readCalls: jsonb('read_calls').$type<Record<string, number>>().notNull().default({}),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('routine_runs_ws_id_uq').on(t.workspaceId, t.id),
+    tenantFk(
+      'routine_runs_routine_fk',
+      [t.workspaceId, t.routineId],
+      [routines.workspaceId, routines.id],
+    ),
+    tenantFk(
+      'routine_runs_version_fk',
+      [t.workspaceId, t.versionId],
+      [routineVersions.workspaceId, routineVersions.id],
+    ),
+    tenantFk(
+      'routine_runs_source_fk',
+      [t.workspaceId, t.sourceId],
+      [routineSources.workspaceId, routineSources.id],
+    ),
+    index('routine_runs_routine_idx').on(t.workspaceId, t.routineId, t.createdAt),
+    index('routine_runs_due_idx')
+      .on(t.availableAt)
+      .where(sql`${t.status} in ('queued', 'running')`),
+    index('routine_runs_record_idx')
+      .on(t.routineId, t.recordId)
+      .where(sql`${t.status} in ('queued', 'held', 'running')`),
+    index('routine_runs_preview_idx').on(t.workspaceId, t.previewId),
+    index('routine_runs_version_idx').on(t.workspaceId, t.versionId),
+    index('routine_runs_source_idx').on(t.workspaceId, t.sourceId),
+    index('routine_runs_retention_idx').on(t.finishedAt).where(sql`${t.finishedAt} is not null`),
+    // One run at a time per routine and record (§6.2).
+    uniqueIndex('routine_runs_one_running_uq')
+      .on(t.routineId, t.recordId)
+      .where(sql`${t.status} = 'running' and ${t.mode} = 'run' and ${t.recordId} is not null`),
+    check('routine_runs_mode', sql`${t.mode} in ('run', 'test', 'dry', 'check', 'build')`),
+    check(
+      'routine_runs_status',
+      sql`${t.status} in ('queued', 'held', 'running', 'succeeded', 'failed', 'skipped', 'expired', 'stopped', 'diverged', 'budget_exhausted', 'erased', 'discarded')`,
+    ),
+    check(
+      'routine_runs_trigger_kind',
+      sql`${t.triggerKind} in ('record', 'schedule', 'manual', 'test', 'preview', 'check', 'build')`,
+    ),
+    check(
+      'routine_runs_pinned',
+      sql`${t.mode} not in ('run', 'test') or (${t.routineId} is not null and ${t.sourceId} is not null)`,
+    ),
+    tenantPolicy('routine_runs_workspace', t.workspaceId),
+  ],
+).enableRLS();
+
+/**
+ * Each effect of a run, by position (§6.2): a retry gets the recorded result
+ * instead of repeating the effect. `result` may hold copied content; it is
+ * cleared 7 days after the run ends and by `forget` (§6.6).
+ */
+export const routineRunResults = pgTable(
+  'routine_run_results',
+  {
+    workspaceId: workspaceId(),
+    runId: uuid('run_id').notNull(),
+    position: integer('position').notNull(),
+    operation: text('operation').notNull(),
+    argsHash: text('args_hash').notNull(),
+    /** `started`, `done`, `failed` or `reported` (a dry or test run's call). */
+    state: text('state').notNull(),
+    result: jsonb('result'),
+    /** A failed effect's error code, or what a tool call reported. */
+    code: text('code'),
+    /** A retry found this position with different arguments (§6.2). */
+    differs: boolean('differs').notNull().default(false),
+    /** The tool job a `tool` effect started. */
+    toolJobId: uuid('tool_job_id'),
+    /** The record a write wrote. */
+    recordId: uuid('record_id'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.runId, t.position] }),
+    tenantFk(
+      'routine_run_results_run_fk',
+      [t.workspaceId, t.runId],
+      [routineRuns.workspaceId, routineRuns.id],
+    ),
+    index('routine_run_results_workspace_idx').on(t.workspaceId),
+    check(
+      'routine_run_results_state',
+      sql`${t.state} in ('started', 'done', 'failed', 'reported')`,
+    ),
+    tenantPolicy('routine_run_results_workspace', t.workspaceId),
+  ],
+).enableRLS();
+
+/**
+ * What a routine already did, so it does not do it again (§4.2, §6.1): a
+ * `once` mark per record for `oncePerRecord` routines, and each schedule
+ * tick it fired.
+ */
+export const routineFirings = pgTable(
+  'routine_firings',
+  {
+    workspaceId: workspaceId(),
+    routineId: uuid('routine_id').notNull(),
+    kind: text('kind').notNull(),
+    /** The record; the nil UUID for a schedule tick with no record. */
+    recordId: uuid('record_id').notNull(),
+    /** A schedule tick's time; the epoch for `once` marks. */
+    dueAt: timestamptz('due_at').notNull(),
+    runId: uuid('run_id'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.routineId, t.kind, t.recordId, t.dueAt] }),
+    tenantFk(
+      'routine_firings_routine_fk',
+      [t.workspaceId, t.routineId],
+      [routines.workspaceId, routines.id],
+    ),
+    index('routine_firings_record_idx').on(t.workspaceId, t.recordId),
+    check('routine_firings_kind', sql`${t.kind} in ('once', 'schedule')`),
+    tenantPolicy('routine_firings_workspace', t.workspaceId),
+  ],
+).enableRLS();
+
+/** Routine model calls reserved per workspace and UTC day (§6.3). */
+export const routineModelDays = pgTable(
+  'routine_model_days',
+  {
+    workspaceId: workspaceId(),
+    day: date('day').notNull(),
+    count: integer('count').notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.day] }),
+    check('routine_model_days_count', sql`${t.count} >= 0`),
+    tenantPolicy('routine_model_days_workspace', t.workspaceId),
   ],
 ).enableRLS();

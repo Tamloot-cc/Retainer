@@ -1,6 +1,7 @@
 import type { Caller, InstallationBinding, RunBinding } from '../caller.js';
 import type { Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
+import { admitRoutine } from '../routine-runtime/admission.js';
 import { isPartialReleaseJob } from './lifecycle.js';
 import { lockExtension } from './locks.js';
 
@@ -209,6 +210,7 @@ export async function admitCaller(
   purpose: 'crm' | 'runtime' = 'crm',
 ) {
   if (caller.run) await admitRun(tx, caller.workspaceId, caller.run, write, purpose);
+  if (caller.routine) await admitRoutine(tx, caller.workspaceId, caller.routine, write);
   if (caller.installation)
     await admitInstallation(tx, caller.workspaceId, caller.installation, write);
 }

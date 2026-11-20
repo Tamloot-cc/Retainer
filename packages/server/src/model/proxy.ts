@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { bearerToken } from '../auth/middleware.js';
 import type { ModelClaims, RunTokens, VerifiedModelToken } from '../extension-runtime/tokens.js';
 import { readCapped } from '../http/request.js';
-import { allowedPath, refusedBeta, refusedBody } from './allowlist.js';
+import { allowedPath, refusedBeta, refusedBody, refusedRoutineBody } from './allowlist.js';
 import { UsageMeter, type UsageReport } from './usage.js';
 
 /**
@@ -92,6 +92,12 @@ export function createModelProxy(options: ModelProxyOptions) {
     const url = new URL(request.url);
     const route = allowedPath(request.method, path, url.searchParams);
     if ('status' in route) return anthropicError(route.status, route.type, route.message);
+    if (claims.kind === 'routine' && path !== '/v1/messages')
+      return anthropicError(
+        404,
+        'not_found_error',
+        `${request.method} ${path} is not available with a routine's model token`,
+      );
     const beta = refusedBeta(request.headers.get('anthropic-beta'));
     if (beta) return anthropicError(beta.status, beta.type, beta.message);
     let body: Uint8Array | undefined;
@@ -112,6 +118,8 @@ export function createModelProxy(options: ModelProxyOptions) {
       }
       const refused = refusedBody(parsed);
       if (refused) return anthropicError(refused.status, refused.type, refused.message);
+      const narrowed = claims.kind === 'routine' ? refusedRoutineBody(parsed, claims) : undefined;
+      if (narrowed) return anthropicError(narrowed.status, narrowed.type, narrowed.message);
       streamed = (parsed as { stream?: unknown }).stream === true;
     }
 

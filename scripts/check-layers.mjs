@@ -28,12 +28,13 @@ const LAYERS = [
       'db',
       'schema',
       'extension-runtime',
+      'routine-runtime',
       'file-storage',
     ],
   ],
   ['core', ['records', 'memory', 'privacy', 'files', 'sources', 'changes']],
   ['features', ['views', 'comments', 'retrieval', 'reads']],
-  ['admin', ['schema-engine', 'templates', 'workspaces', 'extensions']],
+  ['admin', ['schema-engine', 'templates', 'workspaces', 'extensions', 'routines']],
   [
     'interfaces',
     [

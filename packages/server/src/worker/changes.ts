@@ -5,6 +5,7 @@ import { failInstallation } from '../extension-runtime/lifecycle.js';
 import { lockExtension, lockQueue } from '../extension-runtime/locks.js';
 import type { ExtensionQueue } from '../extension-runtime/queue.js';
 import type { Extensions } from '../extensions/service.js';
+import type { RoutineMaintenance } from './routines.js';
 
 /** Rows deleted per pruning transaction, so a writer waits for one batch at most. */
 export const PRUNE_BATCH = 1000;
@@ -27,6 +28,8 @@ export class ChangeMaintenance {
      * minute. Set only where no extension executor runs them.
      */
     private readonly upgrades?: Pick<Extensions, 'upgradeDue'>,
+    /** Routine matching and schedules (routines spec §6.1), with their own budget. */
+    private readonly routines?: Pick<RoutineMaintenance, 'maintain'>,
   ) {}
   /**
    * Deletes expired feed rows in bounded transactions until none are left,
@@ -77,6 +80,8 @@ export class ChangeMaintenance {
     if (!Number.isInteger(budget) || budget < 1 || budget > 240000)
       throw new Error('invalid change maintenance budget');
     const deadline = Date.now() + budget;
+    const routineReserve = this.routines ? Math.min(30_000, Math.floor(budget / 3)) : 0;
+    const extensionDeadline = deadline - routineReserve;
     let queued = 0,
       blocked = 0,
       pruned = 0,
@@ -84,12 +89,21 @@ export class ChangeMaintenance {
     if (this.stopped) return { queued, blocked, pruned, failed };
     const due = this.queue ? await this.queue.discoverChanges(this.discovery, this.after) : [];
     for (const item of due) {
-      if (this.stopped || Date.now() >= deadline) break;
+      if (this.stopped || Date.now() >= extensionDeadline) break;
       this.after = item.installation_id;
       try {
         const result = await this.queue?.dispatchChanges(item.workspace_id, item.installation_id);
         queued += result?.queued ?? 0;
         blocked += result?.blocked ?? 0;
+      } catch {
+        failed++;
+      }
+    }
+    if (this.routines && !this.stopped && Date.now() < deadline) {
+      try {
+        const result = await this.routines.maintain(Math.min(30000, deadline - Date.now()));
+        queued += result.queued;
+        failed += result.failed;
       } catch {
         failed++;
       }
@@ -143,7 +157,9 @@ export class ChangeMaintenance {
             await tx`update extension_attempts set status='failed',code='job_expired',finished_at=clock_timestamp()
               where job_id=${job.id} and finished_at is null`;
             const installation = current.get(job.installation_id);
-            if (installation) await failInstallation(tx, installation, job, 'job_expired');
+            // A tool call that outlived its caller's deadline says nothing about the extension.
+            if (installation && job.trigger_kind !== 'tool')
+              await failInstallation(tx, installation, job, 'job_expired');
           }
           const jobs =
             await tx`delete from extension_jobs where id in(select id from extension_jobs where status in ('succeeded','failed','cancelled')

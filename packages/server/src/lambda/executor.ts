@@ -1,7 +1,11 @@
+import { setTimeout as delay } from 'node:timers/promises';
+import { ROUTINE_LIMITS } from '@retainer/shared';
 import { type Config, loadConfig } from '../config.js';
 import { createRuntimeSql, type Sql } from '../db/client.js';
 import { extensionServices } from '../extension-control/configuration.js';
+import { RUN_GRACE_SECONDS } from '../routines/runs.js';
 import type { ExtensionExecutor } from '../worker/extensions.js';
+import type { RoutineExecutor } from '../worker/routines.js';
 import { withPassLock } from './deploy-lock.js';
 
 export const EXECUTOR_LEADER = 0x52544e07;
@@ -12,7 +16,11 @@ export async function runExecutorLeader(
   lock: Sql,
   executor: ExtensionExecutor,
   claimWindowMs: number,
-  options: { idleTimeoutMs?: number; idleMs?: number } = {},
+  options: {
+    idleTimeoutMs?: number;
+    idleMs?: number;
+    routines?: Pick<RoutineExecutor, 'tick' | 'stop'>;
+  } = {},
 ) {
   const [leader] = await lock<{ acquired: boolean }[]>`
     select pg_try_advisory_lock(${EXECUTOR_LEADER}) as acquired`;
@@ -33,23 +41,62 @@ export async function runExecutorLeader(
   // Waiting for a migration also consumes the claim window. Never hold leadership until
   // Lambda's hard timeout while blocked on the shared deploy lock.
   const timer = setTimeout(() => executor.drain(), Math.max(0, claimWindowMs));
+  const routines = options.routines;
+  const routineWindow =
+    Date.now() + claimWindowMs - (ROUTINE_LIMITS.maxRunSeconds + RUN_GRACE_SECONDS) * 1000;
+  const routinePolling = new AbortController();
+  const stopRoutinePolling = () => {
+    routinePolling.abort();
+    routines?.stop();
+  };
+  let checkingRoutines = false;
   let failure: unknown;
+  const report = (error: unknown) => {
+    failure ??= error;
+    stopRoutinePolling();
+    executor.drain();
+  };
   try {
     await lock`select set_config('lock_timeout', ${`${Math.max(1, Math.floor(claimWindowMs))}ms`}, false)`;
-    await withPassLock(lock, () =>
-      executor.run({
-        idleTimeoutMs: options.idleTimeoutMs ?? 15000,
-        ...(options.idleMs === undefined ? {} : { idleMs: options.idleMs }),
-        onClaimingStopped: release,
-        onError: (error) => {
-          failure ??= error;
-          executor.drain();
-        },
-      }),
-    );
+    await withPassLock(lock, async () => {
+      const pollRoutines = async () => {
+        if (!routines) return;
+        // Stop claiming routines early so their tool jobs still get serviced during drain.
+        while (!routinePolling.signal.aborted && Date.now() < routineWindow) {
+          checkingRoutines = true;
+          try {
+            await routines.tick(4, routineWindow);
+          } finally {
+            checkingRoutines = false;
+          }
+          if (!routinePolling.signal.aborted)
+            await delay(options.idleMs ?? 1000, undefined, { signal: routinePolling.signal });
+        }
+      };
+      const routineWork = pollRoutines().catch((error) => {
+        if (error instanceof Error && error.name === 'AbortError') return;
+        report(error);
+      });
+      try {
+        await executor.run({
+          idleTimeoutMs: options.idleTimeoutMs ?? 15000,
+          ...(options.idleMs === undefined ? {} : { idleMs: options.idleMs }),
+          hasDependentWork: () => checkingRoutines,
+          onClaimingStopped: async () => {
+            stopRoutinePolling();
+            await release();
+          },
+          onError: report,
+        });
+      } finally {
+        stopRoutinePolling();
+        await routineWork;
+      }
+    });
     if (failure) throw failure;
     return { skipped: false };
   } finally {
+    stopRoutinePolling();
     clearTimeout(timer);
     try {
       await lock`select set_config('lock_timeout', '0', false)`;
@@ -73,6 +120,7 @@ export async function createExecutorHandler(config: Config) {
     throw error;
   }
   let active: ExtensionExecutor | undefined;
+  let activeRoutines: RoutineExecutor | undefined;
   let busy = false;
   return Object.assign(
     async (context: { getRemainingTimeInMillis(): number }) => {
@@ -85,15 +133,26 @@ export async function createExecutorHandler(config: Config) {
         if (!services.executor) throw new Error('extension executor is not configured');
         const executor = services.executor;
         active = executor;
+        activeRoutines = services.routineExecutor;
         if (config.RETAINER_EXTENSION_DRIVER !== 'lambda')
-          return await withPassLock(lock, () => executor.tick(4));
+          return await withPassLock(lock, async () => {
+            const [extensions, routines] = await Promise.allSettled([
+              executor.tick(4),
+              activeRoutines?.tick(4),
+            ]);
+            if (extensions.status === 'rejected') throw extensions.reason;
+            if (routines.status === 'rejected') throw routines.reason;
+            return extensions.value;
+          });
         return await runExecutorLeader(
           lock,
           active,
           context.getRemainingTimeInMillis() - DRAIN_BUDGET_MS,
+          activeRoutines ? { routines: activeRoutines } : {},
         );
       } finally {
         active = undefined;
+        activeRoutines = undefined;
         await services?.close();
         busy = false;
       }
@@ -101,6 +160,7 @@ export async function createExecutorHandler(config: Config) {
     {
       close: async () => {
         active?.stop();
+        activeRoutines?.stop();
         await prepared?.close();
         prepared = undefined;
         await Promise.all([sql.end({ timeout: 5 }), lock.end({ timeout: 5 })]);

@@ -5,8 +5,10 @@ import {
   type ExecutionResult,
   type VerificationResult,
 } from '@retainer/extension';
+import { routineInvocationSchema } from '@retainer/shared';
 import { settle } from './outcome.js';
 import { execute } from './registry.js';
+import { executeRoutine } from './routine.js';
 import { verifyWebhook } from './webhooks.js';
 
 export type RunnerMode = 'job' | 'verify' | 'both';
@@ -45,6 +47,22 @@ export async function handle(
     if (event && typeof event === 'object' && 'kind' in event && event.kind === 'health') {
       if (!releaseDigest) return { status: 'failed', code: 'incompatible_runtime' };
       return { protocolVersion: 1, runtimeVersion: 'node24', releaseDigest, mode };
+    }
+    if ((event as { kind?: string })?.kind === 'routine') {
+      if (mode === 'verify') return { status: 'failed', code: 'invalid_invocation' };
+      const routine = routineInvocationSchema.parse(event);
+      if (!releaseDigest || routine.releaseDigest !== releaseDigest)
+        return { status: 'failed', code: 'incompatible_runtime' };
+      const remaining = new Date(routine.deadline).getTime() - Date.now();
+      if (remaining <= 0 || remaining > 300000)
+        return { status: 'failed', code: 'invalid_deadline' };
+      const controller = new AbortController(),
+        timer = setTimeout(() => controller.abort(), remaining);
+      try {
+        return await executeRoutine(routine, controller.signal);
+      } finally {
+        clearTimeout(timer);
+      }
     }
     const verifying = (event as { kind?: string })?.kind === 'webhook';
     if ((verifying && mode === 'job') || (!verifying && mode === 'verify'))

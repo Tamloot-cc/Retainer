@@ -20,6 +20,7 @@ const alias = {
     new URL('../runner/src/tamloot-contract.ts', import.meta.url),
   ),
   '@retainer/runner/tamloot': fileURLToPath(new URL('../runner/src/tamloot.ts', import.meta.url)),
+  '@retainer/runner/routine': fileURLToPath(new URL('../runner/src/routine.ts', import.meta.url)),
   '@retainer/runner/last-contact': fileURLToPath(
     new URL('../runner/src/last-contact.ts', import.meta.url),
   ),

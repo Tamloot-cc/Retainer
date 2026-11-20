@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { decodeInvocation, decodeVerification } from '@retainer/extension';
+import { routineInvocationSchema } from '@retainer/shared';
 import { z } from 'zod';
 import { bundleSchema, DockerSandbox } from './launcher/docker.js';
 
@@ -91,7 +92,9 @@ const server = createServer(async (req, res) => {
         )
       : await sandbox.run(
           parsed.bundleId,
-          decodeInvocation(JSON.stringify(parsed.invocation)),
+          (parsed.invocation as { kind?: unknown })?.kind === 'routine'
+            ? routineInvocationSchema.parse(parsed.invocation)
+            : decodeInvocation(JSON.stringify(parsed.invocation)),
           controller.signal,
         );
     if (res.writableEnded || res.destroyed) return;

@@ -267,6 +267,8 @@ describe('strict extension contracts', () => {
       'tool connection must match the release',
     );
     expect(() => defineFunction({ ...tool, trigger: { kind: 'job' } })).toThrow();
+    // `then` would make the routine SDK's tools object look like a promise.
+    expect(() => defineTool({ ...declaration, name: 'then' })).toThrow('cannot be named');
   });
   it('accepts bounded JSON output on successful protocol v1 results', () => {
     const result = { status: 'succeeded', output: { deliverable: false } };

@@ -3,6 +3,7 @@ import { FieldValueError, MULTI_VALUE_TYPES } from '@retainer/shared';
 import { z } from 'zod';
 import type { Tx } from '../db/tx.js';
 import { AppError, notFound, requireUser } from '../errors.js';
+import { moveRoutineRecord } from '../routine-runtime/merge.js';
 import type { CompiledObject, CompiledSchema } from '../schema/compiled.js';
 import { type FieldState, relationTargetIds } from '../schema/types.js';
 import { getRecord } from './read.js';
@@ -142,6 +143,7 @@ export async function mergeRecords(
   const pair = [a, b].sort() as [string, string];
   const locked = await lockRecordsForUpdate(tx, workspaceId, pair);
   for (const id of pair) await context.changes?.capture(tx, id);
+  context.changes?.markMerged(b);
   const survivor = locked.find((r) => r.id === a);
   const merged = locked.find((r) => r.id === b);
   if (!survivor || !merged || survivor.merged_into_id || merged.merged_into_id) {
@@ -261,6 +263,7 @@ export async function mergeRecords(
       data = '{}'::jsonb, label = null, search = null
     where id = ${b}`;
   await tx`update records set merged_into_id = ${a} where merged_into_id = ${b}`;
+  await moveRoutineRecord(tx, workspaceId, b, a);
   await tx`
     update merge_suggestions set status = 'accepted', decided_by = ${tx.json(context.actor)},
       decided_at = clock_timestamp()

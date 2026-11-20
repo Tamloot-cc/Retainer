@@ -1,4 +1,5 @@
 import { executionResultSchema, type Invocation } from '@retainer/extension';
+import type { RoutineInvocation } from '@retainer/shared';
 import type { Executable, ExecutionDriver } from './extensions.js';
 
 /** Talks only to a trusted configured launcher; target selection stays outside invocation JSON. */
@@ -21,7 +22,12 @@ export class LauncherDriver implements ExecutionDriver {
       throw new Error('invalid launcher configuration');
     this.origin = url.origin;
   }
-  async invoke(executable: Executable, invocation: Invocation, signal: AbortSignal) {
+  /** An extension run, or a routine run of the routine runner bundle (routines spec §3.3). */
+  async invoke(
+    executable: Executable,
+    invocation: Invocation | RoutineInvocation,
+    signal: AbortSignal,
+  ) {
     const response = await fetch(`${this.origin}/run`, {
       method: 'POST',
       headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },

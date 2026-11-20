@@ -102,7 +102,8 @@ export async function withWrite<T>(
   locks: WriteLocks = {},
   { asPerson = true }: TransactionOptions = {},
 ): Promise<T> {
-  const person = !caller.run && !caller.installation && asPerson ? caller.person : undefined;
+  const person =
+    !caller.run && !caller.installation && !caller.routine && asPerson ? caller.person : undefined;
   for (let attempt = 0; ; attempt++) {
     try {
       return await inWorkspace(
@@ -145,19 +146,19 @@ export async function withRead<T>(
   options: { privacy?: boolean; schema?: boolean } = {},
 ): Promise<T> {
   const { workspaceId } = caller;
-  const person = caller.run || caller.installation ? undefined : caller.person;
+  const machine = caller.run || caller.installation || caller.routine;
+  const person = machine ? undefined : caller.person;
   return inWorkspace(
     sql,
     workspaceId,
     async (tx) => {
       if (options.privacy) await lockPrivacyShared(tx, workspaceId);
-      if (options.schema && !caller.run && !caller.installation)
-        await lockSchemaShared(tx, workspaceId);
+      if (options.schema && !machine) await lockSchemaShared(tx, workspaceId);
       // A read with a person can see their personal memory on any path
       // (search, an event's citations), so it holds their membership lock
       // and re-checks access first: a removal either committed before, and
       // the read is refused, or waits for it (personal memory spec 4.3).
-      if (caller.run || caller.installation) {
+      if (machine) {
         await lockSchemaShared(tx, workspaceId);
         await admitCaller(tx, caller);
       }

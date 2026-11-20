@@ -65,7 +65,12 @@ async function presentSession(sql: Sql, caller: Caller): Promise<Session> {
     };
   });
 }
-export function sessionRoutes(app: Hono<AppEnv>, sql: Sql, publicOrigin?: string) {
+export function sessionRoutes(
+  app: Hono<AppEnv>,
+  sql: Sql,
+  publicOrigin?: string,
+  routinesAvailable = false,
+) {
   app.post('/auth/session', async (c) => {
     requireWebHeader(c, publicOrigin);
     const { key } = await readBody(c, z.strictObject({ key: z.string().min(1).max(1024) }));
@@ -81,7 +86,7 @@ export function sessionRoutes(app: Hono<AppEnv>, sql: Sql, publicOrigin?: string
       maxAge: 30 * 24 * 60 * 60,
     });
     c.header('Cache-Control', 'no-store');
-    return c.json(result);
+    return c.json(routinesAvailable ? { ...result, routinesAvailable: true } : result);
   });
   app.delete('/auth/session', (c) => {
     requireWebHeader(c, publicOrigin);
@@ -90,6 +95,9 @@ export function sessionRoutes(app: Hono<AppEnv>, sql: Sql, publicOrigin?: string
     return c.json({ signedOut: true });
   });
 }
-export function meRoute(app: Hono<AppEnv>, sql: Sql) {
-  app.get('/me', async (c) => c.json(await presentSession(sql, c.get('caller'))));
+export function meRoute(app: Hono<AppEnv>, sql: Sql, routinesAvailable = false) {
+  app.get('/me', async (c) => {
+    const session = await presentSession(sql, c.get('caller'));
+    return c.json(routinesAvailable ? { ...session, routinesAvailable: true } : session);
+  });
 }

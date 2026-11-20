@@ -118,3 +118,53 @@ export function refusedBody(body: unknown): Refusal | undefined {
   }
   return undefined;
 }
+
+/** Fields a routine's plain model call may send (routines spec §4.5). */
+const ROUTINE_BODY_FIELDS: ReadonlySet<string> = new Set([
+  'model',
+  'messages',
+  'system',
+  'max_tokens',
+  'stream',
+  'stop_sequences',
+  'metadata',
+  'output_config',
+]);
+
+/**
+ * The narrower list for a routine's model token: one plain call, the
+ * operator's model, at most its token cap of output, and no `tools` or
+ * `mcp_servers`. The code holds its token and could call the proxy directly,
+ * so the proxy is what makes "no tools" true; a model's server-side tools
+ * would otherwise be a way out of the closed sandbox.
+ */
+export function refusedRoutineBody(
+  body: unknown,
+  claims: { model: string; maxTokens: number },
+): Refusal | undefined {
+  const value = body as Record<string, unknown>;
+  for (const key of Object.keys(value))
+    if (!ROUTINE_BODY_FIELDS.has(key))
+      return {
+        status: 400,
+        type: 'invalid_request_error',
+        message: `field ${key} is not allowed with a routine's model token`,
+      };
+  if (value.model !== claims.model)
+    return {
+      status: 400,
+      type: 'invalid_request_error',
+      message: `a routine's model token calls ${claims.model} only`,
+    };
+  if (
+    typeof value.max_tokens !== 'number' ||
+    !Number.isInteger(value.max_tokens) ||
+    value.max_tokens > claims.maxTokens
+  )
+    return {
+      status: 400,
+      type: 'invalid_request_error',
+      message: `max_tokens must be at most ${claims.maxTokens} with a routine's model token`,
+    };
+  return undefined;
+}

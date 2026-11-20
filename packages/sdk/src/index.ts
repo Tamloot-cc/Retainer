@@ -51,6 +51,15 @@ import type {
   RetractEventResult,
   ReviewCollection,
   ReviewQueue,
+  RoutineButton,
+  RoutineCapabilities,
+  RoutineCheckResult,
+  RoutineDetail,
+  RoutinePreview,
+  RoutineProblem,
+  RoutineReport,
+  RoutineRunView,
+  RoutineView,
   SavedView,
   SchemaChange,
   SchemaChangeResult,
@@ -1196,5 +1205,116 @@ export class RetainerClient {
       { method: 'POST' },
       isFailedChange,
     );
+  }
+
+  // Routines (routines spec §5, §6).
+  routineCapabilities(signal?: AbortSignal) {
+    return this.get<RoutineCapabilities>('/v1/routines/capabilities', {}, signal);
+  }
+  /** Checks a routine; `wait` seconds for the sandbox's type-check before answering with a job. */
+  validateRoutine(input: { manifest: unknown; code: string }, wait = 15) {
+    return this.post<RoutineCheckResult>(`/v1/routines/validate?wait=${wait}`, input);
+  }
+  previewRoutine(input: { manifest: unknown; code: string }) {
+    return this.post<{
+      valid: boolean;
+      problems: RoutineProblem[];
+      /** Null when nothing matched recently: there is nothing to dry-run or poll. */
+      previewId?: string | null;
+      matched?: number;
+      done?: boolean;
+    }>('/v1/routines/preview', input);
+  }
+  routinePreview(previewId: string, signal?: AbortSignal) {
+    return this.get<RoutinePreview>(
+      `/v1/routines/previews/${encodeURIComponent(previewId)}`,
+      {},
+      signal,
+    );
+  }
+  routineJob(jobId: string, signal?: AbortSignal) {
+    return this.get<RoutineRunView & Partial<RoutineCheckResult>>(
+      `/v1/routines/jobs/${encodeURIComponent(jobId)}`,
+      {},
+      signal,
+    );
+  }
+  /** Asks the built-in builder for a routine from a description; poll the job. */
+  buildRoutine(description: string, routineId?: string) {
+    return this.post<{ jobId: string }>('/v1/routines/build', {
+      description,
+      ...(routineId ? { routineId } : {}),
+    });
+  }
+  proposeRoutine(input: {
+    manifest: unknown;
+    code: string;
+    name: string;
+    description: string;
+    summary: string;
+    report: RoutineReport;
+    routineId?: string;
+  }) {
+    return this.post<{ routineId: string; versionId: string; number: number }>(
+      '/v1/routines',
+      input,
+    );
+  }
+  routines(signal?: AbortSignal) {
+    return this.get<{ timeZone: string; routines: RoutineView[] }>('/v1/routines', {}, signal);
+  }
+  routine(id: string, signal?: AbortSignal) {
+    return this.get<RoutineDetail>(`/v1/routines/${encodeURIComponent(id)}`, {}, signal);
+  }
+  routineRun(id: string, runId: string, signal?: AbortSignal) {
+    return this.get<RoutineRunView>(
+      `/v1/routines/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}`,
+      {},
+      signal,
+    );
+  }
+  decideRoutineVersion(id: string, versionId: string, decision: 'approve' | 'reject') {
+    return this.post<{
+      routineId: string;
+      versionId: string;
+      state?: string;
+      status?: string;
+      discardedRuns?: number;
+    }>(
+      `/v1/routines/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/${decision}`,
+      {},
+    );
+  }
+  /** Runs a version once for real, on one record, as the admin who asks. */
+  testRoutine(id: string, versionId: string, recordId: string | null) {
+    return this.post<{ runId: string }>(
+      `/v1/routines/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/test`,
+      { recordId },
+    );
+  }
+  setRoutineState(id: string, action: 'pause' | 'resume' | 'archive') {
+    return this.post<{ routineId: string; status: RoutineView['status'] }>(
+      `/v1/routines/${encodeURIComponent(id)}/${action}`,
+      {},
+    );
+  }
+  releaseHeldRuns(id: string, action: 'run' | 'discard') {
+    return this.post<{ routineId: string; queued?: number; discarded?: number }>(
+      `/v1/routines/${encodeURIComponent(id)}/held`,
+      {
+        action,
+      },
+    );
+  }
+  runRoutine(id: string, recordIds: string[]) {
+    return this.post<{ runs: string[] }>(`/v1/routines/${encodeURIComponent(id)}/run`, {
+      recordIds,
+    });
+  }
+  routineButtons(object: string, signal?: AbortSignal) {
+    return this.get<{ buttons: RoutineButton[] }>('/v1/routines/buttons', { object }, signal);
+  }
+  setTimeZone(timeZone: string) {
+    return this.send<{ timeZone: string }>('PUT', '/v1/workspace/time-zone', { timeZone });
   }
 }

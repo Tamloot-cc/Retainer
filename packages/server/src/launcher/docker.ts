@@ -11,6 +11,11 @@ import {
   type VerificationResult,
   verificationResultSchema,
 } from '@retainer/extension';
+import {
+  ROUTINE_RUNNER_FUNCTION_ID,
+  type RoutineInvocation,
+  routineInvocationSchema,
+} from '@retainer/shared';
 import { z } from 'zod';
 
 export const bundleSchema = z.strictObject({
@@ -209,6 +214,8 @@ export class DockerSandbox {
     for (const input of options.bundles) {
       const bundle = bundleSchema.parse(input);
       if (this.bundles.has(bundle.id)) throw new Error('duplicate bundle');
+      if (!options.apiContainer && bundle.functionIds.includes(ROUTINE_RUNNER_FUNCTION_ID))
+        throw new Error('the routine runner requires a local API container');
       const ids = [...bundle.functionIds, ...bundle.verifierFunctionIds];
       if (!ids.length || new Set(ids).size !== ids.length)
         throw new Error('duplicate or empty bundle functions');
@@ -270,8 +277,17 @@ export class DockerSandbox {
     )
       throw new Error('runner image contains forbidden credential environment');
   }
-  async run(bundleId: string, input: Invocation, signal: AbortSignal): Promise<ExecutionResult> {
-    const invocation = decodeInvocation(JSON.stringify(input));
+  async run(
+    bundleId: string,
+    input: Invocation | RoutineInvocation,
+    signal: AbortSignal,
+  ): Promise<ExecutionResult> {
+    // A routine run is closed (routines spec §3.3): its network reaches the
+    // API and nothing else, with no egress proxy.
+    const invocation =
+      (input as { kind?: unknown }).kind === 'routine'
+        ? routineInvocationSchema.parse(input)
+        : decodeInvocation(JSON.stringify(input));
     const origin = new URL(invocation.apiOrigin);
     if (
       origin.origin !== new URL(this.options.apiOrigin).origin ||
@@ -295,15 +311,19 @@ export class DockerSandbox {
   }
   private async launch(
     bundleId: string,
-    invocation: Invocation | VerificationInvocation,
+    invocation: Invocation | VerificationInvocation | RoutineInvocation,
     signal: AbortSignal,
     verifying: boolean,
   ) {
     const bundle = this.bundles.get(bundleId);
+    // Routine bundles are registered only with a local, isolated API endpoint.
+    const closed = 'kind' in invocation && invocation.kind === 'routine';
+    const functionId =
+      'functionId' in invocation ? invocation.functionId : ROUTINE_RUNNER_FUNCTION_ID;
     if (
       !bundle ||
       bundle.releaseDigest !== invocation.releaseDigest ||
-      !(verifying ? bundle.verifierFunctionIds : bundle.functionIds).includes(invocation.functionId)
+      !(verifying ? bundle.verifierFunctionIds : bundle.functionIds).includes(functionId)
     )
       throw new Error('unknown execution bundle');
     const deadline = new Date(invocation.deadline).getTime();
@@ -362,7 +382,7 @@ export class DockerSandbox {
           throw new Error('execution network isolation is unavailable');
         for (const [container, origin] of [
           [this.options.apiContainer, this.options.apiOrigin],
-          [this.options.proxyContainer, this.options.proxyOrigin],
+          ...(closed ? [] : [[this.options.proxyContainer, this.options.proxyOrigin]]),
         ]) {
           if (!container) continue;
           if (!origin) throw new Error('missing trusted endpoint');
@@ -388,17 +408,18 @@ export class DockerSandbox {
           OpenStdin: true,
           StdinOnce: true,
           Tty: false,
-          Env: verifying
-            ? []
-            : [
-                `HTTP_PROXY=${this.options.proxyOrigin}`,
-                `HTTPS_PROXY=${this.options.proxyOrigin}`,
-                'NO_PROXY=',
-                'NODE_USE_ENV_PROXY=1',
-                ...(bundle.id === 'enrichment' && this.options.exaApiKey
-                  ? [`EXA_API_KEY=${this.options.exaApiKey}`]
-                  : []),
-              ],
+          Env:
+            verifying || closed
+              ? []
+              : [
+                  `HTTP_PROXY=${this.options.proxyOrigin}`,
+                  `HTTPS_PROXY=${this.options.proxyOrigin}`,
+                  'NO_PROXY=',
+                  'NODE_USE_ENV_PROXY=1',
+                  ...(bundle.id === 'enrichment' && this.options.exaApiKey
+                    ? [`EXA_API_KEY=${this.options.exaApiKey}`]
+                    : []),
+                ],
           Labels: {
             'retainer.extension.run': '1',
             'retainer.extension.launcher': this.options.networkPrefix,

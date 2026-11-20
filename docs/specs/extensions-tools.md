@@ -68,7 +68,7 @@ export const sendWhatsApp = defineTool({
 
 | Field                         | Purpose                                                                                                    |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `name`, `title`               | How code and people refer to it                                                                            |
+| `name`, `title`               | How code and people refer to it; `name` cannot be `then`                                                   |
 | `description`                 | Written for an agent: what it does and when to use it                                                      |
 | `effect`                      | `read` (answers a question), `write` (changes Retainer records only) or `send` (acts outside Retainer)     |
 | `inputSchema`, `outputSchema` | Use the extension platform's bounded JSON Schema subset. Retainer validates values against them and uses them to generate routine SDK types. |

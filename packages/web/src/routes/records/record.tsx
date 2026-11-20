@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useWorkspace } from '../../api/client.js';
 import { Notice, ObjectIcon, Page, RecordAvatar } from '../../ui/index.js';
+import { RoutineButtons } from '../routines/record-buttons.js';
 import { classLabel, objectByName, QueryError, recordTitle } from '../state.js';
 import { RecordActions } from './record-actions.js';
 import { useMemoryNav } from './record-memory.js';
@@ -41,11 +42,14 @@ export function RecordPage() {
       }
       description={`Last updated ${new Date(r.updatedAt).toLocaleString()}`}
       actions={
-        <RecordActions
-          record={r}
-          requestedId={id}
-          onGone={() => void navigate({ to: '/o/$object', params: { object: r.object } })}
-        />
+        <>
+          <RoutineButtons object={r.object} recordId={r.id} />
+          <RecordActions
+            record={r}
+            requestedId={id}
+            onGone={() => void navigate({ to: '/o/$object', params: { object: r.object } })}
+          />
+        </>
       }
     >
       <RecordView key={r.id} record={r} requestedId={id} nav={nav} />

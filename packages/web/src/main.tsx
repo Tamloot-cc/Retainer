@@ -151,6 +151,7 @@ function Layout() {
         <ReportContext.Provider value={setReport}>
           <Shell
             workspace={session.workspace.name}
+            routinesAvailable={session.routinesAvailable === true}
             user={{
               name: session.actor.name || session.actor.id,
               detail: accountState
@@ -261,6 +262,21 @@ const rootRoute = createRootRoute({
     </Page>
   ),
 });
+const routinesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/routines',
+  component: function RoutineLayout() {
+    const { session } = useAuth();
+    return session.routinesAvailable ? (
+      <Outlet />
+    ) : (
+      <Page title="Routines are unavailable">
+        <Link to="/">Go home</Link>
+      </Page>
+    );
+  },
+});
+
 const routeTree = rootRoute.addChildren([
   createRoute({
     getParentRoute: () => rootRoute,
@@ -356,6 +372,23 @@ const routeTree = rootRoute.addChildren([
       'ExtensionMappingPage',
     ),
   }),
+  routinesRoute.addChildren([
+    createRoute({
+      getParentRoute: () => routinesRoute,
+      path: '/',
+      component: lazyRouteComponent(() => import('./routes/routines/list.js'), 'RoutinesPage'),
+    }),
+    createRoute({
+      getParentRoute: () => routinesRoute,
+      path: '$id',
+      component: lazyRouteComponent(() => import('./routes/routines/detail.js'), 'RoutinePage'),
+    }),
+    createRoute({
+      getParentRoute: () => routinesRoute,
+      path: '$id/runs/$run',
+      component: lazyRouteComponent(() => import('./routes/routines/run.js'), 'RoutineRunPage'),
+    }),
+  ]),
   createRoute({
     getParentRoute: () => rootRoute,
     path: '/settings',
