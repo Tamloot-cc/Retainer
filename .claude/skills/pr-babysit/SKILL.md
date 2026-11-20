@@ -1,7 +1,8 @@
 ---
 name: pr-babysit
 argument-hint: "[PR-number] [--merge]"
-description: Open a PR for the finished work in Retainer and stay with it until it's settled. Wait for CI and both review bots (claude-review and Codex) to finish on the head commit. Assess every finding, fix the valid ones, answer the rest, then email the outcome. Squash-merge and clean up only with --merge. Use when the user says "PR this", "open a PR and babysit it", "babysit PR #12", or "commit, PR and merge when settled". Not for reviewing someone else's PR.
+description: >-
+  Open a PR for the finished work in Retainer and stay with it until it's settled. Wait for CI and both review bots (claude-review and Codex) to finish on the head commit. Assess every finding, fix the valid ones, answer the rest, then email the outcome. Web UI changes also get a modern web guidance check and screenshots in the PR. Squash-merge and clean up only with --merge. Use when the user says "PR this", "open a PR and babysit it", "babysit PR #12", or "commit, PR and merge when settled". Not for reviewing someone else's PR.
 ---
 
 # PR Babysit (Retainer)
@@ -22,18 +23,102 @@ Docs-only changes don't get a PR: commit them on `main` and push.
 
 ## Phase 1 — Submit
 
-1. Run the `simplify` skill on the diff against `main` and apply its fixes.
+Clean the diff before review. Every problem fixed here is a review comment
+that never gets written.
+
+1. Run the web guidance check if the diff touches web UI (below).
+2. Run the `simplify` skill on the diff against `main` and apply its fixes.
    Skip any that change behavior, and say so.
-2. Run the checks locally (see `CLAUDE.md`): `pnpm lint`, `pnpm typecheck`,
+3. Run the checks locally (see `CLAUDE.md`): `pnpm lint`, `pnpm typecheck`,
    `pnpm test` with `DATABASE_URL` set, and `pnpm test:web` if `packages/web`
-   or the e2e specs changed.
-3. Branch off `main` if needed. Stage only files that belong to the work,
+   or the e2e specs changed. Steps 1 and 2 leave unreviewed edits, so run
+   them after those.
+4. Branch off `main` if needed. Stage only files that belong to the work,
    and mention any stray edits you left out. Write the commit subject as a
    plain sentence, the way `git log` does it ("Web: create, delete and merge
    records"), not conventional-commit style. End the commit and the PR body
    with the attribution lines the session gives you.
-4. Push and run `gh pr create --base main`. The body should say what changed
+5. Add screenshots if the PR changes something a user sees (below).
+6. Push and run `gh pr create --base main`. The body should say what changed
    and why, and how it was tested.
+
+### Web guidance check
+
+Run it when the diff changes HTML, CSS or TSX in `packages/web`. Skip it for
+the server, the database, CI, tests and copy-only edits.
+
+The code is already written, so this is a check, not a starting point:
+
+1. List the UI patterns and platform features the diff adds or rewrites: a
+   dialog, a form with validation, date formatting, an animation, image
+   loading.
+2. Search each one and read the guides that match:
+
+   ```bash
+   DISABLE_TELEMETRY=1 npx -y modern-web-guidance@latest search "<2-5 word pattern>"
+   DISABLE_TELEMETRY=1 npx -y modern-web-guidance@latest retrieve "<id>[,<id>]"
+   ```
+
+   Without `DISABLE_TELEMETRY=1` the queries go to Google. Keep queries
+   generic: "light dismiss dialog", not "close React record dialog".
+3. Fix the places where the diff uses an outdated pattern. For anything that
+   isn't Baseline Widely available, follow the guide's fallback rules.
+
+Stay inside the diff. Old patterns in code the PR doesn't touch are not this
+PR's job. The guides are plain HTML, CSS and JS, so adapt them to how the app
+already works (React, Radix primitives, Tailwind). Where a guide conflicts
+with an established repo convention, keep the convention and say so.
+
+Add a `### Modern Web Guidance` section to the PR body listing the guides you
+checked and what changed because of them.
+
+### Screenshots
+
+Add them when the diff changes rendered UI in `packages/web`: a screen,
+component, layout or style. Skip them for everything else, including
+refactors with no visible difference.
+
+**Capture.** Run `pnpm dev` and `pnpm dev:web`, then capture the states the
+PR changes with the browser tools or Playwright.
+
+- One screenshot per changed screen or state, cropped to what changed. Add a
+  "before" (taken on `main`) only when the difference isn't obvious from the
+  "after".
+- If colors changed, capture dark mode too. If layout changed, capture a
+  phone width too.
+- **Seed or demo data only.** The repo is public and these images stay in
+  its history. Never capture a real workspace, emails or tokens.
+- If the surface can't run here, don't substitute a mock-up. Write
+  `Screenshots: not captured — <reason>` in the PR body instead.
+
+**Publish.** GitHub has no API for uploading images to a PR, so the images
+ride the PR branch:
+
+1. Add the PNGs under `docs/pr-screenshots/<branch-slug>/` and commit them on
+   their own ("Add <what> screenshots for review").
+2. Remove them in the very next commit ("Remove the review screenshots").
+   The squash-merge then lands no binaries on `main`, and the first commit
+   stays reachable through the PR.
+3. Link each image by the first commit's SHA, never by branch name (the
+   branch is deleted at merge) and never through an outside image host:
+
+   ```markdown
+   ![<alt text>](https://raw.githubusercontent.com/Tamloot-cc/Retainer/<sha>/docs/pr-screenshots/<slug>/<file>.png)
+   ```
+
+4. Put them in the PR body under `## Screenshots`, each with a one-line
+   caption.
+
+Make both commits before the first push, so they cost no extra review round.
+
+**Later pushes.** When a fix changes what a screenshot shows, recapture only
+the affected ones and publish them the same way in that push. Post them in a
+PR comment with one line on what changed, and update the PR body so it shows
+the current UI. A push that changes nothing visible gets no new screenshots.
+
+**Open PR without screenshots.** Add them with the first push you make for
+another reason. Don't push only for screenshots on a PR that would otherwise
+settle untouched; say in the email that it has none.
 
 ## Phase 2 — Babysit
 
@@ -59,9 +144,12 @@ gh pr checks <PR> --watch --interval 30
 Every round, read all of these:
 
 - Inline threads, with GraphQL `reviewThreads` (snippet below).
-- Top-level comments: `gh api repos/{owner}/{repo}/issues/<PR>/comments`.
-- Review bodies: `gh api repos/{owner}/{repo}/pulls/<PR>/reviews`. Check each
-  review's `commit_id`.
+- Top-level comments: `gh api --paginate repos/{owner}/{repo}/issues/<PR>/comments`.
+- Review bodies: `gh api --paginate repos/{owner}/{repo}/pulls/<PR>/reviews`.
+  Check each review's `commit_id`.
+
+Without `--paginate` these return only the first 30 items, which hides the
+newest comments on a long PR.
 
 ### Triage: a comment is a claim, not an order
 
@@ -73,13 +161,19 @@ Every round, read all of these:
   rule.
 
 Batch each round into one push. Run the relevant tests before pushing, then
-reply to every thread, citing the fixing commit, and resolve it.
+reply to every thread, citing the fixing commit, and resolve it. A fix that
+writes new web UI gets the web guidance check, and a fix that changes what a
+screenshot shows gets new screenshots (see "Later pushes").
 
 ```bash
+# Threads: id, state, and each comment's databaseId (the comment_id for replies)
+gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){pageInfo{hasNextPage endCursor} nodes{id isResolved isOutdated comments(first:20){nodes{databaseId body author{login}}}}}}}}' -f o=<owner> -f r=<repo> -F n=<PR>
 gh api repos/{owner}/{repo}/pulls/<PR>/comments/<comment_id>/replies -f body="Fixed in abc1234: …"
-gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:50){nodes{id isResolved comments(first:5){nodes{body author{login}}}}}}}}' -f o=<owner> -f r=<repo> -F n=<PR>
 gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<threadId>
 ```
+
+If `hasNextPage` is true, fetch the rest with
+`reviewThreads(first:100, after:"<endCursor>")`.
 
 For claude-review findings, which have no thread, post one top-level reply
 that covers each finding.
@@ -148,5 +242,6 @@ both `text` and `html`, and use the idempotency key
 Start with **In plain words**: two sentences, no jargon, saying what was
 missing and what the PR adds. Then include the PR link, each finding and how
 it was handled (including any you pushed back on, and why), the final CI
-state, the deploy (shipped, nothing to ship, or failed, with the run link),
-what cleanup removed, and what is waiting on the user.
+state, for a UI change whether screenshots are in the PR (or why not), the
+deploy (shipped, nothing to ship, or failed, with the run link), what
+cleanup removed, and what is waiting on the user.
