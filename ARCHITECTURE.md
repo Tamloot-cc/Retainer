@@ -2004,10 +2004,10 @@ from its own layer and the ones below it:
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | Entry      | `index`, `cli`, `lambda`, `egress-proxy`, `extension-launcher`, `file-server`                                                     | Starting the server, the CLI and the Lambda functions                             |
 | Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`, `egress`, `model`, `launcher`, `extension-control`, `webhooks`    | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
-| Admin      | `schema-engine`, `templates`, `workspaces`, `extensions`                                                                          | Changing a schema and creating workspaces                                         |
+| Admin      | `schema-engine`, `templates`, `workspaces`, `extensions`, `routines`                                                              | Changing a schema, creating workspaces, extensions and routines                   |
 | Features   | `views`, `comments`, `retrieval`, `reads`                                                                                         | Built on records and memory                                                       |
 | Core       | `records`, `memory`, `privacy`, `files`, `sources`, `changes`                                                                     | The write rules                                                                   |
-| Foundation | `db`, `schema`, `caller`, `idempotency`, `stable-json`, `config`, `errors`, `log`, `version`, `extension-runtime`, `file-storage` | The database and reading a schema                                                 |
+| Foundation | `db`, `schema`, `caller`, `idempotency`, `stable-json`, `config`, `errors`, `log`, `version`, `extension-runtime`, `routine-runtime`, `file-storage` | The database and reading a schema |
 
 The schema engine sits above the records because a schema change rewrites
 records and views, while records only need to read a schema: `schema` holds the

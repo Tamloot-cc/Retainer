@@ -7,7 +7,7 @@ import type { Sql } from '../db/client.js';
 import type { ApiKeyScope } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { isInstallationKey, lookupInstallationKey } from '../extension-runtime/credentials.js';
-import { isRunToken, type RunTokens } from '../extension-runtime/tokens.js';
+import { isRoutineToken, isRunToken, type RunTokens } from '../extension-runtime/tokens.js';
 import { type AppEnv, errorResponse } from '../http/response.js';
 import {
   accountSessionCookie,
@@ -16,6 +16,7 @@ import {
   WORKSPACE_HEADER,
 } from './account-session.js';
 import { looksLikeJwt, lookupOAuthToken, type OAuthSettings } from './oauth-token.js';
+import { authenticateRoutine } from './routine.js';
 import { lookupKey, requireWebHeader, SESSION_COOKIE } from './session.js';
 
 const BEARER = /^Bearer\s+(\S+)$/i;
@@ -85,15 +86,21 @@ export function authenticate(sql: Sql, options: AuthOptions = {}): MiddlewareHan
           throw new AppError(401, 'unauthorized', 'installation keys require the REST resource');
         caller = isInstallationKey(key)
           ? await lookupInstallationKey(sql, key)
-          : isRunToken(key)
+          : isRoutineToken(key)
             ? options.runTokens
-              ? await options.runTokens.authenticate(sql, key)
+              ? await authenticateRoutine(sql, options.runTokens, key, c.req.path)
               : (() => {
-                  throw new AppError(401, 'unauthorized', 'run credentials are not enabled');
+                  throw new AppError(401, 'unauthorized', 'routine credentials are not enabled');
                 })()
-            : oauth && looksLikeJwt(key)
-              ? await lookupOAuthToken(sql, key, oauth)
-              : await lookupKey(sql, key);
+            : isRunToken(key)
+              ? options.runTokens
+                ? await options.runTokens.authenticate(sql, key)
+                : (() => {
+                    throw new AppError(401, 'unauthorized', 'run credentials are not enabled');
+                  })()
+              : oauth && looksLikeJwt(key)
+                ? await lookupOAuthToken(sql, key, oauth)
+                : await lookupKey(sql, key);
         // A key belongs to one workspace; naming another is a client mistake.
         const named = c.req.header(WORKSPACE_HEADER);
         if (named !== undefined && named !== caller.workspaceId) {

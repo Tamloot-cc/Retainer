@@ -313,7 +313,8 @@ export class ExtensionQueue {
       | 'uninstall'
       | 'connect'
       | 'disconnect'
-      | 'change' = 'job',
+      | 'change'
+      | 'tool' = 'job',
     setupChild = false,
     depth = cause.length,
   ) {
@@ -570,6 +571,45 @@ export class ExtensionQueue {
       [],
       'connect',
     );
+  }
+  /**
+   * Queues one tool call (extensions-tools spec 4) in the caller's
+   * transaction. The input is checked against the tool's `inputSchema`
+   * before anything is queued. The dedupe key is the caller's effect key, so
+   * a repeated call returns the same job. The call carries the caller's cause
+   * chain, so the tool's writes cannot trigger the routine that called it,
+   * and it expires at the caller's deadline: it is never retried past it.
+   */
+  async enqueueTool(
+    tx: Tx,
+    workspace: string,
+    call: {
+      installationId: string;
+      connectionId?: string | null;
+      functionId: string;
+      input: unknown;
+      dedupeKey: string;
+      cause: string[];
+      depth: number;
+      expiresAt: Date;
+      callerRunId?: string | null;
+      callerUserId?: string | null;
+    },
+  ) {
+    let installation = await this.installation(tx, workspace, call.installationId);
+    installation = await this.connection(tx, installation, call.connectionId ?? null);
+    const id = await this.insert(
+      tx,
+      installation,
+      { functionId: call.functionId, input: call.input, dedupeKey: call.dedupeKey },
+      call.cause,
+      'tool',
+      false,
+      call.depth,
+    );
+    await tx`update extension_jobs set caller_run_id=${call.callerRunId ?? null},caller_user_id=${call.callerUserId ?? null},
+      expires_at=least(expires_at,${call.expiresAt}) where id=${id} and status='queued' and attempt=0`;
+    return id;
   }
   /** Trusted ingress/scheduler entry. Runtime children use checkpoint so cause is server-derived. */
   async enqueue(workspace: string, installationId: string, input: Enqueue) {
@@ -1015,6 +1055,21 @@ export class ExtensionQueue {
         return null;
       }
       if (!runnable(installation, job.trigger_kind, partial)) return null;
+      // A routine's tool call repeats its caller's checks when it starts
+      // (routines spec §8): the run still running and not expired, its
+      // routine active, a test's initiator still an admin.
+      const callerRun = (job as Job & { caller_run_id?: string | null }).caller_run_id;
+      if (job.trigger_kind === 'tool' && callerRun) {
+        const [live] =
+          await tx`select 1 from routine_runs r left join routines rt on rt.id=r.routine_id
+          where r.id=${callerRun} and r.status='running' and coalesce(r.expires_at>clock_timestamp(),true)
+            and (r.mode<>'run' or rt.status='active')
+            and (r.mode<>'test' or retainer_routine_admin(r.workspace_id,r.initiator_user_id))`;
+        if (!live) {
+          await tx`update extension_jobs set status='cancelled',code='caller_stopped',lease_owner=null,lease_until=null,run_until=null,updated_at=now() where id=${id}`;
+          return null;
+        }
+      }
       const [exhausted] =
         await tx`select 1 where ${job.expires_at}<=clock_timestamp() or ${job.cycle_attempt}>=10`;
       if (exhausted) {
@@ -1067,8 +1122,10 @@ export class ExtensionQueue {
         await this.finishLifecycle(tx, installation, job, 'failed', 'forbidden');
         return null;
       }
+      // Tool calls have their own lane (extensions-tools spec 4).
       const [other] =
-        await tx`select id from extension_jobs where installation_id=${installation.id} and connection_id is not distinct from ${installation.connection_id ?? null}::uuid and status='running' and id<>${id}`;
+        await tx`select id from extension_jobs where installation_id=${installation.id} and connection_id is not distinct from ${installation.connection_id ?? null}::uuid and status='running' and id<>${id}
+          and (trigger_kind='tool')=${job.trigger_kind === 'tool'}`;
       if (other) return null;
       const [slot] = await tx<
         { available: boolean }[]
@@ -1319,6 +1376,7 @@ export class ExtensionQueue {
       code?: string;
       retryAfterSeconds?: number;
       releaseIncomplete?: string[];
+      output?: unknown;
     },
   ) {
     z.strictObject({
@@ -1329,10 +1387,12 @@ export class ExtensionQueue {
         .optional(),
       retryAfterSeconds: z.number().int().min(0).max(3600).optional(),
       releaseIncomplete: z.array(z.string().regex(RELEASE_INCIDENT_PATTERN)).max(8).optional(),
+      output: z.json().optional(),
     }).parse(result);
     return this.withLease(
       lease,
       async (tx, installation, job) => {
+        if (job.trigger_kind === 'tool') return this.completeTool(tx, installation, job, result);
         const status =
           result.status === 'retry'
             ? job.cycle_attempt >= 10
@@ -1361,6 +1421,42 @@ export class ExtensionQueue {
       },
       true,
     );
+  }
+  /**
+   * A tool call ends here, never back in the queue: a failure goes to its
+   * caller as an error and the caller decides (routines spec 8). Its output
+   * must match the tool's `outputSchema` and fit in 64 KiB (extensions-tools
+   * spec 3); otherwise the call fails and the caller gets no output.
+   */
+  private async completeTool(
+    tx: Tx,
+    installation: Installation,
+    job: Job,
+    result: { status: 'succeeded' | 'retry' | 'failed'; code?: string; output?: unknown },
+  ) {
+    let status: 'succeeded' | 'failed' = result.status === 'succeeded' ? 'succeeded' : 'failed';
+    let code: string | null = result.status === 'succeeded' ? null : (result.code ?? 'tool_failed');
+    let output: unknown = null;
+    if (status === 'succeeded') {
+      const fn = this.manifest({
+        ...installation,
+        release_digest: job.release_digest,
+      }).functions.find((f) => f.universalId === job.function_id);
+      try {
+        if (fn?.trigger.kind !== 'tool') throw new Error('not a tool');
+        if (Buffer.byteLength(stableJson(result.output ?? null)) > 65536)
+          throw new Error('output too large');
+        validateInput(fn.trigger.outputSchema, result.output ?? null);
+        output = result.output ?? null;
+      } catch {
+        status = 'failed';
+        code = 'invalid_output';
+      }
+    }
+    await tx`update extension_jobs set status=${status},code=${code},output=${status === 'succeeded' ? tx.json(jsonValue(output)) : null},
+      lease_owner=null,lease_until=null,updated_at=now() where id=${job.id}`;
+    await tx`update extension_attempts set status=${status},code=${code},finished_at=now() where job_id=${job.id} and attempt=${job.attempt}`;
+    return { status, activated: false };
   }
   /**
    * Hands a run back after a graceful executor shutdown. The first few releases of a job do not

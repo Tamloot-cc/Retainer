@@ -5,6 +5,7 @@ import { failInstallation } from '../extension-runtime/lifecycle.js';
 import { lockExtension, lockQueue } from '../extension-runtime/locks.js';
 import type { ExtensionQueue } from '../extension-runtime/queue.js';
 import type { Extensions } from '../extensions/service.js';
+import type { RoutineMaintenance } from './routines.js';
 
 /** Rows deleted per pruning transaction, so a writer waits for one batch at most. */
 export const PRUNE_BATCH = 1000;
@@ -27,6 +28,8 @@ export class ChangeMaintenance {
      * minute. Set only where no extension executor runs them.
      */
     private readonly upgrades?: Pick<Extensions, 'upgradeDue'>,
+    /** Routine matching and schedules (routines spec §6.1), with their own budget. */
+    private readonly routines?: Pick<RoutineMaintenance, 'maintain'>,
   ) {}
   /**
    * Deletes expired feed rows in bounded transactions until none are left,
@@ -94,6 +97,15 @@ export class ChangeMaintenance {
         failed++;
       }
     }
+    if (this.routines && !this.stopped && Date.now() < deadline) {
+      try {
+        const result = await this.routines.maintain(Math.min(30000, deadline - Date.now()));
+        queued += result.queued;
+        failed += result.failed;
+      } catch {
+        failed++;
+      }
+    }
     if (this.upgrades && !this.stopped && Date.now() >= this.upgradeAfter) {
       this.upgradeAfter = Date.now() + 60000;
       failed += (await this.upgrades.upgradeDue(this.discovery)).failed;
@@ -143,7 +155,9 @@ export class ChangeMaintenance {
             await tx`update extension_attempts set status='failed',code='job_expired',finished_at=clock_timestamp()
               where job_id=${job.id} and finished_at is null`;
             const installation = current.get(job.installation_id);
-            if (installation) await failInstallation(tx, installation, job, 'job_expired');
+            // A tool call that outlived its caller's deadline says nothing about the extension.
+            if (installation && job.trigger_kind !== 'tool')
+              await failInstallation(tx, installation, job, 'job_expired');
           }
           const jobs =
             await tx`delete from extension_jobs where id in(select id from extension_jobs where status in ('succeeded','failed','cancelled')

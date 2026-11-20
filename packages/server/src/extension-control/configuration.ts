@@ -1,3 +1,4 @@
+import { ROUTINE_RUNNER_REGISTRATION_ID } from '@retainer/shared';
 import { importJWK } from 'jose';
 import { z } from 'zod';
 import { type Config, EXECUTOR_ROLE, ownerDatabaseUrl, SECRET_BROKER_ROLE } from '../config.js';
@@ -20,6 +21,7 @@ import {
   LambdaVerifier,
 } from '../worker/lambda-driver.js';
 import { LauncherDriver } from '../worker/launch-driver.js';
+import { RoutineExecutor, RoutineMaintenance } from '../worker/routines.js';
 import { LauncherVerifier } from '../worker/verifier-driver.js';
 
 /** These are operator-provisioned release inputs. Workspace APIs cannot change them. */
@@ -132,6 +134,7 @@ export async function extensionServices(
               'disconnect',
               'schedule',
               'change',
+              'tool',
             ].includes(fn.trigger.kind)
           )
             throw new Error('trigger runtime is unavailable');
@@ -243,6 +246,39 @@ export async function extensionServices(
         upgrades: new Extensions(options.workerSql, catalog, broker, activationReady),
       });
     }
+    // Routines (routines spec §6.1): matching runs in change maintenance; the
+    // runs execute only where the routine runner bundle is deployed.
+    const routineMaintenance =
+      options.workerSql && discovery
+        ? new RoutineMaintenance(options.workerSql, discovery)
+        : undefined;
+    let routineExecutor: RoutineExecutor | undefined;
+    if (options.workerSql && discovery && tokens && config.RETAINER_EXTENSION_EXECUTABLES) {
+      const entries: unknown = JSON.parse(config.RETAINER_EXTENSION_EXECUTABLES);
+      const runner = Array.isArray(entries)
+        ? new ExecutionRegistry(entries as Executable[]).find(ROUTINE_RUNNER_REGISTRATION_ID)
+        : undefined;
+      const apiOrigin = config.RETAINER_EXTENSION_API_ORIGIN ?? config.RETAINER_PUBLIC_ORIGIN;
+      if (runner && apiOrigin && config.RETAINER_EXTENSION_RUN_PRIVATE_KEY)
+        routineExecutor = new RoutineExecutor({
+          sql: options.workerSql,
+          discoverySql: discovery,
+          tokens,
+          driver: lambda
+            ? new LambdaDriver(config.RETAINER_EXTENSION_LAMBDA_PREFIX)
+            : new LauncherDriver(
+                config.RETAINER_EXTENSION_LAUNCHER_ORIGIN as string,
+                config.RETAINER_LAUNCHER_TOKEN as string,
+              ),
+          executable: runner,
+          apiOrigin,
+          owner: `routines-${crypto.randomUUID()}`,
+          config: {
+            catalog: catalog.runtime,
+            modelAvailable: !!(config.RETAINER_MODEL_API_KEY || config.RETAINER_MODEL_ORIGIN),
+          },
+        });
+    }
     // Without an executor (standalone apps only), change maintenance runs the
     // automatic upgrades the executor would.
     const changeMaintenance =
@@ -252,6 +288,7 @@ export async function extensionServices(
             discovery,
             changeQueue,
             executor ? undefined : new Extensions(options.workerSql, catalog, broker, activation),
+            routineMaintenance,
           )
         : undefined;
     return {
@@ -266,6 +303,7 @@ export async function extensionServices(
       fileStorage,
       fileMaintenance,
       changeMaintenance,
+      routineExecutor,
       close,
     };
   } catch {

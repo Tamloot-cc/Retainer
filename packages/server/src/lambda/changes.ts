@@ -3,6 +3,7 @@ import { createRuntimeSql, createSql } from '../db/client.js';
 import { extensionServices } from '../extension-control/configuration.js';
 import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { ChangeMaintenance } from '../worker/changes.js';
+import { RoutineMaintenance } from '../worker/routines.js';
 import { withPassLock } from './deploy-lock.js';
 
 /** Hosted IAM/scheduling live in retainer-cloud; no provider code runs in this task. */
@@ -22,7 +23,14 @@ export async function createChangeMaintenanceHandler(config: Config) {
     },
     services.activation,
   );
-  const worker = new ChangeMaintenance(sql, discovery, queue),
+  // Routine matching and schedules run here too, with their own budget (routines spec §11.3).
+  const worker = new ChangeMaintenance(
+      sql,
+      discovery,
+      queue,
+      undefined,
+      new RoutineMaintenance(sql, discovery),
+    ),
     deployLock = createRuntimeSql(config, { max: 1, keepConnections: true });
   return async () => {
     const result = await withPassLock(deployLock, () => worker.tick());

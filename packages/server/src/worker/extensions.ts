@@ -50,6 +50,13 @@ export class ExecutionRegistry {
       );
     return structuredClone(value);
   }
+  /** The one entry a first-party registration has, such as the routine runner. */
+  find(registrationId: string) {
+    const value = [...this.entries.values()].find(
+      (entry) => entry.registrationId === registrationId,
+    );
+    return value ? structuredClone(value) : undefined;
+  }
   get(job: ClaimedJob) {
     return this.lookup(job.registrationId, job.releaseDigest, job.functionId);
   }

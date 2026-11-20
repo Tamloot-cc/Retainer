@@ -93,6 +93,17 @@ export class ChangeCollector {
       chain = change.cause;
       depth = 0;
     }
+    if (caller.routine) {
+      // A routine joins the cause chain like an installation (routines spec
+      // §6.5): its writes never trigger it again, and chains stop at 8 hops.
+      const [run] = await tx<
+        { cause: string[]; cause_depth: number }[]
+      >`select cause,cause_depth from routine_runs where id=${caller.routine.runId}`;
+      chain = run?.cause ?? [];
+      depth = (run?.cause_depth ?? 0) + 1;
+      const self = caller.routine.routineId ?? caller.routine.runId;
+      if (!chain.includes(self)) chain = [...chain, self];
+    }
     if (origin && !chain.includes(origin)) chain = [...chain, origin];
     if (origin) depth = causedBy && !caller.run ? 1 : depth + (job?.cause.includes(origin) ? 0 : 1);
     const collector = new ChangeCollector(caller.workspaceId, schema, origin, chain, depth);

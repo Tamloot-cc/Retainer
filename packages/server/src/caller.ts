@@ -13,6 +13,8 @@ export type Caller = {
   run?: RunBinding;
   /** A standalone workspace grant; no hosted lease, installer impersonation or personal memory. */
   installation?: InstallationBinding;
+  /** A routine run's credential (routines spec §3.3); never reaches personal memory. */
+  routine?: RoutineCaller;
   scopes: readonly ApiKeyScope[];
   /** The signed-in person, in accounts mode. */
   userId?: string;
@@ -83,4 +85,19 @@ export type InstallationBinding = {
    * hosted function that triggered the app is not triggered again (§9.4).
    */
   causedBy?: string;
+};
+
+/** A routine run, from its signed token (routines spec §3.3). */
+export type RoutineCaller = {
+  runId: string;
+  routineId: string | null;
+  fence: string;
+  mode: 'run' | 'test' | 'dry' | 'check' | 'build';
+  /** The tools the run may call: its manifest's list. */
+  tools: string[];
+  /**
+   * Set only by the server's effects path, which numbers and records each
+   * write (§6.2). A routine token on the plain REST routes can only read.
+   */
+  effect?: boolean;
 };

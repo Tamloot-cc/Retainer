@@ -35,6 +35,13 @@ export function createApiHandler(
     accountsSecret: config.RETAINER_AUTH_SECRET,
     rateLimit: { limit: rateLimitPerMinute(config) },
     clientIp: (c) => clientIpOf((c.env as { event?: unknown }).event, config.RETAINER_EDGE_SECRET),
+    // The hosted `model` function holds the key; its origin says it exists.
+    routines: {
+      modelAvailable: !!config.RETAINER_MODEL_ORIGIN,
+      modelOrigin: config.RETAINER_MODEL_ORIGIN,
+      modelName: config.RETAINER_ROUTINE_MODEL,
+      modelCallsPerDay: config.RETAINER_ROUTINE_MODEL_CALLS_PER_DAY,
+    },
   });
   return requireEdge(config.RETAINER_EDGE_SECRET, handle(app));
 }

@@ -149,6 +149,16 @@ export class UsageMeter {
 export async function recordUsage(sql: Sql, claims: ModelClaims, report: UsageReport) {
   try {
     await inWorkspace(sql, claims.workspaceId, async (tx) => {
+      if (claims.kind === 'routine') {
+        // A routine's call (routines spec §6.3): the row names the routine and the run.
+        await tx`insert into ai_usage(id,workspace_id,kind,routine_id,routine_run_id,attempt,model,input_tokens,
+          output_tokens,cache_read_tokens,cache_write_tokens,usage,provider_request_id,partial,created_at)
+          values(${report.id},${claims.workspaceId},'routine',${claims.routineId},${claims.runId},${claims.attempt},
+            ${report.model},${report.inputTokens},${report.outputTokens},${report.cacheReadTokens},${report.cacheWriteTokens},
+            ${tx.json(report.usage)},${report.providerRequestId},${report.partial},${report.at})
+          on conflict (id) do nothing`;
+        return;
+      }
       await tx`insert into ai_usage(id,workspace_id,kind,installation_id,registration_id,release_digest,
         function_id,job_id,attempt,model,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,
         usage,provider_request_id,partial,created_at)
