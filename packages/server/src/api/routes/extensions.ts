@@ -74,6 +74,30 @@ export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMo
       201,
     ),
   );
+  app.post('/extensions/:id/connections/gmail/authorize', requireScope('read'), async (c) => {
+    const { historyDays } = await readBody(
+      c,
+      z.strictObject({
+        shareGmail: z.literal(true),
+        historyDays: z.number().int().min(0).max(3650),
+      }),
+    );
+    c.header('Cache-Control', 'no-store');
+    return c.json(
+      await extensions.connections.startGmailAuthorization(
+        c.get('caller'),
+        idParam(c),
+        historyDays,
+      ),
+      201,
+    );
+  });
+  app.post('/extensions/:id/connections/gmail/complete', requireScope('read'), async (c) => {
+    const { attemptId } = await readBody(c, z.strictObject({ attemptId: z.uuid() }));
+    return c.json(
+      await extensions.connections.finishGmailAuthorization(c.get('caller'), idParam(c), attemptId),
+    );
+  });
   app.post('/extensions/:id/connections/authorize', requireScope('read'), async (c) =>
     c.json(
       await extensions.connections.authorize(

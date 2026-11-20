@@ -1,4 +1,5 @@
-import { type Actor, type ActorType, isProfileAlias } from '@retainer/shared';
+import { gmailRegistrationId } from '@retainer/extension/nango-gmail';
+import { type Actor, type ActorType, BASE_OBJECT_IDS, isProfileAlias } from '@retainer/shared';
 import type { CallerPerson, InstallationBinding, RunBinding } from '../caller.js';
 import type { ChangeCollector } from '../changes/collect.js';
 import { isUuid } from '../db/ids.js';
@@ -637,8 +638,16 @@ async function claimIdentifiers(
   value: unknown,
 ): Promise<{ value: string; recordId: string } | null> {
   const fieldId = field.id as string;
+  const identifiers = identifiersFor(field, value);
+  const emails = [
+    ...new Set(identifiers.filter((entry) => entry.kind === 'email').map((entry) => entry.value)),
+  ];
+  const prior = emails.length
+    ? await tx<{ value: string }[]>`select distinct value from record_identifiers
+        where record_id=${recordId} and kind='email' and value=any(${emails}::text[])`
+    : [];
   await tx`delete from record_identifiers where record_id = ${recordId} and field_id = ${fieldId}`;
-  for (const identifier of identifiersFor(field, value)) {
+  for (const identifier of identifiers) {
     if (!field.isUnique) {
       await tx`
         insert into record_identifiers (workspace_id, record_id, field_id, kind, value, is_claim)
@@ -658,6 +667,21 @@ async function claimIdentifiers(
           and value = ${identifier.value} and is_claim`;
       return { value: identifier.value, recordId: holder?.record_id ?? 'unknown' };
     }
+  }
+  const known = new Set(prior.map((entry) => entry.value));
+  const added = emails.filter((email) => !known.has(email));
+  if (added.length) {
+    await tx`insert into gmail_contact_additions(workspace_id,record_id,email,history_days)
+      select r.workspace_id,r.id,e.email,(i.settings->>'historyDays')::numeric::int
+      from records r
+      join object_types o on o.id=r.object_type_id and o.workspace_id=r.workspace_id
+      join extension_installations i on i.workspace_id=r.workspace_id and i.registration_id=${gmailRegistrationId}
+      cross join unnest(${added}::text[]) as e(email)
+      where r.id=${recordId} and r.workspace_id=${workspaceId} and r.private_to_user is null
+        and r.deleted_at is null and r.merged_into_id is null
+        and o.universal_id=${BASE_OBJECT_IDS.person} and i.state='active'
+        and (i.settings->>'historyDays') ~ '^[0-9]{1,4}$'
+        and (i.settings->>'historyDays')::numeric between 0 and 3650`;
   }
   return null;
 }
@@ -744,7 +768,12 @@ export async function softDeleteRecord(
 ): Promise<string[]> {
   const rootId = await resolveRecordId(tx, context.workspaceId, id);
   // Collect first, then lock everything in sorted order.
-  const sorted = [...(await cascadeSet(tx, context.schema, [rootId]))].sort();
+  const gmailEvents = await tx<{ id: string }[]>`
+    select m.event_id as id from gmail_messages m where m.workspace_id=${context.workspaceId}
+      and m.thread_group_id=(select thread_group_id from gmail_messages where event_id=${rootId})`;
+  const sorted = [
+    ...(await cascadeSet(tx, context.schema, [rootId, ...gmailEvents.map((r) => r.id)])),
+  ].sort();
   const locked = await lockRecordsForUpdate(tx, context.workspaceId, sorted);
   const root = locked.find((r) => r.id === rootId);
   if (root) objectOf(context.schema, root);

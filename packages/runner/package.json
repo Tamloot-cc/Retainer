@@ -16,6 +16,8 @@
     "@retainer/extension": "workspace:*",
     "@retainer/sdk": "workspace:*",
     "@retainer/shared": "workspace:*",
+    "html-to-text": "^10.0.1",
+    "postal-mime": "^4.2.1",
     "zod": "^4.6.7"
   },
   "exports": {
@@ -25,6 +27,11 @@
     "./enrichment": "./dist/enrichment.js",
     "./enrichment-contract": "./dist/enrichment-contract.js",
     "./tamloot": "./dist/tamloot.js",
-    "./tamloot-contract": "./dist/tamloot-contract.js"
+    "./tamloot-contract": "./dist/tamloot-contract.js",
+    "./gmail": "./dist/gmail.js",
+    "./gmail-contract": "./dist/gmail-contract.js"
+  },
+  "devDependencies": {
+    "@types/html-to-text": "^9.0.4"
   }
 }

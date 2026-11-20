@@ -3,6 +3,8 @@ import { RetainerClient } from '@retainer/sdk';
 import { z } from 'zod';
 import { executeEnrichment } from './enrichment.js';
 import { ENRICHMENT_FUNCTION_IDS } from './enrichment-contract.js';
+import { executeGmail } from './gmail.js';
+import { GMAIL_FUNCTION_IDS } from './gmail-contract.js';
 import { executeGranola } from './granola.js';
 import { GRANOLA_FUNCTION_IDS } from './granola-contract.js';
 import { executeLastContact, LAST_CONTACT_FUNCTION_IDS } from './last-contact.js';
@@ -23,6 +25,8 @@ export async function execute(
   signal: AbortSignal,
   transport: typeof fetch = fetch,
 ): Promise<ExecutionResult> {
+  if (GMAIL_FUNCTION_IDS.includes(invocation.functionId))
+    return executeGmail(invocation, signal, transport);
   if (TAMLOOT_FUNCTION_IDS.includes(invocation.functionId))
     return executeTamloot(invocation, signal, transport);
   if (GRANOLA_FUNCTION_IDS.includes(invocation.functionId))

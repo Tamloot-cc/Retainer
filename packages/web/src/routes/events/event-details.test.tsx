@@ -168,6 +168,30 @@ const event: EventDetails = {
 };
 
 describe('EventDetailsView', () => {
+  it('shows Gmail message text literally and appends additional messages in order', async () => {
+    const first = {
+      id: 'mail-1',
+      occurredAt: event.occurredAt,
+      originalDate: null,
+      body: '<b>First message</b>',
+    };
+    const second = { ...first, id: 'mail-2', body: 'Second message' };
+    vi.spyOn(api, 'gmailMessages').mockImplementation(async (_id, after) =>
+      after ? { messages: [second], nextAfter: null } : { messages: [first], nextAfter: first.id },
+    );
+    renderIn(
+      <EventDetailsView id="e1" event={{ ...event, channel: 'gmail', gmail: true }} editable />,
+    );
+    const body = await screen.findByText('<b>First message</b>');
+    expect(body.querySelector('b')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add participant…' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Load more messages' }));
+    expect(await screen.findByText('Second message')).toBeTruthy();
+    const list = body.closest('ol');
+    expect(
+      [...(list?.querySelectorAll('li p') ?? [])].map((message) => message.textContent),
+    ).toEqual([first.body, second.body]);
+  });
   it('explains superseded provider evidence and keeps its participants immutable', async () => {
     renderIn(
       <EventDetailsView

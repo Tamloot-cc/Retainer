@@ -24,6 +24,10 @@ export async function prepareSourceErasure(
     select distinct s.id,s.account_id,s.external_id,a.registration_id,a.provider,a.namespace
     from source_items s join source_accounts a on a.id=s.account_id
     where s.state<>'erased' and (exists(select 1 from source_revisions v where v.item_id=s.id and v.event_id=any(${eventIds}::uuid[]))
+      or exists(select 1 from gmail_deliveries d
+        join extension_connections c on c.workspace_id=d.workspace_id and c.id=d.connection_id
+        where d.workspace_id=s.workspace_id and c.source_account_id=s.account_id
+          and d.provider_message_id=s.external_id and d.message_id=any(${eventIds}::uuid[]))
       or exists(select 1 from source_participants p where p.item_id=s.id and p.email=any(${handles}::text[]))) order by s.id`;
   const ids = items.map((i) => i.id),
     accounts = [...new Set(items.map((i) => i.account_id))];

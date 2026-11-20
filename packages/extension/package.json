@@ -20,6 +20,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./nango-gmail": {
+      "types": "./dist/nango-gmail.d.ts",
+      "default": "./dist/nango-gmail.js"
     }
   },
   "files": [
