@@ -1,13 +1,14 @@
 # Routines: spec
 
-Status: **building**, 2026-11-20. Phases 1 to 5 (§11.1) are implemented on
-the `routines` branch, except `relative` triggers and the hosted network path
-(§11.3), which lives in `retainer-cloud`. §11.4 records where the build
-differs from this spec. Before that, the proposal of 2026-11-19 went through
-three drafts: after two reviews, the product owner decided that a routine is
-TypeScript code, not a JSON flow, and that the first version stays lean. A
-third review tightened the rules for retries, dry runs, version changes and
-the model cap. Section 2 lists what is decided and what is only proposed.
+Status: **building**, 2026-11-21. Phases 1 to 5 (§11.1) are on main (#128),
+except `relative` triggers. On the hosted service the runner's network stays
+open for now and the process sandbox is the boundary (§11.3, decided
+2026-11-21). §11.4 records where the build differs from this spec. Before
+that, the proposal of 2026-11-19 went through three drafts: after two reviews,
+the product owner decided that a routine is TypeScript code, not a JSON flow,
+and that the first version stays lean. A third review tightened the rules for
+retries, dry runs, version changes and the model cap. Section 2 lists what is
+decided and what is only proposed.
 
 Builds on the extension platform in [extensions.md](extensions.md), model calls
 in [extensions-model-calls.md](extensions-model-calls.md) and the two-step
@@ -212,10 +213,14 @@ kind of run. This is the first thing to build (§11).
   subprocesses and no imports beyond the bundled SDK. Nothing a run leaves
   behind is visible to the next run, including on a reused hosted function.
 - **Network to Retainer only: its API, its model proxy and its file
-  service.** Hosted, the runner's function has no public egress. In Compose,
-  its container's proxy allows only those three. Outside effects come only
-  from extension tools, called through Retainer. On the hosted service this
-  path does not exist yet and is built with `retainer-cloud` (§11.3).
+  service.** The routine's process has no network of its own: it holds no
+  token and no network API, and every read and effect is a message to the
+  runner, which calls Retainer. In Compose the runner's container is also on a
+  network that holds only the API. Outside effects come only from extension
+  tools, called through Retainer. On the hosted service the runner's function
+  can still reach public addresses, like every job function, so there the
+  process sandbox alone keeps the code in; closing the function's network is
+  hardening for later (§11.3).
 - **The run token is the boundary.** It is bound to one run, expires with
   it, has agent rank, and can call only the tools the manifest lists. It
   carries no model access: each model call asks the API for a short-lived
@@ -1204,11 +1209,10 @@ Left out of the first version on purpose, with the room left for each:
    call with its call ID and polling, the tool list. It has no caller until
    phase 3, so it lands before it or with it.
 2. **The closed sandbox.** The routine runner bundle; a fresh restricted
-   process per run; no public egress, hosted and in Compose; the generator
-   for the SDK's types; the type-check; the routine run token and its
-   read-only form for dry runs. The hosted network path is a joint deliverable
-   with `retainer-cloud` (§11.3), and the phase is done only when the
-   closed-sandbox test passes on the hosted service as well as in Compose.
+   process per run with no network of its own; no public egress in Compose;
+   the generator for the SDK's types; the type-check; the routine run token
+   and its read-only form for dry runs. The hosted runner is a job function
+   like any other bundle's (§11.3).
 3. **Routines without model calls.** The manifest and its checker; routine
    discovery with its own cursor, working with no installations; matching for
    `record`, `schedule` and `manual` triggers; `oncePerRecord`; the hourly
@@ -1236,8 +1240,8 @@ each against real Postgres:
 - **Phase 2, the sandbox is closed.** Routine code cannot reach a public
   address, read a file or an environment variable, start a process, or see
   anything a previous run left. Code that calls the API directly with a dry
-  run's token changes nothing. The test passes in Compose and on the hosted
-  service.
+  run's token changes nothing. The test passes in Compose, and the process
+  checks pass on the hosted service.
 - **Phase 3, the first routine.** "When a deal moves to Proposal, create one
   follow-up task", in a workspace with no extensions installed. The run is
   interrupted right after the task is created. The retry leaves exactly one
@@ -1287,18 +1291,25 @@ each against real Postgres:
 - **A new trigger kind.** A server release that accepts `tool` must be live
   before any bundle declaring a tool enters the hosted catalog
   (`extensions-tools.md` §7).
-- **Two new first-party bundles.** The routine runner and the builder are new
-  bundles. Each needs the cloud repository's steps for a brand-new bundle:
-  its Lambda function, the catalog configuration and the release allowlists.
-- **A function with no public egress: a joint deliverable.** Hosted job
-  functions have no VPC configuration and reach any public address today, an
-  accepted relaxation for reviewed code (`extensions.md` §9.1). Only
-  verifier functions are isolated, and they have no egress at all. The model
-  proxy is a function outside the VPC, reached over the public internet. The
-  routine runner needs something neither offers: a path to Retainer's API,
-  model proxy and file service, and to nothing else. That path is designed
-  and built in `retainer-cloud` together with phase 2 here, and phase 2's
-  closed-sandbox test must pass on the hosted service.
+- **One new first-party bundle.** The routine runner (the builder is a
+  `build` run of it) needs the cloud repository's steps for a brand-new
+  bundle: its Lambda function, the catalog configuration and the release
+  allowlists. It has no catalog entry, only an executable.
+- **The runner is an ordinary job function (decided 2026-11-21).** Hosted
+  job functions have no VPC configuration and reach any public address, an
+  accepted relaxation for reviewed code (`extensions.md` §9.1). The routine
+  runner is reviewed first-party code too, so it runs the same way. The code
+  it runs is not reviewed by Tamloot, so the process sandbox is the boundary
+  there: the child process holds no token and has no network API, module
+  loading or `process` (§11.4). Leaking a workspace's records takes two
+  failures: an admin approves code that tries, and that code escapes the
+  sandbox. Node's permission model is not meant to stop malicious code, so
+  this is a deliberate trade for the first version, while there are no
+  users. **Before real workspaces use Routines on the hosted service**, close
+  the runner's network to Retainer's API, model proxy and file service, as
+  Compose does. The likely shape: the runner in the VPC, reaching an internal
+  load balancer in front of the API, model and files functions, and the
+  files bucket through its endpoint.
 - **Polling, not waiting.** Tool calls, checks and previews return an ID
   because the hosted API answers within 30 seconds (`extensions-tools.md`
   §4).
@@ -1496,12 +1507,12 @@ they left open:
   writes it under `artifacts/extensions/routine-runner`. Web, REST, MCP and
   background dispatch are enabled when the deployment registers that runner
   and provides its run verification key. Retention keeps running when the
-  runner is unavailable. Hosted execution also needs the isolated runner
-  deployment.
+  runner is unavailable. On the hosted service the runner is the
+  `routine-runner` job function (§11.3).
 
 Acceptance tests (§11.2) not yet automated: expiry, a tool's contract
-changing, a test run reaching a `send` tool, the worked example (§9.4), and
-the closed-sandbox test on the hosted service. The others run in
+changing, a test run reaching a `send` tool, and the worked example (§9.4).
+The hosted runner's network is open by decision (§11.3). The others run in
 `packages/server/test/api/routine*.test.ts` and
 `packages/runner/src/routine.test.ts`. `pnpm test:routines:compose` (part of
 `pnpm test:docker`) runs a routine's type-check and run in Compose and checks
@@ -1515,7 +1526,7 @@ owner changes it.
 | Question                                                         | Answer                                                                                                                                                                               | Why                                                                                                                                                                     |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | What does a routine write as?                                    | An agent, always, in the first version                                                                                                                                               | The leanest rule: no new actor type, nothing with a person's authority in the sandbox, and it is Macro's default. A routine rank is the first extension (§10)           |
-| What runs the code?                                              | A fresh restricted process per run, inside a first-party bundle, with network to Retainer only. Which runtime is settled by a spike: Deno, as Macro uses, or Node's permission model | The token, the API and the network are the boundary; the runtime only has to start clean and stay closed                                                                |
+| What runs the code?                                              | A fresh restricted process per run, inside a first-party bundle, with no network of its own. Which runtime is settled by a spike: Deno, as Macro uses, or Node's permission model    | The token, the API and the network are the boundary; the runtime only has to start clean and stay closed                                                                |
 | Does a retried run repeat itself?                                | No. Effects are numbered, and a retry gets the recorded result when the operation and arguments match at that position. An outside call with an unknown outcome is sent again with the same key   | The queue delivers at least once, and the code cannot be trusted to make itself safe to repeat. The database guarantees writes; a tool must honour the key for the rest |
 | Can a rewrite go live without approval?                          | No, never                                                                                                                                                                            | Nothing runs without a person's approval. Macro applies some rewrites on its own; here an admin approves every version                                                  |
 | What happens to runs when a version changes or a routine pauses? | A run is pinned to its version. A new approval discards runs not yet started. A pause is checked before every effect                                                                 | An approval needs a clear edge: nothing unapproved starts, and a pause stops work at the next effect                                                                    |
