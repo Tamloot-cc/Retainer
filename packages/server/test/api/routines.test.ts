@@ -654,6 +654,28 @@ describe('routines', () => {
     expect(record.body.fields.tier ?? null).toBe(null);
   });
 
+  it('a preview counts a record merged since its change as the survivor', async () => {
+    const s = await setup();
+    const survivor = await createCompany(s.app, s.keys.admin, 'Acme Survivor');
+    for (let i = 0; i < 5; i++) await createCompany(s.app, s.keys.admin, `Acme ${i}`);
+    // The newest match is merged away: its slot goes to the survivor, not to nothing.
+    const merged = await createCompany(s.app, s.keys.admin, 'Acme Merged');
+    const merge = await s.app.request(`/v1/records/${survivor}/merge`, {
+      key: s.keys.admin,
+      body: { recordId: merged },
+    });
+    expect(merge.status).toBe(200);
+    const res = await s.app.request('/v1/routines/preview', {
+      key: s.keys.agent,
+      body: TIER_ROUTINE(s.key('tier'), s.key('name')),
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.runs).toHaveLength(5);
+    const [first] = await db.owner<{ record_id: string }[]>`
+      select record_id from routine_runs where id=${res.body.runs[0]}`;
+    expect(first?.record_id).toBe(survivor);
+  });
+
   it('reserves model calls against the daily cap atomically', async () => {
     const s = await setup({ modelCallsPerDay: 3 });
     const source = {

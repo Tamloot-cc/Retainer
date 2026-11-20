@@ -56,18 +56,17 @@ export async function matchingSince(
       and operation in ('create','update','supersede','links') and merged_from_id is null
     order by position desc limit 5000`;
   const matched = rows.filter((row) => triggerMatches(when, object.id, row));
-  const records: string[] = [];
-  for (const row of matched)
-    if (row.record_id && !records.includes(row.record_id) && records.length < 5)
-      records.push(row.record_id);
-  const live = records.length
-    ? await tx<{ id: string }[]>`select id from records where id=any(${records}::uuid[])
-        and deleted_at is null and merged_into_id is null`
+  const ids = [...new Set(matched.flatMap((row) => (row.record_id ? [row.record_id] : [])))];
+  // A record merged since its change counts as its survivor (§6.1), and a
+  // deleted one takes no slot: the five most recent live records.
+  const live = ids.length
+    ? await tx<{ id: string }[]>`
+        select s.id from unnest(${ids}::uuid[]) with ordinality as c(id,n)
+        join records r on r.id=c.id join records s on s.id=coalesce(r.merged_into_id,r.id)
+        where s.deleted_at is null and s.merged_into_id is null
+        group by s.id order by min(c.n) limit 5`
     : [];
-  return {
-    matched: matched.length,
-    records: records.filter((id) => live.some((row) => row.id === id)),
-  };
+  return { matched: matched.length, records: live.map((row) => row.id) };
 }
 
 /** The records a schedule tick would fan out to, and how many there are. */
