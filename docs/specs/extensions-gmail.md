@@ -1,7 +1,7 @@
 # Gmail extension
 
-Implemented for development catalogs. Hosted enablement requires the release
-review below.
+Available as an opt-in extension bundle. Hosted publication selects it
+explicitly in the deployment bundle list.
 
 ## Goal
 

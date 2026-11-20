@@ -500,8 +500,8 @@ writeRoutine('executables.json', [
     driverTarget: 'routine-runner',
   },
 ]);
-// Gmail is available to development catalogs while hosted access is being reviewed.
-if (development) {
+// Hosted publication selects Gmail explicitly through its bundle list.
+{
   const gmail = gmailManifest({
     version,
     packageDigest,
