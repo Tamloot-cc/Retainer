@@ -151,6 +151,13 @@ Disconnect disables the Retainer binding and removes the dedicated Nango
 connection. Google-wide revocation can affect other connections to the same
 OAuth client, so it is not a per-workspace cleanup step.
 
+Retainer records cleanup work before opening Connect. Starting over or
+letting an attempt expire blocks its completion and leaves cleanup in place.
+The extension executor checks the exact attempt tags after the Connect window
+closes, retries failed deletions, and checks again after 24 hours. A successfully
+bound mailbox is excluded from attempt cleanup. Cleanup retains the encoded
+member tag and vendor identity through member, installation, or workspace removal.
+
 ## Local development
 
 Build the development bundle with `pnpm build` and
@@ -165,7 +172,10 @@ Set `RETAINER_GMAIL_NANGO_CONTROL_KEY` and `RETAINER_GMAIL_NANGO_PROXY_KEY`
 on the Retainer API that serves the extension routes. For local development
 both can fall back to `NANGO_API_KEY` in the server environment. The proxy
 key needs `environment:proxy`. The control key needs Connect session creation
-and connection list, read, credential read and delete permissions.
+and connection list, read, credential read and delete permissions. Set
+`RETAINER_GMAIL_NANGO_CLEANUP_KEY` on the trusted extension executor before
+enabling Gmail. It only needs connection list and delete permissions. The local
+executor also accepts `NANGO_API_KEY`. Configure both in the same Nango environment.
 Member authorization creates a dedicated tagged connection. To replace a Gmail
 grant, disconnect in Retainer and start a new authorization.
 

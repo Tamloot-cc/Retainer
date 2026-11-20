@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import {
   createNangoGmailConnectSession,
@@ -14,7 +15,9 @@ const connection = {
 const attempt = { workspaceId: 'workspace', memberId: 'member', attemptId: 'attempt' };
 const tags = {
   organization_id: 'workspace',
-  end_user_id: 'member',
+  end_user_id: createHash('sha256')
+    .update(JSON.stringify([attempt.workspaceId, attempt.memberId]))
+    .digest('hex'),
   retainer_attempt_id: 'attempt',
 };
 const id = '18a0';

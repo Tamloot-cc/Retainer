@@ -6,6 +6,8 @@ import {
   findNangoGmailConnection,
   GmailProviderError,
   gmailRegistrationId,
+  nangoGmailAttemptTags,
+  nangoId,
   verifyNangoGmailGrant,
 } from '@retainer/extension/nango-gmail';
 import { z } from 'zod';
@@ -158,18 +160,20 @@ export class MemberConnections {
     )
       throw notFound('Gmail installation');
     const apiKey = process.env.RETAINER_GMAIL_NANGO_CONTROL_KEY ?? process.env.NANGO_API_KEY;
-    const integrationId = installation.settings.nangoIntegrationId;
+    const integration = nangoId.safeParse(installation.settings.nangoIntegrationId);
     const days = z.number().int().min(0).max(3650).safeParse(installation.settings.historyDays);
     if (!days.success)
       throw new AppError(422, 'invalid_settings', 'choose a whole number of days of email history');
-    if (!apiKey || typeof integrationId !== 'string' || !integrationId)
+    if (!apiKey || !integration.success)
       throw new AppError(503, 'gmail_unavailable', 'Nango Gmail is not configured');
-    return { apiKey, integrationId, historyDays: days.data };
+    return { apiKey, integrationId: integration.data, historyDays: days.data };
   }
 
   async startGmailAuthorization(caller: Caller, id: string, acceptedHistoryDays: number) {
     human(caller);
     const attemptId = randomUUID();
+    const attempt = { workspaceId: caller.workspaceId, memberId: caller.actor.id, attemptId };
+    const tags = nangoGmailAttemptTags(attempt);
     const config = await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       await lockForWrite(tx, caller.workspaceId);
       await membership(tx, caller);
@@ -191,16 +195,17 @@ export class MemberConnections {
         (id,workspace_id,installation_id,connection_id,owner_id,state_hash,expected_generation,settings,expires_at)
         values(${attemptId},${caller.workspaceId},${id},${randomUUID()},${caller.actor.id},${sha256(attemptId)},
           ${i.generation},${tx.json({ shareGmail: true, consentHistoryDays: config.historyDays, boundNangoIntegrationId: config.integrationId })},clock_timestamp()+interval '30 minutes')`;
+      // Persist cleanup before starting the vendor session, including if its response is lost.
+      await tx`insert into gmail_authorization_cleanups
+        (attempt_id,workspace_id,member_tag,integration_id,next_attempt_at,final_check_at)
+        values(${attemptId},${caller.workspaceId},${tags.end_user_id},${config.integrationId},
+          clock_timestamp()+interval '1 hour',clock_timestamp()+interval '24 hours')`;
       return config;
     });
     try {
       const session = await createNangoGmailConnectSession(
         config,
-        {
-          workspaceId: caller.workspaceId,
-          memberId: caller.actor.id,
-          attemptId,
-        },
+        attempt,
         AbortSignal.timeout(20000),
       );
       return { ...session, attemptId };
@@ -233,18 +238,24 @@ export class MemberConnections {
       await verifyNangoGmailGrant({ ...config, connectionId, attempt }, AbortSignal.timeout(20000));
     } catch (error) {
       if (connectionId && invalidGmailScope(error)) {
-        // Only scope errors follow successful verification of the current attempt's owner tags.
-        // Leave the attempt usable if Nango cannot delete its rejected credential yet.
-        try {
-          await deleteNangoGmailConnection({ ...config, connectionId }, AbortSignal.timeout(20000));
-        } catch (cleanupError) {
-          throw gmailError(cleanupError);
-        }
-        await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
-          await tx`update extension_authorizations set consumed_at=clock_timestamp()
+        // Prevent a racing completion from claiming the grant before deleting it.
+        const rejected = await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+          const [row] = await tx`update extension_authorizations set consumed_at=clock_timestamp()
             where id=${attemptId} and installation_id=${id} and owner_id=${caller.actor.id}
-              and verifier_ref is null and consumed_at is null`;
+              and verifier_ref is null and consumed_at is null returning id`;
+          return !!row;
         });
+        if (rejected) {
+          try {
+            await deleteNangoGmailConnection(
+              { ...config, connectionId },
+              AbortSignal.timeout(20000),
+            );
+          } catch (cleanupError) {
+            if (!(cleanupError instanceof GmailProviderError)) throw cleanupError;
+            // The persisted cleanup will retry, even if the member leaves this screen.
+          }
+        }
       }
       throw gmailError(error);
     }
@@ -504,6 +515,14 @@ export class MemberConnections {
             and consumed_at is null and expires_at>clock_timestamp() returning created_at,connection_id,settings`
         : [];
       if (method.authorizationId && !request) throw expired();
+      if (method.gmail) {
+        const connectionId = nangoId.parse(input.settings.nangoConnectionId);
+        const [cleanup] = await tx`update gmail_authorization_cleanups
+          set bound_connection_id=${connectionId}
+          where attempt_id=${method.authorizationId ?? null} and fence=0 and bound_connection_id is null
+          returning attempt_id`;
+        if (!cleanup) throw expired();
+      }
       const manifest = this.catalog.get(i.registration_id, i.version).manifest;
       if (manifest.connection !== 'member')
         throw new AppError(

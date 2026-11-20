@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
 export const gmailRegistrationId = '4c60fc8e-45f9-49c8-919e-5c05c947a9aa';
@@ -77,10 +78,12 @@ export type NangoGmailConfig = { apiKey: string; integrationId: string };
 export type NangoGmailConnection = NangoGmailConfig & { connectionId: string };
 export type ConnectAttempt = { workspaceId: string; memberId: string; attemptId: string };
 
-function attemptTags(attempt: ConnectAttempt) {
+export function nangoGmailAttemptTags(attempt: ConnectAttempt) {
   const tags = {
     organization_id: attempt.workspaceId,
-    end_user_id: attempt.memberId,
+    end_user_id: createHash('sha256')
+      .update(JSON.stringify([attempt.workspaceId, attempt.memberId]))
+      .digest('hex'),
     retainer_attempt_id: attempt.attemptId,
   };
   if (!Object.values(tags).every((value) => nangoId.safeParse(value).success))
@@ -183,7 +186,7 @@ export async function createNangoGmailConnectSession(
       integrations_config_defaults: {
         [config.integrationId]: { connection_config: { oauth_scopes_override: readOnlyScope } },
       },
-      tags: attemptTags(attempt),
+      tags: nangoGmailAttemptTags(attempt),
     },
   );
   if (!response.ok) await nangoFailure(response, timeout);
@@ -201,7 +204,7 @@ export async function verifyNangoGmailGrant(
   transport: typeof fetch = fetch,
 ) {
   assertConnectionConfig(connection);
-  const expectedTags = connection.attempt && attemptTags(connection.attempt);
+  const expectedTags = connection.attempt && nangoGmailAttemptTags(connection.attempt);
   const url = new URL(`/connections/${connection.connectionId}`, nangoOrigin);
   url.searchParams.set('provider_config_key', connection.integrationId);
   const timeout = AbortSignal.any([signal, AbortSignal.timeout(20000)]);
@@ -226,14 +229,24 @@ export async function verifyNangoGmailGrant(
     throw new GmailProviderError('provider_scope_excessive');
 }
 
-/** Only consider connections created by this pending attempt. Verify their grant separately. */
-export async function findNangoGmailConnection(
+const connectionsPage = z.object({
+  connections: z.array(
+    z.object({
+      connection_id: nangoId,
+      provider_config_key: nangoId,
+      provider: z.string(),
+      tags: z.record(z.string(), z.string()).nullable().optional(),
+    }),
+  ),
+});
+
+/** Return only connections with the exact integration and attempt tags. */
+export async function listNangoGmailAttemptConnections(
   config: NangoGmailConfig,
-  attempt: ConnectAttempt,
+  tags: ReturnType<typeof nangoGmailAttemptTags>,
   signal: AbortSignal,
   transport: typeof fetch = fetch,
 ) {
-  const tags = attemptTags(attempt);
   const url = new URL('/connections', nangoOrigin);
   url.searchParams.set('limit', '3');
   for (const [name, value] of Object.entries(tags)) url.searchParams.set(`tags[${name}]`, value);
@@ -245,25 +258,32 @@ export async function findNangoGmailConnection(
     transport,
   );
   if (!response.ok) await nangoFailure(response, timeout);
-  const list = z.object({
-    connections: z.array(
-      z.object({
-        connection_id: nangoId,
-        provider_config_key: nangoId,
-        provider: z.string(),
-        tags: z.record(z.string(), z.string()).nullable().optional(),
-      }),
-    ),
-  });
-  const result = await readResponse(response, list, timeout, 128 * 1024);
-  const matches = result.connections.filter(
-    (row) =>
-      row.provider === 'google-mail' &&
-      row.provider_config_key === config.integrationId &&
-      Object.entries(tags).every(([name, value]) => row.tags?.[name] === value),
+  const result = await readResponse(response, connectionsPage, timeout, 128 * 1024);
+  return result.connections
+    .filter(
+      (row) =>
+        row.provider === 'google-mail' &&
+        row.provider_config_key === config.integrationId &&
+        Object.entries(tags).every(([name, value]) => row.tags?.[name] === value),
+    )
+    .map((row) => row.connection_id);
+}
+
+/** Only consider connections created by this pending attempt. Verify their grant separately. */
+export async function findNangoGmailConnection(
+  config: NangoGmailConfig,
+  attempt: ConnectAttempt,
+  signal: AbortSignal,
+  transport: typeof fetch = fetch,
+) {
+  const matches = await listNangoGmailAttemptConnections(
+    config,
+    nangoGmailAttemptTags(attempt),
+    signal,
+    transport,
   );
   if (matches.length > 1) throw new GmailProviderError('provider_identity_mismatch');
-  return matches[0]?.connection_id ?? null;
+  return matches[0] ?? null;
 }
 
 /** Delete this dedicated connection. A prior successful deletion can be retried. */

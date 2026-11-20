@@ -1776,6 +1776,37 @@ export const extensionAuthorizations = pgTable(
   ],
 ).enableRLS();
 
+/** An OAuth session may outlive its member, installation or workspace. Keep only its exact
+ * Nango lookup tags and claimed connection ID until cleanup has confirmed completion. */
+export const gmailAuthorizationCleanups = pgTable(
+  'gmail_authorization_cleanups',
+  {
+    attemptId: uuid('attempt_id').primaryKey(),
+    workspaceId: uuid('workspace_id').notNull(),
+    memberTag: text('member_tag').notNull(),
+    integrationId: text('integration_id').notNull(),
+    boundConnectionId: text('bound_connection_id'),
+    nextAttemptAt: timestamptz('next_attempt_at').notNull(),
+    finalCheckAt: timestamptz('final_check_at').notNull(),
+    fence: integer('fence').notNull().default(0),
+  },
+  (t) => [
+    index('gmail_authorization_cleanups_due_idx').on(t.nextAttemptAt, t.attemptId),
+    pgPolicy('gmail_authorization_cleanups_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+      withCheck: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
+    }),
+    pgPolicy('gmail_authorization_cleanups_executor', {
+      for: 'all',
+      to: 'retainer_executor',
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
+).enableRLS();
+
 export const extensionJobs = pgTable(
   'extension_jobs',
   {

@@ -86,6 +86,7 @@ services:
     environment:
       DATABASE_URL: postgres://retainer:retainer@postgres:5432/retainer
       RETAINER_ROLE: worker
+      RETAINER_GMAIL_NANGO_CLEANUP_KEY: "${RETAINER_GMAIL_NANGO_CLEANUP_KEY:-${NANGO_API_KEY:-}}"
       RETAINER_PUBLIC_ORIGIN: "${RETAINER_PUBLIC_ORIGIN:-}"
       RETAINER_EXTENSION_API_ORIGIN: http://retainer:8787
       RETAINER_EXTENSION_ISSUER: "${RETAINER_EXTENSION_ISSUER:-}"

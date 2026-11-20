@@ -1,9 +1,10 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Invocation } from '@retainer/extension';
 import { executeGmail } from '@retainer/runner/gmail';
 import { GMAIL, gmailManifest } from '@retainer/runner/gmail-contract';
 import { generateKeyPair } from 'jose';
 import { afterEach, expect, it, vi } from 'vitest';
+import { cleanGmailAuthorizations } from '../../src/extension-runtime/gmail-cleanup.js';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
@@ -12,7 +13,16 @@ import { useTestDatabase } from '../helpers/db.js';
 
 const db = useTestDatabase();
 const origin = 'https://retainer.test';
+const memberId = `member | ${'a'.repeat(256)}`;
 const gmailReadonly = 'https://www.googleapis.com/auth/gmail.readonly';
+
+function gate() {
+  let resolve = () => {};
+  const promise = new Promise<void>((ready) => {
+    resolve = ready;
+  });
+  return { promise, resolve };
+}
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -46,7 +56,7 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
     { name: 'Gmail' },
     {
       admin: { actor: { type: 'user', id: 'admin' }, scopes: ['admin'] },
-      member: { actor: { type: 'user', id: 'member' }, scopes: ['read', 'write'] },
+      member: { actor: { type: 'user', id: memberId }, scopes: ['read', 'write'] },
       other: { actor: { type: 'user', id: 'other' }, scopes: ['read', 'write'] },
     },
   );
@@ -129,7 +139,10 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
   let profileReads = 0;
   const deleted: string[] = [];
   let nangoConnectionId = 'rejected-test';
-  let failCleanup = true;
+  let failedDeletes = 2;
+  const grants = new Map<string, { tags: Record<string, string>; scope: string }>();
+  const readingGrant = gate();
+  const finishReadingGrant = gate();
   const fullReads: string[] = [];
   const messageDate = Date.now() - 3_600_000;
   const from = {
@@ -139,6 +152,7 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
   } as const;
   vi.stubEnv('RETAINER_GMAIL_NANGO_CONTROL_KEY', 'control-test');
   vi.stubEnv('RETAINER_GMAIL_NANGO_PROXY_KEY', 'proxy-test');
+  vi.stubEnv('RETAINER_GMAIL_NANGO_CLEANUP_KEY', 'cleanup-test');
   vi.stubGlobal('fetch', async (input: URL, init: RequestInit) => {
     const url = new URL(input);
     expect(url.origin).toBe('https://api.nango.dev');
@@ -152,6 +166,7 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
         request.integrations_config_defaults['google-mail'].connection_config.oauth_scopes_override,
       ).toBe(gmailReadonly);
       tags = request.tags;
+      grants.set(nangoConnectionId, { tags, scope });
       return Response.json({
         data: {
           connect_link: 'https://connect.nango.dev/test',
@@ -159,25 +174,51 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
         },
       });
     }
-    const connection = {
-      connection_id: nangoConnectionId,
+    const nangoRow = (id: string, grant: { tags: Record<string, string> }) => ({
+      connection_id: id,
       provider: 'google-mail',
       provider_config_key: 'google-mail',
-      tags,
-    };
-    if (pathname === '/connections') return Response.json({ connections: [connection] });
-    if (pathname === `/connections/${nangoConnectionId}`) {
-      expect(headers.get('authorization')).toBe('Bearer control-test');
+      tags: grant.tags,
+    });
+    if (pathname === '/connections') {
+      expect(['Bearer control-test', 'Bearer cleanup-test']).toContain(
+        headers.get('authorization'),
+      );
+      const matches = [...grants].filter(([, grant]) =>
+        Object.entries(grant.tags).every(
+          ([key, value]) => searchParams.get(`tags[${key}]`) === value,
+        ),
+      );
+      return Response.json({
+        connections: matches.slice(0, 3).map(([id, grant]) => nangoRow(id, grant)),
+      });
+    }
+    if (pathname.startsWith('/connections/')) {
+      const connectionId = pathname.slice('/connections/'.length);
       expect(searchParams.get('provider_config_key')).toBe('google-mail');
+      const grant = grants.get(connectionId);
+      if (!grant) return Response.json({ error: { code: 'not_found' } }, { status: 404 });
       if (init.method === 'DELETE') {
-        if (failCleanup) {
-          failCleanup = false;
+        expect(['Bearer control-test', 'Bearer cleanup-test']).toContain(
+          headers.get('authorization'),
+        );
+        if (failedDeletes > 0) {
+          failedDeletes--;
           return Response.json({ error: { code: 'unavailable' } }, { status: 503 });
         }
-        deleted.push(nangoConnectionId);
+        deleted.push(connectionId);
+        grants.delete(connectionId);
         return Response.json({ success: true });
       }
-      return Response.json({ ...connection, credentials: { type: 'OAUTH2', raw: { scope } } });
+      expect(headers.get('authorization')).toBe('Bearer control-test');
+      if (connectionId === 'racing-test') {
+        readingGrant.resolve();
+        await finishReadingGrant.promise;
+      }
+      return Response.json({
+        ...nangoRow(connectionId, grant),
+        credentials: { type: 'OAUTH2', raw: { scope: grant.scope } },
+      });
     }
     expect(headers.get('authorization')).toBe('Bearer proxy-test');
     expect(headers.get('connection-id')).toBe('dedicated-test');
@@ -248,29 +289,88 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
   expect(attempt.status, JSON.stringify(attempt.body)).toBe(201);
   expect(tags).toEqual({
     organization_id: workspace.id,
-    end_user_id: 'member',
+    end_user_id: createHash('sha256')
+      .update(JSON.stringify([workspace.id, memberId]))
+      .digest('hex'),
     retainer_attempt_id: attempt.body.attemptId,
   });
+  const cleanupSql = db.connect({ role: 'retainer_executor' });
+  const makeDue = async (attemptId: string, final = false) => {
+    await db.owner`update gmail_authorization_cleanups set next_attempt_at=clock_timestamp(),
+      final_check_at=case when ${final} then clock_timestamp() else final_check_at end
+      where attempt_id=${attemptId}`;
+  };
+  const start = async (id: string) => {
+    nangoConnectionId = id;
+    const response = await t.request(authorize, {
+      key: keys.member,
+      body: { shareGmail: true, historyDays: 2 },
+    });
+    expect(response.status).toBe(201);
+    return { attemptId: response.body.attemptId as string };
+  };
   const rejected = { attemptId: attempt.body.attemptId };
   expect((await t.request(complete, { key: keys.other, body: rejected })).status).toBe(409);
-  expect((await t.request(complete, { key: keys.member, body: rejected })).status).toBe(503);
-  expect(deleted).toEqual([]);
   expect((await t.request(complete, { key: keys.member, body: rejected })).body.error.code).toBe(
     'gmail_scope_invalid',
   );
+  expect(deleted).toEqual([]);
+  await makeDue(rejected.attemptId);
+  await Promise.all([cleanGmailAuthorizations(cleanupSql), cleanGmailAuthorizations(cleanupSql)]);
+  expect(deleted).toEqual([]);
+  await cleanGmailAuthorizations(cleanupSql);
+  expect(deleted).toEqual([]);
+  await makeDue(rejected.attemptId);
+  await cleanGmailAuthorizations(cleanupSql);
   expect(deleted).toEqual(['rejected-test']);
   expect((await t.request(complete, { key: keys.member, body: rejected })).status).toBe(409);
 
   scope = gmailReadonly;
-  nangoConnectionId = 'dedicated-test';
-  const accepted = await t.request(authorize, {
-    key: keys.member,
-    body: { shareGmail: true, historyDays: 2 },
-  });
-  const body = { attemptId: accepted.body.attemptId };
+  const abandoned = await start('abandoned-test');
+  const abandonedTags = tags;
+  const racing = await start('racing-test');
+  expect((await t.request(complete, { key: keys.member, body: abandoned })).status).toBe(409);
+  await makeDue(abandoned.attemptId);
+  await cleanGmailAuthorizations(cleanupSql);
+  expect(deleted).toContain('abandoned-test');
+  // A Google callback can materialize a grant after the first cleanup pass.
+  grants.set('late-test', { tags: abandonedTags, scope });
+  await makeDue(abandoned.attemptId, true);
+  await cleanGmailAuthorizations(cleanupSql);
+  expect(deleted).toContain('late-test');
+  expect(
+    await db.owner`select 1 from gmail_authorization_cleanups
+    where attempt_id=${abandoned.attemptId}`,
+  ).toHaveLength(0);
+
+  const racingCompletion = t.request(complete, { key: keys.member, body: racing });
+  try {
+    await readingGrant.promise;
+    await makeDue(racing.attemptId);
+    await cleanGmailAuthorizations(cleanupSql);
+  } finally {
+    finishReadingGrant.resolve();
+  }
+  expect((await racingCompletion).status).toBe(409);
+  expect(deleted).toContain('racing-test');
+
+  const expired = await start('expired-test');
+  await db.owner`update extension_authorizations set expires_at=clock_timestamp()-interval '1 second'
+    where id=${expired.attemptId}`;
+  expect((await t.request(complete, { key: keys.member, body: expired })).status).toBe(409);
+  await makeDue(expired.attemptId);
+  await cleanGmailAuthorizations(cleanupSql);
+  expect(deleted).toContain('expired-test');
+
+  const body = await start('dedicated-test');
   const connection = await t.request(complete, { key: keys.member, body });
   expect(connection.status, JSON.stringify(connection.body)).toBe(200);
   expect((await t.request(complete, { key: keys.member, body })).status).toBe(409);
+  grants.set('unused-copy-test', { tags, scope });
+  await makeDue(body.attemptId, true);
+  await cleanGmailAuthorizations(cleanupSql);
+  expect(deleted).toContain('unused-copy-test');
+  expect(deleted).not.toContain('dedicated-test');
   await runWorker('connect');
 
   const schedule = async () => {
@@ -323,7 +423,7 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
   });
   expect(disconnected.status).toBe(200);
   await runWorker('disconnect');
-  expect(deleted).toEqual(['rejected-test', 'dedicated-test']);
+  expect(deleted.at(-1)).toBe('dedicated-test');
   expect(
     (await t.request(`/v1/events/${evidence?.id}/gmail-messages`, { key: keys.member })).body
       .messages,
