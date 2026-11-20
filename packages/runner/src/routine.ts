@@ -371,6 +371,10 @@ export async function runSandboxed(
     ],
     { cwd: dir, env: {}, stdio: ['pipe', 'pipe', 'pipe'] },
   );
+  // A process that died, or was killed, before the runner saw it exit makes
+  // the next write fail with EPIPE. Its 'close' already ends the run, so a
+  // lost answer needs nothing more; unheard, the error would crash the runner.
+  child.stdin.on('error', () => {});
   const reply = (message: unknown) => {
     if (!child.stdin.destroyed) child.stdin.write(`${JSON.stringify(message)}\n`);
   };
