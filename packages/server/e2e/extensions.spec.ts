@@ -13,7 +13,9 @@ test('reviews and approves an installation, changes settings, inspects runs and 
   await expect(page.getByLabel('Generated signing secret')).toHaveCount(0);
   await page.getByLabel('Enabled (required)').check();
   await page.getByRole('button', { name: 'Review installation' }).click();
-  await expect(page.getByText(/It can read workspace CRM data/)).toBeVisible();
+  const access = page.getByRole('region', { name: 'Access' });
+  await expect(access.getByText('CRM data', { exact: true })).toBeVisible();
+  await expect(access.getByText('Read', { exact: true })).toBeVisible();
   await expect(page.getByText(/Runtime activation is unavailable/)).toBeVisible();
   expect((await r.request('/extensions', undefined, r.keys.user)).installations).toHaveLength(0);
   await page.getByRole('button', { name: 'Approve installation' }).click();
@@ -39,7 +41,7 @@ test('reviews and approves an installation, changes settings, inspects runs and 
   await expect(page).toHaveURL(/\/extensions$/);
   await page.getByRole('link', { name: 'Set up browser-fixture', exact: true }).click();
   await page.getByRole('button', { name: 'Review installation' }).click();
-  await expect(page.getByText('No schema changes.')).toBeVisible();
+  await expect(page.getByText('No fields, record types or saved views change.')).toBeVisible();
   await page.getByRole('button', { name: 'Approve installation' }).click();
   await expect(page).toHaveURL(new RegExp(`/extensions/${installed.id}$`));
   const schema = await r.request('/schema');

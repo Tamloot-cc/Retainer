@@ -34,14 +34,22 @@ test('imports an agent draft, edits it, approves the reviewed mapping and remaps
   await dialog.getByRole('button', { name: /^Headquarters destination/ }).click();
   await page.getByRole('option', { name: 'Address' }).click();
   await dialog.getByRole('button', { name: 'Review installation' }).click();
-  const bindings = dialog.getByRole('list', { name: 'Field mapping' });
-  await expect(bindings.getByText('Employee count → Employee Count')).toBeVisible();
-  await expect(bindings.getByText('New field')).toBeVisible();
+  const mappingRows = dialog
+    .getByRole('list', { name: 'Extension outputs and workspace fields' })
+    .getByRole('listitem');
+  const employees = mappingRows.filter({ hasText: 'Extension output: Employee count' });
+  const headquarters = mappingRows.filter({ hasText: 'Extension output: Headquarters' });
+  await expect(employees).toBeVisible();
+  await expect(employees).toContainText('Workspace field: Employee Count');
+  await expect(employees.getByText('New field')).toBeVisible();
   // The new field shows once, on its mapping line, not again as a raw schema operation.
   await expect(dialog.getByText('Unknown change')).toHaveCount(0);
   await expect(dialog.getByText(/^Add field /)).toHaveCount(0);
-  await expect(bindings.getByText('Headquarters → Address')).toBeVisible();
-  await expect(dialog.getByText(/made by an agent/)).toBeVisible();
+  await expect(headquarters).toBeVisible();
+  await expect(headquarters).toContainText('Workspace field: Address');
+  const access = dialog.getByRole('region', { name: 'Access' });
+  await expect(access.getByText('Writes recorded as', { exact: true })).toBeVisible();
+  await expect(access.getByText('Agent', { exact: true })).toBeVisible();
   expect((await r.request('/extensions', undefined, r.keys.user)).installations).toHaveLength(0);
   await dialog.getByRole('button', { name: 'Approve installation' }).click();
   await expect(page).toHaveURL(/\/extensions\/[0-9a-f-]{36}$/);
@@ -54,7 +62,8 @@ test('imports an agent draft, edits it, approves the reviewed mapping and remaps
   ]);
   await page.getByRole('button', { name: 'Field mapping', exact: true }).click();
   const summary = page.getByRole('region', { name: 'Approved field mapping' });
-  await expect(summary.getByText('Headquarters → Address')).toBeVisible();
+  await expect(summary).toBeVisible();
+  await expect(headquarters).toContainText('Workspace field: Address');
 
   // A later remap goes through its own review and keeps the installation's settings.
   await summary.getByRole('link', { name: 'Edit mapping' }).click();
@@ -67,14 +76,15 @@ test('imports an agent draft, edits it, approves the reviewed mapping and remaps
   await dialog.getByRole('button', { name: /^Headquarters destination/ }).click();
   await page.getByRole('option', { name: 'Skip' }).click();
   await dialog.getByRole('button', { name: 'Review mapping' }).click();
-  await expect(dialog.getByText('Headquarters → skipped')).toBeVisible();
+  await expect(headquarters.getByText('Skipped', { exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'Approve mapping' }).click();
   await expect(page).toHaveURL(new RegExp(`/extensions/${installed.id}$`));
   detail = await r.request(`/extensions/${installed.id}`, undefined, r.keys.user);
   expect(detail.mapping.revision).toBe(1);
   expect(detail.generation).toBe(installed.generation + 1);
   await page.getByRole('button', { name: 'Field mapping', exact: true }).click();
-  await expect(summary.getByText('Headquarters → skipped')).toBeVisible();
+  await expect(summary).toBeVisible();
+  await expect(headquarters.getByText('Skipped', { exact: true })).toBeVisible();
 });
 
 test('an agent can preview a mapping draft but cannot approve it', async ({ retainer: r }) => {
