@@ -384,6 +384,60 @@ describe('extension pages and human approval', () => {
     await vi.waitFor(() => expect(upgrade).toHaveBeenCalledTimes(1));
   });
 
+  it('upgrades a disabled extension that has suggestions through the full review', async () => {
+    const configure: Release['manifest']['functions'][number] = {
+      universalId: '5e0c5a6f-1b2d-4c3e-8f4a-5b6c7d8e9f02',
+      name: 'configure',
+      description: 'Suggests settings',
+      handlerDigest: 'c'.repeat(64),
+      trigger: { kind: 'configure' },
+      inputSchema: { type: 'object', additionalProperties: false },
+      timeoutSeconds: 120,
+    };
+    const upgraded: Release = {
+      ...release,
+      manifest: {
+        ...release.manifest,
+        version: '1.1.0',
+        functions: [configure],
+        settings: {
+          enabled: {
+            type: 'boolean',
+            label: 'Enabled',
+            required: true,
+            secret: false,
+            reconnect: false,
+          },
+        },
+      },
+    };
+    const disabled: typeof installation = {
+      ...installation,
+      state: 'disabled',
+      lastError: 'handler_failed',
+    };
+    const suggestions = vi.spyOn(api, 'extensionSuggestions');
+    const plan = vi.spyOn(api, 'previewExtension').mockResolvedValue(preview);
+    const upgrade = vi
+      .spyOn(api, 'upgradeExtension')
+      .mockResolvedValue({ ...disabled, version: '1.1.0' });
+    mount(
+      <ExtensionSetup
+        release={upgraded}
+        installation={disabled}
+        mode="upgrade"
+        onCancel={() => {}}
+        onDone={() => {}}
+      />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Review upgrade' }));
+    await userEvent.click(await screen.findByRole('button', { name: /upgrade$/i }));
+    await vi.waitFor(() => expect(upgrade).toHaveBeenCalledTimes(1));
+    expect(suggestions).not.toHaveBeenCalled();
+    expect(plan.mock.calls[0]?.[0]).toMatchObject({ installationId: disabled.id });
+    expect(plan.mock.calls[0]?.[0]).not.toHaveProperty('accessOnly');
+  });
+
   it('treats an upgrade that adds model use as more access, and shows model use on the approval', async () => {
     const pick = {
       universalId: '5e0c5a6f-1b2d-4c3e-8f4a-5b6c7d8e9f01',

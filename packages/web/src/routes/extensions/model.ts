@@ -131,6 +131,11 @@ export const initialSettings = (
 });
 
 /** Whether a workspace-level reconnect can change anything for this release. */
+/** Whether the release can suggest settings and a mapping for this installation now. */
+export const canSuggest = (release: Release, installation: Installation | undefined) =>
+  installation?.state === 'active' &&
+  release.manifest.functions.some((fn) => fn.trigger.kind === 'configure');
+
 export const canReconnect = (release: Release, installation: Installation) =>
   release.manifest.connection === 'workspace' &&
   installation.state !== 'configuring' &&

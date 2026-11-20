@@ -289,7 +289,30 @@ async function setup(options: { modelKey?: boolean; legacy?: boolean } = {}) {
   const fields = async (record: string) =>
     (await app.request(`/v1/records/${record}`, { key: keys.admin })).body.fields;
   const detail = async () => (await app.request(`/v1/extensions/${id}`, { key: keys.admin })).body;
+  /** The current release's input for upgrading this installation. */
+  const upgradeInput = {
+    registrationId: ENRICHMENT.registration,
+    version: current.version,
+    installationId: id,
+    settings: { shareDomains: true },
+  };
+  /** Previews and approves the upgrade to the current release, as an admin reviewing it. */
+  async function upgrade() {
+    const preview = await app.request('/v1/extensions/preview', {
+      key: keys.admin,
+      body: upgradeInput,
+    });
+    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+    const upgraded = await app.request(`/v1/extensions/${id}/upgrade`, {
+      key: keys.admin,
+      body: { ...upgradeInput, planDigest: preview.body.planDigest },
+      headers: { 'Idempotency-Key': randomUUID() },
+    });
+    expect(upgraded.status, JSON.stringify(upgraded.body)).toBe(200);
+  }
   return {
+    upgradeInput,
+    upgrade,
     app,
     keys,
     id,
@@ -358,23 +381,7 @@ describe('company enrichment through a fake Exa', () => {
     await h.drain();
     const previous = await h.detail();
     expect(previous).toMatchObject({ state: 'active', secrets: { apiKey: true } });
-    const input = {
-      registrationId: ENRICHMENT.registration,
-      version: h.currentVersion,
-      installationId: h.id,
-      settings: { shareDomains: true },
-    };
-    const preview = await h.app.request('/v1/extensions/preview', {
-      key: h.keys.admin,
-      body: input,
-    });
-    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
-    const upgraded = await h.app.request(`/v1/extensions/${h.id}/upgrade`, {
-      key: h.keys.admin,
-      body: { ...input, planDigest: preview.body.planDigest },
-      headers: { 'Idempotency-Key': randomUUID() },
-    });
-    expect(upgraded.status, JSON.stringify(upgraded.body)).toBe(200);
+    await h.upgrade();
     await h.drain();
     expect(await h.detail()).toMatchObject({
       state: 'active',
@@ -386,6 +393,36 @@ describe('company enrichment through a fake Exa', () => {
     const company = await h.company({ name: 'Acme', domain: 'acme.example' });
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
     expect(h.exa.requests.at(-1)).toMatchObject({ key: 'exa-fixture-key' });
+    expect((await h.fields(company)).employeeCount).toBe(12);
+  });
+
+  it('upgrades a workspace-key installation that a failed setup left disabled', async () => {
+    const h = await setup({ legacy: true });
+    await h.drain();
+    const previous = await h.detail();
+    // A setup run at the installed release failed, as on the hosted service.
+    await db.owner`update extension_installations set state='disabled', setup_kind='upgrade',
+      last_error='handler_failed' where id=${h.id}`;
+    // Suggestions need an active installation, and the refusal says so.
+    const access = await h.app.request('/v1/extensions/preview', {
+      key: h.keys.admin,
+      body: { ...h.upgradeInput, accessOnly: true },
+    });
+    expect(access.status).toBe(409);
+    expect(access.body.error.code).toBe('installation_disabled');
+    // The full review upgrades it, keeps its mapping and turns it back on.
+    await h.upgrade();
+    const runs = await h.drain();
+    expect(runs.length).toBeGreaterThan(0);
+    expect(runs.every((run) => run.status === 'succeeded')).toBe(true);
+    expect(await h.detail()).toMatchObject({
+      state: 'active',
+      version: h.currentVersion,
+      lastError: null,
+      mapping: { outputs: previous.mapping.outputs },
+    });
+    const company = await h.company({ name: 'Acme', domain: 'acme.example' });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
     expect((await h.fields(company)).employeeCount).toBe(12);
   });
 

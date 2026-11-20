@@ -31,6 +31,7 @@ import { MappingBindings } from './mapping.js';
 import {
   accessText,
   canReconnect,
+  canSuggest,
   detailKey,
   errorText,
   hasInstallationSettings,
@@ -520,8 +521,7 @@ function MappingSummary({
       ) : null}
       {admin ? (
         <Row>
-          {installation.state === 'active' &&
-          release.manifest.functions.some((fn) => fn.trigger.kind === 'configure') ? (
+          {canSuggest(release, installation) ? (
             <Button disabled={suggest.isPending} onClick={() => suggest.mutate()}>
               Suggest mapping
             </Button>
