@@ -525,6 +525,70 @@ describe('routines', () => {
     ]);
   });
 
+  it('a filter field made non-filterable pauses the routine, in the `if` and in a schedule', async () => {
+    const s = await setup();
+    const tierFilter = { [s.key('tier')]: { eq: 'gold' } };
+    const code = `export async function main({ record }: RoutineContext<'company'>) {
+  return record.id;
+}
+`;
+    const manual = await activate(s, {
+      manifest: {
+        when: { kind: 'manual', object: 'company', label: 'Go' },
+        if: tierFilter,
+        uses: { tools: [], model: false },
+      },
+      code,
+    });
+    const scheduled = await activate(s, {
+      manifest: {
+        when: { kind: 'schedule', cron: '0 9 * * 1', object: 'company', filter: tierFilter },
+        uses: { tools: [], model: false },
+      },
+      code,
+    });
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Unfilterable');
+    const changed = await s.app.request('/v1/schema/changes', {
+      key: s.keys.admin,
+      body: {
+        operations: [{ op: 'update_field', object: 'company', field: 'tier', isFilterable: false }],
+        reason: 'not filterable',
+      },
+    });
+    expect(changed.status).toBe(200);
+    const pressed = await s.app.request(`/v1/routines/${manual.routineId}/run`, {
+      key: s.keys.admin,
+      body: { recordIds: [acme] },
+    });
+    expect(await s.executor.claim(s.workspace, pressed.body.runs[0])).toBe(null);
+    await db.owner`update routines set next_fire_at=now()-interval '1 minute' where id=${scheduled.routineId}`;
+    expect((await s.maintenance.maintain()).failed).toBe(0);
+    const [run] = await db.owner<{ status: string; code: string }[]>`
+      select status,code from routine_runs where id=${pressed.body.runs[0]}`;
+    expect(run).toEqual({ status: 'failed', code: 'check_failed' });
+    const routines = await db.owner<{ status: string; paused_reason: string }[]>`
+      select status,paused_reason from routines where id=any(${[manual.routineId, scheduled.routineId]}::uuid[])`;
+    expect(routines).toEqual([
+      { status: 'needs_attention', paused_reason: 'check_failed' },
+      { status: 'needs_attention', paused_reason: 'check_failed' },
+    ]);
+  });
+
+  it('a preview counts every recent matching change, past the sample it reads', async () => {
+    const s = await setup();
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Busy');
+    // 5,100 matching changes: more than the preview ever read, and than its sample.
+    await db.owner`insert into record_changes(workspace_id,position,record_id,object_type_id,operation,field_keys,cause,cause_depth,created_at)
+      select c.workspace_id,c.position+1000000+g,c.record_id,c.object_type_id,'create',c.field_keys,c.cause,c.cause_depth,c.created_at
+      from record_changes c, generate_series(1,5100) g where c.record_id=${acme} and c.operation='create'`;
+    const res = await s.app.request('/v1/routines/preview', {
+      key: s.keys.agent,
+      body: TIER_ROUTINE(s.key('tier'), s.key('name')),
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.matched).toBeGreaterThan(5100);
+  });
+
   it('removing a field the code uses pauses the routine before it acts', async () => {
     const s = await setup();
     const { routineId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));

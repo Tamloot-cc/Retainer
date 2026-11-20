@@ -60,6 +60,20 @@ export function mapFilter(
   return out;
 }
 
+/**
+ * Whether a stored filter still runs against the schema as it is now: it
+ * maps and compiles exactly as the query will, so a field that is gone, no
+ * longer filterable or of another type all count (§5.3).
+ */
+export function filterResolves(tx: Tx, object: CompiledObject, filter: RoutineFilter): boolean {
+  try {
+    compileFilter(tx, object, mapFilter(object, filter, 'name'));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export type CheckedManifest = { manifest: RoutineManifest; problems: RoutineProblem[] };
 
 /**

@@ -1359,7 +1359,11 @@ they left open:
   answers 409 (`model_unavailable`, `tool_unavailable`), so those are.
 - **A tool call's payloads are routine content.** `forget` redacts the input
   and output of every routine tool job in the workspace and cancels the
-  unfinished ones; retention clears them 7 days after the run ends.
+  unfinished ones; retention clears them 7 days after the run ends, and
+  cancels one the run left unfinished.
+- **A preview counts every match.** The cost estimate counts all matching
+  changes of the window in SQL; only the sample records come from a bounded
+  read.
 - **Clock changes.** A scheduled wall time that a spring-forward change
   skips runs an hour later (02:30 at 03:30); one that a fall-back change
   repeats runs the first time, in every zone.
@@ -1397,9 +1401,12 @@ they left open:
   does. A change refuses the call (`tool_changed`) and pauses the routine.
 - **An `if` on a removed field** fails the run as `check_failed` and pauses
   the routine, as code that no longer type-checks does.
-- **A schedule or trigger whose object or filter field is removed** pauses
-  the routine as `check_failed` at its next tick or change, instead of
-  failing each tick or skipping every change in silence.
+- **A stored filter that no longer runs** pauses the routine as
+  `check_failed`: an `if` at the run's start, a schedule's filter at its
+  tick, and a record trigger whose object is gone at its next change. One
+  check compiles the filter exactly as the query will, so a removed field,
+  one made non-filterable and a removed object all count, instead of
+  failing each pass or skipping every change in silence.
 - **Names the SDK uses.** An object named `files`, `events`, `tools`, `ai`
   or `remember` would collide with `retainer.<service>`, so routines do not
   list it and refuse it as a trigger (`reserved_object`). No tool may be

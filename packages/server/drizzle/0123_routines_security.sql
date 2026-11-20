@@ -54,7 +54,7 @@ RETURNS TABLE(workspace_id uuid) LANGUAGE sql STABLE SECURITY DEFINER SET search
     AND (r.finished_at<now()-interval '30 days' OR r.output IS NOT NULL
       OR EXISTS(SELECT 1 FROM public.routine_run_results x WHERE x.run_id=r.id AND x.result IS NOT NULL)
       OR EXISTS(SELECT 1 FROM public.extension_jobs j WHERE j.caller_run_id=r.id
-        AND j.status IN ('succeeded','failed','cancelled') AND (j.input<>'{}'::jsonb OR j.output IS NOT NULL)))
+        AND (j.input<>'{}'::jsonb OR j.output IS NOT NULL OR j.status IN ('queued','running'))))
   LIMIT least(greatest(batch_limit,1),1000)
 $$;
 --> statement-breakpoint

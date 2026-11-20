@@ -15,7 +15,7 @@ import { matchingRecords } from '../records/query.js';
 import { resolveRecordId } from '../records/write.js';
 import { stillAdmin } from '../routine-runtime/admission.js';
 import type { RoutineConfig } from '../routines/capabilities.js';
-import { mapFilter, objectFor } from '../routines/manifest.js';
+import { filterResolves, mapFilter, objectFor } from '../routines/manifest.js';
 import { dispatchRoutines, fireSchedule } from '../routines/matcher.js';
 import { RUN_GRACE_SECONDS as GRACE_SECONDS, pauseRoutine, usedUp } from '../routines/runs.js';
 import { getSchema } from '../schema/compiled.js';
@@ -231,17 +231,15 @@ export class RoutineExecutor {
           await this.end(tx, id, 'skipped', 'record_used_up');
           return null;
         }
-        let filter: ReturnType<typeof mapFilter> | undefined;
-        try {
-          filter = run.manifest.if ? mapFilter(object, run.manifest.if, 'name') : undefined;
-        } catch {
-          // The `if` names a field that is gone: the version no longer fits the
-          // workspace, as when its code no longer type-checks (§5.3).
+        // An `if` that no longer runs against the schema means the version no
+        // longer fits the workspace, as when its code no longer type-checks (§5.3).
+        if (run.manifest.if && !filterResolves(tx, object, run.manifest.if)) {
           await this.end(tx, id, 'failed', 'check_failed');
           if (run.mode === 'run' && run.routine_id)
             await pauseRoutine(tx, run.routine_id, 'needs_attention', 'check_failed');
           return null;
         }
+        const filter = run.manifest.if ? mapFilter(object, run.manifest.if, 'name') : undefined;
         const [hit] = await tx<{ data: Record<string, unknown> }[]>`
           select r.data from records r where r.id=${recordId}
             and ${matchingRecords(tx, workspace, schema, object, filter ? { filter } : {}, 'source')}`;
@@ -458,10 +456,14 @@ export class RoutineMaintenance {
           and output is not null`;
         await tx`update routine_run_results x set result=null from routine_runs r
           where r.id=x.run_id and r.finished_at<clock_timestamp()-interval '7 days' and x.result is not null`;
-        // A tool call's input and output are stored results too.
-        await tx`update extension_jobs j set input='{}'::jsonb,output=null,input_hash='' from routine_runs r
-          where r.id=j.caller_run_id and r.finished_at<clock_timestamp()-interval '7 days'
-            and j.status in ('succeeded','failed','cancelled') and (j.input<>'{}'::jsonb or j.output is not null)`;
+        // A tool call's input and output are stored results too. One its run
+        // left unfinished (the extension never ran it) is cancelled as well.
+        await tx`update extension_jobs j set input='{}'::jsonb,output=null,input_hash='',
+          code=case when j.status in ('queued','running') then 'caller_stopped' else j.code end,
+          status=case when j.status in ('queued','running') then 'cancelled' else j.status end,
+          lease_owner=null,lease_until=null,run_until=null,updated_at=clock_timestamp()
+          from routine_runs r where r.id=j.caller_run_id and r.finished_at<clock_timestamp()-interval '7 days'
+            and (j.input<>'{}'::jsonb or j.output is not null or j.status in ('queued','running'))`;
         await tx`delete from routine_runs where id in(select id from routine_runs
           where finished_at<clock_timestamp()-interval '30 days' order by finished_at limit 1000)`;
       });

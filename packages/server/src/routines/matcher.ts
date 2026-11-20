@@ -5,7 +5,7 @@ import { inWorkspace, lockPrivacyShared, lockSchemaShared, type Tx } from '../db
 import { matchingRecords } from '../records/query.js';
 import { type CompiledSchema, getSchema } from '../schema/compiled.js';
 import { nextInZone } from './cron.js';
-import { mapFilter, objectFor } from './manifest.js';
+import { filterResolves, mapFilter, objectFor } from './manifest.js';
 import { hourlyAllowance, NO_RECORD, pauseRoutine, queueRun, usedUp } from './runs.js';
 
 type ChangeRow = {
@@ -50,13 +50,23 @@ export async function matchingSince(
   if (when.kind !== 'record') return { matched: 0, records: [] as string[] };
   const object = objectFor(schema, when.object);
   if (!object) return { matched: 0, records: [] as string[] };
-  const rows = await tx<ChangeRow[]>`
-    select position::text,record_id,object_type_id,operation,field_keys,cause,cause_depth from record_changes
-    where object_type_id=${object.id} and created_at>clock_timestamp()-${days}*interval '1 day'
-      and operation in ('create','update','supersede','links') and merged_from_id is null
-    order by position desc limit 5000`;
-  const matched = rows.filter((row) => triggerMatches(when, object.id, row));
-  const ids = [...new Set(matched.flatMap((row) => (row.record_id ? [row.record_id] : [])))];
+  // The trigger as SQL (`triggerMatches`), so every matching change is counted.
+  const where = tx`object_type_id=${object.id} and created_at>clock_timestamp()-${days}*interval '1 day'
+    and merged_from_id is null and (
+      ${when.on.includes('created') ? tx`operation='create'` : tx`false`}
+      or ${when.on.includes('links') ? tx`operation='links'` : tx`false`}
+      or ${
+        when.on.includes('updated')
+          ? tx`(operation in ('update','supersede') ${when.fields?.length ? tx`and field_keys ?| ${when.fields}::text[]` : tx``})`
+          : tx`false`
+      })`;
+  const [count] = await tx<
+    { n: number }[]
+  >`select count(*)::int as n from record_changes where ${where}`;
+  const rows = await tx<{ record_id: string }[]>`
+    select record_id from record_changes where ${where} and record_id is not null
+    order by position desc limit 1000`;
+  const ids = [...new Set(rows.map((row) => row.record_id))];
   // A record merged since its change counts as its survivor (§6.1), and a
   // deleted one takes no slot: the five most recent live records.
   const live = ids.length
@@ -66,19 +76,13 @@ export async function matchingSince(
         where s.deleted_at is null and s.merged_into_id is null
         group by s.id order by min(c.n) limit 5`
     : [];
-  return { matched: matched.length, records: live.map((row) => row.id) };
+  return { matched: count?.n ?? 0, records: live.map((row) => row.id) };
 }
 
 /** Whether a schedule's object and filter still resolve against the schema. */
-function scheduleResolves(schema: CompiledSchema, ref: string, filter?: RoutineFilter) {
+function scheduleResolves(tx: Tx, schema: CompiledSchema, ref: string, filter?: RoutineFilter) {
   const object = objectFor(schema, ref);
-  if (!object) return false;
-  try {
-    if (filter) mapFilter(object, filter, 'name');
-    return true;
-  } catch {
-    return false;
-  }
+  return !!object && (!filter || filterResolves(tx, object, filter));
 }
 
 /** The records a schedule tick would fan out to, and how many there are. */
@@ -251,7 +255,7 @@ export async function fireSchedule(sql: Sql, workspace: string, routineId: strin
     const schema = await getSchema(tx, workspace);
     // A schedule whose object or filter no longer resolves needs repair, as
     // code that no longer type-checks does (§5.3).
-    if (when.object && !scheduleResolves(schema, when.object, when.filter)) {
+    if (when.object && !scheduleResolves(tx, schema, when.object, when.filter)) {
       await pauseRoutine(tx, routineId, 'needs_attention', 'check_failed');
       return { queued: 0 };
     }

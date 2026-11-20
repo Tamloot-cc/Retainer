@@ -357,8 +357,20 @@ describe('routine tool calls', () => {
     const keptLease = await s.queue.claim(s.workspace, kept.body.tool.callId, 'tool-runner');
     if (!keptLease) throw new Error('tool job not claimed');
     await s.queue.complete(keptLease, { status: 'succeeded', output: { deliverable: false } });
+    // A third run timed out with its tool job never run (no extension executor).
+    const third = await s.press(await s.another());
+    const stranded = await s.app.request('/v1/routines/runtime/effects', {
+      key: third.token,
+      body: {
+        position: 1,
+        operation: 'tool',
+        args: { name: 'check_address', input: { address: 's@x.y' } },
+      },
+    });
     await db.owner`update routine_runs set status='succeeded',lease_owner=null,lease_until=null,
       finished_at=now()-interval '8 days' where id=${second.runId}`;
+    await db.owner`update routine_runs set status='failed',code='run_timeout',lease_owner=null,lease_until=null,
+      finished_at=now()-interval '8 days' where id=${third.runId}`;
     await new RoutineMaintenance(
       s.app.sql,
       db.connect({ role: 'retainer_executor', max: 1 }),
@@ -366,5 +378,8 @@ describe('routine tool calls', () => {
     const [cleared] = await db.owner<{ input: unknown; output: unknown }[]>`
       select input,output from extension_jobs where id=${kept.body.tool.callId}`;
     expect(cleared).toEqual({ input: {}, output: null });
+    const [cancelled] = await db.owner<{ status: string; input: unknown }[]>`
+      select status,input from extension_jobs where id=${stranded.body.tool.callId}`;
+    expect(cancelled).toEqual({ status: 'cancelled', input: {} });
   });
 });
