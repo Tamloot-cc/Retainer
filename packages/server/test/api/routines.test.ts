@@ -740,6 +740,18 @@ describe('routines', () => {
       },
     });
     expect(checked.body).toMatchObject({ problems: [], contextType: 'RoutineContext<"company">' });
+    // A draft whose manifest does not parse gets its problems, not a server error.
+    for (const manifest of [{}, null, { when: 'record' }]) {
+      const broken = await s.app.request('/v1/routines/runtime/build/check', {
+        key: token,
+        body: { manifest, code: 'export async function main() {}\n' },
+      });
+      expect(broken.status).toBe(200);
+      expect(broken.body.problems.map((p: { code: string }) => p.code)).toContain(
+        'invalid_manifest',
+      );
+      expect(broken.body.contextType).toBeUndefined();
+    }
   });
 
   it('removing a field the code uses pauses the routine before it acts', async () => {

@@ -1395,6 +1395,10 @@ they left open:
   check, and the loader refuses one at run time. The server does not scan
   the text, which cannot tell syntax from a string or a member named
   `import`.
+- **The approver is checked at every effect.** An approver who stops being
+  an admin refuses the run's next effect as `routine_paused` and cancels a
+  tool job it has not started, as a test run's initiator does; the next
+  run's start records the pause (`approver_left`).
 - **A tool is checked again when it is called.** An extension upgraded
   after a run started could change a tool's contract mid-run, so the call
   compares the installed tool with the version's pin, as the run's start

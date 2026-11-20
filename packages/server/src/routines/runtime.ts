@@ -233,8 +233,9 @@ export class RoutineRuntime {
         manifest,
         problems,
         typesFingerprint: caps.typesFingerprint,
-        // The builder checks `main` against it, as a validation's check does.
-        contextType: contextTypeFor(schema, manifest),
+        // The builder checks `main` against it, as a validation's check does;
+        // a manifest with problems has no trigger to read it from.
+        ...(problems.length ? {} : { contextType: contextTypeFor(schema, manifest) }),
       };
     });
   }

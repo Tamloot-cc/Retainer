@@ -97,8 +97,12 @@ export function manifestResolves(tx: Tx, schema: CompiledSchema, manifest: Routi
 
 /** The type `main`'s argument must accept: its trigger object's context, or none. */
 export function contextTypeFor(schema: CompiledSchema, manifest: RoutineManifest): string {
-  const when = manifest.when;
-  const object = 'object' in when && when.object ? objectFor(schema, when.object) : undefined;
+  const when: unknown = manifest?.when;
+  const ref =
+    when && typeof when === 'object' && 'object' in when && typeof when.object === 'string'
+      ? when.object
+      : undefined;
+  const object = ref ? objectFor(schema, ref) : undefined;
   return object ? `RoutineContext<${JSON.stringify(object.name)}>` : 'RoutineContext';
 }
 

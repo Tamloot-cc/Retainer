@@ -1062,8 +1062,9 @@ export class ExtensionQueue {
       if (job.trigger_kind === 'tool' && callerRun) {
         const [live] =
           await tx`select 1 from routine_runs r left join routines rt on rt.id=r.routine_id
+          left join routine_versions v on v.id=r.version_id
           where r.id=${callerRun} and r.status='running' and coalesce(r.expires_at>clock_timestamp(),true)
-            and (r.mode<>'run' or rt.status='active')
+            and (r.mode<>'run' or (rt.status='active' and retainer_routine_admin(r.workspace_id,v.approver_user_id)))
             and (r.mode<>'test' or retainer_routine_admin(r.workspace_id,r.initiator_user_id))`;
         if (!live) {
           await tx`update extension_jobs set status='cancelled',code='caller_stopped',lease_owner=null,lease_until=null,run_until=null,updated_at=now() where id=${id}`;
