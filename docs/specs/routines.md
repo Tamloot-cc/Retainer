@@ -1361,7 +1361,9 @@ Acceptance tests (§11.2) not yet automated: expiry, a tool's contract
 changing, a test run reaching a `send` tool, the worked example (§9.4), and
 the closed-sandbox test on the hosted service. The others run in
 `packages/server/test/api/routine*.test.ts` and
-`packages/runner/src/routine.test.ts`.
+`packages/runner/src/routine.test.ts`. `pnpm test:routines:compose` (part of
+`pnpm test:docker`) runs a routine's type-check and run in Compose and checks
+that each run network held only the API and the runner.
 
 ## 12. Open questions, answered
 
