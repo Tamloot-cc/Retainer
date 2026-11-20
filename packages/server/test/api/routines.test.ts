@@ -872,35 +872,43 @@ describe('routines', () => {
     const first = await s.executor.claim(s.workspace, run.id);
     if (!first) throw new Error('run not claimed');
 
-    const effect = async (claim: typeof first, position: number, value: string) => {
-      const token = await tokens.issueRoutine(
+    const keyFor = (claim: typeof first) =>
+      tokens.issueRoutine(
         s.workspace,
         { runId: run.id, routineId, fence: claim.fence, mode: claim.mode, tools: [] },
         new Date(Date.now() + 60_000),
       );
-      return s.app.request('/v1/routines/runtime/effects', {
-        key: token,
+    const context = (key: string) => s.app.request('/v1/routines/runtime/run', { key });
+    const effect = (key: string, position: number, value: string) =>
+      s.app.request('/v1/routines/runtime/effects', {
+        key,
         body: {
           position,
           operation: 'record.update',
-          args: {
-            object: 'company',
-            id: recordId,
-            values: { [name]: value },
-          },
+          args: { object: 'company', id: recordId, values: { [name]: value } },
         },
       });
-    };
 
-    expect((await effect(first, 1, 'No longer matches')).status).toBe(200);
+    const firstKey = await keyFor(first);
+    const initial = (await context(firstKey)).body.record;
+    expect(initial[name]).toBe('Acme Retry');
+    const nextName = (input: typeof initial) =>
+      `Contacted ${String(input[name]).replace('Acme ', '')}`;
+    expect((await effect(firstKey, 1, nextName(initial))).status).toBe(200);
     const record = await s.app.request(`/v1/records/${recordId}`, { key: s.keys.admin });
-    expect(record.body.fields.name).toBe('No longer matches');
+    expect(record.body.fields.name).toBe('Contacted Retry');
     await db.owner`update routine_runs set lease_until=clock_timestamp()-interval '1 second' where id=${run.id}`;
     const retry = await s.executor.claim(s.workspace, run.id);
     expect(retry?.attempt).toBe(2);
     if (!retry) throw new Error('retry not claimed');
-    expect((await effect(retry, 1, 'No longer matches')).body).toMatchObject({ replayed: true });
-    expect((await effect(retry, 2, 'Follow-up write')).body).toMatchObject({ replayed: false });
+    const retryKey = await keyFor(retry);
+    const replayed = (await context(retryKey)).body.record;
+    expect(replayed).toEqual(initial);
+    expect((await effect(retryKey, 1, nextName(replayed))).body).toMatchObject({ replayed: true });
+    expect((await effect(retryKey, 2, 'Follow-up write')).body).toMatchObject({ replayed: false });
+    await s.executor.complete(retry, { status: 'succeeded' });
+    const [stored] = await db.owner`select input from routine_runs where id=${run.id}`;
+    expect(stored?.input).toBeNull();
   });
 
   it('an older run cannot pause an active replacement after reapproval', async () => {
@@ -962,7 +970,7 @@ describe('routines', () => {
     expect(fences?.n).toBe(5);
   });
 
-  it('a paused routine refuses the next effect of a run already going', async () => {
+  it('a paused routine fences started runs even if resumed before their next effect', async () => {
     const s = await setup();
     const source = {
       manifest: {
@@ -991,15 +999,23 @@ describe('routines', () => {
       (await s.app.request(`/v1/routines/${routineId}/pause`, { key: s.keys.admin, body: {} }))
         .status,
     ).toBe(200);
+    expect(
+      (await s.app.request(`/v1/routines/${routineId}/resume`, { key: s.keys.admin, body: {} }))
+        .body.status,
+    ).toBe('active');
     const refused = await s.app.request('/v1/routines/runtime/effects', {
       key: token,
       body: {
         position: 1,
         operation: 'record.update',
-        args: { object: 'company', id: acme, values: {} },
+        args: { object: 'company', id: acme, values: { [s.key('tier')]: 'gold' } },
       },
     });
     expect(refused.body.error.code).toBe('routine_paused');
+    await s.executor.complete(claimed, { status: 'succeeded' });
+    const [row] =
+      await db.owner`select status,input,fence::text from routine_runs where id=${claimed.runId}`;
+    expect(row).toMatchObject({ status: 'stopped', input: null, fence: '2' });
   });
 
   it('forget erases stored results and ends runs in flight as erased', async () => {
@@ -1051,6 +1067,16 @@ describe('routines', () => {
     });
     expect(call.body.state).toBe('done');
     await db.owner`update routine_runs set status='queued',lease_owner=null,lease_until=null where id=${second.runId}`;
+    const snapshotOnly = await s.app.request(
+      `/v1/routines/${routineId}/versions/${versionId}/test`,
+      {
+        key: s.keys.admin,
+        body: { recordId: acme },
+      },
+    );
+    const third = await s.executor.claim(s.workspace, snapshotOnly.body.runId);
+    if (!third) throw new Error('run not claimed');
+    await s.executor.complete(third, { status: 'retry', code: 'execution_unavailable' });
     const untouched = await s.app.request(`/v1/routines/${routineId}/versions/${versionId}/test`, {
       key: s.keys.admin,
       body: { recordId: acme },
@@ -1068,12 +1094,16 @@ describe('routines', () => {
     >`select status from routine_runs where id=${claimed.runId}`;
     expect(run?.status).toBe('erased');
     expect((await effect(2)).body.error.code).toMatch(/run_erased|lease_expired/);
-    const statuses = await db.owner<{ id: string; status: string }[]>`
-      select id,status from routine_runs where id in (${second.runId},${untouched.body.runId})`;
-    expect(Object.fromEntries(statuses.map((r) => [r.id, r.status]))).toEqual({
+    const runs = await db.owner<{ id: string; status: string; input: unknown }[]>`
+      select id,status,input from routine_runs where id in
+        (${claimed.runId},${second.runId},${third.runId},${untouched.body.runId})`;
+    expect(Object.fromEntries(runs.map((r) => [r.id, r.status]))).toEqual({
+      [claimed.runId]: 'erased',
       [second.runId]: 'erased',
+      [third.runId]: 'erased',
       [untouched.body.runId]: 'queued',
     });
+    expect(runs.every((r) => r.input === null)).toBe(true);
   });
 
   it('a schedule fires once per matching record per due time, in the workspace time zone', async () => {

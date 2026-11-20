@@ -537,10 +537,10 @@ export class Routines {
         await tx`update routines set status='archived',paused_reason=null,next_fire_at=null,feed_position=null
         where id=${routineId} returning id`;
       if (!row) throw notFound('routine');
-      await tx`update routine_runs set status='discarded',code='archived',finished_at=clock_timestamp()
-        where routine_id=${routineId} and status in ('queued','held')`;
-      await tx`update routine_runs set status='stopped',code='archived',finished_at=clock_timestamp(),lease_owner=null,lease_until=null
-        where routine_id=${routineId} and status='running'`;
+      await tx`update routine_runs set status='discarded',code='archived',finished_at=clock_timestamp(),
+        input=nullif(input-'triggerRecord','{}'::jsonb) where routine_id=${routineId} and status in ('queued','held')`;
+      await tx`update routine_runs set status='stopped',code='archived',finished_at=clock_timestamp(),lease_owner=null,lease_until=null,
+        input=nullif(input-'triggerRecord','{}'::jsonb) where routine_id=${routineId} and status='running'`;
       return { routineId, status: 'archived' };
     });
   }

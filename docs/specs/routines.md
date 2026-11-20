@@ -614,9 +614,9 @@ history are how a person catches that.
   re-check fails, when a tool's contract changes, when it keeps failing, and
   when its approver stops being an admin. A pause takes effect at once:
   Retainer checks that the routine is active before every effect, and again
-  when a tool job it called starts. An effect after the pause is refused and
-  the run ends as `stopped`. Runs not yet started are held for an admin to
-  run or discard.
+  when a tool job it called starts. Pausing permanently fences started
+  runs and marks them `stopped`. Resuming leaves those runs stopped.
+  Runs not yet started are held for an admin to run or discard.
 - **Resuming.** A resumed routine starts from the feed's head, as at
   approval. Changes made while it was paused, and due times that passed, are
   not handled later. The Routines page says since when it was paused. This
@@ -1476,7 +1476,10 @@ they left open:
   `schedule_too_large`: the filter must be narrowed.
 - **The sandbox clock** (`Date.now()`, `new Date()` and `Date()`) is frozen
   to the first attempt's start. `run.at` remains the trigger's effective time,
-  which can be earlier for a scheduled run.
+  which can be earlier for a scheduled run. The runner also receives the
+  trigger record as it was when first claimed. This snapshot is retained
+  for retries and cleared when the run ends or on `forget`. Explicit reads
+  by the code still fetch current records.
 - **Run output** (the value `main` returns and up to 50 log lines) is kept
   on the run, cleared after 7 days and by `forget`, like stored results.
 - **Configuration.** `RETAINER_ROUTINE_MODEL` (default `claude-opus-5-5`) and

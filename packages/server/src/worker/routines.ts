@@ -8,16 +8,18 @@ import {
   type ToolContract,
 } from '@retainer/shared';
 import type { Sql } from '../db/client.js';
-import { inWorkspace, jsonValue, lockSchemaShared, type Tx } from '../db/tx.js';
+import { inWorkspace, jsonValue, lockPrivacyShared, lockSchemaShared, type Tx } from '../db/tx.js';
 import type { RunTokens } from '../extension-runtime/tokens.js';
 import { installedTools, sameContract, toolContract } from '../extensions/tools.js';
 import { matchingRecords } from '../records/query.js';
+import { getRecord } from '../records/read.js';
 import { resolveRecordId } from '../records/write.js';
 import { stillAdmin } from '../routine-runtime/admission.js';
 import type { RoutineConfig } from '../routines/capabilities.js';
 import { manifestResolves, mapFilter, objectFor } from '../routines/manifest.js';
 import { dispatchRoutines, fireSchedule } from '../routines/matcher.js';
 import { RUN_GRACE_SECONDS as GRACE_SECONDS, pauseRoutine, usedUp } from '../routines/runs.js';
+import { keyed } from '../routines/runtime.js';
 import { getSchema } from '../schema/compiled.js';
 import type { Executable } from './extensions.js';
 
@@ -51,6 +53,7 @@ type ClaimRow = {
   mode: RoutineRunMode;
   status: string;
   record_id: string | null;
+  has_trigger_record: boolean | null;
   attempt: number;
   expired: boolean;
   expires_at: Date | null;
@@ -122,7 +125,7 @@ export class RoutineExecutor {
   /** Ends a run that will not start, with its status and code. */
   private async end(tx: Tx, id: string, status: string, code: string | null) {
     await tx`update routine_runs set status=${status},code=${code},finished_at=clock_timestamp(),
-      lease_owner=null,lease_until=null where id=${id}`;
+      lease_owner=null,lease_until=null,input=nullif(input-'triggerRecord','{}'::jsonb) where id=${id}`;
   }
 
   /**
@@ -140,12 +143,13 @@ export class RoutineExecutor {
 
   private async claimIn(workspace: string, id: string): Promise<ClaimedRun | null> {
     return inWorkspace(this.options.sql, workspace, async (tx) => {
+      await lockPrivacyShared(tx, workspace);
       await lockSchemaShared(tx, workspace);
       await tx`select rt.id from routines rt join routine_runs r on r.routine_id=rt.id
         where r.id=${id} and r.mode='run' for update of rt`;
       const [run] = await tx<ClaimRow[]>`
         select r.id,r.routine_id,r.version_id,r.mode,r.status,r.record_id,r.attempt,r.initiator_user_id,r.expires_at,
-          coalesce(r.expires_at<=clock_timestamp(),false) as expired,s.manifest,rt.status as routine_status,
+          r.input ? 'triggerRecord' as has_trigger_record,coalesce(r.expires_at<=clock_timestamp(),false) as expired,s.manifest,rt.status as routine_status,
           rt.active_version_id,v.tool_contracts,v.approver_user_id
         from routine_runs r left join routine_sources s on s.id=r.source_id
         left join routines rt on rt.id=r.routine_id left join routine_versions v on v.id=r.version_id
@@ -168,6 +172,10 @@ export class RoutineExecutor {
           return null;
         }
         if (run.routine_status !== 'active') {
+          if (run.attempt > 0) {
+            await this.end(tx, id, 'stopped', 'routine_paused');
+            return null;
+          }
           await tx`update routine_runs set status='held',code='paused',lease_owner=null,lease_until=null where id=${id}`;
           return null;
         }
@@ -192,7 +200,7 @@ export class RoutineExecutor {
             changed ? 'tool_changed' : 'approver_left',
             run.version_id,
           );
-          if (!paused) {
+          if (!paused || run.attempt > 0) {
             await this.end(tx, id, 'stopped', changed ? 'tool_changed' : 'approver_left');
             return null;
           }
@@ -286,10 +294,17 @@ export class RoutineExecutor {
           and mode='run' and status='running' and id<>${id}`;
         if (busy) return null;
       }
+      // The initial record is an input, like the clock. A routine may change
+      // that record itself before losing its lease.
+      const triggerRecord =
+        recordId && !run.has_trigger_record
+          ? keyed(schema, await getRecord(tx, workspace, schema, recordId))
+          : undefined;
       const timeout = timeoutFor(run.mode);
       const [claimed] = await tx<{ fence: string; attempt: number; deadline: Date }[]>`
         update routine_runs set status='running',lease_owner=${this.options.owner},fence=fence+1,attempt=attempt+1,read_calls='{}',
           record_id=coalesce(${recordId}::uuid,record_id),
+          input=${triggerRecord ? tx`coalesce(input,'{}'::jsonb) || ${tx.json(jsonValue({ triggerRecord }))}` : tx`input`},
           lease_until=clock_timestamp()+${timeout + GRACE_SECONDS}*interval '1 second',
           started_at=coalesce(started_at,clock_timestamp()),
           expires_at=coalesce(expires_at,least(clock_timestamp()+${ROUTINE_LIMITS.expiryHours}*interval '1 hour',${expiry}::timestamptz)),
@@ -396,7 +411,7 @@ export class RoutineExecutor {
       }
       await tx`update routine_runs set status=${status},code=${status === 'succeeded' ? null : code},
         output=${output ? tx.json(jsonValue(output)) : null},finished_at=clock_timestamp(),
-        lease_owner=null,lease_until=null where id=${run.runId}`;
+        input=nullif(input-'triggerRecord','{}'::jsonb),lease_owner=null,lease_until=null where id=${run.runId}`;
       if (run.mode !== 'run' || !row.routine_id) return;
       // The code passed a fresh check against the workspace's new types (§5.3).
       if (typeof output?.typesFingerprint === 'string' && row.version_id && status !== 'failed')

@@ -45,9 +45,9 @@ export async function queueRun(tx: Tx, workspace: string, run: QueueRun): Promis
 }
 
 /**
- * Pauses a routine at once (§5.3): every later effect of its runs is
- * refused, because admission checks the routine is active. Runs not yet
- * started are held for an admin to run or discard.
+ * Pauses a routine at once (§5.3). Started runs are fenced permanently so
+ * a later resume cannot reactivate their credentials. Unstarted runs wait
+ * for an admin to release or discard them.
  */
 export async function pauseRoutine(
   tx: Tx,
@@ -63,7 +63,12 @@ export async function pauseRoutine(
     returning id`;
   if (!paused) return false;
   await tx`update routine_runs set status='held',code=${reason}
-    where routine_id=${routineId} and mode='run' and status='queued'`;
+    where routine_id=${routineId} and mode='run' and status='queued' and attempt=0`;
+  await tx`update routine_runs set status='stopped',code=${reason},fence=fence+1,
+    finished_at=clock_timestamp(),lease_owner=null,lease_until=null,
+    input=nullif(input-'triggerRecord','{}'::jsonb)
+    where routine_id=${routineId} and mode='run'
+      and (status='running' or (status='queued' and attempt>0))`;
   return true;
 }
 

@@ -81,7 +81,7 @@ type RunState = {
   initiator_user_id: string | null;
   initiated_by: { name?: string; id: string } | null;
   model_calls: number;
-  input: Record<string, unknown> | null;
+  input: (Record<string, unknown> & { triggerRecord?: RoutineRecord }) | null;
   manifest: RoutineManifest | null;
   code: string | null;
   types_fingerprint: string | null;
@@ -174,11 +174,7 @@ export class RoutineRuntime {
     return withRead(this.sql, caller, async (tx, schema) => {
       const run = await this.run(tx, binding.runId);
       const caps = await capabilities(tx, schema, this.config);
-      let record: RoutineRecord | undefined;
-      if (run.record_id) {
-        const id = await resolveRecordId(tx, caller.workspaceId, run.record_id);
-        record = keyed(schema, await getRecord(tx, caller.workspaceId, schema, id));
-      }
+      const record = run.input?.triggerRecord;
       const pinned = run.types_fingerprint ?? (run.input?.typesFingerprint as string | undefined);
       return {
         run: {
@@ -544,7 +540,8 @@ export class RoutineRuntime {
           (tx) =>
             tx`with stopped as (
               update routine_runs set status='diverged',code='run_diverged',finished_at=clock_timestamp(),
-                lease_owner=null,lease_until=null where id=${runId} and fence=${fence}::bigint and status='running'
+                lease_owner=null,lease_until=null,input=nullif(input-'triggerRecord','{}'::jsonb)
+              where id=${runId} and fence=${fence}::bigint and status='running'
               returning id
             )
             update routine_run_results x set differs=true from stopped where x.run_id=stopped.id
