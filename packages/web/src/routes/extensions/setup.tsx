@@ -3,11 +3,13 @@ import {
   type ExtensionMappingChoices,
   type ExtensionMappingView,
   type ExtensionSuggestions,
+  MODEL_USE_NOTICE,
   releaseUses,
 } from '@retainer/extension';
 import { RetainerApiError } from '@retainer/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { Eye, LayoutList, Shapes, ShieldCheck } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import {
@@ -19,27 +21,34 @@ import {
   Muted,
   Notice,
   Page,
-  Panel,
   Row,
   Stack,
   StepActions,
   StepFlow,
   StepHeader,
 } from '../../ui/index.js';
+import {
+  ChangeGroup,
+  ChangeList,
+  ReviewCard,
+  ReviewCardBody,
+  ReviewCardFooter,
+  ReviewCardHeader,
+  ReviewIcon,
+} from '../../ui/review.js';
 import { describeDiffOp } from '../schema/schema-model.js';
 import { QueryError } from '../state.js';
 import { extensionName } from './branding.js';
 import {
   choicesFromView,
   defaultChoices,
-  MappingBindings,
   MappingFields,
+  MappingGroup,
   type MappingIssues,
   mappingObject,
   serverIssues,
 } from './mapping.js';
 import {
-  accessText,
   canSuggest,
   detailKey,
   hasInstallationSettings,
@@ -61,25 +70,6 @@ type DiffOp = { kind: string; [key: string]: unknown };
 type SetupMode = 'install' | 'upgrade' | 'reconnect' | 'mapping';
 type Step = 'settings' | 'mapping' | 'review';
 
-/**
- * The preview's schema changes to list. Fields the mapping creates are left
- * out: the mapping lines already show them as "New field".
- */
-function previewSchemaOps(preview: Preview, mappingObjectId?: string) {
-  const created = new Set(
-    (preview.mapping ?? []).flatMap((b) =>
-      b.action === 'create' && b.contribution && b.field ? [b.field.name] : [],
-    ),
-  );
-  return (preview.operations as DiffOp[]).filter(
-    (op) =>
-      !(
-        op.kind === 'create_field' &&
-        op.objectId === mappingObjectId &&
-        created.has(String((op.field as { name?: unknown } | undefined)?.name))
-      ),
-  );
-}
 const VIEW_ACTIONS = {
   create: 'Create',
   retain: 'Keep',
@@ -520,31 +510,27 @@ function BasicExtensionSetup({
         {actions}
       </Form>
     );
-  else
+  else {
+    const backButton =
+      steps.length > 1 ? (
+        <Button disabled={busy} onClick={() => back(step - 1)}>
+          Back
+        </Button>
+      ) : (
+        <Button disabled={busy} onClick={onCancel}>
+          Cancel
+        </Button>
+      );
     body = (
       <Stack>
         <StepHeader title="Review and approve">
           {accessOnly
-            ? 'Approve read access so this extension can prepare suggestions. '
-            : 'Nothing changes until you approve. '}
-          Check what {name} will be allowed to do and what it adds to this workspace.
+            ? `Approve read access so ${name} can prepare suggestions.`
+            : `Check what ${name} can access and what will change when you approve.`}
         </StepHeader>
         {plan ? (
-          <Review plan={plan} release={release} />
-        ) : review.isPending ? (
-          <Loading>Preparing the review…</Loading>
-        ) : null}
-        <StepActions>
-          {steps.length > 1 ? (
-            <Button disabled={busy} onClick={() => back(step - 1)}>
-              Back
-            </Button>
-          ) : (
-            <Button disabled={busy} onClick={onCancel}>
-              Cancel
-            </Button>
-          )}
-          {plan ? (
+          <Review plan={plan} release={release}>
+            {backButton}
             <Button variant="primary" disabled={busy} onClick={() => save.mutate()}>
               {save.isPending
                 ? 'Approving…'
@@ -562,14 +548,23 @@ function BasicExtensionSetup({
                             ? 'Approve upgrade'
                             : 'Approve installation'}
             </Button>
-          ) : !review.isPending ? (
-            <Button variant="primary" onClick={() => review.mutate()}>
-              Try again
-            </Button>
-          ) : null}
-        </StepActions>
+          </Review>
+        ) : (
+          <>
+            {review.isPending ? <Loading>Preparing the review…</Loading> : null}
+            <StepActions>
+              {backButton}
+              {!review.isPending ? (
+                <Button variant="primary" onClick={() => review.mutate()}>
+                  Try again
+                </Button>
+              ) : null}
+            </StepActions>
+          </>
+        )}
       </Stack>
     );
+  }
   return (
     <StepFlow
       label={`${TITLES[mode](name)} steps`}
@@ -602,63 +597,132 @@ function grantSummary(grants: { actor: string; scopes: string[]; uses: string[] 
   return `${grants.scopes.join(' and ')}${grants.uses.includes('model') ? ' with model use' : ''} as an ${grants.actor}`;
 }
 
+const CREATE_PEOPLE: Record<string, string> = {
+  never: 'Never',
+  contacted_first: 'Only people you contacted first',
+  everyone: 'Everyone',
+};
+
 /** What approving will do: access, schema changes, field mapping, saved views and warnings. */
-function Review({ plan, release }: { plan: Plan; release: Release }) {
+function Review({
+  plan,
+  release,
+  children,
+}: {
+  plan: Plan;
+  release: Release;
+  children: ReactNode;
+}) {
   const { schema } = useWorkspace();
   const mapping = release.manifest.mapping;
-  const schemaOps = previewSchemaOps(plan.preview, mapping?.objectId);
   const { preview } = plan;
+  const { grants } = preview;
+  const canWrite = grants.scopes.includes('write');
+  const bindings = mapping ? preview.mapping : undefined;
+  const mappedNames = new Set(
+    bindings?.flatMap((binding) => (binding.field ? [binding.field.name] : [])),
+  );
+  // Use the engine's actual creates: choosing "create" can reuse an existing field.
+  const newFields = new Set<string>();
+  const schemaOps = (preview.operations as DiffOp[]).filter((op) => {
+    if (op.kind !== 'create_field' || op.objectId !== mapping?.objectId) return true;
+    const field = (op.field as { name?: string } | undefined)?.name;
+    if (!field || !mappedNames.has(field)) return true;
+    newFields.add(field);
+    return false;
+  });
+  const createPeople = String(plan.input.settings.createPeople ?? release.manifest.createPeople);
+
   return (
     <Stack>
-      <Panel title="Access">
-        <Stack>
-          <p className="text-sm">
-            {accessText(preview.grants.scopes, preview.grants.actor, preview.grants.uses)}
-          </p>
+      <ReviewCard>
+        <ReviewCardHeader leading={<ReviewIcon icon={ShieldCheck} />} title="Access" />
+        <ReviewCardBody>
+          <dl className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-x-4 gap-y-2 text-sm sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-y-1">
+            <dt className="text-muted-foreground">CRM data</dt>
+            <dd>
+              {grants.scopes.includes('read')
+                ? canWrite
+                  ? 'Read and write'
+                  : 'Read'
+                : canWrite
+                  ? 'Write'
+                  : 'None'}
+            </dd>
+            {canWrite ? (
+              <>
+                <dt className="text-muted-foreground">Writes recorded as</dt>
+                <dd>{grants.actor === 'agent' ? 'Agent' : 'Integration'}</dd>
+                <dt className="text-muted-foreground">Create people</dt>
+                <dd>{CREATE_PEOPLE[createPeople] ?? createPeople.replaceAll('_', ' ')}</dd>
+                <dt className="text-muted-foreground">Source deletions</dt>
+                <dd>
+                  {release.manifest.onSourceDelete === 'keep'
+                    ? 'Keep what was imported'
+                    : 'Remove what was imported from it'}
+                </dd>
+              </>
+            ) : null}
+          </dl>
+          {grants.uses.includes('model') ? <Notice>{MODEL_USE_NOTICE}</Notice> : null}
           {preview.previousGrants ? (
             <Notice>
               This approval changes access from {grantSummary(preview.previousGrants)} to{' '}
-              {grantSummary(preview.grants)}.
+              {grantSummary(grants)}.
             </Notice>
           ) : null}
-          <Muted>
-            Creates people:{' '}
-            {String(plan.input.settings.createPeople ?? release.manifest.createPeople).replaceAll(
-              '_',
-              ' ',
-            )}
-            . When something is deleted at the source:{' '}
-            {release.manifest.onSourceDelete === 'keep'
-              ? 'keep what was imported'
-              : 'remove what was imported from it'}
-            .
-          </Muted>
-        </Stack>
-      </Panel>
-      <Panel title="Changes to this workspace">
-        <Stack>
-          {schemaOps.length ? (
-            <ul className="list-disc pl-5 text-sm">
-              {schemaOps.map((operation) => (
-                <li key={JSON.stringify(operation)}>{describeDiffOp(operation, schema.objects)}</li>
-              ))}
-            </ul>
-          ) : preview.mapping?.length ? null : (
-            <Muted>No schema changes.</Muted>
-          )}
-          {preview.mapping && mapping ? (
-            <MappingBindings mapping={mapping} bindings={preview.mapping} />
+        </ReviewCardBody>
+      </ReviewCard>
+      <ReviewCard>
+        <ReviewCardHeader leading={<ReviewIcon icon={LayoutList} />} title="Workspace changes" />
+        <ReviewCardBody>
+          {mapping && bindings?.length ? (
+            <MappingGroup mapping={mapping} bindings={bindings} newFields={newFields} />
           ) : null}
-          {preview.views.map((view) => (
-            <p key={view.universalId} className="text-sm">
-              {VIEW_ACTIONS[view.action]} saved view: {view.name}
-            </p>
+          {schemaOps.length ? (
+            <ChangeList label="Structure changes">
+              <ChangeGroup
+                icon={<Shapes aria-hidden size={15} />}
+                title="Structure changes"
+                lines={[]}
+              >
+                <ul className="space-y-1.5 text-sm">
+                  {schemaOps.map((operation) => (
+                    <li
+                      key={JSON.stringify(operation)}
+                      className="rounded-md bg-muted/50 px-3 py-2"
+                    >
+                      {describeDiffOp(operation, schema.objects)}
+                    </li>
+                  ))}
+                </ul>
+              </ChangeGroup>
+            </ChangeList>
+          ) : null}
+          {preview.views.length ? (
+            <ChangeList label="Saved views">
+              <ChangeGroup icon={<Eye aria-hidden size={15} />} title="Saved views" lines={[]}>
+                <ul className="space-y-1.5 text-sm">
+                  {preview.views.map((view) => (
+                    <li key={view.universalId} className="rounded-md bg-muted/50 px-3 py-2">
+                      {VIEW_ACTIONS[view.action]} {view.name}
+                    </li>
+                  ))}
+                </ul>
+              </ChangeGroup>
+            </ChangeList>
+          ) : null}
+          {!schemaOps.length && !bindings?.length && !preview.views.length ? (
+            <Muted>No fields, record types or saved views change.</Muted>
+          ) : null}
+          {preview.warnings.map((warning) => (
+            <Notice warning key={warning}>
+              {warning}
+            </Notice>
           ))}
-        </Stack>
-      </Panel>
-      {preview.warnings.map((warning) => (
-        <Notice key={warning}>{warning}</Notice>
-      ))}
+        </ReviewCardBody>
+        <ReviewCardFooter>{children}</ReviewCardFooter>
+      </ReviewCard>
     </Stack>
   );
 }

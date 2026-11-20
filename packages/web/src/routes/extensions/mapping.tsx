@@ -12,7 +12,10 @@ import {
   mappingFieldIssue,
   type ObjectView,
 } from '@retainer/shared';
+import { ArrowRight } from 'lucide-react';
 import { useState } from 'react';
+import { useWorkspace } from '../../api/client.js';
+import { cn } from '../../ui/core.js';
 import {
   Badge,
   Button,
@@ -20,11 +23,13 @@ import {
   Label,
   Muted,
   Notice,
+  ObjectIcon,
   Row,
   SelectMenu,
   Stack,
   Textarea,
 } from '../../ui/index.js';
+import { ChangeGroup, ChangeList } from '../../ui/review.js';
 
 type Mapping = NonNullable<ExtensionManifest['mapping']>;
 /** Per output, a problem to show next to its row: from an imported draft or the server. */
@@ -284,36 +289,91 @@ function ImportDraft({
 const outputLabel = (mapping: Mapping, key: string) =>
   mapping.outputs.find((o) => o.key === key)?.label ?? key;
 
-/** One line per output in a review or an installation summary. */
-export function MappingBindings({
+const MAPPING_COLUMNS = '@min-[24rem]:grid-cols-[minmax(0,1fr)_0.875rem_minmax(0,1.4fr)]';
+
+/** The resolved output destinations, grouped under their workspace record type. */
+export function MappingGroup(props: Parameters<typeof MappingBindings>[0]) {
+  const { schema } = useWorkspace();
+  const object = mappingObject(schema.objects, props.mapping);
+  return (
+    <ChangeList label="Field mapping">
+      <ChangeGroup
+        icon={
+          object ? (
+            <ObjectIcon name={object.nameSingular} objectClass={object.class} size={15} />
+          ) : null
+        }
+        title={object?.labelSingular ?? 'Field mapping'}
+        lines={[]}
+      >
+        <MappingBindings {...props} />
+      </ChangeGroup>
+    </ChangeList>
+  );
+}
+
+/** One row per output in a review or an installation summary. */
+function MappingBindings({
   mapping,
   bindings,
+  newFields,
 }: {
   mapping: Mapping;
   bindings: ExtensionMappingBinding[];
+  /** In a preview, the fields the schema plan actually creates. */
+  newFields?: ReadonlySet<string>;
 }) {
   return (
-    <ul aria-label="Field mapping" className="flex flex-col gap-1">
-      {bindings.map((binding) => (
-        <li key={binding.output}>
-          <Row>
-            <span>
-              {outputLabel(mapping, binding.output)} →{' '}
-              {binding.action === 'skip'
-                ? 'skipped'
-                : (binding.field?.label ?? 'a field that no longer exists')}
+    <div className="@container">
+      <div
+        aria-hidden
+        className={cn(
+          'mb-1 hidden gap-x-3 px-3 text-xs text-muted-foreground @min-[24rem]:grid',
+          MAPPING_COLUMNS,
+        )}
+      >
+        <span>Extension output</span>
+        <span className="col-start-3">Workspace field</span>
+      </div>
+      <ul aria-label="Extension outputs and workspace fields" className="space-y-1.5">
+        {bindings.map(({ output, action, field, status }) => (
+          <li
+            key={output}
+            className={cn(
+              'grid min-w-0 items-center gap-x-3 gap-y-1 rounded-md bg-muted/50 px-3 py-2 text-sm [overflow-wrap:anywhere]',
+              MAPPING_COLUMNS,
+            )}
+          >
+            <span className="min-w-0 text-muted-foreground">
+              <span className="sr-only">Extension output: </span>
+              {outputLabel(mapping, output)}
             </span>
-            {binding.action === 'create' && binding.contribution ? (
-              <Badge tone="pending">New field</Badge>
-            ) : null}
-            {binding.status === 'missing' ? (
-              <Badge tone="error">Field deleted</Badge>
-            ) : binding.status === 'incompatible' ? (
-              <Badge tone="error">Field type changed</Badge>
-            ) : null}
-          </Row>
-        </li>
-      ))}
-    </ul>
+            <ArrowRight
+              size={14}
+              aria-hidden
+              className="hidden text-muted-foreground @min-[24rem]:block"
+            />
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 font-medium">
+              {action === 'skip' ? (
+                <span>Skipped</span>
+              ) : field ? (
+                <span className="min-w-0">
+                  <span className="sr-only">Workspace field: </span>
+                  {field.label}
+                </span>
+              ) : status === 'ok' ? (
+                <span>Field unavailable</span>
+              ) : null}
+              {field && newFields?.has(field.name) ? <Badge tone="success">New field</Badge> : null}
+              {status === 'missing' ? (
+                <Badge tone="error">Field deleted</Badge>
+              ) : status === 'incompatible' ? (
+                <Badge tone="error">Field type changed</Badge>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
