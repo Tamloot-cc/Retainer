@@ -252,8 +252,8 @@ export async function extensionServices(
     // Routines (routines spec §6.1): matching runs in change maintenance; the
     // runs execute only where the routine runner bundle is deployed.
     const routineMaintenance =
-      options.workerSql && discovery && routinesAvailable
-        ? new RoutineMaintenance(options.workerSql, discovery)
+      options.workerSql && discovery
+        ? new RoutineMaintenance(options.workerSql, discovery, routinesAvailable)
         : undefined;
     let routineExecutor: RoutineExecutor | undefined;
     if (options.workerSql && discovery && tokens && routinesAvailable) {

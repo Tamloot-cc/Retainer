@@ -441,6 +441,7 @@ export class RoutineMaintenance {
   constructor(
     private readonly sql: Sql,
     private readonly discoverySql: Sql,
+    private readonly dispatchEnabled = true,
   ) {}
   stop() {
     this.stopped = true;
@@ -450,26 +451,33 @@ export class RoutineMaintenance {
     const deadline = Date.now() + budgetMs;
     let queued = 0,
       failed = 0;
-    const changes = await this.discoverySql<{ workspace_id: string }[]>`
-      select * from retainer_routine_changes_due(1000)`;
-    for (const { workspace_id: workspace } of changes) {
-      if (this.stopped || Date.now() >= deadline) break;
-      try {
-        const dispatched = await dispatchRoutines(this.sql, workspace, 500, deadline);
-        queued += dispatched.queued;
-        failed += dispatched.failed;
-      } catch {
-        failed++;
+    if (this.stopped) return { queued, failed };
+    if (this.dispatchEnabled) {
+      // A busy change feed still leaves time for schedule ticks and erasure.
+      const reserve = Math.floor(budgetMs / 6);
+      const changesDeadline = deadline - 2 * reserve;
+      const schedulesDeadline = deadline - reserve;
+      const changes = await this.discoverySql<{ workspace_id: string }[]>`
+        select * from retainer_routine_changes_due(1000)`;
+      for (const { workspace_id: workspace } of changes) {
+        if (this.stopped || Date.now() >= changesDeadline) break;
+        try {
+          const dispatched = await dispatchRoutines(this.sql, workspace, 500, changesDeadline);
+          queued += dispatched.queued;
+          failed += dispatched.failed;
+        } catch {
+          failed++;
+        }
       }
-    }
-    const schedules = await this.discoverySql<{ workspace_id: string; routine_id: string }[]>`
-      select * from retainer_routine_schedules_due(1000)`;
-    for (const item of schedules) {
-      if (this.stopped || Date.now() >= deadline) break;
-      try {
-        queued += (await fireSchedule(this.sql, item.workspace_id, item.routine_id)).queued;
-      } catch {
-        failed++;
+      const schedules = await this.discoverySql<{ workspace_id: string; routine_id: string }[]>`
+        select * from retainer_routine_schedules_due(1000)`;
+      for (const item of schedules) {
+        if (this.stopped || Date.now() >= schedulesDeadline) break;
+        try {
+          queued += (await fireSchedule(this.sql, item.workspace_id, item.routine_id)).queued;
+        } catch {
+          failed++;
+        }
       }
     }
     await this.retention(deadline).catch(() => failed++);

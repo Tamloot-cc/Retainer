@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { executeRoutine } from '@retainer/runner/routine';
 import { ROUTINE_LIMITS } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { loadConfig } from '../../src/config.js';
+import { extensionServices } from '../../src/extension-control/configuration.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { dispatchRoutines } from '../../src/routines/matcher.js';
 import {
@@ -1288,6 +1290,44 @@ describe('routines', () => {
     expect(runs.every((r) => r.input === null)).toBe(true);
   });
 
+  it('fires due schedules and clears expired output during a busy record pass', async () => {
+    const s = await setup();
+    const records = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    const schedule = await activate(s, {
+      manifest: {
+        when: { kind: 'schedule', cron: '0 9 * * *' },
+        uses: { tools: [], model: false },
+      },
+      code: 'export function main() { return null; }',
+    });
+    await db.owner`update routines set next_fire_at=now()-interval '1 minute' where id=${schedule.routineId}`;
+    for (let i = 0; i < 40; i++) await createCompany(s.app, s.keys.admin, `Acme Backlog ${i}`);
+    const [oldRun] = await db.owner<{ id: string }[]>`
+      insert into routine_runs(workspace_id,mode,trigger_kind,status,output,finished_at)
+      values(${s.workspace},'check','check','succeeded','{"copied":"crm data"}'::jsonb,now()-interval '8 days')
+      returning id`;
+
+    // Advance the application's clock at each budget check.
+    let time = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (time += 25));
+    try {
+      const result = await s.maintenance.maintain(600);
+      expect(result.failed).toBe(0);
+    } finally {
+      clock.mockRestore();
+    }
+    const [recordRuns] = await db.owner`select count(*)::int as n from routine_runs
+      where routine_id=${records.routineId} and mode='run'`;
+    expect(recordRuns?.n).toBeGreaterThan(0);
+    expect(recordRuns?.n).toBeLessThan(40);
+    const [scheduled] = await db.owner`select status from routine_runs
+      where routine_id=${schedule.routineId} and mode='run'`;
+    expect(scheduled?.status).toBe('queued');
+    const [cleaned] =
+      await db.owner`select output from routine_runs where id=${oldRun?.id as string}`;
+    expect(cleaned?.output).toBeNull();
+  });
+
   it('a schedule fires once per matching record per due time, in the workspace time zone', async () => {
     const s = await setup();
     const tier = s.key('tier');
@@ -1732,13 +1772,27 @@ describe('routines', () => {
     }
   });
 
-  it('clears a run output after 7 days even when the run made no calls', async () => {
+  it('clears expired output without dispatching work when the runner is disabled', async () => {
     const s = await setup();
+    const { routineId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    await createCompany(s.app, s.keys.admin, 'Acme While Disabled');
     const [run] = await db.owner<{ id: string }[]>`
       insert into routine_runs(workspace_id,mode,trigger_kind,status,output,finished_at)
       values(${s.workspace},'check','check','succeeded','{"copied":"crm data"}'::jsonb,now()-interval '8 days')
       returning id`;
-    await s.maintenance.maintain();
+    const disabled = await extensionServices(loadConfig({ DATABASE_URL: db.url }), {
+      workerSql: s.app.sql,
+    });
+    try {
+      expect(disabled.routinesAvailable).toBe(false);
+      const result = await disabled.changeMaintenance?.tick();
+      expect(result).toMatchObject({ queued: 0, failed: 0 });
+    } finally {
+      await disabled.close();
+    }
+    const runs =
+      await db.owner`select id from routine_runs where routine_id=${routineId} and mode='run'`;
+    expect(runs).toHaveLength(0);
     const [after] = await db.owner<{ output: unknown }[]>`
       select output from routine_runs where id=${run?.id as string}`;
     expect(after?.output).toBe(null);

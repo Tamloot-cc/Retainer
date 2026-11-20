@@ -212,10 +212,11 @@ async function dispatchRoutine(
       order by record_changes.position limit ${limit}`;
       for (const row of rows) {
         if (
-          paused &&
-          (scannedAfterPause++ >= ROUTINE_LIMITS.recordHeldMax || Date.now() >= deadline)
+          Date.now() >= deadline ||
+          (paused && scannedAfterPause++ >= ROUTINE_LIMITS.recordHeldMax)
         ) {
-          await tx`update routines set paused_reason='record_backlog_over_limit',
+          await tx`update routines set
+            paused_reason=case when ${paused} then 'record_backlog_over_limit' else paused_reason end,
             feed_position=${from}::bigint where id=${routine.id}`;
           break pages;
         }

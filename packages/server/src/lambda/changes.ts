@@ -29,7 +29,7 @@ export async function createChangeMaintenanceHandler(config: Config) {
       discovery,
       queue,
       undefined,
-      services.routinesAvailable ? new RoutineMaintenance(sql, discovery) : undefined,
+      new RoutineMaintenance(sql, discovery, services.routinesAvailable),
     ),
     deployLock = createRuntimeSql(config, { max: 1, keepConnections: true });
   return async () => {

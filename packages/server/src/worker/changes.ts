@@ -80,6 +80,8 @@ export class ChangeMaintenance {
     if (!Number.isInteger(budget) || budget < 1 || budget > 240000)
       throw new Error('invalid change maintenance budget');
     const deadline = Date.now() + budget;
+    const routineReserve = this.routines ? Math.min(30_000, Math.floor(budget / 3)) : 0;
+    const extensionDeadline = deadline - routineReserve;
     let queued = 0,
       blocked = 0,
       pruned = 0,
@@ -87,7 +89,7 @@ export class ChangeMaintenance {
     if (this.stopped) return { queued, blocked, pruned, failed };
     const due = this.queue ? await this.queue.discoverChanges(this.discovery, this.after) : [];
     for (const item of due) {
-      if (this.stopped || Date.now() >= deadline) break;
+      if (this.stopped || Date.now() >= extensionDeadline) break;
       this.after = item.installation_id;
       try {
         const result = await this.queue?.dispatchChanges(item.workspace_id, item.installation_id);

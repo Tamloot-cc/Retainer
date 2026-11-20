@@ -1470,8 +1470,9 @@ they left open:
   record that no newer revision replaced.
 - **Record dispatch commits separately per routine.** A paused burst
   collects up to 2,000 held runs per routine and bounds the remaining scan.
-  Discovery prioritizes the workspaces least recently dispatched. The pause
-  reason reports overflow. If the cursor expired, dispatch logs
+  Discovery prioritizes the workspaces least recently dispatched. The
+  maintenance pass reserves time for scheduled runs and retention. The
+  pause reason reports overflow. If the cursor expired, dispatch logs
   the gap and starts at the retained floor.
 - **Reads count per attempt.** Each read operation is capped at 200 calls,
   counted atomically on the run and reset when an attempt starts, since
@@ -1494,8 +1495,9 @@ they left open:
   `ROUTINE_RUNNER_FUNCTION_ID`; `scripts/build-extension-artifacts.mjs`
   writes it under `artifacts/extensions/routine-runner`. Web, REST, MCP and
   background dispatch are enabled when the deployment registers that runner
-  and provides its run verification key. Hosted execution also needs the
-  isolated runner deployment.
+  and provides its run verification key. Retention keeps running when the
+  runner is unavailable. Hosted execution also needs the isolated runner
+  deployment.
 
 Acceptance tests (§11.2) not yet automated: expiry, a tool's contract
 changing, a test run reaching a `send` tool, the worked example (§9.4), and
