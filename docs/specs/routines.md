@@ -1360,10 +1360,11 @@ they left open:
   repeats runs the first time, in every zone.
 - **Merges** mark every change they make (`record_changes.merged_from_id`):
   the survivor's, and those of records and events that pointed at the
-  merged-away record. Dispatch and the preview skip them. A merge also moves the merged-away record's queued and held
-  runs, firings and `oncePerRecord` marks to the survivor (§6.1). A run
-  that a queued run of the same version on the survivor already covers is
-  discarded as `merged`.
+  merged-away record. Dispatch and the preview skip them. A merge also
+  moves the merged-away record's queued and held runs, firings and
+  `oncePerRecord` marks to the survivor (§6.1). A run that a queued run of
+  the same version on the survivor already covers is discarded as
+  `merged`. The executor treats a record and those merged into it as one.
 - **A routine paused mid-burst** holds the rest of the burst in the same
   pass, up to the feed head the pass began at; changes after that are not
   run, as for any paused routine.
