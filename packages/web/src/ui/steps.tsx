@@ -6,7 +6,7 @@ import { Section } from './property.js';
 
 /**
  * The steps of a flow that takes a page, such as setting up an extension:
- * a numbered list beside the current step (from `md`), or a strip above it.
+ * a numbered list beside the current step (from `md`), or a wrapping row above it.
  * A finished step can be picked to go back to it; later steps cannot.
  */
 export function StepFlow({
@@ -25,19 +25,19 @@ export function StepFlow({
   return (
     <div className="grid gap-5 md:grid-cols-[12rem_minmax(0,1fr)] md:gap-10">
       <nav aria-label={label} className="min-w-0 md:sticky md:top-16 md:self-start">
-        <ol className="-mx-4 flex gap-1.5 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:flex-col md:gap-1 md:px-0">
+        <ol className="flex flex-wrap gap-1.5 md:flex-col md:gap-1">
           {steps.map((step, index) => {
             const done = index < current,
               active = index === current;
             return (
-              <li key={step} className="shrink-0">
+              <li key={step} className="max-w-full">
                 <button
                   type="button"
                   disabled={!done}
                   aria-current={active ? 'step' : undefined}
                   onClick={() => onBack(index)}
                   className={cn(
-                    'flex h-9 w-full items-center gap-2.5 rounded-md px-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    'flex h-9 w-full items-center gap-2.5 rounded-md px-1.5 text-left text-sm md:px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     active
                       ? 'bg-hover font-medium text-foreground'
                       : done

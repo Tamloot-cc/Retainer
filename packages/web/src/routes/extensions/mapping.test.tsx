@@ -208,7 +208,17 @@ describe('importDraft', () => {
 
 describe('mapping review in the setup page', () => {
   it('offers compatible fields, sends the choices and shows the resolved bindings before approval', async () => {
-    const plan = vi.spyOn(api, 'previewExtension').mockResolvedValue(preview);
+    const plan = vi.spyOn(api, 'previewExtension').mockResolvedValue({
+      ...preview,
+      operations: [
+        {
+          kind: 'create_field',
+          objectId: COMPANY,
+          object: 'company',
+          field: mapping.outputs[0]?.field,
+        },
+      ],
+    });
     const install = vi.spyOn(api, 'installExtension').mockResolvedValue(installation);
     mount(
       <ExtensionSetup release={release} mode="install" onCancel={() => {}} onDone={() => {}} />,
@@ -225,10 +235,16 @@ describe('mapping review in the setup page', () => {
       employee_count: { action: 'create' },
       headquarters: { action: 'existing', field: 'address' },
     });
-    const bindings = await screen.findByRole('list', { name: 'Field mapping' });
-    expect(within(bindings).getByText('Employee count → Employee Count')).toBeTruthy();
-    expect(within(bindings).getByText('New field')).toBeTruthy();
-    expect(within(bindings).getByText('Headquarters → Address')).toBeTruthy();
+    const changes = await screen.findByRole('region', { name: 'Workspace changes' });
+    const bindings = within(changes).getByRole('list', {
+      name: 'Extension outputs and workspace fields',
+    });
+    const [employees, headquarters] = within(bindings).getAllByRole('listitem');
+    expect(employees?.textContent).toContain('Workspace field: Employee Count');
+    expect(employees?.textContent).toContain('New field');
+    expect(headquarters?.textContent).toContain('Workspace field: Address');
+    expect(headquarters?.textContent).not.toContain('New field');
+    expect(within(changes).queryByRole('list', { name: 'Structure changes' })).toBeNull();
     expect(install).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Approve installation' }));
     await vi.waitFor(() => expect(install).toHaveBeenCalledTimes(1));
@@ -325,7 +341,11 @@ describe('approved mappings on an installation', () => {
     router.search = { tab: 'mapping' };
     mount(<ExtensionPage />);
     const summary = await screen.findByRole('region', { name: 'Approved field mapping' });
-    expect(within(summary).getByText('Headquarters → Office')).toBeTruthy();
+    const rows = within(summary)
+      .getByRole('list', { name: 'Extension outputs and workspace fields' })
+      .querySelectorAll('li');
+    expect(rows[1]?.textContent).toContain('Extension output: Headquarters');
+    expect(rows[1]?.textContent).toContain('Workspace field: Office');
     expect(within(summary).getByText('Field deleted')).toBeTruthy();
     expect(within(summary).getByText(/is not written until you remap or skip it/)).toBeTruthy();
     expect(within(summary).getByRole('link', { name: 'Edit mapping' }).getAttribute('href')).toBe(
@@ -368,7 +388,9 @@ describe('approved mappings on an installation', () => {
         headquarters: { action: 'existing', field: 'address' },
       },
     });
-    await userEvent.click(await screen.findByRole('button', { name: 'Approve mapping' }));
+    const approve = await screen.findByRole('button', { name: 'Approve mapping' });
+    expect(screen.queryByText('New field')).toBeNull();
+    await userEvent.click(approve);
     await vi.waitFor(() => expect(change).toHaveBeenCalledTimes(1));
     expect(change.mock.calls[0]?.[0]).toBe(installation.id);
     expect(settings).not.toHaveBeenCalled();

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { Ellipsis } from 'lucide-react';
+import { Ellipsis, LayoutList } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAccount } from '../../accounts/context.js';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
@@ -24,10 +24,17 @@ import {
   Stack,
   Tabs,
 } from '../../ui/index.js';
+import {
+  ReviewCard,
+  ReviewCardBody,
+  ReviewCardFooter,
+  ReviewCardHeader,
+  ReviewIcon,
+} from '../../ui/review.js';
 import { QueryError, useView } from '../state.js';
 import { ExtensionIcon, extensionName } from './branding.js';
 import { MemberConnectionPanel } from './connections.js';
-import { MappingBindings } from './mapping.js';
+import { MappingGroup } from './mapping.js';
 import {
   accessText,
   canReconnect,
@@ -510,30 +517,38 @@ function MappingSummary({
   if (!view) return <Muted>Loading field mapping…</Muted>;
   const broken = view.outputs.some((o) => o.status !== 'ok');
   return (
-    <section aria-label="Approved field mapping" className="flex flex-col gap-3">
-      {suggest.error ? <Notice error>{suggest.error.message}</Notice> : null}
-      <MappingBindings mapping={mapping} bindings={view.outputs} />
-      {broken ? (
-        <Notice>
-          A mapped field was deleted or changed. Its value is not written until you remap or skip
-          it.
-        </Notice>
-      ) : null}
-      {admin ? (
-        <Row>
-          {canSuggest(release, installation) ? (
-            <Button disabled={suggest.isPending} onClick={() => suggest.mutate()}>
-              Suggest mapping
-            </Button>
+    <div className="max-w-2xl">
+      <ReviewCard>
+        <ReviewCardHeader
+          leading={<ReviewIcon icon={LayoutList} />}
+          title="Approved field mapping"
+        />
+        <ReviewCardBody>
+          <MappingGroup mapping={mapping} bindings={view.outputs} />
+          {broken ? (
+            <Notice warning>
+              A mapped field was deleted or changed. Its value is not written until you remap or
+              skip it.
+            </Notice>
           ) : null}
-          <Button asChild>
-            <Link to="/extensions/$id/mapping" params={{ id: installation.id }}>
-              Edit mapping
-            </Link>
-          </Button>
-        </Row>
-      ) : null}
-    </section>
+          {suggest.error ? <Notice error>{suggest.error.message}</Notice> : null}
+        </ReviewCardBody>
+        {admin ? (
+          <ReviewCardFooter>
+            {canSuggest(release, installation) ? (
+              <Button disabled={suggest.isPending} onClick={() => suggest.mutate()}>
+                {suggest.isPending ? 'Requesting suggestions…' : 'Suggest mapping'}
+              </Button>
+            ) : null}
+            <Button asChild className="min-h-11 flex-1 sm:min-h-8 sm:flex-none">
+              <Link to="/extensions/$id/mapping" params={{ id: installation.id }}>
+                Edit mapping
+              </Link>
+            </Button>
+          </ReviewCardFooter>
+        ) : null}
+      </ReviewCard>
+    </div>
   );
 }
 
