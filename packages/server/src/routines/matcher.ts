@@ -143,6 +143,12 @@ export async function dispatchRoutines(
     } catch {
       result.failed++;
       log.error('Routine change dispatch failed', { workspace, routineId: id });
+      // A broken routine keeps its cursor, but gives other workspaces their turn.
+      await inWorkspace(
+        sql,
+        workspace,
+        (tx) => tx`update routines set updated_at=clock_timestamp() where id=${id}`,
+      ).catch(() => {});
     }
   }
   return result;
@@ -165,6 +171,8 @@ async function dispatchRoutine(
       where r.id=${id} and r.status='active' and r.feed_position is not null
       for no key update of r skip locked`;
     if (!routine) return;
+    // Workspace discovery serves the least recently dispatched routines first.
+    await tx`update routines set updated_at=clock_timestamp() where id=${id}`;
     const schema = await getSchema(tx, workspace);
     const [counter] = await tx<{ position: string; retained_after: string }[]>`
       select position::text,retained_after::text from change_counters where workspace_id=${workspace}`;

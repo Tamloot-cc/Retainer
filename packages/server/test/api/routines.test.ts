@@ -1762,6 +1762,27 @@ describe('routines', () => {
     }
   });
 
+  it('rotates change discovery even while the first workspace still has work due', async () => {
+    const first = await setup(),
+      second = await setup();
+    for (const s of [first, second]) {
+      await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+      await createCompany(s.app, s.keys.admin, 'Acme First');
+      await createCompany(s.app, s.keys.admin, 'Acme Second');
+    }
+    await db.owner`update routines set updated_at=now()-interval '1 day' where workspace_id=${first.workspace}`;
+    const discovery = db.connect({ role: 'retainer_executor', max: 1 });
+    const next = async () =>
+      (
+        await discovery<{ workspace_id: string }[]>`select * from retainer_routine_changes_due(1)`
+      )[0]?.workspace_id;
+    expect(await next()).toBe(first.workspace);
+    await dispatchRoutines(first.app.sql, first.workspace, 1);
+    expect(await next()).toBe(second.workspace);
+    await dispatchRoutines(second.app.sql, second.workspace, 1);
+    expect(await next()).toBe(first.workspace);
+  });
+
   it('keeps feed and queued change positions at bigint precision', async () => {
     const s = await setup();
     await createCompany(s.app, s.keys.admin, 'Acme Before');

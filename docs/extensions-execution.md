@@ -145,11 +145,11 @@ Routine code runs in the routine runner, a first-party bundle of the runner
 image ([routines.md](specs/routines.md) §3.3, §11.4). Add its entry from
 `artifacts/extensions/routine-runner/executables.json` to
 `RETAINER_EXTENSION_EXECUTABLES`, and its bundle from `metadata.json` (bundle
-`routine-runner`) to the launcher's `RETAINER_EXTENSION_BUNDLES`. The launcher
-gives each routine run a network with only the API on it, without the egress
-proxy; inside the container the code runs in a child process with no file
-system, environment, processes or token of its own. Without the entry,
-routines can be proposed and approved, but no run starts.
+`routine-runner`) to the launcher's `RETAINER_EXTENSION_BUNDLES`. Compose
+requires a local API container for the routine bundle. The launcher puts
+only that API on the run network. Inside the runner, the routine code has no
+credentials or environment of its own. A server without the runner entry
+omits Routines from its web, REST and MCP interfaces.
 
 - `RETAINER_ROUTINE_MODEL`: the one model routine code and the builder call.
   Defaults to `claude-opus-5-5`.

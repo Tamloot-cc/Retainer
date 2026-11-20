@@ -214,6 +214,8 @@ export class DockerSandbox {
     for (const input of options.bundles) {
       const bundle = bundleSchema.parse(input);
       if (this.bundles.has(bundle.id)) throw new Error('duplicate bundle');
+      if (!options.apiContainer && bundle.functionIds.includes(ROUTINE_RUNNER_FUNCTION_ID))
+        throw new Error('the routine runner requires a local API container');
       const ids = [...bundle.functionIds, ...bundle.verifierFunctionIds];
       if (!ids.length || new Set(ids).size !== ids.length)
         throw new Error('duplicate or empty bundle functions');
@@ -314,10 +316,10 @@ export class DockerSandbox {
     verifying: boolean,
   ) {
     const bundle = this.bundles.get(bundleId);
-    // A remote API is reached only through the trusted proxy, so a closed run keeps it then.
-    const closed =
-      'kind' in invocation && invocation.kind === 'routine' && !!this.options.apiContainer;
-    const functionId = closed ? ROUTINE_RUNNER_FUNCTION_ID : (invocation as Invocation).functionId;
+    // Routine bundles are registered only with a local, isolated API endpoint.
+    const closed = 'kind' in invocation && invocation.kind === 'routine';
+    const functionId =
+      'functionId' in invocation ? invocation.functionId : ROUTINE_RUNNER_FUNCTION_ID;
     if (
       !bundle ||
       bundle.releaseDigest !== invocation.releaseDigest ||

@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ROUTINE_RUNNER_FUNCTION_ID } from '@retainer/shared';
 import { expect, it } from 'vitest';
 import { DockerSandbox } from './docker.js';
 
@@ -22,6 +23,31 @@ it('permits a remote HTTPS API through the trusted proxy without attaching a loc
   expect(() => new DockerSandbox({ ...options, proxyContainer: '' })).toThrow(
     'fixed API and proxy',
   );
+  expect(
+    () =>
+      new DockerSandbox({ ...options, apiContainer: 'trusted-api', apiOrigin: 'http://api:8787' }),
+  ).not.toThrow();
+});
+
+it('requires a local API when registering the closed routine runner', () => {
+  const options = {
+    socketPath: '/unused',
+    networkPrefix: 'reviewed-execution',
+    apiContainer: '',
+    apiOrigin: 'https://api.example',
+    proxyContainer: 'trusted-proxy',
+    proxyOrigin: 'http://proxy:3128',
+    bundles: [
+      {
+        id: 'routine-runner',
+        image: `sha256:${'c'.repeat(64)}`,
+        releaseDigest: 'a'.repeat(64),
+        functionIds: [ROUTINE_RUNNER_FUNCTION_ID],
+        verifierFunctionIds: [],
+      },
+    ],
+  };
+  expect(() => new DockerSandbox(options)).toThrow('routine runner requires a local API container');
   expect(
     () =>
       new DockerSandbox({ ...options, apiContainer: 'trusted-api', apiOrigin: 'http://api:8787' }),

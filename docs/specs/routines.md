@@ -1470,7 +1470,8 @@ they left open:
   record that no newer revision replaced.
 - **Record dispatch commits separately per routine.** A paused burst
   collects up to 2,000 held runs per routine and bounds the remaining scan.
-  The pause reason reports overflow. If the cursor expired, dispatch logs
+  Discovery prioritizes the workspaces least recently dispatched. The pause
+  reason reports overflow. If the cursor expired, dispatch logs
   the gap and starts at the retained floor.
 - **Reads count per attempt.** Each read operation is capped at 200 calls,
   counted atomically on the run and reset when an attempt starts, since
