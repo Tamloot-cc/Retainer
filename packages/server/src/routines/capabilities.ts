@@ -9,6 +9,7 @@ import {
   type RoutineCapabilities,
   type RoutineObjectDescription,
   SORTABLE_TYPES,
+  writeRules,
 } from '@retainer/shared';
 import type { WorkspaceSettings } from '../db/schema.js';
 import type { Tx } from '../db/tx.js';
@@ -51,6 +52,7 @@ export function describeObjects(schema: CompiledSchema): RoutineObjectDescriptio
           sortable: field.isFilterable && SORTABLE_TYPES.includes(field.type),
           aggregates: aggregateOps(field),
           nullable: field.isNullable,
+          ...writeRules(field),
           ...(field.settings.options
             ? { options: field.settings.options.map((o) => o.value) }
             : {}),

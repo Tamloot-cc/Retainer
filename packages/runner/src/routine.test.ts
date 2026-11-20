@@ -6,6 +6,7 @@ import {
   type RoutineInvocation,
   type RoutineRunContext,
   SORTABLE_TYPES,
+  writeRules,
 } from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
 import { executeRoutine, parseProblems, typeCheck } from './routine.js';
@@ -116,6 +117,15 @@ describe('routine type-check', () => {
       '1:52',
     ]);
     expect(await check(`export async function main() { return require('fs'); }`)).toEqual(['1:39']);
+    // Nor does the routine's own file, which the sandbox would not load either.
+    expect(
+      await check(
+        `import { main as again } from './routine.js';\nexport async function main() { return again; }`,
+      ),
+    ).toEqual(['1:31']);
+    expect(await check(`export async function main() { return import('./routine.js'); }`)).toEqual([
+      '1:46',
+    ]);
     // Strings, comments, a member named import and a regex literal are not imports.
     expect(
       await check(`const helper = { import: (v: number) => v };
@@ -160,7 +170,9 @@ export async function main() {
 
 /** A fixture field with what the API takes for it, from the API's own rules. */
 const withRules = (
-  objects: { fields: { type: string; filterable: boolean; many?: boolean }[] }[],
+  objects: {
+    fields: { type: string; filterable: boolean; nullable: boolean; many?: boolean }[];
+  }[],
 ) =>
   objects.map((object) => ({
     ...object,
@@ -174,6 +186,7 @@ const withRules = (
         operators: field.filterable ? [...filterOperatorsFor(rules)] : [],
         sortable: field.filterable && SORTABLE_TYPES.includes(rules.type),
         aggregates: aggregateOps(rules),
+        ...writeRules({ ...rules, isNullable: field.nullable }),
       };
     }),
   }));
@@ -227,6 +240,28 @@ describe('generated workspace types', () => {
             description: null,
             filterable: true,
             nullable: false,
+          },
+          {
+            key: 'owner',
+            name: 'owner',
+            label: 'Owner',
+            type: 'relation',
+            description: null,
+            filterable: true,
+            nullable: false,
+            target: 'company',
+            many: false,
+          },
+          {
+            key: 'partners',
+            name: 'partners',
+            label: 'Partners',
+            type: 'relation',
+            description: null,
+            filterable: true,
+            nullable: true,
+            target: 'company',
+            many: true,
           },
           {
             key: 'meta',
@@ -293,8 +328,8 @@ describe('generated workspace types', () => {
   const stats = await retainer.deal.aggregate({ aggregates: [{ field: 'stage', op: 'countEmpty' }, { field: 'amount_k', op: 'sum' }] });
   await retainer.meeting.query({ sort: [{ field: 'occurredAt', direction: 'desc' }, { field: 'id' }] });
   const sent = await retainer.tools.send_email({ to: 'a@b.c', body: tone + run.at + stats.total });
-  await retainer.deal.update(record.id, { stage: 'lead', meta: null });
-  await retainer.deal.create({ title: record.title + ' renewal', meta: { tags: ['a'], n: 1 } });
+  await retainer.deal.update(record.id, { stage: 'lead', meta: null, partners: [] });
+  await retainer.deal.create({ title: record.title + ' renewal', owner: record.owner ?? record.id, meta: { tags: ['a'], n: 1 } });
   return sent.id;
 }
 `,
@@ -315,6 +350,8 @@ describe('generated workspace types', () => {
   await retainer.deal.create({ stage: 'won' });
   await retainer.deal.update(record.id, { title: null });
   await retainer.deal.update(record.id, { meta: () => 1 });
+  await retainer.deal.update(record.id, { owner: null });
+  await retainer.deal.update(record.id, { partners: null });
   return retainer.invoice.get('x');
 }
 `,
@@ -337,7 +374,9 @@ describe('generated workspace types', () => {
       expect.stringMatching(/^9:/),
       expect.stringMatching(/^10:/),
       expect.stringMatching(/^11:/),
-      '12:19',
+      expect.stringMatching(/^12:/),
+      expect.stringMatching(/^13:/),
+      '14:19',
     ]);
   });
 });

@@ -1397,11 +1397,19 @@ they left open:
   check, and the loader refuses one at run time. The server does not scan
   the text, which cannot tell syntax from a string or a member named
   `import`.
-- **Values are typed by the field's rules.** A create's values require
-  every non-nullable field and take null only where the field is nullable
-  (an update takes any subset with the same nulls), and a JSON field takes a
-  JSON value, so code the API would refuse with `invalid_values` fails its
-  type-check instead.
+- **Values are typed by the API's write rules.** One function in `shared`
+  (`writeRules`) says whether a create must set a field and whether a write
+  takes null; the API's value validation and the generated types both read
+  it, as filters, sorts and aggregates read the API's own rules. So a create
+  requires every non-nullable field, null clears only a nullable
+  single-value field (a many-to-many relation is cleared with `[]`), an
+  update is any subset, and a JSON field takes a JSON value. Code the API
+  would refuse with `invalid_values` fails its type-check instead.
+- **No import resolves, the routine's own file included.** The code is
+  checked under a file name it cannot know, as the sandbox loads nothing but
+  the routine.
+- **`then` is reserved** for objects as for tools: the sandbox keeps
+  `retainer` from being thenable.
 - **Resuming for an approver who left is a fresh approval.** The admin who
   resumes becomes the approver, with the time they resumed.
 - **The approver is checked at every effect.** An approver who stops being

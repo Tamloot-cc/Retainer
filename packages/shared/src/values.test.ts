@@ -5,13 +5,43 @@ import {
   FIELD_TYPES,
   type FieldType,
 } from './field-types.js';
-import { FIELD_VALUE_FORMATS, FieldValueError, validateFieldValue, valueError } from './values.js';
+import {
+  FIELD_VALUE_FORMATS,
+  FieldValueError,
+  validateFieldValue,
+  valueError,
+  writeRules,
+} from './values.js';
 
 const f = (type: Parameters<typeof validateFieldValue>[0]['type'], settings = {}) => ({
   type,
   settings,
   isNullable: true,
 });
+describe('write rules', () => {
+  it('say null exactly where validation takes it, for every type, nullability and cardinality', () => {
+    for (const type of FIELD_TYPES)
+      for (const isNullable of [true, false])
+        for (const relationCardinality of ['many_to_one', 'many_to_many']) {
+          const field = { type, settings: { relationCardinality }, isNullable } as never;
+          let accepted = true;
+          try {
+            validateFieldValue(field, null);
+          } catch (error) {
+            if (!(error instanceof FieldValueError)) throw error;
+            accepted = false;
+          }
+          expect([type, isNullable, relationCardinality, writeRules(field).acceptsNull]).toEqual([
+            type,
+            isNullable,
+            relationCardinality,
+            accepted,
+          ]);
+          expect(writeRules(field).required).toBe(!isNullable);
+        }
+  });
+});
+
 describe('public field-aware validation', () => {
   it('enforces field settings and nullability, not just composite shape', () => {
     expect(() => validateFieldValue({ ...f('text'), isNullable: false }, null)).toThrow(

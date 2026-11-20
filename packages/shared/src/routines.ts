@@ -207,6 +207,9 @@ export type RoutineFieldDescription = {
   sortable: boolean;
   aggregates: AggregateOp[];
   nullable: boolean;
+  /** Whether a create must set it and whether a write takes null (`writeRules`). */
+  required: boolean;
+  acceptsNull: boolean;
   /** For `select` and `multi_select`: the option values. */
   options?: string[];
   /** For `relation`: the target object's API name, and whether it holds many records. */
@@ -498,7 +501,8 @@ export function describeFilter(value: RoutineFilter, field: (key: string) => str
 // ---------------------------------------------------------------------------
 // The SDK's types, generated from the workspace (§4.4).
 
-const RESERVED_SDK_NAMES = new Set(['files', 'events', 'tools', 'ai', 'remember']);
+// `then` too: the sandbox keeps `retainer` from being thenable, so it has none.
+const RESERVED_SDK_NAMES = new Set(['files', 'events', 'tools', 'ai', 'remember', 'then']);
 
 /**
  * Whether an object's name is taken by a built-in SDK service
@@ -724,14 +728,16 @@ export function generateRoutineTypes(input: {
           `${comment(`${field.label}${field.description ? `: ${field.description}` : ''}`, '  ')}  ${propertyKey(field.key)}: ${valueType(field)}${field.nullable || field.type === 'files' || field.type === 'relation' ? ' | null' : ''};`,
       )
       .join('\n');
-    // A create must set every required field, and only a nullable one (or a
-    // relation or file list, which null clears) takes null; an update takes
-    // any of them (Partial), with the same nulls.
+    // Writes follow the API's own write rules: a create sets every required
+    // field, null only where the field takes it, and an update is a Partial.
     const write = fields
       .filter((field) => !field.readOnly)
       .map((field) => {
-        const nulls = field.nullable || field.type === 'files' || field.type === 'relation';
-        return `  ${propertyKey(field.key)}${field.nullable ? '?' : ''}: ${valueType(field)}${nulls ? ' | null' : ''};`;
+        const type =
+          field.type === 'json' && !field.acceptsNull
+            ? 'Exclude<JsonValue, null>'
+            : valueType(field);
+        return `  ${propertyKey(field.key)}${field.required ? '' : '?'}: ${type}${field.acceptsNull && field.type !== 'json' ? ' | null' : ''};`;
       })
       .join('\n');
     out.push(

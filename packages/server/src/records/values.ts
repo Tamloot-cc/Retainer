@@ -1,9 +1,9 @@
 import {
   FieldValueError,
-  isCollectionRelation,
   type ValueError,
   validateFieldValue,
   valueError,
+  writeRules,
 } from '@retainer/shared';
 
 export { normalizeFieldValue } from '@retainer/shared';
@@ -36,12 +36,6 @@ export function prepareValues(
       continue;
     }
     if (value === undefined) continue;
-    if (value === null && !isCollectionRelation(field)) {
-      if (!field.isNullable)
-        errors.push({ field: name, message: 'is required and cannot be null' });
-      else writes.set(field, null);
-      continue;
-    }
     try {
       writes.set(field, validateFieldValue(field, value));
     } catch (error) {
@@ -52,7 +46,11 @@ export function prepareValues(
 
   if (mode === 'create') {
     for (const field of object.activeFields) {
-      if (!field.isNullable && !writes.has(field) && !errors.some((e) => e.field === field.name)) {
+      if (
+        writeRules(field).required &&
+        !writes.has(field) &&
+        !errors.some((e) => e.field === field.name)
+      ) {
         errors.push({ field: field.name, message: 'is required' });
       }
     }

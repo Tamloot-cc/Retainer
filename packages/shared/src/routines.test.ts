@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { describeFilter, routineFacts, routineManifestSchema } from './routines.js';
+import {
+  describeFilter,
+  isReservedRoutineName,
+  routineFacts,
+  routineManifestSchema,
+} from './routines.js';
 
 const names = {
   object: (id: string) =>
@@ -11,6 +16,14 @@ const names = {
   tool: (name: string) =>
     name === 'send_email' ? { title: 'Send an email', effect: 'send' as const } : undefined,
 };
+
+describe('reserved names', () => {
+  it('reserve the SDK services and then, which the sandbox never exposes', () => {
+    for (const name of ['files', 'events', 'tools', 'ai', 'remember', 'then'])
+      expect(isReservedRoutineName(name)).toBe(true);
+    expect(isReservedRoutineName('company')).toBe(false);
+  });
+});
 
 describe('routine facts', () => {
   it("states a manifest's trigger, condition, reach and limits in fixed words", () => {

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -221,13 +222,16 @@ export async function typeCheck(
   // The permission model matches real paths; macOS's tmpdir is a symlink.
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'routine-')));
   await writeFile(join(dir, 'retainer.d.ts'), `${types}\n${SANDBOX_GLOBALS}`);
-  await writeFile(join(dir, 'routine.ts'), code);
+  // A file name the code cannot know, so no import resolves, its own file
+  // included: the sandbox loads nothing but the routine.
+  const source = `routine-${randomUUID()}`;
+  await writeFile(join(dir, `${source}.ts`), code);
   // The exported `main` must take the context this routine is called with,
   // as Macro checks a step's `main` against its `StepContext`.
   if (check)
     await writeFile(
       join(dir, MAIN_CHECK),
-      `import { main } from './routine.js';\nexport const routineMain: (context: ${contextType}) => unknown = main;\n`,
+      `import { main } from './${source}.js';\nexport const routineMain: (context: ${contextType}) => unknown = main;\n`,
     );
   await writeFile(
     join(dir, 'tsconfig.json'),
@@ -246,7 +250,7 @@ export async function typeCheck(
         pretty: false,
         ...(check ? {} : { noCheck: true }),
       },
-      files: ['retainer.d.ts', 'routine.ts', ...(check ? [MAIN_CHECK] : [])],
+      files: ['retainer.d.ts', `${source}.ts`, ...(check ? [MAIN_CHECK] : [])],
     }),
   );
   const output = await new Promise<string>((resolve, reject) => {
@@ -269,7 +273,7 @@ export async function typeCheck(
   const problems = parseProblems(output);
   let js: string | undefined;
   try {
-    js = await readFile(join(dir, 'out', 'routine.js'), 'utf8');
+    js = await readFile(join(dir, 'out', `${source}.js`), 'utf8');
   } catch {
     js = undefined;
   }
@@ -297,7 +301,9 @@ export function parseProblems(output: string): RoutineProblem[] {
             }
           : {
               part: 'code',
-              ...(file?.endsWith('routine.ts') ? { at: `${row}:${column}` } : {}),
+              ...(file && /routine(-[0-9a-f-]+)?\.ts$/.test(file)
+                ? { at: `${row}:${column}` }
+                : {}),
               code: code as string,
               message: message as string,
             },
