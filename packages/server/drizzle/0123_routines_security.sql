@@ -55,6 +55,11 @@ RETURNS TABLE(workspace_id uuid) LANGUAGE sql STABLE SECURITY DEFINER SET search
       OR EXISTS(SELECT 1 FROM public.routine_run_results x WHERE x.run_id=r.id AND x.result IS NOT NULL)
       OR EXISTS(SELECT 1 FROM public.extension_jobs j WHERE j.caller_run_id=r.id
         AND (j.input<>'{}'::jsonb OR j.output IS NOT NULL OR j.status IN ('queued','running'))))
+  UNION
+  SELECT s.workspace_id FROM public.routine_sources s
+  WHERE s.created_at<now()-interval '30 days'
+    AND NOT EXISTS(SELECT 1 FROM public.routine_runs r WHERE r.source_id=s.id)
+    AND NOT EXISTS(SELECT 1 FROM public.routine_versions v WHERE v.source_id=s.id)
   LIMIT least(greatest(batch_limit,1),1000)
 $$;
 --> statement-breakpoint

@@ -1060,6 +1060,46 @@ describe('routines', () => {
     expect(first?.record_id).toBe(survivor);
   });
 
+  it('a preview type-checks its code in full, even before any validation', async () => {
+    const s = await setup();
+    await createCompany(s.app, s.keys.admin, 'Acme Unchecked');
+    const res = await s.app.request('/v1/routines/preview', {
+      key: s.keys.agent,
+      body: { ...TIER_ROUTINE(s.key('tier'), s.key('name')), code: 'export const main = 1;\n' },
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.runs.length).toBeGreaterThan(0);
+    await s.executor.tick();
+    const runs = await db.owner<{ status: string; code: string }[]>`
+      select status,code from routine_runs where preview_id=${res.body.previewId}`;
+    expect(runs.every((r) => r.status === 'failed' && r.code === 'check_failed')).toBe(true);
+  });
+
+  it('retention removes a source only validations used, and keeps a version source', async () => {
+    const s = await setup();
+    const kept = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    const validated = await s.app.request('/v1/routines/validate', {
+      key: s.keys.agent,
+      body: {
+        ...TIER_ROUTINE(s.key('tier'), s.key('name')),
+        code: 'export async function main() {\n  return 1;\n}\n',
+      },
+    });
+    await s.executor.tick();
+    const [check] = await db.owner<{ source_id: string }[]>`
+      select source_id from routine_runs where id=${validated.body.jobId}`;
+    // Everything is 31 days old: the runs are past retention, the sources too.
+    await db.owner`update routine_runs set finished_at=now()-interval '31 days' where workspace_id=${s.workspace}`;
+    await db.owner`update routine_sources set created_at=now()-interval '31 days' where workspace_id=${s.workspace}`;
+    await s.maintenance.maintain();
+    const sources = await db.owner<{ id: string }[]>`
+      select id from routine_sources where workspace_id=${s.workspace}`;
+    const [version] = await db.owner<{ source_id: string }[]>`
+      select source_id from routine_versions where id=${kept.versionId}`;
+    expect(sources.map((row) => row.id)).toEqual([version?.source_id]);
+    expect(sources.map((row) => row.id)).not.toContain(check?.source_id);
+  });
+
   it('reserves model calls against the daily cap atomically', async () => {
     const s = await setup({ modelCallsPerDay: 3 });
     const source = {

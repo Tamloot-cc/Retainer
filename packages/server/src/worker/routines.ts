@@ -470,6 +470,11 @@ export class RoutineMaintenance {
             and (j.input<>'{}'::jsonb or j.output is not null or j.status in ('queued','running'))`;
         await tx`delete from routine_runs where id in(select id from routine_runs
           where finished_at<clock_timestamp()-interval '30 days' order by finished_at limit 1000)`;
+        // A source only a validation or a preview used goes with its runs. A
+        // source saved again counts from then, so one about to run is kept.
+        await tx`delete from routine_sources s where s.created_at<clock_timestamp()-interval '30 days'
+          and not exists(select 1 from routine_runs r where r.source_id=s.id)
+          and not exists(select 1 from routine_versions v where v.source_id=s.id)`;
       });
     }
   }

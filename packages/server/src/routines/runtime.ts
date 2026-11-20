@@ -201,7 +201,12 @@ export class RoutineRuntime {
         types: caps.types,
         ...(run.manifest ? { contextType: contextTypeFor(schema, run.manifest) } : {}),
         typesFingerprint: caps.typesFingerprint,
-        check: run.mode === 'check' || (pinned !== undefined && pinned !== caps.typesFingerprint),
+        // A preview's dry run may come before any validation, so it checks
+        // its code in full, as a check run does (§5.2).
+        check:
+          run.mode === 'check' ||
+          run.mode === 'dry' ||
+          (pinned !== undefined && pinned !== caps.typesFingerprint),
         ...(record ? { record } : {}),
         ...(run.mode === 'build'
           ? {

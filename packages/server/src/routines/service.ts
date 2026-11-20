@@ -57,7 +57,7 @@ export async function saveSource(
   const [row] = await tx<{ id: string }[]>`
     insert into routine_sources(workspace_id,hash,manifest,code)
     values(${workspace},${hash},${tx.json(jsonValue(manifest))},${code})
-    on conflict(workspace_id,hash) do update set hash=excluded.hash returning id`;
+    on conflict(workspace_id,hash) do update set created_at=clock_timestamp() returning id`;
   if (!row) throw new Error('source insert returned no row');
   return row.id;
 }

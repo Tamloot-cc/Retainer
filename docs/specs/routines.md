@@ -1426,6 +1426,12 @@ they left open:
   from the values, so a field keyed `source` is written like any other.
 - **A preview with nothing to dry-run** answers `previewId: null` and
   `done: true` at once, rather than an ID that has no runs to poll.
+- **A preview type-checks in full.** It may come before any validation, so
+  its dry runs check the code as a check run does: code that would never
+  pass validation fails as `check_failed` instead of previewing.
+- **Sources go with their runs.** A source only validations or previews
+  used is deleted once its runs are, 30 days on; a version's source stays,
+  and a source saved again counts from then.
 - **`main` takes its trigger's context.** The sandbox check requires the
   exported `main` to accept `RoutineContext<'<object>'>` (or `RoutineContext`
   without an object), as Macro checks a step's `main` against its context. The builder's own check of a
