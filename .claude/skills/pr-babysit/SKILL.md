@@ -193,10 +193,24 @@ All of these must hold for the **current head commit**:
 
 Any push resets conditions 1, 2, 3 and 5.
 
-There's no round cap while each round fixes real findings. Stop and report
-the PR as **stalled** if fixes keep producing new findings in the same area,
-or if claude-review raises a design concern you agree with. Name the design
-question instead of patching on top of it.
+### Round limit
+
+A round is one push that got reviewed. Codex keeps finding something new on
+a large PR: #128 drew 61 findings over 28 rounds, two or three per fix. So
+from round 5 on:
+
+- **Fix** P1 findings and real bugs that take a few lines. Fix them in one
+  push, with tests, as before.
+- **Defer** every other finding (P2s, hardening, edge cases that lose
+  nothing). Collect them in one follow-up issue, saying for each why it is
+  safe to wait. Reply on each thread with the issue link and resolve it.
+- **Don't ask for another Codex round** after that push. Condition 3 then
+  holds if Codex reviewed any earlier commit and the last push only fixes
+  findings already raised. Conditions 1, 2, 4 and 5 still apply.
+
+Stop earlier and report the PR as **stalled** if fixes keep producing new
+findings in the same area, or if claude-review raises a design concern you
+agree with. Name the design question instead of patching on top of it.
 
 ## Phase 3 — Merge and clean up (only with `--merge`)
 
