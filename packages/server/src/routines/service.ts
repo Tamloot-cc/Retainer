@@ -431,10 +431,10 @@ export class Routines {
   ) {
     // Approve and resume hold the routine row, serializing version numbers with proposals.
     const [copy] = await tx<{ id: string }[]>`
-      insert into routine_versions(workspace_id,routine_id,source_id,number,summary,report,rank,types_fingerprint,tool_contracts,built_by)
+      insert into routine_versions(workspace_id,routine_id,source_id,number,name,description,summary,report,rank,types_fingerprint,tool_contracts,built_by)
       select ${workspace},v.routine_id,${sourceId},
         (select max(number)+1 from routine_versions where routine_id=v.routine_id),
-        v.summary,v.report,v.rank,v.types_fingerprint,v.tool_contracts,v.built_by
+        v.name,v.description,v.summary,v.report,v.rank,v.types_fingerprint,v.tool_contracts,v.built_by
       from routine_versions v where v.id=${version.id} returning id`;
     if (!copy) throw notFound('routine version');
     return copy.id;
@@ -455,14 +455,16 @@ export class Routines {
     routineId: string,
     manifest: RoutineManifest,
     zone: string,
-    versionId?: string,
+    versionId: string,
   ) {
     const head = await feedHead(tx, workspace);
     const next =
       manifest.when.kind === 'schedule' ? nextInZone(manifest.when.cron, new Date(), zone) : null;
-    await tx`update routines set status='active',paused_reason=null,paused_at=null,failures=0,
+    await tx`update routines r set status='active',paused_reason=null,paused_at=null,failures=0,
+      name=coalesce(v.name,r.name),description=coalesce(v.description,r.description),
       feed_position=${manifest.when.kind === 'record' ? head : null}::bigint,next_fire_at=${next},
-      active_version_id=coalesce(${versionId ?? null}::uuid,active_version_id) where id=${routineId}`;
+      active_version_id=v.id from routine_versions v where r.id=${routineId} and v.routine_id=r.id
+        and v.id=${versionId}`;
   }
 
   async reject(caller: Caller, routineId: string, versionId: string) {
@@ -704,7 +706,6 @@ export async function insertProposal(
     if (!routine) throw notFound('routine');
     if (routine.status === 'archived')
       throw new AppError(409, 'routine_archived', 'this routine is archived');
-    await tx`update routines set description=${input.description},name=${input.name} where id=${routineId}`;
   } else {
     const [created] = await tx<{ id: string }[]>`
       insert into routines(workspace_id,name,description,created_by)
@@ -718,10 +719,10 @@ export async function insertProposal(
     if (tool) contracts[name] = toolContract(tool);
   }
   const [version] = await tx<{ id: string; number: number }[]>`
-    insert into routine_versions(workspace_id,routine_id,source_id,number,summary,report,types_fingerprint,tool_contracts,built_by)
+    insert into routine_versions(workspace_id,routine_id,source_id,number,name,description,summary,report,types_fingerprint,tool_contracts,built_by)
     values(${workspace},${routineId},${sourceId},
       coalesce((select max(number) from routine_versions where routine_id=${routineId}),0)+1,
-      ${input.summary},${tx.json(jsonValue(input.report))},${caps.typesFingerprint},
+      ${input.name},${input.description},${input.summary},${tx.json(jsonValue(input.report))},${caps.typesFingerprint},
       ${tx.json(jsonValue(contracts))},${tx.json(jsonValue(actor))})
     returning id,number`;
   return { routineId, versionId: version?.id as string, number: version?.number as number };
@@ -804,6 +805,8 @@ export type VersionRow = {
   source_id: string;
   number: number;
   state: string;
+  name: string | null;
+  description: string | null;
   summary: string;
   report: RoutineReport;
   rank: string;
@@ -860,6 +863,8 @@ function presentVersion(version: VersionRow, names: FactsNames) {
     id: version.id,
     number: version.number,
     state: version.state,
+    ...(version.name === null ? {} : { name: version.name }),
+    ...(version.description === null ? {} : { description: version.description }),
     summary: version.summary,
     report: version.report,
     rank: version.rank,

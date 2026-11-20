@@ -55,7 +55,8 @@ export async function admitRoutine(
       deleting: boolean;
     }[]
   >`select r.status,r.fence::text,coalesce(r.expires_at>clock_timestamp(),true) as live,r.mode,
-      rt.status as routine_status,rt.name as routine_name,r.initiator_user_id,v.approver_user_id,r.initiated_by,v.number,
+      rt.status as routine_status,coalesce(v.name,rt.name) as routine_name,
+      r.initiator_user_id,v.approver_user_id,r.initiated_by,v.number,
       w.deletion_scheduled_at is not null as deleting
     from routine_runs r join workspaces w on w.id=r.workspace_id
     left join routines rt on rt.id=r.routine_id left join routine_versions v on v.id=r.version_id

@@ -263,6 +263,124 @@ describe('routines', () => {
     expect(proposed.status).toBe(409);
   });
 
+  it('type-checks an object named base against its own fields', async () => {
+    const s = await setup();
+    const created = await s.app.request('/v1/schema/changes', {
+      key: s.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_object',
+            object: {
+              nameSingular: 'base',
+              namePlural: 'bases',
+              labelSingular: 'Base',
+              labelPlural: 'Bases',
+              labelField: 'title',
+              fields: [{ name: 'title', label: 'Title', type: 'text' }],
+            },
+          },
+        ],
+        reason: 'Routine SDK aliases',
+      },
+    });
+    expect(created.status).toBe(200);
+    const caps = await s.app.request('/v1/routines/capabilities', { key: s.keys.agent });
+    const base = caps.body.objects.find((object: { name: string }) => object.name === 'base');
+    const title = JSON.stringify(
+      base.fields.find((field: { name: string }) => field.name === 'title').key,
+    );
+    const validation = await s.app.request('/v1/routines/validate', {
+      key: s.keys.agent,
+      body: {
+        manifest: { when: { kind: 'manual', object: 'base' }, uses: { tools: [], model: false } },
+        code: `export async function main({ record, retainer }: RoutineContext<'base'>) {
+          return retainer.base.update(record.id, { [${title}]: record[${title}] ?? 'Untitled' });
+        }`,
+      },
+    });
+    expect(validation.body.valid).toBeNull();
+    await s.executor.tick();
+    const job = await s.app.request(`/v1/routines/jobs/${validation.body.jobId}`, {
+      key: s.keys.agent,
+    });
+    expect(job.body).toMatchObject({ valid: true, problems: [] });
+  });
+
+  it('keeps each proposal’s name and intent with its version until approval', async () => {
+    const s = await setup();
+    const source = TIER_ROUTINE(s.key('tier'), s.key('name'));
+    const { routineId, versionId } = await activate(s, source);
+    const get = () => s.app.request(`/v1/routines/${routineId}`, { key: s.keys.admin });
+    const original = (await get()).body;
+    const recordId = await createCompany(s.app, s.keys.admin, 'Acme Original Version');
+    await dispatchRoutines(s.app.sql, s.workspace);
+    const [run] = await db.owner<{ id: string }[]>`select id from routine_runs
+      where routine_id=${routineId} and mode='run'`;
+    const claimed = run && (await s.executor.claim(s.workspace, run.id));
+    if (!claimed) throw new Error('first version run not claimed');
+    const propose = async (name: string, description: string) => {
+      const proposal = await s.app.request('/v1/routines', {
+        key: s.keys.agent,
+        body: {
+          ...source,
+          routineId,
+          name,
+          description,
+          summary: description,
+          report: { verdict: 'full', gaps: [] },
+        },
+      });
+      expect(proposal.status).toBe(201);
+      return proposal.body.versionId as string;
+    };
+    const earlier = await propose('Earlier choice', 'First proposed intent.');
+    const later = await propose('Later choice', 'Second proposed intent.');
+    expect((await get()).body).toMatchObject({
+      name: original.name,
+      description: original.description,
+      activeVersion: { id: versionId },
+      versions: [
+        { id: later, name: 'Later choice', description: 'Second proposed intent.' },
+        { id: earlier, name: 'Earlier choice', description: 'First proposed intent.' },
+        { id: versionId, name: original.name, description: original.description },
+      ],
+    });
+
+    const approve = await s.app.request(`/v1/routines/${routineId}/versions/${earlier}/approve`, {
+      key: s.keys.admin,
+      body: {},
+    });
+    expect(approve.status).toBe(200);
+    const reject = await s.app.request(`/v1/routines/${routineId}/versions/${later}/reject`, {
+      key: s.keys.admin,
+      body: {},
+    });
+    expect(reject.status).toBe(200);
+    expect((await get()).body).toMatchObject({
+      name: 'Earlier choice',
+      description: 'First proposed intent.',
+      activeVersion: { id: earlier, name: 'Earlier choice', description: 'First proposed intent.' },
+    });
+    const key = await tokens.issueRoutine(
+      s.workspace,
+      { runId: claimed.runId, routineId, fence: claimed.fence, mode: 'run', tools: [] },
+      new Date(Date.now() + 60_000),
+    );
+    const written = await s.app.request('/v1/routines/runtime/effects', {
+      key,
+      body: {
+        position: 1,
+        operation: 'record.update',
+        args: { object: 'company', id: recordId, values: { [s.key('tier')]: 'gold' } },
+      },
+    });
+    expect(written.status).toBe(200);
+    const [assertion] = await db.owner`select actor from field_assertions
+      where record_id=${recordId} and actor->>'id'=${routineId}`;
+    expect(assertion?.actor?.name).toContain(original.name);
+  });
+
   it('runs an approved routine on matching records only, writing as the routine', async () => {
     const s = await setup();
     const { routineId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));

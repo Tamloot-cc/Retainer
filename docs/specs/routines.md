@@ -1412,6 +1412,9 @@ they left open:
   the routine.
 - **`then` is reserved** for objects as for tools: the sandbox keeps
   `retainer` from being thenable.
+- **Name and description follow the approved version.** Proposals carry
+  their own name and description. Approval makes that version's name and
+  description the routine's live metadata.
 - **Re-approval creates a version.** Approving an already approved version,
   including resuming on behalf of an approver who has left, records a new
   version and preserves the prior approval. Only the active version's runs

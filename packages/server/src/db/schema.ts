@@ -3091,9 +3091,12 @@ export const routineVersions = pgTable(
     workspaceId: workspaceId(),
     routineId: uuid('routine_id').notNull(),
     sourceId: uuid('source_id').notNull(),
-    /** Counts the routine's proposals, from 1. */
+    /** Counts the routine's versions, from 1. */
     number: integer('number').notNull(),
     state: text('state').notNull().default('proposed'),
+    /** The name and intent reviewed with this version. Older versions may lack both. */
+    name: text('name'),
+    description: text('description'),
     /** The builder's one-sentence summary; Retainer does not vouch for it. */
     summary: text('summary').notNull(),
     /** The builder's verdict and gaps (§5.2). */
