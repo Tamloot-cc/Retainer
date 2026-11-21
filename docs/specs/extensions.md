@@ -506,6 +506,15 @@ request. Key-mode standalone apps use a separate revocable installation key.
 Authorization-code flows use state, PKCE and exact registered redirects; provider
 OAuth connection management is separate from Retainer access authorization.
 
+A standalone release may also include hosted functions. The app's service keeps
+its installation credential, and the functions run in the sandbox like any
+hosted function, with run tokens and their declared scopes and secrets. This is
+how a standalone app publishes tools: a `tool` function calls the app's own API.
+One review covers both parts, and disable or uninstall stops both. Rules that
+require `execution: 'hosted'`, such as mappings and member connections, stay as
+they are until a standalone app needs them.
+[Booking](booking-extension.md) is the first user.
+
 Accounts-mode manifests pin `oauthClientId` into the reviewed release digest;
 the same registration cannot switch to a different client across releases.
 Clients explicitly register the `/v1` resource; ordinary registrations keep
@@ -574,7 +583,11 @@ broker's own SQL admission refuse any other. Redact provider response bodies fro
 when it is optional and secret. Such provider-generated signing/refresh material
 is omitted from human settings forms and cannot be staged by an admin. Live
 runs can write it with revision CAS through `PUT /v1/extensions/:id/runtime/secrets/:name`; runs cannot overwrite human-provided
-credentials. Broker-side admission takes its own schema/installation/lease locks
+credentials. A standalone app's installation credential may also write its own
+installation's generated secrets, with the same CAS, and nothing else: it cannot
+read secrets or write human-provided ones. The app uses this during its own
+connection flow to hand its functions a shared key, so the admin fills in no
+form. Broker-side admission takes its own schema/installation/lease locks
 in the same transaction as the read/write. Release API validation locks before
 awaiting that broker transaction, avoiding cross-connection revocation deadlocks
 and reliance on the API connection remaining alive.

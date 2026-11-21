@@ -22,6 +22,8 @@ flowchart LR
     Worker --> CRM["Retainer booking summary"]
     Worker --> Mail["Email"]
     CRM --> Routine["Record-triggered Routine"]
+    Routine --> Tools["Booking tool functions"]
+    Tools --> Booking
 ```
 
 The booking database is authoritative for times, assignments and status.
@@ -32,14 +34,16 @@ booking for changes. This keeps a CRM edit from silently diverging from the
 reservation (section 5).
 
 This spec uses Booking-owned resource schedules. A shared Calendar primitive
-can be introduced independently. V1 talks to Retainer only through the
-standalone REST grant, using `@retainer/sdk`, and through `record` triggers
-on the summary. Standalone releases cannot publish
-[extension tools](extensions-tools.md) today, so agents and
-[Routines](routines.md) cannot call Booking until the V2 bridge. Like the
+can be introduced independently. Booking writes to Retainer through the
+standalone REST grant, using `@retainer/sdk`. [Routines](routines.md) react to
+the summary through `record` triggers. Booking's release also includes small
+hosted [tool functions](extensions-tools.md) that call Booking's API
+([extensions.md](extensions.md) §8), so Routines can find slots, book, move and
+cancel (section 4). Like the
 other first-party extensions, Booking lives in this repository as an MIT
-package, `packages/booking`. It depends only on `@retainer/sdk` and
-`@retainer/shared` and never imports server code.
+package, `packages/booking`. Its service depends only on `@retainer/sdk`
+and `@retainer/shared`, its tool functions on `@retainer/extension`, and
+none of it imports server code.
 
 ## 2. V1 experience
 
@@ -68,7 +72,7 @@ second public page for the same chair cannot sell an overlapping slot.
 | Booking | Stable ID, monotonic version, confirmed or cancelled state, guest contact details, scheduled interval, its allocation, and policy snapshot. |
 | Allocation | Stable ID and the claims that hold capacity for one scheduled interval. In V1 each booking has exactly one allocation, released on cancellation. |
 | Resource claim | Belongs to an allocation. Records the role ID it fills, the resource, and the occupied interval including buffers. Exclusive across all booking types in the workspace. |
-| Booking event | One row per mutation, written in its transaction: event ID, booking ID, version, kind (`booked`, `moved`, `cancelled`), actor (`staff`, `guest` or `system`, with an ID) and reason. Staff history and the outbox read it. |
+| Booking event | One row per mutation, written in its transaction: event ID, booking ID, version, kind (`booked`, `moved`, `cancelled`), actor (`staff`, `guest`, `retainer` or `system`, with an ID) and reason. Staff history and the outbox read it. |
 
 The allocation keeps capacity separate from the guest's booking. A V2 group
 session shares one allocation across many bookings, and a V2 hold owns an
@@ -114,6 +118,24 @@ with authorization and response fields appropriate to each caller.
 | `moveBooking` | Accept a booking ID, expected version, new start and request key. Replace old claims and advance the version in one transaction. On conflict, retain the original booking. |
 | `cancelBooking` | Accept a booking ID, expected version and request key. Release its claims and write the cancellation once. A retry with the same key returns the prior result. |
 | `getBooking` | Return the live booking. Guest access is scoped to one booking. Staff access is scoped to their Booking workspace. |
+
+Retainer callers reach the same operations through four tools in Booking's
+release. Each is a hosted function that calls Booking's API with the
+installation's shared tool key.
+
+| Tool | Effect | Calls |
+| --- | --- | --- |
+| `find_slots` | `read` | `findSlots` |
+| `book` | `send` | `book` |
+| `move_booking` | `send` | `moveBooking` |
+| `cancel_booking` | `send` | `cancelBooking` |
+
+The three changing tools are `send` because they act outside Retainer: they
+change Booking and email the guest. The tool call ID becomes the request key,
+so a retried call returns the first result. Booking records the calling
+Routine or agent as a `retainer` actor. Tool calls follow the guest policy
+(notice, horizon and change cutoff), because no staff member is present to
+give an audit reason.
 
 Booking mutations and configuration edits share one lock order:
 
@@ -172,6 +194,11 @@ effects while Booking continues to treat the reservation as confirmed.
   workspace and installation through `GET /v1/me` before storing a key.
   Connecting a different Retainer workspace requires a new Booking
   workspace.
+- **Tool key.** When the connection completes, Booking generates a random
+  tool key, keeps only its hash, and writes the key to the installation's
+  generated secret setting with its new credential. The tool functions
+  send it with each call. A reconnect replaces it. The admin never sees or
+  copies it.
 - **Guest access.** Public routes expose published settings and available
   times. Verify a staff session or a booking-scoped capability on every
   management request. Guest links use high-entropy, revocable tokens, stored
@@ -251,7 +278,7 @@ has been verified.
 | Waitlists and disruptions | Match people by preferences, expiry and priority. Start with a staff shortlist, then add expiring offers and automatic backfill. Claim a freed slot through the regular booking command. |
 | Guest and staff surfaces | Add an optional workspace directory, embeds, branding, locale and custom domains. Add configurable intake, guest verification and matching, attendance, branch roles, check-in or pickup, and utilization reporting. |
 | Communications | Add durable appointment-relative reminders, two-way confirmation and more messaging channels. Moves and cancellations invalidate obsolete reminders through the same event-keyed notices. |
-| Agent and extension interoperability | Expose scoped typed commands and lifecycle events from the booking event log, with the appropriate authorization and caller attribution. A reusable bridge for standalone extension tools would let a Retainer agent or Routine call these commands. Direct event subscriptions can follow when consumers need every transition rather than the summary's current state. Payment, calendar and door-access partners can use Booking's API and signed webhooks. |
+| Agent and extension interoperability | Agents call the V1 tools once Retainer offers extension tools to agents. Add staff-level tools only with an explicit policy for who may override notice and cutoff. Expose lifecycle events from the booking event log when consumers need every transition rather than the summary's current state. Payment, calendar and door-access partners can use Booking's API and signed webhooks. |
 
 ## 7. Acceptance criteria
 
@@ -279,6 +306,10 @@ staff, guest and CRM paths end to end.
   A person cannot edit or drag Booking-owned fields. Deleting a booking
   with a CRM write in flight leaves the summary deleted. Revoking the
   grant stops CRM effects, and staff can still manage the booking.
+- A Routine can find slots, book, move and cancel through the tools. A
+  retried tool call returns the first result and books nothing twice. A
+  call with a wrong or replaced tool key is refused. A tool call past the
+  guest cutoff is refused.
 - V2 additions extend these tests with hold expiration and late checkout,
   duplicate provider callbacks, concurrent last-seat claims, external
   calendar staleness, and reminder cancellation or rescheduling.

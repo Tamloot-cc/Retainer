@@ -33,7 +33,9 @@ credentials, and nothing that calls it ever holds those credentials.
 
 ## 2. Declaring a tool
 
-A tool is a function with the new `tool` trigger.
+A tool is a function with the new `tool` trigger. A standalone app publishes
+tools the same way: its release includes hosted `tool` functions that call the
+app's own API ([extensions.md](extensions.md) §8).
 
 ```ts
 import { defineTool } from '@retainer/extension';

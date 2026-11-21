@@ -62,5 +62,12 @@ attestation, participant matching, source suppression and atomic source revision
 imports require a reviewed hosted adapter and its live lease. An OAuth token does
 not fabricate that lease or grant the hosted queue/KV/secret broker APIs.
 
+To let routines call the app, include hosted `tool` functions in the same
+release ([extensions.md](specs/extensions.md) §8). Each tool calls the app's own
+API with a shared key. The app generates that key during its connection flow
+and writes it to the installation's generated secret setting with its own
+credential, so the admin does not copy it anywhere. The app records the tool
+call ID as its idempotency key and the calling routine or agent as the actor.
+
 Hosted infrastructure and live provider acceptance are separate launch steps;
 local OAuth and fixture tests do not establish deployment or provider access.
