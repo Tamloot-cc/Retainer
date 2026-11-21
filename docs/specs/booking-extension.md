@@ -26,6 +26,11 @@ flowchart LR
     Tools --> Booking
 ```
 
+Staff never sign in to Booking separately. Installing Booking adds a
+Bookings link to Retainer's sidebar, and opening it signs the person in to
+Booking with their Retainer account. Guests use Booking's public pages and
+never need an account.
+
 The booking database is authoritative for times, assignments and status.
 Staff and guests use the same reservation commands. In Retainer the summary
 is read-only, apart from its Person link. Retainer's views can display it,
@@ -49,7 +54,7 @@ none of it imports server code.
 
 | Surface | Must-have behavior |
 | --- | --- |
-| Workspace setup | An owner connects the Retainer workspace, sets a time zone, invites schedulers, creates resources, and defines when they can be booked. The owner can preview and publish each booking type or pause new public bookings. |
+| Workspace setup | A Retainer admin connects the workspace, sets a time zone, creates resources, and defines when they can be booked. The owner can preview and publish each booking type or pause new public bookings. |
 | Staff calendar | Day and week views with resource and booking-type filters. Staff can see hours and blocks, find a slot, book for a guest, reschedule or cancel, and view the booking's history. |
 | Public booking page | One shareable URL per published booking type, such as `/book/acme/intro-call`. Show the duration, time zone and available starts. Collect name and email. Confirm immediately if all required resources are still available. Offer refreshed alternatives on conflict. |
 | Guest confirmation and management | Show confirmation after commit and email the time and a private link. From that link a guest can view, move or cancel their booking within policy. Staff can manage it separately. Guests can book without Retainer accounts. |
@@ -174,8 +179,10 @@ effects while Booking continues to treat the reservation as confirmed.
   replaces a pending notice about the old time. A cancellation replaces any
   pending confirmation or move notice. A deletion cancels every pending
   notice. Nothing else cancels guest mail.
-  Handle ambiguous provider outcomes idempotently where the provider
-  supports it.
+  Booking sends guest email through Resend from our domain, with the
+  business's address as reply-to. Each send passes the notice key as
+  Resend's idempotency key, so a retry after an unclear outcome sends
+  nothing twice.
 - **CRM summary.** Keep at most one CRM job per booking. Each run writes
   the booking's current state, so queued changes coalesce:
   1. Read the summary's `updatedAt` from Retainer first, then the booking's
@@ -199,12 +206,15 @@ effects while Booking continues to treat the reservation as confirmed.
 
 ## 5. V1 access, installation and CRM
 
-- **Staff identity.** Booking authenticates staff to its own workspace.
-  Booking owners manage configuration, staff grants and the Retainer
-  connection. Schedulers manage bookings. The Retainer installation token
-  is a server credential, and Booking staff authority comes from app
-  membership. Bootstrap requires a signed-in Booking owner to complete
-  Retainer's existing workspace-admin consent, using OAuth state and PKCE.
+- **Staff identity.** Staff sign in through Retainer from the sidebar link
+  ([extensions.md](extensions.md) §8). Booking takes roles from the
+  Retainer role in the ID token: workspace admins are owners, who manage
+  configuration and the Retainer connection, and members are schedulers,
+  who manage bookings. Booking keeps no staff list or passwords of its own.
+  The installation credential stays a server credential and is never tied
+  to a person. Bootstrap: a Retainer admin approves the installation, opens
+  Booking from the sidebar, and completes the connection consent, using
+  OAuth state and PKCE. Booking needs Retainer's accounts mode.
 - **Binding.** A binding is unique per Retainer origin, workspace and
   installation. Retainer revokes the previous credential when an admin
   consents again, before Booking sees the callback. So a repeat consent for
@@ -296,15 +306,21 @@ Booking depends on these platform changes, none of them built yet:
 3. `Retainer-Caused-By` naming tool calls of the same installation (§9.4).
 4. Installation-owned fields, with owner-only merge and delete for records
    whose unique field is one of them.
+5. Sidebar links and sign-in to standalone apps through Retainer (§8).
 
 The hosted server must also accept the `tool` kind before Booking's bundle
 enters the catalog ([extension tools](extensions-tools.md) §7).
 
-Ship the pilot with a Booking service, its Postgres store, a worker, email
-delivery and a registered standalone installation. Keep database migrations,
-backups and recovery under Booking's operational ownership. A self-hosted
-Retainer connects a separately running Booking app through the applicable
-standalone credential path. On Compose, a private Booking address must be
+Ship the pilot with a Booking service, its Postgres store, a worker, Resend
+email and a registered standalone installation. On the hosted service,
+Booking runs next to Retainer on AWS, with the same deploy pattern in the
+private `retainer-cloud` repo. It gets its own database on the existing
+Postgres server, with its own login role and migrations. A separate
+database adds no server cost, keeps Booking from reading Retainer's tables,
+and can move to its own server later. Keep migrations, backups and recovery
+under Booking's operational ownership. A self-hosted Retainer connects a
+separately running Booking app, with its own Compose file, through the
+applicable standalone credential path. On Compose, a private Booking address must be
 listed in `RETAINER_EXECUTION_API_ORIGINS` so the tool functions can reach
 it. The pilot does not require a Booking container
 in Retainer's base Compose deployment.
@@ -324,7 +340,7 @@ has been verified.
 | Calendar sync and shared Calendar | Add Google or Outlook invite delivery and reconciliation, with a policy for external edits. When a shared Calendar contract exists, publish Booking entries and consume authorized availability from other sources. Keep the final capacity check in Booking. |
 | Complex bookings | Add group sessions, where many bookings share one allocation with a seat limit counted inside the session. Add recurring series with explicit partial or all-or-none booking, and multi-service visits with claims per segment, each tied to its role. |
 | Waitlists and disruptions | Match people by preferences, expiry and priority. Start with a staff shortlist, then add expiring offers and automatic backfill. Claim a freed slot through the regular booking command. |
-| Guest and staff surfaces | Add an optional workspace directory, embeds, branding, locale and custom domains. Add configurable intake, guest verification and matching, attendance, branch roles, check-in or pickup, and utilization reporting. |
+| Guest and staff surfaces | Show Booking's staff pages inside Retainer's own page, reusing the V1 sign-in. Send guest email from the business's own domain or Gmail. Add an optional workspace directory, embeds, branding, locale and custom domains. Add configurable intake, guest verification and matching, attendance, branch roles, check-in or pickup, and utilization reporting. |
 | Communications | Add durable appointment-relative reminders, two-way confirmation and more messaging channels. Moves and cancellations invalidate obsolete reminders through the same event-keyed notices. |
 | Agent and extension interoperability | Agents call the V1 tools once Retainer offers extension tools to agents. Link Routine-made bookings to their Person automatically, designed on the Retainer side around the summary. Add staff-level tools only with an explicit policy for who may override notice and cutoff. Expose lifecycle events from the booking event log when consumers need every transition rather than the summary's current state. Payment, calendar and door-access partners can use Booking's API and signed webhooks. |
 
@@ -360,6 +376,10 @@ staff, guest and CRM paths end to end.
   version returns the current booking. A call with a wrong or replaced key,
   or past the guest cutoff, is refused. The tools are unavailable before
   the key is written and after the credential is revoked.
+- A workspace member opens Bookings from Retainer's sidebar and is signed
+  in without a password, as an owner if they are a Retainer admin and a
+  scheduler otherwise. A person outside the workspace is refused. A
+  removed member loses access within 12 hours.
 - A Routine that books when a booking is created does not trigger itself.
   A CRM write delayed behind a newer one, or a create retried after a lost
   response, leaves one current summary. A person cannot merge or delete a

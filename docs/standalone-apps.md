@@ -62,6 +62,14 @@ attestation, participant matching, source suppression and atomic source revision
 imports require a reviewed hosted adapter and its live lease. An OAuth token does
 not fabricate that lease or grant the hosted queue/KV/secret broker APIs.
 
+To give the workspace's members a way in, declare a sidebar link in the
+release ([extensions.md](specs/extensions.md) §8). Members open the app from
+Retainer's sidebar and are signed in with their Retainer account through an
+OpenID Connect flow, so the app needs no login of its own. The ID token carries
+the person, the workspace, their role and the installation. Use it for identity
+only; the app's API access stays its installation credential. This needs
+accounts mode.
+
 To let routines call the app, include hosted `tool` functions in the same
 release ([extensions.md](specs/extensions.md) §8). Each tool calls the app's own
 API with a shared key. The app generates that key during its connection flow

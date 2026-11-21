@@ -522,6 +522,31 @@ revocation does not change `connection_health`. Rules that require
 are until a standalone app needs them.
 [Booking](booking-extension.md) is the first user.
 
+A standalone release may declare a sidebar link: a label, an icon and a path on
+the app's origin, which is the origin of its registered OAuth redirect. Retainer
+shows the link to every member of a workspace where the installation is active.
+Opening it signs the person in to the app through Retainer, with no password and
+no consent page:
+
+- The app runs an authorization-code flow with PKCE and the `openid`, `email`
+  and `profile` scopes, and no API resource. A person already signed in to
+  Retainer passes straight through.
+- The link names the installation, so a person in several workspaces sees no
+  workspace picker.
+- Retainer returns an ID token with the person's ID, name, email, workspace
+  ID, workspace role and the installation ID. It grants no API access; the app
+  keeps using its installation credential for that.
+- Approving the installation covers sign-in for that workspace's members, so
+  the install review lists it: "Members can open this app signed in with
+  their Retainer account."
+- The app keeps its own session for at most 12 hours, then signs the person in
+  again, so removing someone from the workspace ends their access within that
+  time.
+
+Sign-in needs accounts mode, because key mode has no signed-in people. Showing
+the app's page inside Retainer's own page can come later and reuse the same
+identity.
+
 Accounts-mode manifests pin `oauthClientId` into the reviewed release digest;
 the same registration cannot switch to a different client across releases.
 Clients explicitly register the `/v1` resource; ordinary registrations keep
