@@ -883,6 +883,20 @@
       "when": 1795193064547,
       "tag": "0125_fair_routine_discovery",
       "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1795292583605,
+      "tag": "0126_model_call_traces",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1795292585035,
+      "tag": "0127_model_call_security",
+      "breakpoints": true
     }
   ]
 }

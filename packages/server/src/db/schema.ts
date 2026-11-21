@@ -3006,6 +3006,88 @@ export const aiUsage = pgTable(
   ],
 ).enableRLS();
 
+/** Provider attempts live independently of usage and can outlast their parent run. */
+export const modelCalls = pgTable(
+  'model_calls',
+  {
+    /** Made by the proxy before it calls the provider; shared with `ai_usage.id`. */
+    id: uuid('id').notNull().default(sql`uuidv7()`),
+    workspaceId: workspaceId(),
+    ownerKind: text('owner_kind').notNull(),
+    ownerId: uuid('owner_id').notNull(),
+    attempt: integer('attempt').notNull(),
+    routineId: uuid('routine_id'),
+    releaseDigest: text('release_digest'),
+    functionId: uuid('function_id'),
+    provider: text('provider').notNull(),
+    requestedModel: text('requested_model'),
+    returnedModel: text('returned_model'),
+    providerRequestId: text('provider_request_id'),
+    startedAt: timestamptz('started_at').notNull(),
+    finishedAt: timestamptz('finished_at'),
+    durationMs: integer('duration_ms'),
+    outcome: text('outcome').notNull(),
+    httpStatus: integer('http_status'),
+    code: text('code'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.id] }),
+    index('model_calls_retention_idx').on(t.startedAt),
+    index('model_calls_owner_idx').on(t.workspaceId, t.ownerKind, t.ownerId, t.startedAt),
+    check('model_calls_owner_kind', sql`${t.ownerKind} in ('routine', 'extension')`),
+    check(
+      'model_calls_outcome',
+      sql`${t.outcome} in ('started', 'completed', 'provider_error', 'transport_error', 'stream_interrupted')`,
+    ),
+    check(
+      'model_calls_finish',
+      sql`(${t.outcome} = 'started' and ${t.finishedAt} is null and ${t.durationMs} is null)
+      or (${t.outcome} <> 'started' and ${t.finishedAt} is not null and ${t.durationMs} >= 0)`,
+    ),
+    pgPolicy('model_calls_workspace', {
+      to: 'retainer_app',
+      for: 'all',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
+
+/** Optional captured content. The API runtime can insert, but cannot read it. */
+export const modelCallPayloads = pgTable(
+  'model_call_payloads',
+  {
+    workspaceId: uuid('workspace_id').notNull(),
+    callId: uuid('call_id').notNull(),
+    requestBody: bytea('request_body').notNull(),
+    responseBody: bytea('response_body').notNull(),
+    requestTruncated: boolean('request_truncated').notNull(),
+    responseTruncated: boolean('response_truncated').notNull(),
+    responsePartial: boolean('response_partial').notNull(),
+    expiresAt: timestamptz('expires_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.callId] }),
+    tenantFk(
+      'model_call_payloads_call_fk',
+      [t.workspaceId, t.callId],
+      [modelCalls.workspaceId, modelCalls.id],
+    ),
+    index('model_call_payloads_expiry_idx').on(t.expiresAt),
+    check(
+      'model_call_payloads_size',
+      sql`octet_length(${t.requestBody}) <= 32768 and octet_length(${t.responseBody}) <= 32768`,
+    ),
+    pgPolicy('model_call_payloads_insert', {
+      to: 'retainer_app',
+      for: 'insert',
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
 // ---------------------------------------------------------------------------
 // Routines (docs/specs/routines.md §6.6). Not records: they are not in views
 // or the change feed. Run history copies no CRM content outside

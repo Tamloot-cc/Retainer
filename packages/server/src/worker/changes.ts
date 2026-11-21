@@ -115,6 +115,19 @@ export class ChangeMaintenance {
     if (this.stopped || Date.now() >= deadline || Date.now() < this.pruneAfter)
       return { queued, blocked, pruned, failed };
     this.pruneAfter = Date.now() + 60000;
+    try {
+      // Each call removes at most 1,000 rows per table; keep going while one
+      // comes back full, so retention keeps up with a busy minute.
+      for (;;) {
+        const [batch] = await this.discovery<{ calls: number; payloads: number }[]>`
+          select public.retainer_prune_model_calls() as calls,
+            public.retainer_prune_model_call_payloads() as payloads`;
+        if (!batch || (batch.calls < 1000 && batch.payloads < 1000)) break;
+        if (this.stopped || Date.now() >= deadline) break;
+      }
+    } catch {
+      failed++;
+    }
     const expired = await this.discovery<
       { workspace_id: string }[]
     >`select * from retainer_change_retention_due(1000)`;
