@@ -3,6 +3,7 @@
 Status: proposal. This spec defines one general-purpose Booking extension for
 Retainer. V1 covers staff scheduling and public self-booking. V2 expands the
 same booking model and adds integrations.
+Implementation plan: [booking-implementation.md](booking-implementation.md).
 
 ## 1. Architecture
 
