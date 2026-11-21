@@ -748,8 +748,9 @@ The Better Auth browser client with the passkey plugin adds about 16 KB gzipped.
 
 Settings exist only in accounts mode. Key mode keeps today's app, where keys are
 managed with the CLI. Two places hold them: **Settings**, for the workspace you are
-in, and **Your account**, for you. Both open from the account menu at the bottom of
-the sidebar, next to Developer view and Sign out.
+in, and **Your account**, for you. Settings is the last link in the sidebar's
+Workspace group; Your account opens from the account menu, next to Developer view
+and Sign out.
 
 Screens show only what the person can do. A button they could not use is hidden,
 not disabled, and the server checks every action again (4.3).

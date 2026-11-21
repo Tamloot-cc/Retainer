@@ -1,6 +1,7 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Link } from '@tanstack/react-router';
 import {
+  ChevronDown,
   ChevronsUpDown,
   House,
   Inbox,
@@ -56,12 +57,11 @@ type ShellProps = {
   user: { name: string; detail: string };
   /**
    * Accounts mode: the workspaces to switch between (each a full page load),
-   * creating one, Settings and Your account.
+   * creating one and Your account. Settings shows in the Workspace group.
    */
   accounts?: {
     workspaces: { id: string; name: string; href: string; current: boolean }[];
     onNewWorkspace?: () => void;
-    onSettings: () => void;
     accountHref: string;
   };
   /** Entities are listed under Records, event types under Activity. */
@@ -398,29 +398,40 @@ function Sidebar({
           {objectLinks('event')}
         </NavGroup>
         <div className="flex-1" />
-        {routinesAvailable ? (
+        <NavGroup label="Workspace" collapsed={collapsed}>
+          {routinesAvailable ? (
+            <NavLink
+              to="/routines"
+              icon={Workflow}
+              label="Routines"
+              collapsed={collapsed}
+              onNavigate={onNavigate}
+            />
+          ) : null}
           <NavLink
-            to="/routines"
-            icon={Workflow}
-            label="Routines"
+            to="/extensions"
+            icon={Puzzle}
+            label="Extensions"
             collapsed={collapsed}
             onNavigate={onNavigate}
           />
-        ) : null}
-        <NavLink
-          to="/extensions"
-          icon={Puzzle}
-          label="Extensions"
-          collapsed={collapsed}
-          onNavigate={onNavigate}
-        />
-        <NavLink
-          to="/schema"
-          icon={Shapes}
-          label="Schema"
-          collapsed={collapsed}
-          onNavigate={onNavigate}
-        />
+          <NavLink
+            to="/schema"
+            icon={Shapes}
+            label="Schema"
+            collapsed={collapsed}
+            onNavigate={onNavigate}
+          />
+          {accounts ? (
+            <NavLink
+              to="/settings"
+              icon={Settings}
+              label="Settings"
+              collapsed={collapsed}
+              onNavigate={onNavigate}
+            />
+          ) : null}
+        </NavGroup>
       </nav>
       <div
         className={cn(
@@ -448,28 +459,26 @@ function Sidebar({
                 {initials(user.name)}
               </span>
               {collapsed ? null : (
-                <span className="min-w-0 flex-1 leading-tight">
-                  <span className="block truncate text-sm font-medium">{user.name}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {user.detail}
-                    {developer ? ' · Developer view' : ''}
+                <>
+                  <span className="min-w-0 flex-1 leading-tight">
+                    <span className="block truncate text-sm font-medium">{user.name}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {user.detail}
+                      {developer ? ' · Developer view' : ''}
+                    </span>
                   </span>
-                </span>
+                  <ChevronDown
+                    aria-hidden="true"
+                    size={14}
+                    className="shrink-0 text-muted-foreground"
+                  />
+                </>
               )}
             </button>
           }
         >
           {accounts ? (
             <>
-              <MenuAction
-                onSelect={() => {
-                  onNavigate?.();
-                  accounts.onSettings();
-                }}
-              >
-                <Settings size={14} />
-                Settings
-              </MenuAction>
               <MenuAction onSelect={() => window.location.assign(accounts.accountHref)}>
                 <UserCog size={14} />
                 Your account
@@ -534,7 +543,15 @@ function NavLink({
   onNavigate,
   children,
 }: {
-  to: '/' | '/review' | '/o/$object' | '/schema' | '/activity' | '/extensions' | '/routines';
+  to:
+    | '/'
+    | '/review'
+    | '/o/$object'
+    | '/schema'
+    | '/activity'
+    | '/extensions'
+    | '/routines'
+    | '/settings';
   params?: { object: string };
   icon: LucideIcon;
   color?: CategoryColor;

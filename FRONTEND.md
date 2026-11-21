@@ -395,11 +395,14 @@ One route for every object. Source: `POST /v1/objects/:object/query`.
   objects (standard ones first, each with its icon). **Activity** starts
   with each event type. **Home** (5.3c) sits above both groups. Event types
   take their icons from one family (squared speech marks), so the two
-  groups are told apart at a glance. Then Schema, and the signed-in actor,
-  whose account menu holds the **Developer view** switch (5.8) and Sign out.
+  groups are told apart at a glance. At the bottom, a **Workspace** group
+  holds the pages that set the workspace up: Routines (when available),
+  Extensions, Schema and, in accounts mode, Settings. Then the signed-in
+  actor, whose account menu holds Your account, the **Developer view**
+  switch (5.8) and Sign out.
   `main.tsx` passes each object's `class` to the shell.
 - It collapses to an icon rail with its toggle or ⌘\, remembered in
-  `localStorage`; the rail keeps a divider between the two groups. Below
+  `localStorage`; the rail keeps a divider between the groups. Below
   `md` it is a drawer opened from the top bar.
 - Every screen has a slim top bar with a breadcrumb and the screen's
   actions. The crumb before the title links to the page it names (a
