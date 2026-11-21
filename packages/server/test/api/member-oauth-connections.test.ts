@@ -153,12 +153,7 @@ beforeAll(async () => {
     catalog,
     'https://retainer.test',
   );
-  const deps = {
-    extensionCatalog: catalog,
-    extensionActivation: new Set(catalog.list().map((r) => r.digest)),
-    extensionSecrets: broker,
-    runTokens: tokens,
-  };
+  const deps = appDeps(catalog);
   t = startTestApp(db, { ...deps, extensionOAuthClients: clients });
   strict = startTestApp(db, {
     ...deps,
@@ -168,6 +163,13 @@ beforeAll(async () => {
       'https://retainer.test',
     ),
   });
+});
+/** An app's extension dependencies for a catalog, with the shared broker and run tokens. */
+const appDeps = (extensions: ExtensionCatalog) => ({
+  extensionCatalog: extensions,
+  extensionActivation: new Set(extensions.list().map((r) => r.digest)),
+  extensionSecrets: broker,
+  runTokens: tokens,
 });
 
 async function setup(release: ExtensionManifest = manifest) {
@@ -560,6 +562,30 @@ describe('the OAuth client route', () => {
     expect((await t.request(`${h.base}/runtime/secrets/tokens`, { key: work.token })).status).toBe(
       404,
     );
+  });
+  it("answers 503 from a process that does not hold the run's release yet, so the run retries", async () => {
+    // A rolling deploy updates functions one at a time: the executor can start a
+    // run on a release the API process serving it does not hold yet.
+    const older = new ExtensionCatalog([
+      { manifest: keyOnly, actorCeiling: 'integration', runtimeEnabled: true },
+    ]);
+    const behind = startTestApp(db, { ...appDeps(older), extensionOAuthClients: new Map() });
+    const h = await setup();
+    const c = await connected(h, h.keys.dana);
+    for (const path of ['runtime/oauth-client', 'runtime/secrets/code']) {
+      const refused = await behind.request(`${h.base}/${path}`, { key: c.token });
+      expect(refused.status).toBe(503);
+      expect(refused.body.error.code).toBe('release_not_loaded');
+      // The process that holds the release answers the same run.
+      expect((await t.request(`${h.base}/${path}`, { key: c.token })).status).toBe(200);
+    }
+    // The source routes resolve the release the same way.
+    const verify = { body: { accountId: 'acct-1', sharing: 'workspace' }, key: c.token };
+    const source = await behind.request(`${h.base}/source/verify`, verify);
+    expect(source.status).toBe(503);
+    expect(source.body.error.code).toBe('release_not_loaded');
+    // This fixture release has no managed source: the up-to-date process refuses it as before.
+    expect((await t.request(`${h.base}/source/verify`, verify)).status).toBe(403);
   });
 });
 

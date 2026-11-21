@@ -135,11 +135,7 @@ export class ExtensionExecutor {
     try {
       if (controller.signal.aborted) throw new Error('executor stopped');
       const executable = this.options.registry.get(job);
-      const release = this.options.catalog
-        .list()
-        .find(
-          (r) => r.digest === job.releaseDigest && r.manifest.universalId === job.registrationId,
-        );
+      const release = this.options.catalog.byDigest(job.registrationId, job.releaseDigest);
       const fn = release?.manifest.functions.find((f) => f.universalId === job.functionId);
       if (
         release?.runtimeEnabled !== true ||

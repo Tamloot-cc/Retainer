@@ -53,21 +53,11 @@ export function runtimeRoutes(
     return inWorkspace(sql, caller.workspaceId, async (tx) => {
       await lockSchemaShared(tx, caller.workspaceId);
       await admitRun(tx, caller.workspaceId, run, false, 'runtime');
-      const release = catalog
-        .list()
-        .find(
-          (r) => r.digest === run.releaseDigest && r.manifest.universalId === run.registrationId,
-        );
-      if (!release) throw notFound('extension release');
+      const release = catalog.forRun(run);
       const definition = release.manifest.settings[name],
         fn = release.manifest.functions.find((f) => f.universalId === run.functionId);
       // A run reaches only the secrets its own function declares (spec 8).
-      if (
-        release.digest !== run.releaseDigest ||
-        !definition?.secret ||
-        !fn ||
-        !functionSecrets(release.manifest, fn).includes(name)
-      )
+      if (!definition?.secret || !fn || !functionSecrets(release.manifest, fn).includes(name))
         throw notFound('connection secret');
       if (writing && (fn.trigger.kind === 'configure' || !definition.generated))
         throw new AppError(403, 'forbidden', 'runs can write only declared generated secrets');
@@ -92,15 +82,10 @@ export function runtimeRoutes(
     const client = await inWorkspace(sql, caller.workspaceId, async (tx) => {
       await lockSchemaShared(tx, caller.workspaceId);
       await admitRun(tx, caller.workspaceId, run, false, 'runtime');
-      const release = catalog
-        .list()
-        .find(
-          (r) => r.digest === run.releaseDigest && r.manifest.universalId === run.registrationId,
-        );
-      const fn = release?.manifest.functions.find((f) => f.universalId === run.functionId);
-      const token = release?.manifest.oauth?.tokenSetting;
+      const release = catalog.forRun(run);
+      const fn = release.manifest.functions.find((f) => f.universalId === run.functionId);
+      const token = release.manifest.oauth?.tokenSetting;
       if (
-        !release ||
         !fn ||
         !token ||
         fn.trigger.kind === 'configure' ||

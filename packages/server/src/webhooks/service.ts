@@ -184,17 +184,12 @@ export class Webhooks {
         await lockSchemaShared(tx, caller.workspaceId);
         await admitRun(tx, caller.workspaceId, run, false, 'runtime');
         await lockQueue(tx, caller.workspaceId, id);
-        const [installation] = await tx<
-          { version: string }[]
-        >`select version from extension_installations where id=${id}`;
-        if (!installation) throw notFound('extension installation');
-        const release = this.options.catalog.get(run.registrationId, installation.version),
+        const release = this.options.catalog.forRun(run),
           policy = release.manifest.source,
           hook = release.manifest.webhooks?.find((entry) => entry.route === route);
         const [job] =
           await tx`select trigger_kind,function_id from extension_jobs where id=${run.jobId}`;
         if (
-          release.digest !== run.releaseDigest ||
           !hook ||
           !policy ||
           job?.trigger_kind !== 'install' ||

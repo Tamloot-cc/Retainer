@@ -27,13 +27,7 @@ export async function lambdaRuntimeCompatible(config: Config, invoke?: LambdaInv
       targets.set(executable.driverTarget, { digest: executable.releaseDigest, mode: 'job' });
       continue;
     }
-    const release = catalog
-      .list()
-      .find(
-        (r) =>
-          r.digest === executable.releaseDigest &&
-          r.manifest.universalId === executable.registrationId,
-      );
+    const release = catalog.byDigest(executable.registrationId, executable.releaseDigest);
     const fn = release?.manifest.functions.find((f) => f.universalId === executable.functionId);
     if (
       !fn ||

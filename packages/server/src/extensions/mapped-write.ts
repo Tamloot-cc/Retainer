@@ -80,13 +80,13 @@ export async function mappedWrite(
   try {
     return await withWrite(sql, caller, async (tx, context) => {
       const [installation] = await tx<
-        { version: string; mapping: StoredMapping }[]
-      >`select version, mapping from extension_installations where id = ${run.installationId}`;
+        { mapping: StoredMapping }[]
+      >`select mapping from extension_installations where id = ${run.installationId}`;
       if (!installation) throw notFound('extension installation');
-      const release = catalog.get(run.registrationId, installation.version);
+      const release = catalog.forRun(run);
       const mapping = release.manifest.mapping;
       const fn = release.manifest.functions.find((f) => f.universalId === run.functionId);
-      if (release.digest !== run.releaseDigest || !mapping || !fn?.mappedWrite)
+      if (!mapping || !fn?.mappedWrite)
         throw forbidden('this function may not write mapped outputs');
       const stored = installation.mapping?.outputs ? installation.mapping : EMPTY_MAPPING;
       const unknown = Object.keys(input.values).filter((key) => !stored.outputs[key]);

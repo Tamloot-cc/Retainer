@@ -77,6 +77,21 @@ describe('release-owned catalog', () => {
     expect(listed?.digest).toBe(hash(exact));
     expect(listed?.manifest).not.toHaveProperty('serverRange');
   });
+  it("finds a run's release by digest, and answers a release it lacks with a retryable 503", () => {
+    const m = manifest();
+    const catalog = new ExtensionCatalog([{ manifest: m, actorCeiling: 'integration' }]);
+    const digest = catalog.list()[0]?.digest as string;
+    expect(catalog.forRun({ registrationId: m.universalId, releaseDigest: digest }).digest).toBe(
+      digest,
+    );
+    for (const run of [
+      { registrationId: m.universalId, releaseDigest: 'f'.repeat(64) },
+      { registrationId: '0f3c7a39-5d7e-4f3e-9a51-2b6f1d2c8e70', releaseDigest: digest },
+    ])
+      expect(() => catalog.forRun(run)).toThrow(
+        expect.objectContaining({ status: 503, code: 'release_not_loaded' }),
+      );
+  });
   it('hashes canonical JSON without key-order differences', () => {
     expect(hash({ a: 1, b: { d: 2, c: 3 } })).toBe(hash({ b: { c: 3, d: 2 }, a: 1 }));
   });

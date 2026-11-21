@@ -236,6 +236,15 @@ deployed executables (a hosted release without one is `incompatible_runtime`, ma
 `runtimeReady`); the failure code is a safe operator diagnostic. The web app explains when the server cannot
 run an extension.
 
+The API answers a run the same way. A run's release comes from the database, so a
+process that does not hold it in its catalog is one a deploy has not reached yet: a
+rolling deploy updates its functions one at a time, and the executor can start a run on
+a new release before the process serving the run's API calls has it. The routes a run
+calls (`/runtime/*`, the source routes, mapped writes, webhook binding) answer
+`503 release_not_loaded` (`ExtensionCatalog.forRun`), which runners retry like any other
+5xx, never a 403 or 404 that would fail the run, move its connection to `setup_failed`
+or `needs_reconnect`, or record a release incident.
+
 Nothing about availability is stored. Each worker passes the `(registration, release
 digest)` pairs it can run now (they resolve in its catalog, fit the server range, are
 `runtimeEnabled`, and have a deployed executable when it knows them) to the job,

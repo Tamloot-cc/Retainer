@@ -45,11 +45,9 @@ export async function saveSuggestions(
     await lockSchemaShared(tx, caller.workspaceId);
     await admitRun(tx, caller.workspaceId, run, false, 'runtime');
     const [job] = await tx`select trigger_kind from extension_jobs where id=${run.jobId}`;
-    const release = catalog
-      .list()
-      .find((r) => r.digest === run.releaseDigest && r.manifest.universalId === run.registrationId);
-    if (job?.trigger_kind !== 'configure' || !release)
+    if (job?.trigger_kind !== 'configure')
       throw new AppError(403, 'forbidden', 'only configure runs save suggestions');
+    const release = catalog.forRun(run);
     for (const key of Object.keys(input.mapping ?? {}))
       if (!release.manifest.mapping?.outputs.some((o) => o.key === key))
         throw new AppError(400, 'invalid_suggestions', 'unknown output', { key });
