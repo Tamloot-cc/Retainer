@@ -5,8 +5,10 @@ import { z } from 'zod';
 import { emptyToUndefined as empty, publicOriginSchema } from '../config.js';
 import { importRunPublicKey, RunTokens } from '../extension-runtime/tokens.js';
 import { LOG_LEVELS, setLogLevel } from '../log.js';
+import { capturePolicySchema } from '../model/capture.js';
 import { createModelProxy, type RecordUsage } from '../model/proxy.js';
-import { reportUsage } from '../model/routes.js';
+import { reportTrace, reportUsage } from '../model/routes.js';
+import type { RecordTrace } from '../model/trace.js';
 
 /**
  * The hosted model proxy (model calls spec 3.6): its own Lambda function,
@@ -28,6 +30,21 @@ const modelConfigSchema = z.object({
     empty,
     publicOriginSchema.default('https://api.anthropic.com/'),
   ),
+  RETAINER_MODEL_CAPTURE_POLICY: z.preprocess(
+    empty,
+    z
+      .string()
+      .transform((value, ctx): unknown => {
+        try {
+          return JSON.parse(value);
+        } catch {
+          ctx.addIssue({ code: 'custom', message: 'Expected a capture policy object' });
+          return z.NEVER;
+        }
+      })
+      .pipe(capturePolicySchema)
+      .optional(),
+  ),
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
 });
 
@@ -37,7 +54,7 @@ const modelConfigSchema = z.object({
  */
 export async function createModelApp(
   env: Record<string, string | undefined>,
-  options: { fetch?: typeof fetch; record?: RecordUsage } = {},
+  options: { fetch?: typeof fetch; record?: RecordUsage; trace?: RecordTrace } = {},
 ) {
   const parsed = modelConfigSchema.safeParse(env);
   // Never include values: they hold the key.
@@ -60,17 +77,18 @@ export async function createModelApp(
         }
       : {}),
   });
+  const reporting = {
+    origin: config.RETAINER_PUBLIC_ORIGIN,
+    secret: config.RETAINER_MODEL_USAGE_SECRET,
+  };
   const proxy = createModelProxy({
     tokens,
     apiKey: config.RETAINER_MODEL_API_KEY,
     upstream: config.RETAINER_MODEL_UPSTREAM_ORIGIN,
     ...(options.fetch ? { fetch: options.fetch } : {}),
-    record:
-      options.record ??
-      reportUsage({
-        origin: config.RETAINER_PUBLIC_ORIGIN,
-        secret: config.RETAINER_MODEL_USAGE_SECRET,
-      }),
+    record: options.record ?? reportUsage(reporting),
+    trace: options.trace ?? reportTrace(reporting),
+    capturePolicy: config.RETAINER_MODEL_CAPTURE_POLICY,
   });
   const app = new Hono();
   // The function URL is the proxy's base URL: the SDK appends `/v1/messages`.

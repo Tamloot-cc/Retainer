@@ -6,6 +6,9 @@
  * server change with a test.
  */
 
+/** A model ID as the proxy accepts it in a path or a request body. */
+export const MODEL_ID = /^[A-Za-z0-9._:@-]{1,200}$/;
+
 /** Anthropic API paths under the proxy's base URL, by method. */
 export const ALLOWED_PATHS: readonly {
   method: 'GET' | 'POST';
@@ -15,7 +18,11 @@ export const ALLOWED_PATHS: readonly {
   { method: 'POST', pattern: /^\/v1\/messages$/, query: ['beta'] },
   { method: 'POST', pattern: /^\/v1\/messages\/count_tokens$/, query: ['beta'] },
   { method: 'GET', pattern: /^\/v1\/models$/, query: ['beta', 'limit', 'before_id', 'after_id'] },
-  { method: 'GET', pattern: /^\/v1\/models\/[A-Za-z0-9._:@-]{1,200}$/, query: ['beta'] },
+  {
+    method: 'GET',
+    pattern: new RegExp(`^/v1/models/${MODEL_ID.source.slice(1)}`),
+    query: ['beta'],
+  },
 ];
 
 /** Top-level body fields of the two Messages paths. Not `container`, `thread` or `diagnostics`. */

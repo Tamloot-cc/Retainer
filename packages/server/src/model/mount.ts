@@ -3,7 +3,7 @@ import type { Sql } from '../db/client.js';
 import type { RunTokens } from '../extension-runtime/tokens.js';
 import type { AppEnv } from '../http/response.js';
 import { createModelProxy } from './proxy.js';
-import { modelProxyRoute, recordDirectly, usageReportRoute } from './routes.js';
+import { modelProxyRoute, recordDirectly, traceDirectly, usageReportRoute } from './routes.js';
 
 /**
  * Mounts what this process serves of the model proxy, outside the `/v1`
@@ -31,6 +31,7 @@ export function mountModelRoutes(
         apiKey: deps.model.apiKey,
         upstream: deps.model.upstream,
         record: recordDirectly(deps.sql),
+        trace: traceDirectly(deps.sql),
       }),
     );
 }

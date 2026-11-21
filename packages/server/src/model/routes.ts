@@ -8,6 +8,7 @@ import { MODEL_PROXY_PATH, type ModelClaims, type RunTokens } from '../extension
 import { type AppEnv, errorResponse } from '../http/response.js';
 import { log } from '../log.js';
 import type { RecordUsage } from './proxy.js';
+import { type ModelTrace, modelTraceSchema, type RecordTrace, recordTrace } from './trace.js';
 import { recordUsage, type UsageReport, usageReportSchema } from './usage.js';
 
 export { MODEL_PROXY_PATH };
@@ -35,23 +36,40 @@ const logLost = (report: UsageReport) =>
   );
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+type ModelReport = UsageReport | ModelTrace;
+const isTrace = (report: ModelReport): report is ModelTrace => 'type' in report;
+const logReportLost = (report: ModelReport) => {
+  if (isTrace(report))
+    log.error(`Model call trace ${report.id} (${report.outcome}) could not be recorded.`);
+  else logLost(report);
+};
+
 /**
- * The self-hosted proxy writes `ai_usage` directly: three tries with backoff,
- * since the insert ignores a repeated ID, then it logs like `reportUsage`.
+ * The self-hosted proxy writes `ai_usage` and `model_calls` directly: three
+ * tries with backoff, since each write ignores a repeated ID, then it logs
+ * like the hosted recorder.
  */
-export const recordDirectly =
-  (sql: Sql, backoffMs = 250): RecordUsage =>
-  async (_token, claims, report) => {
+function directRecorder<T extends ModelReport>(
+  sql: Sql,
+  write: (sql: Sql, claims: ModelClaims, report: T) => Promise<void>,
+  backoffMs = 250,
+) {
+  return async (_token: string, claims: ModelClaims, report: T) => {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        await recordUsage(sql, claims, report);
+        await write(sql, claims, report);
         return;
       } catch {
         if (attempt < 3) await pause(backoffMs * 4 ** (attempt - 1));
       }
     }
-    logLost(report);
+    logReportLost(report);
   };
+}
+
+export const recordDirectly = (sql: Sql, backoffMs?: number): RecordUsage =>
+  directRecorder(sql, recordUsage, backoffMs);
+export const traceDirectly = (sql: Sql): RecordTrace => directRecorder(sql, recordTrace);
 
 const sameSecret = (sent: string, secret: string) => {
   const a = Buffer.from(sent);
@@ -79,10 +97,19 @@ export function usageReportRoute(
     } catch {
       return errorResponse(c, new AppError(400, 'invalid_request', 'usage report must be JSON'));
     }
-    const parsed = usageReportSchema.extend({ token: z.string().min(1).max(8192) }).safeParse(body);
+    const envelope = z
+      .object({ token: z.string().min(1).max(8192) })
+      .loose()
+      .safeParse(body);
+    if (!envelope.success)
+      return errorResponse(c, new AppError(400, 'invalid_request', 'invalid usage report'));
+    const { token, ...fields } = envelope.data;
+    const parsed =
+      fields.type === 'model_call'
+        ? modelTraceSchema.safeParse(fields)
+        : usageReportSchema.safeParse(fields);
     if (!parsed.success)
       return errorResponse(c, new AppError(400, 'invalid_request', 'invalid usage report'));
-    const { token, ...report } = parsed.data;
     let claims: ModelClaims;
     try {
       claims = await deps.tokens.verifyModel(token, USAGE_TOKEN_GRACE_SECONDS);
@@ -92,10 +119,23 @@ export function usageReportRoute(
         new AppError(401, 'unauthorized', 'usage report needs a valid model token'),
       );
     }
-    await recordUsage(deps.sql, claims, report);
+    if (isTrace(parsed.data)) await recordTrace(deps.sql, claims, parsed.data);
+    else await recordUsage(deps.sql, claims, parsed.data);
     return c.json({ recorded: true });
   });
 }
+
+type ReporterOptions = {
+  origin: string;
+  secret: string;
+  fetch?: typeof fetch;
+  backoffMs?: number;
+};
+
+export const reportUsage = (options: ReporterOptions): RecordUsage =>
+  hostedRecorder(options, 10_000);
+export const reportTrace = (options: ReporterOptions): RecordTrace =>
+  hostedRecorder(options, 2_000);
 
 /**
  * The hosted `model` function's recorder: posts each report to the public API
@@ -103,16 +143,11 @@ export function usageReportRoute(
  * backoff before the invocation ends; after that it logs the ID and counts (no
  * content), and that call goes uncounted.
  */
-export function reportUsage(options: {
-  origin: string;
-  secret: string;
-  fetch?: typeof fetch;
-  backoffMs?: number;
-}): RecordUsage {
+function hostedRecorder(options: ReporterOptions, timeoutMs: number) {
   const fetcher = options.fetch ?? fetch;
   const url = new URL(USAGE_REPORT_PATH, options.origin);
   const backoff = options.backoffMs ?? 250;
-  return async (token: string, _claims, report: UsageReport) => {
+  return async (token: string, _claims: ModelClaims, report: ModelReport) => {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const response = await fetcher(url, {
@@ -122,7 +157,7 @@ export function reportUsage(options: {
             'content-type': 'application/json',
           },
           body: JSON.stringify({ ...report, token }),
-          signal: AbortSignal.timeout(10_000),
+          signal: AbortSignal.timeout(timeoutMs),
           redirect: 'error',
         });
         await response.body?.cancel().catch(() => {});
@@ -134,6 +169,6 @@ export function reportUsage(options: {
       }
       if (attempt < 3) await pause(backoff * 4 ** (attempt - 1));
     }
-    logLost(report);
+    logReportLost(report);
   };
 }

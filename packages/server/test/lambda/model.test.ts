@@ -7,7 +7,7 @@ import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { createApiHandler } from '../../src/lambda/api.js';
 import { createModelApp } from '../../src/lambda/model.js';
 import { MAX_REQUEST_BYTES } from '../../src/model/proxy.js';
-import { reportUsage, USAGE_REPORT_PATH } from '../../src/model/routes.js';
+import { reportTrace, reportUsage, USAGE_REPORT_PATH } from '../../src/model/routes.js';
 import type { UsageReport } from '../../src/model/usage.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
@@ -100,6 +100,11 @@ describe('the hosted model function', () => {
           secret: SECRET,
           fetch: t.inProcessFetch as typeof fetch,
         }),
+        trace: reportTrace({
+          origin: env.RETAINER_PUBLIC_ORIGIN as string,
+          secret: SECRET,
+          fetch: t.inProcessFetch as typeof fetch,
+        }),
       },
     );
     const response = await post(app, message);
@@ -172,12 +177,14 @@ describe('the hosted model function', () => {
     await expect(executorTokens.verifyModel(result.model.token)).rejects.toMatchObject({
       status: 401,
     });
+    const reporting = {
+      origin: 'http://retainer.test',
+      secret: SECRET,
+      fetch: t.inProcessFetch as typeof fetch,
+    };
     const app = await createModelApp(env, {
-      record: reportUsage({
-        origin: 'http://retainer.test',
-        secret: SECRET,
-        fetch: t.inProcessFetch as typeof fetch,
-      }),
+      record: reportUsage(reporting),
+      trace: reportTrace(reporting),
     });
     const response = await post(app, message, result.model.token);
     expect(response.status).toBe(200);
@@ -187,7 +194,7 @@ describe('the hosted model function', () => {
   });
 
   it('refuses a body over 6 MB with 413', async () => {
-    const app = await createModelApp(env, { record: async () => {} });
+    const app = await createModelApp(env, { record: async () => {}, trace: async () => {} });
     const response = await post(app, 'x'.repeat(MAX_REQUEST_BYTES + 1));
     expect(response.status).toBe(413);
     expect(((await response.json()) as { error: { type: string } }).error.type).toBe(

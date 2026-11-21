@@ -27,7 +27,23 @@ const MAX_JSON_BYTES = 16 * 1024 * 1024;
 const count = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
 
-const METERED_EVENTS = new Set(['message_start', 'message_delta', 'message_stop']);
+const providerErrorTypes = new Set([
+  'invalid_request_error',
+  'authentication_error',
+  'billing_error',
+  'permission_error',
+  'not_found_error',
+  'request_too_large',
+  'rate_limit_error',
+  'api_error',
+  'overloaded_error',
+]);
+export function providerErrorCode(value: unknown): string | undefined {
+  const type = (value as { error?: { type?: unknown } } | null)?.error?.type;
+  return typeof type === 'string' && providerErrorTypes.has(type) ? type : undefined;
+}
+
+const METERED_EVENTS = new Set(['message_start', 'message_delta', 'message_stop', 'error']);
 
 /**
  * Reads usage from a Messages response as it passes through: a JSON body, or
@@ -42,6 +58,10 @@ export class UsageMeter {
   private usage: Record<string, unknown> = {};
   private complete = false;
   private overflow = false;
+  providerError: string | undefined;
+  get messageComplete() {
+    return this.complete;
+  }
   constructor(private readonly streamed: boolean) {}
 
   push(chunk: Uint8Array) {
@@ -106,7 +126,9 @@ export class UsageMeter {
       } catch {
         continue;
       }
-      if (parsed.type === 'message_start') {
+      if (parsed.type === 'error')
+        this.providerError = providerErrorCode(parsed) ?? 'provider_stream_error';
+      else if (parsed.type === 'message_start') {
         if (typeof parsed.message?.model === 'string') this.model = parsed.message.model;
         if (parsed.message?.usage && typeof parsed.message.usage === 'object')
           this.usage = { ...(parsed.message.usage as Record<string, unknown>) };
@@ -123,7 +145,12 @@ export class UsageMeter {
   }
 
   /** What was seen, or undefined when the response named no model (nothing to record). */
-  report(id: string, providerRequestId: string | null, cut: boolean): UsageReport | undefined {
+  report(
+    id: string,
+    providerRequestId: string | null,
+    cut: boolean,
+    at = new Date().toISOString(),
+  ): UsageReport | undefined {
     if (!this.model) return undefined;
     const usage = jsonValue(this.usage) as UsageReport['usage'];
     return {
@@ -136,7 +163,7 @@ export class UsageMeter {
       cacheReadTokens: count(this.usage.cache_read_input_tokens),
       cacheWriteTokens: count(this.usage.cache_creation_input_tokens),
       usage,
-      at: new Date().toISOString(),
+      at,
     };
   }
 }

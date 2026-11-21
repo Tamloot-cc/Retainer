@@ -2,8 +2,17 @@ import { randomBytes } from 'node:crypto';
 import { bearerToken } from '../auth/middleware.js';
 import type { ModelClaims, RunTokens, VerifiedModelToken } from '../extension-runtime/tokens.js';
 import { readCapped } from '../http/request.js';
-import { allowedPath, refusedBeta, refusedBody, refusedRoutineBody } from './allowlist.js';
-import { UsageMeter, type UsageReport } from './usage.js';
+import { log } from '../log.js';
+import {
+  allowedPath,
+  MODEL_ID,
+  refusedBeta,
+  refusedBody,
+  refusedRoutineBody,
+} from './allowlist.js';
+import { type CapturePolicy, captureFor } from './capture.js';
+import type { ModelTrace, RecordTrace } from './trace.js';
+import { providerErrorCode, UsageMeter, type UsageReport } from './usage.js';
 
 /**
  * The model proxy (model calls spec 3.2). Extension code calls it with the
@@ -24,6 +33,8 @@ export const UPSTREAM_TIMEOUT_MS = 330_000;
 const FORWARDED_REQUEST_HEADERS = ['anthropic-version', 'anthropic-beta', 'content-type'];
 /** Response headers passed back: the body's type and what the SDK reads. */
 const FORWARDED_RESPONSE_HEADERS = ['content-type', 'request-id', 'retry-after'];
+/** How much of a provider error body is read for its error type. */
+const MAX_ERROR_BYTES = 8192;
 
 /** A UUIDv7, like every primary key: the usage row's ID, made before the row exists. */
 export function uuidv7(now = Date.now()): string {
@@ -49,6 +60,8 @@ export type ModelProxyOptions = {
   /** Anthropic's API origin, or a fake in tests. */
   upstream: string;
   record: RecordUsage;
+  trace?: RecordTrace | undefined;
+  capturePolicy?: CapturePolicy | undefined;
   fetch?: typeof fetch;
   timeoutMs?: number;
 };
@@ -102,6 +115,8 @@ export function createModelProxy(options: ModelProxyOptions) {
     if (beta) return anthropicError(beta.status, beta.type, beta.message);
     let body: Uint8Array | undefined;
     let streamed = false;
+    let requestedModel: string | null = null;
+    let captureCandidate: unknown;
     if (request.method === 'POST') {
       const declared = Number(request.headers.get('content-length'));
       body =
@@ -120,7 +135,11 @@ export function createModelProxy(options: ModelProxyOptions) {
       if (refused) return anthropicError(refused.status, refused.type, refused.message);
       const narrowed = claims.kind === 'routine' ? refusedRoutineBody(parsed, claims) : undefined;
       if (narrowed) return anthropicError(narrowed.status, narrowed.type, narrowed.message);
-      streamed = (parsed as { stream?: unknown }).stream === true;
+      const message = parsed as { stream?: unknown; model?: unknown };
+      streamed = message.stream === true;
+      if (options.capturePolicy && path === '/v1/messages') captureCandidate = parsed;
+      if (typeof message.model === 'string' && MODEL_ID.test(message.model))
+        requestedModel = message.model;
     }
 
     const headers = new Headers({ 'x-api-key': options.apiKey });
@@ -141,34 +160,80 @@ export function createModelProxy(options: ModelProxyOptions) {
         Math.min(options.timeoutMs ?? UPSTREAM_TIMEOUT_MS, claims.expiresAt * 1000 - Date.now()),
       ),
     );
-    // Successful Messages responses are metered; errors, token counts and
-    // model lists pass through unchanged, and a rejected request records nothing.
+    const metered = request.method === 'POST' && path === '/v1/messages';
+    if (request.signal.aborted) {
+      clearTimeout(timeout);
+      return anthropicError(502, 'api_error', 'the model request was cancelled');
+    }
+    const started = Date.now();
+    const monotonicStart = performance.now();
+    const call: Extract<ModelTrace, { outcome: 'started' }> = {
+      id: uuidv7(started),
+      type: 'model_call',
+      outcome: 'started',
+      requestedModel,
+      startedAt: new Date(started).toISOString(),
+    };
+    // Both recorders retry and log what they lose; the response is unaffected.
+    const trace = async (report: ModelTrace) => {
+      try {
+        await options.trace?.(token, claims, report);
+      } catch {}
+    };
+    const startReport = metered ? trace(call) : undefined;
+    const capture = metered
+      ? captureFor(options.capturePolicy, claims, started, body, captureCandidate)
+      : undefined;
     let meter: UsageMeter | undefined;
     let providerRequestId: string | null = null;
+    let httpStatus: number | null = null;
+    let providerError: string | undefined;
     let finished: Promise<void> | undefined;
-    // Once, before the stream to the extension closes, so a hosted invocation
-    // can't end with its report still pending.
-    const finish = (cut: boolean) => {
+    const finish = (
+      outcome: Exclude<ModelTrace['outcome'], 'started'>,
+      code: string | null = null,
+      partialBody = false,
+    ) => {
       finished ??= (async () => {
         clearTimeout(timeout);
         request.signal.removeEventListener('abort', onClientAbort);
-        const report = meter?.report(uuidv7(), providerRequestId, cut);
-        if (!report) return;
-        try {
-          await options.record(token, claims, report);
-        } catch {
-          // Both recorders retry and log what they lose; the response is unaffected.
-        }
+        if (!metered) return;
+        const usage = meter?.report(
+          call.id,
+          providerRequestId,
+          outcome !== 'completed',
+          call.startedAt,
+        );
+        const finishedAt = Date.now();
+        const payload = capture?.finish(partialBody, finishedAt);
+        await Promise.all([
+          startReport,
+          trace({
+            ...call,
+            outcome,
+            code,
+            finishedAt: new Date(finishedAt).toISOString(),
+            ...(payload ? { payload } : {}),
+            durationMs: Math.round(performance.now() - monotonicStart),
+            returnedModel: usage?.model ?? null,
+            providerRequestId,
+            httpStatus,
+          }),
+          usage ? options.record(token, claims, usage).catch(() => {}) : undefined,
+        ]);
       })();
       return finished;
     };
+    /** The body stopped early: a provider error keeps its status as the code. */
+    const interrupted = (code: string) =>
+      finish(providerError ? 'provider_error' : 'stream_interrupted', providerError ?? code, true);
     const onClientAbort = () => {
       abort.abort();
-      void finish(true);
+      void (httpStatus === null
+        ? finish('transport_error', 'client_disconnected', true)
+        : interrupted('client_disconnected'));
     };
-    // A disconnect during the checks above fired before this listener existed.
-    if (request.signal.aborted) onClientAbort();
-    else request.signal.addEventListener('abort', onClientAbort, { once: true });
+    request.signal.addEventListener('abort', onClientAbort, { once: true });
     let response: Response;
     try {
       response = await fetcher(target, {
@@ -179,9 +244,16 @@ export function createModelProxy(options: ModelProxyOptions) {
         redirect: 'error',
       });
     } catch {
-      await finish(true);
+      await finish(
+        'transport_error',
+        abort.signal.aborted ? 'request_aborted' : 'fetch_failed',
+        true,
+      );
       return anthropicError(502, 'api_error', 'the model provider could not be reached');
     }
+    httpStatus = response.status;
+    providerRequestId = response.headers.get('request-id')?.slice(0, 200) ?? null;
+    providerError = response.ok ? undefined : `http_${response.status}`;
     // Set here, not by the mount: a handler returning this Response drops
     // headers set on Hono's context.
     const outgoing = new Headers({ 'cache-control': 'no-store' });
@@ -190,14 +262,24 @@ export function createModelProxy(options: ModelProxyOptions) {
       if (value !== null) outgoing.set(name, value);
     }
     if (!response.body) {
-      await finish(false);
+      await finish(providerError ? 'provider_error' : 'completed', providerError);
       return new Response(null, { status: response.status, headers: outgoing });
     }
-    if (request.method === 'POST' && path === '/v1/messages' && response.ok) {
-      meter = new UsageMeter(streamed);
-      providerRequestId = response.headers.get('request-id');
-    }
+    if (metered && response.ok) meter = new UsageMeter(streamed);
     const reader = response.body.getReader();
+    const errorChunks: Uint8Array[] = [];
+    let errorBytes = 0;
+    const errorCode = () => {
+      if (!providerError || errorBytes > MAX_ERROR_BYTES) return providerError;
+      try {
+        return (
+          providerErrorCode(JSON.parse(Buffer.concat(errorChunks).toString('utf8'))) ??
+          providerError
+        );
+      } catch {
+        return providerError;
+      }
+    };
     return new Response(
       new ReadableStream<Uint8Array>({
         async pull(controller) {
@@ -205,22 +287,31 @@ export function createModelProxy(options: ModelProxyOptions) {
           try {
             chunk = await reader.read();
           } catch (error) {
-            await finish(true);
+            await interrupted('body_read_failed');
             controller.error(error);
             return;
           }
           if (chunk.done) {
             meter?.end();
-            await finish(false);
+            if (providerError || meter?.providerError)
+              await finish('provider_error', meter?.providerError ?? errorCode());
+            else if (streamed && !meter?.messageComplete)
+              await finish('stream_interrupted', 'stream_incomplete', true);
+            else await finish('completed');
             controller.close();
             return;
+          }
+          capture?.push(chunk.value);
+          if (providerError && errorBytes <= MAX_ERROR_BYTES) {
+            errorBytes += chunk.value.byteLength;
+            if (errorBytes <= MAX_ERROR_BYTES) errorChunks.push(chunk.value);
           }
           meter?.push(chunk.value);
           controller.enqueue(chunk.value);
         },
         async cancel() {
           abort.abort();
-          await finish(true);
+          await interrupted('client_disconnected');
         },
       }),
       { status: response.status, headers: outgoing },

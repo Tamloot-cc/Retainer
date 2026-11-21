@@ -115,6 +115,12 @@ export class ChangeMaintenance {
     if (this.stopped || Date.now() >= deadline || Date.now() < this.pruneAfter)
       return { queued, blocked, pruned, failed };
     this.pruneAfter = Date.now() + 60000;
+    try {
+      await this
+        .discovery`select public.retainer_prune_model_calls(), public.retainer_prune_model_call_payloads()`;
+    } catch {
+      failed++;
+    }
     const expired = await this.discovery<
       { workspace_id: string }[]
     >`select * from retainer_change_retention_due(1000)`;
