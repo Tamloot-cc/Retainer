@@ -48,8 +48,11 @@ hosted [tool functions](extensions-tools.md) that call Booking's API
 cancel (section 4). Like the
 other first-party extensions, Booking lives in this repository as an MIT
 package, `packages/booking`. Its service depends only on `@retainer/sdk`
-and `@retainer/shared`, its tool functions on `@retainer/extension`, and
-none of it imports server code.
+and `@retainer/shared`. The five tool functions are thin HTTP calls compiled
+into `packages/runner` with the other first-party functions, because hosted
+functions run only from the reviewed runner build. Both sides import one
+request and response contract from `@retainer/shared`, so they cannot drift.
+None of it imports server code.
 
 ## 2. V1 experience
 
@@ -149,7 +152,9 @@ passes that version to `booking_move` or `booking_cancel`. Change results
 return the new version, and a stale version returns the current booking. Tool
 calls follow the guest policy (notice, horizon and change cutoff), because no
 staff member is present to give an audit reason. While the binding is
-disconnected, Booking refuses tool calls with `booking_not_connected`.
+disconnected, Booking refuses tool calls with `booking_not_connected`. It
+treats any `401` from Retainer as a disconnect, so a reconnect whose
+callback was lost stops tool calls until the reconnect completes.
 
 Booking mutations and configuration edits share one lock order:
 
@@ -166,7 +171,10 @@ candidates with different start times. Cancelled claims leave the active
 set, and a move replaces claims inside its transaction.
 
 Scope request keys to workspace, authorized caller or public session, and
-operation. Store the request digest and final result with the transaction.
+operation. Store the request digest and a reference to the result (booking
+ID, version and outcome) with the transaction. A replay renders the response
+from the current booking, so a deleted booking replays as deleted and no
+stored result keeps guest details.
 Reject same-key requests with a different payload. An authorized retry with
 the same key receives the durable result. Stale edit versions return the
 current authorized state for refresh rather than overwriting someone else's
@@ -191,8 +199,7 @@ effects while Booking continues to treat the reservation as confirmed.
      landing after a newer one.
   2. If no summary exists, create it. The create is create-only, and the
      unique `bookingId` refuses a second record. After a refused or
-     unanswered create, look the summary up by `bookingId` and continue as
-     an update.
+     unanswered create, start again from step 1.
   3. Otherwise upsert by `bookingId` with `expectedUpdatedAt` from step 1.
      Retainer checks it under the record lock, so a delayed older request
      is refused with `412 stale_write`. On a `412`, repeat both reads.
@@ -202,16 +209,22 @@ effects while Booking continues to treat the reservation as confirmed.
   5. Mark outbox items done only up to the booking version actually
      written.
 
-  A `deleted` event soft-deletes the summary through the same job.
+  A `deleted` event soft-deletes the summary through the same job. If an
+  earlier create's outcome is unknown, the job concludes there is no summary
+  only after that request's deadline has passed, so a late create cannot
+  outlive the delete. `expectedUpdatedAt` needs Retainer to expose
+  `updatedAt` at full database precision, so two changes in one millisecond
+  differ.
 - Surface delivery failures to staff.
 
 ## 5. V1 access, installation and CRM
 
 - **Staff identity.** Staff sign in through Retainer from the sidebar link
   ([extensions.md](extensions.md) §8). Booking takes roles from the
-  Retainer role in the ID token: workspace admins are owners, who manage
-  configuration and the Retainer connection, and members are schedulers,
-  who manage bookings. Booking keeps no staff list or passwords of its own.
+  Retainer role in the ID token: admins are owners, who manage
+  configuration and the Retainer connection; editors are schedulers, who
+  manage bookings; viewers can look but change nothing. The command layer
+  enforces the role, not just the screens. Booking keeps no staff list or passwords of its own.
   The installation credential stays a server credential and is never tied
   to a person. Bootstrap: a Retainer admin approves the installation, opens
   Booking from the sidebar, and completes the connection consent, using
@@ -223,9 +236,7 @@ effects while Booking continues to treat the reservation as confirmed.
   existing binding. The owner who started it is told only that the
   installation is connected to another Booking workspace, without naming
   it. A lost callback leaves the binding disconnected, and repeating
-  consent from the bound Booking workspace restores it. In key mode, Booking verifies the
-  workspace and installation through `GET /v1/me` before storing a key.
-  Connecting a different Retainer workspace requires a new Booking
+  consent from the bound Booking workspace restores it. Connecting a different Retainer workspace requires a new Booking
   workspace.
 - **Tool key.** When the connection completes, Booking generates a random
   tool key and saves its hash as pending. It then writes its API address and
@@ -248,7 +259,10 @@ effects while Booking continues to treat the reservation as confirmed.
 - **CRM summary.** Booking's release contributes one Booking object through
   the schema engine, with permanent universal IDs for the object and its
   fields. It does not map onto a workspace's own objects. Writes use the
-  installation's `integration` actor and ordinary field assertions.
+  installation's `integration` actor and ordinary field assertions. The
+  `person` relation needs the workspace's Person object, so installing
+  Booking requires it. A workspace started from scratch has none, and the
+  install preview names it as missing.
 
   | Field | Type | Written by | Note |
   | --- | --- | --- | --- |
@@ -307,7 +321,10 @@ Booking depends on these platform changes, none of them built yet:
 3. `Retainer-Caused-By` naming tool calls of the same installation (§9.4).
 4. Installation-owned fields, with owner-only merge and delete for records
    whose unique field is one of them.
-5. Sidebar links and sign-in to standalone apps through Retainer (§8).
+5. Sidebar links and sign-in to standalone apps through Retainer (§8),
+   which skips the consent page only for the installation's own client.
+6. `updatedAt` exposed at full database precision, so `expectedUpdatedAt`
+   tells apart two changes in one millisecond.
 
 The hosted server must also accept the `tool` kind before Booking's bundle
 enters the catalog ([extension tools](extensions-tools.md) §7).
@@ -378,9 +395,19 @@ staff, guest and CRM paths end to end.
   or past the guest cutoff, is refused. The tools are unavailable before
   the key is written and after the credential is revoked.
 - A workspace member opens Bookings from Retainer's sidebar and is signed
-  in without a password, as an owner if they are a Retainer admin and a
-  scheduler otherwise. A person outside the workspace is refused. A
-  removed member loses access within 12 hours.
+  in without a password: an admin as owner, an editor as scheduler and a
+  viewer read-only. A viewer's direct change request is refused. A person
+  outside the workspace is refused. Another OAuth client that names the
+  installation gets no ID token without consent. A removed member loses
+  access within 12 hours.
+- Installing Booking in a workspace without a Person object fails in the
+  preview with a clear message. Acceptance runs from a workspace started
+  from scratch with the Person object added.
+- After `deleteBooking`, no stored request result or outbox item holds the
+  guest's details. A delete that starts while a first create is unanswered
+  leaves no summary once that create lands. Two summary writes in one
+  millisecond do not both pass `expectedUpdatedAt`. A `401` from Retainer
+  stops tool calls until the reconnect completes.
 - A Routine that books when a booking is created does not trigger itself.
   A CRM write delayed behind a newer one, or a create retried after a lost
   response, leaves one current summary. A person cannot merge or delete a

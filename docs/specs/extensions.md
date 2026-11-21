@@ -510,6 +510,8 @@ A standalone release may also include hosted functions. The app's service keeps
 its installation credential, and the functions run in the sandbox like any
 hosted function, with run tokens and their declared scopes and secrets. This is
 how a standalone app publishes tools: a `tool` function calls the app's own API.
+Like every first-party function, it is compiled into `packages/runner`, because
+hosted functions run only from the reviewed runner build.
 One review covers both parts, and disable or uninstall stops both.
 `execution` decides only how the app's service gets its credential and how the
 installation activates. The functions follow the hosted rules for
@@ -533,6 +535,15 @@ no consent page:
   Retainer passes straight through.
 - The link names the installation, so a person in several workspaces sees no
   workspace picker.
+- Retainer skips the consent page only when the requesting client is the one
+  the installation's release pins (`oauthClientId`), the redirect URI is one
+  registered for it, the scopes are exactly `openid email profile` with no
+  resource, the installation is active and the person is a member of its
+  workspace. Any other request gets the normal consent page or is refused.
+  Client registration is open, so this check is what keeps another client
+  from learning who a member is. It is decided per request, never with a
+  client-wide skip-consent flag, which would also skip the installation's
+  API consent.
 - Retainer returns an ID token with the person's ID, name, email, workspace
   ID, workspace role and the installation ID. It grants no API access; the app
   keeps using its installation credential for that.

@@ -27,7 +27,7 @@ against them.
 
 | Seam | Rule | What it makes cheap later |
 | --- | --- | --- |
-| Booking and Retainer | Booking reaches Retainer only through `@retainer/sdk` and its tool functions. It has its own database and never imports server code. | Moving, scaling or replacing Booking; the next standalone app |
+| Booking and Retainer | Booking reaches Retainer only through `@retainer/sdk` and its tool functions. It has its own database and never imports server code. The tool functions are thin HTTP calls; all booking logic stays in `packages/booking`. | Moving, scaling or replacing Booking; the next standalone app |
 | Platform stays generic | Nothing in PR 1 names Booking. Its tests use the generic fixture app. | Every future standalone app reuses PR 1 unchanged |
 | One command layer | Staff screens, guest pages and tool functions call the same commands, each with an actor. No caller writes tables directly. | Agents, partners and webhooks as new callers |
 | Pure domain core | Availability, policy and assignment are pure functions with no I/O. Availability takes busy intervals as input. | External calendars add a busy source, not a new algorithm |
@@ -50,7 +50,16 @@ its own database, React with Vite and TanStack Router for the pages.
 | `src/auth` | Guest capabilities, the staff identity port and its adapters | `store` |
 | `src/api` | Hono routes for staff, public and guest callers | `commands`, `auth` |
 | `src/web` | Staff screens, public pages, guest management page | the API over HTTP only |
-| `src/functions` | The tool functions bundle (`@retainer/extension`) | Booking's API over HTTP only |
+
+The five tool functions do not live here. Hosted functions run only when they
+are compiled into `packages/runner`: its `registry.ts` answers any unknown
+function with `function_not_bundled`, and the runner image builds only
+`shared`, `extension`, `sdk` and `runner`. So the functions go in
+`packages/runner/src/booking.ts` and `booking-contract.ts`, registered in
+`registry.ts` and released by `scripts/build-extension-artifacts.mjs`, as
+Tamloot's are. They only call Booking's API over HTTP. The request and response
+schemas live in one `@retainer/shared` module that Booking's API and the
+functions both import.
 
 Add `packages/booking` to `scripts/check-layers.mjs` with these rules, and
 forbid imports from `packages/server`. The pages reuse `packages/web`'s styles
@@ -72,9 +81,10 @@ standalone release with one tool.
    `extension-control/configuration.ts`, `extension-runtime/availability.ts`
    and uninstall in `extension-runtime/queue.ts`. Lifecycle jobs run only for
    declared lifecycle functions.
-2. **Hosted accepts the `tool` kind.** `extensionServices` must load a catalog
-   with tool functions. Deploy this before any bundle with a tool reaches the
-   hosted catalog; an unknown kind stopped catalog loading on 2026-11-15.
+2. **Hosted accepts the `tool` kind.** `extensionServices` already does; add a
+   test that a hosted catalog with tool functions loads, and keep it deployed
+   before any bundle with a tool reaches the hosted catalog. An unknown kind
+   stopped catalog loading on 2026-11-15.
 3. **Tool readiness.** A tool is ready only with a live, unrevoked credential
    and its generated secret present. Check in `extensions/tools.ts` and in the
    broker.
@@ -95,14 +105,24 @@ standalone release with one tool.
 7. **Sidebar link and sign-in.** A `sidebarLink` in the manifest, rendered in
    `packages/web/src/ui/shell.tsx` for members of workspaces where the
    installation is active. An identity-only flow on the existing OAuth server
-   in `accounts/auth.ts`: `openid`, `email`, `profile`, no API resource, no
-   consent page, the installation named by the link, the claims listed in
-   extensions.md §8.
+   in `accounts/auth.ts`: `openid`, `email`, `profile`, no API resource, the
+   installation named by the link, the claims listed in extensions.md §8. The
+   consent page is skipped per request, only when the client is the
+   installation's pinned `oauthClientId` with a registered redirect URI and
+   the person is a member. Never use the client-wide `skipConsent` flag: client
+   registration is open, and the flag would also skip the installation's API
+   consent.
+8. **`updatedAt` at full precision.** Expose and compare `updatedAt` at the
+   database's microsecond precision. Today it passes through a JavaScript
+   `Date` (`records/read.ts`) and `records/write.ts` compares milliseconds, so
+   two changes in one millisecond share a precondition.
 
 **Done when** the fixture app installs, a routine calls its tool, its
 credential writes the tool's secret, a write citing the tool call does not
 retrigger the routine, a person cannot edit, merge or delete a record keyed by
-its owned field, and a member opens its sidebar link signed in.
+its owned field, a member opens its sidebar link signed in, another client
+naming the installation gets no ID token without consent, and two writes in
+one millisecond do not both pass `expectedUpdatedAt`.
 
 **Leaves out:** mapping and member connections for standalone releases, and
 showing an app's page inside Retainer's own page.
@@ -125,7 +145,10 @@ review.
   exclusion constraint on workspace and resource (`btree_gist`).
 - **Commands:** the six operations in the product spec §4, the lock order,
   request-key replay and stale-version responses. Configuration edits take
-  the same locks.
+  the same locks. Request keys store a reference to the result (booking ID,
+  version, outcome), never the response body, and a replay renders from the
+  current booking. Every command checks the caller's role: owner, scheduler
+  or viewer.
 - **Outbox:** the worker and the email adapter (Resend, notice key as its
   idempotency key). The CRM adapter is an interface with no implementation
   yet.
@@ -140,7 +163,8 @@ overlap; a failed two-resource booking leaves no claim; a failed move keeps
 the original claims; a schedule edit and a booking commit cannot race past a
 new block; replays return the first result; overrides and daylight-saving
 boundaries give the documented slots; a guest link reaches only its booking;
-an email retry sends once.
+an email retry sends once; after `deleteBooking`, no request-key row or
+outbox item holds the guest's details; a viewer's change request is refused.
 
 **Leaves out:** Retainer sign-in, the connection, the CRM summary and the tools.
 
@@ -148,21 +172,31 @@ an email retry sends once.
 
 Needs PR 1 merged.
 
-- **Staff identity adapter:** Retainer sign-in; admins are owners, members are
-  schedulers.
-- **Binding:** OAuth connection and key mode verified with `GET /v1/me`; one
-  binding per Retainer origin, workspace and installation; repeat consent
-  refreshes it.
+- **Staff identity adapter:** Retainer sign-in; admins are owners, editors are
+  schedulers, viewers are read-only.
+- **Binding:** the OAuth connection only, because Booking needs accounts mode;
+  one binding per Retainer origin, workspace and installation; repeat consent
+  refreshes it. Any `401` from Retainer marks the binding disconnected and
+  stops tool calls until the reconnect completes.
 - **Tool key:** pending hash first, one rotation at a time, retry with the
   revision a `409` reports.
 - **CRM adapter:** the five steps in the product spec §4, including
-  `Retainer-Caused-By`; `deleteBooking` soft-deletes the summary; revocation
-  halts the adapter and shows in delivery status.
+  `Retainer-Caused-By`. After a refused or unanswered create, start again from
+  the first read. `deleteBooking` soft-deletes the summary; if an earlier
+  create's outcome is unknown, the delete job waits until that request's
+  deadline has passed before concluding there is no summary. Revocation halts
+  the adapter and shows in delivery status.
+- **Tool functions:** in `packages/runner`, as in §2, over the shared contract.
 - **Release:** the Booking object with permanent IDs and installation-owned
-  fields, the sidebar link, and the five tool functions.
+  fields, the Person object as an install requirement the preview reports,
+  the sidebar link, and the five tool functions. The manifest takes
+  `oauthClientId` as a build input, because the client ID differs on every
+  Retainer deployment; the Compose test registers the client, then builds the
+  manifest and the runner image.
 
 **Tests:** the product spec's §7 end to end against real Postgres for both
-apps, and `pnpm test:docker` for Compose.
+apps, starting from a workspace created from scratch with the Person object
+added, and `pnpm test:docker` for Compose.
 
 ## 6. Rollout
 
@@ -170,10 +204,13 @@ apps, and `pnpm test:docker` for Compose.
 2. In `retainer-cloud`: Booking's database and login role on the existing
    Postgres server, Booking's API and worker next to Retainer's, the Resend
    domain and key.
-3. Register Booking's OAuth client and catalog entry, add it to
-   `EXTENSION_BUNDLES` and the cloud allowlist, and apply the Terraform
-   variables.
-4. Self-hosting: `docker/booking.compose.yml` and a section in
+3. Register Booking's OAuth client, build the release and runner image with
+   its client ID, add the catalog entry to `EXTENSION_BUNDLES` and the cloud
+   allowlist, and apply the Terraform variables.
+4. Pilot workspaces need the Person object. A workspace from hosted onboarding
+   that started from scratch gets it through the schema engine before
+   installing Booking.
+5. Self-hosting: `docker/booking.compose.yml` and a section in
    `docs/self-hosting.md`. Booking needs accounts mode.
 
 ## 7. Where later features go
