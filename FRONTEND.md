@@ -899,8 +899,12 @@ this:
 - No native `<select>`. A choice is a `SelectMenu` (a button opening a
   searchable `OptionList`); a list of actions or of one-of-many settings is
   a `Menu`. Lists move with the arrow keys and pick with Enter.
-- Checkboxes, radios and switches use the drawn `ui-checkbox`, `ui-radio`
-  and `ui-switch` styles in `style.css`, never the browser's.
+- Checkboxes, radios and switches are `Checkbox`, `Radio` and `Switch` from
+  `src/ui/choice.tsx`, never an `<input type="checkbox">` or `"radio"` in a
+  screen. They draw the control (`ui-checkbox`, `ui-radio`, `ui-switch` in
+  `style.css`, never the browser's), take a `label` and an optional
+  `description`, and centre the control on the label's first line at any
+  text size. A test fails if a screen draws its own.
 
 ---
 

@@ -17,6 +17,7 @@ import { api, canMutate, useWorkspace } from '../../api/client.js';
 import {
   Badge,
   Button,
+  Checkbox,
   CopyButton,
   Dialog,
   Empty,
@@ -64,7 +65,7 @@ import {
   useRefreshExtensions,
 } from './model.js';
 import { SettingFields } from './setting-fields.js';
-import { ExtensionCard, ExtensionCheckbox, ExtensionFacts } from './surface.js';
+import { ExtensionCard, ExtensionFacts } from './surface.js';
 
 type Settings = Installation['settings'];
 type Tab = 'overview' | 'connections' | 'mapping' | 'settings' | 'runs' | 'credentials';
@@ -764,8 +765,9 @@ export function InstallationCredentials({
         <ExtensionCard title="Create a key" icon={KeyRound}>
           <Stack>
             {installation.grantedScopes.map((scope) => (
-              <ExtensionCheckbox
+              <Checkbox
                 key={scope}
+                variant="card"
                 checked={selected.includes(scope)}
                 onChange={(event) =>
                   setScopes(
@@ -774,9 +776,8 @@ export function InstallationCredentials({
                       : selected.filter((s) => s !== scope),
                   )
                 }
-              >
-                {scope === 'read' ? 'Read workspace data' : 'Write workspace data'}
-              </ExtensionCheckbox>
+                label={scope === 'read' ? 'Read workspace data' : 'Write workspace data'}
+              />
             ))}
             <Row>
               <Button

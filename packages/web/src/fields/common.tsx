@@ -34,7 +34,6 @@ import {
   Button,
   CategoryTag,
   Check,
-  CheckLabel,
   Columns,
   ExternalLink,
   type FitItem,
@@ -51,6 +50,7 @@ import {
   Row,
   SelectMenu,
   Stack,
+  Switch,
   Textarea,
   Tooltip,
   toggleValue,
@@ -934,17 +934,14 @@ export function FieldInput(props: InputProps) {
       return <FieldDisplay field={field} value={value} />;
     case 'boolean':
       return (
-        <CheckLabel>
-          <Input
-            {...controlState}
-            type="checkbox"
-            role="switch"
-            aria-label={field.label}
-            checked={value === true}
-            onChange={(e) => onChange(e.target.checked)}
-          />
-          <span>{value === true ? 'Yes' : 'No'}</span>
-        </CheckLabel>
+        <Switch
+          {...controlState}
+          aria-label={field.label}
+          checked={value === true}
+          onChange={(e) => onChange(e.target.checked)}
+          label={value === true ? 'Yes' : 'No'}
+          truncate
+        />
       );
     case 'number':
       return (

@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import type { InputHTMLAttributes, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import {
   ReviewCard,
   ReviewCardBody,
@@ -39,20 +39,5 @@ export function ExtensionFacts({ items }: { items: [string, ReactNode][] }) {
         </div>
       ))}
     </dl>
-  );
-}
-
-/** A checkbox and its explanation share one touch target. */
-export function ExtensionCheckbox({
-  children,
-  ...input
-}: Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'children'> & {
-  children: ReactNode;
-}) {
-  return (
-    <label className="flex min-h-11 min-w-0 items-start gap-2.5 rounded-md bg-muted/50 px-3 py-2.5 text-sm">
-      <input {...input} type="checkbox" className="ui-checkbox" />
-      <span className="flex min-w-0 flex-col gap-1 [overflow-wrap:anywhere]">{children}</span>
-    </label>
   );
 }

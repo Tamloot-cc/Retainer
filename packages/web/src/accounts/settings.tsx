@@ -19,7 +19,7 @@ import { TimeZoneSetting } from '../routes/routines/time-zone.js';
 import { QueryError, useView } from '../routes/state.js';
 import {
   Button,
-  CheckLabel,
+  Checkbox,
   Code,
   CopyButton,
   Dialog,
@@ -634,20 +634,12 @@ function CreateKey({
               options={KEY_ACCESS_OPTIONS}
               onChange={setAccess}
             />
-            <Stack gap="small">
-              <CheckLabel>
-                <Input
-                  type="checkbox"
-                  checked={worksForMe}
-                  onChange={(e) => setWorksForMe(e.target.checked)}
-                />
-                <span>This agent works for me</span>
-              </CheckLabel>
-              <Muted small>
-                It can read and write your personal memory here, which only you and your agents see.
-                Leave it off for a key a team or a service shares.
-              </Muted>
-            </Stack>
+            <Checkbox
+              checked={worksForMe}
+              onChange={(e) => setWorksForMe(e.target.checked)}
+              label="This agent works for me"
+              description="It can read and write your personal memory here, which only you and your agents see. Leave it off for a key a team or a service shares."
+            />
             {error ? <Notice error>{error}</Notice> : null}
             <Button type="submit" variant="primary">
               Create key

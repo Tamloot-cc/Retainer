@@ -28,7 +28,7 @@ import { api, useWorkspace } from '../../api/client.js';
 import { fields } from '../../fields/index.js';
 import {
   Button,
-  CheckLabel,
+  Checkbox,
   Dialog,
   Form,
   FormField,
@@ -551,16 +551,14 @@ export function ViewOptions({
             const shown = !view.hiddenGroups.includes(g.value);
             return (
               <MenuItem key={g.key} muted={!shown}>
-                <CheckLabel>
-                  <Input
-                    type="checkbox"
-                    checked={shown}
-                    onChange={() =>
-                      onChange({ hiddenGroups: toggleHidden(view.hiddenGroups, g.value) })
-                    }
-                  />
-                  <span>{g.label}</span>
-                </CheckLabel>
+                <Checkbox
+                  checked={shown}
+                  onChange={() =>
+                    onChange({ hiddenGroups: toggleHidden(view.hiddenGroups, g.value) })
+                  }
+                  label={g.label}
+                  truncate
+                />
               </MenuItem>
             );
           })}

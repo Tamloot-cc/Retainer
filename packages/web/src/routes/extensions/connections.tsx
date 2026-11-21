@@ -10,7 +10,7 @@ import { Cable, KeyRound, UsersRound } from 'lucide-react';
 import { useEffect, useEffectEvent, useId, useRef, useState } from 'react';
 import { useAccount } from '../../accounts/context.js';
 import { api, useWorkspace } from '../../api/client.js';
-import { Badge, Button, Muted, Notice, Row, Stack } from '../../ui/index.js';
+import { Badge, Button, Checkbox, Muted, Notice, Row, Stack } from '../../ui/index.js';
 import { QueryError } from '../state.js';
 import {
   forgetAttempt,
@@ -663,24 +663,20 @@ function GmailAuthorization({
         sign-in and keeps it current, so Google may show Nango's name when you approve access.
         Retainer never receives your Google password.
       </p>
-      <div className="flex items-start gap-2">
-        <input
-          type="checkbox"
-          id={id}
-          name="shareGmail"
-          checked={consent}
-          disabled={!enabled || start.isPending}
-          onChange={(event) => {
-            const checked = event.target.checked;
-            setConsent(checked);
-            if (checked) prepare();
-            else start.reset();
-          }}
-          required
-          aria-describedby={`${id}-description`}
-        />
-        <label htmlFor={id}>I agree to share qualifying Gmail messages</label>
-      </div>
+      <Checkbox
+        name="shareGmail"
+        checked={consent}
+        disabled={!enabled || start.isPending}
+        onChange={(event) => {
+          const checked = event.target.checked;
+          setConsent(checked);
+          if (checked) prepare();
+          else start.reset();
+        }}
+        required
+        aria-describedby={`${id}-description`}
+        label="I agree to share qualifying Gmail messages"
+      />
       <Button type="submit" disabled={!enabled || !consent || start.isPending}>
         {start.isPending
           ? 'Preparing Gmail…'

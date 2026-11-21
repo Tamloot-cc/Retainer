@@ -14,6 +14,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import {
   Button,
+  Checkbox,
   Empty,
   Loading,
   Muted,
@@ -59,7 +60,7 @@ import {
   useRefreshExtensions,
 } from './model.js';
 import { SettingFields } from './setting-fields.js';
-import { ExtensionCard, ExtensionCheckbox } from './surface.js';
+import { ExtensionCard } from './surface.js';
 
 type Settings = Installation['settings'];
 type Preview = Awaited<ReturnType<typeof api.previewExtension>>;
@@ -458,16 +459,13 @@ function BasicExtensionSetup({
               }}
             />
             {reconnect && release.manifest.source ? (
-              <ExtensionCheckbox
+              <Checkbox
+                variant="card"
                 checked={replaceSourceAccount}
                 onChange={(event) => setReplaceSourceAccount(event.target.checked)}
-              >
-                <span className="font-medium">Use a different provider account</span>
-                <Muted small>
-                  Retire the previous account binding and callback addresses. Imported evidence
-                  stays in its existing namespace.
-                </Muted>
-              </ExtensionCheckbox>
+                label="Use a different provider account"
+                description="Retire the previous account binding and callback addresses. Imported evidence stays in its existing namespace."
+              />
             ) : null}
           </fieldset>
         </ExtensionCard>

@@ -2,7 +2,7 @@ import { cappedScopes, OAUTH_SCOPES } from '@retainer/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { type Account, account as accountApi } from '../api/account.js';
-import { Button, Muted, Notice, Stack } from '../ui/index.js';
+import { Button, Muted, Notice, Radio, Stack } from '../ui/index.js';
 import { allWorkspaces } from './context.js';
 import { APP_SCOPE_WORDS, capital, withoutSignInError } from './format.js';
 import { NeedWorkspace } from './onboarding.js';
@@ -146,20 +146,15 @@ function PersonConsent({ account }: { account: Account }) {
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-2 text-sm font-medium">Which workspace?</legend>
             {reachable.map(({ workspace, organization }) => (
-              <label
+              <Radio
                 key={workspace.id}
-                className="flex cursor-pointer items-start gap-3 rounded-md border border-border bg-background p-3 text-sm has-[:checked]:border-primary"
-              >
-                <input
-                  type="radio"
-                  name="workspace"
-                  value={workspace.id}
-                  checked={picked === workspace.id}
-                  onChange={() => setSelected(workspace.id)}
-                  className="mt-1"
-                />
-                <span>
-                  <span className="block font-medium">
+                variant="option"
+                name="workspace"
+                value={workspace.id}
+                checked={picked === workspace.id}
+                onChange={() => setSelected(workspace.id)}
+                label={
+                  <>
                     {workspace.name}
                     {account.organizations.length > 1 ? (
                       <span className="font-normal text-muted-foreground">
@@ -167,13 +162,12 @@ function PersonConsent({ account }: { account: Account }) {
                         · {organization.name}
                       </span>
                     ) : null}
-                  </span>
-                  <span className="block text-muted-foreground">
-                    Your role: {capital(workspace.role)}
-                    {reachable.length > 1 ? ` · ${workspace.slug}` : ''}
-                  </span>
-                </span>
-              </label>
+                  </>
+                }
+                description={`Your role: ${capital(workspace.role)}${
+                  reachable.length > 1 ? ` · ${workspace.slug}` : ''
+                }`}
+              />
             ))}
           </fieldset>
           {choice ? (
