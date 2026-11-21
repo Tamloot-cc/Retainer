@@ -798,10 +798,16 @@ export class RetainerClient {
     );
   }
   authorizeGmail(id: string, historyDays: number) {
-    return this.post<{ attemptId: string; connectLink: string; expiresAt: string }>(
-      `/v1/extensions/${encodeURIComponent(id)}/connections/gmail/authorize`,
-      { shareGmail: true, historyDays },
-    );
+    return this.post<{
+      attemptId: string;
+      connectLink: string;
+      sessionToken: string;
+      integrationId: string;
+      expiresAt: string;
+    }>(`/v1/extensions/${encodeURIComponent(id)}/connections/gmail/authorize`, {
+      shareGmail: true,
+      historyDays,
+    });
   }
   finishGmailAuthorization(id: string, attemptId: string) {
     return this.post<{ pending: true } | { id: string; state: 'connecting' }>(

@@ -1,3 +1,4 @@
+import Nango, { AuthError } from '@nangohq/frontend';
 import type {
   ExtensionConnection,
   ExtensionInstallation,
@@ -6,7 +7,7 @@ import type {
 import { RetainerApiError } from '@retainer/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Cable, KeyRound, UsersRound } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useId, useRef, useState } from 'react';
 import { useAccount } from '../../accounts/context.js';
 import { api, useWorkspace } from '../../api/client.js';
 import { Badge, Button, Muted, Notice, Row, Stack } from '../../ui/index.js';
@@ -230,6 +231,7 @@ export function MemberConnectionPanel({
               </Muted>
               {human && gmail ? (
                 <GmailAuthorization
+                  key={JSON.stringify([installation.id, installation.settings.historyDays])}
                   installation={installation}
                   onChanged={refresh}
                   enabled={enabled}
@@ -481,58 +483,170 @@ function GmailAuthorization({
   enabled: boolean;
 }) {
   const id = useId();
-  const [pendingMessage, setPendingMessage] = useState('');
   const days = Number(installation.settings.historyDays);
-  const start = useMutation({ mutationFn: () => api.authorizeGmail(installation.id, days) });
-  const finish = useMutation({
-    mutationFn: (attemptId: string) => api.finishGmailAuthorization(installation.id, attemptId),
-    onSuccess: async (result) => {
-      if ('pending' in result) setPendingMessage('Gmail authorization is still pending.');
-      else await onChanged();
-    },
+  const [consent, setConsent] = useState(false);
+  const [mode, setMode] = useState<'ready' | 'authorizing' | 'blocked' | 'failed' | 'done'>(
+    'ready',
+  );
+  const [error, setError] = useState('');
+  const nango = useRef<Nango | null>(null);
+  const checkNow = useRef<(() => void) | null>(null);
+  const start = useMutation({
+    mutationFn: () => api.authorizeGmail(installation.id, days),
+    retry: false,
   });
-  if (start.data)
+  const session = start.data;
+  const refreshConnection = useEffectEvent(onChanged);
+
+  useEffect(
+    () => () => {
+      nango.current?.clear();
+      nango.current = null;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (mode !== 'authorizing' || !session || !enabled) return;
+    let stopped = false;
+    let checking = false;
+
+    const check = async () => {
+      if (stopped || checking) return;
+      if (Date.now() >= Date.parse(session.expiresAt)) {
+        setError('Gmail authorization expired. Try again.');
+        setMode('failed');
+        return;
+      }
+      checking = true;
+      try {
+        const result = await api.finishGmailAuthorization(installation.id, session.attemptId);
+        if (!stopped && !('pending' in result)) {
+          setMode('done');
+          await refreshConnection();
+        }
+      } catch (error) {
+        if (stopped) return;
+        setError(error instanceof Error ? error.message : 'Could not connect Gmail. Try again.');
+        setMode('failed');
+        // A lost completion response can leave an active connection on the server.
+        void refreshConnection();
+      } finally {
+        checking = false;
+      }
+    };
+    const checkWhenVisible = () => {
+      if (document.visibilityState === 'visible') void check();
+    };
+    checkNow.current = () => void check();
+    const timer = window.setInterval(() => {
+      if (document.hasFocus()) checkWhenVisible();
+    }, 5000);
+    // Nango leaves the popup blank until a WebSocket acknowledgment arrives.
+    const client = nango.current;
+    const popup = client?.win?.modal;
+    const popupTimeout =
+      popup &&
+      window.setTimeout(() => {
+        if (nango.current !== client) return;
+        try {
+          if (popup.closed || popup.location.href !== 'about:blank') return;
+        } catch {
+          // The provider page is cross-origin once the popup has navigated.
+          return;
+        }
+        client.clear();
+        nango.current = null;
+        setMode('blocked');
+      }, 10000);
+    window.addEventListener('focus', checkWhenVisible);
+    document.addEventListener('visibilitychange', checkWhenVisible);
+    checkWhenVisible();
+    return () => {
+      stopped = true;
+      checkNow.current = null;
+      window.clearInterval(timer);
+      window.clearTimeout(popupTimeout);
+      window.removeEventListener('focus', checkWhenVisible);
+      document.removeEventListener('visibilitychange', checkWhenVisible);
+    };
+  }, [enabled, installation.id, mode, session]);
+
+  function prepare() {
+    nango.current?.clear();
+    nango.current = null;
+    setMode('ready');
+    setError('');
+    start.mutate();
+  }
+
+  async function authorize() {
+    if (!enabled || !consent || !session || start.isPending) return;
+    if (Date.now() >= Date.parse(session.expiresAt)) {
+      setError('Gmail authorization expired. Try again.');
+      setMode('failed');
+      return;
+    }
+    const client = new Nango({ connectSessionToken: session.sessionToken });
+    nango.current = client;
+    setMode('authorizing');
+    try {
+      // auth opens the popup before yielding the submit gesture.
+      await client.auth(session.integrationId);
+      if (nango.current === client) checkNow.current?.();
+    } catch (error) {
+      if (nango.current !== client) return;
+      if (error instanceof AuthError && error.type === 'blocked_by_browser') {
+        setMode('blocked');
+        return;
+      }
+      // Verify on return even if the popup lost its success signal.
+      checkNow.current?.();
+      setError(
+        'Google authorization was interrupted. You can try again if Gmail does not connect.',
+      );
+    }
+  }
+
+  if (mode === 'authorizing' || mode === 'blocked' || mode === 'done') {
     return (
       <Stack>
-        <a
-          className="underline"
-          href={start.data.connectLink}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Authorize Gmail (opens a new tab)
-        </a>
-        <Row>
-          <Button
-            type="button"
-            disabled={!enabled || finish.isPending}
-            onClick={() => finish.mutate(start.data.attemptId)}
-          >
-            Finish connecting Gmail
+        {mode === 'blocked' && session ? (
+          <>
+            <p>Allow popups or open Gmail authorization in a new tab.</p>
+            <Button asChild>
+              <a
+                href={session.connectLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setMode('authorizing')}
+              >
+                Open Gmail authorization
+              </a>
+            </Button>
+          </>
+        ) : null}
+        <p role="status">
+          {mode === 'authorizing' ? 'Complete Google authorization to connect Gmail.' : null}
+          {mode === 'done' ? 'Gmail authorization complete.' : null}
+        </p>
+        {error ? <Notice error>{error}</Notice> : null}
+        {mode !== 'done' ? (
+          <Button type="button" variant="ghost" onClick={prepare} disabled={!enabled}>
+            Try again
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              start.reset();
-              finish.reset();
-              setPendingMessage('');
-            }}
-          >
-            Start over
-          </Button>
-        </Row>
-        <p role="status">{pendingMessage}</p>
-        {finish.error ? <Notice error>{finish.error.message}</Notice> : null}
+        ) : null}
       </Stack>
     );
+  }
   return (
     <form
       aria-label="Connect Gmail"
       method="post"
       onSubmit={(event) => {
         event.preventDefault();
-        start.mutate();
+        if (mode === 'failed' || start.isError) prepare();
+        else void authorize();
       }}
       className="flex flex-col items-start gap-3"
     >
@@ -554,15 +668,27 @@ function GmailAuthorization({
           type="checkbox"
           id={id}
           name="shareGmail"
+          checked={consent}
+          disabled={!enabled || start.isPending}
+          onChange={(event) => {
+            const checked = event.target.checked;
+            setConsent(checked);
+            if (checked) prepare();
+            else start.reset();
+          }}
           required
           aria-describedby={`${id}-description`}
         />
         <label htmlFor={id}>I agree to share qualifying Gmail messages</label>
       </div>
-      <Button type="submit" disabled={!enabled || start.isPending}>
-        Connect Gmail
+      <Button type="submit" disabled={!enabled || !consent || start.isPending}>
+        {start.isPending
+          ? 'Preparing Gmail…'
+          : mode === 'failed' || start.isError
+            ? 'Try again'
+            : 'Connect Gmail'}
       </Button>
-      {start.error ? <Notice error>{start.error.message}</Notice> : null}
+      {error || start.error ? <Notice error>{error || start.error?.message}</Notice> : null}
     </form>
   );
 }

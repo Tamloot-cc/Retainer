@@ -43,3 +43,8 @@ their owners.
 - Gmail icon from the [Google Brand Resource Center](https://about.google/brand-resource-center/products-and-services/).
 - Granola favicon from the [Granola website](https://www.granola.ai/favicon/favicon.svg).
 - Tamloot favicon from the Tamloot landing page source.
+
+## Nango Frontend SDK — Elastic License 2.0
+
+The Gmail authorization UI uses `@nangohq/frontend`. The license is included
+with the built web assets as `licenses/nango-frontend.txt`.

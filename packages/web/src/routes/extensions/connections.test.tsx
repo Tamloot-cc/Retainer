@@ -6,7 +6,7 @@ import type {
 import { RetainerApiError } from '@retainer/sdk';
 import type { Session } from '@retainer/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AccountContext, type AccountState } from '../../accounts/context.js';
@@ -103,38 +103,140 @@ function mount(admin = false, installed = installation, listed = release) {
 }
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   sessionStorage.clear();
 });
 describe('member connection controls', () => {
-  it('requires Gmail sharing consent before authorizing and lets the member check completion', async () => {
-    vi.spyOn(api, 'extensionConnections').mockResolvedValue({ connections: [] });
-    const authorize = vi.spyOn(api, 'authorizeGmail').mockResolvedValue({
-      attemptId: 'attempt',
-      connectLink: 'https://connect.nango.dev/example',
-      expiresAt: '2026-11-20T12:00:00Z',
-    });
-    const finish = vi.spyOn(api, 'finishGmailAuthorization').mockResolvedValue({ pending: true });
-    const { user } = mount(
+  const gmailSession = {
+    attemptId: 'attempt',
+    connectLink: 'https://connect.nango.dev/example',
+    sessionToken: 'nango-session',
+    integrationId: 'retainer-gmail',
+    expiresAt: '2099-11-20T12:00:00Z',
+  };
+  function mountGmail() {
+    return mount(
       false,
       { ...installation, settings: { historyDays: 2 } },
-      {
-        manifest: { ...release.manifest, name: 'gmail' },
-      },
+      { manifest: { ...release.manifest, name: 'gmail' } },
     );
+  }
+
+  it('opens Gmail from the submit gesture and completes after Nango reports success', async () => {
+    vi.spyOn(api, 'extensionConnections').mockResolvedValue({ connections: [] });
+    const authorize = vi.spyOn(api, 'authorizeGmail').mockResolvedValue(gmailSession);
+    const popup = { location: '', closed: false, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+    let socket: TestSocket | undefined;
+    class TestSocket {
+      onmessage?: (message: MessageEvent<string>) => void;
+      close = vi.fn();
+      constructor() {
+        socket = this;
+      }
+    }
+    vi.stubGlobal('WebSocket', TestSocket);
+    const vendorMessage = (message: object) =>
+      socket?.onmessage?.(new MessageEvent('message', { data: JSON.stringify(message) }));
+    const finish = vi
+      .spyOn(api, 'finishGmailAuthorization')
+      .mockResolvedValueOnce({ pending: true })
+      .mockResolvedValue({ id: 'own', state: 'connecting' });
+    const { user, onChanged } = mountGmail();
     const button = await screen.findByRole('button', { name: 'Connect Gmail' });
     expect(screen.getByText(/up to 2 days of email history/)).toBeTruthy();
     await user.click(button);
     expect(authorize).not.toHaveBeenCalled();
-    await user.click(
-      screen.getByRole('checkbox', { name: 'I agree to share qualifying Gmail messages' }),
-    );
-    await user.click(button);
-    const link = await screen.findByRole('link', { name: /Authorize Gmail/ });
-    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(open).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('checkbox', { name: /I agree to share/ }));
     expect(authorize).toHaveBeenCalledWith('installation', 2);
-    await user.click(screen.getByRole('button', { name: 'Finish connecting Gmail' }));
-    expect(await screen.findByText('Gmail authorization is still pending.')).toBeTruthy();
-    expect(finish).toHaveBeenCalledWith('installation', 'attempt');
+    expect(open).not.toHaveBeenCalled();
+    await user.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
+    expect(open).toHaveBeenCalledOnce();
+    vendorMessage({ message_type: 'connection_ack', ws_client_id: 'test-client' });
+    const destination = new URL(popup.location);
+    expect(destination.pathname).toBe('/oauth/connect/retainer-gmail');
+    expect(destination.searchParams.get('connect_session_token')).toBe(gmailSession.sessionToken);
+    expect(finish).toHaveBeenLastCalledWith('installation', 'attempt');
+    expect(onChanged).not.toHaveBeenCalled();
+
+    vendorMessage({
+      message_type: 'success',
+      provider_config_key: 'retainer-gmail',
+      connection_id: 'nango-id',
+    });
+    await waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
+    expect(await screen.findByText('Gmail authorization complete.')).toBeTruthy();
+    await waitFor(() => expect(popup.close).toHaveBeenCalledOnce());
+  });
+
+  it.each([false, true])(
+    'leaves a navigated popup open and falls back for a blank popup (navigated: %s)',
+    async (navigated) => {
+      vi.spyOn(api, 'extensionConnections').mockResolvedValue({ connections: [] });
+      vi.spyOn(api, 'authorizeGmail').mockResolvedValue(gmailSession);
+      vi.spyOn(api, 'finishGmailAuthorization').mockResolvedValue({ pending: true });
+      const popup = { location: { href: 'about:blank' }, closed: false, close: vi.fn() };
+      vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+      vi.stubGlobal(
+        'WebSocket',
+        class {
+          close() {}
+        },
+      );
+      const { user } = mountGmail();
+      await user.click(await screen.findByRole('checkbox', { name: /I agree to share/ }));
+      await screen.findByRole('button', { name: 'Connect Gmail' });
+      try {
+        vi.useFakeTimers();
+        fireEvent.submit(screen.getByRole('form', { name: 'Connect Gmail' }));
+        if (navigated) {
+          Object.defineProperty(popup.location, 'href', {
+            get: () => {
+              throw new DOMException('Cross-origin', 'SecurityError');
+            },
+          });
+        }
+        await act(async () => vi.advanceTimersByTimeAsync(10500));
+        const link = screen.queryByRole('link', { name: 'Open Gmail authorization' });
+        if (navigated) {
+          expect(link).toBeNull();
+          expect(popup.close).not.toHaveBeenCalled();
+        } else {
+          expect(link?.getAttribute('href')).toBe(gmailSession.connectLink);
+          expect(popup.close).toHaveBeenCalledOnce();
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('offers a hosted link when popups are blocked and finishes when the member returns', async () => {
+    vi.spyOn(api, 'extensionConnections').mockResolvedValue({ connections: [] });
+    vi.spyOn(api, 'authorizeGmail').mockResolvedValue(gmailSession);
+    vi.spyOn(window, 'open').mockReturnValue(null);
+    let granted = false;
+    const finish = vi
+      .spyOn(api, 'finishGmailAuthorization')
+      .mockImplementation(async () =>
+        granted ? { id: 'own', state: 'connecting' } : { pending: true },
+      );
+    const { user, onChanged } = mountGmail();
+    await user.click(await screen.findByRole('checkbox', { name: /I agree to share/ }));
+    await user.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
+    const link = await screen.findByRole('link', { name: 'Open Gmail authorization' });
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(link.getAttribute('href')).toBe(gmailSession.connectLink);
+    link.addEventListener('click', (event) => event.preventDefault());
+    await user.click(link);
+    expect(onChanged).not.toHaveBeenCalled();
+
+    granted = true;
+    window.dispatchEvent(new Event('focus'));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
+    expect(finish).toHaveBeenLastCalledWith('installation', 'attempt');
   });
   it('stages a private key and connects with only member settings, then disconnects without an admin role', async () => {
     let rows: ExtensionConnection[] = [];
