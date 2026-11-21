@@ -569,7 +569,9 @@ describe('a failed run', () => {
       ),
     ).toBeTruthy();
     const calls = screen.getByRole('list', { name: 'Calls' });
-    expect(within(calls).getByText('Refused')).toBeTruthy();
+    // A provider error is a failure, not the model declining to answer.
+    expect(within(calls).getByText('Failed')).toBeTruthy();
+    expect(within(calls).queryByText('Refused')).toBeNull();
     expect(within(calls).getByText(/The model provider said: .*maxItems/)).toBeTruthy();
     // A call left open on a finished run got no answer; it is not still waiting.
     expect(within(calls).getByText('No answer')).toBeTruthy();

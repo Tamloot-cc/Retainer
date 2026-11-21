@@ -169,7 +169,9 @@ function Call({ call, finished }: { call: RoutineRunCall; finished: boolean }) {
       ) : null}
       {error ? (
         <span>
-          {call.operation === 'ai.generate' ? 'The model provider said: ' : 'The error: '}
+          {call.code === 'model_failed' || call.code === 'model_refused'
+            ? 'The model provider said: '
+            : 'The error: '}
           {error}
         </span>
       ) : call.result !== undefined ? (

@@ -136,8 +136,9 @@ const CALL_STATES: Record<string, string> = {
   reported: 'Reported, not made',
 };
 /** A call's state in words; a call still open on a finished run got no answer. */
-export function callStateText(call: Pick<RoutineRunCall, 'state' | 'operation'>, finished = false) {
-  if (call.state === 'failed' && call.operation === 'ai.generate') return 'Refused';
+export function callStateText(call: Pick<RoutineRunCall, 'state' | 'code'>, finished = false) {
+  if (call.state === 'failed' && call.code === 'model_refused') return 'Refused';
+  if (call.state === 'failed' && call.code === 'model_output') return 'Unusable answer';
   if (call.state === 'started' && finished) return 'No answer';
   return CALL_STATES[call.state] ?? plain(call.state);
 }
