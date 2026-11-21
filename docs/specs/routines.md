@@ -1377,11 +1377,13 @@ they left open:
 - **Schedules in words.** Retainer's facts describe a schedule in words
   (`describeCron` in `shared`): "every Sunday at 09:00", "every weekday
   (Monday to Friday) at 08:30". A shape it doesn't know is quoted as
-  written.
+  written, and so is a step that doesn't divide the hour or the day
+  (`*/45` fires at :00 and :45, not every 45 minutes).
 - **Run now** (`POST /v1/routines/:id/run-now`, admins). An active
-  schedule's tick is made due and fired at once, with every rule a due
-  tick has: the fan-out cap, held runs and `oncePerRecord`. The next
-  regular time is unchanged. A paused routine refuses it
+  schedule fires one tick due now, with every rule a due tick has: the
+  fan-out cap, held runs and `oncePerRecord`. It fires in the transaction
+  that holds the routine, so a regular tick skips it meanwhile and a second
+  press fires its own tick after it. The next regular time is unchanged. A paused routine refuses it
   (`routine_paused`), as does one without a schedule (`not_schedule`).
 - **A paused routine has no next time.** The API answers `nextFireAt:
   null` while a routine is not active; resuming sets it afresh.

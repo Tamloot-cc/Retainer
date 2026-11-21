@@ -116,5 +116,12 @@ describe('describeCron', () => {
     expect(describeCron('0 9 1 * 1')).toBe('on the schedule "0 9 1 * 1"');
     expect(describeCron('0 9 * * MON')).toBe('on the schedule "0 9 * * MON"');
     expect(describeCron('0 9-17 * * *')).toBe('on the schedule "0 9-17 * * *"');
+    // A step that doesn't divide the hour or the day is not an even interval:
+    // */45 fires at :00 and :45, and */5 hours leaves a 4-hour gap at midnight.
+    expect(describeCron('*/45 * * * *')).toBe('on the schedule "*/45 * * * *"');
+    expect(describeCron('*/40 * * * *')).toBe('on the schedule "*/40 * * * *"');
+    expect(describeCron('0 */5 * * *')).toBe('on the schedule "0 */5 * * *"');
+    expect(describeCron('*/20 * * * *')).toBe('every 20 minutes');
+    expect(describeCron('0 */8 * * *')).toBe('every 8 hours, at 0 minutes past');
   });
 });

@@ -20,8 +20,8 @@ import { getSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
 import { type Capabilities, capabilities, type RoutineConfig } from './capabilities.js';
 import { nextInZone } from './cron.js';
-import { checkCode, checkManifest, fieldFor, objectFor } from './manifest.js';
-import { fireSchedule, matchingSince, scheduleTargets } from './matcher.js';
+import { checkCode, checkManifest, fieldFor, manifestResolves, objectFor } from './manifest.js';
+import { fireTick, matchingSince, scheduleTargets } from './matcher.js';
 import { pauseRoutine, queueRun } from './runs.js';
 
 export const sourceInputSchema = z.strictObject({
@@ -662,7 +662,10 @@ export class Routines {
    */
   async runNow(caller: Caller, routineId: string) {
     requireAdmin(caller);
-    await this.tx(caller, async (tx) => {
+    return this.tx(caller, async (tx) => {
+      await lockSchemaShared(tx, caller.workspaceId);
+      // Held for the whole tick: a regular tick skips the routine meanwhile,
+      // and a second press waits, then fires its own tick.
       const [routine] = await tx<RoutineRow[]>`
         select * from routines where id=${routineId} for no key update`;
       if (!routine || !routine.active_version_id) throw notFound('routine');
@@ -671,12 +674,25 @@ export class Routines {
       const [version] = await tx<VersionRow[]>`
         select v.*,s.manifest,s.code from routine_versions v join routine_sources s on s.id=v.source_id
         where v.id=${routine.active_version_id}`;
-      if (version?.manifest.when.kind !== 'schedule')
+      if (!version || version.manifest.when.kind !== 'schedule')
         throw new AppError(409, 'not_schedule', 'only a schedule routine runs now');
-      await tx`update routines set next_fire_at=clock_timestamp() where id=${routineId}`;
+      const [now] = await tx<{ at: Date }[]>`select clock_timestamp() as at`;
+      const schema = await getSchema(tx, caller.workspaceId);
+      if (!manifestResolves(tx, schema, version.manifest))
+        throw new AppError(409, 'check_failed', 'the routine no longer fits the workspace');
+      const fired = await fireTick(
+        tx,
+        caller.workspaceId,
+        {
+          id: routineId,
+          version_id: version.id,
+          source_id: version.source_id,
+          manifest: version.manifest,
+        },
+        now?.at ?? new Date(),
+      );
+      return { routineId, ...fired };
     });
-    const fired = await fireSchedule(this.sql, caller.workspaceId, routineId);
-    return { routineId, ...fired };
   }
 
   /** Buttons a person can press on a record of this object. */

@@ -925,16 +925,22 @@ export function describeCron(cron: string): string {
   if (fields.length !== 5) return raw;
   const [minute, hour, day, month, weekday] = fields as [string, string, string, string, string];
   if (month !== '*') return raw;
-  const step = (field: string) => /^\*\/(\d{1,2})$/.exec(field)?.[1];
+  // `*/N` matches the values divisible by N and starts again each hour or
+  // day, so it is an even "every N" only when N divides the field's range.
+  const step = (field: string, range: number) => {
+    const n = /^\*\/(\d{1,2})$/.exec(field)?.[1];
+    return n && Number(n) > 0 && range % Number(n) === 0 ? n : undefined;
+  };
   // Every N minutes, or every hour at a minute.
   if (hour === '*' && day === '*' && weekday === '*') {
-    const every = step(minute);
+    const every = step(minute, 60);
     if (every) return `every ${every} minutes`;
-    if (NUMBER.test(minute)) return `every hour at ${Number(minute)} minutes past`;
+    if (NUMBER.test(minute) && Number(minute) <= 59)
+      return `every hour at ${Number(minute)} minutes past`;
     return raw;
   }
   if (!NUMBER.test(minute)) return raw;
-  const hours = step(hour);
+  const hours = step(hour, 24);
   if (hours && day === '*' && weekday === '*')
     return `every ${hours} hours, at ${Number(minute)} minutes past`;
   if (!NUMBER.test(hour) || Number(hour) > 23 || Number(minute) > 59) return raw;

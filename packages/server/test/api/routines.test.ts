@@ -2324,20 +2324,32 @@ describe('routines: run now, and a paused schedule (issue 147)', () => {
     expect(after?.next_fire_at.getTime()).toBe(before?.next_fire_at.getTime());
   });
 
-  it('two presses of run now at once fire one tick each, and never the same tick twice', async () => {
+  it('two presses of run now at once each fire their own tick, beside a due regular tick', async () => {
     const s = await setup();
-    await createCompany(s.app, s.keys.admin, 'Acme Twice');
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Twice');
     const { routineId } = await activate(s, WEEKLY(s));
+    // A regular tick comes due while the presses are made.
+    await db.owner`update routines set next_fire_at=now()-interval '1 minute' where id=${routineId}`;
     const press = () =>
       s.app.request(`/v1/routines/${routineId}/run-now`, { key: s.keys.admin, body: {} });
-    const answers = await Promise.all([press(), press()]);
-    expect(answers.map((a) => a.status)).toEqual([202, 202]);
-    const firings = await db.owner<{ due_at: Date }[]>`
-      select due_at from routine_firings where routine_id=${routineId}`;
+    const [first, second] = await Promise.all([press(), press(), s.maintenance.maintain()]);
+    expect([first, second].map((a) => [a.status, a.body.queued])).toEqual([
+      [202, 1],
+      [202, 1],
+    ]);
+    await s.maintenance.maintain();
+    const firings = await db.owner<{ due_at: Date; record_id: string }[]>`
+      select due_at,record_id from routine_firings where routine_id=${routineId}`;
+    // Two presses and the regular tick: three ticks, each its own firing and run.
+    expect(firings).toHaveLength(3);
+    expect(new Set(firings.map((f) => f.due_at.getTime())).size).toBe(3);
+    expect(firings.every((f) => f.record_id === acme)).toBe(true);
     const runs = await db.owner`select id from routine_runs where routine_id=${routineId}`;
-    // Each run belongs to its own firing: no tick queued a record twice.
-    expect(runs.length).toBe(firings.length);
-    expect(new Set(firings.map((f) => f.due_at.getTime())).size).toBe(firings.length);
+    expect(runs).toHaveLength(3);
+    // The regular tick moved the next time on; the presses did not touch it.
+    const [next] = await db.owner<{ next_fire_at: Date }[]>`
+      select next_fire_at from routines where id=${routineId}`;
+    expect(next?.next_fire_at.getTime()).toBeGreaterThan(Date.now());
   });
 
   it('refuses run now for a paused routine or one without a schedule, and hides a paused next time', async () => {

@@ -313,70 +313,87 @@ export async function fireSchedule(sql: Sql, workspace: string, routineId: strin
     const due = routine.next_fire_at;
     await tx`update routines set next_fire_at=${nextInZone(when.cron, new Date(Math.max(Date.now(), due.getTime())), zoneRow?.zone ?? 'UTC')}
       where id=${routineId}`;
-    const schema = await getSchema(tx, workspace);
-    // A schedule whose object or filter no longer resolves needs repair, as
-    // code that no longer type-checks does (§5.3).
-    if (!manifestResolves(tx, schema, routine.manifest)) {
-      await pauseRoutine(tx, routineId, 'needs_attention', 'check_failed');
-      return { queued: 0 };
-    }
-    const { matched, records } = await scheduleTargets(
-      tx,
-      workspace,
-      schema,
-      routine.manifest,
-      ROUTINE_LIMITS.scheduleFanOut + 1,
-    );
-    // Over the cap the tick starts nothing: its runs are held and the routine
-    // pauses, so an admin runs the tick once, over the cap, or discards it.
-    const over = !!when.object && matched > ROUTINE_LIMITS.scheduleFanOut;
-    if (over && matched > ROUTINE_LIMITS.scheduleHeldMax) {
-      await pauseRoutine(tx, routineId, 'needs_attention', 'schedule_too_large');
-      return { queued: 0, held: 0, matched };
-    }
-    const targets = !when.object
-      ? [NO_RECORD]
-      : over
-        ? (
-            await scheduleTargets(
-              tx,
-              workspace,
-              schema,
-              routine.manifest,
-              ROUTINE_LIMITS.scheduleHeldMax,
-            )
-          ).records
-        : records;
-    if (over) await pauseRoutine(tx, routineId, 'needs_attention', 'schedule_over_limit');
-    let queued = 0,
-      held = 0,
-      paused = over;
-    for (const recordId of targets) {
-      const real = recordId === NO_RECORD ? null : recordId;
-      if (real && when.oncePerRecord && (await usedUp(tx, routineId, real))) continue;
-      const [fresh] =
-        await tx`insert into routine_firings(workspace_id,routine_id,kind,record_id,due_at)
-        values(${workspace},${routineId},'schedule',${recordId},${due}) on conflict do nothing returning 1`;
-      if (!fresh) continue;
-      // The hourly cap counts scheduled runs too (§4.6): past it the rest are held.
-      const allowed = !paused && (await hourlyAllowance(tx, routineId));
-      await queueRun(tx, workspace, {
-        mode: 'run',
-        triggerKind: 'schedule',
-        routineId,
-        versionId: routine.version_id,
-        sourceId: routine.source_id,
-        recordId: real,
-        runAt: due,
-        held: !allowed,
-      });
-      if (allowed) queued++;
-      else {
-        held++;
-        if (!paused) await pauseRoutine(tx, routineId, 'needs_attention', 'runs_held');
-        paused = true;
-      }
-    }
-    return held ? { queued, held, matched } : { queued, matched };
+    return fireTick(tx, workspace, routine, due);
   });
+}
+
+/**
+ * Fires one tick of a schedule routine the caller holds locked, due at
+ * `due`: a regular tick, or one an admin runs now. Every rule of a tick
+ * applies; the routine's next regular time is the caller's to set.
+ */
+export async function fireTick(
+  tx: Tx,
+  workspace: string,
+  routine: Pick<ActiveRoutine, 'id' | 'version_id' | 'source_id' | 'manifest'>,
+  due: Date,
+): Promise<{ queued: number; held?: number; matched?: number }> {
+  const routineId = routine.id;
+  const when = routine.manifest.when;
+  if (when.kind !== 'schedule') return { queued: 0 };
+  const schema = await getSchema(tx, workspace);
+  // A schedule whose object or filter no longer resolves needs repair, as
+  // code that no longer type-checks does (§5.3).
+  if (!manifestResolves(tx, schema, routine.manifest)) {
+    await pauseRoutine(tx, routineId, 'needs_attention', 'check_failed');
+    return { queued: 0 };
+  }
+  const { matched, records } = await scheduleTargets(
+    tx,
+    workspace,
+    schema,
+    routine.manifest,
+    ROUTINE_LIMITS.scheduleFanOut + 1,
+  );
+  // Over the cap the tick starts nothing: its runs are held and the routine
+  // pauses, so an admin runs the tick once, over the cap, or discards it.
+  const over = !!when.object && matched > ROUTINE_LIMITS.scheduleFanOut;
+  if (over && matched > ROUTINE_LIMITS.scheduleHeldMax) {
+    await pauseRoutine(tx, routineId, 'needs_attention', 'schedule_too_large');
+    return { queued: 0, held: 0, matched };
+  }
+  const targets = !when.object
+    ? [NO_RECORD]
+    : over
+      ? (
+          await scheduleTargets(
+            tx,
+            workspace,
+            schema,
+            routine.manifest,
+            ROUTINE_LIMITS.scheduleHeldMax,
+          )
+        ).records
+      : records;
+  if (over) await pauseRoutine(tx, routineId, 'needs_attention', 'schedule_over_limit');
+  let queued = 0,
+    held = 0,
+    paused = over;
+  for (const recordId of targets) {
+    const real = recordId === NO_RECORD ? null : recordId;
+    if (real && when.oncePerRecord && (await usedUp(tx, routineId, real))) continue;
+    const [fresh] =
+      await tx`insert into routine_firings(workspace_id,routine_id,kind,record_id,due_at)
+        values(${workspace},${routineId},'schedule',${recordId},${due}) on conflict do nothing returning 1`;
+    if (!fresh) continue;
+    // The hourly cap counts scheduled runs too (§4.6): past it the rest are held.
+    const allowed = !paused && (await hourlyAllowance(tx, routineId));
+    await queueRun(tx, workspace, {
+      mode: 'run',
+      triggerKind: 'schedule',
+      routineId,
+      versionId: routine.version_id,
+      sourceId: routine.source_id,
+      recordId: real,
+      runAt: due,
+      held: !allowed,
+    });
+    if (allowed) queued++;
+    else {
+      held++;
+      if (!paused) await pauseRoutine(tx, routineId, 'needs_attention', 'runs_held');
+      paused = true;
+    }
+  }
+  return held ? { queued, held, matched } : { queued, matched };
 }
