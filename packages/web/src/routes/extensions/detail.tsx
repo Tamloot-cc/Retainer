@@ -1,6 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { Ellipsis, LayoutList } from 'lucide-react';
+import {
+  Activity,
+  Cpu,
+  Ellipsis,
+  History,
+  KeyRound,
+  LayoutList,
+  Server,
+  Settings2,
+  ShieldCheck,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAccount } from '../../accounts/context.js';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
@@ -11,7 +21,6 @@ import {
   Dialog,
   Empty,
   Input,
-  Label,
   Loading,
   Menu,
   MenuAction,
@@ -20,7 +29,6 @@ import {
   Notice,
   Page,
   Row,
-  Section,
   Stack,
   Tabs,
 } from '../../ui/index.js';
@@ -56,6 +64,7 @@ import {
   useRefreshExtensions,
 } from './model.js';
 import { SettingFields } from './setting-fields.js';
+import { ExtensionCard, ExtensionCheckbox, ExtensionFacts } from './surface.js';
 
 type Settings = Installation['settings'];
 type Tab = 'overview' | 'connections' | 'mapping' | 'settings' | 'runs' | 'credentials';
@@ -273,6 +282,8 @@ function InstalledExtension({
       ) : null}
       {installation.lastError ? <Notice error>{errorText(installation.lastError)}</Notice> : null}
       <Tabs
+        sticky
+        wrapLabels
         items={tabs}
         value={tab}
         onChange={(value) => void setSearch({ tab: value === opening ? undefined : value })}
@@ -299,7 +310,7 @@ function InstalledExtension({
           release={release}
           installation={installation}
           reconnect={!!reconnect}
-          saved={savedRevision === installation.settingsRevision}
+          saved={savedRevision !== undefined && savedRevision === installation.settingsRevision}
           onSaved={(revision) => {
             setSavedRevision(revision);
             return refresh();
@@ -362,8 +373,8 @@ function Overview({
   release: Release | undefined;
 }) {
   return (
-    <Stack>
-      <Section title="Access">
+    <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+      <ExtensionCard title="Access" icon={ShieldCheck}>
         <p className="text-sm">
           {accessText(
             installation.grantedScopes,
@@ -371,18 +382,18 @@ function Overview({
             installation.grantedUses,
           )}
         </p>
-      </Section>
+      </ExtensionCard>
       {installation.grantedUses.includes('model') ? (
-        <Section title="Model use this month">
+        <ExtensionCard title="Model use this month" icon={Cpu}>
           <ModelUsage installationId={installation.id} />
-        </Section>
+        </ExtensionCard>
       ) : null}
       {release?.manifest.source && release.manifest.connection === 'workspace' ? (
-        <Section title="Sync">
+        <ExtensionCard title="Sync" icon={Activity}>
           <SourceSyncStatus installationId={installation.id} />
-        </Section>
+        </ExtensionCard>
       ) : null}
-      <Section title="Where it runs">
+      <ExtensionCard title="Where it runs" icon={Server}>
         {release ? (
           <p className="text-sm">
             {release.manifest.execution === 'standalone'
@@ -392,8 +403,8 @@ function Overview({
         ) : (
           <Muted>This server no longer offers the installed version of this extension.</Muted>
         )}
-      </Section>
-    </Stack>
+      </ExtensionCard>
+    </div>
   );
 }
 
@@ -409,11 +420,16 @@ function ModelUsage({ installationId }: { installationId: string }) {
   if (!model.requests) return <Muted>No model calls yet this month.</Muted>;
   const number = new Intl.NumberFormat();
   return (
-    <p className="text-sm">
-      {number.format(model.requests)} {model.requests === 1 ? 'call' : 'calls'}:{' '}
-      {number.format(model.inputTokens + model.cacheReadTokens + model.cacheWriteTokens)} input
-      tokens and {number.format(model.outputTokens)} output tokens.
-    </p>
+    <ExtensionFacts
+      items={[
+        ['Calls', number.format(model.requests)],
+        [
+          'Input tokens',
+          number.format(model.inputTokens + model.cacheReadTokens + model.cacheWriteTokens),
+        ],
+        ['Output tokens', number.format(model.outputTokens)],
+      ]}
+    />
   );
 }
 
@@ -453,38 +469,45 @@ function SettingsForm({
         save.mutate();
       }}
     >
-      {save.error ? <Notice error>{save.error.message}</Notice> : null}
-      {saved ? <Notice onDismiss={onDismiss}>Settings saved.</Notice> : null}
-      <fieldset disabled={save.isPending} className="flex flex-col gap-4">
-        <SettingFields
-          release={release}
-          values={values}
-          secrets={{}}
-          existing={installation}
-          references={{}}
-          onChange={(key, value) => {
-            setValues((v) => ({ ...v, [key]: value }));
-            onDismiss();
-          }}
-          onSecret={() => {}}
-        />
-      </fieldset>
-      <Muted>
-        Saving stops pending runs and starts again with the new values. The connection stays on and
-        its app keys keep working.
-      </Muted>
-      <Row>
-        <Button type="submit" variant="primary" disabled={save.isPending}>
-          {save.isPending ? 'Saving…' : 'Save settings'}
-        </Button>
-        {reconnect ? (
-          <Button asChild>
-            <Link to="/extensions/$id/reconnect" params={{ id: installation.id }}>
-              Change credentials
-            </Link>
-          </Button>
-        ) : null}
-      </Row>
+      <ExtensionCard
+        title="Workspace settings"
+        icon={Settings2}
+        actions={
+          <>
+            <Button type="submit" variant="primary" disabled={save.isPending}>
+              {save.isPending ? 'Saving…' : 'Save settings'}
+            </Button>
+            {reconnect ? (
+              <Button asChild>
+                <Link to="/extensions/$id/reconnect" params={{ id: installation.id }}>
+                  Change credentials
+                </Link>
+              </Button>
+            ) : null}
+          </>
+        }
+      >
+        {save.error ? <Notice error>{save.error.message}</Notice> : null}
+        {saved ? <Notice onDismiss={onDismiss}>Settings saved.</Notice> : null}
+        <fieldset disabled={save.isPending} className="flex flex-col gap-4">
+          <SettingFields
+            release={release}
+            values={values}
+            secrets={{}}
+            existing={installation}
+            references={{}}
+            onChange={(key, value) => {
+              setValues((v) => ({ ...v, [key]: value }));
+              onDismiss();
+            }}
+            onSecret={() => {}}
+          />
+        </fieldset>
+        <Muted>
+          Saving stops pending runs and starts again with the new values. The connection stays on
+          and its app keys keep working.
+        </Muted>
+      </ExtensionCard>
     </form>
   );
 }
@@ -581,7 +604,7 @@ function RunList({
     onSuccess: () => client.invalidateQueries({ queryKey }),
   });
   return (
-    <Stack>
+    <ExtensionCard title="Run history" icon={History}>
       {connection ? <Notice onDismiss={onAll}>Showing the runs of one connection.</Notice> : null}
       {runs.error ? <QueryError error={runs.error} retry={() => void runs.refetch()} /> : null}
       {retry.error ? <Notice error>{retry.error.message}</Notice> : null}
@@ -595,7 +618,10 @@ function RunList({
           className="flex flex-col divide-y divide-border rounded-lg border border-border"
         >
           {runs.data.runs.map((run) => (
-            <li key={run.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5">
+            <li
+              key={run.id}
+              className="flex flex-wrap items-center gap-x-3 gap-y-2 bg-muted/30 px-3 py-3"
+            >
               <Badge
                 tone={
                   run.status === 'failed'
@@ -609,7 +635,7 @@ function RunList({
               </Badge>
               <span className="text-sm">Attempt {run.attempt}</span>
               {run.code ? <Muted small>{stateLabel(run.code)}</Muted> : null}
-              <span className="ml-auto flex items-center gap-2">
+              <span className="flex w-full flex-wrap items-center justify-between gap-2 sm:ml-auto sm:w-auto">
                 <Muted small>{new Date(run.createdAt).toLocaleString()}</Muted>
                 {admin && run.status === 'failed' ? (
                   <Button
@@ -631,7 +657,7 @@ function RunList({
           <Button onClick={() => setCursor(runs.data?.nextCursor ?? undefined)}>Older runs</Button>
         ) : null}
       </Row>
-    </Stack>
+    </ExtensionCard>
   );
 }
 
@@ -714,7 +740,7 @@ export function InstallationCredentials({
       {issue.error ? <Notice error>{issue.error.message}</Notice> : null}
       {revoke.error ? <Notice error>{revoke.error.message}</Notice> : null}
       {!keyMode ? null : issued ? (
-        <Section title="New key">
+        <ExtensionCard title="New key" icon={KeyRound}>
           <Stack>
             <Notice>Copy this key now. It is shown only once.</Notice>
             <Row nowrap>
@@ -733,25 +759,24 @@ export function InstallationCredentials({
               </Button>
             </Row>
           </Stack>
-        </Section>
+        </ExtensionCard>
       ) : (
-        <Section title="Create a key">
+        <ExtensionCard title="Create a key" icon={KeyRound}>
           <Stack>
             {installation.grantedScopes.map((scope) => (
-              <Label key={scope}>
-                <input
-                  type="checkbox"
-                  checked={selected.includes(scope)}
-                  onChange={(event) =>
-                    setScopes(
-                      event.currentTarget.checked
-                        ? [...selected, scope]
-                        : selected.filter((s) => s !== scope),
-                    )
-                  }
-                />
+              <ExtensionCheckbox
+                key={scope}
+                checked={selected.includes(scope)}
+                onChange={(event) =>
+                  setScopes(
+                    event.currentTarget.checked
+                      ? [...selected, scope]
+                      : selected.filter((s) => s !== scope),
+                  )
+                }
+              >
                 {scope === 'read' ? 'Read workspace data' : 'Write workspace data'}
-              </Label>
+              </ExtensionCheckbox>
             ))}
             <Row>
               <Button
@@ -765,17 +790,20 @@ export function InstallationCredentials({
               <Muted>Enable this app before creating a new key.</Muted>
             ) : null}
           </Stack>
-        </Section>
+        </ExtensionCard>
       )}
       {credentials.data?.credentials.length ? (
-        <Section title="Keys and connections">
+        <ExtensionCard title="Keys and connections" icon={KeyRound}>
           <ul
             aria-label="App credentials"
             className="flex flex-col divide-y divide-border rounded-lg border border-border"
           >
             {credentials.data.credentials.map((credential) => (
-              <li key={credential.id} className="flex items-center gap-3 px-3 py-2.5 text-sm">
-                <span className="min-w-0 flex-1 truncate">
+              <li
+                key={credential.id}
+                className="flex flex-wrap items-center gap-3 bg-muted/30 px-3 py-2.5 text-sm"
+              >
+                <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
                   {credential.prefix ?? 'OAuth connection'} ·{' '}
                   {credential.active ? 'Active' : 'Inactive'}
                 </span>
@@ -791,7 +819,7 @@ export function InstallationCredentials({
               </li>
             ))}
           </ul>
-        </Section>
+        </ExtensionCard>
       ) : null}
     </div>
   );

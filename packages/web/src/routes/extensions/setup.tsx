@@ -9,14 +9,12 @@ import {
 import { RetainerApiError } from '@retainer/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { Eye, LayoutList, Shapes, ShieldCheck } from 'lucide-react';
+import { Eye, LayoutList, Settings2, Shapes, ShieldCheck, Sparkles } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import {
   Button,
   Empty,
-  Input,
-  Label,
   Loading,
   Muted,
   Notice,
@@ -61,6 +59,7 @@ import {
   useRefreshExtensions,
 } from './model.js';
 import { SettingFields } from './setting-fields.js';
+import { ExtensionCard, ExtensionCheckbox } from './surface.js';
 
 type Settings = Installation['settings'];
 type Preview = Awaited<ReturnType<typeof api.previewExtension>>;
@@ -203,14 +202,14 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
     );
   if (phase === 'waiting' || phase === 'checking')
     return (
-      <Stack>
+      <ExtensionCard title="Configuration suggestions" icon={Sparkles}>
         <Loading>Preparing suggestions…</Loading>
         {query.error ? <Notice error>{query.error.message}</Notice> : null}
         <Row>
           <Button onClick={() => setPhase('review')}>Skip suggestions</Button>
           <Button onClick={props.onCancel}>Continue later</Button>
         </Row>
-      </Stack>
+      </ExtensionCard>
     );
   return (
     <Stack>
@@ -408,7 +407,7 @@ function BasicExtensionSetup({
     else setStep(step + 1);
   };
   const actions = (
-    <StepActions>
+    <>
       {step > 0 ? (
         <Button disabled={busy} onClick={() => back(step - 1)}>
           Back
@@ -421,7 +420,7 @@ function BasicExtensionSetup({
       <Button type="submit" variant="primary" disabled={busy}>
         {review.isPending ? 'Preparing review…' : last ? reviewLabel : 'Continue'}
       </Button>
-    </StepActions>
+    </>
   );
   const name = extensionName(release.manifest.universalId, release.manifest.name);
   let body: ReactNode;
@@ -437,77 +436,81 @@ function BasicExtensionSetup({
               ? `Version ${release.manifest.version} keeps your settings. Change any before you review the upgrade.`
               : release.manifest.description}
         </StepHeader>
-        <fieldset disabled={busy} className="flex flex-col gap-4">
-          <SettingFields
-            release={release}
-            values={values}
-            secrets={secrets}
-            {...(retained ? { existing: retained } : {})}
-            references={references}
-            allowConnectionEdit={reconnect || retained?.state === 'configuring'}
-            allowNewCredentials={accessOnly || upgrade}
-            providedSecrets={providedSecrets}
-            onChange={(key, value) => setValues((v) => ({ ...v, [key]: value }))}
-            onSecret={(key, value) => {
-              setSecrets((v) => ({ ...v, [key]: value }));
-              setReferences((v) => {
-                const next = { ...v };
-                delete next[key];
-                return next;
-              });
-            }}
-          />
-          {reconnect && release.manifest.source ? (
-            <Label>
-              <Input
-                type="checkbox"
+        <ExtensionCard title="Extension settings" icon={Settings2} actions={actions}>
+          <fieldset disabled={busy} className="flex flex-col gap-4">
+            <SettingFields
+              release={release}
+              values={values}
+              secrets={secrets}
+              {...(retained ? { existing: retained } : {})}
+              references={references}
+              allowConnectionEdit={reconnect || retained?.state === 'configuring'}
+              allowNewCredentials={accessOnly || upgrade}
+              providedSecrets={providedSecrets}
+              onChange={(key, value) => setValues((v) => ({ ...v, [key]: value }))}
+              onSecret={(key, value) => {
+                setSecrets((v) => ({ ...v, [key]: value }));
+                setReferences((v) => {
+                  const next = { ...v };
+                  delete next[key];
+                  return next;
+                });
+              }}
+            />
+            {reconnect && release.manifest.source ? (
+              <ExtensionCheckbox
                 checked={replaceSourceAccount}
                 onChange={(event) => setReplaceSourceAccount(event.target.checked)}
-              />
-              Use a different provider account
-              <Muted small>
-                Retire the previous account binding and callback addresses. Imported evidence stays
-                in its existing namespace.
-              </Muted>
-            </Label>
-          ) : null}
-        </fieldset>
-        {actions}
+              >
+                <span className="font-medium">Use a different provider account</span>
+                <Muted small>
+                  Retire the previous account binding and callback addresses. Imported evidence
+                  stays in its existing namespace.
+                </Muted>
+              </ExtensionCheckbox>
+            ) : null}
+          </fieldset>
+        </ExtensionCard>
       </Form>
     );
   else if (current === 'mapping')
     body = (
       <Form onSubmit={next}>
-        <fieldset disabled={busy} className="flex flex-col gap-3">
-          {mapping && mapped ? (
-            <MappingFields
-              mapping={mapping}
-              object={mapped}
-              choices={choices}
-              issues={issues}
-              suggestions={suggestions?.mapping}
-              onChange={(key, choice) => {
-                setChoices((c) => ({ ...c, [key]: choice }));
-                setIssues(({ [key]: _, ...rest }) => rest);
-              }}
-              onImport={(next, found) => {
-                setChoices(next);
-                setIssues(found);
-              }}
-            />
-          ) : (
-            <Notice>
-              This extension maps values to an object the web app cannot map yet. Use the API to
-              review its mapping.
-            </Notice>
-          )}
-          {editMapping && mapped ? (
-            <Muted>
-              Changing the mapping does not fill in existing {mapped.labelPlural.toLowerCase()}.
-            </Muted>
-          ) : null}
-        </fieldset>
-        {actions}
+        <ExtensionCard
+          title={mapped ? `Map fields for ${mapped.labelPlural}` : 'Map fields'}
+          icon={LayoutList}
+          actions={actions}
+        >
+          <fieldset disabled={busy} className="flex flex-col gap-3">
+            {mapping && mapped ? (
+              <MappingFields
+                mapping={mapping}
+                object={mapped}
+                choices={choices}
+                issues={issues}
+                suggestions={suggestions?.mapping}
+                onChange={(key, choice) => {
+                  setChoices((c) => ({ ...c, [key]: choice }));
+                  setIssues(({ [key]: _, ...rest }) => rest);
+                }}
+                onImport={(next, found) => {
+                  setChoices(next);
+                  setIssues(found);
+                }}
+              />
+            ) : (
+              <Notice>
+                This extension maps values to an object the web app cannot map yet. Use the API to
+                review its mapping.
+              </Notice>
+            )}
+            {editMapping && mapped ? (
+              <Muted>
+                Changing the mapping does not fill in existing {mapped.labelPlural.toLowerCase()}.
+              </Muted>
+            ) : null}
+          </fieldset>
+        </ExtensionCard>
       </Form>
     );
   else {

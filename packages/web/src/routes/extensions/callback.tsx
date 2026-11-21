@@ -5,7 +5,7 @@ import { allWorkspaces } from '../../accounts/context.js';
 import { AccountFrame } from '../../accounts/screens.js';
 import { type Account, workspaceHref } from '../../api/account.js';
 import { api, openWorkspace } from '../../api/client.js';
-import { Notice } from '../../ui/index.js';
+import { Button, Loading, Notice } from '../../ui/index.js';
 import {
   type ConnectResult,
   connectionsHref,
@@ -106,9 +106,10 @@ export function ConnectCallback(props: { account?: Account; session?: Session })
   if (outcome === 'sign-in')
     return (
       <AccountFrame title="Sign in to Retainer">
-        <Notice>
-          {SIGN_IN_FIRST} <a href="/app/">Open Retainer</a>
-        </Notice>
+        <Notice>{SIGN_IN_FIRST}</Notice>
+        <Button asChild>
+          <a href="/app/">Open Retainer</a>
+        </Button>
       </AccountFrame>
     );
   if (outcome === 'cannot')
@@ -117,14 +118,15 @@ export function ConnectCallback(props: { account?: Account; session?: Session })
         title="Connecting didn't finish"
         {...(props.account ? { account: props.account } : {})}
       >
-        <Notice>
-          {CANNOT_FINISH} <a href="/app/">Open Retainer</a>
-        </Notice>
+        <Notice>{CANNOT_FINISH}</Notice>
+        <Button asChild>
+          <a href="/app/">Open Retainer</a>
+        </Button>
       </AccountFrame>
     );
   return (
     <AccountFrame title="Connecting…">
-      <Notice>Finishing the connection.</Notice>
+      <Loading>Finishing the connection.</Loading>
     </AccountFrame>
   );
 }

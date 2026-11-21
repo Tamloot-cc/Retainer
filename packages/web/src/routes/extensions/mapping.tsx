@@ -175,12 +175,13 @@ export function MappingFields({
   return (
     <section aria-label="Field mapping" className="flex flex-col gap-3">
       <Row>
-        <span className="font-medium">Where each value goes</span>
-        <Button onClick={() => setImporting(true)}>Import draft</Button>
+        <Button size="small" onClick={() => setImporting(true)}>
+          Import draft
+        </Button>
       </Row>
       <Muted small>
-        Values fill only {object.labelPlural.toLowerCase()} fields that are empty. A field someone
-        filled or cleared is never changed.
+        This extension fills empty fields on {object.labelPlural.toLowerCase()}. Fields someone
+        already filled or cleared stay as they are.
       </Muted>
       {issues['*'] ? <Notice>{issues['*']}</Notice> : null}
       {unknown.length ? (
@@ -200,31 +201,33 @@ export function MappingFields({
           { value: 'skip', label: 'Skip' },
         ];
         return (
-          <Label key={output.key}>
-            {output.label}
-            {suggestions?.[output.key] ? <Badge>Suggested</Badge> : null}
-            {suggestions?.[output.key]?.reason ? (
-              <Muted small>{suggestions[output.key]?.reason}</Muted>
-            ) : null}
-            <Muted small>{output.description}</Muted>
-            <SelectMenu
-              label={`${output.label} destination`}
-              value={encode(choice)}
-              options={options}
-              fallback={
-                choice?.action === 'existing' ? (
-                  <span>{choice.field} (not available)</span>
-                ) : undefined
-              }
-              onChange={(value) => onChange(output.key, decode(value))}
-              fill
-            />
-            {issues[output.key] ? (
-              <span role="alert" className="text-sm text-destructive">
-                {issues[output.key]}
-              </span>
-            ) : null}
-          </Label>
+          <div key={output.key} className="min-w-0 rounded-md bg-muted/50 p-3">
+            <Label>
+              {output.label}
+              {suggestions?.[output.key] ? <Badge>Suggested</Badge> : null}
+              {suggestions?.[output.key]?.reason ? (
+                <Muted small>{suggestions[output.key]?.reason}</Muted>
+              ) : null}
+              <Muted small>{output.description}</Muted>
+              <SelectMenu
+                label={`${output.label} destination`}
+                value={encode(choice)}
+                options={options}
+                fallback={
+                  choice?.action === 'existing' ? (
+                    <span>{choice.field} (not available)</span>
+                  ) : undefined
+                }
+                onChange={(value) => onChange(output.key, decode(value))}
+                fill
+              />
+              {issues[output.key] ? (
+                <span role="alert" className="text-sm text-destructive">
+                  {issues[output.key]}
+                </span>
+              ) : null}
+            </Label>
+          </div>
         );
       })}
       {importing ? (

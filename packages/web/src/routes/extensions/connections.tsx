@@ -5,10 +5,11 @@ import type {
 } from '@retainer/extension';
 import { RetainerApiError } from '@retainer/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Cable, KeyRound, UsersRound } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useAccount } from '../../accounts/context.js';
 import { api, useWorkspace } from '../../api/client.js';
-import { Button, Muted, Notice, Panel, Row, Stack } from '../../ui/index.js';
+import { Badge, Button, Muted, Notice, Row, Stack } from '../../ui/index.js';
 import { QueryError } from '../state.js';
 import {
   forgetAttempt,
@@ -19,6 +20,7 @@ import {
 } from './connect-return.js';
 import { stateLabel as label } from './model.js';
 import { SettingFields } from './setting-fields.js';
+import { ExtensionCard, ExtensionFacts } from './surface.js';
 
 type Release = {
   manifest: Pick<ExtensionManifest, 'name' | 'settings'> &
@@ -139,136 +141,141 @@ export function MemberConnectionPanel({
     installation.id,
   ]);
   const ownOAuth = oauthRelease && own?.credential === 'oauth';
-  // Without an OAuth client the table is today's, unless OAuth connections remain.
-  const reasons =
+  // OAuth errors and incomplete revocations can outlive an offered OAuth method.
+  const showOAuthReasons =
     oauth ||
     (oauthRelease && !!connections.data?.connections.some((c) => c.credential === 'oauth'));
+  const members = admin ? connections.data?.connections.filter((c) => c.id !== own?.id) : undefined;
   return (
     <Stack>
-      <section
-        aria-label={`Your ${label(release.manifest.name)} connection`}
-        className="flex flex-col gap-3"
-      >
-        <h3 className="font-medium">Your {label(release.manifest.name)} connection</h3>
-        {returnNotice ? (
-          <Notice onDismiss={() => setReturnNotice(null)}>{returnNotice}</Notice>
-        ) : null}
-        {oauthRelease && installation.releaseNotice ? (
-          <ReleaseNotice
-            key={installation.releaseNotice.at}
-            installation={installation}
-            notice={installation.releaseNotice}
-            provider={provider}
-            revokeUrl={release.manifest.oauth?.revokeUrl}
-            onChanged={onChanged}
-          />
-        ) : null}
-        {connections.error ? (
-          <QueryError error={connections.error} retry={() => void connections.refetch()} />
-        ) : null}
-        {disconnect.error ? <Notice>{disconnect.error.message}</Notice> : null}
-        {!connections.data && !connections.error ? (
-          <Muted>Loading your connection…</Muted>
-        ) : ownOAuth && own ? (
-          <OAuthConnection
-            connection={own}
-            installation={installation}
-            release={release}
-            provider={provider}
-            human={human}
-            available={oauth}
-            enabled={enabled}
-            reconnecting={reconnecting}
-            onReconnect={() => setReconnecting((open) => !open)}
-            onDisconnect={() => disconnect.mutate(own.id)}
-            disconnecting={disconnect.isPending}
-            onRuns={() => onRuns(own.id)}
-          />
-        ) : own ? (
-          <>
-            {gmail && typeof own.settings.gmailAddress === 'string' ? (
-              <p>{own.settings.gmailAddress}</p>
-            ) : null}
-            <p>
-              {label(own.state)} · {label(own.health)}
-            </p>
-            <Muted>
-              Last completed scan: {date(own.lastSuccessfulScanAt)}. Failed imports:{' '}
-              {own.failedItems}.
-            </Muted>
-            {own.lastError ? (
-              <Notice>
-                {gmail && own.lastError === 'provider_unauthorized'
-                  ? 'Gmail access ended. Disconnect this account and connect it again.'
-                  : connectionError(own.lastError)}
-              </Notice>
-            ) : null}
-            <Row>
-              {human && keyMethod ? (
-                <Button disabled={!enabled} onClick={() => setForm({ connection: own })}>
-                  Reconnect account
-                </Button>
-              ) : null}
-              {human ? (
-                <Button disabled={disconnect.isPending} onClick={() => disconnect.mutate(own.id)}>
-                  Disconnect account
-                </Button>
-              ) : null}
-              <Button onClick={() => onRuns(own.id)}>View your runs</Button>
-            </Row>
-          </>
-        ) : connections.data ? (
-          <>
-            <Muted>
-              {human
-                ? 'Connect your own account to share its data with this workspace.'
-                : 'A person must connect their account. Sign in with a user key or a person’s session.'}
-            </Muted>
-            {human && gmail ? (
-              <GmailAuthorization
-                installation={installation}
-                onChanged={refresh}
-                enabled={enabled}
-              />
-            ) : null}
-            {human && oauth ? (
-              <OAuthStart
-                installation={installation}
-                release={release}
-                provider={provider}
-                disabled={!enabled}
-              />
-            ) : null}
-            {human && keyMethod ? (
-              oauth ? (
-                <div>
-                  <Button variant="ghost" disabled={!enabled} onClick={() => setForm({})}>
-                    Use an API key instead
+      <div className="max-w-2xl">
+        <ExtensionCard
+          title={`Your ${provider} connection`}
+          icon={Cable}
+          actions={
+            own && !ownOAuth ? (
+              <>
+                <Button onClick={() => onRuns(own.id)}>View your runs</Button>
+                {human && keyMethod ? (
+                  <Button disabled={!enabled} onClick={() => setForm({ connection: own })}>
+                    Reconnect account
                   </Button>
-                </div>
-              ) : (
-                <Button disabled={!enabled} onClick={() => setForm({})}>
-                  Connect account
-                </Button>
-              )
-            ) : null}
-          </>
-        ) : null}
-        {!enabled ? (
-          <Muted>
-            {['installing', 'upgrading'].includes(installation.state)
-              ? 'Workspace setup is still running. Connect after it finishes.'
-              : 'An admin must enable this extension before you connect.'}
-          </Muted>
-        ) : null}
-        <Muted small>
-          {gmail
-            ? 'Disconnecting stops future Gmail imports. Previously imported messages remain in this workspace until removed.'
-            : ownOAuth
-              ? `Disconnecting stops imports now and keeps imported records in the workspace. Retainer then gives up this workspace's access in ${provider}, retrying for up to a day.`
-              : 'Disconnecting keeps imported records in the workspace. A completed scan can still have pending or failed imports.'}
-        </Muted>
-      </section>
+                ) : null}
+                {human ? (
+                  <Button disabled={disconnect.isPending} onClick={() => disconnect.mutate(own.id)}>
+                    Disconnect account
+                  </Button>
+                ) : null}
+              </>
+            ) : undefined
+          }
+        >
+          {returnNotice ? (
+            <Notice onDismiss={() => setReturnNotice(null)}>{returnNotice}</Notice>
+          ) : null}
+          {oauthRelease && installation.releaseNotice ? (
+            <ReleaseNotice
+              key={installation.releaseNotice.at}
+              installation={installation}
+              notice={installation.releaseNotice}
+              provider={provider}
+              revokeUrl={release.manifest.oauth?.revokeUrl}
+              onChanged={onChanged}
+            />
+          ) : null}
+          {connections.error ? (
+            <QueryError error={connections.error} retry={() => void connections.refetch()} />
+          ) : null}
+          {disconnect.error ? <Notice error>{disconnect.error.message}</Notice> : null}
+          {!connections.data && !connections.error ? (
+            <Muted>Loading your connection…</Muted>
+          ) : ownOAuth && own ? (
+            <OAuthConnection
+              connection={own}
+              installation={installation}
+              release={release}
+              provider={provider}
+              human={human}
+              available={oauth}
+              enabled={enabled}
+              reconnecting={reconnecting}
+              onReconnect={() => setReconnecting((open) => !open)}
+              onDisconnect={() => disconnect.mutate(own.id)}
+              disconnecting={disconnect.isPending}
+              onRuns={() => onRuns(own.id)}
+            />
+          ) : own ? (
+            <>
+              {gmail && typeof own.settings.gmailAddress === 'string' ? (
+                <p className="text-base font-semibold">{own.settings.gmailAddress}</p>
+              ) : own.owner.name ? (
+                <p className="text-base font-semibold">{own.owner.name}</p>
+              ) : null}
+              <ConnectionBadges connection={own} />
+              <ConnectionScan connection={own} />
+              {own.lastError ? (
+                <Notice>
+                  {gmail && own.lastError === 'provider_unauthorized'
+                    ? 'Gmail access ended. Disconnect this account and connect it again.'
+                    : connectionError(own.lastError)}
+                </Notice>
+              ) : null}
+            </>
+          ) : connections.data ? (
+            <>
+              <Muted>
+                {human
+                  ? 'Connect your own account to share its data with this workspace.'
+                  : 'A person must connect their account. Sign in with a user key or a person’s session.'}
+              </Muted>
+              {human && gmail ? (
+                <GmailAuthorization
+                  installation={installation}
+                  onChanged={refresh}
+                  enabled={enabled}
+                />
+              ) : null}
+              {human && oauth ? (
+                <OAuthStart
+                  installation={installation}
+                  release={release}
+                  provider={provider}
+                  disabled={!enabled}
+                />
+              ) : null}
+              {human && keyMethod ? (
+                oauth ? (
+                  <div>
+                    <Button variant="ghost" disabled={!enabled} onClick={() => setForm({})}>
+                      Use an API key instead
+                    </Button>
+                  </div>
+                ) : (
+                  <Button disabled={!enabled} onClick={() => setForm({})}>
+                    Connect account
+                  </Button>
+                )
+              ) : null}
+            </>
+          ) : null}
+          {!enabled ? (
+            <Muted>
+              {['installing', 'upgrading'].includes(installation.state)
+                ? 'Workspace setup is still running. Connect after it finishes.'
+                : 'An admin must enable this extension before you connect.'}
+            </Muted>
+          ) : null}
+          {own ? (
+            <Muted small>
+              {gmail
+                ? 'Disconnecting stops future Gmail imports. Previously imported messages remain in this workspace until removed.'
+                : ownOAuth
+                  ? `Disconnecting stops imports now and keeps imported records in the workspace. Retainer then gives up this workspace's access in ${provider}, retrying for up to a day.`
+                  : 'Disconnecting keeps imported records in the workspace. A completed scan can still have pending or failed imports.'}
+            </Muted>
+          ) : null}
+        </ExtensionCard>
+      </div>
       {form ? (
         <ConnectionForm
           installation={installation}
@@ -278,70 +285,77 @@ export function MemberConnectionPanel({
           onSaved={refresh}
         />
       ) : null}
-      {admin && connections.data?.connections.length ? (
-        <section aria-label="Member connections">
-          <h3 className="mb-2 font-medium">Member connections</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr>
-                  {[
-                    'Owner',
-                    'Status',
-                    'Health',
-                    'Last completed scan',
-                    'Failed imports',
-                    ...(reasons ? ['Reason'] : []),
-                    'Actions',
-                  ].map((title) => (
-                    <th className="p-2" scope="col" key={title}>
-                      {title}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {connections.data.connections.map((c) => (
-                  <tr key={c.id}>
-                    <td className="p-2">{c.owner.name ?? c.owner.id}</td>
-                    <td className="p-2">{label(c.state)}</td>
-                    <td className="p-2">{label(c.health)}</td>
-                    <td className="p-2">{date(c.lastSuccessfulScanAt)}</td>
-                    <td className="p-2">{c.failedItems}</td>
-                    {reasons ? (
-                      <td className="p-2">
-                        {c.releaseIncompleteAt
-                          ? `${provider} access may remain. The member can revoke Retainer in ${provider}.`
-                          : c.lastError
-                            ? connectionError(c.lastError, c, provider)
-                            : ''}
-                      </td>
-                    ) : null}
-                    <td className="p-2">
-                      <Row>
-                        <Button onClick={() => onRuns(c.id)}>
-                          View runs for {c.owner.name ?? c.owner.id}
+      {members?.length ? (
+        <ExtensionCard title="Member connections" icon={UsersRound}>
+          <ul aria-label="Other member connections" className="@container space-y-2">
+            {members.map((c) => {
+              const owner = c.owner.name ?? c.owner.id;
+              const reason = c.releaseIncompleteAt
+                ? `${provider} access may remain. The member can revoke Retainer in ${provider}.`
+                : c.lastError
+                  ? connectionError(c.lastError, c, provider)
+                  : null;
+              return (
+                <li key={c.id} className="space-y-3 rounded-md border border-border px-3 py-3">
+                  <div className="grid gap-3 @min-[40rem]:grid-cols-[minmax(8rem,1fr)_minmax(0,2fr)_auto] @min-[40rem]:items-center">
+                    <div className="min-w-0 space-y-1">
+                      <p className="text-sm font-semibold">{owner}</p>
+                      <ConnectionBadges connection={c} />
+                    </div>
+                    <ConnectionScan connection={c} />
+                    <Row>
+                      <Button
+                        size="small"
+                        className="min-h-11 @min-[40rem]:min-h-8"
+                        aria-label={`View runs for ${owner}`}
+                        onClick={() => onRuns(c.id)}
+                      >
+                        View runs
+                      </Button>
+                      {c.state !== 'disconnected' ? (
+                        <Button
+                          size="small"
+                          className="min-h-11 @min-[40rem]:min-h-8"
+                          aria-label={`Disconnect ${owner}`}
+                          disabled={disconnect.isPending}
+                          onClick={() => disconnect.mutate(c.id)}
+                        >
+                          Disconnect
                         </Button>
-                        {c.state !== 'disconnected' ? (
-                          <Button
-                            disabled={disconnect.isPending}
-                            onClick={() => disconnect.mutate(c.id)}
-                          >
-                            Disconnect {c.owner.name ?? c.owner.id}
-                          </Button>
-                        ) : null}
-                      </Row>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                      ) : null}
+                    </Row>
+                  </div>
+                  {showOAuthReasons && reason ? <Notice warning>{reason}</Notice> : null}
+                </li>
+              );
+            })}
+          </ul>
+        </ExtensionCard>
       ) : null}
     </Stack>
   );
 }
+
+function ConnectionBadges({ connection: { state, health } }: { connection: ExtensionConnection }) {
+  return (
+    <Row>
+      <Badge tone={state === 'active' ? 'success' : 'neutral'}>{label(state)}</Badge>
+      {health !== 'ok' && health !== state ? <Badge tone="pending">{label(health)}</Badge> : null}
+    </Row>
+  );
+}
+
+function ConnectionScan({ connection }: { connection: ExtensionConnection }) {
+  return (
+    <ExtensionFacts
+      items={[
+        ['Last completed scan', date(connection.lastSuccessfulScanAt)],
+        ['Failed imports', connection.failedItems],
+      ]}
+    />
+  );
+}
+
 function ConnectionForm({
   installation,
   release,
@@ -391,7 +405,7 @@ function ConnectionForm({
   });
   const title = `${connection ? 'Reconnect' : 'Connect'} your ${label(release.manifest.name)} account`;
   return (
-    <Panel title={title}>
+    <ExtensionCard title={title} icon={KeyRound}>
       <form
         aria-label={title}
         onSubmit={(event) => {
@@ -427,7 +441,7 @@ function ConnectionForm({
           </Row>
         </Stack>
       </form>
-    </Panel>
+    </ExtensionCard>
   );
 }
 /** A connection's non-secret settings: its current values, else the manifest's defaults. */
@@ -653,25 +667,19 @@ function OAuthConnection({
 }) {
   const broken = failing(c);
   const started = release.manifest.gettingStarted;
-  const scanLine = (
-    <Muted>
-      Last completed scan: {date(c.lastSuccessfulScanAt)}. Failed imports: {c.failedItems}.
-    </Muted>
-  );
+  const scanLine = <ConnectionScan connection={c} />;
   return (
     <>
       {c.state === 'setup_failed' ? null : broken ? (
-        <p>Needs reconnect</p>
+        <Badge tone="pending">Needs reconnect</Badge>
       ) : c.state === 'active' && !c.lastSuccessfulScanAt ? (
         <>
-          <p>Importing…</p>
+          <Badge tone="pending">Importing…</Badge>
           {scanLine}
         </>
       ) : c.state === 'active' && !c.hasImportedItems && started ? (
         <>
-          <p>
-            {label(c.state)} · {label(c.health)}
-          </p>
+          <ConnectionBadges connection={c} />
           <Muted>
             {started.text}{' '}
             <a href={started.url} target="_blank" rel="noopener noreferrer" className="underline">
@@ -681,9 +689,7 @@ function OAuthConnection({
         </>
       ) : (
         <>
-          <p>
-            {label(c.state)} · {label(c.health)}
-          </p>
+          <ConnectionBadges connection={c} />
           {scanLine}
         </>
       )}
