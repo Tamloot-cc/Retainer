@@ -2120,3 +2120,159 @@ describe('routines', () => {
     expect(row).toEqual({ status: 'succeeded', code: null });
   });
 });
+
+describe('routines: findings from the live test (issue 147)', () => {
+  async function proposeVersion(s: Setup, routineId: string | undefined, description: string) {
+    const validated = await s.app.request('/v1/routines/validate', {
+      key: s.keys.agent,
+      body: TIER_ROUTINE(s.key('tier'), s.key('name')),
+    });
+    if (validated.body.valid === null) await s.executor.tick();
+    const proposal = await s.app.request('/v1/routines', {
+      key: s.keys.agent,
+      body: {
+        ...TIER_ROUTINE(s.key('tier'), s.key('name')),
+        ...(routineId ? { routineId } : {}),
+        name: 'Tier Acme companies',
+        description,
+        summary: description,
+        report: { verdict: 'full', gaps: [] },
+      },
+    });
+    expect(proposal.status).toBe(201);
+    return proposal.body as { routineId: string; versionId: string; number: number };
+  }
+  const approve = (s: Setup, routineId: string, versionId: string) =>
+    s.app.request(`/v1/routines/${routineId}/versions/${versionId}/approve`, {
+      key: s.keys.admin,
+      body: {},
+    });
+
+  it('approving a version closes the older proposals and leaves newer ones open', async () => {
+    const s = await setup();
+    const first = await proposeVersion(s, undefined, 'Version one.');
+    const second = await proposeVersion(s, first.routineId, 'Version two.');
+    const third = await proposeVersion(s, first.routineId, 'Version three.');
+    const fourth = await proposeVersion(s, first.routineId, 'Version four.');
+    expect((await approve(s, first.routineId, third.versionId)).status).toBe(200);
+    const detail = await s.app.request(`/v1/routines/${first.routineId}`, { key: s.keys.admin });
+    const states = Object.fromEntries(
+      detail.body.versions.map((v: { id: string; state: string }) => [v.id, v.state]),
+    );
+    expect(states).toEqual({
+      [first.versionId]: 'superseded',
+      [second.versionId]: 'superseded',
+      [third.versionId]: 'approved',
+      [fourth.versionId]: 'proposed',
+    });
+    expect(detail.body.proposals).toBe(1);
+    // A closed proposal can no longer be approved over the live version.
+    const late = await approve(s, first.routineId, second.versionId);
+    expect(late.status).toBe(409);
+    expect(late.body.error.code).toBe('not_a_proposal');
+  });
+
+  it('two proposals approved at once leave exactly one approved, active version', async () => {
+    const s = await setup();
+    const first = await proposeVersion(s, undefined, 'Version one.');
+    const second = await proposeVersion(s, first.routineId, 'Version two.');
+    const results = await Promise.all([
+      approve(s, first.routineId, first.versionId),
+      approve(s, first.routineId, second.versionId),
+    ]);
+    expect(results.some((r) => r.status === 200)).toBe(true);
+    const rows = await db.owner<{ id: string; state: string }[]>`
+      select id,state from routine_versions where routine_id=${first.routineId}`;
+    const approved = rows.filter((r) => r.state === 'approved');
+    expect(approved).toHaveLength(1);
+    expect(rows.filter((r) => r.state === 'proposed')).toHaveLength(0);
+    const [routine] = await db.owner<{ active_version_id: string; status: string }[]>`
+      select active_version_id,status from routines where id=${first.routineId}`;
+    expect(routine).toEqual({ active_version_id: approved[0]?.id, status: 'active' });
+  });
+
+  it('a preview returns each write in the typed shape, so code that reads it runs', async () => {
+    const s = await setup();
+    const tier = s.key('tier');
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Typed Preview');
+    const res = await s.app.request('/v1/routines/preview', {
+      key: s.keys.agent,
+      body: {
+        manifest: {
+          when: { kind: 'record', object: 'company', on: ['created'] },
+          if: { [s.key('name')]: { contains: 'Typed Preview' } },
+          uses: { tools: [], model: false },
+        },
+        code: `export async function main({ retainer, record }: RoutineContext<'company'>) {
+  const made = await retainer.company.create({ ${JSON.stringify(s.key('name'))}: 'Child of ' + record.id });
+  const res = await retainer.company.update(record.id, { ${JSON.stringify(tier)}: 'gold' });
+  return { made: made.fields, tier: res.fields[${JSON.stringify(tier)}] ?? null, id: res.id };
+}
+`,
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.valid).toBe(true);
+    await s.executor.tick();
+    const preview = await s.app.request(`/v1/routines/previews/${res.body.previewId}`, {
+      key: s.keys.agent,
+    });
+    const run = preview.body.runs.find((r: { recordId: string }) => r.recordId === acme);
+    expect(run).toMatchObject({
+      status: 'succeeded',
+      output: {
+        result: { made: { [s.key('name')]: 'applied' }, tier: 'applied', id: acme },
+      },
+    });
+    const record = await s.app.request(`/v1/records/${acme}`, { key: s.keys.admin });
+    expect(record.body.fields.tier ?? null).toBe(null);
+  });
+
+  it('a refused model call is kept as failed with the provider’s words, and a retry gets it again', async () => {
+    const s = await setup();
+    const source = {
+      manifest: {
+        when: { kind: 'manual', object: 'company', label: 'Ask' },
+        uses: { tools: [], model: true },
+      },
+      code: `export async function main({ retainer }: RoutineContext<'company'>) {
+  return retainer.ai.generate({ instructions: 'Say hi', input: null, output: { type: 'string' } });
+}
+`,
+    };
+    const { routineId, versionId } = await activate(s, source);
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Refused Model');
+    const { runId, token, effect } = await drive(s, routineId, versionId, acme);
+    const args = { instructions: 'Say hi', input: null, output: { type: 'string' } };
+    expect((await effect(1, 'ai.generate', args)).body.state).toBe('model');
+    const failed = await s.app.request('/v1/routines/runtime/effects/1/result', {
+      key: token,
+      body: { error: { code: 'model_failed', message: "property 'maxItems' is not supported" } },
+    });
+    expect(failed.status).toBe(200);
+    const view = await s.app.request(`/v1/routines/${routineId}/runs/${runId}`, {
+      key: s.keys.admin,
+    });
+    expect(view.body.calls).toEqual([
+      expect.objectContaining({
+        position: 1,
+        operation: 'ai.generate',
+        state: 'failed',
+        code: 'model_failed',
+        result: { error: "property 'maxItems' is not supported" },
+      }),
+    ]);
+    const retried = await effect(1, 'ai.generate', args);
+    expect(retried.status).toBe(422);
+    expect(retried.body.error.code).toBe('model_failed');
+    // A late answer does not overwrite the refusal.
+    const late = await s.app.request('/v1/routines/runtime/effects/1/result', {
+      key: token,
+      body: { result: 'hi' },
+    });
+    expect(late.status).toBe(422);
+    const [row] = await db.owner<{ state: string }[]>`
+      select state from routine_run_results where run_id=${runId} and position=1`;
+    expect(row?.state).toBe('failed');
+  });
+});

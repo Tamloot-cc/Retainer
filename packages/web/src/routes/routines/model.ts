@@ -1,7 +1,9 @@
 import { RetainerApiError } from '@retainer/sdk';
 import type {
   RoutineGapCode,
+  RoutineRunCall,
   RoutineRunStatus,
+  RoutineRunView,
   RoutineStatus,
   RoutineView,
 } from '@retainer/shared';
@@ -133,7 +135,36 @@ const CALL_STATES: Record<string, string> = {
   failed: 'Failed',
   reported: 'Reported, not made',
 };
-export const callStateText = (state: string) => CALL_STATES[state] ?? plain(state);
+/** A call's state in words; a call still open on a finished run got no answer. */
+export function callStateText(call: Pick<RoutineRunCall, 'state' | 'operation'>, finished = false) {
+  if (call.state === 'failed' && call.operation === 'ai.generate') return 'Refused';
+  if (call.state === 'started' && finished) return 'No answer';
+  return CALL_STATES[call.state] ?? plain(call.state);
+}
+
+/** The error a failed call kept, such as the model provider's refusal. */
+export function callError(call: RoutineRunCall): string | null {
+  if (call.state !== 'failed') return null;
+  const error = (call.result as { error?: unknown } | undefined)?.error;
+  return typeof error === 'string' && error ? error : null;
+}
+
+const FAILURES: Record<string, string> = {
+  routine_error: 'The routine’s code stopped with an error.',
+  check_failed: 'The code no longer passes Retainer’s checks, so it did not run.',
+  run_timeout: 'It ran past its time limit.',
+  output_too_large: 'It wrote more output than a run may keep.',
+  no_code: 'This version has no code to run.',
+};
+
+/** Why a failed run failed, in a sentence, with the error it ended on. */
+export function failureText(run: Pick<RoutineRunView, 'status' | 'code' | 'output'>) {
+  if (!['failed', 'diverged', 'budget_exhausted'].includes(run.status)) return null;
+  const error = typeof run.output?.error === 'string' ? run.output.error : null;
+  const why = run.code ? (FAILURES[run.code] ?? null) : null;
+  if (!why && !error) return null;
+  return [why, error ? `The error: ${error}` : null].filter(Boolean).join(' ');
+}
 
 const GAPS: Record<RoutineGapCode, string> = {
   no_source: 'Nothing brings this kind of event into Retainer.',

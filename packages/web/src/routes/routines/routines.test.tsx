@@ -311,11 +311,17 @@ describe('routine page', () => {
         discardedRuns: 2,
       } as never);
     mount(<RoutinePage />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Approve version 2' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve version 2…' }));
+    // Approving asks first, and says what going live means.
+    const dialog = await screen.findByRole('dialog', { name: 'Approve version 2?' });
+    expect(decide).not.toHaveBeenCalled();
+    expect(within(dialog).getByText(/It replaces version 1\./)).toBeTruthy();
+    expect(within(dialog).getByText(/start a dry run/)).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Approve version 2' }));
     expect(
-      await screen.findByText('Only a workspace admin can approve or reject a routine.'),
+      await within(dialog).findByText('Only a workspace admin can approve or reject a routine.'),
     ).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'Approve version 2' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Approve version 2' }));
     expect(decide).toHaveBeenLastCalledWith('routine-1', 'version-2', 'approve');
     expect(await screen.findByText(/Approved version 2\./)).toBeTruthy();
     expect(
@@ -398,8 +404,68 @@ describe('routine page', () => {
     expect(await screen.findByRole('menuitem', { name: 'Archive…' })).toBeTruthy();
     expect(screen.queryByRole('menuitem', { name: 'Resume' })).toBeNull();
     await userEvent.keyboard('{Escape}');
-    await userEvent.click(screen.getByRole('button', { name: 'Approve again' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Approve again…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Approve version 1?' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Approve version 1' }));
     expect(decide).toHaveBeenCalledWith('routine-1', 'version-1', 'approve');
+  });
+
+  it('dry-runs a proposal and shows what each run would do, without changing anything', async () => {
+    router.params = { id: 'routine-1' };
+    vi.spyOn(api, 'routine').mockResolvedValue(detail({ proposals: 1 }));
+    vi.spyOn(api, 'record').mockResolvedValue({
+      id: RECORD,
+      object: 'deal',
+      title: 'Acme deal',
+    } as never);
+    const preview = vi.spyOn(api, 'previewRoutine').mockResolvedValue({
+      valid: true,
+      problems: [],
+      previewId: 'preview-1',
+      matched: 3,
+    });
+    vi.spyOn(api, 'routinePreview').mockResolvedValue({
+      previewId: 'preview-1',
+      done: true,
+      runs: [
+        run({
+          id: 'dry-1',
+          mode: 'dry',
+          trigger: 'preview',
+          recordId: RECORD,
+          status: 'failed',
+          code: 'routine_error',
+          output: {
+            outcome: 'failed',
+            error: "Cannot read properties of undefined (reading 'sector')",
+          },
+          calls: [
+            {
+              position: 1,
+              operation: 'record.update',
+              state: 'reported',
+              code: null,
+              differs: false,
+              recordId: null,
+            },
+          ],
+        }),
+      ],
+    });
+    mount(<RoutinePage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Dry run…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Dry run of version 2' });
+    expect(within(dialog).getByText(/reported, not made\. Nothing changes/)).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Start the dry run' }));
+    expect(preview).toHaveBeenCalledWith({
+      manifest: version().manifest,
+      code: version().code,
+    });
+    expect(await within(dialog).findByText(/3 recent changes or records/)).toBeTruthy();
+    expect(within(dialog).getByText(/reading 'sector'/)).toBeTruthy();
+    const calls = within(dialog).getByRole('list', { name: 'Dry run calls' });
+    expect(within(calls).getByText('Update a record')).toBeTruthy();
+    expect(within(calls).getByText('Reported, not made')).toBeTruthy();
   });
 
   it('lists recent runs, each opening its calls', async () => {
@@ -460,6 +526,54 @@ describe('routine run page', () => {
       'task-1',
     );
     expect(screen.getAllByText('Test').length).toBeGreaterThan(0);
+  });
+});
+
+describe('a failed run', () => {
+  it('says why it failed, and marks a refused model call with the provider’s words', async () => {
+    router.params = { id: 'routine-1', run: 'run-9' };
+    const refusal =
+      "output_config.format.schema: For 'array' type, property 'maxItems' is not supported";
+    vi.spyOn(api, 'routineRun').mockResolvedValue(
+      run({
+        id: 'run-9',
+        status: 'failed',
+        code: 'routine_error',
+        modelCalls: 1,
+        output: { outcome: 'failed', code: 'routine_error', error: refusal },
+        calls: [
+          {
+            position: 1,
+            operation: 'ai.generate',
+            state: 'failed',
+            code: 'model_failed',
+            differs: false,
+            recordId: null,
+            result: { error: refusal },
+          },
+          {
+            position: 2,
+            operation: 'ai.generate',
+            state: 'started',
+            code: null,
+            differs: false,
+            recordId: null,
+          },
+        ],
+      }),
+    );
+    mount(<RoutineRunPage />);
+    expect(
+      await screen.findByText(
+        /The routine’s code stopped with an error\. The error: output_config/,
+      ),
+    ).toBeTruthy();
+    const calls = screen.getByRole('list', { name: 'Calls' });
+    expect(within(calls).getByText('Refused')).toBeTruthy();
+    expect(within(calls).getByText(/The model provider said: .*maxItems/)).toBeTruthy();
+    // A call left open on a finished run got no answer; it is not still waiting.
+    expect(within(calls).getByText('No answer')).toBeTruthy();
+    expect(within(calls).queryByText('Sent, no answer yet')).toBeNull();
   });
 });
 

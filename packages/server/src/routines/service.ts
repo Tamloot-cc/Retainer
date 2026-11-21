@@ -406,6 +406,10 @@ export class Routines {
           : await this.copyVersionForApproval(tx, caller.workspaceId, version, sourceId);
       const discardedRuns = await this.discardUnstarted(tx, routineId);
       await tx`update routine_versions set state='superseded' where routine_id=${routineId} and state='approved'`;
+      // Proposals older than the approved version are settled with it, so none
+      // can be approved over it by mistake; newer ones stay open for review.
+      await tx`update routine_versions set state='superseded' where routine_id=${routineId}
+        and state='proposed' and number<${version.number}`;
       await tx`update routine_versions set state='approved',approved_by=${tx.json(jsonValue(caller.actor))},
         approver_user_id=${who},approved_at=clock_timestamp(),types_fingerprint=${caps.typesFingerprint},
         tool_contracts=${tx.json(jsonValue(contracts))},source_id=${sourceId}

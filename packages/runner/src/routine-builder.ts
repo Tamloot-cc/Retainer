@@ -27,13 +27,14 @@ The manifest is JSON:
   "when": one of
     { "kind": "record", "object": "<object name>", "on": ["created" | "updated" | "links"], "fields"?: ["<field key>"], "oncePerRecord"?: true }
     { "kind": "schedule", "cron": "<5-field cron, at least 15 minutes apart>", "object"?: "<object name>", "filter"?: <filter>, "oncePerRecord"?: true }
-    { "kind": "manual", "object": "<object name>", "label": "<button label>" }
+    { "kind": "manual", "object": "<object name>", "label": "<button label>", "oncePerRecord"?: true }
   "if"?: <filter>,           // checked by Retainer before the code runs; the code never starts when it fails
   "expiry"?: { "field": "<date field key>" },  // the run is dropped once this date passes
   "uses": { "tools": ["<tool name>"], "model": true | false }
 }
 "links" fires when an event gains a participant or about link (event types only).
 A filter uses field keys: { "<key>": { "eq" | "neq" | "in" | "contains" | "gt" | "gte" | "lt" | "lte" | "isNull": value }, "and"?: [...], "or"?: [...], "not"?: {...} }. Only filterable fields can be filtered.
+"oncePerRecord": true makes Retainer act at most once for each record, ever: the record is used up by the run's first write or tool call. Set it whenever the description says to act once per record ("only once per project", "at most once for each conversation", "don't do it again"), and whenever a record or manual routine creates records from the triggering record, unless the description wants it to act again on later changes or presses. A check in the code alone is not enough: the admin who approves sees Retainer's facts, which come from the manifest.
 
 The code:
 - exports one function: export async function main({ retainer, record, run, trigger }: RoutineContext<'<object name>'>) { ... }
@@ -43,7 +44,9 @@ The code:
 - reads and writes values by field key, as the types show.
 - calls only the tools the manifest lists, and retainer.ai.generate only when uses.model is true.
 - returns a short JSON summary of what it did.
-- keeps conditions that only depend on the record in the manifest's "if", not in the code.`;
+- keeps conditions that only depend on the record in the manifest's "if", not in the code.
+- in a model call's output schema, uses only type, description, enum, properties, required, items and maxItems; Retainer enforces maxItems on the answer.
+- in a dry run (run.dryRun), gets writes back in their usual shape, but nothing is written.`;
 
 function instructions(
   caps: Omit<RoutineCapabilities, 'types' | 'typesFingerprint'>,
@@ -61,7 +64,7 @@ The SDK's types, generated from this workspace:
 ${types}
 \`\`\`
 
-Report honestly how much of the description the routine does: "full", "partial" (list each gap) or "not_possible" (then manifest and code may be empty strings). Each gap names the part of the description, a reason from ${JSON.stringify(caps.gapCodes)}, and what would make it possible (a field to add, an extension to install). Never pretend: if a field, object, tool or model the description needs is missing, it is a gap.
+Report honestly how much of the description the routine does: "full", "partial" (list each gap) or "not_possible" (then manifest and code may be empty strings). "full" means every action and every rule the description states is done, and each rule Retainer can enforce (a condition, "once per record", a schedule) is in the manifest. Each gap names the part of the description, a reason from ${JSON.stringify(caps.gapCodes)}, and what would make it possible (a field to add, an extension to install). Never pretend: if a field, object, tool or model the description needs is missing, it is a gap.
 
 name: a short name for the routine. summary: one sentence, in plain words, of what the routine does.
 When the input lists problems with a previous attempt, fix every one of them.`;
@@ -90,6 +93,45 @@ const outputSchema = (gapCodes: readonly string[]) => ({
   },
   required: ['verdict', 'gaps', 'name', 'summary', 'manifest', 'code'],
 });
+
+/** Words after "once" that make it a frequency ("once a week"), not once per record. */
+const FREQUENCY =
+  /^(?:(?:a|an|every|per|each|in an?)\s+)?(?:day|week|fortnight|month|quarter|year|hour|minute|morning|afternoon|evening|night|monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?\b/;
+
+/** Whether an English description asks to act at most once per record. */
+export function saysOncePerRecord(description: string): boolean {
+  for (const match of description.matchAll(/\b(only |just |at most )?once\b\s*/gi)) {
+    const rest = description
+      .slice((match.index ?? 0) + match[0].length)
+      .slice(0, 60)
+      .toLowerCase();
+    if (FREQUENCY.test(rest)) continue;
+    if (match[1]) return true;
+    if (/^(?:per|for each|for every|for any|on each|on every)\s+\w/.test(rest)) return true;
+  }
+  return false;
+}
+
+/**
+ * A description that says to act once per record needs `oncePerRecord` in
+ * the manifest, where Retainer enforces it and the approver reads it; the
+ * code's own check is neither (routines spec §4.2).
+ */
+export function onceProblems(description: string, manifest: unknown): RoutineProblem[] {
+  const when = (manifest as { when?: { kind?: string; object?: string; oncePerRecord?: boolean } })
+    ?.when;
+  if (!when || when.oncePerRecord || !saysOncePerRecord(description)) return [];
+  if (when.kind === 'schedule' && !when.object) return [];
+  return [
+    {
+      part: 'manifest',
+      at: 'when.oncePerRecord',
+      code: 'once_not_in_manifest',
+      message:
+        'the description says to act once per record: set "oncePerRecord": true in "when", so Retainer enforces it and shows it to the approver',
+    },
+  ];
+}
 
 /**
  * The built-in builder (routines spec §5.1): the description in, a checked
@@ -153,7 +195,7 @@ export async function buildRoutine(
       typesFingerprint: string;
       contextType?: string;
     }>('POST', 'build/check', { manifest, code: draft.code });
-    let problems = checked.problems;
+    let problems = [...checked.problems, ...onceProblems(description, manifest)];
     if (!problems.length) {
       const typed = await typeCheck(types, draft.code, true, signal, checked.contextType);
       await rm(typed.dir, { recursive: true, force: true }).catch(() => {});

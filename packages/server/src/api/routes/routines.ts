@@ -183,9 +183,25 @@ export function routineRuntimeRoutes(app: Hono<AppEnv>, runtime: RoutineRuntime)
     c.json(await runtime.poll(c.get('caller'), positionParam(c.req.param('position')))),
   );
   app.post('/routines/runtime/effects/:position/result', async (c) => {
-    const { result } = await readBody(c, z.strictObject({ result: z.json() }), 70000);
+    const body = await readBody(
+      c,
+      z.union([
+        z.strictObject({ result: z.json() }),
+        // The provider refused the call or its answer was unusable (§11.4).
+        z.strictObject({
+          error: z.strictObject({
+            code: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+            message: z.string().max(2000),
+          }),
+        }),
+      ]),
+      70000,
+    );
+    const position = positionParam(c.req.param('position'));
     return c.json(
-      await runtime.modelResult(c.get('caller'), positionParam(c.req.param('position')), result),
+      'error' in body
+        ? await runtime.modelFailed(c.get('caller'), position, body.error)
+        : await runtime.modelResult(c.get('caller'), position, body.result),
     );
   });
   app.post('/routines/runtime/build/check', async (c) =>
