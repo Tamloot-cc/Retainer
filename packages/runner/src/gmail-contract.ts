@@ -67,14 +67,6 @@ export function gmailManifest(build: {
         secret: false,
         reconnect: false,
       },
-      nangoIntegrationId: {
-        type: 'string',
-        label: 'Nango Gmail integration',
-        required: true,
-        default: 'google-mail',
-        secret: false,
-        reconnect: true,
-      },
       nangoConnectionId: {
         type: 'string',
         label: 'Verified Nango connection',

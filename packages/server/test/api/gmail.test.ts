@@ -63,7 +63,7 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
   const install = {
     registrationId: GMAIL.registration,
     version: manifest.version,
-    settings: { historyDays: 2, nangoIntegrationId: 'google-mail' },
+    settings: { historyDays: 2 },
   };
   const preview = await t.request('/v1/extensions/preview', { key: keys.admin, body: install });
   expect(preview.status, JSON.stringify(preview.body)).toBe(200);
@@ -157,6 +157,7 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
   vi.stubEnv('RETAINER_GMAIL_NANGO_CONTROL_KEY', 'control-test');
   vi.stubEnv('RETAINER_GMAIL_NANGO_PROXY_KEY', 'proxy-test');
   vi.stubEnv('RETAINER_GMAIL_NANGO_CLEANUP_KEY', 'cleanup-test');
+  vi.stubEnv('RETAINER_GMAIL_NANGO_INTEGRATION_ID', 'retainer-gmail');
   vi.stubGlobal('fetch', async (input: URL, init: RequestInit) => {
     const url = new URL(input);
     expect(url.origin).toBe('https://api.nango.dev');
@@ -165,9 +166,10 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
     if (pathname === '/connect/sessions') {
       expect(headers.get('authorization')).toBe('Bearer control-test');
       const request = JSON.parse(String(init.body));
-      expect(request.allowed_integrations).toEqual(['google-mail']);
+      expect(request.allowed_integrations).toEqual(['retainer-gmail']);
       expect(
-        request.integrations_config_defaults['google-mail'].connection_config.oauth_scopes_override,
+        request.integrations_config_defaults['retainer-gmail'].connection_config
+          .oauth_scopes_override,
       ).toBe(gmailReadonly);
       tags = request.tags;
       grants.set(nangoConnectionId, { tags, scope });
@@ -181,7 +183,7 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
     const nangoRow = (id: string, grant: { tags: Record<string, string> }) => ({
       connection_id: id,
       provider: 'google-mail',
-      provider_config_key: 'google-mail',
+      provider_config_key: 'retainer-gmail',
       tags: grant.tags,
     });
     if (pathname === '/connections') {
@@ -199,7 +201,7 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
     }
     if (pathname.startsWith('/connections/')) {
       const connectionId = pathname.slice('/connections/'.length);
-      expect(searchParams.get('provider_config_key')).toBe('google-mail');
+      expect(searchParams.get('provider_config_key')).toBe('retainer-gmail');
       const grant = grants.get(connectionId);
       if (!grant) return Response.json({ error: { code: 'not_found' } }, { status: 404 });
       if (init.method === 'DELETE') {
@@ -226,6 +228,7 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
     }
     expect(headers.get('authorization')).toBe('Bearer proxy-test');
     expect(headers.get('connection-id')).toBe('dedicated-test');
+    expect(headers.get('provider-config-key')).toBe('retainer-gmail');
     expect(init.method).toBe('GET');
     const path = pathname.replace('/proxy/gmail/v1/users/me/', '');
     if (revoked) return Response.json({ error: { code: 'invalid_credentials' } }, { status: 424 });

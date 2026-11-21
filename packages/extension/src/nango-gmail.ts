@@ -6,6 +6,16 @@ export const nangoOrigin = 'https://api.nango.dev';
 const readOnlyScope = 'https://www.googleapis.com/auth/gmail.readonly';
 const identityScopes = new Set(['openid', 'https://www.googleapis.com/auth/userinfo.email']);
 export const nangoId = z.string().regex(/^[A-Za-z0-9_-]{1,255}$/);
+
+/**
+ * The Nango integration Gmail connects through. It belongs to the operator's Nango
+ * environment, like the keys, so it comes from the server environment, not a
+ * workspace setting.
+ */
+export function nangoGmailIntegrationId(env: NodeJS.ProcessEnv = process.env) {
+  const parsed = nangoId.safeParse(env.RETAINER_GMAIL_NANGO_INTEGRATION_ID || 'google-mail');
+  return parsed.success ? parsed.data : null;
+}
 const maxResponseBytes = 4 * 1024 * 1024;
 const nangoGrant = z.object({
   connection_id: nangoId,
