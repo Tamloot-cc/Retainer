@@ -31,9 +31,9 @@ test('a member connects and disconnects; an admin sees and disconnects every own
   await dialog.getByLabel('Member API key (required)').fill('fixture-member-key');
   await dialog.getByRole('button', { name: 'Connect account', exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(own.getByText('Connecting · Ok')).toBeVisible();
+  await expect(own.getByText('Connecting', { exact: true })).toBeVisible();
   await r.activateMembers();
-  await expect(own.getByText('Active · Ok')).toBeVisible();
+  await expect(own.getByText('Active', { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Member connections' })).toHaveCount(0);
   await own.getByRole('button', { name: 'View your runs' }).click();
   await expect(
@@ -59,13 +59,13 @@ test('a member connects and disconnects; an admin sees and disconnects every own
   await page.getByRole('link', { name: 'Extensions', exact: true }).click();
   await page.getByRole('link', { name: /^member-browser/ }).click();
   const members = page.getByRole('region', { name: 'Member connections' });
-  await expect(members.getByRole('cell', { name: 'writer', exact: true })).toBeVisible();
-  await expect(members.getByRole('cell', { name: 'reader', exact: true })).toBeVisible();
+  await expect(members.getByText('writer', { exact: true })).toBeVisible();
+  await expect(members.getByText('reader', { exact: true })).toBeVisible();
   await members.getByRole('button', { name: 'Disconnect reader', exact: true }).click();
   const row = members
-    .getByRole('row')
-    .filter({ has: page.getByRole('cell', { name: 'reader', exact: true }) });
-  await expect(row.getByRole('cell', { name: 'Disconnected', exact: true })).toBeVisible();
+    .getByRole('listitem')
+    .filter({ has: page.getByText('reader', { exact: true }) });
+  await expect(row.getByText('Disconnected', { exact: true })).toBeVisible();
   expect(
     (await r.request(`${base}/connections`, undefined, r.keys.user)).connections.every(
       (c: { state: string }) => c.state === 'disconnected',

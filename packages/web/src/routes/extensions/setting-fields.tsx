@@ -1,6 +1,7 @@
 import type { ExtensionInstallation, ExtensionManifest } from '@retainer/extension';
 import { Input, Label, Muted, SelectMenu } from '../../ui/index.js';
 import { stateLabel } from './model.js';
+import { ExtensionCheckbox } from './surface.js';
 
 type Installation = ExtensionInstallation;
 type Release = { manifest: Pick<ExtensionManifest, 'name' | 'settings'> };
@@ -59,10 +60,31 @@ export function SettingFields({
               allowNewCredentials &&
               (definition.secret ? !presence?.[key] : !Object.hasOwn(existing.settings, key))
             );
+          const caption = `${definition.label}${definition.required ? ' (required)' : ''}`;
+          const details = (
+            <>
+              {definition.description ? <Muted small>{definition.description}</Muted> : null}
+              {locked ? (
+                <Muted small>Use Reconnect to change credentials or account settings.</Muted>
+              ) : null}
+            </>
+          );
+          if (!definition.secret && !definition.options && definition.type === 'boolean')
+            return (
+              <ExtensionCheckbox
+                key={key}
+                checked={values[key] === true}
+                required={definition.consent}
+                disabled={locked}
+                onChange={(event) => onChange(key, event.target.checked)}
+              >
+                <span className="font-medium">{caption}</span>
+                {details}
+              </ExtensionCheckbox>
+            );
           return (
             <Label key={key}>
-              {definition.label}
-              {definition.required ? ' (required)' : ''}
+              {caption}
               {definition.secret ? (
                 <Input
                   type="password"
@@ -97,14 +119,6 @@ export function SettingFields({
                     fill
                   />
                 </fieldset>
-              ) : definition.type === 'boolean' ? (
-                <Input
-                  type="checkbox"
-                  checked={values[key] === true}
-                  required={definition.consent}
-                  disabled={locked}
-                  onChange={(e) => onChange(key, e.target.checked)}
-                />
               ) : (
                 <Input
                   type={definition.type === 'number' ? 'number' : 'text'}
@@ -119,10 +133,7 @@ export function SettingFields({
                   }
                 />
               )}
-              {definition.description ? <Muted small>{definition.description}</Muted> : null}
-              {locked ? (
-                <Muted small>Use Reconnect to change credentials or account settings.</Muted>
-              ) : null}
+              {details}
             </Label>
           );
         })}

@@ -169,7 +169,7 @@ describe('member connection controls', () => {
       }),
     );
     expect(stage).toHaveBeenCalledWith('installation', { name: 'apiKey', value: 'fixture-key' });
-    await screen.findByText('Connecting · Ok');
+    await screen.findByText('Connecting');
     expect(screen.queryByRole('region', { name: 'Member connections' })).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Disconnect account' }));
     await waitFor(() => expect(disconnect).toHaveBeenCalledWith('installation', 'own'));
@@ -190,7 +190,10 @@ describe('member connection controls', () => {
     });
     const { user, onRuns } = mount(true);
     const region = await screen.findByRole('region', { name: 'Member connections' });
-    expect(within(region).getByText('Dana')).toBeTruthy();
+    expect(
+      within(screen.getByRole('region', { name: 'Your Tamloot connection' })).getByText('Dana'),
+    ).toBeTruthy();
+    expect(within(region).queryByText('Dana')).toBeNull();
     expect(within(region).getByText('Eli')).toBeTruthy();
     await user.click(within(region).getByRole('button', { name: 'View runs for Eli' }));
     expect(onRuns).toHaveBeenCalledWith('other');
@@ -417,7 +420,7 @@ describe('connecting with OAuth', () => {
     );
     rows([{ ...oauthConnection, state: 'connecting' }]);
     mountOAuth();
-    expect(await screen.findByText('Connecting · Ok')).toBeTruthy();
+    expect(await screen.findByText('Connecting')).toBeTruthy();
     await waitFor(() =>
       expect(sessionStorage.getItem('retainer:connect:v1.workspace.installation.done')).toBeNull(),
     );
@@ -445,7 +448,7 @@ describe('connecting with OAuth', () => {
     cleanup();
     list.mockResolvedValue({ connections: [oauthConnection] });
     mountOAuth();
-    expect(await screen.findByText(/Last completed scan:/)).toBeTruthy();
+    expect(await screen.findByText('Last completed scan')).toBeTruthy();
     expect(screen.queryByText(/Record a meeting/)).toBeNull();
   });
   it('shows needs reconnect with its reason and reconnects with the connection and generation', async () => {
@@ -601,7 +604,7 @@ describe('connecting with OAuth', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
     expect(screen.queryByText('The notice changed.')).toBeNull();
   });
-  it('gives admins a reason column, including access that may remain', async () => {
+  it('shows admins connection errors and access that may remain', async () => {
     rows([
       {
         ...oauthConnection,
@@ -621,7 +624,6 @@ describe('connecting with OAuth', () => {
     ]);
     mountOAuth({ admin: true });
     const region = await screen.findByRole('region', { name: 'Member connections' });
-    expect(within(region).getByRole('columnheader', { name: 'Reason' })).toBeTruthy();
     expect(
       within(region).getByText(
         "Retainer's access to this Tamloot account ended. Connect again to resume imports.",
@@ -633,10 +635,11 @@ describe('connecting with OAuth', () => {
       ),
     ).toBeTruthy();
   });
-  it('adds no reason column without OAuth', async () => {
+  it('shows scan details in the admin list without OAuth', async () => {
     rows([{ ...connection, owner: { type: 'user', id: 'eli', name: 'Eli' } }]);
     mountOAuth({ admin: true, inst: installation });
     const region = await screen.findByRole('region', { name: 'Member connections' });
-    expect(within(region).queryByRole('columnheader', { name: 'Reason' })).toBeNull();
+    expect(within(region).getByText('Last completed scan')).toBeTruthy();
+    expect(within(region).getByText('Failed imports')).toBeTruthy();
   });
 });

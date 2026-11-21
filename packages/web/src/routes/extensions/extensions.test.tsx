@@ -92,8 +92,8 @@ describe('extension pages and human approval', () => {
     });
     vi.spyOn(api, 'extensions').mockResolvedValue({ installations: [] });
     mount(<ExtensionsPage />);
-    expect(await screen.findByText('1.0.10')).toBeTruthy();
-    expect(screen.queryByText('1.0.1')).toBeNull();
+    expect(await screen.findByText('Version 1.0.10')).toBeTruthy();
+    expect(screen.queryByText('Version 1.0.1')).toBeNull();
     expect(screen.queryByText('1.0.2')).toBeNull();
     const setup = screen.getAllByRole('link', { name: 'Set up Fixture' });
     expect(setup).toHaveLength(1);

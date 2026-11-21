@@ -17,7 +17,7 @@ test('approves access, prepares suggestions, resumes and turns on the reviewed m
   expect(installed.grantedScopes).toEqual(['read']);
   await page.getByRole('button', { name: 'Continue later' }).click();
   await expect(page.getByText('Waiting for your review', { exact: true })).toBeVisible();
-  await page.getByRole('link', { name: /^browser-configure Waiting/ }).click();
+  await page.getByRole('link', { name: /^browser-configure\b/ }).click();
   await page.getByRole('link', { name: 'Continue setup' }).click();
   await r.finishConfigure();
   await expect(page.getByText('A dedicated count field.')).toBeVisible();

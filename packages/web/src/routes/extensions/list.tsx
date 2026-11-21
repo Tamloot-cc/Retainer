@@ -1,16 +1,8 @@
 import { Link } from '@tanstack/react-router';
+import { ArrowUpRight } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { canMutate, useWorkspace } from '../../api/client.js';
-import {
-  Badge,
-  Button,
-  Empty,
-  ItemCard,
-  ItemCards,
-  Loading,
-  Muted,
-  Page,
-  Stack,
-} from '../../ui/index.js';
+import { Badge, Button, Empty, Loading, Muted, Page, Row, Section, Stack } from '../../ui/index.js';
 import { QueryError } from '../state.js';
 import { ExtensionIcon, extensionName } from './branding.js';
 import { installedRelease, status, upgradeFor, useExtensions } from './model.js';
@@ -26,7 +18,7 @@ export function ExtensionsPage() {
   const page = (children: React.ReactNode) => (
     <Page
       title="Extensions"
-      description="Extensions connect other services to this workspace. Each one brings in data or keeps records up to date, with the access you approve."
+      description="Manage the services that bring data into this workspace or keep records up to date."
     >
       {children}
     </Page>
@@ -48,65 +40,121 @@ export function ExtensionsPage() {
   return page(
     <Stack>
       {installed.length ? (
-        <ItemCards label="Installed">
-          {installed.map((installation) => {
-            const release = installedRelease(data.releases, installation);
-            const upgrade = upgradeFor(data.newest, installation);
-            const { label, tone } = status(installation);
-            return (
-              <ItemCard
-                key={installation.id}
-                icon={<ExtensionIcon registrationId={installation.registrationId} />}
-                title={extensionName(
-                  installation.registrationId,
-                  release?.manifest.name ?? 'Unavailable extension',
-                )}
-                status={
-                  <>
-                    <Badge tone={tone}>{label}</Badge>
-                    {upgrade ? <Badge>Update available</Badge> : null}
-                  </>
-                }
-                description={`Version ${installation.version}${release ? ` · ${release.manifest.description}` : ''}`}
-                link={{ to: '/extensions/$id', params: { id: installation.id } }}
-              />
-            );
-          })}
-        </ItemCards>
+        <Section title="Installed">
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {installed.map((installation) => {
+              const release = installedRelease(data.releases, installation);
+              const upgrade = upgradeFor(data.newest, installation);
+              const { label, tone } = status(installation);
+              return (
+                <li key={installation.id} className="min-w-0">
+                  <Link
+                    to="/extensions/$id"
+                    params={{ id: installation.id }}
+                    className="group flex h-full flex-col gap-3 rounded-lg border border-border bg-card p-4 hover:border-primary/40 focus-visible:outline-2 focus-visible:outline-ring"
+                  >
+                    <CatalogIdentity
+                      registration={installation.registrationId}
+                      name={extensionName(
+                        installation.registrationId,
+                        release?.manifest.name ?? 'Unavailable extension',
+                      )}
+                      version={installation.version}
+                      description={release?.manifest.description}
+                      trailing={
+                        <ArrowUpRight
+                          aria-hidden
+                          size={16}
+                          className="ml-auto shrink-0 text-muted-foreground group-hover:text-primary"
+                        />
+                      }
+                    />
+                    <Row>
+                      <Badge tone={tone}>{label}</Badge>
+                      {upgrade ? <Badge>Update available</Badge> : null}
+                    </Row>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </Section>
       ) : null}
       {available.length ? (
-        <ItemCards label="Available" columns={2}>
-          {available.map(({ manifest }) => {
-            const registrationId = manifest.universalId;
-            const name = extensionName(registrationId, manifest.name);
-            return (
-              <ItemCard
-                key={registrationId}
-                icon={<ExtensionIcon registrationId={registrationId} />}
-                title={name}
-                status={<Muted small>{manifest.version}</Muted>}
-                description={manifest.description}
-                action={
-                  admin ? (
-                    <Button size="small" asChild>
-                      <Link
-                        to="/extensions/new/$registration"
-                        params={{ registration: registrationId }}
-                        aria-label={`Set up ${name}`}
-                      >
-                        Set up
-                      </Link>
-                    </Button>
-                  ) : null
-                }
-              />
-            );
-          })}
-        </ItemCards>
+        <Section title="Available">
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {available.map(({ manifest }) => {
+              const registrationId = manifest.universalId;
+              const name = extensionName(registrationId, manifest.name);
+              return (
+                <li
+                  key={registrationId}
+                  className="flex min-w-0 flex-col rounded-lg border border-border bg-card"
+                >
+                  <div className="flex flex-1 flex-col gap-3 p-4">
+                    <CatalogIdentity
+                      registration={registrationId}
+                      name={name}
+                      version={manifest.version}
+                      description={manifest.description}
+                    />
+                  </div>
+                  {admin ? (
+                    <div className="flex justify-end border-t border-border bg-muted/30 px-4 py-2">
+                      <Button size="small" className="min-h-11 sm:min-h-8" asChild>
+                        <Link
+                          to="/extensions/new/$registration"
+                          params={{ registration: registrationId }}
+                          aria-label={`Set up ${name}`}
+                        >
+                          Set up
+                        </Link>
+                      </Button>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </Section>
       ) : null}
       {available.length && !admin ? (
         <Muted>A workspace admin can set up these extensions.</Muted>
       ) : null}
     </Stack>,
+  );
+}
+
+function CatalogIdentity({
+  registration,
+  name,
+  version,
+  description,
+  trailing,
+}: {
+  registration: string;
+  name: string;
+  version: string;
+  description?: string | undefined;
+  trailing?: ReactNode;
+}) {
+  return (
+    <>
+      <div className="flex items-start gap-3">
+        <div className="shrink-0">
+          <ExtensionIcon registrationId={registration} />
+        </div>
+        <div className="min-w-0 [overflow-wrap:anywhere]">
+          <div className="font-semibold">{name}</div>
+          <Muted small>Version {version}</Muted>
+        </div>
+        {trailing}
+      </div>
+      {description ? (
+        <p className="text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+          {description}
+        </p>
+      ) : null}
+    </>
   );
 }
