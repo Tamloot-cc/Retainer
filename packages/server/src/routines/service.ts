@@ -21,7 +21,7 @@ import { stableJson } from '../stable-json.js';
 import { type Capabilities, capabilities, type RoutineConfig } from './capabilities.js';
 import { nextInZone } from './cron.js';
 import { checkCode, checkManifest, fieldFor, objectFor } from './manifest.js';
-import { matchingSince, scheduleTargets } from './matcher.js';
+import { fireSchedule, matchingSince, scheduleTargets } from './matcher.js';
 import { pauseRoutine, queueRun } from './runs.js';
 
 export const sourceInputSchema = z.strictObject({
@@ -655,6 +655,30 @@ export class Routines {
     });
   }
 
+  /**
+   * Runs an active schedule's tick now, as an admin asks (§4.2): the tick
+   * is made due and fired with every rule a due tick has (the fan-out cap,
+   * held runs, `oncePerRecord`), and the next regular time stays as it was.
+   */
+  async runNow(caller: Caller, routineId: string) {
+    requireAdmin(caller);
+    await this.tx(caller, async (tx) => {
+      const [routine] = await tx<RoutineRow[]>`
+        select * from routines where id=${routineId} for no key update`;
+      if (!routine || !routine.active_version_id) throw notFound('routine');
+      if (routine.status !== 'active')
+        throw new AppError(409, 'routine_paused', 'the routine is not active');
+      const [version] = await tx<VersionRow[]>`
+        select v.*,s.manifest,s.code from routine_versions v join routine_sources s on s.id=v.source_id
+        where v.id=${routine.active_version_id}`;
+      if (version?.manifest.when.kind !== 'schedule')
+        throw new AppError(409, 'not_schedule', 'only a schedule routine runs now');
+      await tx`update routines set next_fire_at=clock_timestamp() where id=${routineId}`;
+    });
+    const fired = await fireSchedule(this.sql, caller.workspaceId, routineId);
+    return { routineId, ...fired };
+  }
+
   /** Buttons a person can press on a record of this object. */
   async buttons(caller: Caller, object: string) {
     readScope(caller);
@@ -891,7 +915,8 @@ function presentRoutine(row: RoutineRow, version: VersionRow | undefined, caps: 
     status: row.status,
     pausedReason: row.paused_reason,
     pausedAt: row.paused_at?.toISOString() ?? null,
-    nextFireAt: row.next_fire_at?.toISOString() ?? null,
+    // A paused routine fires nothing; resuming sets its next time afresh.
+    nextFireAt: row.status === 'active' ? (row.next_fire_at?.toISOString() ?? null) : null,
     heldRuns: row.held ?? 0,
     proposals: row.proposals ?? 0,
     activeVersion: version ? presentVersion(version, names) : null,

@@ -421,8 +421,8 @@ export function routineFacts(manifest: RoutineManifest, names: FactsNames): stri
     const object = when.object ? names.object(when.object) : undefined;
     facts.push(
       object
-        ? `Runs on the schedule "${when.cron}" (the workspace's time zone), once for each ${object.singular}${when.filter ? ' matching its filter' : ''}, up to ${ROUTINE_LIMITS.scheduleFanOut}.`
-        : `Runs on the schedule "${when.cron}" (the workspace's time zone).`,
+        ? `Runs ${describeCron(when.cron)} (the workspace's time zone), once for each ${object.singular}${when.filter ? ' matching its filter' : ''}, up to ${ROUTINE_LIMITS.scheduleFanOut}.`
+        : `Runs ${describeCron(when.cron)} (the workspace's time zone).`,
     );
   } else {
     const object = names.object(when.object);
@@ -910,3 +910,63 @@ export type RoutinePreview = {
 };
 
 export type RoutineButton = { routineId: string; name: string; label: string };
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const NUMBER = /^\d{1,2}$/;
+
+/**
+ * A five-field cron in words, for the facts an admin reads (routines spec
+ * §5.2): "every Sunday at 09:00". A shape it does not know is quoted as
+ * written, so the sentence is never wrong, only less plain.
+ */
+export function describeCron(cron: string): string {
+  const raw = `on the schedule "${cron}"`;
+  const fields = cron.trim().split(/\s+/);
+  if (fields.length !== 5) return raw;
+  const [minute, hour, day, month, weekday] = fields as [string, string, string, string, string];
+  if (month !== '*') return raw;
+  const step = (field: string) => /^\*\/(\d{1,2})$/.exec(field)?.[1];
+  // Every N minutes, or every hour at a minute.
+  if (hour === '*' && day === '*' && weekday === '*') {
+    const every = step(minute);
+    if (every) return `every ${every} minutes`;
+    if (NUMBER.test(minute)) return `every hour at ${Number(minute)} minutes past`;
+    return raw;
+  }
+  if (!NUMBER.test(minute)) return raw;
+  const hours = step(hour);
+  if (hours && day === '*' && weekday === '*')
+    return `every ${hours} hours, at ${Number(minute)} minutes past`;
+  if (!NUMBER.test(hour) || Number(hour) > 23 || Number(minute) > 59) return raw;
+  const at = `at ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+  if (day === '*' && weekday === '*') return `every day ${at}`;
+  if (weekday === '*' && NUMBER.test(day) && Number(day) >= 1 && Number(day) <= 31)
+    return `on day ${Number(day)} of every month ${at}`;
+  if (day !== '*') return raw;
+  const days = weekdays(weekday);
+  if (!days) return raw;
+  if (days.join() === '1,2,3,4,5') return `every weekday (Monday to Friday) ${at}`;
+  if (days.join() === '0,6') return `every Saturday and Sunday ${at}`;
+  const names = days.map((d) => WEEKDAYS[d] as string);
+  const list =
+    names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return `every ${list} ${at}`;
+}
+
+/** The weekdays a cron's fifth field names (0 or 7 is Sunday), or null. */
+function weekdays(field: string): number[] | null {
+  const out = new Set<number>();
+  for (const part of field.split(',')) {
+    const range = /^(\d)-(\d)$/.exec(part);
+    if (range) {
+      const from = Number(range[1]),
+        to = Number(range[2]);
+      if (from > to || to > 7) return null;
+      for (let d = from; d <= to; d++) out.add(d % 7);
+    } else if (/^\d$/.test(part) && Number(part) <= 7) out.add(Number(part) % 7);
+    else return null;
+  }
+  return [...out].sort((a, b) => a - b);
+}

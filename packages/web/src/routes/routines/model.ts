@@ -1,5 +1,6 @@
 import { RetainerApiError } from '@retainer/sdk';
 import type {
+  RoutineCapabilities,
   RoutineGapCode,
   RoutineRunCall,
   RoutineRunStatus,
@@ -21,6 +22,22 @@ export function useRoutines() {
     queryFn: ({ signal }) => api.routines(signal),
   });
 }
+
+/** What routines can use in this workspace: its objects and fields by key, its tools. */
+export function useRoutineCapabilities() {
+  const { session } = useWorkspace();
+  return useQuery({
+    queryKey: [...routinesKey(session.workspace.id), 'capabilities'],
+    queryFn: ({ signal }) => api.routineCapabilities(signal),
+    staleTime: 5 * 60_000,
+  });
+}
+
+/** An object routines describe, by its API name or the universal ID a manifest stores. */
+export const routineObject = (
+  caps: Pick<RoutineCapabilities, 'objects'> | undefined,
+  id: string | undefined,
+) => caps?.objects.find((o) => o.universalId === id || o.name === id);
 
 /** The workspace's time zone, which schedules are read in. */
 export function useTimeZone() {
@@ -128,6 +145,49 @@ const OPERATIONS: Record<string, string> = {
   'ai.generate': 'Ask the model',
 };
 export const operationText = (operation: string) => OPERATIONS[operation] ?? operation;
+
+const WRITES = ['record.create', 'record.update', 'events.log', 'remember'];
+
+/** Whether a run changed anything: a write made, or a tool called. */
+export const madeChanges = (run: Pick<RoutineRunView, 'calls'>) =>
+  run.calls.some(
+    (call) =>
+      call.state === 'done' && (WRITES.includes(call.operation) || call.operation === 'tool'),
+  );
+
+/** A finished run's status, saying when it succeeded without changing anything. */
+export function runOutcome(run: Pick<RoutineRunView, 'status' | 'calls'>) {
+  if (run.status === 'succeeded' && !madeChanges(run))
+    return { label: 'Done, no changes', tone: 'neutral' as Tone };
+  return runStatus(run.status);
+}
+
+/** What happened to each field a write set, in words. */
+export const FIELD_STATUS: Record<string, string> = {
+  applied: 'saved',
+  pending_review: 'waiting for review',
+  superseded: 'not used: a newer value is kept',
+};
+
+/** A record write's fields and what happened to each, when the result has them. */
+export function writtenFields(call: RoutineRunCall): [string, string][] | null {
+  if (call.operation !== 'record.create' && call.operation !== 'record.update') return null;
+  const fields = (call.result as { fields?: unknown } | undefined)?.fields;
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) return null;
+  return Object.entries(fields as Record<string, unknown>).map(([key, status]) => [
+    key,
+    String(status),
+  ]);
+}
+
+/** How many values a run wrote that wait for a person's review. */
+export const pendingReviews = (run: Pick<RoutineRunView, 'calls'>) =>
+  run.calls.reduce(
+    (count, call) =>
+      count +
+      (writtenFields(call)?.filter(([, status]) => status === 'pending_review').length ?? 0),
+    0,
+  );
 
 const CALL_STATES: Record<string, string> = {
   started: 'Sent, no answer yet',

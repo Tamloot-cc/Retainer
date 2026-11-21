@@ -4,6 +4,7 @@ import { useParams } from '@tanstack/react-router';
 import { api, useWorkspace } from '../../api/client.js';
 import {
   Badge,
+  CodeBlock,
   Empty,
   JsonBlock,
   Loading,
@@ -20,13 +21,19 @@ import { QueryError, recordTitle, useRecordLabel } from '../state.js';
 import {
   callError,
   callStateText,
+  FIELD_STATUS,
   failureText,
+  madeChanges,
   operationText,
+  pendingReviews,
   RUN_STATUS_TEXT,
+  routineObject,
   routinesKey,
   runFinished,
-  runStatus,
+  runOutcome,
   triggerText,
+  useRoutineCapabilities,
+  writtenFields,
 } from './model.js';
 
 /** A record's name, fetched only to label it; a record gone since says so. */
@@ -63,8 +70,11 @@ export function RoutineRunPage() {
       </Page>
     );
   const r = run.data;
-  const { label, tone } = runStatus(r.status);
+  const { label, tone } = runOutcome(r);
   const test = r.mode === 'test';
+  const waiting = pendingReviews(r);
+  const output = r.output ?? {};
+  const logs = Array.isArray(output.logs) ? (output.logs as unknown[]).map(String) : [];
   return (
     <Page
       {...crumb}
@@ -78,6 +88,18 @@ export function RoutineRunPage() {
       </Row>
       {failureText(r) ? <Notice error>{failureText(r)}</Notice> : null}
       {RUN_STATUS_TEXT[r.status] ? <Notice>{RUN_STATUS_TEXT[r.status]}</Notice> : null}
+      {r.status === 'succeeded' && !madeChanges(r) ? (
+        <Notice>
+          It finished without changing anything. What it returned, below, may say why.
+        </Notice>
+      ) : null}
+      {waiting ? (
+        <Notice warning>
+          {waiting === 1 ? '1 value it wrote waits' : `${waiting} values it wrote wait`} for a
+          person’s review. A person or a sync set {waiting === 1 ? 'that field' : 'those fields'},
+          so the routine’s value does not replace it until someone approves it.
+        </Notice>
+      ) : null}
       {test ? (
         <Muted>
           A test makes real writes. A tool that sends something is reported, not called, and the
@@ -117,6 +139,18 @@ export function RoutineRunPage() {
           Results are kept for 7 days after a run ends, so you can check what it did.
         </Muted>
       </Section>
+      {output.result !== undefined || logs.length ? (
+        <Section title="What it returned">
+          {output.result === undefined || output.result === null ? (
+            <Muted>Nothing.</Muted>
+          ) : typeof output.result === 'string' ? (
+            <p className="text-sm">{output.result}</p>
+          ) : (
+            <JsonBlock value={output.result} label="What it returned" />
+          )}
+          {logs.length ? <CodeBlock summary="Show its log" code={logs.join('\n')} /> : null}
+        </Section>
+      ) : null}
     </Page>
   );
 }
@@ -145,11 +179,18 @@ export function Calls({
 
 function Call({ call, finished }: { call: RoutineRunCall; finished: boolean }) {
   const error = callError(call);
+  const fields = writtenFields(call);
   return (
     <li className="flex flex-col gap-1.5 px-3 py-2.5 text-sm">
       <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <Muted small>{call.position}.</Muted>
-        <span className="font-medium">{operationText(call.operation)}</span>
+        <span className="font-medium">
+          {call.recordId && fields ? (
+            <WriteTitle call={call} recordId={call.recordId} />
+          ) : (
+            operationText(call.operation)
+          )}
+        </span>
         <Badge
           tone={call.state === 'failed' ? 'error' : call.state === 'done' ? 'success' : 'pending'}
         >
@@ -174,9 +215,47 @@ function Call({ call, finished }: { call: RoutineRunCall; finished: boolean }) {
             : 'The error: '}
           {error}
         </span>
+      ) : fields ? (
+        <WrittenFields call={call} fields={fields} />
       ) : call.result !== undefined ? (
         <JsonBlock value={call.result} label={`Result of call ${call.position}`} />
       ) : null}
     </li>
+  );
+}
+
+/** The object a write's record belongs to, and its routine description. */
+function useWrittenObject(recordId: string | null) {
+  const record = useRecordLabel(recordId ?? '', !!recordId);
+  const caps = useRoutineCapabilities();
+  return routineObject(caps.data, record.data?.object);
+}
+
+/** "Create a task", "Update a company": the write, with the kind of record. */
+function WriteTitle({ call, recordId }: { call: RoutineRunCall; recordId: string }) {
+  const object = useWrittenObject(recordId);
+  const verb = call.operation === 'record.create' ? 'Create' : 'Update';
+  return <>{object ? `${verb} a ${object.label.toLowerCase()}` : operationText(call.operation)}</>;
+}
+
+/** Each field a write set and what happened to it, by the field's label. */
+function WrittenFields({ call, fields }: { call: RoutineRunCall; fields: [string, string][] }) {
+  const object = useWrittenObject(call.recordId);
+  if (!fields.length) return <Muted small>It set no fields.</Muted>;
+  return (
+    <ul aria-label={`Fields of call ${call.position}`} className="flex flex-col gap-0.5">
+      {fields.map(([key, status]) => (
+        <li key={key}>
+          <span className="text-muted-foreground">
+            {object?.fields.find((f) => f.key === key)?.label ?? key}:
+          </span>{' '}
+          {status === 'pending_review' ? (
+            <Badge tone="pending">{FIELD_STATUS[status]}</Badge>
+          ) : (
+            (FIELD_STATUS[status] ?? status.replaceAll('_', ' '))
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }

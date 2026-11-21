@@ -1312,6 +1312,13 @@ export class RetainerClient {
       },
     );
   }
+  /** Runs an active schedule routine's tick now; its regular schedule is unchanged. */
+  runRoutineNow(id: string) {
+    return this.post<{ routineId: string; queued: number; held?: number; matched?: number }>(
+      `/v1/routines/${encodeURIComponent(id)}/run-now`,
+      {},
+    );
+  }
   runRoutine(id: string, recordIds: string[]) {
     return this.post<{ runs: string[] }>(`/v1/routines/${encodeURIComponent(id)}/run`, {
       recordIds,

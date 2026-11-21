@@ -131,9 +131,20 @@ function mount(element: ReactNode, admin = true, report = vi.fn()) {
   return report;
 }
 function capabilities(timezone = 'Europe/London') {
-  return vi
-    .spyOn(api, 'routineCapabilities')
-    .mockResolvedValue({ timezone } as unknown as RoutineCapabilities);
+  return vi.spyOn(api, 'routineCapabilities').mockResolvedValue({
+    timezone,
+    objects: [
+      {
+        name: 'deal',
+        universalId: 'deal-universal',
+        label: 'Deal',
+        fields: [
+          { key: 'f_stage', label: 'Stage' },
+          { key: 'f_sector', label: 'Sector' },
+        ],
+      },
+    ],
+  } as unknown as RoutineCapabilities);
 }
 
 afterEach(() => {
@@ -344,6 +355,16 @@ describe('routine page', () => {
     router.params = { id: 'routine-1' };
     vi.spyOn(api, 'routine').mockResolvedValue(detail({ proposals: 1 }));
     const test = vi.spyOn(api, 'testRoutine').mockResolvedValue({ runId: 'run-7' });
+    capabilities();
+    const search = vi.spyOn(api, 'queryRecords').mockResolvedValue({
+      records: [{ id: RECORD, object: 'deal', label: 'Acme renewal' }],
+      nextCursor: null,
+    } as never);
+    vi.spyOn(api, 'record').mockResolvedValue({
+      id: RECORD,
+      object: 'deal',
+      label: 'Acme renewal',
+    } as never);
     mount(<RoutinePage />);
     const [testButton] = await screen.findAllByRole('button', { name: 'Test on a record…' });
     if (!testButton) throw new Error('no test button');
@@ -351,7 +372,14 @@ describe('routine page', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Test version 2' });
     expect(within(dialog).getByText(/is not called\. Retainer reports the call/)).toBeTruthy();
     expect(within(dialog).getByText(/those may send/)).toBeTruthy();
-    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Record ID' }), RECORD);
+    // The record is found by searching the routine's object, not by pasting an ID.
+    expect(within(dialog).queryByRole('textbox', { name: 'Record ID' })).toBeNull();
+    const start = within(dialog).getByRole('button', { name: 'Start the test' });
+    expect((start as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.type(await within(dialog).findByRole('textbox', { name: /^Search/ }), 'Acme');
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Acme renewal' }));
+    expect(search.mock.calls[0]?.[0]).toBe('deal');
+    expect(await within(dialog).findByText('Acme renewal')).toBeTruthy();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Start the test' }));
     expect(test).toHaveBeenCalledWith('routine-1', 'version-2', RECORD);
     const link = await within(dialog).findByRole('link', { name: 'Open the test run' });
@@ -468,6 +496,65 @@ describe('routine page', () => {
     expect(within(calls).getByText('Reported, not made')).toBeTruthy();
   });
 
+  it('runs an approved schedule now after saying what happens', async () => {
+    router.params = { id: 'routine-1' };
+    const weekly = version({
+      id: 'version-1',
+      number: 1,
+      state: 'approved',
+      manifest: {
+        when: { kind: 'schedule', cron: '0 9 * * 0' },
+        uses: { tools: [], model: false },
+      },
+    });
+    vi.spyOn(api, 'routine').mockResolvedValue(
+      detail({ activeVersion: weekly, versions: [weekly], nextFireAt: '2026-11-22T07:00:00Z' }),
+    );
+    const now = vi
+      .spyOn(api, 'runRoutineNow')
+      .mockResolvedValue({ routineId: 'routine-1', queued: 1, matched: 1 });
+    mount(<RoutinePage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Routine actions' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Run now…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Run Thank won deals now?' });
+    expect(within(dialog).getByText(/Its next scheduled run stays at/)).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Run now' }));
+    expect(now).toHaveBeenCalledWith('routine-1');
+    expect(
+      await screen.findByText('Started 1 run. Its regular schedule is unchanged.'),
+    ).toBeTruthy();
+  });
+
+  it('offers no run now for a routine without a schedule', async () => {
+    router.params = { id: 'routine-1' };
+    vi.spyOn(api, 'routine').mockResolvedValue(detail());
+    mount(<RoutinePage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Routine actions' }));
+    expect(await screen.findByRole('menuitem', { name: 'Pause' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: 'Run now…' })).toBeNull();
+  });
+
+  it('lists a run that changed nothing as such, not as a plain success', async () => {
+    router.params = { id: 'routine-1' };
+    const write = {
+      position: 1,
+      operation: 'record.create',
+      state: 'done' as const,
+      code: null,
+      differs: false,
+      recordId: null,
+    };
+    vi.spyOn(api, 'routine').mockResolvedValue(
+      detail({ runs: [run({ calls: [write] }), run({ id: 'run-2', calls: [] })] }),
+    );
+    mount(<RoutinePage />);
+    const links = within(await screen.findByRole('list', { name: 'Routine runs' })).getAllByRole(
+      'link',
+    );
+    expect(links[0]?.getAttribute('aria-label')).toMatch(/run, Done,/);
+    expect(links[1]?.getAttribute('aria-label')).toMatch(/run, Done, no changes,/);
+  });
+
   it('lists recent runs, each opening its calls', async () => {
     router.params = { id: 'routine-1' };
     vi.spyOn(api, 'routine').mockResolvedValue(
@@ -526,6 +613,68 @@ describe('routine run page', () => {
       'task-1',
     );
     expect(screen.getAllByText('Test').length).toBeGreaterThan(0);
+  });
+});
+
+describe('what a run did, in words', () => {
+  it('names the record kind and each field, and says when a value waits for review', async () => {
+    capabilities();
+    router.params = { id: 'routine-1', run: 'run-8' };
+    vi.spyOn(api, 'record').mockResolvedValue({
+      id: RECORD,
+      object: 'deal',
+      label: 'Acme renewal',
+    } as never);
+    vi.spyOn(api, 'routineRun').mockResolvedValue(
+      run({
+        id: 'run-8',
+        output: { outcome: 'succeeded', result: { updated: true }, logs: ['checked sector'] },
+        calls: [
+          {
+            position: 1,
+            operation: 'record.update',
+            state: 'done',
+            code: null,
+            differs: false,
+            recordId: RECORD,
+            result: { id: RECORD, fields: { f_stage: 'applied', f_sector: 'pending_review' } },
+          },
+        ],
+      }),
+    );
+    mount(<RoutineRunPage />);
+    const calls = await screen.findByRole('list', { name: 'Calls' });
+    expect(await within(calls).findByText('Update a deal')).toBeTruthy();
+    const fields = within(calls).getByRole('list', { name: 'Fields of call 1' });
+    expect(await within(fields).findByText('Stage:')).toBeTruthy();
+    expect(within(fields).getByText('saved')).toBeTruthy();
+    expect(within(fields).getByText('Sector:')).toBeTruthy();
+    expect(within(fields).getByText('waiting for review')).toBeTruthy();
+    // No raw JSON for a write.
+    expect(within(calls).queryByRole('region', { name: 'Result of call 1' })).toBeNull();
+    expect(screen.getByText(/1 value it wrote waits for a person’s review/)).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'What it returned' }).textContent).toContain(
+      'updated',
+    );
+    expect(screen.getByText('Show its log')).toBeTruthy();
+  });
+
+  it('says plainly when a run finished without changing anything, and what it returned', async () => {
+    router.params = { id: 'routine-1', run: 'run-6' };
+    vi.spyOn(api, 'routineRun').mockResolvedValue(
+      run({
+        id: 'run-6',
+        output: {
+          outcome: 'succeeded',
+          result: 'Kickoff checklist already created for this project',
+        },
+        calls: [],
+      }),
+    );
+    mount(<RoutineRunPage />);
+    expect(await screen.findByText('Done, no changes')).toBeTruthy();
+    expect(screen.getByText(/finished without changing anything/)).toBeTruthy();
+    expect(screen.getByText('Kickoff checklist already created for this project')).toBeTruthy();
   });
 });
 

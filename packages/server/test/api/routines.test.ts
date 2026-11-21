@@ -2279,3 +2279,86 @@ describe('routines: findings from the live test (issue 147)', () => {
     expect(row?.state).toBe('failed');
   });
 });
+
+describe('routines: run now, and a paused schedule (issue 147)', () => {
+  const WEEKLY = (s: Setup) => ({
+    manifest: {
+      when: {
+        kind: 'schedule',
+        cron: '0 9 * * 1',
+        object: 'company',
+        filter: { [s.key('name')]: { contains: 'Acme' } },
+      },
+      uses: { tools: [], model: false },
+    },
+    code: `export async function main({ retainer, record }: RoutineContext<'company'>) {
+  await retainer.company.update(record.id, { ${JSON.stringify(s.key('tier'))}: 'now' });
+}
+`,
+  });
+
+  it('runs a schedule now with its regular rules, and keeps its next time', async () => {
+    const s = await setup();
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Run Now');
+    await createCompany(s.app, s.keys.admin, 'Other Run Now');
+    const { routineId } = await activate(s, WEEKLY(s));
+    const [before] = await db.owner<{ next_fire_at: Date }[]>`
+      select next_fire_at from routines where id=${routineId}`;
+    const refused = await s.app.request(`/v1/routines/${routineId}/run-now`, {
+      key: s.keys.agent,
+      body: {},
+    });
+    expect(refused.status).toBe(403);
+    const ran = await s.app.request(`/v1/routines/${routineId}/run-now`, {
+      key: s.keys.admin,
+      body: {},
+    });
+    expect(ran.status).toBe(202);
+    expect(ran.body).toMatchObject({ routineId, queued: 1, matched: 1 });
+    await s.executor.tick();
+    const runs = await db.owner<{ record_id: string; status: string; trigger_kind: string }[]>`
+      select record_id,status,trigger_kind from routine_runs where routine_id=${routineId}`;
+    expect(runs).toEqual([{ record_id: acme, status: 'succeeded', trigger_kind: 'schedule' }]);
+    const [after] = await db.owner<{ next_fire_at: Date }[]>`
+      select next_fire_at from routines where id=${routineId}`;
+    expect(after?.next_fire_at.getTime()).toBe(before?.next_fire_at.getTime());
+  });
+
+  it('two presses of run now at once fire one tick each, and never the same tick twice', async () => {
+    const s = await setup();
+    await createCompany(s.app, s.keys.admin, 'Acme Twice');
+    const { routineId } = await activate(s, WEEKLY(s));
+    const press = () =>
+      s.app.request(`/v1/routines/${routineId}/run-now`, { key: s.keys.admin, body: {} });
+    const answers = await Promise.all([press(), press()]);
+    expect(answers.map((a) => a.status)).toEqual([202, 202]);
+    const firings = await db.owner<{ due_at: Date }[]>`
+      select due_at from routine_firings where routine_id=${routineId}`;
+    const runs = await db.owner`select id from routine_runs where routine_id=${routineId}`;
+    // Each run belongs to its own firing: no tick queued a record twice.
+    expect(runs.length).toBe(firings.length);
+    expect(new Set(firings.map((f) => f.due_at.getTime())).size).toBe(firings.length);
+  });
+
+  it('refuses run now for a paused routine or one without a schedule, and hides a paused next time', async () => {
+    const s = await setup();
+    const { routineId } = await activate(s, WEEKLY(s));
+    expect(
+      (await s.app.request(`/v1/routines/${routineId}`, { key: s.keys.admin })).body.nextFireAt,
+    ).not.toBeNull();
+    await s.app.request(`/v1/routines/${routineId}/pause`, { key: s.keys.admin, body: {} });
+    const paused = await s.app.request(`/v1/routines/${routineId}`, { key: s.keys.admin });
+    expect(paused.body).toMatchObject({ status: 'paused', nextFireAt: null });
+    const refused = await s.app.request(`/v1/routines/${routineId}/run-now`, {
+      key: s.keys.admin,
+      body: {},
+    });
+    expect(refused.body.error.code).toBe('routine_paused');
+    const record = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    const notSchedule = await s.app.request(`/v1/routines/${record.routineId}/run-now`, {
+      key: s.keys.admin,
+      body: {},
+    });
+    expect(notSchedule.body.error.code).toBe('not_schedule');
+  });
+});
