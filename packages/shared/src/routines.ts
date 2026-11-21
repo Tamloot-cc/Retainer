@@ -946,7 +946,8 @@ export function describeCron(cron: string): string {
   if (!NUMBER.test(hour) || Number(hour) > 23 || Number(minute) > 59) return raw;
   const at = `at ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
   if (day === '*' && weekday === '*') return `every day ${at}`;
-  if (weekday === '*' && NUMBER.test(day) && Number(day) >= 1 && Number(day) <= 31)
+  // Only days every month has: the 31st skips five months, the 29th one most years.
+  if (weekday === '*' && NUMBER.test(day) && Number(day) >= 1 && Number(day) <= 28)
     return `on day ${Number(day)} of every month ${at}`;
   if (day !== '*') return raw;
   const days = weekdays(weekday);

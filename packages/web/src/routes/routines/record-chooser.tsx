@@ -14,23 +14,30 @@ export function RecordChooser({
   value,
   onChange,
 }: {
-  /** The object's API name, or undefined while it is being looked up. */
-  object: string | undefined;
+  /** The object's API name; undefined while it is looked up, null if it is gone. */
+  object: string | null | undefined;
   value: string;
   onChange: (id: string) => void;
 }) {
   const { session, schema } = useWorkspace();
   const [search, setSearch] = useState('');
   const query = useDebounced(search.trim());
-  const view = objectByName(schema, object);
+  const view = objectByName(schema, object ?? undefined);
   const plural = view?.labelPlural.toLowerCase() ?? 'records';
   const records = useQuery({
     queryKey: [session.workspace.id, 'routineTestRecords', object, query],
     queryFn: ({ signal }) =>
-      api.queryRecords(object as string, { search: query || undefined, limit: 10 }, signal),
+      api.queryRecords(object ?? '', { search: query || undefined, limit: 10 }, signal),
     enabled: !!object && !value,
     placeholderData: (previous) => previous,
   });
+  if (object === null)
+    return (
+      <Notice error>
+        The object this routine runs on is no longer in the workspace, so it can’t be tested.
+        Describe it again to repair it.
+      </Notice>
+    );
   if (!object) return <Loading>Finding the records it runs on…</Loading>;
   if (value)
     return (

@@ -496,6 +496,25 @@ describe('routine page', () => {
     expect(within(calls).getByText('Reported, not made')).toBeTruthy();
   });
 
+  it('says a test cannot find records when the routine’s object is gone', async () => {
+    router.params = { id: 'routine-1' };
+    capabilities();
+    const gone = version({
+      manifest: {
+        when: { kind: 'record', object: 'removed-object', on: ['created'] },
+        uses: { tools: [], model: false },
+      },
+    });
+    vi.spyOn(api, 'routine').mockResolvedValue(detail({ proposals: 1, versions: [gone] }));
+    mount(<RoutinePage />);
+    const [testButton] = await screen.findAllByRole('button', { name: 'Test on a record…' });
+    if (!testButton) throw new Error('no test button');
+    await userEvent.click(testButton);
+    const dialog = await screen.findByRole('dialog', { name: 'Test version 2' });
+    expect(await within(dialog).findByText(/no longer in the workspace/)).toBeTruthy();
+    expect(within(dialog).queryByText(/Finding the records/)).toBeNull();
+  });
+
   it('runs an approved schedule now after saying what happens', async () => {
     router.params = { id: 'routine-1' };
     const weekly = version({

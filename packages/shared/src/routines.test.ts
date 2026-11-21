@@ -115,6 +115,10 @@ describe('describeCron', () => {
     expect(describeCron('0 9 1 6 *')).toBe('on the schedule "0 9 1 6 *"');
     expect(describeCron('0 9 1 * 1')).toBe('on the schedule "0 9 1 * 1"');
     expect(describeCron('0 9 * * MON')).toBe('on the schedule "0 9 * * MON"');
+    // Not every month has a 29th, 30th or 31st.
+    expect(describeCron('0 9 31 * *')).toBe('on the schedule "0 9 31 * *"');
+    expect(describeCron('0 9 29 * *')).toBe('on the schedule "0 9 29 * *"');
+    expect(describeCron('0 9 28 * *')).toBe('on day 28 of every month at 09:00');
     expect(describeCron('0 9-17 * * *')).toBe('on the schedule "0 9-17 * * *"');
     // A step that doesn't divide the hour or the day is not an even interval:
     // */45 fires at :00 and :45, and */5 hours leaves a 4-hour gap at midnight.

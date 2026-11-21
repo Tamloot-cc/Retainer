@@ -468,7 +468,10 @@ function TestDialog({
   const needsRecord = version.manifest.when.kind !== 'schedule' || !!version.manifest.when.object;
   const caps = useRoutineCapabilities();
   const when = version.manifest.when;
-  const object = routineObject(caps.data, 'object' in when ? when.object : undefined)?.name;
+  // Undefined while capabilities load; null once they show the object is gone.
+  const object = caps.isPending
+    ? undefined
+    : (routineObject(caps.data, 'object' in when ? when.object : undefined)?.name ?? null);
   const test = useMutation({
     mutationFn: () => api.testRoutine(routineId, version.id, recordId.trim() || null),
     onSuccess: () => client.invalidateQueries({ queryKey: routinesKey(session.workspace.id) }),
@@ -511,7 +514,11 @@ function TestDialog({
             <li>Its writes can make other routines or extensions act, and those may send.</li>
           </ul>
           {needsRecord ? (
-            <RecordChooser object={object} value={recordId} onChange={setRecordId} />
+            caps.error ? (
+              <Notice error>{errorText(caps.error, 'test a routine')}</Notice>
+            ) : (
+              <RecordChooser object={object} value={recordId} onChange={setRecordId} />
+            )
           ) : (
             <Muted>This routine runs without a record.</Muted>
           )}
