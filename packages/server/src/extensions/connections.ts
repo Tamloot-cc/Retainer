@@ -268,7 +268,7 @@ export class MemberConnections {
       {
         credential: 'key',
         authorizationId: attemptId,
-        gmail: { integrationId: config.integrationId },
+        gmail: true,
       },
     );
   }
@@ -491,7 +491,7 @@ export class MemberConnections {
     method: {
       credential: ConnectionCredential;
       authorizationId?: string;
-      gmail?: { integrationId: string };
+      gmail?: true;
     } = {
       credential: 'key',
     },
@@ -506,12 +506,15 @@ export class MemberConnections {
       // `installation` holds: clock_timestamp, since a lock wait can cross the expiry.
       const [request] = method.authorizationId
         ? await tx<
-            { created_at: Date; connection_id: string; settings: { consentHistoryDays?: number } }[]
+            {
+              created_at: Date;
+              connection_id: string;
+              settings: { consentHistoryDays?: number; boundNangoIntegrationId?: string };
+            }[]
           >`update extension_authorizations set consumed_at=clock_timestamp() where id=${method.authorizationId}
             and installation_id=${id} and owner_id=${caller.actor.id}
             and (${!!method.gmail} = (verifier_ref is null))
-            and (${!method.gmail} or (expected_generation=${i.generation}
-              and settings->>'boundNangoIntegrationId'=${method.gmail?.integrationId ?? null}))
+            and (${!method.gmail} or expected_generation=${i.generation})
             and consumed_at is null and expires_at>clock_timestamp() returning created_at,connection_id,settings`
         : [];
       if (method.authorizationId && !request) throw expired();
@@ -627,7 +630,8 @@ export class MemberConnections {
           ? {
               ...input.settings,
               consentHistoryDays: request?.settings.consentHistoryDays ?? null,
-              boundNangoIntegrationId: method.gmail.integrationId,
+              // The integration this attempt was authorized through, which `finish` checked.
+              boundNangoIntegrationId: request?.settings.boundNangoIntegrationId,
               gmailConnectionStartedAt: new Date().toISOString(),
             }
           : input.settings;
