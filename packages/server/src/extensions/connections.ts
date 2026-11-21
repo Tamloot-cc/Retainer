@@ -7,6 +7,7 @@ import {
   GmailProviderError,
   gmailRegistrationId,
   nangoGmailAttemptTags,
+  nangoGmailIntegrationId,
   nangoId,
   verifyNangoGmailGrant,
 } from '@retainer/extension/nango-gmail';
@@ -160,13 +161,13 @@ export class MemberConnections {
     )
       throw notFound('Gmail installation');
     const apiKey = process.env.RETAINER_GMAIL_NANGO_CONTROL_KEY ?? process.env.NANGO_API_KEY;
-    const integration = nangoId.safeParse(installation.settings.nangoIntegrationId);
+    const integrationId = nangoGmailIntegrationId();
     const days = z.number().int().min(0).max(3650).safeParse(installation.settings.historyDays);
     if (!days.success)
       throw new AppError(422, 'invalid_settings', 'choose a whole number of days of email history');
-    if (!apiKey || !integration.success)
+    if (!apiKey || !integrationId)
       throw new AppError(503, 'gmail_unavailable', 'Nango Gmail is not configured');
-    return { apiKey, integrationId: integration.data, historyDays: days.data };
+    return { apiKey, integrationId, historyDays: days.data };
   }
 
   async startGmailAuthorization(caller: Caller, id: string, acceptedHistoryDays: number) {
@@ -510,8 +511,7 @@ export class MemberConnections {
             and installation_id=${id} and owner_id=${caller.actor.id}
             and (${!!method.gmail} = (verifier_ref is null))
             and (${!method.gmail} or (expected_generation=${i.generation}
-              and settings->>'boundNangoIntegrationId'=${method.gmail?.integrationId ?? null}
-              and settings->>'boundNangoIntegrationId'=${i.settings.nangoIntegrationId ?? null}))
+              and settings->>'boundNangoIntegrationId'=${method.gmail?.integrationId ?? null}))
             and consumed_at is null and expires_at>clock_timestamp() returning created_at,connection_id,settings`
         : [];
       if (method.authorizationId && !request) throw expired();

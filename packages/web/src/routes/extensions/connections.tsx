@@ -544,6 +544,11 @@ function GmailAuthorization({
         Conversations. History for newly added addresses follows the workspace limit at the time
         they are added.
       </p>
+      <p className="text-sm">
+        Retainer connects to Gmail through Nango, a third-party service that stores your Google
+        sign-in and keeps it current, so Google may show Nango's name when you approve access.
+        Retainer never receives your Google password.
+      </p>
       <div className="flex items-start gap-2">
         <input
           type="checkbox"

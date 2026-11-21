@@ -45,11 +45,10 @@ async function gmailRun(
   const [installation] = await tx<
     {
       version: string;
-      settings: Record<string, unknown>;
       connection_settings: Record<string, unknown>;
     }[]
   >`
-    select i.version,i.settings,c.settings as connection_settings
+    select i.version,c.settings as connection_settings
     from extension_installations i join extension_connections c on c.installation_id=i.id
     where i.id=${installationId} and c.id=${run.connectionId}`;
   if (!installation) throw forbidden('a live Gmail mailbox run is required');
@@ -75,10 +74,8 @@ async function gmailRun(
     installationId,
     connectionId: run.connectionId,
     isSetup: run.functionId === policy.verifyFunctionId,
-    integrationId: nangoId.parse(
-      installation.connection_settings.boundNangoIntegrationId ??
-        installation.settings.nangoIntegrationId,
-    ),
+    // The integration the member authorized through, even if the server's has changed since.
+    integrationId: nangoId.parse(installation.connection_settings.boundNangoIntegrationId),
     nangoConnectionId: nangoId.parse(installation.connection_settings.nangoConnectionId),
   };
 }

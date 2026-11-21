@@ -34,6 +34,16 @@ Keep both keys server-side. Scheduled jobs call a fixed set of Gmail read
 endpoints through Nango. They never receive raw Google credentials or a
 project-wide proxy capability.
 
+The Nango integration ID is operator configuration, like the keys: the server
+reads it from `RETAINER_GMAIL_NANGO_INTEGRATION_ID`, defaulting to
+`google-mail`. Workspace admins never see or set it. Each connection keeps the
+integration it was authorized through, so changing the variable affects only
+new connections.
+
+Before a member authorizes Gmail, tell them that Retainer connects through
+Nango, a third-party service that stores and refreshes their Google sign-in,
+and that Google's approval screen may show Nango's name.
+
 Retainer starts a short-lived Nango Connect session for the signed-in workspace
 member and pending connection attempt. Verify the completed Nango connection
 against that attempt, the workspace, the owner, and the configured integration
@@ -164,8 +174,9 @@ member tag and vendor identity through member, installation, or workspace remova
 Build the development bundle with `pnpm build` and
 `node scripts/build-extension-artifacts.mjs --development`. Use the catalog
 and executable mapping in `artifacts/extensions/gmail` with Retainer's
-[extension execution setup](../extensions-execution.md). The default
-integration ID is `google-mail`. Connect requests
+[extension execution setup](../extensions-execution.md). The integration ID
+defaults to `google-mail`; set `RETAINER_GMAIL_NANGO_INTEGRATION_ID` on the
+Retainer API if your Nango integration has another ID. Connect requests
 `https://www.googleapis.com/auth/gmail.readonly` for that integration and
 rejects a broader Gmail grant.
 
