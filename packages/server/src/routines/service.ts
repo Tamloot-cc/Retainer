@@ -20,7 +20,7 @@ import { getSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
 import { type Capabilities, capabilities, type RoutineConfig } from './capabilities.js';
 import { nextInZone } from './cron.js';
-import { checkCode, checkManifest, fieldFor, manifestResolves, objectFor } from './manifest.js';
+import { checkCode, checkManifest, fieldFor, objectFor } from './manifest.js';
 import { fireTick, matchingSince, scheduleTargets } from './matcher.js';
 import { pauseRoutine, queueRun } from './runs.js';
 
@@ -677,9 +677,8 @@ export class Routines {
       if (!version || version.manifest.when.kind !== 'schedule')
         throw new AppError(409, 'not_schedule', 'only a schedule routine runs now');
       const [now] = await tx<{ at: Date }[]>`select clock_timestamp() as at`;
-      const schema = await getSchema(tx, caller.workspaceId);
-      if (!manifestResolves(tx, schema, version.manifest))
-        throw new AppError(409, 'check_failed', 'the routine no longer fits the workspace');
+      // A schedule that no longer fits the workspace pauses in the tick, as a
+      // due tick does, rather than being refused here.
       const fired = await fireTick(
         tx,
         caller.workspaceId,

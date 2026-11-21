@@ -369,6 +369,7 @@ export async function fireTick(
   let queued = 0,
     held = 0,
     paused = over;
+  const ran: string[] = [];
   for (const recordId of targets) {
     const real = recordId === NO_RECORD ? null : recordId;
     if (real && when.oncePerRecord && (await usedUp(tx, routineId, real))) continue;
@@ -378,7 +379,7 @@ export async function fireTick(
     if (!fresh) continue;
     // The hourly cap counts scheduled runs too (§4.6): past it the rest are held.
     const allowed = !paused && (await hourlyAllowance(tx, routineId));
-    await queueRun(tx, workspace, {
+    const runId = await queueRun(tx, workspace, {
       mode: 'run',
       triggerKind: 'schedule',
       routineId,
@@ -388,6 +389,7 @@ export async function fireTick(
       runAt: due,
       held: !allowed,
     });
+    ran.push(runId);
     if (allowed) queued++;
     else {
       held++;
@@ -395,5 +397,11 @@ export async function fireTick(
       paused = true;
     }
   }
-  return held ? { queued, held, matched } : { queued, matched };
+  if (!held) return { queued, matched };
+  // The pause held this tick's earlier runs too: count them as they ended up.
+  const [count] = await tx<{ queued: number }[]>`
+    select count(*) filter (where status='queued')::int as queued from routine_runs
+    where id=any(${ran}::uuid[])`;
+  const still = count?.queued ?? 0;
+  return { queued: still, held: ran.length - still, matched };
 }
