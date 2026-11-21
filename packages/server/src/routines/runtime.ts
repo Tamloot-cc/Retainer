@@ -461,7 +461,7 @@ export class RoutineRuntime {
       };
     if (existing.state === 'reported') return { state: 'reported', stop: existing.code === 'stop' };
     if (existing.state === 'failed')
-      throw new AppError(422, existing.code ?? 'effect_failed', 'this call failed');
+      throw new AppError(422, existing.code ?? 'effect_failed', failedMessage(existing.result));
     return existing;
   }
 
@@ -883,9 +883,33 @@ export class RoutineRuntime {
       if (!row || row.operation !== 'ai.generate') throw notFound('model call');
       if (row.state === 'done')
         return { state: 'done' as const, result: row.result, replayed: true };
+      // A refusal already recorded stands: a retry must get the same error.
+      if (row.state === 'failed')
+        throw new AppError(422, row.code ?? 'model_failed', failedMessage(row.result));
       await tx`update routine_run_results set state='done',result=${tx.json(jsonValue(result ?? null))},updated_at=clock_timestamp()
         where run_id=${binding.runId} and position=${position}`;
       return { state: 'done' as const, result, replayed: false };
+    });
+  }
+
+  /**
+   * A started model call the provider refused, or whose answer was unusable:
+   * kept as a failed call with the provider's words, so the run's page says
+   * why and a retry gets the same error at this position.
+   */
+  async modelFailed(caller: Caller, position: number, error: { code: string; message: string }) {
+    const binding = this.binding(caller);
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await lockSchemaShared(tx, caller.workspaceId);
+      await admitCaller(tx, caller);
+      const [row] = await tx<ResultRow[]>`
+        select * from routine_run_results where run_id=${binding.runId} and position=${position} for update`;
+      if (!row || row.operation !== 'ai.generate') throw notFound('model call');
+      if (row.state === 'started')
+        await tx`update routine_run_results set state='failed',code=${error.code},
+          result=${tx.json({ error: error.message })},updated_at=clock_timestamp()
+          where run_id=${binding.runId} and position=${position}`;
+      return { state: 'failed' as const, code: row.state === 'started' ? error.code : row.code };
     });
   }
 
@@ -929,6 +953,12 @@ export class RoutineRuntime {
     if ('failed' in polled) throw new AppError(422, polled.failed, 'the tool call failed');
     return polled;
   }
+}
+
+/** A failed call's own words, so a retry throws what the first attempt did. */
+function failedMessage(result: unknown) {
+  const error = (result as { error?: unknown } | null)?.error;
+  return typeof error === 'string' && error ? error : 'this call failed';
 }
 
 function keyedStatus(object: CompiledObject, fields: Record<string, string>) {

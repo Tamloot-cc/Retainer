@@ -18,7 +18,9 @@ import {
 } from '../../ui/index.js';
 import { QueryError, recordTitle, useRecordLabel } from '../state.js';
 import {
+  callError,
   callStateText,
+  failureText,
   operationText,
   RUN_STATUS_TEXT,
   routinesKey,
@@ -74,6 +76,7 @@ export function RoutineRunPage() {
         {test ? <Badge>Test</Badge> : null}
         {r.code ? <Muted>{r.code.replaceAll('_', ' ')}</Muted> : null}
       </Row>
+      {failureText(r) ? <Notice error>{failureText(r)}</Notice> : null}
       {RUN_STATUS_TEXT[r.status] ? <Notice>{RUN_STATUS_TEXT[r.status]}</Notice> : null}
       {test ? (
         <Muted>
@@ -106,14 +109,7 @@ export function RoutineRunPage() {
       </PropertyList>
       <Section title="What it did, in order">
         {r.calls.length ? (
-          <ol
-            aria-label="Calls"
-            className="flex flex-col divide-y divide-border rounded-lg border border-border"
-          >
-            {r.calls.map((call) => (
-              <Call key={call.position} call={call} />
-            ))}
-          </ol>
+          <Calls calls={r.calls} finished={runFinished(r.status)} />
         ) : (
           <Empty quiet title={runFinished(r.status) ? 'It made no calls.' : 'No calls yet.'} />
         )}
@@ -125,7 +121,30 @@ export function RoutineRunPage() {
   );
 }
 
-function Call({ call }: { call: RoutineRunCall }) {
+/** Each call a run made, in order. */
+export function Calls({
+  calls,
+  finished,
+  label = 'Calls',
+}: {
+  calls: RoutineRunCall[];
+  finished: boolean;
+  label?: string;
+}) {
+  return (
+    <ol
+      aria-label={label}
+      className="flex flex-col divide-y divide-border rounded-lg border border-border"
+    >
+      {calls.map((call) => (
+        <Call key={call.position} call={call} finished={finished} />
+      ))}
+    </ol>
+  );
+}
+
+function Call({ call, finished }: { call: RoutineRunCall; finished: boolean }) {
+  const error = callError(call);
   return (
     <li className="flex flex-col gap-1.5 px-3 py-2.5 text-sm">
       <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -134,7 +153,7 @@ function Call({ call }: { call: RoutineRunCall }) {
         <Badge
           tone={call.state === 'failed' ? 'error' : call.state === 'done' ? 'success' : 'pending'}
         >
-          {callStateText(call.state)}
+          {callStateText(call, finished)}
         </Badge>
         {call.code ? <Muted small>{call.code.replaceAll('_', ' ')}</Muted> : null}
         {call.recordId ? (
@@ -148,7 +167,14 @@ function Call({ call }: { call: RoutineRunCall }) {
           The replay stopped here because this call changed. The original effect is shown above.
         </Muted>
       ) : null}
-      {call.result !== undefined ? (
+      {error ? (
+        <span>
+          {call.code === 'model_failed' || call.code === 'model_refused'
+            ? 'The model provider said: '
+            : 'The error: '}
+          {error}
+        </span>
+      ) : call.result !== undefined ? (
         <JsonBlock value={call.result} label={`Result of call ${call.position}`} />
       ) : null}
     </li>

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -124,7 +124,7 @@ export class RoutineApi {
           messages: [{ role: 'user', content: request.user }],
           output_config: {
             effort: 'low',
-            format: { type: 'json_schema', schema: strictSchema(request.schema) },
+            format: { type: 'json_schema', schema: providerSchema(request.schema) },
           },
         }),
         signal: this.signal,
@@ -150,28 +150,73 @@ export class RoutineApi {
       if (body?.stop_reason !== 'end_turn')
         throw new ApiError(422, 'model_output', 'the answer was cut off');
       const text = (body.content ?? []).flatMap((b) => (b.type === 'text' ? [b.text ?? ''] : []));
+      let answer: unknown;
       try {
-        return JSON.parse(text.join(''));
+        answer = JSON.parse(text.join(''));
       } catch {
         throw new ApiError(422, 'model_output', 'the answer was not valid JSON');
       }
+      return fitAnswer(request.schema, answer);
     }
   }
 }
 
-/** Structured outputs need every object closed. */
-function strictSchema(schema: unknown, depth = 0): unknown {
+/**
+ * What the provider's structured outputs accept. Its schema supports fewer
+ * keywords than `OutputSchema` allows, and refuses a call that sends one it
+ * does not (`maxItems` on an array, for one). Every other keyword is left
+ * out of the request; `fitAnswer` applies the ones Retainer enforces itself.
+ */
+const PROVIDER_KEYWORDS = new Set([
+  'type',
+  'description',
+  'enum',
+  'properties',
+  'required',
+  'items',
+]);
+
+/** The schema the provider receives: its own keywords only, every object closed. */
+export function providerSchema(schema: unknown, depth = 0): unknown {
   if (depth > 20 || !schema || typeof schema !== 'object' || Array.isArray(schema)) return schema;
-  const out: Record<string, unknown> = { ...(schema as Record<string, unknown>) };
+  const out: Record<string, unknown> = Object.fromEntries(
+    Object.entries(schema as Record<string, unknown>).filter(([key]) => PROVIDER_KEYWORDS.has(key)),
+  );
   if (out.type === 'object') {
     out.additionalProperties = false;
     const props = (out.properties ?? {}) as Record<string, unknown>;
     out.properties = Object.fromEntries(
-      Object.entries(props).map(([key, value]) => [key, strictSchema(value, depth + 1)]),
+      Object.entries(props).map(([key, value]) => [key, providerSchema(value, depth + 1)]),
     );
   }
-  if (out.type === 'array' && out.items) out.items = strictSchema(out.items, depth + 1);
+  if (out.type === 'array' && out.items) out.items = providerSchema(out.items, depth + 1);
   return out;
+}
+
+/**
+ * The model's answer held to the schema's limits the provider cannot take:
+ * an array keeps its first `maxItems` items.
+ */
+export function fitAnswer(schema: unknown, value: unknown, depth = 0): unknown {
+  if (depth > 20 || !schema || typeof schema !== 'object') return value;
+  const s = schema as {
+    type?: string;
+    items?: unknown;
+    maxItems?: unknown;
+    properties?: Record<string, unknown>;
+  };
+  if (s.type === 'array' && Array.isArray(value)) {
+    const max = typeof s.maxItems === 'number' && s.maxItems >= 0 ? s.maxItems : value.length;
+    return value.slice(0, max).map((item) => fitAnswer(s.items, item, depth + 1));
+  }
+  if (s.type === 'object' && value && typeof value === 'object' && !Array.isArray(value))
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        fitAnswer(s.properties?.[key], item, depth + 1),
+      ]),
+    );
+  return value;
 }
 
 function delay(ms: number, signal: AbortSignal) {
@@ -538,9 +583,35 @@ async function effect(
   return settleEffect(api, context, message, response, signal);
 }
 
+/** Statuses a model call keeps failing with however often it is sent. */
+const DEFINITE_MODEL_FAILURES = new Set([400, 404, 413, 422]);
+
+/** Whether a model call failed in a way sending it again would not change. */
+export const definiteModelFailure = (error: unknown): error is ApiError =>
+  error instanceof ApiError && DEFINITE_MODEL_FAILURES.has(error.status);
+
+/**
+ * A refusal or an unusable answer keeps its position, so the run's page can
+ * say why and a retry gets the same error (§11.4). A rate limit, an outage
+ * or a rejected token may pass, so a later attempt asks again.
+ */
+export async function recordModelFailure(
+  api: RoutineApi,
+  position: number,
+  error: unknown,
+  signal: AbortSignal,
+) {
+  if (!definiteModelFailure(error) || signal.aborted) return;
+  await api
+    .call('POST', `effects/${position}/result`, {
+      error: { code: error.code, message: error.message.slice(0, 2000) },
+    })
+    .catch(() => {});
+}
+
 export async function settleEffect(
   api: RoutineApi,
-  _context: RoutineRunContext,
+  context: RoutineRunContext,
   message: { position: number; operation: string; args: Record<string, unknown> },
   response: RoutineEffectResponse,
   signal: AbortSignal,
@@ -549,15 +620,21 @@ export async function settleEffect(
   if (response.state === 'reported') {
     if (response.stop)
       throw new Ended({ outcome: 'succeeded', stoppedAt: message.position, result: null });
-    return { dryRun: true };
+    return dryRunResult(context.run.id, message);
   }
   if (response.state === 'model') {
     const args = message.args as { instructions?: unknown; input?: unknown; output?: unknown };
-    const result = await api.model(response.model, {
-      system: `${String(args.instructions ?? '')}\n\nAnswer with JSON that matches the given schema, and nothing else.`,
-      user: JSON.stringify(args.input ?? null),
-      schema: (args.output ?? { type: 'object', properties: {} }) as Record<string, unknown>,
-    });
+    let result: unknown;
+    try {
+      result = await api.model(response.model, {
+        system: `${String(args.instructions ?? '')}\n\nAnswer with JSON that matches the given schema, and nothing else.`,
+        user: JSON.stringify(args.input ?? null),
+        schema: (args.output ?? { type: 'object', properties: {} }) as Record<string, unknown>,
+      });
+    } catch (error) {
+      await recordModelFailure(api, message.position, error, signal);
+      throw error;
+    }
     const recorded = await api.call<RoutineEffectResponse>(
       'POST',
       `effects/${message.position}/result`,
@@ -569,11 +646,44 @@ export async function settleEffect(
   for (let wait = 500; ; wait = Math.min(5000, wait * 1.5)) {
     await delay(wait, signal);
     const polled = await api.call<RoutineEffectResponse>('GET', `effects/${message.position}`);
-    if (polled.state !== 'pending') return settleEffect(api, _context, message, polled, signal);
+    if (polled.state !== 'pending') return settleEffect(api, context, message, polled, signal);
   }
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * What a write returns in a dry run, in the shape the SDK types (§5.2): the
+ * written fields read `applied`, and a record the run would create gets a
+ * placeholder ID, the same on every attempt. Nothing was written.
+ */
+export function dryRunResult(
+  runId: string,
+  message: { position: number; operation: string; args: Record<string, unknown> },
+): unknown {
+  const placeholder = () => {
+    const hex = createHash('sha256').update(`${runId}:${message.position}`).digest('hex');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+  };
+  const fields = () =>
+    Object.fromEntries(
+      Object.keys((message.args.values ?? {}) as Record<string, unknown>).map((key) => [
+        key,
+        'applied',
+      ]),
+    );
+  switch (message.operation) {
+    case 'record.create':
+      return { id: placeholder(), fields: fields() };
+    case 'record.update':
+      return { id: String(message.args.id ?? ''), fields: fields() };
+    case 'events.log':
+    case 'remember':
+      return { id: placeholder() };
+    default:
+      return { dryRun: true };
+  }
+}
 
 /** Runs one routine invocation to its outcome. */
 export async function executeRoutine(

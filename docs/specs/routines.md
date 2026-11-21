@@ -1362,14 +1362,43 @@ they left open:
 - **The Routines page** (`packages/web/src/routes/routines`) has the
   describe box, the review (facts, summary, report, code), approve, reject,
   test, pause, resume, archive, held runs, runs with their calls, record
-  buttons, and the workspace time zone under workspace settings. It does
-  not yet show a dry run or a diff against the approved version on the
-  review (§5.2), or which tool each call named.
+  buttons, and the workspace time zone under workspace settings. A
+  proposal has a dry run, which shows each run's calls and why one failed,
+  and Approve asks for confirmation first. It does not yet show a diff
+  against the approved version on the review (§5.2), or which tool each
+  call named.
 - **A refused call keeps its position.** Code may catch a refused effect (a
   missing record, an unlisted tool) and go on, so the refusal is recorded as
   a failed call at its position and a retry gets the same error. A 429 or a
   server error is not recorded; a server without a model or tool catalog
-  answers 409 (`model_unavailable`, `tool_unavailable`), so those are.
+  answers 409 (`model_unavailable`, `tool_unavailable`), so those are. A
+  model call the provider refuses (400, 404, 413) or whose answer is
+  unusable (422) is recorded the same way with the provider's words, which
+  the run's page shows and a retry throws again; a late answer does not
+  replace it. A rate limit, an outage or a rejected token is not recorded,
+  so a later attempt asks again. The builder records its own calls the same
+  way, and a definite failure ends the build as `builder_failed` with the
+  provider's words instead of retrying.
+- **A model call's schema is held to what the provider takes.** The runner
+  sends only `type`, `description`, `enum`, `properties`, `required` and
+  `items`, with every object closed, and applies `maxItems` to the answer
+  itself before it is recorded, since the provider refuses that keyword.
+- **A dry run's writes come back typed.** A write in a dry run returns the
+  shape the SDK declares: `{ id, fields }` with each written field
+  `applied`, and a placeholder ID for a record it would create (the same on
+  every attempt). Code that reads the result runs in a preview as it does
+  for real.
+- **Approving a version closes older proposals.** Proposals numbered below
+  the approved version are superseded in the same transaction, which holds
+  the routine row, so one cannot be approved over it later. Newer proposals
+  stay open.
+- **The builder sets `oncePerRecord` when the description asks for it.**
+  Its guide lists the flag for every trigger, and its answer says whether
+  the description asks to act once per record. When it says so and the
+  manifest lacks the flag, the draft is sent back with that problem, so the
+  rule is in the manifest, where Retainer enforces it and the approver
+  reads it. The model reads the description: a pattern would misread "once
+  a week per deal" or "only once the deal has an amount".
 - **A tool call's payloads are routine content.** `forget` redacts the input
   and output of every routine tool job in the workspace and cancels the
   unfinished ones; retention clears them 7 days after the run ends, and

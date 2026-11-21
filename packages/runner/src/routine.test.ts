@@ -9,7 +9,8 @@ import {
   writeRules,
 } from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
-import { executeRoutine, parseProblems, typeCheck } from './routine.js';
+import { executeRoutine, fitAnswer, parseProblems, providerSchema, typeCheck } from './routine.js';
+import { onceProblems } from './routine-builder.js';
 
 const TYPES = `
 type RecordId = string;
@@ -605,6 +606,185 @@ describe('routine sandbox', () => {
     );
     expect(result).toMatchObject({
       output: { outcome: 'failed', code: 'routine_error', error: 'boom' },
+    });
+  });
+});
+
+describe('model calls and dry runs (issue 147)', () => {
+  const MODEL = {
+    state: 'model',
+    model: { origin: 'http://model.test/', token: 'mt', name: 'claude-test', maxTokens: 100 },
+  };
+  const answered = (text: string) =>
+    Response.json({ stop_reason: 'end_turn', content: [{ type: 'text', text }] });
+
+  it('sends the provider only its own schema keywords, and keeps the first maxItems items', async () => {
+    let sent: any;
+    const { result, calls } = await run(
+      context(`export async function main({ retainer }: RoutineContext<'deal'>) {
+        return retainer.ai.generate({
+          instructions: 'List action items',
+          input: null,
+          output: { type: 'object', properties: { items: { type: 'array', maxItems: 2, items: { type: 'string' } } }, required: ['items'] },
+        });
+      }`),
+      (path, body) => {
+        if (path === 'effects') return MODEL;
+        if (path === '/v1/messages') {
+          sent = body;
+          return answered(JSON.stringify({ items: ['a', 'b', 'c', 'd'] }));
+        }
+        if (path === 'effects/1/result')
+          return { state: 'done', result: body.result, replayed: false };
+      },
+    );
+    expect(sent.output_config.format.schema).toEqual({
+      type: 'object',
+      additionalProperties: false,
+      properties: { items: { type: 'array', items: { type: 'string' } } },
+      required: ['items'],
+    });
+    // The answer is recorded already held to the limit, so a retry replays the same.
+    expect(calls.find((c) => c.path === 'effects/1/result')?.body).toEqual({
+      result: { items: ['a', 'b'] },
+    });
+    expect(result).toMatchObject({
+      output: { outcome: 'succeeded', result: { items: ['a', 'b'] } },
+    });
+  });
+
+  it('records a refused model call at its position, with the provider’s words', async () => {
+    const { result, calls } = await run(
+      context(`export async function main({ retainer }: RoutineContext<'deal'>) {
+        return retainer.ai.generate({ instructions: 'x', input: null, output: { type: 'string' } });
+      }`),
+      (path) => {
+        if (path === 'effects') return MODEL;
+        if (path === '/v1/messages')
+          return Response.json(
+            { error: { type: 'invalid_request_error', message: 'schema not supported' } },
+            { status: 400 },
+          );
+        if (path === 'effects/1/result') return { state: 'failed', code: 'model_failed' };
+      },
+    );
+    expect(calls.find((c) => c.path === 'effects/1/result')?.body).toEqual({
+      error: { code: 'model_failed', message: 'schema not supported' },
+    });
+    expect(result).toMatchObject({
+      output: { outcome: 'failed', code: 'routine_error', error: 'schema not supported' },
+    });
+  });
+
+  it('does not record a provider outage, so a later attempt can ask again', async () => {
+    const { result, calls } = await run(
+      context(`export async function main({ retainer }: RoutineContext<'deal'>) {
+        return retainer.ai.generate({ instructions: 'x', input: null, output: { type: 'string' } });
+      }`),
+      (path) => {
+        if (path === 'effects') return MODEL;
+        if (path === '/v1/messages')
+          return Response.json({ error: { message: 'overloaded' } }, { status: 529 });
+      },
+    );
+    expect(calls.filter((c) => c.path === '/v1/messages')).toHaveLength(3);
+    expect(calls.some((c) => c.path === 'effects/1/result')).toBe(false);
+    expect(result).toMatchObject({ output: { outcome: 'failed', error: 'overloaded' } });
+  }, 20000);
+
+  it('a dry run returns each write in the shape the SDK types', async () => {
+    const { result } = await run(
+      context(
+        `export async function main({ retainer, record }: RoutineContext<'deal'>) {
+          const res: any = await retainer.deal.update(record.id, { stage: 'won' });
+          const made: any = await (retainer as any).task.create({ title: 'Call' });
+          const again: any = await (retainer as any).task.create({ title: 'Call' });
+          return { id: res.id, stage: res.fields.stage, made, same: made.id === again.id };
+        }`,
+        'dry',
+      ),
+      () => ({ state: 'reported', stop: false }),
+    );
+    const output = (result as any).output;
+    expect(output).toMatchObject({
+      outcome: 'succeeded',
+      result: {
+        id: 'deal-1',
+        stage: 'applied',
+        made: { fields: { title: 'applied' } },
+        same: false,
+      },
+    });
+    expect(output.result.made.id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('fits nested answers and leaves other values alone', () => {
+    const schema = {
+      type: 'array',
+      maxItems: 1,
+      items: {
+        type: 'object',
+        properties: { tags: { type: 'array', maxItems: 1, items: { type: 'string' } } },
+      },
+    };
+    expect(fitAnswer(schema, [{ tags: ['a', 'b'] }, { tags: [] }])).toEqual([{ tags: ['a'] }]);
+    expect(fitAnswer({ type: 'string' }, 'x')).toBe('x');
+    expect(providerSchema({ type: 'string', maxLength: 5, enum: ['a'] })).toEqual({
+      type: 'string',
+      enum: ['a'],
+    });
+  });
+});
+
+describe('the builder’s once-per-record check (issue 147)', () => {
+  it('asks for oncePerRecord in the manifest when the builder says the description wants it', () => {
+    const manual = { when: { kind: 'manual', object: 'project', label: 'Kickoff' } };
+    expect(onceProblems(true, manual)).toEqual([
+      expect.objectContaining({ code: 'once_not_in_manifest', at: 'when.oncePerRecord' }),
+    ]);
+    expect(onceProblems(true, { when: { ...manual.when, oncePerRecord: true } })).toEqual([]);
+    expect(onceProblems(false, manual)).toEqual([]);
+    expect(onceProblems(undefined, manual)).toEqual([]);
+    // A schedule without an object has no record to act on once.
+    expect(onceProblems(true, { when: { kind: 'schedule', cron: '0 9 * * 0' } })).toEqual([]);
+  });
+});
+
+describe('builder model failures (issue 147)', () => {
+  it('records a refused builder call and ends the build, without retrying', async () => {
+    const ctx = {
+      ...context('', 'build'),
+      code: null,
+      build: { description: 'Tag new deals' },
+    } as unknown as RoutineRunContext;
+    const { result, calls } = await run(ctx, (path) => {
+      if (path === 'capabilities')
+        return {
+          objects: [],
+          tools: [],
+          model: { available: true },
+          timezone: 'UTC',
+          triggers: ['record'],
+          limits: {},
+          gapCodes: ['unclear'],
+          types: '',
+          typesFingerprint: 'f'.repeat(64),
+        };
+      if (path === 'effects')
+        return {
+          state: 'model',
+          model: { origin: 'http://model.test/', token: 'mt', name: 'm', maxTokens: 100 },
+        };
+      if (path === '/v1/messages')
+        return Response.json({ error: { message: 'schema not supported' } }, { status: 400 });
+      if (path === 'effects/1/result') return { state: 'failed', code: 'model_failed' };
+    });
+    expect(calls.find((c) => c.path === 'effects/1/result')?.body).toEqual({
+      error: { code: 'model_failed', message: 'schema not supported' },
+    });
+    expect(result).toMatchObject({
+      status: 'succeeded',
+      output: { outcome: 'failed', code: 'builder_failed', error: 'schema not supported' },
     });
   });
 });

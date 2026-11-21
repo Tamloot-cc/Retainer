@@ -6,7 +6,7 @@ import type {
   RoutineRunContext,
 } from '@retainer/shared';
 import type { RoutineApi, RoutineOutcome } from './routine.js';
-import { typeCheck } from './routine.js';
+import { definiteModelFailure, recordModelFailure, typeCheck } from './routine.js';
 
 /** Attempts the builder makes before it reports what still fails. */
 const ATTEMPTS = 3;
@@ -18,6 +18,8 @@ type Draft = {
   summary: string;
   manifest: string;
   code: string;
+  /** Whether the description asks to act at most once for each record. */
+  oncePerRecord?: boolean;
 };
 
 const MANIFEST_GUIDE = `A routine is a manifest plus TypeScript code.
@@ -27,13 +29,14 @@ The manifest is JSON:
   "when": one of
     { "kind": "record", "object": "<object name>", "on": ["created" | "updated" | "links"], "fields"?: ["<field key>"], "oncePerRecord"?: true }
     { "kind": "schedule", "cron": "<5-field cron, at least 15 minutes apart>", "object"?: "<object name>", "filter"?: <filter>, "oncePerRecord"?: true }
-    { "kind": "manual", "object": "<object name>", "label": "<button label>" }
+    { "kind": "manual", "object": "<object name>", "label": "<button label>", "oncePerRecord"?: true }
   "if"?: <filter>,           // checked by Retainer before the code runs; the code never starts when it fails
   "expiry"?: { "field": "<date field key>" },  // the run is dropped once this date passes
   "uses": { "tools": ["<tool name>"], "model": true | false }
 }
 "links" fires when an event gains a participant or about link (event types only).
 A filter uses field keys: { "<key>": { "eq" | "neq" | "in" | "contains" | "gt" | "gte" | "lt" | "lte" | "isNull": value }, "and"?: [...], "or"?: [...], "not"?: {...} }. Only filterable fields can be filtered.
+"oncePerRecord": true makes Retainer act at most once for each record, ever: the record is used up by the run's first write or tool call. Set it whenever the description says to act once per record ("only once per project", "at most once for each conversation", "don't do it again"), and whenever a record or manual routine creates records from the triggering record, unless the description wants it to act again on later changes or presses. A check in the code alone is not enough: the admin who approves sees Retainer's facts, which come from the manifest.
 
 The code:
 - exports one function: export async function main({ retainer, record, run, trigger }: RoutineContext<'<object name>'>) { ... }
@@ -43,7 +46,9 @@ The code:
 - reads and writes values by field key, as the types show.
 - calls only the tools the manifest lists, and retainer.ai.generate only when uses.model is true.
 - returns a short JSON summary of what it did.
-- keeps conditions that only depend on the record in the manifest's "if", not in the code.`;
+- keeps conditions that only depend on the record in the manifest's "if", not in the code.
+- in a model call's output schema, uses only type, description, enum, properties, required, items and maxItems; Retainer enforces maxItems on the answer.
+- in a dry run (run.dryRun), gets writes back in their usual shape, but nothing is written.`;
 
 function instructions(
   caps: Omit<RoutineCapabilities, 'types' | 'typesFingerprint'>,
@@ -61,7 +66,7 @@ The SDK's types, generated from this workspace:
 ${types}
 \`\`\`
 
-Report honestly how much of the description the routine does: "full", "partial" (list each gap) or "not_possible" (then manifest and code may be empty strings). Each gap names the part of the description, a reason from ${JSON.stringify(caps.gapCodes)}, and what would make it possible (a field to add, an extension to install). Never pretend: if a field, object, tool or model the description needs is missing, it is a gap.
+Report honestly how much of the description the routine does: "full", "partial" (list each gap) or "not_possible" (then manifest and code may be empty strings). "full" means every action and every rule the description states is done, and each rule Retainer can enforce (a condition, "once per record", a schedule) is in the manifest. Each gap names the part of the description, a reason from ${JSON.stringify(caps.gapCodes)}, and what would make it possible (a field to add, an extension to install). Never pretend: if a field, object, tool or model the description needs is missing, it is a gap.
 
 name: a short name for the routine. summary: one sentence, in plain words, of what the routine does.
 When the input lists problems with a previous attempt, fix every one of them.`;
@@ -87,9 +92,40 @@ const outputSchema = (gapCodes: readonly string[]) => ({
     summary: { type: 'string' },
     manifest: { type: 'string', description: 'The manifest, as a JSON string.' },
     code: { type: 'string', description: 'The TypeScript code.' },
+    oncePerRecord: {
+      type: 'boolean',
+      description:
+        'Whether the description asks to act at most once for each record, ever ("only once per project"). False for a frequency ("once a week per deal") and for "once" meaning "as soon as".',
+    },
   },
-  required: ['verdict', 'gaps', 'name', 'summary', 'manifest', 'code'],
+  required: ['verdict', 'gaps', 'name', 'summary', 'manifest', 'code', 'oncePerRecord'],
 });
+
+/**
+ * The builder says whether the description asks to act at most once per
+ * record; the manifest must then carry `oncePerRecord`, where Retainer
+ * enforces it and the approver reads it (routines spec §4.2). The model
+ * reads the description, so a phrasing such as "once a week" or "only once
+ * the deal has an amount" is its call, not a pattern's.
+ */
+export function onceProblems(
+  oncePerRecord: boolean | undefined,
+  manifest: unknown,
+): RoutineProblem[] {
+  const when = (manifest as { when?: { kind?: string; object?: string; oncePerRecord?: boolean } })
+    ?.when;
+  if (!oncePerRecord || !when || when.oncePerRecord) return [];
+  if (when.kind === 'schedule' && !when.object) return [];
+  return [
+    {
+      part: 'manifest',
+      at: 'when.oncePerRecord',
+      code: 'once_not_in_manifest',
+      message:
+        'you said the description asks to act once per record: set "oncePerRecord": true in "when", so Retainer enforces it and shows it to the approver',
+    },
+  ];
+}
 
 /**
  * The built-in builder (routines spec §5.1): the description in, a checked
@@ -98,6 +134,22 @@ const outputSchema = (gapCodes: readonly string[]) => ({
  * it counts against the workspace's daily model calls.
  */
 export async function buildRoutine(
+  api: RoutineApi,
+  context: RoutineRunContext,
+  signal: AbortSignal,
+): Promise<RoutineOutcome> {
+  try {
+    return await draftRoutine(api, context, signal);
+  } catch (error) {
+    // A call the provider refused fails the build where it stands, on this
+    // attempt and on a retry that replays it, rather than trying again.
+    if (definiteModelFailure(error))
+      return { outcome: 'failed', code: 'builder_failed', error: error.message.slice(0, 2000) };
+    throw error;
+  }
+}
+
+async function draftRoutine(
   api: RoutineApi,
   context: RoutineRunContext,
   signal: AbortSignal,
@@ -117,22 +169,27 @@ export async function buildRoutine(
     let draft: Draft;
     if (response.state === 'done') draft = response.result as Draft;
     else if (response.state === 'model') {
-      draft = (await api.model(response.model, {
-        system,
-        user: JSON.stringify({
-          description,
-          ...(previous
-            ? {
-                previousAttempt: {
-                  manifest: previous.draft.manifest,
-                  code: previous.draft.code,
-                },
-                problems: previous.problems,
-              }
-            : {}),
-        }),
-        schema: outputSchema(caps.gapCodes),
-      })) as Draft;
+      draft = (await api
+        .model(response.model, {
+          system,
+          user: JSON.stringify({
+            description,
+            ...(previous
+              ? {
+                  previousAttempt: {
+                    manifest: previous.draft.manifest,
+                    code: previous.draft.code,
+                  },
+                  problems: previous.problems,
+                }
+              : {}),
+          }),
+          schema: outputSchema(caps.gapCodes),
+        })
+        .catch(async (error: unknown) => {
+          await recordModelFailure(api, attempt, error, signal);
+          throw error;
+        })) as Draft;
       await api.call('POST', `effects/${attempt}/result`, { result: draft });
     } else return { outcome: 'failed', code: 'builder_failed' };
     const report = { verdict: draft.verdict, gaps: draft.gaps };
@@ -153,7 +210,7 @@ export async function buildRoutine(
       typesFingerprint: string;
       contextType?: string;
     }>('POST', 'build/check', { manifest, code: draft.code });
-    let problems = checked.problems;
+    let problems = [...checked.problems, ...onceProblems(draft.oncePerRecord, manifest)];
     if (!problems.length) {
       const typed = await typeCheck(types, draft.code, true, signal, checked.contextType);
       await rm(typed.dir, { recursive: true, force: true }).catch(() => {});

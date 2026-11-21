@@ -26,6 +26,7 @@ import {
 } from '../../ui/index.js';
 import { QueryError } from '../state.js';
 import { DescribeRoutine } from './describe.js';
+import { DryRunDialog } from './dry-run.js';
 import {
   errorText,
   needsApproval,
@@ -79,6 +80,8 @@ function Routine({ routine }: { routine: RoutineDetail }) {
   const [outcome, setOutcome] = useState<ReactNode>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [testing, setTesting] = useState<RoutineVersionView | null>(null);
+  const [dryRun, setDryRun] = useState<RoutineVersionView | null>(null);
+  const [approving, setApproving] = useState<RoutineVersionView | null>(null);
   const refresh = () => client.invalidateQueries({ queryKey: routinesKey(session.workspace.id) });
   const state = useMutation({
     mutationFn: (action: 'pause' | 'resume' | 'archive') => api.setRoutineState(routine.id, action),
@@ -103,6 +106,7 @@ function Routine({ routine }: { routine: RoutineDetail }) {
       decision: 'approve' | 'reject';
     }) => api.decideRoutineVersion(routine.id, version.id, decision),
     onSuccess: async (result, { version, decision }) => {
+      setApproving(null);
       const discarded = result.discardedRuns ?? 0;
       setOutcome(
         decision === 'reject'
@@ -239,15 +243,18 @@ function Routine({ routine }: { routine: RoutineDetail }) {
                   <Button
                     variant="primary"
                     disabled={busy || archived}
-                    onClick={() => decide.mutate({ version, decision: 'approve' })}
+                    onClick={() => setApproving(version)}
                   >
-                    Approve version {version.number}
+                    Approve version {version.number}…
                   </Button>
                   <Button
                     disabled={busy}
                     onClick={() => decide.mutate({ version, decision: 'reject' })}
                   >
                     Reject
+                  </Button>
+                  <Button disabled={busy || archived} onClick={() => setDryRun(version)}>
+                    Dry run…
                   </Button>
                   <Button disabled={busy || archived} onClick={() => setTesting(version)}>
                     Test on a record…
@@ -277,12 +284,8 @@ function Routine({ routine }: { routine: RoutineDetail }) {
                   {stopped &&
                   needsApproval(routine.pausedReason) &&
                   routine.pausedReason !== 'check_failed' ? (
-                    <Button
-                      variant="primary"
-                      disabled={busy}
-                      onClick={() => decide.mutate({ version: active, decision: 'approve' })}
-                    >
-                      Approve again
+                    <Button variant="primary" disabled={busy} onClick={() => setApproving(active)}>
+                      Approve again…
                     </Button>
                   ) : null}
                   <Button disabled={busy} onClick={() => setTesting(active)}>
@@ -313,6 +316,51 @@ function Routine({ routine }: { routine: RoutineDetail }) {
       </Section>
       {testing ? (
         <TestDialog routineId={routine.id} version={testing} onClose={() => setTesting(null)} />
+      ) : null}
+      {dryRun ? <DryRunDialog version={dryRun} onClose={() => setDryRun(null)} /> : null}
+      {approving ? (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !decide.isPending) setApproving(null);
+          }}
+          title={`Approve version ${approving.number}?`}
+        >
+          <Stack>
+            <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+              <li>It goes live now and acts on what happens from now on.</li>
+              <li>It writes as an agent, without anyone reviewing each run.</li>
+              {active && active.id !== approving.id ? (
+                <li>
+                  It replaces version {active.number}. Runs of version {active.number} that have not
+                  started yet are discarded.
+                </li>
+              ) : null}
+              {proposals.some((p) => p.number < approving.number) ? (
+                <li>Older versions waiting for review are closed.</li>
+              ) : null}
+            </ul>
+            <Muted small>
+              Not sure it works? Cancel and start a dry run: it shows what the code would do on
+              recent records, without changing anything.
+            </Muted>
+            {decide.error ? (
+              <Notice error>{errorText(decide.error, 'approve or reject a routine')}</Notice>
+            ) : null}
+            <Row>
+              <Button
+                variant="primary"
+                disabled={decide.isPending}
+                onClick={() => decide.mutate({ version: approving, decision: 'approve' })}
+              >
+                {decide.isPending ? 'Approving…' : `Approve version ${approving.number}`}
+              </Button>
+              <Button disabled={decide.isPending} onClick={() => setApproving(null)}>
+                Cancel
+              </Button>
+            </Row>
+          </Stack>
+        </Dialog>
       ) : null}
       {confirmArchive ? (
         <Dialog

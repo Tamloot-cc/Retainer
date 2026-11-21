@@ -634,7 +634,7 @@ type Links = { primary: { url: string; label?: string } | null; additional?: { u
 type FullName = { first?: string; last?: string };
 type Address = { street1?: string; street2?: string; city?: string; state?: string; postcode?: string; country?: string };
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-/** A JSON Schema for a model's answer: object, array, string, number, integer, boolean, null. */
+/** A JSON Schema for a model's answer: object, array, string, number, integer, boolean, null. Retainer keeps an array's first maxItems items. */
 type OutputSchema =
   | { type: 'string' | 'number' | 'integer' | 'boolean' | 'null'; description?: string; enum?: readonly (string | number)[] }
   | { type: 'array'; items: OutputSchema; description?: string; maxItems?: number }
@@ -665,6 +665,7 @@ type AggregateOp = 'countEmpty' | 'countNotEmpty' | 'percentEmpty' | 'percentNot
 type AggregateResult = { total: number; values: { field: string; op: AggregateOp; value: number | string | Money | null }[] };
 type BaseRecord = { id: RecordId; createdAt: string; updatedAt: string };
 type EventRecord = BaseRecord & { occurredAt: string; participants: RecordId[]; about: RecordId[] };
+/** In a dry run nothing is written: each field reads 'applied', and a created record's ID is a placeholder. */
 type WriteResult = { id: RecordId; fields: Record<string, 'applied' | 'pending_review' | 'superseded'> };
 type ObjectClient<R, W, F, S, A> = {
   /** One record by ID, or null. */
