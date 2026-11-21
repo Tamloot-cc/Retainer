@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { ROUTINE_RUNNER_FUNCTION_ID, ROUTINE_RUNNER_REGISTRATION_ID } from '@retainer/shared';
 import { expect, test, vi } from 'vitest';
 import { loadConfig } from '../../src/config.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
@@ -166,4 +167,59 @@ test('Lambda status checks every distinct packaged target and its release and ro
   expect(
     await createOpsHandler({ ...config, RETAINER_EXTENSION_EXECUTABLES: '[]' })(command),
   ).toEqual({ ...result, compatible: false });
+});
+
+test('Lambda status probes the routine runner, which has no catalog entry, as a job function', async () => {
+  const prefix = 'arn:aws:lambda:eu-central-1:123456789012:function:retainer-ext-';
+  const runner = {
+    registrationId: ROUTINE_RUNNER_REGISTRATION_ID,
+    releaseDigest: 'c'.repeat(64),
+    functionId: ROUTINE_RUNNER_FUNCTION_ID,
+    handlerDigest: 'd'.repeat(64),
+    packageDigest: 'e'.repeat(64),
+    runtimeVersion: 'node24',
+    driverTarget: `${prefix}routine-runner:3`,
+  };
+  const config = loadConfig({
+    DATABASE_URL: 'postgres://owner:password@localhost/unused',
+    RETAINER_EXTENSION_DRIVER: 'lambda',
+    RETAINER_EXTENSION_LAMBDA_PREFIX: prefix,
+    RETAINER_EXTENSION_CATALOG: '[]',
+    RETAINER_EXTENSION_EXECUTABLES: JSON.stringify([runner]),
+  });
+  const command = { command: 'extension-runtime-status' };
+  const answer = (patch: object = {}) =>
+    aws.send.mockImplementation(async (sent) => {
+      expect(sent.input.FunctionName).toBe(runner.driverTarget);
+      return {
+        StatusCode: 200,
+        Payload: Buffer.from(
+          JSON.stringify({
+            protocolVersion: 1,
+            runtimeVersion: 'node24',
+            releaseDigest: runner.releaseDigest,
+            mode: 'job',
+            ...patch,
+          }),
+        ),
+      };
+    });
+  aws.send.mockReset();
+  answer();
+  expect(await createOpsHandler(config)(command)).toMatchObject({ compatible: true });
+  expect(aws.send).toHaveBeenCalledTimes(1);
+  for (const patch of [{ releaseDigest: 'f'.repeat(64) }, { mode: 'verify' }]) {
+    answer(patch);
+    expect(await createOpsHandler(config)(command)).toMatchObject({ compatible: false });
+  }
+  // Only the pinned runner identity skips the catalog: any other uncatalogued
+  // executable still fails the check.
+  answer();
+  const stranger = { ...runner, registrationId: crypto.randomUUID() };
+  expect(
+    await createOpsHandler({
+      ...config,
+      RETAINER_EXTENSION_EXECUTABLES: JSON.stringify([stranger]),
+    })(command),
+  ).toMatchObject({ compatible: false });
 });
