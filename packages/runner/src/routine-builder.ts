@@ -94,11 +94,26 @@ const outputSchema = (gapCodes: readonly string[]) => ({
   required: ['verdict', 'gaps', 'name', 'summary', 'manifest', 'code'],
 });
 
-/** Words after "once" that make it a frequency ("once a week"), not once per record. */
-const FREQUENCY =
-  /^(?:(?:a|an|every|per|each|in an?)\s+)?(?:day|week|fortnight|month|quarter|year|hour|minute|morning|afternoon|evening|night|monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?\b/;
+const UNIT =
+  '(?:day|week|fortnight|month|quarter|year|hour|minute|morning|afternoon|evening|night|weekday|weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?';
+const COUNT = '(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|few|couple of)';
 
-/** Whether an English description asks to act at most once per record. */
+/** Words after "once" that make it a frequency ("once a week", "once every two weeks"). */
+const FREQUENCY = new RegExp(
+  `^(?:(?:a|an|every|per|each|in an?|for each|for every|on each|on every|on)\\s+)?(?:${COUNT}\\s+)?${UNIT}\\b`,
+);
+
+/** "once per project", "once for each conversation": once for each of a kind of record. */
+const PER_RECORD = /^(?:per|for each|for every|for any|on each|on every)\s+\w/;
+
+/** "only once." or "only once, and": the clause ends at "once", so it means one time. */
+const CLAUSE_END = /^(?:$|[.,;:!?)]|(?:and|or|but|then|ever)\b)/;
+
+/**
+ * Whether an English description asks to act at most once per record. Only
+ * a clear form counts: "once" as a conjunction ("only once the deal has an
+ * amount") or a frequency ("once every two weeks") does not.
+ */
 export function saysOncePerRecord(description: string): boolean {
   for (const match of description.matchAll(/\b(only |just |at most )?once\b\s*/gi)) {
     const rest = description
@@ -106,8 +121,8 @@ export function saysOncePerRecord(description: string): boolean {
       .slice(0, 60)
       .toLowerCase();
     if (FREQUENCY.test(rest)) continue;
-    if (match[1]) return true;
-    if (/^(?:per|for each|for every|for any|on each|on every)\s+\w/.test(rest)) return true;
+    if (PER_RECORD.test(rest)) return true;
+    if (match[1] && CLAUSE_END.test(rest)) return true;
   }
   return false;
 }

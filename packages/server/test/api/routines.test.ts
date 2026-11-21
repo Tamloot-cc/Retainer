@@ -2264,7 +2264,10 @@ describe('routines: findings from the live test (issue 147)', () => {
     ]);
     const retried = await effect(1, 'ai.generate', args);
     expect(retried.status).toBe(422);
-    expect(retried.body.error.code).toBe('model_failed');
+    expect(retried.body.error).toMatchObject({
+      code: 'model_failed',
+      message: "property 'maxItems' is not supported",
+    });
     // A late answer does not overwrite the refusal.
     const late = await s.app.request('/v1/routines/runtime/effects/1/result', {
       key: token,

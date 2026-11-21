@@ -1372,9 +1372,11 @@ they left open:
   a failed call at its position and a retry gets the same error. A 429 or a
   server error is not recorded; a server without a model or tool catalog
   answers 409 (`model_unavailable`, `tool_unavailable`), so those are. A
-  model call the provider refuses, or whose answer is unusable, is recorded
-  the same way with the provider's words, which the run's page shows; a
-  late answer does not replace it.
+  model call the provider refuses (400, 404, 413) or whose answer is
+  unusable (422) is recorded the same way with the provider's words, which
+  the run's page shows and a retry throws again; a late answer does not
+  replace it. A rate limit, an outage or a rejected token is not recorded,
+  so a later attempt asks again.
 - **A model call's schema is held to what the provider takes.** The runner
   sends only `type`, `description`, `enum`, `properties`, `required` and
   `items`, with every object closed, and applies `maxItems` to the answer
@@ -1390,9 +1392,11 @@ they left open:
   stay open.
 - **The builder sets `oncePerRecord` when the description asks for it.**
   Its guide lists the flag for every trigger, and a draft whose description
-  says to act once per record ("only once per project") without the flag is
-  sent back with that problem, so the rule is in the manifest, where
-  Retainer enforces it and the approver reads it.
+  says to act once per record ("only once per project", "just once.")
+  without the flag is sent back with that problem, so the rule is in the
+  manifest, where Retainer enforces it and the approver reads it. "Once" as
+  a conjunction ("only once the deal has an amount") or with a frequency
+  ("once every two weeks") does not count.
 - **A tool call's payloads are routine content.** `forget` redacts the input
   and output of every routine tool job in the workspace and cancels the
   unfinished ones; retention clears them 7 days after the run ends, and

@@ -583,6 +583,9 @@ async function effect(
   return settleEffect(api, context, message, response, signal);
 }
 
+/** Statuses a model call keeps failing with however often it is sent. */
+const DEFINITE_MODEL_FAILURES = new Set([400, 404, 413, 422]);
+
 export async function settleEffect(
   api: RoutineApi,
   context: RoutineRunContext,
@@ -606,9 +609,10 @@ export async function settleEffect(
         schema: (args.output ?? { type: 'object', properties: {} }) as Record<string, unknown>,
       });
     } catch (error) {
-      // The call keeps its refusal at its position, so the run's page can
-      // say why, and a retry gets the same error (§11.4).
-      if (error instanceof ApiError && !signal.aborted)
+      // A refusal or an unusable answer keeps its position, so the run's page
+      // can say why and a retry gets the same error (§11.4). A rate limit, an
+      // outage or a rejected token may pass, so a later attempt asks again.
+      if (error instanceof ApiError && DEFINITE_MODEL_FAILURES.has(error.status) && !signal.aborted)
         await api
           .call('POST', `effects/${message.position}/result`, {
             error: { code: error.code, message: error.message.slice(0, 2000) },

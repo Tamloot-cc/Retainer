@@ -461,7 +461,7 @@ export class RoutineRuntime {
       };
     if (existing.state === 'reported') return { state: 'reported', stop: existing.code === 'stop' };
     if (existing.state === 'failed')
-      throw new AppError(422, existing.code ?? 'effect_failed', 'this call failed');
+      throw new AppError(422, existing.code ?? 'effect_failed', failedMessage(existing.result));
     return existing;
   }
 
@@ -885,7 +885,7 @@ export class RoutineRuntime {
         return { state: 'done' as const, result: row.result, replayed: true };
       // A refusal already recorded stands: a retry must get the same error.
       if (row.state === 'failed')
-        throw new AppError(422, row.code ?? 'model_failed', 'this call failed');
+        throw new AppError(422, row.code ?? 'model_failed', failedMessage(row.result));
       await tx`update routine_run_results set state='done',result=${tx.json(jsonValue(result ?? null))},updated_at=clock_timestamp()
         where run_id=${binding.runId} and position=${position}`;
       return { state: 'done' as const, result, replayed: false };
@@ -953,6 +953,12 @@ export class RoutineRuntime {
     if ('failed' in polled) throw new AppError(422, polled.failed, 'the tool call failed');
     return polled;
   }
+}
+
+/** A failed call's own words, so a retry throws what the first attempt did. */
+function failedMessage(result: unknown) {
+  const error = (result as { error?: unknown } | null)?.error;
+  return typeof error === 'string' && error ? error : 'this call failed';
 }
 
 function keyedStatus(object: CompiledObject, fields: Record<string, string>) {

@@ -676,6 +676,22 @@ describe('model calls and dry runs (issue 147)', () => {
     });
   });
 
+  it('does not record a provider outage, so a later attempt can ask again', async () => {
+    const { result, calls } = await run(
+      context(`export async function main({ retainer }: RoutineContext<'deal'>) {
+        return retainer.ai.generate({ instructions: 'x', input: null, output: { type: 'string' } });
+      }`),
+      (path) => {
+        if (path === 'effects') return MODEL;
+        if (path === '/v1/messages')
+          return Response.json({ error: { message: 'overloaded' } }, { status: 529 });
+      },
+    );
+    expect(calls.filter((c) => c.path === '/v1/messages')).toHaveLength(3);
+    expect(calls.some((c) => c.path === 'effects/1/result')).toBe(false);
+    expect(result).toMatchObject({ output: { outcome: 'failed', error: 'overloaded' } });
+  }, 20000);
+
   it('a dry run returns each write in the shape the SDK types', async () => {
     const { result } = await run(
       context(
@@ -729,6 +745,18 @@ describe('the builder’s once-per-record check (issue 147)', () => {
     expect(saysOncePerRecord('Run once a week for each deal.')).toBe(false);
     expect(saysOncePerRecord('Only once per day, remind the owner.')).toBe(false);
     expect(saysOncePerRecord('When a deal is won, create a task.')).toBe(false);
+    expect(saysOncePerRecord('Do it only once.')).toBe(true);
+    expect(saysOncePerRecord('Run just once, and tell the owner.')).toBe(true);
+    // "once" as a conjunction, or with a counted interval, is not once per record.
+    expect(
+      saysOncePerRecord(
+        'When a deal changes, update the forecast only once the deal has an amount.',
+      ),
+    ).toBe(false);
+    expect(saysOncePerRecord('Send the summary only once the meeting has ended.')).toBe(false);
+    expect(saysOncePerRecord('Run only once every two weeks per deal.')).toBe(false);
+    expect(saysOncePerRecord('Remind them once per 3 days.')).toBe(false);
+    expect(saysOncePerRecord('Check once on each Monday.')).toBe(false);
   });
 
   it('asks for oncePerRecord in the manifest when the description says so', () => {
