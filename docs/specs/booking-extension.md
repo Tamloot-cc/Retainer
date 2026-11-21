@@ -36,9 +36,10 @@ can be introduced independently. V1 talks to Retainer only through the
 standalone REST grant, using `@retainer/sdk`, and through `record` triggers
 on the summary. Standalone releases cannot publish
 [extension tools](extensions-tools.md) today, so agents and
-[Routines](routines.md) cannot call Booking until the V2 bridge. Booking
-depends only on `@retainer/sdk` and `@retainer/shared` and never imports
-server code. Open decision: Booking's code location and license.
+[Routines](routines.md) cannot call Booking until the V2 bridge. Like the
+other first-party extensions, Booking lives in this repository as an MIT
+package, `packages/booking`. It depends only on `@retainer/sdk` and
+`@retainer/shared` and never imports server code.
 
 ## 2. V1 experience
 
