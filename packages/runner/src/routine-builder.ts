@@ -18,6 +18,8 @@ type Draft = {
   summary: string;
   manifest: string;
   code: string;
+  /** Whether the description asks to act at most once for each record. */
+  oncePerRecord?: boolean;
 };
 
 const MANIFEST_GUIDE = `A routine is a manifest plus TypeScript code.
@@ -90,52 +92,29 @@ const outputSchema = (gapCodes: readonly string[]) => ({
     summary: { type: 'string' },
     manifest: { type: 'string', description: 'The manifest, as a JSON string.' },
     code: { type: 'string', description: 'The TypeScript code.' },
+    oncePerRecord: {
+      type: 'boolean',
+      description:
+        'Whether the description asks to act at most once for each record, ever ("only once per project"). False for a frequency ("once a week per deal") and for "once" meaning "as soon as".',
+    },
   },
-  required: ['verdict', 'gaps', 'name', 'summary', 'manifest', 'code'],
+  required: ['verdict', 'gaps', 'name', 'summary', 'manifest', 'code', 'oncePerRecord'],
 });
 
-const UNIT =
-  '(?:day|week|fortnight|month|quarter|year|hour|minute|morning|afternoon|evening|night|weekday|weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?';
-const COUNT = '(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|few|couple of)';
-
-/** Words after "once" that make it a frequency ("once a week", "once every two weeks"). */
-const FREQUENCY = new RegExp(
-  `^(?:(?:a|an|every|per|each|in an?|for each|for every|on each|on every|on)\\s+)?(?:${COUNT}\\s+)?${UNIT}\\b`,
-);
-
-/** "once per project", "once for each conversation": once for each of a kind of record. */
-const PER_RECORD = /^(?:per|for each|for every|for any|on each|on every)\s+\w/;
-
-/** "only once." or "only once, and": the clause ends at "once", so it means one time. */
-const CLAUSE_END = /^(?:$|[.,;:!?)]|(?:and|or|but|then|ever)\b)/;
-
 /**
- * Whether an English description asks to act at most once per record. Only
- * a clear form counts: "once" as a conjunction ("only once the deal has an
- * amount") or a frequency ("once every two weeks") does not.
+ * The builder says whether the description asks to act at most once per
+ * record; the manifest must then carry `oncePerRecord`, where Retainer
+ * enforces it and the approver reads it (routines spec §4.2). The model
+ * reads the description, so a phrasing such as "once a week" or "only once
+ * the deal has an amount" is its call, not a pattern's.
  */
-export function saysOncePerRecord(description: string): boolean {
-  for (const match of description.matchAll(/\b(only |just |at most )?once\b\s*/gi)) {
-    const rest = description
-      .slice((match.index ?? 0) + match[0].length)
-      .slice(0, 60)
-      .toLowerCase();
-    if (FREQUENCY.test(rest)) continue;
-    if (PER_RECORD.test(rest)) return true;
-    if (match[1] && CLAUSE_END.test(rest)) return true;
-  }
-  return false;
-}
-
-/**
- * A description that says to act once per record needs `oncePerRecord` in
- * the manifest, where Retainer enforces it and the approver reads it; the
- * code's own check is neither (routines spec §4.2).
- */
-export function onceProblems(description: string, manifest: unknown): RoutineProblem[] {
+export function onceProblems(
+  oncePerRecord: boolean | undefined,
+  manifest: unknown,
+): RoutineProblem[] {
   const when = (manifest as { when?: { kind?: string; object?: string; oncePerRecord?: boolean } })
     ?.when;
-  if (!when || when.oncePerRecord || !saysOncePerRecord(description)) return [];
+  if (!oncePerRecord || !when || when.oncePerRecord) return [];
   if (when.kind === 'schedule' && !when.object) return [];
   return [
     {
@@ -143,7 +122,7 @@ export function onceProblems(description: string, manifest: unknown): RoutinePro
       at: 'when.oncePerRecord',
       code: 'once_not_in_manifest',
       message:
-        'the description says to act once per record: set "oncePerRecord": true in "when", so Retainer enforces it and shows it to the approver',
+        'you said the description asks to act once per record: set "oncePerRecord": true in "when", so Retainer enforces it and shows it to the approver',
     },
   ];
 }
@@ -210,7 +189,7 @@ export async function buildRoutine(
       typesFingerprint: string;
       contextType?: string;
     }>('POST', 'build/check', { manifest, code: draft.code });
-    let problems = [...checked.problems, ...onceProblems(description, manifest)];
+    let problems = [...checked.problems, ...onceProblems(draft.oncePerRecord, manifest)];
     if (!problems.length) {
       const typed = await typeCheck(types, draft.code, true, signal, checked.contextType);
       await rm(typed.dir, { recursive: true, force: true }).catch(() => {});

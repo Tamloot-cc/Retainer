@@ -1391,12 +1391,12 @@ they left open:
   the routine row, so one cannot be approved over it later. Newer proposals
   stay open.
 - **The builder sets `oncePerRecord` when the description asks for it.**
-  Its guide lists the flag for every trigger, and a draft whose description
-  says to act once per record ("only once per project", "just once.")
-  without the flag is sent back with that problem, so the rule is in the
-  manifest, where Retainer enforces it and the approver reads it. "Once" as
-  a conjunction ("only once the deal has an amount") or with a frequency
-  ("once every two weeks") does not count.
+  Its guide lists the flag for every trigger, and its answer says whether
+  the description asks to act once per record. When it says so and the
+  manifest lacks the flag, the draft is sent back with that problem, so the
+  rule is in the manifest, where Retainer enforces it and the approver
+  reads it. The model reads the description: a pattern would misread "once
+  a week per deal" or "only once the deal has an amount".
 - **A tool call's payloads are routine content.** `forget` redacts the input
   and output of every routine tool job in the workspace and cancels the
   unfinished ones; retention clears them 7 days after the run ends, and

@@ -10,7 +10,7 @@ import {
 } from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
 import { executeRoutine, fitAnswer, parseProblems, providerSchema, typeCheck } from './routine.js';
-import { onceProblems, saysOncePerRecord } from './routine-builder.js';
+import { onceProblems } from './routine-builder.js';
 
 const TYPES = `
 type RecordId = string;
@@ -737,38 +737,15 @@ describe('model calls and dry runs (issue 147)', () => {
 });
 
 describe('the builder’s once-per-record check (issue 147)', () => {
-  it('reads "once per record" in a description, not a frequency', () => {
-    expect(saysOncePerRecord('Run it only once per project.')).toBe(true);
-    expect(saysOncePerRecord('Act at most once per conversation.')).toBe(true);
-    expect(saysOncePerRecord('Do it once for each company.')).toBe(true);
-    expect(saysOncePerRecord('Every Sunday at 9:00, count the open tasks.')).toBe(false);
-    expect(saysOncePerRecord('Run once a week for each deal.')).toBe(false);
-    expect(saysOncePerRecord('Only once per day, remind the owner.')).toBe(false);
-    expect(saysOncePerRecord('When a deal is won, create a task.')).toBe(false);
-    expect(saysOncePerRecord('Do it only once.')).toBe(true);
-    expect(saysOncePerRecord('Run just once, and tell the owner.')).toBe(true);
-    // "once" as a conjunction, or with a counted interval, is not once per record.
-    expect(
-      saysOncePerRecord(
-        'When a deal changes, update the forecast only once the deal has an amount.',
-      ),
-    ).toBe(false);
-    expect(saysOncePerRecord('Send the summary only once the meeting has ended.')).toBe(false);
-    expect(saysOncePerRecord('Run only once every two weeks per deal.')).toBe(false);
-    expect(saysOncePerRecord('Remind them once per 3 days.')).toBe(false);
-    expect(saysOncePerRecord('Check once on each Monday.')).toBe(false);
-  });
-
-  it('asks for oncePerRecord in the manifest when the description says so', () => {
+  it('asks for oncePerRecord in the manifest when the builder says the description wants it', () => {
     const manual = { when: { kind: 'manual', object: 'project', label: 'Kickoff' } };
-    expect(onceProblems('Run it only once per project.', manual)).toEqual([
+    expect(onceProblems(true, manual)).toEqual([
       expect.objectContaining({ code: 'once_not_in_manifest', at: 'when.oncePerRecord' }),
     ]);
-    expect(
-      onceProblems('Run it only once per project.', {
-        when: { ...manual.when, oncePerRecord: true },
-      }),
-    ).toEqual([]);
-    expect(onceProblems('Create a task.', manual)).toEqual([]);
+    expect(onceProblems(true, { when: { ...manual.when, oncePerRecord: true } })).toEqual([]);
+    expect(onceProblems(false, manual)).toEqual([]);
+    expect(onceProblems(undefined, manual)).toEqual([]);
+    // A schedule without an object has no record to act on once.
+    expect(onceProblems(true, { when: { kind: 'schedule', cron: '0 9 * * 0' } })).toEqual([]);
   });
 });
