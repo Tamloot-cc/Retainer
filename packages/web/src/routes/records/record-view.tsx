@@ -40,6 +40,7 @@ import { useRememberCommand } from '../command-recents.js';
 import { DeveloperFacts, useApiName } from '../developer.js';
 import { EventDetailsView } from '../events/event-details.js';
 import { eventMedium, mediumField } from '../events/event-list.js';
+import { RoutineButtons } from '../routines/record-buttons.js';
 import { classLabel, objectByName, QueryError, recordTitle, relationsTo } from '../state.js';
 import { RecordActions } from './record-actions.js';
 import { type MemoryNav, type MemoryState, MemoryTabs, pointsAt } from './record-memory.js';
@@ -132,6 +133,7 @@ export function RecordSheet({ id, onClose }: { id: string; onClose: () => void }
       description="Record details. Click a value to edit it."
       actions={
         <>
+          {r ? <RoutineButtons object={r.object} recordId={r.id} /> : null}
           {r ? <RecordActions record={r} requestedId={id} onGone={onClose} /> : null}
           <Button asChild variant="ghost" size="icon">
             <Link

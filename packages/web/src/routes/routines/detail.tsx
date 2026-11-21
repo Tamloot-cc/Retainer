@@ -31,11 +31,14 @@ import {
   errorText,
   needsApproval,
   pausedText,
+  routineObject,
   routineStatus,
   routinesKey,
-  runStatus,
+  runOutcome,
   triggerText,
+  useRoutineCapabilities,
 } from './model.js';
+import { RecordChooser } from './record-chooser.js';
 import { RecordName } from './run.js';
 import { VersionDetails } from './version.js';
 
@@ -82,6 +85,7 @@ function Routine({ routine }: { routine: RoutineDetail }) {
   const [testing, setTesting] = useState<RoutineVersionView | null>(null);
   const [dryRun, setDryRun] = useState<RoutineVersionView | null>(null);
   const [approving, setApproving] = useState<RoutineVersionView | null>(null);
+  const [confirmRunNow, setConfirmRunNow] = useState(false);
   const refresh = () => client.invalidateQueries({ queryKey: routinesKey(session.workspace.id) });
   const state = useMutation({
     mutationFn: (action: 'pause' | 'resume' | 'archive') => api.setRoutineState(routine.id, action),
@@ -94,6 +98,14 @@ function Routine({ routine }: { routine: RoutineDetail }) {
             ? 'Resumed. It acts on what happens from now on, not on what happened while it was paused.'
             : 'Archived. It will not run again.',
       );
+      await refresh();
+    },
+  });
+  const runNow = useMutation({
+    mutationFn: () => api.runRoutineNow(routine.id),
+    onSuccess: async (result) => {
+      setConfirmRunNow(false);
+      setOutcome(runNowText(result));
       await refresh();
     },
   });
@@ -141,7 +153,7 @@ function Routine({ routine }: { routine: RoutineDetail }) {
     : decide.error
       ? 'approve or reject a routine'
       : 'run or discard held runs';
-  const busy = state.isPending || decide.isPending || held.isPending;
+  const busy = state.isPending || decide.isPending || held.isPending || runNow.isPending;
   return (
     <Page
       {...CRUMB}
@@ -163,6 +175,9 @@ function Routine({ routine }: { routine: RoutineDetail }) {
               </Button>
             }
           >
+            {routine.status === 'active' && active?.manifest.when.kind === 'schedule' ? (
+              <MenuAction onSelect={() => setConfirmRunNow(true)}>Run now…</MenuAction>
+            ) : null}
             {routine.status === 'active' ? (
               <MenuAction onSelect={() => state.mutate('pause')}>Pause</MenuAction>
             ) : null}
@@ -362,6 +377,37 @@ function Routine({ routine }: { routine: RoutineDetail }) {
           </Stack>
         </Dialog>
       ) : null}
+      {confirmRunNow ? (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !runNow.isPending) setConfirmRunNow(false);
+          }}
+          title={`Run ${routine.name} now?`}
+        >
+          <Stack>
+            <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+              <li>It runs once now, for real, as it would on its schedule.</li>
+              <li>
+                {routine.nextFireAt
+                  ? `Its next scheduled run stays at ${new Date(routine.nextFireAt).toLocaleString()}.`
+                  : 'Its regular schedule is unchanged.'}
+              </li>
+            </ul>
+            {runNow.error ? (
+              <Notice error>{errorText(runNow.error, 'run a routine now')}</Notice>
+            ) : null}
+            <Row>
+              <Button variant="primary" disabled={runNow.isPending} onClick={() => runNow.mutate()}>
+                {runNow.isPending ? 'Starting…' : 'Run now'}
+              </Button>
+              <Button disabled={runNow.isPending} onClick={() => setConfirmRunNow(false)}>
+                Cancel
+              </Button>
+            </Row>
+          </Stack>
+        </Dialog>
+      ) : null}
       {confirmArchive ? (
         <Dialog
           open
@@ -420,6 +466,12 @@ function TestDialog({
   const client = useQueryClient();
   const [recordId, setRecordId] = useState('');
   const needsRecord = version.manifest.when.kind !== 'schedule' || !!version.manifest.when.object;
+  const caps = useRoutineCapabilities();
+  const when = version.manifest.when;
+  // Undefined while capabilities load; null once they show the object is gone.
+  const object = caps.isPending
+    ? undefined
+    : (routineObject(caps.data, 'object' in when ? when.object : undefined)?.name ?? null);
   const test = useMutation({
     mutationFn: () => api.testRoutine(routineId, version.id, recordId.trim() || null),
     onSuccess: () => client.invalidateQueries({ queryKey: routinesKey(session.workspace.id) }),
@@ -462,15 +514,11 @@ function TestDialog({
             <li>Its writes can make other routines or extensions act, and those may send.</li>
           </ul>
           {needsRecord ? (
-            <FormField label="Record ID" hint="The record to test it on">
-              <Input
-                aria-label="Record ID"
-                value={recordId}
-                required
-                placeholder="00000000-0000-0000-0000-000000000000"
-                onChange={(e) => setRecordId(e.currentTarget.value)}
-              />
-            </FormField>
+            caps.error ? (
+              <Notice error>{errorText(caps.error, 'test a routine')}</Notice>
+            ) : (
+              <RecordChooser object={object} value={recordId} onChange={setRecordId} />
+            )
           ) : (
             <Muted>This routine runs without a record.</Muted>
           )}
@@ -502,7 +550,7 @@ function Runs({ routineId, runs }: { routineId: string; runs: RoutineRunView[] }
       className="flex flex-col divide-y divide-border rounded-lg border border-border"
     >
       {runs.map((run) => {
-        const { label, tone } = runStatus(run.status);
+        const { label, tone } = runOutcome(run);
         return (
           <li key={run.id}>
             <Link
@@ -527,4 +575,17 @@ function Runs({ routineId, runs }: { routineId: string; runs: RoutineRunView[] }
       })}
     </ul>
   );
+}
+
+/**
+ * What Run now did, in a sentence. Why runs were held or nothing started is
+ * the routine's pause reason, which the page shows, so this does not guess.
+ */
+export function runNowText(result: { queued: number; held?: number; matched?: number }) {
+  const runs = (n: number) => (n === 1 ? '1 run' : `${n} runs`);
+  if (result.held)
+    return `Started ${runs(result.queued)} and held ${runs(result.held)}. Retainer paused the routine; the notice above says why.`;
+  if (result.queued) return `Started ${runs(result.queued)}. Its regular schedule is unchanged.`;
+  if (result.matched === 0) return 'Nothing to run: no record matches it now.';
+  return 'Started nothing. Either each matching record was already handled, or Retainer paused the routine and the notice above says why.';
 }

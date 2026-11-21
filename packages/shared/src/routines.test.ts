@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  describeCron,
   describeFilter,
   isReservedRoutineName,
   routineFacts,
@@ -61,7 +62,7 @@ describe('routine facts', () => {
         names,
       ).slice(0, 1),
     ).toEqual([
-      'Runs on the schedule "0 9 * * 1" (the workspace\'s time zone), once for each deal, up to 200.',
+      "Runs every Monday at 09:00 (the workspace's time zone), once for each deal, up to 200.",
     ]);
     expect(
       routineFacts(
@@ -93,5 +94,38 @@ describe('routine facts', () => {
         uses: { tools: [], model: false },
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('describeCron', () => {
+  it('says common schedules in words', () => {
+    expect(describeCron('0 9 * * 0')).toBe('every Sunday at 09:00');
+    expect(describeCron('0 9 * * 7')).toBe('every Sunday at 09:00');
+    expect(describeCron('30 8 * * 1-5')).toBe('every weekday (Monday to Friday) at 08:30');
+    expect(describeCron('0 17 * * 1,4')).toBe('every Monday and Thursday at 17:00');
+    expect(describeCron('0 9 * * 6,0')).toBe('every Saturday and Sunday at 09:00');
+    expect(describeCron('15 6 * * *')).toBe('every day at 06:15');
+    expect(describeCron('0 9 1 * *')).toBe('on day 1 of every month at 09:00');
+    expect(describeCron('*/15 * * * *')).toBe('every 15 minutes');
+    expect(describeCron('5 * * * *')).toBe('every hour at 5 minutes past');
+    expect(describeCron('0 */6 * * *')).toBe('every 6 hours, at 0 minutes past');
+  });
+
+  it('quotes a shape it does not know, rather than guessing', () => {
+    expect(describeCron('0 9 1 6 *')).toBe('on the schedule "0 9 1 6 *"');
+    expect(describeCron('0 9 1 * 1')).toBe('on the schedule "0 9 1 * 1"');
+    expect(describeCron('0 9 * * MON')).toBe('on the schedule "0 9 * * MON"');
+    // Not every month has a 29th, 30th or 31st.
+    expect(describeCron('0 9 31 * *')).toBe('on the schedule "0 9 31 * *"');
+    expect(describeCron('0 9 29 * *')).toBe('on the schedule "0 9 29 * *"');
+    expect(describeCron('0 9 28 * *')).toBe('on day 28 of every month at 09:00');
+    expect(describeCron('0 9-17 * * *')).toBe('on the schedule "0 9-17 * * *"');
+    // A step that doesn't divide the hour or the day is not an even interval:
+    // */45 fires at :00 and :45, and */5 hours leaves a 4-hour gap at midnight.
+    expect(describeCron('*/45 * * * *')).toBe('on the schedule "*/45 * * * *"');
+    expect(describeCron('*/40 * * * *')).toBe('on the schedule "*/40 * * * *"');
+    expect(describeCron('0 */5 * * *')).toBe('on the schedule "0 */5 * * *"');
+    expect(describeCron('*/20 * * * *')).toBe('every 20 minutes');
+    expect(describeCron('0 */8 * * *')).toBe('every 8 hours, at 0 minutes past');
   });
 });

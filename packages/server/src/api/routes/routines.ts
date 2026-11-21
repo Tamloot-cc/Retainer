@@ -115,6 +115,9 @@ export function routineRoutes(app: Hono<AppEnv>, routines: Routines) {
     const { action } = await readBody(c, z.strictObject({ action: z.enum(['run', 'discard']) }));
     return c.json(await routines.releaseHeld(c.get('caller'), idParam(c), action));
   });
+  app.post('/routines/:id/run-now', requireScope('admin'), async (c) =>
+    c.json(await routines.runNow(c.get('caller'), idParam(c)), 202),
+  );
   app.post('/routines/:id/run', requireScope('write'), async (c) => {
     const { recordIds } = await readBody(
       c,

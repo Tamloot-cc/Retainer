@@ -2279,3 +2279,155 @@ describe('routines: findings from the live test (issue 147)', () => {
     expect(row?.state).toBe('failed');
   });
 });
+
+describe('routines: run now, and a paused schedule (issue 147)', () => {
+  const WEEKLY = (s: Setup) => ({
+    manifest: {
+      when: {
+        kind: 'schedule',
+        cron: '0 9 * * 1',
+        object: 'company',
+        filter: { [s.key('name')]: { contains: 'Acme' } },
+      },
+      uses: { tools: [], model: false },
+    },
+    code: `export async function main({ retainer, record }: RoutineContext<'company'>) {
+  await retainer.company.update(record.id, { ${JSON.stringify(s.key('tier'))}: 'now' });
+}
+`,
+  });
+
+  it('runs a schedule now with its regular rules, and keeps its next time', async () => {
+    const s = await setup();
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Run Now');
+    await createCompany(s.app, s.keys.admin, 'Other Run Now');
+    const { routineId } = await activate(s, WEEKLY(s));
+    const [before] = await db.owner<{ next_fire_at: Date }[]>`
+      select next_fire_at from routines where id=${routineId}`;
+    const refused = await s.app.request(`/v1/routines/${routineId}/run-now`, {
+      key: s.keys.agent,
+      body: {},
+    });
+    expect(refused.status).toBe(403);
+    const ran = await s.app.request(`/v1/routines/${routineId}/run-now`, {
+      key: s.keys.admin,
+      body: {},
+    });
+    expect(ran.status).toBe(202);
+    expect(ran.body).toMatchObject({ routineId, queued: 1, matched: 1 });
+    await s.executor.tick();
+    const runs = await db.owner<{ record_id: string; status: string; trigger_kind: string }[]>`
+      select record_id,status,trigger_kind from routine_runs where routine_id=${routineId}`;
+    expect(runs).toEqual([{ record_id: acme, status: 'succeeded', trigger_kind: 'schedule' }]);
+    const [after] = await db.owner<{ next_fire_at: Date }[]>`
+      select next_fire_at from routines where id=${routineId}`;
+    expect(after?.next_fire_at.getTime()).toBe(before?.next_fire_at.getTime());
+  });
+
+  it('two presses of run now at once each fire their own tick, beside a due regular tick', async () => {
+    const s = await setup();
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Twice');
+    const { routineId } = await activate(s, WEEKLY(s));
+    // A regular tick comes due while the presses are made.
+    await db.owner`update routines set next_fire_at=now()-interval '1 minute' where id=${routineId}`;
+    const press = () =>
+      s.app.request(`/v1/routines/${routineId}/run-now`, { key: s.keys.admin, body: {} });
+    const [first, second] = await Promise.all([press(), press(), s.maintenance.maintain()]);
+    expect([first, second].map((a) => [a.status, a.body.queued])).toEqual([
+      [202, 1],
+      [202, 1],
+    ]);
+    await s.maintenance.maintain();
+    const firings = await db.owner<{ due_at: Date; record_id: string }[]>`
+      select due_at,record_id from routine_firings where routine_id=${routineId}`;
+    // Two presses and the regular tick: three ticks, each its own firing and run.
+    expect(firings).toHaveLength(3);
+    expect(new Set(firings.map((f) => f.due_at.getTime())).size).toBe(3);
+    expect(firings.every((f) => f.record_id === acme)).toBe(true);
+    const runs = await db.owner`select id from routine_runs where routine_id=${routineId}`;
+    expect(runs).toHaveLength(3);
+    // The regular tick moved the next time on; the presses did not touch it.
+    const [next] = await db.owner<{ next_fire_at: Date }[]>`
+      select next_fire_at from routines where id=${routineId}`;
+    expect(next?.next_fire_at.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('counts the runs a mid-tick hourly pause held, not only the later ones', async () => {
+    const s = await setup();
+    const limits = ROUTINE_LIMITS as { runsPerHour: number };
+    const saved = limits.runsPerHour;
+    limits.runsPerHour = 2;
+    try {
+      for (const name of ['Acme A', 'Acme B', 'Acme C'])
+        await createCompany(s.app, s.keys.admin, name);
+      const { routineId } = await activate(s, WEEKLY(s));
+      const ran = await s.app.request(`/v1/routines/${routineId}/run-now`, {
+        key: s.keys.admin,
+        body: {},
+      });
+      // The third run is over the cap; the pause holds the tick's others too.
+      expect(ran.body).toMatchObject({ queued: 0, held: 3, matched: 3 });
+      const runs = await db.owner<{ status: string }[]>`
+        select status from routine_runs where routine_id=${routineId}`;
+      expect(runs.map((r) => r.status)).toEqual(['held', 'held', 'held']);
+    } finally {
+      limits.runsPerHour = saved;
+    }
+  });
+
+  it('pauses a schedule that no longer fits the workspace, as a due tick does', async () => {
+    const s = await setup();
+    const tier = s.key('tier');
+    const { routineId } = await activate(s, {
+      ...WEEKLY(s),
+      manifest: {
+        when: {
+          kind: 'schedule',
+          cron: '0 9 * * 1',
+          object: 'company',
+          filter: { [tier]: { eq: 'gold' } },
+        },
+        uses: { tools: [], model: false },
+      },
+    });
+    const removed = await s.app.request('/v1/schema/changes', {
+      key: s.keys.admin,
+      body: {
+        operations: [{ op: 'delete_field', object: 'company', field: 'tier' }],
+        reason: 'gone',
+      },
+    });
+    expect(removed.status).toBe(200);
+    const ran = await s.app.request(`/v1/routines/${routineId}/run-now`, {
+      key: s.keys.admin,
+      body: {},
+    });
+    expect(ran.status).toBe(202);
+    expect(ran.body).toMatchObject({ queued: 0 });
+    const [routine] = await db.owner<{ status: string; paused_reason: string }[]>`
+      select status,paused_reason from routines where id=${routineId}`;
+    expect(routine).toEqual({ status: 'needs_attention', paused_reason: 'check_failed' });
+  });
+
+  it('refuses run now for a paused routine or one without a schedule, and hides a paused next time', async () => {
+    const s = await setup();
+    const { routineId } = await activate(s, WEEKLY(s));
+    expect(
+      (await s.app.request(`/v1/routines/${routineId}`, { key: s.keys.admin })).body.nextFireAt,
+    ).not.toBeNull();
+    await s.app.request(`/v1/routines/${routineId}/pause`, { key: s.keys.admin, body: {} });
+    const paused = await s.app.request(`/v1/routines/${routineId}`, { key: s.keys.admin });
+    expect(paused.body).toMatchObject({ status: 'paused', nextFireAt: null });
+    const refused = await s.app.request(`/v1/routines/${routineId}/run-now`, {
+      key: s.keys.admin,
+      body: {},
+    });
+    expect(refused.body.error.code).toBe('routine_paused');
+    const record = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    const notSchedule = await s.app.request(`/v1/routines/${record.routineId}/run-now`, {
+      key: s.keys.admin,
+      body: {},
+    });
+    expect(notSchedule.body.error.code).toBe('not_schedule');
+  });
+});

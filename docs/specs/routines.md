@@ -1364,9 +1364,29 @@ they left open:
   test, pause, resume, archive, held runs, runs with their calls, record
   buttons, and the workspace time zone under workspace settings. A
   proposal has a dry run, which shows each run's calls and why one failed,
-  and Approve asks for confirmation first. It does not yet show a diff
-  against the approved version on the review (§5.2), or which tool each
-  call named.
+  and Approve asks for confirmation first. A run's page shows what the
+  code returned and its log, says when a run changed nothing ("Done, no
+  changes", in the run list too), and shows each write as the kind of
+  record and each field by its label with what happened to it ("saved",
+  "waiting for review"), with a notice when a value waits for a person. A
+  test finds its record by searching the routine's object. A manual
+  routine's button shows in the side panel of a record opened from a list,
+  as on the full page. An active schedule has "Run now". It does not yet
+  show a diff against the approved version on the review (§5.2), or which
+  tool each call named.
+- **Schedules in words.** Retainer's facts describe a schedule in words
+  (`describeCron` in `shared`): "every Sunday at 09:00", "every weekday
+  (Monday to Friday) at 08:30". A shape it doesn't know is quoted as
+  written, and so is a step that doesn't divide the hour or the day
+  (`*/45` fires at :00 and :45, not every 45 minutes).
+- **Run now** (`POST /v1/routines/:id/run-now`, admins). An active
+  schedule fires one tick due now, with every rule a due tick has: the
+  fan-out cap, held runs and `oncePerRecord`. It fires in the transaction
+  that holds the routine, so a regular tick skips it meanwhile and a second
+  press fires its own tick after it. The next regular time is unchanged. A paused routine refuses it
+  (`routine_paused`), as does one without a schedule (`not_schedule`).
+- **A paused routine has no next time.** The API answers `nextFireAt:
+  null` while a routine is not active; resuming sets it afresh.
 - **A refused call keeps its position.** Code may catch a refused effect (a
   missing record, an unlisted tool) and go on, so the refusal is recorded as
   a failed call at its position and a retry gets the same error. A 429 or a
