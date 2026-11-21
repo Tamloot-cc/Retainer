@@ -143,7 +143,9 @@ button:not(:disabled) {
 .ui-switch {
   appearance: none;
   flex-shrink: 0;
-  margin: 0;
+  /* 1rem tall, padded to the height of the surrounding line: at the top of a row it sits
+     centred on the label's first line at any text size; in a centred row nothing moves. */
+  margin: calc((1lh - 1rem) / 2) 0;
   border: 1px solid var(--input);
   background-color: var(--card);
   cursor: pointer;

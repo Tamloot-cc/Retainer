@@ -66,19 +66,12 @@ export function Button({
     />
   );
 }
+/** A text-like field. Checkboxes, radios and switches are `Checkbox`, `Radio` and `Switch`. */
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={
-        props.type === 'checkbox'
-          ? props.role === 'switch'
-            ? 'ui-switch'
-            : 'ui-checkbox'
-          : props.type === 'radio'
-            ? 'ui-radio'
-            : 'h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring disabled:opacity-50'
-      }
+      className="h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring disabled:opacity-50"
     />
   );
 }
@@ -142,15 +135,6 @@ export function Label({
           : 'gap-1.5 text-sm font-medium',
       )}
     >
-      {children}
-    </label>
-  );
-}
-/** A checkbox (or radio) beside its label, on one line. */
-export function CheckLabel({ children }: { children: ReactNode }) {
-  return (
-    // biome-ignore lint/a11y/noLabelWithoutControl: the control is passed in as a child.
-    <label className="flex min-w-0 flex-1 items-center gap-2 text-sm [&>span]:truncate">
       {children}
     </label>
   );
@@ -846,6 +830,7 @@ export {
   MonthGrid,
   MoreEntries,
 } from './calendar.js';
+export { Checkbox, Radio, Switch } from './choice.js';
 export { Badge, CategoryTag, type Tone } from './core.js';
 export {
   DataGrid,

@@ -4,9 +4,7 @@ import { Fragment, useState } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import {
   Check,
-  CheckLabel,
   Code,
-  Input,
   Muted,
   Notice,
   Property,
@@ -15,6 +13,7 @@ import {
   Section,
   Sheet,
   Stack,
+  Switch,
   TextButton,
 } from '../../ui/index.js';
 import { CORE_ROLE_TEXT, FieldTypeLabel, OWNERS, OwnerBadge } from './schema-labels.js';
@@ -254,17 +253,14 @@ export function RollUpEventsSwitch({ object, field }: { object: ObjectView; fiel
   return (
     <Stack gap="small">
       {allowed ? (
-        <CheckLabel>
-          <Input
-            type="checkbox"
-            role="switch"
-            aria-label="Roll up events"
-            checked={on}
-            disabled={busy}
-            onChange={(e) => void change(e.target.checked)}
-          />
-          <span>{on ? 'On' : 'Off'}</span>
-        </CheckLabel>
+        <Switch
+          aria-label="Roll up events"
+          checked={on}
+          disabled={busy}
+          onChange={(e) => void change(e.target.checked)}
+          label={on ? 'On' : 'Off'}
+          truncate
+        />
       ) : (
         <Check value={on} />
       )}

@@ -15,10 +15,9 @@ import { fields } from '../../fields/index.js';
 import {
   ApiName,
   Button,
-  CheckLabel,
+  Checkbox,
   Form,
   IconLabel,
-  Input,
   MenuItem,
   MenuLabel,
   MenuList,
@@ -280,10 +279,7 @@ export function ColumnsMenu({
         <MenuLabel>Shown</MenuLabel>
         {label ? (
           <MenuItem>
-            <CheckLabel>
-              <Input type="checkbox" checked disabled />
-              <FieldLabel field={label} />
-            </CheckLabel>
+            <Checkbox checked disabled label={<FieldLabel field={label} />} truncate />
           </MenuItem>
         ) : null}
         {shown.map((f, i) => (
@@ -314,27 +310,23 @@ export function ColumnsMenu({
               </>
             }
           >
-            <CheckLabel>
-              <Input
-                type="checkbox"
-                checked
-                onChange={() => onChange(setColumnVisible(order, f.name, false))}
-              />
-              <FieldLabel field={f} />
-            </CheckLabel>
+            <Checkbox
+              checked
+              onChange={() => onChange(setColumnVisible(order, f.name, false))}
+              label={<FieldLabel field={f} />}
+              truncate
+            />
           </MenuItem>
         ))}
         {hidden.length ? <MenuLabel>Hidden</MenuLabel> : null}
         {hidden.map((f) => (
           <MenuItem key={f.name} muted>
-            <CheckLabel>
-              <Input
-                type="checkbox"
-                checked={false}
-                onChange={() => onChange(setColumnVisible(order, f.name, true))}
-              />
-              <FieldLabel field={f} />
-            </CheckLabel>
+            <Checkbox
+              checked={false}
+              onChange={() => onChange(setColumnVisible(order, f.name, true))}
+              label={<FieldLabel field={f} />}
+              truncate
+            />
           </MenuItem>
         ))}
       </MenuList>

@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { Checkbox } from './choice.js';
 import { cn, isPlainClick, PLACEMENT, ROW_STATE } from './core.js';
 import { ApiName } from './layout.js';
 import { type EditorHandlers, EditorHostContext } from './property.js';
@@ -151,10 +152,8 @@ export function DataGrid({
                 className="sticky left-0 top-0 z-20 h-9 border-b border-border bg-sidebar p-0"
               >
                 <div className="flex h-9 items-center justify-center pointer-coarse:h-11">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     aria-label="Select all rows on this page"
-                    className="ui-checkbox"
                     checked={all}
                     ref={(el) => {
                       if (el) el.indeterminate = some;
@@ -317,10 +316,8 @@ const GridBody = memo(function GridBody({
           {selection ? (
             <td className={`${CELL} sticky left-0 z-[5]`}>
               <div className="flex h-9 items-center justify-center pointer-coarse:h-11">
-                <input
-                  type="checkbox"
+                <Checkbox
                   aria-label={`Select ${r.label ?? 'row'}`}
-                  className="ui-checkbox"
                   checked={selection.selected.has(r.id)}
                   onChange={() => selection.onToggle(r.id)}
                 />

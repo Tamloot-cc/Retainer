@@ -10,10 +10,10 @@ import { objectColor } from '../../ui/colors.js';
 import {
   Badge,
   Button,
+  Checkbox,
   Empty,
   EventLink,
   IdentityTag,
-  Input,
   Muted,
   Notice,
   ObjectIcon,
@@ -410,8 +410,7 @@ export function ReviewPage() {
                       leading={
                         canWrite ? (
                           <ReviewSelect>
-                            <Input
-                              type="checkbox"
+                            <Checkbox
                               aria-label={`Select ${a.recordLabel ?? a.recordId} ${a.field}`}
                               checked={selected.includes(a.id)}
                               onChange={(e) =>
