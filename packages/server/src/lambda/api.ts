@@ -36,10 +36,10 @@ export function createApiHandler(
     accountsSecret: config.RETAINER_AUTH_SECRET,
     rateLimit: { limit: rateLimitPerMinute(config) },
     clientIp: (c) => clientIpOf((c.env as { event?: unknown }).event, config.RETAINER_EDGE_SECRET),
-    // The hosted `model` function holds the key; its origin says it exists.
+    // The API issues routine-only credentials for the hosted model proxy.
     routines: {
       available: routinesAvailable,
-      modelAvailable: !!config.RETAINER_MODEL_ORIGIN,
+      modelAvailable: !!(config.RETAINER_MODEL_ORIGIN && config.RETAINER_ROUTINE_MODEL_PRIVATE_KEY),
       modelOrigin: config.RETAINER_MODEL_ORIGIN,
       modelName: config.RETAINER_ROUTINE_MODEL,
       modelCallsPerDay: config.RETAINER_ROUTINE_MODEL_CALLS_PER_DAY,

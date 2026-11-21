@@ -188,6 +188,9 @@ const configSchema = z
       emptyToUndefined,
       publicOriginSchema.default('https://api.anthropic.com/'),
     ),
+    /** Hosted routine model credentials. The API signs; the proxy and usage route verify. */
+    RETAINER_ROUTINE_MODEL_PRIVATE_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    RETAINER_ROUTINE_MODEL_PUBLIC_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
     /** The one model routine code and the routine builder call (routines spec §4.5). */
     RETAINER_ROUTINE_MODEL: z.preprocess(
       emptyToUndefined,

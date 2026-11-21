@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { importJWK, jwtVerify, SignJWT } from 'jose';
+import { decodeProtectedHeader, importJWK, jwtVerify, SignJWT } from 'jose';
 import { z } from 'zod';
 import type { Caller, RunBinding } from '../caller.js';
 import type { Sql } from '../db/client.js';
@@ -34,6 +34,9 @@ export const isRunToken = (token: string) => token.startsWith(prefix);
  * has its own audience, so the API refuses it and the proxy refuses a run token.
  */
 const modelAudience = 'retainer:extension-model';
+const routineModelAudience = 'retainer:routine-model';
+const modelTokenType = 'retainer-model+jwt';
+const routineModelTokenType = 'retainer-routine-model+jwt';
 /** Where the self-hosted server serves the model proxy, under the API origin (spec 3.6). */
 export const MODEL_PROXY_PATH = '/v1/extensions/runtime/model';
 const modelPrefix = 'rt_model_';
@@ -104,7 +107,7 @@ export async function importRunPublicKey(json: string): Promise<CryptoKey> {
   return key;
 }
 
-/** The coordinator holds a private key; API processes need only the verification key. */
+/** The hosted API can sign routine model tokens with a separate key. */
 export class RunTokens {
   constructor(
     private readonly options: {
@@ -112,6 +115,8 @@ export class RunTokens {
       keyId: string;
       verificationKey: CryptoKey;
       signingKey?: CryptoKey;
+      routineModelSigningKey?: CryptoKey;
+      routineModelVerificationKey?: CryptoKey;
     },
   ) {}
   async issue(sql: Sql, job: ClaimedJob, registrationId: string, scopes: ('read' | 'write')[]) {
@@ -184,7 +189,7 @@ export class RunTokens {
       attempt: job.attempt,
     };
     const token = await new SignJWT({ model: extensionModelClaims.parse(claims) })
-      .setProtectedHeader({ alg: 'EdDSA', typ: 'retainer-model+jwt', kid: this.options.keyId })
+      .setProtectedHeader({ alg: 'EdDSA', typ: modelTokenType, kid: this.options.keyId })
       .setIssuer(this.options.issuer)
       .setAudience(modelAudience)
       .setIssuedAt()
@@ -198,8 +203,9 @@ export class RunTokens {
    * one request: at most five minutes, and never past the run's expiry.
    */
   async issueRoutineModel(claims: RoutineModelClaims, until: Date) {
-    const key = this.options.signingKey;
-    if (!key) throw new Error('run signing key is unavailable');
+    const routineKey = this.options.routineModelSigningKey;
+    const key = routineKey ?? this.options.signingKey;
+    if (!key) throw new Error('routine model signing key is unavailable');
     const expiry = Math.min(
       Math.floor(Date.now() / 1000) + 300,
       Math.floor(until.getTime() / 1000),
@@ -207,9 +213,13 @@ export class RunTokens {
     if (expiry <= Math.floor(Date.now() / 1000))
       throw new AppError(409, 'run_expired', 'the run has expired');
     const token = await new SignJWT({ model: routineModelClaims.parse(claims) })
-      .setProtectedHeader({ alg: 'EdDSA', typ: 'retainer-model+jwt', kid: this.options.keyId })
+      .setProtectedHeader({
+        alg: 'EdDSA',
+        typ: routineKey ? routineModelTokenType : modelTokenType,
+        kid: this.options.keyId,
+      })
       .setIssuer(this.options.issuer)
-      .setAudience(modelAudience)
+      .setAudience(routineKey ? routineModelAudience : modelAudience)
       .setIssuedAt()
       .setExpirationTime(expiry)
       .setJti(randomUUID())
@@ -279,27 +289,33 @@ export class RunTokens {
   async verifyModel(token: string, graceSeconds = 0): Promise<VerifiedModelToken> {
     try {
       if (!isModelToken(token)) throw new Error('wrong credential type');
-      const { payload, protectedHeader } = await jwtVerify(
-        token.slice(modelPrefix.length),
-        this.options.verificationKey,
-        {
-          algorithms: ['EdDSA'],
-          issuer: this.options.issuer,
-          audience: modelAudience,
-          maxTokenAge: '5m',
-          clockTolerance: graceSeconds,
-          requiredClaims: ['iat', 'exp', 'jti'],
-        },
-      );
+      const jwt = token.slice(modelPrefix.length);
+      const usingRoutineKey = decodeProtectedHeader(jwt).typ === routineModelTokenType;
+      const routineKey = this.options.routineModelVerificationKey;
+      const key = usingRoutineKey ? routineKey : this.options.verificationKey;
+      if (!key) throw new Error('routine model verification key is unavailable');
+      const { payload, protectedHeader } = await jwtVerify(jwt, key, {
+        algorithms: ['EdDSA'],
+        issuer: this.options.issuer,
+        audience: usingRoutineKey ? routineModelAudience : modelAudience,
+        maxTokenAge: '5m',
+        clockTolerance: graceSeconds,
+        requiredClaims: ['iat', 'exp', 'jti'],
+      });
       if (
-        protectedHeader.typ !== 'retainer-model+jwt' ||
+        protectedHeader.typ !== (usingRoutineKey ? routineModelTokenType : modelTokenType) ||
         protectedHeader.kid !== this.options.keyId ||
         typeof payload.iat !== 'number' ||
         typeof payload.exp !== 'number' ||
         payload.exp - payload.iat > 300
       )
         throw new Error('invalid model token header or lifetime');
-      return { ...modelClaims.parse(payload.model), expiresAt: payload.exp };
+      const claims = modelClaims.parse(payload.model);
+      // Dedicated credentials only authorize routine calls. The shared run key
+      // still signs routine model tokens on self-hosted installations.
+      if ((usingRoutineKey || routineKey) && usingRoutineKey !== (claims.kind === 'routine'))
+        throw new Error('model claims do not match the signing key');
+      return { ...claims, expiresAt: payload.exp };
     } catch {
       throw new AppError(401, 'unauthorized', 'model credential is invalid or expired');
     }

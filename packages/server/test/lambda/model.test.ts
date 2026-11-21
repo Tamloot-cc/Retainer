@@ -1,12 +1,17 @@
-import { exportJWK } from 'jose';
+import { exportJWK, exportPKCS8, exportSPKI, generateKeyPair } from 'jose';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { loadConfig } from '../../src/config.js';
+import { RUNTIME_ROLE } from '../../src/db/client.js';
+import { extensionServices } from '../../src/extension-control/configuration.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { createApiHandler } from '../../src/lambda/api.js';
 import { createModelApp } from '../../src/lambda/model.js';
 import { MAX_REQUEST_BYTES } from '../../src/model/proxy.js';
 import { reportUsage, USAGE_REPORT_PATH } from '../../src/model/routes.js';
 import type { UsageReport } from '../../src/model/usage.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
+import { bodyOf, context, httpEvent } from '../helpers/lambda.js';
 import {
   claimRun,
   fakeAnthropic,
@@ -29,15 +34,32 @@ let t: TestApp,
   upstream: Upstream,
   env: Record<string, string>,
   token: string,
-  installationId: string;
+  installationId: string,
+  executorTokens: Awaited<ReturnType<typeof testRunTokens>>['tokens'],
+  routineModelPrivateKey: string;
 
 beforeAll(async () => {
   upstream = await fakeAnthropic();
   const { tokens, keys } = await testRunTokens();
+  executorTokens = tokens;
+  const routineKeys = await generateKeyPair('EdDSA', { extractable: true });
+  routineModelPrivateKey = await exportPKCS8(routineKeys.privateKey);
+  // No DATABASE_URL: the function admits model tokens by signature alone.
+  env = {
+    RETAINER_MODEL_API_KEY: 'sk-hosted-key',
+    RETAINER_MODEL_USAGE_SECRET: SECRET,
+    RETAINER_EXTENSION_RUN_PUBLIC_KEY: JSON.stringify(await exportJWK(keys.publicKey)),
+    RETAINER_EXTENSION_RUN_KEY_ID: 'test',
+    RETAINER_EXTENSION_ISSUER: 'https://retainer.test',
+    RETAINER_ROUTINE_MODEL_PUBLIC_KEY: await exportSPKI(routineKeys.publicKey),
+    RETAINER_PUBLIC_ORIGIN: 'http://retainer.test',
+    RETAINER_MODEL_UPSTREAM_ORIGIN: upstream.origin,
+  };
   // The `extensions` function: it holds the database and the usage route.
+  const usage = await extensionServices(loadConfig({ ...env, DATABASE_URL: db.url }));
   t = startTestApp(db, {
     extensionCatalog: catalog,
-    runTokens: tokens,
+    ...(usage.tokens ? { runTokens: usage.tokens } : {}),
     extensionActivation: new Set(catalog.list().map((r) => r.digest)),
     modelUsageSecret: SECRET,
   });
@@ -46,16 +68,6 @@ beforeAll(async () => {
   token = await tokens.issueModel(
     await claimRun(t, catalog, installed.workspace, installed.id, PICK),
   );
-  // No DATABASE_URL: the function admits model tokens by signature alone.
-  env = {
-    RETAINER_MODEL_API_KEY: 'sk-hosted-key',
-    RETAINER_MODEL_USAGE_SECRET: SECRET,
-    RETAINER_EXTENSION_RUN_PUBLIC_KEY: JSON.stringify(await exportJWK(keys.publicKey)),
-    RETAINER_EXTENSION_RUN_KEY_ID: 'test',
-    RETAINER_EXTENSION_ISSUER: 'https://retainer.test',
-    RETAINER_PUBLIC_ORIGIN: 'http://retainer.test',
-    RETAINER_MODEL_UPSTREAM_ORIGIN: upstream.origin,
-  };
 });
 
 const post = (
@@ -101,6 +113,77 @@ describe('the hosted model function', () => {
     const forged = await post(app, message, 'rt_model_forged');
     expect(forged.status).toBe(401);
     expect(forged.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('queues a hosted build and signs its metered model call with only the routine model key', async () => {
+    const origin = 'https://model.lambda-url.test';
+    const config = loadConfig({
+      DATABASE_URL: db.url,
+      RETAINER_EXTENSION_RUN_PUBLIC_KEY: env.RETAINER_EXTENSION_RUN_PUBLIC_KEY,
+      RETAINER_EXTENSION_RUN_KEY_ID: env.RETAINER_EXTENSION_RUN_KEY_ID,
+      RETAINER_EXTENSION_ISSUER: env.RETAINER_EXTENSION_ISSUER,
+      RETAINER_MODEL_ORIGIN: origin,
+      RETAINER_ROUTINE_MODEL_PRIVATE_KEY: routineModelPrivateKey,
+    });
+    const services = await extensionServices(config);
+    if (!services.tokens) throw new Error('API run tokens are unavailable');
+    const api = createApiHandler(
+      config,
+      db.connect({ role: RUNTIME_ROLE }),
+      { runTokens: services.tokens },
+      true,
+    );
+    const { workspace, keys } = await t.setupWorkspace(
+      { name: 'Hosted routine builder' },
+      { agent: { actor: { type: 'agent', id: 'builder-test' }, scopes: ['write'] } },
+    );
+    const request = (path: string, key: string, body: unknown) =>
+      api(
+        httpEvent('POST', path, {
+          headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+        context,
+      );
+    const build = await request('/v1/routines/build', keys.agent, {
+      description: 'Draft a routine',
+    });
+    expect(build.statusCode).toBe(202);
+    const { jobId } = JSON.parse(bodyOf(build)) as { jobId: string };
+    await db.owner`
+      update routine_runs set status='running', fence=1, lease_until=clock_timestamp()+interval '1 minute'
+      where id=${jobId}`;
+    const runToken = await executorTokens.issueRoutine(
+      workspace.id,
+      { runId: jobId, routineId: null, fence: '1', mode: 'build', tools: [] },
+      new Date(Date.now() + 60_000),
+    );
+    const effect = await request('/v1/routines/runtime/effects', runToken, {
+      position: 1,
+      operation: 'ai.generate',
+      args: { instructions: 'Say hi', input: null, output: { type: 'string' } },
+    });
+    expect(effect.statusCode).toBe(200);
+    const result = JSON.parse(bodyOf(effect)) as {
+      state: string;
+      model: { origin: string; token: string };
+    };
+    expect(result).toMatchObject({ state: 'model', model: { origin } });
+    await expect(executorTokens.verifyModel(result.model.token)).rejects.toMatchObject({
+      status: 401,
+    });
+    const app = await createModelApp(env, {
+      record: reportUsage({
+        origin: 'http://retainer.test',
+        secret: SECRET,
+        fetch: t.inProcessFetch as typeof fetch,
+      }),
+    });
+    const response = await post(app, message, result.model.token);
+    expect(response.status).toBe(200);
+    await response.text();
+    const usage = await db.owner`select kind from ai_usage where routine_run_id=${jobId}`;
+    expect(usage).toEqual([{ kind: 'routine' }]);
   });
 
   it('refuses a body over 6 MB with 413', async () => {
