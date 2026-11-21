@@ -175,6 +175,7 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
       grants.set(nangoConnectionId, { tags, scope });
       return Response.json({
         data: {
+          token: 'test-connect-token',
           connect_link: 'https://connect.nango.dev/test',
           expires_at: new Date(Date.now() + 600000).toISOString(),
         },
@@ -302,6 +303,11 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
     body: { shareGmail: true, historyDays: 2 },
   });
   expect(attempt.status, JSON.stringify(attempt.body)).toBe(201);
+  expect(attempt.body).toMatchObject({
+    connectLink: 'https://connect.nango.dev/test',
+    sessionToken: 'test-connect-token',
+    integrationId: 'retainer-gmail',
+  });
   expect(tags).toEqual({
     organization_id: workspace.id,
     end_user_id: createHash('sha256')

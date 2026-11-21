@@ -162,6 +162,7 @@ export async function nangoFailure(
 
 const connectSession = z.object({
   data: z.object({
+    token: z.string().min(1),
     connect_link: z.url().refine((value) => {
       const url = new URL(value);
       return (
@@ -201,7 +202,12 @@ export async function createNangoGmailConnectSession(
   );
   if (!response.ok) await nangoFailure(response, timeout);
   const { data } = await readResponse(response, connectSession, timeout, 64 * 1024);
-  return { connectLink: data.connect_link, expiresAt: data.expires_at };
+  return {
+    connectLink: data.connect_link,
+    sessionToken: data.token,
+    integrationId: config.integrationId,
+    expiresAt: data.expires_at,
+  };
 }
 
 /** Check Google's granted scopes and, at enrollment, the pending attempt's owner tags.

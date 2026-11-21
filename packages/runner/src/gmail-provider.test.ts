@@ -289,11 +289,17 @@ describe('createNangoGmailConnectSession', () => {
   it('restricts the link to the configured integration and tags the pending attempt', async () => {
     const connectLink = 'https://connect.nango.dev/session';
     const expiresAt = '2026-11-20T12:00:00.000Z';
-    const fetch = respond({ data: { connect_link: connectLink, expires_at: expiresAt } }, 201);
+    const sessionToken = 'connect-token';
+    const fetch = respond(
+      { data: { token: sessionToken, connect_link: connectLink, expires_at: expiresAt } },
+      201,
+    );
     await expect(
       createNangoGmailConnectSession(connection, attempt, signal, fetch),
     ).resolves.toEqual({
       connectLink,
+      sessionToken,
+      integrationId: connection.integrationId,
       expiresAt,
     });
     const [url, request] = fetch.mock.calls[0] ?? [];
@@ -313,6 +319,7 @@ describe('createNangoGmailConnectSession', () => {
     fetch.mockResolvedValueOnce(
       Response.json({
         data: {
+          token: sessionToken,
           connect_link: 'https://connect.nango.dev.example.org/session',
           expires_at: expiresAt,
         },
