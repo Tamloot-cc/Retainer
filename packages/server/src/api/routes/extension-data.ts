@@ -1,6 +1,5 @@
 import type { Hono } from 'hono';
 import type { Sql } from '../../db/client.js';
-import { AppError } from '../../errors.js';
 import type { ExtensionCatalog } from '../../extensions/catalog.js';
 import type { AppEnv } from '../../http/response.js';
 import { Sources } from '../../sources/service.js';
@@ -18,11 +17,11 @@ export function extensionDataRoutes(v1: Hono<AppEnv>, sql: Sql, catalog: Extensi
   gmailRuntimeRoutes(v1, sql, catalog);
   sourceRoutes(
     v1,
-    new Sources(sql, (registration, version, digest) => {
-      const release = catalog.get(registration, version);
-      if (release.digest !== digest)
-        throw new AppError(409, 'incompatible_runtime', 'source release changed');
-      return release.manifest;
-    }),
+    // The installation's release, which admission matched to the run's.
+    new Sources(
+      sql,
+      (registrationId, _version, releaseDigest) =>
+        catalog.forRun({ registrationId, releaseDigest }).manifest,
+    ),
   );
 }

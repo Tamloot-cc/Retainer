@@ -18,6 +18,8 @@ export const hash = (value: unknown) =>
 export class ExtensionCatalog {
   readonly runtime: RuntimeCatalog;
   private readonly releases = new Map<string, ReviewedRelease & { digest: string }>();
+  /** The same releases by digest, which identifies a release across registrations. */
+  private readonly digests = new Map<string, ReviewedRelease & { digest: string }>();
   constructor(releases: readonly ReviewedRelease[] = []) {
     const actors = new Map<string, string>();
     const connections = new Map<string, string>();
@@ -52,7 +54,9 @@ export class ExtensionCatalog {
       actors.set(manifest.universalId, release.actorCeiling);
       const key = `${manifest.universalId}:${manifest.version}`;
       if (this.releases.has(key)) throw new Error('duplicate or mutable extension release');
-      this.releases.set(key, structuredClone({ ...release, manifest, digest: hash(manifest) }));
+      const entry = structuredClone({ ...release, manifest, digest: hash(manifest) });
+      this.releases.set(key, entry);
+      this.digests.set(entry.digest, entry);
     }
     this.runtime = Object.freeze({
       releases: Object.freeze(
@@ -82,6 +86,31 @@ export class ExtensionCatalog {
   /** The release if this catalog still holds it, for reads that must survive its removal. */
   find(id: string, version: string) {
     return this.releases.get(`${id}:${version}`);
+  }
+  /** The registration's release with this digest, if this process can run it. */
+  byDigest(registrationId: string, digest: string) {
+    const release = this.digests.get(digest);
+    if (
+      release?.manifest.universalId !== registrationId ||
+      !supportsServer(release.manifest, VERSION)
+    )
+      return undefined;
+    return structuredClone(release);
+  }
+  /**
+   * The release a live run was started on, or `503 release_not_loaded` when this
+   * process lacks it: a deploy has not reached it yet (docs/extensions-execution.md,
+   * "Unavailable releases and server upgrades").
+   */
+  forRun(run: { registrationId: string; releaseDigest: string }) {
+    const release = this.byDigest(run.registrationId, run.releaseDigest);
+    if (!release)
+      throw new AppError(
+        503,
+        'release_not_loaded',
+        "this server does not have the run's extension release yet; retry shortly",
+      );
+    return release;
   }
   get(id: string, version: string) {
     const release = this.releases.get(`${id}:${version}`);

@@ -42,17 +42,12 @@ async function gmailRun(
   const run = caller.run;
   if (run?.installationId !== installationId || !run.connectionId)
     throw forbidden('a live Gmail mailbox run is required');
-  const [installation] = await tx<
-    {
-      version: string;
-      connection_settings: Record<string, unknown>;
-    }[]
-  >`
-    select i.version,c.settings as connection_settings
+  const [installation] = await tx<{ connection_settings: Record<string, unknown> }[]>`
+    select c.settings as connection_settings
     from extension_installations i join extension_connections c on c.installation_id=i.id
     where i.id=${installationId} and c.id=${run.connectionId}`;
   if (!installation) throw forbidden('a live Gmail mailbox run is required');
-  const release = catalog.get(run.registrationId, installation.version);
+  const release = catalog.forRun(run);
   const policy = release.manifest.source;
   const permissions = {
     ingest: policy?.syncFunctionIds ?? [],
@@ -64,7 +59,6 @@ async function gmailRun(
   };
   if (
     run.registrationId !== gmailRegistrationId ||
-    release.digest !== run.releaseDigest ||
     policy?.provider !== 'gmail' ||
     !permissions[purpose].includes(run.functionId) ||
     release.manifest.createPeople !== 'never'

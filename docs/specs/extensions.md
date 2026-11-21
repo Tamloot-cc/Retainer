@@ -1319,7 +1319,9 @@ and model-facing instructions remain deferred.
 Important errors: `unsupported_manifest`, `incompatible_runtime`, `stale_plan`,
 `schema_binding_conflict`, `upgrade_conflict`, `grant_required`,
 `installation_disabled`, `lease_expired`, `source_revision_conflict`,
-`source_suppressed`, `connection_required`, `quota_exceeded`, `cursor_expired`.
+`source_suppressed`, `connection_required`, `quota_exceeded`, `cursor_expired`,
+`release_not_loaded` (503: the answering process does not hold the run's release
+yet; retry).
 Schema errors identify field keys/UUIDs and conflicting properties; never discard
 unmapped values. Runtime errors never include secrets or invisible record data.
 

@@ -2,7 +2,7 @@ import type { Hono } from 'hono';
 import { z } from 'zod';
 import { requireScope } from '../../auth/middleware.js';
 import type { Sql } from '../../db/client.js';
-import { AppError, forbidden, notFound } from '../../errors.js';
+import { AppError, forbidden } from '../../errors.js';
 import type { ExtensionCatalog } from '../../extensions/catalog.js';
 import { idParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
@@ -31,18 +31,10 @@ export function lastContactRoutes(app: Hono<AppEnv>, sql: Sql, catalog: Extensio
         sql,
         caller,
         async (tx, context) => {
-          const [installation] = await tx<
-            { version: string }[]
-          >`select version from extension_installations where id=${id}`;
-          if (!installation) throw notFound('extension installation');
-          const release = catalog.get(run.registrationId, installation.version),
+          const release = catalog.forRun(run),
             policy = release.manifest.lastContact;
           const [job] = await tx`select function_id from extension_jobs where id=${run.jobId}`;
-          if (
-            release.digest !== run.releaseDigest ||
-            !policy ||
-            !policy.functionIds.includes(job?.function_id)
-          )
+          if (!policy || !policy.functionIds.includes(job?.function_id))
             throw forbidden('this function has no last-contact derivation grant');
           const fields = new Map<string, FieldState>();
           for (const binding of policy.fields) {

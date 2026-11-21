@@ -114,6 +114,48 @@ describe('exchange, verify, import (connect spec 5.5)', () => {
   });
 });
 
+describe('an API process a rolling deploy has not reached yet', () => {
+  // It answers `503 release_unavailable` for a run of a release it does not hold.
+  // Every function retries, so a deploy never fails a connection or reports an incident.
+  const BEHIND = ['/runtime/oauth-client', '/runtime/secrets/oauthTokens'];
+  it('connect retries without a token call, then connects once the process holds the release', async () => {
+    for (const path of BEHIND) {
+      const c = h.connection();
+      h.approve(c, 'alice');
+      c.behind.add(path);
+      const r = await connect(c);
+      expect(r).toMatchObject({ status: 'retry', code: 'api_unavailable' });
+      expect(r).not.toHaveProperty('releaseIncomplete');
+      c.behind.clear();
+      expect(await connect(c)).toEqual({ status: 'succeeded' });
+    }
+    expect(tokenCalls()).toBe(2);
+  });
+  it('both disconnect hooks retry and report nothing, then release once it does', async () => {
+    for (const input of [{}, { keep: 'current' as const }])
+      for (const path of BEHIND) {
+        const c = h.connection();
+        await reconnect(c, 'alice');
+        const before = deletes();
+        c.behind.add(path);
+        const r = await hook(c, input);
+        expect(r).toMatchObject({ status: 'retry', code: 'api_unavailable' });
+        expect(r).not.toHaveProperty('releaseIncomplete');
+        expect(deletes()).toBe(before);
+        c.behind.clear();
+        expect(await hook(c, input)).toEqual({ status: 'succeeded' });
+        // The full hook gives up `current`; the keep-current hook keeps it.
+        expect(deletes()).toBe(before + (input.keep ? 0 : 1));
+      }
+  });
+  it('an import run retries rather than failing the connection', async () => {
+    const c = h.connection();
+    await reconnect(c, 'alice');
+    c.behind.add('/runtime/oauth-client');
+    expect(await poll(c)).toMatchObject({ status: 'retry', code: 'api_unavailable' });
+  });
+});
+
 describe('every row of the attempt table (connect spec 5.5)', () => {
   const rows: {
     name: string;

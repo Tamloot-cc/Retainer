@@ -397,6 +397,11 @@ export class RetainerConnection {
   };
   /** Ends the run at the matching token-store write, after committing it or not. */
   crashOn: { match: (store: TokenStore) => boolean; commit: boolean } | null = null;
+  /**
+   * Runtime paths answered `503 release_not_loaded`, as an API process a
+   * rolling deploy has not reached yet answers a run of the new release.
+   */
+  readonly behind = new Set<string>();
   dead = false;
   constructor(
     client: ExtensionOAuthClient | null,
@@ -425,6 +430,7 @@ export class RetainerConnection {
       method = init?.method ?? 'GET',
       body = init?.body ? JSON.parse(String(init.body)) : undefined;
     this.events.push(`retainer:${method} ${path}`);
+    if (this.behind.has(path)) return apiError(503, 'release_not_loaded');
     if (path === '' && method === 'GET')
       return json({
         id: this.installationId,
