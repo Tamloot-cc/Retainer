@@ -105,14 +105,7 @@ function Routine({ routine }: { routine: RoutineDetail }) {
     mutationFn: () => api.runRoutineNow(routine.id),
     onSuccess: async (result) => {
       setConfirmRunNow(false);
-      const runs = (n: number) => (n === 1 ? '1 run' : `${n} runs`);
-      setOutcome(
-        result.held
-          ? `Started ${runs(result.queued)} and held ${runs(result.held)}: it matched more than it may start at once.`
-          : result.queued
-            ? `Started ${runs(result.queued)}. Its regular schedule is unchanged.`
-            : 'Nothing to run: no record matched, or each one was already handled.',
-      );
+      setOutcome(runNowText(result));
       await refresh();
     },
   });
@@ -575,4 +568,17 @@ function Runs({ routineId, runs }: { routineId: string; runs: RoutineRunView[] }
       })}
     </ul>
   );
+}
+
+/**
+ * What Run now did, in a sentence. Why runs were held or nothing started is
+ * the routine's pause reason, which the page shows, so this does not guess.
+ */
+export function runNowText(result: { queued: number; held?: number; matched?: number }) {
+  const runs = (n: number) => (n === 1 ? '1 run' : `${n} runs`);
+  if (result.held)
+    return `Started ${runs(result.queued)} and held ${runs(result.held)}. Retainer paused the routine; the notice above says why.`;
+  if (result.queued) return `Started ${runs(result.queued)}. Its regular schedule is unchanged.`;
+  if (result.matched === 0) return 'Nothing to run: no record matches it now.';
+  return 'Started nothing. Either each matching record was already handled, or Retainer paused the routine and the notice above says why.';
 }

@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, WorkspaceContext } from '../../api/client.js';
 import { router } from '../extensions/test-router.js';
 import { ReportContext } from '../state.js';
-import { RoutinePage } from './detail.js';
+import { RoutinePage, runNowText } from './detail.js';
 import { RoutinesPage } from './list.js';
 import { RoutineButtons } from './record-buttons.js';
 import { RoutineRunPage } from './run.js';
@@ -523,6 +523,17 @@ describe('routine page', () => {
     expect(
       await screen.findByText('Started 1 run. Its regular schedule is unchanged.'),
     ).toBeTruthy();
+  });
+
+  it('says what run now did without guessing why runs were held', () => {
+    expect(runNowText({ queued: 0, held: 1, matched: 1 })).toBe(
+      'Started 0 runs and held 1 run. Retainer paused the routine; the notice above says why.',
+    );
+    expect(runNowText({ queued: 0, held: 0, matched: 2500 })).toMatch(/notice above says why/);
+    expect(runNowText({ queued: 0, matched: 0 })).toBe('Nothing to run: no record matches it now.');
+    expect(runNowText({ queued: 2, matched: 2 })).toBe(
+      'Started 2 runs. Its regular schedule is unchanged.',
+    );
   });
 
   it('offers no run now for a routine without a schedule', async () => {
