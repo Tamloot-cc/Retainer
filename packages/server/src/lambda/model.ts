@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { streamHandle } from 'hono/aws-lambda';
+import { importSPKI } from 'jose';
 import { z } from 'zod';
 import { emptyToUndefined as empty, publicOriginSchema } from '../config.js';
 import { importRunPublicKey, RunTokens } from '../extension-runtime/tokens.js';
@@ -18,6 +19,7 @@ const modelConfigSchema = z.object({
   RETAINER_MODEL_API_KEY: z.string().min(1, 'the model function needs RETAINER_MODEL_API_KEY'),
   RETAINER_MODEL_USAGE_SECRET: z.string().min(32),
   RETAINER_EXTENSION_RUN_PUBLIC_KEY: z.string().min(1),
+  RETAINER_ROUTINE_MODEL_PUBLIC_KEY: z.preprocess(empty, z.string().optional()),
   RETAINER_EXTENSION_RUN_KEY_ID: z.string().default('v1'),
   RETAINER_EXTENSION_ISSUER: z.preprocess(empty, publicOriginSchema.optional()),
   /** Usage reports go to the public API origin, through the edge like any request. */
@@ -49,6 +51,14 @@ export async function createModelApp(
     issuer: config.RETAINER_EXTENSION_ISSUER ?? config.RETAINER_PUBLIC_ORIGIN,
     keyId: config.RETAINER_EXTENSION_RUN_KEY_ID,
     verificationKey: await importRunPublicKey(config.RETAINER_EXTENSION_RUN_PUBLIC_KEY),
+    ...(config.RETAINER_ROUTINE_MODEL_PUBLIC_KEY
+      ? {
+          routineModelVerificationKey: await importSPKI(
+            config.RETAINER_ROUTINE_MODEL_PUBLIC_KEY,
+            'EdDSA',
+          ),
+        }
+      : {}),
   });
   const proxy = createModelProxy({
     tokens,

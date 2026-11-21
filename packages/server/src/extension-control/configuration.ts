@@ -1,5 +1,5 @@
 import { ROUTINE_RUNNER_FUNCTION_ID, ROUTINE_RUNNER_REGISTRATION_ID } from '@retainer/shared';
-import { importJWK } from 'jose';
+import { importJWK, importPKCS8, importSPKI } from 'jose';
 import { z } from 'zod';
 import { type Config, EXECUTOR_ROLE, ownerDatabaseUrl, SECRET_BROKER_ROLE } from '../config.js';
 import { createSql, type Sql } from '../db/client.js';
@@ -69,6 +69,22 @@ export async function extensionServices(
         keyId: config.RETAINER_EXTENSION_RUN_KEY_ID,
         verificationKey,
         ...(signingKey ? { signingKey } : {}),
+        ...(config.RETAINER_ROUTINE_MODEL_PRIVATE_KEY
+          ? {
+              routineModelSigningKey: await importPKCS8(
+                config.RETAINER_ROUTINE_MODEL_PRIVATE_KEY,
+                'EdDSA',
+              ),
+            }
+          : {}),
+        ...(config.RETAINER_ROUTINE_MODEL_PUBLIC_KEY
+          ? {
+              routineModelVerificationKey: await importSPKI(
+                config.RETAINER_ROUTINE_MODEL_PUBLIC_KEY,
+                'EdDSA',
+              ),
+            }
+          : {}),
       });
     }
     let broker: SecretBroker | undefined;
