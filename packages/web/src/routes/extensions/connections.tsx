@@ -542,6 +542,23 @@ function GmailAuthorization({
     const timer = window.setInterval(() => {
       if (document.hasFocus()) checkWhenVisible();
     }, 5000);
+    // Nango leaves the popup blank until a WebSocket acknowledgment arrives.
+    const client = nango.current;
+    const popup = client?.win?.modal;
+    const popupTimeout =
+      popup &&
+      window.setTimeout(() => {
+        if (nango.current !== client) return;
+        try {
+          if (popup.closed || popup.location.href !== 'about:blank') return;
+        } catch {
+          // The provider page is cross-origin once the popup has navigated.
+          return;
+        }
+        client.clear();
+        nango.current = null;
+        setMode('blocked');
+      }, 10000);
     window.addEventListener('focus', checkWhenVisible);
     document.addEventListener('visibilitychange', checkWhenVisible);
     checkWhenVisible();
@@ -549,6 +566,7 @@ function GmailAuthorization({
       stopped = true;
       checkNow.current = null;
       window.clearInterval(timer);
+      window.clearTimeout(popupTimeout);
       window.removeEventListener('focus', checkWhenVisible);
       document.removeEventListener('visibilitychange', checkWhenVisible);
     };

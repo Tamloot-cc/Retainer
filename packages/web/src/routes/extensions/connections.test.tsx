@@ -6,7 +6,7 @@ import type {
 import { RetainerApiError } from '@retainer/sdk';
 import type { Session } from '@retainer/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AccountContext, type AccountState } from '../../accounts/context.js';
@@ -170,6 +170,48 @@ describe('member connection controls', () => {
     expect(await screen.findByText('Gmail authorization complete.')).toBeTruthy();
     await waitFor(() => expect(popup.close).toHaveBeenCalledOnce());
   });
+
+  it.each([false, true])(
+    'leaves a navigated popup open and falls back for a blank popup (navigated: %s)',
+    async (navigated) => {
+      vi.spyOn(api, 'extensionConnections').mockResolvedValue({ connections: [] });
+      vi.spyOn(api, 'authorizeGmail').mockResolvedValue(gmailSession);
+      vi.spyOn(api, 'finishGmailAuthorization').mockResolvedValue({ pending: true });
+      const popup = { location: { href: 'about:blank' }, closed: false, close: vi.fn() };
+      vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+      vi.stubGlobal(
+        'WebSocket',
+        class {
+          close() {}
+        },
+      );
+      const { user } = mountGmail();
+      await user.click(await screen.findByRole('checkbox', { name: /I agree to share/ }));
+      await screen.findByRole('button', { name: 'Connect Gmail' });
+      try {
+        vi.useFakeTimers();
+        fireEvent.submit(screen.getByRole('form', { name: 'Connect Gmail' }));
+        if (navigated) {
+          Object.defineProperty(popup.location, 'href', {
+            get: () => {
+              throw new DOMException('Cross-origin', 'SecurityError');
+            },
+          });
+        }
+        await act(async () => vi.advanceTimersByTimeAsync(10500));
+        const link = screen.queryByRole('link', { name: 'Open Gmail authorization' });
+        if (navigated) {
+          expect(link).toBeNull();
+          expect(popup.close).not.toHaveBeenCalled();
+        } else {
+          expect(link?.getAttribute('href')).toBe(gmailSession.connectLink);
+          expect(popup.close).toHaveBeenCalledOnce();
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it('offers a hosted link when popups are blocked and finishes when the member returns', async () => {
     vi.spyOn(api, 'extensionConnections').mockResolvedValue({ connections: [] });
