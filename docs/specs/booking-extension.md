@@ -25,15 +25,20 @@ flowchart LR
 ```
 
 The booking database is authoritative for times, assignments and status.
-Staff and guests use the same reservation commands. Retainer's generic
-Calendar view can display the summary. Dragging a summary in that view
-changes a CRM field and has no effect on the reservation. Surface a staff
-link to open the live booking, and label its CRM fields as a summary.
+Staff and guests use the same reservation commands. In Retainer the summary
+is read-only, apart from its Person link. Retainer's views can display it,
+but a person cannot edit or drag its times there. A staff link opens the live
+booking for changes. This keeps a CRM edit from silently diverging from the
+reservation (section 5).
 
 This spec uses Booking-owned resource schedules. A shared Calendar primitive
-can be introduced independently. The same applies to standalone extension
-commands and events. V1 uses the existing Retainer extension and Routine
-contracts. [Extension tools](extensions-tools.md), [Routines](routines.md)
+can be introduced independently. V1 talks to Retainer only through the
+standalone REST grant, using `@retainer/sdk`, and through `record` triggers
+on the summary. Standalone releases cannot publish
+[extension tools](extensions-tools.md) today, so agents and
+[Routines](routines.md) cannot call Booking until the V2 bridge. Booking
+depends only on `@retainer/sdk` and `@retainer/shared` and never imports
+server code. Open decision: Booking's code location and license.
 
 ## 2. V1 experience
 
@@ -43,7 +48,7 @@ contracts. [Extension tools](extensions-tools.md), [Routines](routines.md)
 | Staff calendar | Day and week views with resource and booking-type filters. Staff can see hours and blocks, find a slot, book for a guest, reschedule or cancel, and view the booking's history. |
 | Public booking page | One shareable URL per published booking type, such as `/book/acme/intro-call`. Show the duration, time zone and available starts. Collect name and email. Confirm immediately if all required resources are still available. Offer refreshed alternatives on conflict. |
 | Guest confirmation and management | Show confirmation after commit and email the time and a private link. From that link a guest can view, move or cancel their booking within policy. Staff can manage it separately. Guests can book without Retainer accounts. |
-| Retainer contact record | Show the booking summary and a link to open it in Booking. Staff can link a guest to a Person. Unmatched bookings remain visible to staff in Booking and can be linked later. |
+| Retainer contact record | Show the booking summary and a link to open it in Booking. A Retainer user links the summary to a Person, or corrects or clears that link, on the summary itself. Unlinked bookings stay visible in both apps. |
 | Delivery and sync status | Staff can see confirmation emails and CRM writes that need attention and retry a failed delivery. |
 
 Each workspace can publish several links. Booking types can share resources.
@@ -58,15 +63,23 @@ second public page for the same chair cannot sell an overlapping slot.
 | Booking workspace | Stable internal ID, public slug, IANA time zone, staff membership, and one binding to an approved Retainer workspace and installation. |
 | Resource | A host, room, or asset, with a stable ID and independent occupancy. A host may have a staff account. A physical resource can be booked without a host. |
 | Resource schedule | Weekly working windows, dated replacements or closures, and manual blocks. V1 uses the workspace time zone for all resource schedules. |
-| Booking type | Stable ID and public slug, title, fixed duration, slot interval, one required resource and an optional second. Each requirement names a resource or an eligible pool. A type also sets buffers, minimum notice, booking horizon and guest change cutoff. |
-| Booking | Stable ID, monotonic version, confirmed or cancelled state, guest contact details, optional Retainer Person ID, scheduled interval, committed assignments, and policy snapshot. Audit entries record who changed what and when. |
-| Resource claim | The occupied interval for one resource, including its buffers. Enforce exclusivity across all booking types in the workspace. |
+| Booking type | Stable ID and public slug, title, fixed duration, slot interval, and a list of requirements. Each requirement has a stable role ID and names a resource or an eligible pool. V1 allows one or two. A type also sets buffers, minimum notice, booking horizon and guest change cutoff. |
+| Booking | Stable ID, monotonic version, confirmed or cancelled state, guest contact details, scheduled interval, its allocation, and policy snapshot. |
+| Allocation | Stable ID and the claims that hold capacity for one scheduled interval. In V1 each booking has exactly one allocation, released on cancellation. |
+| Resource claim | Belongs to an allocation. Records the role ID it fills, the resource, and the occupied interval including buffers. Exclusive across all booking types in the workspace. |
+| Booking event | One row per mutation, written in its transaction: event ID, booking ID, version, kind (`booked`, `moved`, `cancelled`), actor (`staff`, `guest` or `system`, with an ID) and reason. Staff history and the outbox read it. |
+
+The allocation keeps capacity separate from the guest's booking. A V2 group
+session shares one allocation across many bookings, and a V2 hold owns an
+allocation until checkout converts it, without releasing its claims. Role IDs
+keep each assignment tied to its requirement when V2 adds larger role
+combinations or per-segment claims.
 
 - A dated replacement takes precedence over weekly hours. A closure or
   manual block removes capacity. A candidate fits only when each required
   resource is working and free for its own occupied interval. When several
   assignments fit, prefer the configured resource order and use a stable
-  tie-breaker. The two requirements must resolve to distinct resources.
+  tie-breaker. The requirements must resolve to distinct resources.
 - Store instants in UTC. Generate slots in the workspace zone and show the
   displayed time zone on every guest screen and email. V1 skips ambiguous
   or nonexistent local start times at daylight-saving transitions.
@@ -101,14 +114,19 @@ with authorization and response fields appropriate to each caller.
 | `cancelBooking` | Accept a booking ID, expected version and request key. Release its claims and write the cancellation once. A retry with the same key returns the prior result. |
 | `getBooking` | Return the live booking. Guest access is scoped to one booking. Staff access is scoped to their Booking workspace. |
 
-Booking and scheduling configuration changes must use a common locking or
-version-check protocol so a selection cannot commit under stale rules.
-Acquire resource locks in a stable order when several are needed. Enforce
-exclusive time claims in Postgres with half-open ranges and an overlap
-constraint keyed by workspace and resource. Remove cancelled claims from
-the active set. Move operations replace claims inside the transaction.
-The constraint applies even when overlapping candidates have different
-start times.
+Booking mutations and configuration edits share one lock order:
+
+1. Guard the booking type and its eligibility configuration.
+2. Lock the selected resources in ID order, including the old ones on a move.
+3. Recheck hours, blocks and claims under those locks. If the selection no
+   longer fits, retry selection in a fresh transaction.
+
+Schedule and block edits take the same resource locks. Type and eligibility
+edits take the same configuration lock. Postgres enforces exclusive time
+claims with half-open ranges and an overlap constraint keyed by workspace
+and resource. That constraint is the final guard, including for overlapping
+candidates with different start times. Cancelled claims leave the active
+set, and a move replaces claims inside its transaction.
 
 Scope request keys to workspace, authorized caller or public session, and
 operation. Store the request digest and final result with the transaction.
@@ -117,14 +135,24 @@ the same key receives the durable result. Stale edit versions return the
 current authorized state for refresh rather than overwriting someone else's
 change.
 
-Commit a lifecycle event and outbox work with each successful mutation.
-A confirmation email or CRM outage can delay those effects while Booking
-continues to treat the reservation as confirmed. Workers retry and
-reconcile using stable operation IDs. Deliver CRM updates in version order
-per booking, and skip older summaries when a newer version supersedes
-them. Send notifications for the current version and handle ambiguous
-provider outcomes idempotently where the provider supports it. Surface
-delivery failures to staff.
+Each successful mutation writes its booking event and outbox work in the
+same transaction. A confirmation email or CRM outage can delay those
+effects while Booking continues to treat the reservation as confirmed.
+
+- **Guest notices.** Key each notice by event ID and notice type. A move
+  replaces a pending notice about the old time. A cancellation replaces any
+  pending confirmation or move notice. Nothing else cancels guest mail.
+  Handle ambiguous provider outcomes idempotently where the provider
+  supports it.
+- **CRM summary.** Keep at most one CRM job per booking. It reads the
+  booking's current state when it runs, so queued changes coalesce. The
+  first write creates the summary with an `Idempotency-Key` derived from the
+  booking ID, and the unique `bookingId` field refuses a second record. Later
+  writes read the summary, then upsert by `bookingId` with
+  `expectedUpdatedAt` from that read. Retainer checks it under the record
+  lock, so a delayed older request is refused with `412 stale_write`. On a
+  `412` the job reads again and resends.
+- Surface delivery failures to staff.
 
 ## 5. V1 access, installation and CRM
 
@@ -133,11 +161,16 @@ delivery failures to staff.
   connection. Schedulers manage bookings. The Retainer installation token
   is a server credential, and Booking staff authority comes from app
   membership. Bootstrap requires a signed-in Booking owner to complete
-  Retainer's existing workspace-admin consent. Bind the returned workspace
-  and installation to the initiating Booking workspace using OAuth state
-  and the authenticated connection. Reconnect may replace credentials for
-  the established binding. Connecting a different Retainer workspace
-  requires a new Booking workspace or explicit migration.
+  Retainer's existing workspace-admin consent, using OAuth state and PKCE.
+- **Binding.** A binding is unique per Retainer origin, workspace and
+  installation. Retainer revokes the previous credential when an admin
+  consents again, before Booking sees the callback. So a repeat consent for
+  an installation that is already bound stores the new credential on the
+  existing binding, and the owner who started it is told which Booking
+  workspace holds that connection. In key mode, Booking verifies the
+  workspace and installation through `GET /v1/me` before storing a key.
+  Connecting a different Retainer workspace requires a new Booking
+  workspace.
 - **Guest access.** Public routes expose published settings and available
   times. Verify a staff session or a booking-scoped capability on every
   management request. Guest links use high-entropy, revocable tokens, stored
@@ -146,26 +179,50 @@ delivery failures to staff.
   and CRM fields. Rate-limit public searches, booking submissions and link
   redemption. Guests can view their own booking and submit changes through
   that capability.
-- **CRM summary.** Use the schema engine and reviewed installation to
-  contribute a Booking object or map to a compatible Appointment object.
-  Upsert the summary by a unique booking ID so replay cannot create a
-  second CRM record. Include times, lifecycle status, type, approved labels,
-  an optional Person relation, and a staff manage link
-  that requires sign-in. Use usual field assertions and the installation's
-  actor for CRM writes. Staff select an existing Person only when authorized
-  to use the CRM connection. V1 leaves public bookings unmatched until
-  staff confirm a link. Guest email entry alone cannot link a booking to
-  someone else's CRM record.
-- **Visibility and lifecycle.** Project only fields suitable for the
-  workspace-wide audience of the reviewed grant. Keep private guest data
-  in Booking and give staff export and erasure controls there. Staff
-  deletion workflows must coordinate removal or anonymization of linked
-  summaries and queued copies. On credential revocation, halt CRM work,
-  flag the disconnect, and keep existing bookings manageable in Booking.
-  The Booking owner can pause public links separately. Resume projection
-  only after a verified reconnection to the same workspace.
-- **Routines.** V1 Routines can create prep or follow-up tasks from projected
-  record changes. Required confirmations and transactional notices run from
+- **CRM summary.** Booking's release contributes one Booking object through
+  the schema engine, with permanent universal IDs for the object and its
+  fields. It does not map onto a workspace's own objects. Writes use the
+  installation's `integration` actor and ordinary field assertions.
+
+  | Field | Type | Written by | Note |
+  | --- | --- | --- | --- |
+  | `bookingId` | text, unique | Booking | Create and upsert key |
+  | `bookingTypeId` | text | Booking | Stable type ID |
+  | `title` | text | Booking | Type title and guest name |
+  | `guestEmail` | text | Booking | Lets a person find the right Person |
+  | `startsAt` | date_time | Booking | |
+  | `endsAt` | date_time | Booking | |
+  | `status` | text | Booking | `confirmed` or `cancelled` in V1 |
+  | `person` | relation → person | People | Optional |
+  | `manageUrl` | links | Booking | Requires staff sign-in |
+
+  `status` is text with documented values, not a select, because select
+  options on a contributed field are structural and hard to extend later.
+  Attendance and resource labels wait for the features that need them.
+- **Installation-owned fields (platform change).** A contributed field can
+  declare that only its installation writes it. The API refuses other
+  writers, and the field is presented read-only, which already turns off
+  editing and calendar drag in the web app. Without this, one person's edit
+  outranks every later Booking write (write rule 2) and Routines act on the
+  wrong time. All Booking fields above are installation-owned except
+  `person`. This amends `ARCHITECTURE.md` and `extensions.md` when built.
+- **Person link.** Booking never writes `person` and stores no Person ID.
+  A Retainer user links, corrects or clears it on the summary. Booking does
+  not link by email, because a guest can type anyone's address.
+- **Visibility and lifecycle.** The summary holds only the fields above.
+  Other guest details stay in Booking. Deleting a booking queues a final
+  outbox job that holds only the booking ID. It runs after any CRM write
+  still in flight, stays pending while disconnected, and soft-deletes the
+  summary. Hard erasure in Retainer is an admin running `forget`. On
+  credential revocation, halt CRM work, flag the disconnect, and keep
+  existing bookings manageable in Booking. The Booking owner can pause
+  public links separately. Resume projection only after a verified
+  reconnection to the same binding.
+- **Routines.** V1 Routines can create prep or follow-up tasks from summary
+  changes. They see the summary's current state and can miss steps in
+  between, such as a booking confirmed and cancelled during a CRM outage. A
+  prep Routine should check `status = confirmed` and handle a Person link
+  added later. Required confirmations and transactional notices run from
   the Booking outbox. Booking correctness and guest confirmation are
   independent of Routine timing.
 
@@ -178,21 +235,22 @@ in Retainer's base Compose deployment.
 
 ## 6. V2 additions
 
-V2 features build on the booking IDs, resource scopes and domain commands
-from V1. The first additions can ship independently. Add the checkout flow
-only after the hold and expiry behavior has been verified.
+V2 features build on the booking IDs, allocations, requirement roles, the
+booking event log and domain commands from V1. The first additions can ship
+independently. Add the checkout flow only after the hold and expiry behavior
+has been verified.
 
 | Area | Extensions to V1 |
 | --- | --- |
-| Holds and approval | Add a short, bounded hold with expiry and one-time conversion to a booking. Apply the same resource locks to holds and bookings. Expire conflicting holds under those locks before admission. Add staff approval with an explicit capacity policy for pending requests. |
+| Holds and approval | Add a short, bounded hold with expiry. A hold owns an allocation and converts it to a booking once, without releasing its claims. Holds take the same resource locks as bookings. Expire conflicting holds under those locks before admission. Add staff approval with an explicit capacity policy for pending requests. |
 | Payments | Accept deposits, full payment, or package entitlements during a hold. Verify provider callbacks, deduplicate effects, and reconcile late payments, cancellations and refunds. A late callback cannot reclaim an expired slot. |
 | Availability and assignment | Add resource-specific time zones, fair or weighted host routing, larger role combinations, and multi-day bookings. An external calendar connector can supply busy-only intervals with freshness. Treat a slot as unknown when a required source is stale. Suppress unknown slots on public pages and show the cause to staff. |
 | Calendar sync and shared Calendar | Add Google or Outlook invite delivery and reconciliation, with a policy for external edits. When a shared Calendar contract exists, publish Booking entries and consume authorized availability from other sources. Keep the final capacity check in Booking. |
-| Complex bookings | Add group sessions with concurrent seat limits, recurring series with explicit partial or all-or-none booking, and multi-service visits with resource claims per segment. |
+| Complex bookings | Add group sessions, where many bookings share one allocation with a seat limit counted inside the session. Add recurring series with explicit partial or all-or-none booking, and multi-service visits with claims per segment, each tied to its role. |
 | Waitlists and disruptions | Match people by preferences, expiry and priority. Start with a staff shortlist, then add expiring offers and automatic backfill. Claim a freed slot through the regular booking command. |
-| Guest and staff surfaces | Add an optional workspace directory, embeds, branding, locale and custom domains. Add configurable intake, guest verification and matching, branch roles, check-in or pickup, and utilization reporting. |
-| Communications | Add durable appointment-relative reminders, two-way confirmation and more messaging channels. Rescheduling and cancellation invalidate obsolete reminders. |
-| Agent and extension interoperability | Expose scoped typed commands and lifecycle events with the appropriate authorization and caller attribution. A reusable bridge for standalone extension tools would let a Retainer agent or Routine call these commands. Direct event subscriptions can follow when consumers need better guarantees than CRM projection provides. Payment, calendar and door-access partners can use Booking's API and signed webhooks. |
+| Guest and staff surfaces | Add an optional workspace directory, embeds, branding, locale and custom domains. Add configurable intake, guest verification and matching, attendance, branch roles, check-in or pickup, and utilization reporting. |
+| Communications | Add durable appointment-relative reminders, two-way confirmation and more messaging channels. Moves and cancellations invalidate obsolete reminders through the same event-keyed notices. |
+| Agent and extension interoperability | Expose scoped typed commands and lifecycle events from the booking event log, with the appropriate authorization and caller attribution. A reusable bridge for standalone extension tools would let a Retainer agent or Routine call these commands. Direct event subscriptions can follow when consumers need every transition rather than the summary's current state. Payment, calendar and door-access partners can use Booking's API and signed webhooks. |
 
 ## 7. Acceptance criteria
 
@@ -215,8 +273,11 @@ staff, guest and CRM paths end to end.
   capability cannot read or change that booking. Public responses contain
   no private schedule details or Retainer credentials.
 - A CRM outage after booking preserves the reservation. Recovery writes
-  one current summary with the correct Person link if one exists.
-  Revoking the grant stops CRM effects. Staff can still manage the booking.
+  one current summary. An older CRM write delayed past a newer one is
+  refused. A Person link set in Retainer survives later Booking writes.
+  A person cannot edit or drag Booking-owned fields. Deleting a booking
+  with a CRM write in flight leaves the summary deleted. Revoking the
+  grant stops CRM effects, and staff can still manage the booking.
 - V2 additions extend these tests with hold expiration and late checkout,
   duplicate provider callbacks, concurrent last-seat claims, external
   calendar staleness, and reminder cancellation or rescheduling.
