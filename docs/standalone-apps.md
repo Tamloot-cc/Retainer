@@ -65,9 +65,14 @@ not fabricate that lease or grant the hosted queue/KV/secret broker APIs.
 To let routines call the app, include hosted `tool` functions in the same
 release ([extensions.md](specs/extensions.md) §8). Each tool calls the app's own
 API with a shared key. The app generates that key during its connection flow
-and writes it to the installation's generated secret setting with its own
-credential, so the admin does not copy it anywhere. The app records the tool
-call ID as its idempotency key and the calling routine or agent as the actor.
+and writes it, with its own API address, to the installation's generated secret
+setting using its own credential, so the admin does not copy anything. Tools
+stay unavailable until that secret exists and the credential is live. The app
+records the tool call ID as its idempotency key and as the actor; Retainer's run
+log names the routine behind it. When a tool call leads to a later write, send
+that call ID as `Retainer-Caused-By`, so the write cannot trigger the routine
+that called the tool ([extensions.md](specs/extensions.md) §9.4). On Compose, a
+private app address must be listed in `RETAINER_EXECUTION_API_ORIGINS`.
 
 Hosted infrastructure and live provider acceptance are separate launch steps;
 local OAuth and fixture tests do not establish deployment or provider access.

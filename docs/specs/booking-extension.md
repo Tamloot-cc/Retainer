@@ -69,10 +69,10 @@ second public page for the same chair cannot sell an overlapping slot.
 | Resource | A host, room, or asset, with a stable ID and independent occupancy. A host may have a staff account. A physical resource can be booked without a host. |
 | Resource schedule | Weekly working windows, dated replacements or closures, and manual blocks. V1 uses the workspace time zone for all resource schedules. |
 | Booking type | Stable ID and public slug, title, fixed duration, slot interval, and a list of requirements. Each requirement has a stable role ID and names a resource or an eligible pool. V1 allows one or two. A type also sets buffers, minimum notice, booking horizon and guest change cutoff. |
-| Booking | Stable ID, monotonic version, confirmed or cancelled state, guest contact details, scheduled interval, its allocation, and policy snapshot. |
-| Allocation | Stable ID and the claims that hold capacity for one scheduled interval. In V1 each booking has exactly one allocation, released on cancellation. |
+| Booking | Stable ID, monotonic version, confirmed, cancelled or deleted state, guest contact details, scheduled interval, its allocation, and policy snapshot. |
+| Allocation | Stable ID and the claims that hold capacity for one scheduled interval. Only the allocation's owner releases or replaces its claims. In V1 the owner is always its booking, and each booking has exactly one allocation. |
 | Resource claim | Belongs to an allocation. Records the role ID it fills, the resource, and the occupied interval including buffers. Exclusive across all booking types in the workspace. |
-| Booking event | One row per mutation, written in its transaction: event ID, booking ID, version, kind (`booked`, `moved`, `cancelled`), actor (`staff`, `guest`, `retainer` or `system`, with an ID) and reason. Staff history and the outbox read it. |
+| Booking event | One row per mutation, written in its transaction: event ID, booking ID, version, time, kind (`booked`, `moved`, `cancelled`, `deleted`), actor (`staff`, `guest`, `retainer` or `system`, with an ID), reason, and the interval and resource IDs after the change. A `retainer` actor's ID is the tool call ID. A `deleted` event holds no contact details. Staff history and the outbox read it, and the previous values come from the event before. |
 
 The allocation keeps capacity separate from the guest's booking. A V2 group
 session shares one allocation across many bookings, and a V2 hold owns an
@@ -118,24 +118,32 @@ with authorization and response fields appropriate to each caller.
 | `moveBooking` | Accept a booking ID, expected version, new start and request key. Replace old claims and advance the version in one transaction. On conflict, retain the original booking. |
 | `cancelBooking` | Accept a booking ID, expected version and request key. Release its claims and write the cancellation once. A retry with the same key returns the prior result. |
 | `getBooking` | Return the live booking. Guest access is scoped to one booking. Staff access is scoped to their Booking workspace. |
+| `deleteBooking` | Staff only. Accept a booking ID, expected version and request key. Release its claims, cancel pending guest notices, erase guest details and write a `deleted` event. |
 
-Retainer callers reach the same operations through four tools in Booking's
-release. Each is a hosted function that calls Booking's API with the
-installation's shared tool key.
+Retainer callers reach the same operations through five tools in Booking's
+release. Each is a hosted function that calls Booking's API with the address
+and key in the installation's generated secret. The `booking_` prefix keeps the
+names unique in a workspace, where two tools with one name are both
+unavailable.
 
 | Tool | Effect | Calls |
 | --- | --- | --- |
-| `find_slots` | `read` | `findSlots` |
-| `book` | `send` | `book` |
-| `move_booking` | `send` | `moveBooking` |
-| `cancel_booking` | `send` | `cancelBooking` |
+| `booking_find_slots` | `read` | `findSlots` |
+| `booking_get` | `read` | `getBooking` |
+| `booking_create` | `send` | `book` |
+| `booking_move` | `send` | `moveBooking` |
+| `booking_cancel` | `send` | `cancelBooking` |
 
 The three changing tools are `send` because they act outside Retainer: they
 change Booking and email the guest. The tool call ID becomes the request key,
-so a retried call returns the first result. Booking records the calling
-Routine or agent as a `retainer` actor. Tool calls follow the guest policy
-(notice, horizon and change cutoff), because no staff member is present to
-give an audit reason.
+so a retried call returns the first result. It is also the ID of the
+`retainer` actor Booking records; Retainer's run log names the Routine behind
+it. A Routine reads the live booking and its version with `booking_get`, then
+passes that version to `booking_move` or `booking_cancel`. Change results
+return the new version, and a stale version returns the current booking. Tool
+calls follow the guest policy (notice, horizon and change cutoff), because no
+staff member is present to give an audit reason. While the binding is
+disconnected, Booking refuses tool calls with `booking_not_connected`.
 
 Booking mutations and configuration edits share one lock order:
 
@@ -164,17 +172,29 @@ effects while Booking continues to treat the reservation as confirmed.
 
 - **Guest notices.** Key each notice by event ID and notice type. A move
   replaces a pending notice about the old time. A cancellation replaces any
-  pending confirmation or move notice. Nothing else cancels guest mail.
+  pending confirmation or move notice. A deletion cancels every pending
+  notice. Nothing else cancels guest mail.
   Handle ambiguous provider outcomes idempotently where the provider
   supports it.
-- **CRM summary.** Keep at most one CRM job per booking. It reads the
-  booking's current state when it runs, so queued changes coalesce. The
-  first write creates the summary with an `Idempotency-Key` derived from the
-  booking ID, and the unique `bookingId` field refuses a second record. Later
-  writes read the summary, then upsert by `bookingId` with
-  `expectedUpdatedAt` from that read. Retainer checks it under the record
-  lock, so a delayed older request is refused with `412 stale_write`. On a
-  `412` the job reads again and resends.
+- **CRM summary.** Keep at most one CRM job per booking. Each run writes
+  the booking's current state, so queued changes coalesce:
+  1. Read the summary's `updatedAt` from Retainer first, then the booking's
+     current snapshot. Reading in this order keeps an older snapshot from
+     landing after a newer one.
+  2. If no summary exists, create it. The create is create-only, and the
+     unique `bookingId` refuses a second record. After a refused or
+     unanswered create, look the summary up by `bookingId` and continue as
+     an update.
+  3. Otherwise upsert by `bookingId` with `expectedUpdatedAt` from step 1.
+     Retainer checks it under the record lock, so a delayed older request
+     is refused with `412 stale_write`. On a `412`, repeat both reads.
+  4. Send the tool call ID behind each event the write covers as
+     `Retainer-Caused-By`, so a Routine cannot trigger itself through
+     Booking.
+  5. Mark outbox items done only up to the booking version actually
+     written.
+
+  A `deleted` event soft-deletes the summary through the same job.
 - Surface delivery failures to staff.
 
 ## 5. V1 access, installation and CRM
@@ -189,16 +209,23 @@ effects while Booking continues to treat the reservation as confirmed.
   installation. Retainer revokes the previous credential when an admin
   consents again, before Booking sees the callback. So a repeat consent for
   an installation that is already bound stores the new credential on the
-  existing binding, and the owner who started it is told which Booking
-  workspace holds that connection. In key mode, Booking verifies the
+  existing binding. The owner who started it is told only that the
+  installation is connected to another Booking workspace, without naming
+  it. A lost callback leaves the binding disconnected, and repeating
+  consent from the bound Booking workspace restores it. In key mode, Booking verifies the
   workspace and installation through `GET /v1/me` before storing a key.
   Connecting a different Retainer workspace requires a new Booking
   workspace.
 - **Tool key.** When the connection completes, Booking generates a random
-  tool key, keeps only its hash, and writes the key to the installation's
-  generated secret setting with its new credential. The tool functions
-  send it with each call. A reconnect replaces it. The admin never sees or
-  copies it.
+  tool key and saves its hash as pending. It then writes its API address and
+  the key, as one value, to the installation's generated secret setting
+  with its new credential. The tool functions send the key with each call.
+  Booking runs one rotation at a time. After a failed or unanswered write,
+  it rotates again with a fresh key, using the revision Retainer's `409`
+  reports. A reconnect also rotates, with no grace period for the old key,
+  so tool calls fail briefly. The tools are unavailable until the secret
+  exists and the credential is live. The admin never sees or copies
+  anything.
 - **Guest access.** Public routes expose published settings and available
   times. Verify a staff session or a booking-scoped capability on every
   management request. Guest links use high-entropy, revocable tokens, stored
@@ -233,15 +260,21 @@ effects while Booking continues to treat the reservation as confirmed.
   editing and calendar drag in the web app. Without this, one person's edit
   outranks every later Booking write (write rule 2) and Routines act on the
   wrong time. All Booking fields above are installation-owned except
-  `person`. This amends `ARCHITECTURE.md` and `extensions.md` when built.
+  `person`. Only the owning installation may merge or delete a record whose
+  unique field is installation-owned. A merge could otherwise make two
+  bookings resolve to one summary, and a person's delete would strand the
+  projection. Admin `forget` still works. This amends `ARCHITECTURE.md` and
+  `extensions.md` when built.
 - **Person link.** Booking never writes `person` and stores no Person ID.
   A Retainer user links, corrects or clears it on the summary. Booking does
-  not link by email, because a guest can type anyone's address.
+  not link by email, because a guest can type anyone's address. This
+  includes bookings a Routine makes. Linking those automatically is a later,
+  Retainer-side design (section 6).
 - **Visibility and lifecycle.** The summary holds only the fields above.
-  Other guest details stay in Booking. Deleting a booking queues a final
-  outbox job that holds only the booking ID. It runs after any CRM write
-  still in flight, stays pending while disconnected, and soft-deletes the
-  summary. Hard erasure in Retainer is an admin running `forget`. On
+  Other guest details stay in Booking. Staff delete a booking with
+  `deleteBooking`. Its `deleted` event soft-deletes the summary through the
+  CRM job, after any write still in flight, and stays pending while
+  disconnected. Hard erasure in Retainer is an admin running `forget`. On
   credential revocation, halt CRM work, flag the disconnect, and keep
   existing bookings manageable in Booking. The Booking owner can pause
   public links separately. Resume projection only after a verified
@@ -254,11 +287,26 @@ effects while Booking continues to treat the reservation as confirmed.
   the Booking outbox. Booking correctness and guest confirmation are
   independent of Routine timing.
 
+Booking depends on these platform changes, none of them built yet:
+
+1. Standalone releases with hosted functions, which follow the hosted
+   runtime rules ([extensions.md](extensions.md) §8).
+2. A standalone credential that writes its own installation's generated
+   secrets, with the current revision on `409` (§8).
+3. `Retainer-Caused-By` naming tool calls of the same installation (§9.4).
+4. Installation-owned fields, with owner-only merge and delete for records
+   whose unique field is one of them.
+
+The hosted server must also accept the `tool` kind before Booking's bundle
+enters the catalog ([extension tools](extensions-tools.md) §7).
+
 Ship the pilot with a Booking service, its Postgres store, a worker, email
 delivery and a registered standalone installation. Keep database migrations,
 backups and recovery under Booking's operational ownership. A self-hosted
 Retainer connects a separately running Booking app through the applicable
-standalone credential path. The pilot does not require a Booking container
+standalone credential path. On Compose, a private Booking address must be
+listed in `RETAINER_EXECUTION_API_ORIGINS` so the tool functions can reach
+it. The pilot does not require a Booking container
 in Retainer's base Compose deployment.
 
 ## 6. V2 additions
@@ -278,7 +326,7 @@ has been verified.
 | Waitlists and disruptions | Match people by preferences, expiry and priority. Start with a staff shortlist, then add expiring offers and automatic backfill. Claim a freed slot through the regular booking command. |
 | Guest and staff surfaces | Add an optional workspace directory, embeds, branding, locale and custom domains. Add configurable intake, guest verification and matching, attendance, branch roles, check-in or pickup, and utilization reporting. |
 | Communications | Add durable appointment-relative reminders, two-way confirmation and more messaging channels. Moves and cancellations invalidate obsolete reminders through the same event-keyed notices. |
-| Agent and extension interoperability | Agents call the V1 tools once Retainer offers extension tools to agents. Add staff-level tools only with an explicit policy for who may override notice and cutoff. Expose lifecycle events from the booking event log when consumers need every transition rather than the summary's current state. Payment, calendar and door-access partners can use Booking's API and signed webhooks. |
+| Agent and extension interoperability | Agents call the V1 tools once Retainer offers extension tools to agents. Link Routine-made bookings to their Person automatically, designed on the Retainer side around the summary. Add staff-level tools only with an explicit policy for who may override notice and cutoff. Expose lifecycle events from the booking event log when consumers need every transition rather than the summary's current state. Payment, calendar and door-access partners can use Booking's API and signed webhooks. |
 
 ## 7. Acceptance criteria
 
@@ -306,10 +354,17 @@ staff, guest and CRM paths end to end.
   A person cannot edit or drag Booking-owned fields. Deleting a booking
   with a CRM write in flight leaves the summary deleted. Revoking the
   grant stops CRM effects, and staff can still manage the booking.
-- A Routine can find slots, book, move and cancel through the tools. A
-  retried tool call returns the first result and books nothing twice. A
-  call with a wrong or replaced tool key is refused. A tool call past the
-  guest cutoff is refused.
+- Booking installs and a Routine calls its tools on both Compose and
+  hosted. A Routine can find slots, read, book, move and cancel. A retried
+  tool call returns the first result and books nothing twice. A stale
+  version returns the current booking. A call with a wrong or replaced key,
+  or past the guest cutoff, is refused. The tools are unavailable before
+  the key is written and after the credential is revoked.
+- A Routine that books when a booking is created does not trigger itself.
+  A CRM write delayed behind a newer one, or a create retried after a lost
+  response, leaves one current summary. A person cannot merge or delete a
+  summary. Deleting a booking soft-deletes its summary and sends no guest
+  mail. Staff history shows the times before and after each move.
 - V2 additions extend these tests with hold expiration and late checkout,
   duplicate provider callbacks, concurrent last-seat claims, external
   calendar staleness, and reminder cancellation or rescheduling.

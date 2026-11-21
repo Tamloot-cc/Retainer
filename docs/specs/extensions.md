@@ -510,9 +510,16 @@ A standalone release may also include hosted functions. The app's service keeps
 its installation credential, and the functions run in the sandbox like any
 hosted function, with run tokens and their declared scopes and secrets. This is
 how a standalone app publishes tools: a `tool` function calls the app's own API.
-One review covers both parts, and disable or uninstall stops both. Rules that
-require `execution: 'hosted'`, such as mappings and member connections, stay as
-they are until a standalone app needs them.
+One review covers both parts, and disable or uninstall stops both.
+`execution` decides only how the app's service gets its credential and how the
+installation activates. The functions follow the hosted rules for
+`runtimeEnabled`, executable admission and readiness, and lifecycle jobs run
+only for lifecycle functions the release declares. A tool is ready only when
+the installation has a live, unrevoked credential and the generated secret the
+tool needs exists. Listing tools and the broker both check this, because
+revocation does not change `connection_health`. Rules that require
+`execution: 'hosted'`, such as mappings and member connections, stay as they
+are until a standalone app needs them.
 [Booking](booking-extension.md) is the first user.
 
 Accounts-mode manifests pin `oauthClientId` into the reviewed release digest;
@@ -587,7 +594,8 @@ credentials. A standalone app's installation credential may also write its own
 installation's generated secrets, with the same CAS, and nothing else: it cannot
 read secrets or write human-provided ones. The app uses this during its own
 connection flow to hand its functions a shared key, so the admin fills in no
-form. Broker-side admission takes its own schema/installation/lease locks
+form. A `409 revision_conflict` to that credential carries the current
+revision, never the value, so the app can write again. Broker-side admission takes its own schema/installation/lease locks
 in the same transaction as the read/write. Release API validation locks before
 awaiting that broker transaction, avoiding cross-connection revocation deadlocks
 and reliance on the API connection remaining alive.
@@ -949,7 +957,12 @@ change sends that change's cursor as `Retainer-Caused-By`; its writes then
 inherit the change's recorded chain plus itself, and a hosted function already in
 it is not triggered again. Only standalone installation credentials with read
 scope may send the header (others get `400` or `403`), and a cursor no longer in
-the feed returns `410 cursor_expired`. The inherited chain only excludes
+the feed returns `410 cursor_expired`. The header may also name a tool call of
+the same installation, and may repeat up to 8 times. Retainer then copies each
+named tool job's recorded chain, so a write that a routine's tool call caused
+cannot trigger that routine. A tool job already pruned (after 30 days) returns
+`410`, and the app writes without that cause. That costs at most one extra
+routine run, because the next tool call carries its own cause. The inherited chain only excludes
 installations: it adds no depth (the write counts as the app's first hop), so a
 long referenced chain cannot make the depth cap block the app's write. Trade-off:
 by naming a change, an app can hide its own write from every installation already
