@@ -112,7 +112,11 @@ export const hasInstallationSettings = (release: Release) =>
     (d) => !d.generated && (d.level ?? 'installation') === 'installation',
   );
 
-/** Settings to start a form from: the release's defaults, then what the installation has. */
+/**
+ * Settings to start a form from: the release's defaults, then what the
+ * installation has. A setting the release no longer defines is left out, so an
+ * upgrade that removes one can still be approved.
+ */
 export const initialSettings = (
   release: Release,
   installation?: Installation,
@@ -127,7 +131,11 @@ export const initialSettings = (
       )
       .map(([key, def]) => [key, def.default ?? false]),
   ),
-  ...installation?.settings,
+  ...Object.fromEntries(
+    Object.entries(installation?.settings ?? {}).filter(([key]) =>
+      Object.hasOwn(release.manifest.settings, key),
+    ),
+  ),
 });
 
 /** Whether a workspace-level reconnect can change anything for this release. */
