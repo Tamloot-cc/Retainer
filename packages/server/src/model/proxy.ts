@@ -262,7 +262,10 @@ export function createModelProxy(options: ModelProxyOptions) {
       if (value !== null) outgoing.set(name, value);
     }
     if (!response.body) {
-      await finish(providerError ? 'provider_error' : 'completed', providerError);
+      if (providerError) await finish('provider_error', providerError);
+      // A stream that never started has no `message_stop` either.
+      else if (streamed) await finish('stream_interrupted', 'stream_incomplete', true);
+      else await finish('completed');
       return new Response(null, { status: response.status, headers: outgoing });
     }
     if (metered && response.ok) meter = new UsageMeter(streamed);

@@ -4,6 +4,7 @@ import { EXECUTOR_ROLE } from '../../src/config.js';
 import { createModelProxy } from '../../src/model/proxy.js';
 import { reportTrace, reportUsage, USAGE_REPORT_PATH } from '../../src/model/routes.js';
 import type { ModelTrace } from '../../src/model/trace.js';
+import { ChangeMaintenance } from '../../src/worker/changes.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { testRunTokens } from '../helpers/model.js';
@@ -63,6 +64,7 @@ it('records every provider attempt once and joins partial and complete usage by 
         headers: { 'request-id': 'req_incomplete' },
       },
     ),
+    new Response(null, { status: 204 }),
   ];
   const reporting = {
     origin: 'https://retainer.test',
@@ -82,7 +84,7 @@ it('records every provider attempt once and joins partial and complete usage by 
     record: reportUsage(reporting),
     trace: reportTrace(reporting),
   });
-  for (const status of [200, 429, 502, 200]) {
+  for (const status of [200, 429, 502, 200, 204]) {
     const response = await proxy(proxyRequest(), '/v1/messages');
     expect(response.status).toBe(status);
     await response.text();
@@ -91,14 +93,16 @@ it('records every provider attempt once and joins partial and complete usage by 
     select c.id, c.owner_id, c.attempt, c.outcome, c.http_status, c.code, c.duration_ms, u.partial, u.id as usage_id
     from model_calls c left join ai_usage u on u.workspace_id=c.workspace_id and u.id=c.id
     where c.owner_id=${runId} order by c.started_at, c.id`;
-  expect(calls).toHaveLength(4);
+  expect(calls).toHaveLength(5);
   expect(calls.map((c) => [c.outcome, c.http_status, c.partial])).toEqual([
     ['completed', 200, false],
     ['provider_error', 429, null],
     ['transport_error', null, null],
     ['stream_interrupted', 200, true],
+    ['stream_interrupted', 204, null],
   ]);
   expect(calls[1]?.code).toBe('rate_limit_error');
+  expect(calls[4]?.code).toBe('stream_incomplete');
   for (const c of calls) {
     expect(c).toMatchObject({ owner_id: runId, attempt: 2, duration_ms: expect.any(Number) });
     if (c.partial !== null) expect(c.usage_id).toBe(c.id);
@@ -242,4 +246,14 @@ it('captures a bounded response only inside the approved scope and prunes payloa
   expect(
     await db.owner`select call_id from model_call_payloads where workspace_id=${extra.workspace.id}`,
   ).toHaveLength(0);
+});
+
+it('drains more than one batch of expired traces in a single maintenance tick', async () => {
+  const owner = randomUUID();
+  await db.owner`insert into model_calls (id,workspace_id,owner_kind,owner_id,attempt,provider,started_at,outcome)
+    select uuidv7(),${workspace},'routine',${owner},1,'anthropic',now()-interval '31 days','started'
+    from generate_series(1, 2500)`;
+  const maintenance = new ChangeMaintenance(db.owner, db.connect({ role: EXECUTOR_ROLE }));
+  expect((await maintenance.tick()).failed).toBe(0);
+  expect(await db.owner`select id from model_calls where owner_id=${owner}`).toHaveLength(0);
 });
