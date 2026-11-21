@@ -1,3 +1,4 @@
+import { ROUTINE_RUNNER_FUNCTION_ID, ROUTINE_RUNNER_REGISTRATION_ID } from '@retainer/shared';
 import { z } from 'zod';
 import type { Config } from '../config.js';
 import { parseExtensionCatalog } from '../extensions/catalog.js';
@@ -14,6 +15,18 @@ export async function lambdaRuntimeCompatible(config: Config, invoke?: LambdaInv
   const targets = new Map<string, { digest: string; mode: 'job' | 'verify' }>();
   for (const entry of entries as Executable[]) {
     const executable = registry.lookup(entry.registrationId, entry.releaseDigest, entry.functionId);
+    // The routine runner is not an extension: it has no catalog entry, and
+    // runs as a job function (routines spec §11.3). Its health proves it.
+    if (
+      executable.registrationId === ROUTINE_RUNNER_REGISTRATION_ID &&
+      executable.functionId === ROUTINE_RUNNER_FUNCTION_ID
+    ) {
+      const prior = targets.get(executable.driverTarget);
+      if (prior && (prior.mode !== 'job' || prior.digest !== executable.releaseDigest))
+        return false;
+      targets.set(executable.driverTarget, { digest: executable.releaseDigest, mode: 'job' });
+      continue;
+    }
     const release = catalog
       .list()
       .find(
