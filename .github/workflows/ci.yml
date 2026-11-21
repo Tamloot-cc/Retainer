@@ -2,8 +2,10 @@ name: CI
 
 on:
   pull_request:
+    paths-ignore: ["**/*.md"]
   push:
     branches: [main]
+    paths-ignore: ["**/*.md"]
   # The release workflow runs the same checks before publishing, plus the
   # Docker tests that push and pull-request CI leave to `pnpm test:docker`.
   workflow_call:
