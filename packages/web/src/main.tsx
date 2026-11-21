@@ -10,7 +10,6 @@ import {
   Outlet,
   RouterProvider,
   redirect,
-  useNavigate,
 } from '@tanstack/react-router';
 import { lazy, type ReactNode, StrictMode, Suspense, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -58,7 +57,6 @@ const LazyNewWorkspace = lazy(() =>
 function Layout() {
   const { session, signOut } = useAuth();
   const accountState = useAccount();
-  const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const [command, setCommand] = useState(false),
     [report, setReport] = useState<ReactNode>(null),
@@ -175,7 +173,6 @@ function Layout() {
                     ...(isOrganizationManager(accountState.organization.role)
                       ? { onNewWorkspace: () => setCreating(true) }
                       : {}),
-                    onSettings: () => void navigate({ to: '/settings' }),
                     accountHref: '/app/account',
                   },
                 }

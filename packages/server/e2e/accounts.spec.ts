@@ -30,8 +30,7 @@ test('a new person signs in, names a workspace and lands in it as its admin', as
 
   // Settings shows only what the person can do; one person, one workspace
   // keeps the Organization tab hidden.
-  await page.getByRole('button', { name: 'Account: Ana Silva' }).click();
-  await page.getByRole('menuitem', { name: 'Settings' }).click();
+  await page.getByRole('link', { name: 'Settings' }).click();
   await expect(page).toHaveURL(/\/settings/);
   await expect(page.getByRole('button', { name: 'Members', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Agents', exact: true })).toBeVisible();

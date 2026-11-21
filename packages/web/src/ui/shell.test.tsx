@@ -12,11 +12,20 @@ vi.mock('@tanstack/react-router', async (original) => ({
   ),
 }));
 
-function shell(collapsed: boolean) {
+function shell(collapsed: boolean, options: { accounts?: boolean; routines?: boolean } = {}) {
   localStorage.setItem('retainer:sidebar:collapsed', collapsed ? '1' : '0');
   render(
     <Shell
       workspace="Acme"
+      routinesAvailable={options.routines}
+      {...(options.accounts
+        ? {
+            accounts: {
+              workspaces: [{ id: 'w1', name: 'Acme', href: '/app/w/acme/', current: true }],
+              accountHref: '/app/account',
+            },
+          }
+        : {})}
       user={{ name: 'Dana Levi', detail: 'User' }}
       objects={[
         { name: 'company', label: 'Companies', class: 'entity' },
@@ -58,11 +67,32 @@ describe('the sidebar', () => {
     expect(screen.getByRole('button', { name: 'Account: Dana Levi' })).toBeTruthy();
   });
 
+  it('gathers the pages that set the workspace up at the bottom, with Settings', () => {
+    shell(false, { accounts: true, routines: true });
+    const workspace = screen.getByRole('group', { name: 'Workspace' });
+    expect(
+      within(workspace)
+        .getAllByRole('link')
+        .map((l) => l.textContent),
+    ).toEqual(['Routines', 'Extensions', 'Schema', 'Settings']);
+  });
+
+  it('leaves Settings out with an API key, which has none', () => {
+    shell(false);
+    const workspace = screen.getByRole('group', { name: 'Workspace' });
+    expect(
+      within(workspace)
+        .getAllByRole('link')
+        .map((l) => l.textContent),
+    ).toEqual(['Extensions', 'Schema']);
+  });
+
   it('keeps both groups, divided, in the icon rail', () => {
     shell(true);
     expect(screen.getByRole('link', { name: 'Home' })).toBeTruthy();
     expect(screen.queryByRole('separator')).toBeNull();
     expect(screen.getByRole('group', { name: 'Records' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Workspace' })).toBeTruthy();
   });
 
   it.each([
