@@ -749,3 +749,42 @@ describe('the builder’s once-per-record check (issue 147)', () => {
     expect(onceProblems(true, { when: { kind: 'schedule', cron: '0 9 * * 0' } })).toEqual([]);
   });
 });
+
+describe('builder model failures (issue 147)', () => {
+  it('records a refused builder call and ends the build, without retrying', async () => {
+    const ctx = {
+      ...context('', 'build'),
+      code: null,
+      build: { description: 'Tag new deals' },
+    } as unknown as RoutineRunContext;
+    const { result, calls } = await run(ctx, (path) => {
+      if (path === 'capabilities')
+        return {
+          objects: [],
+          tools: [],
+          model: { available: true },
+          timezone: 'UTC',
+          triggers: ['record'],
+          limits: {},
+          gapCodes: ['unclear'],
+          types: '',
+          typesFingerprint: 'f'.repeat(64),
+        };
+      if (path === 'effects')
+        return {
+          state: 'model',
+          model: { origin: 'http://model.test/', token: 'mt', name: 'm', maxTokens: 100 },
+        };
+      if (path === '/v1/messages')
+        return Response.json({ error: { message: 'schema not supported' } }, { status: 400 });
+      if (path === 'effects/1/result') return { state: 'failed', code: 'model_failed' };
+    });
+    expect(calls.find((c) => c.path === 'effects/1/result')?.body).toEqual({
+      error: { code: 'model_failed', message: 'schema not supported' },
+    });
+    expect(result).toMatchObject({
+      status: 'succeeded',
+      output: { outcome: 'failed', code: 'builder_failed', error: 'schema not supported' },
+    });
+  });
+});

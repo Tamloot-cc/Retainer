@@ -586,6 +586,29 @@ async function effect(
 /** Statuses a model call keeps failing with however often it is sent. */
 const DEFINITE_MODEL_FAILURES = new Set([400, 404, 413, 422]);
 
+/** Whether a model call failed in a way sending it again would not change. */
+export const definiteModelFailure = (error: unknown): error is ApiError =>
+  error instanceof ApiError && DEFINITE_MODEL_FAILURES.has(error.status);
+
+/**
+ * A refusal or an unusable answer keeps its position, so the run's page can
+ * say why and a retry gets the same error (§11.4). A rate limit, an outage
+ * or a rejected token may pass, so a later attempt asks again.
+ */
+export async function recordModelFailure(
+  api: RoutineApi,
+  position: number,
+  error: unknown,
+  signal: AbortSignal,
+) {
+  if (!definiteModelFailure(error) || signal.aborted) return;
+  await api
+    .call('POST', `effects/${position}/result`, {
+      error: { code: error.code, message: error.message.slice(0, 2000) },
+    })
+    .catch(() => {});
+}
+
 export async function settleEffect(
   api: RoutineApi,
   context: RoutineRunContext,
@@ -609,15 +632,7 @@ export async function settleEffect(
         schema: (args.output ?? { type: 'object', properties: {} }) as Record<string, unknown>,
       });
     } catch (error) {
-      // A refusal or an unusable answer keeps its position, so the run's page
-      // can say why and a retry gets the same error (§11.4). A rate limit, an
-      // outage or a rejected token may pass, so a later attempt asks again.
-      if (error instanceof ApiError && DEFINITE_MODEL_FAILURES.has(error.status) && !signal.aborted)
-        await api
-          .call('POST', `effects/${message.position}/result`, {
-            error: { code: error.code, message: error.message.slice(0, 2000) },
-          })
-          .catch(() => {});
+      await recordModelFailure(api, message.position, error, signal);
       throw error;
     }
     const recorded = await api.call<RoutineEffectResponse>(

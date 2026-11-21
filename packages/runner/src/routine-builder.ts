@@ -6,7 +6,7 @@ import type {
   RoutineRunContext,
 } from '@retainer/shared';
 import type { RoutineApi, RoutineOutcome } from './routine.js';
-import { typeCheck } from './routine.js';
+import { definiteModelFailure, recordModelFailure, typeCheck } from './routine.js';
 
 /** Attempts the builder makes before it reports what still fails. */
 const ATTEMPTS = 3;
@@ -138,6 +138,22 @@ export async function buildRoutine(
   context: RoutineRunContext,
   signal: AbortSignal,
 ): Promise<RoutineOutcome> {
+  try {
+    return await draftRoutine(api, context, signal);
+  } catch (error) {
+    // A call the provider refused fails the build where it stands, on this
+    // attempt and on a retry that replays it, rather than trying again.
+    if (definiteModelFailure(error))
+      return { outcome: 'failed', code: 'builder_failed', error: error.message.slice(0, 2000) };
+    throw error;
+  }
+}
+
+async function draftRoutine(
+  api: RoutineApi,
+  context: RoutineRunContext,
+  signal: AbortSignal,
+): Promise<RoutineOutcome> {
   const description = context.build?.description ?? '';
   const caps = await api.call<RoutineCapabilities>('GET', 'capabilities');
   const { types, typesFingerprint, ...facts } = caps;
@@ -153,22 +169,27 @@ export async function buildRoutine(
     let draft: Draft;
     if (response.state === 'done') draft = response.result as Draft;
     else if (response.state === 'model') {
-      draft = (await api.model(response.model, {
-        system,
-        user: JSON.stringify({
-          description,
-          ...(previous
-            ? {
-                previousAttempt: {
-                  manifest: previous.draft.manifest,
-                  code: previous.draft.code,
-                },
-                problems: previous.problems,
-              }
-            : {}),
-        }),
-        schema: outputSchema(caps.gapCodes),
-      })) as Draft;
+      draft = (await api
+        .model(response.model, {
+          system,
+          user: JSON.stringify({
+            description,
+            ...(previous
+              ? {
+                  previousAttempt: {
+                    manifest: previous.draft.manifest,
+                    code: previous.draft.code,
+                  },
+                  problems: previous.problems,
+                }
+              : {}),
+          }),
+          schema: outputSchema(caps.gapCodes),
+        })
+        .catch(async (error: unknown) => {
+          await recordModelFailure(api, attempt, error, signal);
+          throw error;
+        })) as Draft;
       await api.call('POST', `effects/${attempt}/result`, { result: draft });
     } else return { outcome: 'failed', code: 'builder_failed' };
     const report = { verdict: draft.verdict, gaps: draft.gaps };

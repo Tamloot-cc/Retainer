@@ -1376,7 +1376,9 @@ they left open:
   unusable (422) is recorded the same way with the provider's words, which
   the run's page shows and a retry throws again; a late answer does not
   replace it. A rate limit, an outage or a rejected token is not recorded,
-  so a later attempt asks again.
+  so a later attempt asks again. The builder records its own calls the same
+  way, and a definite failure ends the build as `builder_failed` with the
+  provider's words instead of retrying.
 - **A model call's schema is held to what the provider takes.** The runner
   sends only `type`, `description`, `enum`, `properties`, `required` and
   `items`, with every object closed, and applies `maxItems` to the answer
