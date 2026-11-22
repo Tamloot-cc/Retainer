@@ -955,19 +955,6 @@ export class RetainerClient {
       idempotencyKey,
     );
   }
-  /** Commits a reviewed mapping change: preview with `installationId` and `mappingChange: true` first. */
-  changeExtensionMapping(
-    id: string,
-    input: ExtensionInstallInput & { planDigest: string },
-    idempotencyKey: string,
-  ) {
-    return this.post<ExtensionInstallation>(
-      `/v1/extensions/${encodeURIComponent(id)}/mapping`,
-      { ...input, installationId: id, mappingChange: true },
-      undefined,
-      idempotencyKey,
-    );
-  }
   reconnectExtension(
     id: string,
     connection: string,
@@ -1032,7 +1019,7 @@ export class RetainerClient {
     installationId: string,
     input: {
       recordId: string;
-      binding?: string;
+      binding: string;
       lookup?: string;
       values: Record<string, unknown>;
       observedAt?: string;
@@ -1199,10 +1186,6 @@ export class RetainerClient {
   saveExtensionSuggestions(
     id: string,
     input: {
-      mapping?: Record<
-        string,
-        import('@retainer/extension').ExtensionMappingChoice & { reason?: string }
-      >;
       bindings?: import('@retainer/extension').ExtensionBindingChoices;
       bindingReasons?: Record<string, string>;
       settings?: Record<string, string | number | boolean>;

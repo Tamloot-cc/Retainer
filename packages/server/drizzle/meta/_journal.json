@@ -967,6 +967,20 @@
       "when": 1795384794379,
       "tag": "0137_extension_binding_proposal_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1795384829022,
+      "tag": "0138_capture_installation_mapping_for_binding_migration",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1795384830543,
+      "tag": "0139_remove_installation_mapping",
+      "breakpoints": true
     }
   ]
 }

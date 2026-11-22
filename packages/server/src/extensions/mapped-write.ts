@@ -1,4 +1,4 @@
-import { outputKeySchema } from '@retainer/extension';
+import { bindingKeySchema } from '@retainer/extension';
 import { normalizeDomain } from '@retainer/shared';
 import { z } from 'zod';
 import type { Caller } from '../caller.js';
@@ -16,15 +16,14 @@ import { type LockedRecord, writeFields } from '../records/write.js';
 import type { CompiledObject } from '../schema/compiled.js';
 import type { FieldState } from '../schema/types.js';
 import type { ExtensionCatalog } from './catalog.js';
-import { bindingStatus, EMPTY_MAPPING, type StoredMapping } from './mapping.js';
 
 export const mappedWriteSchema = z.strictObject({
   recordId: z.uuid(),
-  binding: outputKeySchema.optional(),
+  binding: bindingKeySchema,
   /** The normalized lookup value the run used, checked against the record's current one. */
   lookup: z.string().min(1).max(2048).optional(),
   /** Only outputs the run has a valid value for. */
-  values: z.record(outputKeySchema, z.json()),
+  values: z.record(bindingKeySchema, z.json()),
   observedAt: z.iso.datetime({ offset: true }).optional(),
   /**
    * How certain the run is, from 0 to 1 (model calls spec 5). Below the
@@ -86,81 +85,47 @@ export async function mappedWrite(
   try {
     return await withWrite(sql, caller, async (tx, context) => {
       const [installation] = await tx<
-        { mapping: StoredMapping; bindings: StoredBindingPlan | null }[]
-      >`select mapping, bindings from extension_installations where id = ${run.installationId}`;
+        { bindings: StoredBindingPlan | null }[]
+      >`select bindings from extension_installations where id = ${run.installationId}`;
       if (!installation) throw notFound('extension installation');
       const release = catalog.forRun(run);
-      const mapping = release.manifest.mapping;
-      const fn = release.manifest.functions.find((f) => f.universalId === run.functionId);
-      if (
-        !fn?.mappedWrite ||
-        (typeof fn.mappedWrite === 'string' && input.binding !== fn.mappedWrite) ||
-        (fn.mappedWrite === true && !mapping)
-      )
-        throw forbidden('this function may not write these outputs');
-      const stored = installation.mapping?.outputs ? installation.mapping : EMPTY_MAPPING;
-      const destination = input.binding ? installation.bindings?.destinations[input.binding] : null;
+      const fn = release.manifest.functions.find((entry) => entry.universalId === run.functionId);
+      if (fn?.mappedWrite !== input.binding)
+        throw forbidden('this function may not write to this binding');
+      const destination = installation.bindings?.destinations[input.binding];
       const declaration = installation.bindings?.declarations.find(
         (entry) => entry.key === input.binding,
       );
-      const object = context.schema.objectsByUniversalId.get(
-        destination?.objects[0] ?? mapping?.objectId ?? '',
-      );
-      if (
-        input.binding &&
-        (!destination || !declaration || !object || !visibleObject(object.state, declaration))
-      )
+      const object = context.schema.objectsByUniversalId.get(destination?.objects[0] ?? '');
+      if (!destination || !declaration || !object || !visibleObject(object.state, declaration))
         throw new AppError(
           409,
           'binding_unavailable',
           'The approved write destination is unavailable.',
         );
       const targets = new Map<string, FieldState>();
-      const conflicts: { output: string; field: string | null; reason: string }[] = [];
       const used = new Set<string>();
-      const lookup = declaration?.fields.find((field) => field.key === 'domain' && field.lookup);
-      const lookupId = lookup ? destination?.fields[lookup.key]?.id : mapping?.lookup?.fieldId;
+      const lookup = declaration.fields.find((field) => field.lookup);
+      const lookupId = lookup && destination.fields[lookup.key]?.id;
       for (const key of Object.keys(input.values)) {
-        if (input.binding) {
-          const rule = declaration?.fields.find((field) => field.key === key);
-          const target = destination?.fields[key];
-          if (!rule || !target || rule.lookup)
-            throw new AppError(
-              422,
-              'bindings_invalid',
-              `No writable destination is approved for ${key}.`,
-            );
-          const field = object?.activeFields.find((entry) => entry.universalId === target.id);
-          if (
-            !field ||
-            !eligibleField(field, rule) ||
-            used.has(target.id) ||
-            target.id === lookupId
-          )
-            throw new AppError(
-              409,
-              'binding_unavailable',
-              `The destination for ${rule.label} is unavailable.`,
-            );
-          used.add(target.id);
-          targets.set(key, field);
-          continue;
-        }
-        const output = mapping?.outputs.find((output) => output.key === key);
-        const binding = stored.outputs[key];
-        if (!output || !binding)
-          throw new AppError(422, 'mapping_invalid', 'values name outputs that are not mapped', {
-            outputs: [{ output: key, reason: 'unknown_output' }],
-          });
-        const { status, field } = bindingStatus(object?.state, output, binding.fieldUniversalId);
-        if (status !== 'ok' || !field)
-          conflicts.push({ output: key, field: field?.name ?? null, reason: status });
-        else targets.set(key, field);
+        const rule = declaration.fields.find((field) => field.key === key);
+        const target = destination.fields[key];
+        if (!rule || !target || rule.lookup)
+          throw new AppError(
+            422,
+            'bindings_invalid',
+            `No writable destination is approved for ${key}.`,
+          );
+        const field = object.activeFields.find((entry) => entry.universalId === target.id);
+        if (!field || !eligibleField(field, rule) || used.has(target.id) || target.id === lookupId)
+          throw new AppError(
+            409,
+            'binding_unavailable',
+            `The destination for ${rule.label} is unavailable.`,
+          );
+        used.add(target.id);
+        targets.set(key, field);
       }
-      if (conflicts.length || !object || object.hidden)
-        throw new AppError(409, 'schema_binding_conflict', 'a mapped field is missing or changed', {
-          outputs: conflicts,
-        });
       const record = await lockExact(tx, caller.workspaceId, input.recordId);
       if (!record) throw notFound('record', { id: input.recordId });
       if (record.object_type_id !== object.id)
@@ -175,7 +140,11 @@ export async function mappedWrite(
       if (input.lookup !== undefined) {
         const field = object.activeFields.find((f) => f.universalId === lookupId);
         if (!field || field.status !== 'active')
-          throw new AppError(409, 'schema_binding_conflict', 'the lookup field is unavailable');
+          throw new AppError(
+            409,
+            'binding_unavailable',
+            'The approved lookup field is unavailable.',
+          );
         if (currentLookup(field, record.data[field.key]) !== input.lookup)
           return skip('lookup_changed');
       }

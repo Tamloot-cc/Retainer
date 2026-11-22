@@ -278,7 +278,12 @@ function BasicExtensionSetup({
     ...release.bindingProposal?.choices,
     ...suggestions?.bindings,
   }));
-  const [bindingIssues, setBindingIssues] = useState<BindingReviewIssue[]>([]);
+  const [bindingIssues, setBindingIssues] = useState<BindingReviewIssue[]>(() =>
+    Object.entries(suggestions?.issues ?? {}).map(([path, message]) => {
+      const [binding, field] = path.split('.');
+      return { binding: binding ?? '*', field, message };
+    }),
+  );
   const [values, setValues] = useState<Settings>(() => ({
     ...initialSettings(release, installation),
     ...suggestions?.settings,

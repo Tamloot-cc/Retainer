@@ -1013,7 +1013,7 @@ export class ExtensionQueue {
     await tx`insert into extension_suggestions(workspace_id,installation_id,release_digest,job_id,reason)
       values(${workspace},${id},${digest},${jobId},${String((input as { reason: string }).reason)})
       on conflict(workspace_id,installation_id,release_digest) do update set job_id=excluded.job_id,
-      reason=excluded.reason,mapping=null,settings=null,created_at=now()`;
+      reason=excluded.reason,bindings=null,binding_reasons=null,settings=null,created_at=now()`;
     return { id: jobId };
   }
 
@@ -1181,7 +1181,7 @@ export class ExtensionQueue {
         where id=${id} returning *,run_until-${RUN_GRACE_SECONDS}*interval '1 second' as handler_deadline`;
       if (!claimed) throw new Error('claim returned no row');
       if (job.trigger_kind === 'configure')
-        await tx`update extension_suggestions set mapping=null,settings=null where job_id=${id}`;
+        await tx`update extension_suggestions set bindings=null,binding_reasons=null,settings=null where job_id=${id}`;
       await tx`insert into extension_attempts(workspace_id,job_id,attempt,fence,status)
         values(${workspace},${id},${claimed.attempt},${claimed.fence},'running')`;
       await tx`update extension_installations set last_claimed_at=clock_timestamp() where id=${installation.id}`;

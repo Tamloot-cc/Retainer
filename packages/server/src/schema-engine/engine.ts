@@ -137,7 +137,7 @@ async function validateInstalledBindings(
 ) {
   const installations = await tx<{ id: string; bindings: StoredBindingPlan }[]>`
     select id, bindings from extension_installations
-    where workspace_id = ${workspaceId} and state <> 'uninstalled' and bindings is not null
+    where workspace_id = ${workspaceId} and state <> 'uninstalled' and jsonb_typeof(bindings->'declarations') = 'array'
       ${replacing ? tx`and id <> ${replacing}` : tx``}
     order by id`;
   const issues = installations.flatMap(({ id, bindings }) =>

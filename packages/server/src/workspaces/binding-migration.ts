@@ -28,6 +28,8 @@ const old = {
   companyContact: '92166eb2-4d95-477e-8db6-04ed3c0094f5',
 };
 
+type LegacyMapping = { outputs?: Record<string, { fieldUniversalId: string }> };
+
 type Row = {
   id: string;
   workspace_id: string;
@@ -35,8 +37,8 @@ type Row = {
   release_digest: string;
   state: string;
   /** Absent before the generated DDL runs, including in the pre-merge report. */
-  bindings?: StoredBindingPlan;
-  mapping?: { outputs?: Record<string, { fieldUniversalId: string }> };
+  bindings?: { legacyMapping?: LegacyMapping };
+  mapping?: LegacyMapping;
   settings: { createPeople?: ExtensionManifest['createPeople'] };
 };
 
@@ -131,10 +133,9 @@ function existingPlan(
         domain: old.companyDomain,
         name: old.companyName,
         ...Object.fromEntries(
-          Object.entries(row.mapping?.outputs ?? {}).map(([key, field]) => [
-            key,
-            field.fieldUniversalId,
-          ]),
+          Object.entries((row.mapping ?? row.bindings?.legacyMapping)?.outputs ?? {}).map(
+            ([key, field]) => [key, field.fieldUniversalId],
+          ),
         ),
       });
       break;
@@ -205,7 +206,7 @@ async function applyPlan(
 }
 
 async function uninstall(tx: Tx, row: Row) {
-  await tx`update extension_installations set state='uninstalled',generation=generation+1,
+  await tx`update extension_installations set state='uninstalled',bindings=null,generation=generation+1,
     grant_generation=grant_generation+1,updated_at=now(),last_error='binding_unavailable' where id=${row.id}`;
   await tx`update extension_attempts set status='cancelled',code='installation_changed',finished_at=now()
     where finished_at is null and job_id in (select id from extension_jobs where installation_id=${row.id})`;
@@ -227,7 +228,8 @@ export async function migrateExtensionBindings(
     if (reportOnly) await tx`set transaction isolation level repeatable read, read only`;
     const installations = await tx<Row[]>`
       select i.* from extension_installations i
-      where i.state<>'uninstalled' and (to_jsonb(i)->>'bindings') is null
+      where i.state<>'uninstalled'
+        and ((to_jsonb(i)->>'bindings') is null or (to_jsonb(i)->'bindings') ? 'legacyMapping')
       order by i.workspace_id,i.id`;
     if (installations.length && !releases.length)
       throw new Error('Load the rebuilt extension catalog before planning the binding migration.');

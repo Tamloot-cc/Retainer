@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
+import { enrichmentManifest } from '@retainer/runner/enrichment-contract';
 import { tamlootManifest } from '@retainer/runner/tamloot-contract';
 import { expect, it } from 'vitest';
 import { inWorkspace } from '../../src/db/tx.js';
@@ -119,4 +120,58 @@ it('reports without writing and applies the same bindings or uninstall decisions
   expect(after.find((row) => row.id === renamed)?.bindings).toBeTruthy();
   expect(after.find((row) => row.id === deleted)?.state).toBe('uninstalled');
   expect(await migrateExtensionBindings(db.owner, catalog, true)).toEqual([]);
+});
+
+it('uses a captured output choice after the old mapping column is dropped', async () => {
+  const enrichment = enrichmentManifest({
+    version: '2.0.0',
+    packageDigest: 'a'.repeat(64),
+    handlerDigest: 'b'.repeat(64),
+    serverRange: '>=0.1.0 <0.2.0',
+  });
+  const workspace = await createWorkspace(db.owner, {
+    name: 'Old enrichment',
+    template: 'starter',
+  });
+  const id = randomUUID();
+  const [address] = await db.owner<{ universal_id: string }[]>`
+    select f.universal_id from fields f join object_types o on o.id=f.object_type_id
+    where o.workspace_id=${workspace.id} and o.name_singular='company' and f.name='address'`;
+  if (!address) throw new Error('missing starter address field');
+  const archived = {
+    legacyMapping: { outputs: { headquarters: { fieldUniversalId: address.universal_id } } },
+  };
+  await db.owner`insert into extension_installations
+    (id,workspace_id,registration_id,version,release_digest,state,granted_actor,granted_scopes,created_by,bindings)
+    values(${id},${workspace.id},${enrichment.universalId},'1.0.0',${'e'.repeat(64)},'active',
+      'agent','["read","write"]',${db.owner.json(actor)},${db.owner.json(archived)})`;
+  const rebuilt = new ExtensionCatalog([
+    { manifest: enrichment, actorCeiling: 'agent', runtimeEnabled: true },
+  ]);
+  const report = await migrateExtensionBindings(db.owner, rebuilt, true);
+  expect(report).toEqual([
+    expect.objectContaining({
+      installationId: id,
+      action: 'bind',
+      plan: expect.objectContaining({
+        bindings: expect.objectContaining({
+          company: expect.objectContaining({
+            fields: expect.objectContaining({
+              headquarters: expect.objectContaining({ name: 'address' }),
+            }),
+          }),
+        }),
+      }),
+    }),
+  ]);
+  expect(await migrateExtensionBindings(db.owner, rebuilt, false)).toEqual(report);
+  const [installed] =
+    await db.owner`select bindings,bindings_revision from extension_installations where id=${id}`;
+  expect(installed).toMatchObject({
+    bindings_revision: 1,
+    bindings: {
+      destinations: { company: { fields: { headquarters: { id: address.universal_id } } } },
+    },
+  });
+  expect(installed?.bindings.legacyMapping).toBeUndefined();
 });

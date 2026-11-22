@@ -4,52 +4,66 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
-import { STARTER_OBJECT_IDS } from '../../src/templates/base.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
-const DOMAIN = 'bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641';
 const manifest = extensionFixture({
   requestedActor: 'agent',
   scopes: ['read', 'write'],
-  mapping: {
-    objectId: STARTER_OBJECT_IDS.company,
-    lookup: { fieldId: DOMAIN, type: 'links' },
-    outputs: [
-      {
-        key: 'employee_count',
-        label: 'Employee count',
-        description: 'Employees the provider finds',
-        types: ['number'],
-        field: {
-          universalId: randomUUID(),
-          name: 'employeeCount',
-          label: 'Employee Count',
-          type: 'number',
+  bindings: [
+    {
+      key: 'company',
+      label: 'Companies',
+      description: 'Company enrichment',
+      class: 'entity',
+      access: 'write',
+      required: true,
+      fields: [
+        { key: 'domain', label: 'Domain', types: ['links'], required: true, lookup: true },
+        {
+          key: 'employee_count',
+          label: 'Employee count',
+          description: 'Employees the provider finds',
+          types: ['number'],
+          required: false,
+          create: {
+            universalId: randomUUID(),
+            name: 'employeeCount',
+            label: 'Employee Count',
+            type: 'number',
+          },
         },
-      },
-      {
-        key: 'linkedin_url',
-        label: 'LinkedIn URL',
-        description: 'Company LinkedIn profile',
-        types: ['links'],
-        field: {
-          universalId: randomUUID(),
-          name: 'linkedinUrl',
+        {
+          key: 'linkedin_url',
           label: 'LinkedIn URL',
-          type: 'links',
+          description: 'Company LinkedIn profile',
+          types: ['links'],
+          required: false,
+          create: {
+            universalId: randomUUID(),
+            name: 'linkedinUrl',
+            label: 'LinkedIn URL',
+            type: 'links',
+          },
         },
-      },
-      {
-        key: 'headquarters',
-        label: 'Headquarters',
-        description: 'Headquarters city and country',
-        types: ['address'],
-      },
-    ],
-  },
+        {
+          key: 'website',
+          label: 'Website',
+          types: ['links'],
+          required: false,
+        },
+        {
+          key: 'headquarters',
+          label: 'Headquarters',
+          description: 'Headquarters city and country',
+          types: ['address'],
+          required: false,
+        },
+      ],
+    },
+  ],
   functions: [
     {
       universalId: randomUUID(),
@@ -59,8 +73,8 @@ const manifest = extensionFixture({
       timeoutSeconds: 60,
       trigger: {
         kind: 'change',
-        objectId: STARTER_OBJECT_IDS.company,
-        fieldIds: [DOMAIN],
+        binding: 'company',
+        fields: ['domain'],
         related: false,
         operations: ['create', 'update'],
       },
@@ -70,7 +84,7 @@ const manifest = extensionFixture({
         required: ['changePosition'],
         additionalProperties: false,
       },
-      mappedWrite: true,
+      mappedWrite: 'company',
     },
   ],
 });
@@ -106,12 +120,17 @@ async function setup() {
   );
   workspaceIds.push(workspace.id);
   const queue = new ExtensionQueue(app.sql, catalog.runtime);
-  const mapping = {
+  const fields = {
     employee_count: { action: 'create' },
     linkedin_url: { action: 'create' },
     headquarters: { action: 'existing', field: 'address' },
   };
-  const body = { registrationId: manifest.universalId, version: '1.0.0', settings: {}, mapping };
+  const body = {
+    registrationId: manifest.universalId,
+    version: '1.0.0',
+    settings: {},
+    bindings: { company: { action: 'existing', objects: ['company'], fields } },
+  };
   const plan = await app.request('/v1/extensions/preview', { key: keys.admin, body });
   const installed = await app.request('/v1/extensions', {
     key: keys.admin,
@@ -150,7 +169,10 @@ async function setup() {
     };
   }
   const write = (token: string, input: Record<string, unknown>) =>
-    app.request(`/v1/extensions/${id}/runtime/mapped-writes`, { key: token, body: input });
+    app.request(`/v1/extensions/${id}/runtime/mapped-writes`, {
+      key: token,
+      body: { binding: 'company', ...input },
+    });
   const patch = (key: string, record: string, values: Record<string, unknown>) =>
     app.request(`/v1/records/${record}`, { key, method: 'PATCH', body: { values } });
   const read = async (record: string) =>
@@ -161,7 +183,24 @@ async function setup() {
         { count: number }[]
       >`select count(*)::int as count from field_assertions where record_id=${record}`
     )[0]?.count ?? 0;
-  return { app, workspace, keys, queue, id, company, run, write, patch, read, assertions };
+  const review = (fields: Record<string, unknown>) => {
+    const input = {
+      ...body,
+      installationId: id,
+      bindings: { company: { action: 'existing', objects: ['company'], fields } },
+    };
+    return {
+      input,
+      preview: () => app.request('/v1/extensions/preview', { key: keys.admin, body: input }),
+      approve: (planDigest: string) =>
+        app.request(`/v1/extensions/${id}/upgrade`, {
+          key: keys.admin,
+          body: { ...input, planDigest },
+          headers: { 'Idempotency-Key': randomUUID() },
+        }),
+    };
+  };
+  return { app, workspace, keys, queue, id, company, run, write, patch, read, assertions, review };
 }
 
 const values = {
@@ -260,7 +299,7 @@ describe('fill-only mapped writes', () => {
     const { token } = await h.run(acme);
     const unknown = await h.write(token, { recordId: acme, values: { revenue: 1 } });
     expect(unknown.status).toBe(422);
-    expect(unknown.body.error.code).toBe('mapping_invalid');
+    expect(unknown.body.error.code).toBe('bindings_invalid');
     expect(
       (await h.write(token, { recordId: acme, values: { employee_count: null } })).status,
     ).toBe(422);
@@ -269,13 +308,63 @@ describe('fill-only mapped writes', () => {
     ).toBe(422);
     const admin = await h.app.request(`/v1/extensions/${h.id}/runtime/mapped-writes`, {
       key: h.keys.admin,
-      body: { recordId: acme, values },
+      body: { binding: 'company', recordId: acme, values },
     });
     expect(admin.status).toBe(403);
     expect((await h.read(acme)).fields.employeeCount ?? null).toBeNull();
   });
 
-  it('fails a write to a deleted target and marks the installation degraded', async () => {
+  it('refuses outputs that share a destination or write the lookup field', async () => {
+    const h = await setup();
+    for (const fields of [
+      { linkedin_url: { action: 'existing', field: 'domain' } },
+      {
+        linkedin_url: { action: 'existing', field: 'linkedinUrl' },
+        website: { action: 'existing', field: 'linkedinUrl' },
+      },
+    ]) {
+      const invalid = await h.review(fields).preview();
+      expect(invalid.status).toBe(422);
+      expect(invalid.body.error.code).toBe('bindings_invalid');
+      expect(
+        invalid.body.error.details.bindings.some((issue: { message: string }) =>
+          issue.message.includes('already used'),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('replays unfinished and undispatched changes for an unchanged trigger', async () => {
+    const h = await setup();
+    const first = await h.company({ name: 'Acme', domain: 'acme.com' });
+    const { token, claimed } = await h.run(first);
+    const second = await h.company({ name: 'Other', domain: 'other.com' });
+    const review = h.review({ headquarters: { action: 'skip' } });
+    const plan = await review.preview();
+    expect(plan.status, JSON.stringify(plan.body)).toBe(200);
+    expect((await review.approve(plan.body.planDigest)).status).toBe(200);
+    expect((await h.write(token, { recordId: first, values: { employee_count: 52 } })).status).toBe(
+      409,
+    );
+    const [pendingSetup] =
+      await db.owner`select id from extension_jobs where installation_id=${h.id}
+      and trigger_kind in ('install','upgrade') and status='queued'`;
+    const setupRun = await h.queue.claim(h.workspace.id, pendingSetup?.id, 're-plan setup');
+    if (!setupRun) throw new Error('re-plan setup did not run');
+    await h.queue.complete(setupRun, { status: 'succeeded' });
+    const next = await h.run(first);
+    expect(next.claimed.jobId).toBe(claimed.jobId);
+    expect(
+      (await h.write(next.token, { recordId: first, values: { employee_count: 52 } })).status,
+    ).toBe(200);
+    await h.queue.complete(next.claimed, { status: 'succeeded' });
+    const secondRun = await h.run(second);
+    expect(
+      (await h.write(secondRun.token, { recordId: second, values: { employee_count: 25 } })).status,
+    ).toBe(200);
+  });
+
+  it('refuses deletion of a bound target and keeps the approved write available', async () => {
     const h = await setup();
     const acme = await h.company({ name: 'Acme', domain: 'acme.com' });
     const { token } = await h.run(acme);
@@ -286,19 +375,10 @@ describe('fill-only mapped writes', () => {
           body: { operations: [{ op: 'delete_field', object: 'company', field: 'address' }] },
         })
       ).status,
-    ).toBe(200);
+    ).toBe(422);
     const res = await h.write(token, { recordId: acme, lookup: 'acme.com', values });
-    expect(res.status).toBe(409);
-    expect(res.body.error).toMatchObject({
-      code: 'schema_binding_conflict',
-      details: { outputs: [{ output: 'headquarters', field: 'address', reason: 'missing' }] },
-    });
-    expect((await h.read(acme)).fields.employeeCount ?? null).toBeNull();
-    const detail = await h.app.request(`/v1/extensions/${h.id}`, { key: h.keys.admin });
-    expect(detail.body).toMatchObject({
-      connectionHealth: 'degraded',
-      lastError: 'schema_binding_conflict',
-    });
+    expect(res.status).toBe(200);
+    expect((await h.read(acme)).fields.employeeCount).toBe(52);
   });
 
   it('never overwrites a value another writer sets concurrently', async () => {

@@ -43,9 +43,8 @@ tab.
 ## 1. Why this design
 
 Before this change, no extension code ran before approval: the install form's
-mapping defaults were fixed in the manifest (`defaultChoices`,
-`packages/web/src/routes/extensions/mapping.tsx:65`), and the `install`
-function cannot read records (`extensions.md:459`).
+defaults came from the manifest. The install function still cannot read
+records before activation.
 
 Considered:
 
@@ -53,7 +52,7 @@ Considered:
   token before any installation exists. It needs a new table, token type,
   admission path and consent rule, all outside the run machinery we have. It is
   a second way to run code, used only for suggestions.
-- **Install with nothing mapped, then propose a mapping change.** The fewest new
+- **Install with skipped bindings, then propose a re-plan.** The fewest new
   concepts, but the admin finishes "installing" and the extension does nothing
   until a second step they may not notice. It also needs the read rule change.
 - **Code in the admin's browser.** Not sandboxed, acts as the admin, and would
@@ -84,7 +83,7 @@ checked when the manifest is validated:
 - Its timeout follows §9.1 (120 s default, 300 s maximum). The admin is waiting,
   so a bundle should aim for well under a minute.
 - A release with a `configure` function must declare at least one thing it can
-  suggest: a `mapping` or a non-secret installation-level setting.
+  suggest: bindings or a non-secret installation-level setting.
 
 Adding, removing or changing the declared contract of a `configure` function
 changes the release contract (`releaseContract`, `packages/server/src/extensions/auto-upgrade.ts:36`),
@@ -104,7 +103,7 @@ Server-defined, like `install`'s `{previousVersion}`:
 ```
 
 On a first install every output is new. On an upgrade, `newOutputs` lists the
-outputs the installed mapping doesn't have. On `requested` (the admin asked from
+binding fields without installed destinations. On `requested` (the admin asked from
 the Bindings tab) it lists outputs currently skipped.
 
 ### 2.2 Saving suggestions
@@ -180,7 +179,7 @@ While `configuring`:
 - The installation stores the release, settings, secrets and the access grant:
   `granted_scopes = ['read']` and the requested actor. Model grants are deferred
   with the separate model platform.
-- It has no schema contributions, views, mapping, schedules, webhook bindings
+- It has no schema contributions, views, bindings, schedules, webhook bindings
   or connections.
 - No trigger fires. The change dispatcher, schedules, routes and webhooks
   already act only for `active` installations
@@ -197,10 +196,10 @@ Preview and commit keep their endpoints (`POST /v1/extensions/preview`,
 For a release with `configure` and no installation:
 
 - The request carries settings and pending secret references, and no
-  `mapping`. An explicit `accessOnly: true` selects the same plan for upgrades
+  `bindings`. An explicit `accessOnly: true` selects the same plan for upgrades
   of an active installation. A disabled one (turned off, or after a failed
   upgrade setup) is refused with `installation_disabled`; it upgrades through
-  the full review, which carries its mapping over, with no suggestions.
+  the full review, which carries its plan over, with no suggestions.
 - The preview shows the access only: the scopes, the actor, the secrets and
   the sharing consent. It plans no schema operations. Its plan
   digest covers those.
@@ -236,7 +235,7 @@ returns that job.
 
 ### 4.3 Review and turn on
 
-The admin reviews the full install form: settings, the mapping prefilled from
+The admin reviews the full install form: settings, the bindings prefilled from
 the suggestions, and what will be added. Preview and commit use a new route for
 an installation in `configuring`:
 
@@ -249,7 +248,7 @@ the reviewed plan digest. Preview uses the existing preview endpoint with the
 same flag and installation ID; operation flags are covered by the digest. The commit runs under the same locks as `commitPlan`
 (`packages/server/src/extensions/service.ts:787`):
 
-- Applies the schema additions, views and mapping.
+- Applies the schema additions, views and bindings.
 - Raises `granted_scopes` to what the release requests.
 - Moves the installation to `installing`, advances its generation (fencing a
   `configure` run still in flight; its later saves get `stale_suggestions`),
@@ -305,10 +304,8 @@ When the admin opens a held upgrade to a release with `configure`:
    with the target `version` requests another run, or lets an API client
    start one under an unchanged existing grant. The token carries `read` only,
    as on first install.
-3. **Review.** The upgrade's Map fields step opens with the suggestions for the
-   new outputs. Today they start as Skip (`choicesFromView`, `mapping.tsx:72`).
-   Outputs that already have a binding keep it unless the suggestion changes it,
-   and every change is shown as one.
+3. **Review.** The upgrade's Bindings step opens with the configure suggestions
+   and retains valid approved destinations that the suggestions leave alone.
 4. **Commit.** The existing upgrade commit (`POST /v1/extensions/:id/upgrade`)
    adopts the release, queues `install` with `previousVersion`, and deletes the
    suggestions. This is where a bundle starts any backfill for new outputs.
@@ -375,7 +372,7 @@ Through `packages/server/src/db/schema.ts` and `pnpm db:generate`:
 
 - `extension_installations.state` accepts `configuring`.
 - **`extension_suggestions`**: `workspace_id`, `installation_id`,
-  `release_digest`, `job_id`, `reason`, `mapping jsonb`, `settings jsonb`,
+  `release_digest`, `job_id`, `reason`, `bindings jsonb`, `binding_reasons jsonb`, `settings jsonb`,
   `created_at`. One row per installation and release digest; RLS by workspace
   like the other extension tables. Deleted when that release is adopted, the
   review is cancelled, or the installation is uninstalled.
@@ -398,7 +395,7 @@ Through `packages/server/src/db/schema.ts` and `pnpm db:generate`:
 | `PUT /v1/extensions/:id/runtime/suggestions`    | the `configure` run token | Save suggestions                                         |
 
 `GET …/suggestions` returns `{status: 'queued' | 'running' | 'ready' | 'failed',
-code?, mapping?, settings?, issues, access?}`. `access` contains the target approval's non-secret settings and names of its
+code?, bindings?, bindingReasons?, settings?, issues, access?}`. `access` contains the target approval's non-secret settings and names of its
 valid staged secrets, never secret values or references. Extension callers
 may read suggestions only for their own installation and must pass live
 runtime admission; workspace readers retain their normal read access. The web
@@ -407,11 +404,9 @@ job or completed suggestions; absent, invalidated or expired approval material
 returns to access review. New secret names remain editable; credentials already
 stored by the active installation still require reconnect.
 
-`issues` comes from `resolveMapping` in
-review mode (`packages/server/src/extensions/mapping.ts:63`) against the
-current schema, keyed by output, with the reasons the web app already
-translates (`REASONS`, `mapping.tsx:86`). A suggestion with an issue is shown
-with it, never dropped.
+The binding resolver checks suggestions against the current schema.
+`issues` carries plain-words messages keyed by the affected binding or field.
+The review keeps the suggestion so the admin can replace it.
 
 MCP: `list_extensions` and `get_extension` show `configuring` and the installed
 release's latest `suggestionsStatus` (`queued`, `running`, `ready`, `failed`). No new tools.
@@ -440,7 +435,7 @@ The web access review also appears for unchanged access. A completed configure
 run resumes directly at review; expired staged credentials require fresh access
 review and restaging.
 
-**Field mapping tab:** "Suggest mapping" (§5.5).
+**Bindings tab:** "Suggest bindings" (§5.5).
 
 FRONTEND.md §5.9 describes the step flow; update it with these steps.
 
@@ -511,7 +506,7 @@ database:
 - Suggestions: shape validation, size limit, settings limited to non-secret
   ones, `stale_suggestions` from a superseded run, issues resolved against a
   schema changed after the save.
-- Turn-on applies schema, mapping and scopes atomically, fences a running
+- Turn-on applies schema, bindings and scopes atomically, fences a running
   `configure`, and queues `install`. A stale plan returns `409 stale_plan`.
 - Cancel and expiry leave nothing behind: no secrets, KV, suggestions or jobs.
 - Automatic upgrades never queue `configure`. A release that adds `configure`
@@ -573,6 +568,6 @@ platform; the shipped enrichment selector uses exact compatible API-name matches
 
 Validation: build, TypeScript checks, lint/layer checks, the real-Postgres server
 suite (`vitest run --maxWorkers=4`), web unit tests, the full 75-test Playwright
-suite plus the on-request mapping scenario, and `pnpm test:docker` (sandbox,
+suite plus the on-request binding scenario, and `pnpm test:docker` (sandbox,
 extension lifecycle and file storage). Tests use synthetic provider responses;
 no real Exa key or model request is part of validation.

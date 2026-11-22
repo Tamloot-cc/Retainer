@@ -150,6 +150,11 @@ export function parseExtensionCatalog(raw?: string): ExtensionCatalog {
     )
     .parse(raw ? JSON.parse(raw) : []);
   return new ExtensionCatalog(
-    entries.map((entry) => ({ ...entry, manifest: defineExtension(entry.manifest) })),
+    entries.flatMap((entry) => {
+      // Published snapshots can retain releases retired by the binding migration.
+      const manifest = entry.manifest;
+      if (manifest && typeof manifest === 'object' && 'mapping' in manifest) return [];
+      return [{ ...entry, manifest: defineExtension(manifest) }];
+    }),
   );
 }

@@ -497,7 +497,7 @@ Lifecycle functions can read their own non-secret installation settings, secret-
 `configure`, after explicit read-access approval (extensions-configure.md).
 
 A run has no `Caller.person` and cannot read personal memory. V1 permissions are
-workspace-wide within the existing scopes; install UI must say so. A mapping or
+workspace-wide within the existing scopes; install UI must say so. A binding or
 list of watched fields is not a data-access restriction. The installer is audit
 metadata, not an impersonated user; a workspace grant survives their departure
 until an admin disconnects it. User-owned provider credentials cannot be presented
@@ -540,7 +540,7 @@ job either. A tool is ready only when
 the installation has a live, unrevoked credential and the generated secret the
 tool needs exists. Listing tools and the broker both check this, because
 revocation does not change `connection_health`. Rules that require
-`execution: 'hosted'`, such as mappings and member connections, stay as they
+`execution: 'hosted'`, such as managed fill-only writes and member connections, stay as they
 are until a standalone app needs them.
 [Booking](booking-extension.md) is the first user.
 
@@ -1382,10 +1382,10 @@ schema changes occur. Read-only preview may be available to schema-capable agent
 | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /v1/extensions/catalog`                                                          | Bundled compatible releases/capabilities; no secrets.                                                                              |
 | `GET /v1/extensions` and `GET /v1/extensions/:id`                                     | Installed state, release, grants, health, settings with secret-presence flags, contributions and sync status.                      |
-| `POST /v1/extensions/preview`                                                         | Registration/release, mappings and settings references → plan digest, schema/view diff, grant changes, warnings/conflicts.         |
+| `POST /v1/extensions/preview`                                                         | Registration/release, bindings and settings references → plan digest, schema/view diff, grant changes, warnings/conflicts.         |
 | `POST /v1/extensions`                                                                 | Commit install using plan digest and idempotency key → installation and lifecycle job.                                             |
 | `POST /v1/extensions/:id/upgrade`                                                     | Commit an upgrade preview; no implicit permission increase.                                                                        |
-| `POST /v1/extensions/:id/disable`, `/enable`, `/uninstall`                            | Generation-fenced lifecycle transitions; enable validates connection and mappings.                                                 |
+| `POST /v1/extensions/:id/disable`, `/enable`, `/uninstall`                            | Generation-fenced lifecycle transitions; enable validates the connection and bindings.                                                 |
 | `POST /v1/extensions/:id/reconnect`                                                   | Reviewed same-release credential/account replacement; human approval and stale-plan fencing.                                       |
 | `PATCH /v1/extensions/:id/settings`                                                   | Expected settings revision, validated settings/secret references; credential/account changes require reconnect and fence old jobs. |
 | `GET /v1/extensions/:id/runs`, `POST /v1/extensions/:id/runs/:run/retry`              | Paginated redacted diagnostics and admin retry; no raw provider bodies.                                                            |

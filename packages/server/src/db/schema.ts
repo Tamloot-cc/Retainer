@@ -1486,12 +1486,6 @@ export const extensionInstallations = pgTable(
     grantedUses: jsonb('granted_uses').$type<string[]>().notNull().default([]),
     settings: jsonb('settings').notNull().default({}),
     settingsRevision: integer('settings_revision').notNull().default(1),
-    /**
-     * The approved output mapping (extensions/mapping.ts): each bound output's
-     * target by universal ID. Changed only through a reviewed plan.
-     */
-    mapping: jsonb('mapping').notNull().default({ outputs: {} }),
-    mappingRevision: integer('mapping_revision').notNull().default(0),
     bindings: jsonb('bindings'),
     bindingsRevision: integer('bindings_revision').notNull().default(0),
     /**
@@ -2912,7 +2906,6 @@ export const extensionSuggestions = pgTable(
     releaseDigest: text('release_digest').notNull(),
     jobId: uuid('job_id').notNull(),
     reason: text('reason').notNull(),
-    mapping: jsonb('mapping'),
     bindings: jsonb('bindings'),
     bindingReasons: jsonb('binding_reasons'),
     settings: jsonb('settings'),

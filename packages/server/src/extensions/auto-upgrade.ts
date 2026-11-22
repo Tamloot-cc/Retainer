@@ -4,7 +4,7 @@ import { hash } from './catalog.js';
 /**
  * Automatic extension upgrades. An installed extension moves to the newest
  * release on its own only when that release differs from the installed one
- * in its code alone: the same access, settings, schema, views, mapping,
+ * in its code alone: the same access, settings, schema, views, bindings,
  * triggers and source. Anything else is held, and the extension's card offers
  * the upgrade for an admin to review.
  */
@@ -47,7 +47,7 @@ export type HoldReason =
   | 'release_changes'
   | 'schema_changes'
   | 'view_changes'
-  | 'mapping_changes';
+  | 'binding_changes';
 
 export function holdReason(input: {
   /** The installed release's manifest, or undefined when the catalog no longer has it. */
@@ -55,19 +55,18 @@ export function holdReason(input: {
   next: ExtensionManifest;
   schemaOperations: number;
   viewActions: readonly string[];
-  storedMapping: unknown;
-  plannedMapping: unknown;
+  storedPlan: unknown;
+  plannedPlan: unknown;
 }): HoldReason | null {
   // Without the installed manifest nothing can be compared; an admin decides.
   if (!input.previous) return 'previous_release_unavailable';
   if (hash(releaseContract(input.previous)) !== hash(releaseContract(input.next)))
     return 'release_changes';
   // The same contract can still plan work when the workspace drifted (a
-  // deleted contributed field, an edited mapping target): an admin reviews it.
+  // deleted contributed field, an edited binding target): an admin reviews it.
   if (input.schemaOperations > 0) return 'schema_changes';
   if (input.viewActions.some((action) => action === 'create' || action === 'update'))
     return 'view_changes';
-  if (hash(input.storedMapping ?? null) !== hash(input.plannedMapping ?? null))
-    return 'mapping_changes';
+  if (hash(input.storedPlan ?? null) !== hash(input.plannedPlan ?? null)) return 'binding_changes';
   return null;
 }

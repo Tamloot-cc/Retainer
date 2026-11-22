@@ -2,8 +2,6 @@ import type Anthropic from '@anthropic-ai/sdk';
 import {
   type ExecutionResult,
   type ExtensionBindingChoices,
-  type ExtensionMappingChoice,
-  type ExtensionMappingView,
   type Invocation,
   isRetryLater,
 } from '@retainer/extension';
@@ -100,9 +98,19 @@ export async function lookUp(
   };
 }
 
+type CompanyMapping = {
+  lookup?: { name: string; status: 'ok' | 'missing' };
+  outputs: {
+    output: string;
+    action: 'existing' | 'skip';
+    status: 'ok' | 'incompatible';
+    field?: { name: string; label: string; type: string };
+  }[];
+};
+
 /** The record's values of the other bound outputs, for the model to compare against. */
 function mappedContext(
-  mapping: ExtensionMappingView,
+  mapping: CompanyMapping,
   record: { fields: Record<string, unknown> },
 ): Record<string, unknown> {
   return Object.fromEntries(
@@ -140,8 +148,7 @@ async function readCompanyBinding(sdk: RetainerClient, invocation: Invocation) {
   const object = destination?.objects[0];
   if (!object || !destination) return null;
   const lookup = destination.fields.domain;
-  const mapping: ExtensionMappingView = {
-    revision: approved.bindings_revision,
+  const mapping: CompanyMapping = {
     ...(lookup
       ? { lookup: { name: lookup.name, status: destination.status === 'ok' ? 'ok' : 'missing' } }
       : {}),
@@ -150,7 +157,6 @@ async function readCompanyBinding(sdk: RetainerClient, invocation: Invocation) {
       return {
         output: output.key,
         action: field ? 'existing' : 'skip',
-        contribution: false,
         status: field && destination.status !== 'ok' ? 'incompatible' : 'ok',
         ...(field
           ? { field: { name: field.name, label: field.label, type: output.field.type } }
@@ -161,7 +167,11 @@ async function readCompanyBinding(sdk: RetainerClient, invocation: Invocation) {
   return { object, mapping, nameField: destination.fields.name?.name };
 }
 
-type Choice = ExtensionMappingChoice & { reason?: string };
+type Choice = (
+  | { action: 'existing'; field: string }
+  | { action: 'create' }
+  | { action: 'skip' }
+) & { reason?: string };
 type Choices = Record<string, Choice>;
 /** Today's suggestion without a model: the expected API name and a compatible type. */
 function byNameAndType(company: ObjectView | undefined, output: MappingOutput): Choice {
@@ -192,7 +202,7 @@ async function suggestWithModel(
   model: Anthropic | null,
   company: ObjectView | undefined,
   outputs: MappingOutput[],
-  current: ExtensionMappingView | null,
+  current: CompanyMapping | null,
   signal: AbortSignal,
 ): Promise<Choices | null> {
   if (!model) return null;
@@ -288,10 +298,10 @@ function boundCompanyName(field: string | undefined, record: { fields: Record<st
  */
 async function fill(
   run: Lookup,
-  mapping: ExtensionMappingView,
+  mapping: CompanyMapping,
   record: { id: string; name: string | null; fields: Record<string, unknown> },
   domain: string,
-  open: ExtensionMappingView['outputs'],
+  open: CompanyMapping['outputs'],
 ): Promise<string> {
   const found = await lookUp(run, {
     name: record.name,
