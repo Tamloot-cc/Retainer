@@ -1,0 +1,884 @@
+<title>Retainer MCP and Plugin</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one column, top-down. Each section = one-line lead + a visual. Same zone colors as the Extensions doc:
+   Retainer (trusted) blue, the person's own machine green, agent clients and outside grey, model calls amber. */
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --fg: #1b2230; --muted: #5b6577; --line: #d9dee7;
+  --accent: #2d5bd0;
+  --trusted: #e7eefc; --trusted-line: #8fa9e6;
+  --local: #e5f4ec; --local-line: #79bf98;
+  --outside: #eef0f3; --outside-line: #a9b1bf;
+  --key: #b86e00; --key-bg: #fff2d9;
+  --good: #1f7a4a; --bad: #b3342b; --code-bg: #eef1f6;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161d; --surface: #1a1f28; --fg: #e4e8ef; --muted: #9aa4b5; --line: #2e3542;
+    --accent: #7ea2ff; --trusted: #1c2943; --trusted-line: #4766a8; --local: #17302a; --local-line: #3f8a64;
+    --outside: #232833; --outside-line: #566073; --key: #f0b54a; --key-bg: #3a2c12;
+    --good: #5fcf8f; --bad: #ff7d72; --code-bg: #20262f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161d; --surface: #1a1f28; --fg: #e4e8ef; --muted: #9aa4b5; --line: #2e3542;
+  --accent: #7ea2ff; --trusted: #1c2943; --trusted-line: #4766a8; --local: #17302a; --local-line: #3f8a64;
+  --outside: #232833; --outside-line: #566073; --key: #f0b54a; --key-bg: #3a2c12;
+  --good: #5fcf8f; --bad: #ff7d72; --code-bg: #20262f; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 16px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 80px;
+}
+main { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 64px; }
+.prose { max-width: 68ch; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 2.1rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.5rem; font-weight: 600; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; }
+section { display: flex; flex-direction: column; gap: 18px; }
+.eyebrow { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.lead { font-size: 1.1rem; color: var(--muted); }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+p code, li code, td code, dd code, small code, .sub code, .note code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre { margin: 0; background: var(--code-bg); border-radius: 8px; padding: 12px 14px; overflow-x: auto; font-size: 0.8rem; line-height: 1.5; }
+pre code { font-size: inherit; }
+ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+a { color: var(--accent); }
+
+.map { display: flex; flex-wrap: wrap; gap: 8px; }
+.map a { text-decoration: none; font-size: 0.9rem; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--fg); }
+.map a:hover, .map a:focus-visible { border-color: var(--accent); outline: none; }
+.status { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.82rem; color: var(--muted); font-family: var(--mono); }
+.status b { color: var(--fg); font-weight: 500; }
+
+/* diagrams */
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.scroll { overflow-x: auto; }
+.figure svg { display: block; width: 100%; height: auto; }
+.scroll svg { min-width: 760px; }
+.caption { font-size: 0.85rem; color: var(--muted); }
+svg text { font-family: var(--sans); fill: var(--fg); font-size: 13px; }
+svg .small { font-size: 11px; fill: var(--muted); }
+svg .mono { font-family: var(--mono); font-size: 11px; }
+svg .zlabel { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; fill: var(--muted); }
+svg .b-trusted { fill: var(--surface); stroke: var(--trusted-line); stroke-width: 1.5; }
+svg .b-local { fill: var(--surface); stroke: var(--local-line); stroke-width: 1.5; }
+svg .b-out { fill: var(--surface); stroke: var(--outside-line); stroke-width: 1.5; }
+svg .b-model { fill: var(--key-bg); stroke: var(--key); stroke-width: 1.5; stroke-dasharray: 5 4; }
+svg .b-step { fill: var(--trusted); stroke: var(--trusted-line); stroke-width: 1; }
+svg .z-trusted { fill: var(--trusted); stroke: none; }
+svg .z-local { fill: var(--local); stroke: none; }
+svg .z-out { fill: var(--outside); stroke: none; }
+svg .z-key { fill: var(--key-bg); stroke: none; }
+svg .arrow { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+svg .arrow-key { stroke: var(--key); stroke-width: 1.8; fill: none; stroke-dasharray: 6 4; }
+svg .arrow-good { stroke: var(--good); stroke-width: 1.8; fill: none; }
+svg .life { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 3 4; }
+svg .head { fill: var(--muted); }
+svg .head-key { fill: var(--key); }
+svg .head-good { fill: var(--good); }
+svg .keytxt { fill: var(--key); font-weight: 600; }
+svg .goodtxt { fill: var(--good); font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.82rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+
+/* layer cards (section 1) */
+.layers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .layers { grid-template-columns: 1fr; } }
+.layer { border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; border: 1.5px solid; min-width: 0; }
+.layer.t { background: var(--trusted); border-color: var(--trusted-line); }
+.layer.l { background: var(--local); border-color: var(--local-line); }
+.layer.o { background: var(--outside); border-color: var(--outside-line); }
+.layer .where { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+.layer p { font-size: 0.88rem; }
+.layer .path { font-family: var(--mono); font-size: 0.76rem; color: var(--muted); margin-top: auto; overflow-wrap: anywhere; }
+
+/* surface: what the agent receives */
+.surface { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 820px) { .surface { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 460px) { .surface { grid-template-columns: 1fr; } }
+.sbox { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.sbox .big { font-size: 1.9rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: var(--accent); }
+.sbox h3 { font-size: 0.95rem; }
+.sbox p { font-size: 0.82rem; color: var(--muted); }
+.sbox.none .big { color: var(--muted); }
+
+/* scope bar */
+.scopebar { display: flex; height: 34px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+.scopebar div { display: flex; align-items: center; padding: 0 10px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; overflow: hidden; }
+.sb-r { background: var(--trusted); color: var(--accent); }
+.sb-w { background: var(--local); color: var(--good); border-left: 1px solid var(--line); }
+.sb-s { background: var(--key-bg); color: var(--key); border-left: 1px solid var(--line); }
+
+/* tool families */
+.families { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.fam { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.fam header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.fam .count { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); }
+.fam p { font-size: 0.84rem; color: var(--muted); }
+.tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.t { font-family: var(--mono); font-size: 0.74rem; padding: 2px 8px; border-radius: 6px; border: 1px solid; }
+.t.r { color: var(--accent); border-color: var(--trusted-line); background: var(--trusted); }
+.t.w { color: var(--good); border-color: var(--local-line); background: var(--local); }
+.t.s { color: var(--key); border-color: var(--key); background: var(--key-bg); }
+.cond { font-size: 0.72rem; color: var(--key); font-weight: 600; }
+
+/* chains */
+.chain { display: flex; align-items: stretch; flex-wrap: wrap; gap: 6px; }
+.node { flex: 1 1 140px; min-width: 0; border-radius: 8px; padding: 8px 10px; font-size: 0.85rem; border: 1.5px solid; display: flex; flex-direction: column; gap: 3px; }
+.node small { color: var(--muted); font-size: 0.75rem; line-height: 1.35; }
+.node.t { background: var(--trusted); border-color: var(--trusted-line); }
+.node.l { background: var(--local); border-color: var(--local-line); }
+.node.o { background: var(--outside); border-color: var(--outside-line); }
+.node.k { background: var(--key-bg); border-color: var(--key); }
+.node .n { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); }
+.arr { align-self: center; color: var(--muted); font-family: var(--mono); flex: 0 0 auto; }
+
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 720px) { .two { grid-template-columns: 1fr; } }
+.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 820px) { .three { grid-template-columns: 1fr; } }
+.four { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 860px) { .four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .four { grid-template-columns: 1fr; } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.panel .sub { font-size: 0.85rem; color: var(--muted); }
+
+.dcard { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dcard .q { font-size: 0.74rem; font-family: var(--mono); color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+.dcard p { font-size: 0.88rem; color: var(--muted); }
+.pill { align-self: flex-start; font-size: 0.78rem; font-weight: 700; padding: 2px 10px; border-radius: 999px; border: 1.5px solid; font-family: var(--mono); }
+.pill.ok { color: var(--good); border-color: var(--good); }
+.pill.held { color: var(--key); border-color: var(--key); background: var(--key-bg); }
+.pill.gray { color: var(--muted); border-color: var(--line); }
+
+/* access grid */
+.grid-access { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.grid-access th, .grid-access td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: center; }
+.grid-access th:first-child, .grid-access td:first-child { text-align: left; }
+.grid-access thead th { font-size: 0.74rem; color: var(--muted); font-weight: 600; vertical-align: bottom; }
+.grid-access tr:last-child td { border-bottom: none; }
+.on { color: var(--good); font-size: 1.05rem; }
+.off { color: var(--line); font-size: 1.05rem; }
+
+.ticks { list-style: none; padding: 0; gap: 7px; font-size: 0.92rem; }
+.ticks li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 6px; }
+.ticks li::before { font-weight: 700; }
+.ticks.yes li::before { content: "✓"; color: var(--good); }
+.ticks.no li::before { content: "✕"; color: var(--bad); }
+.ticks.dot li::before { content: "•"; color: var(--muted); }
+
+/* gates (hook skip filters) */
+.gates { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; }
+.gates li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--line); font-size: 0.9rem; }
+.gates li:last-child { border-bottom: none; }
+.gates .g { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); text-align: center; }
+.gates .skip { font-family: var(--mono); font-size: 0.72rem; color: var(--bad); border: 1px solid var(--bad); border-radius: 999px; padding: 0 8px; white-space: nowrap; }
+.gates .go { font-family: var(--mono); font-size: 0.72rem; color: var(--key); border: 1px solid var(--key); background: var(--key-bg); border-radius: 999px; padding: 0 8px; white-space: nowrap; }
+.gates li.final { font-weight: 600; }
+
+/* file tree */
+.tree { font-family: var(--mono); font-size: 0.8rem; line-height: 1.5; margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.tree li { display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); gap: 12px; padding: 3px 6px; border-radius: 6px; }
+.tree li:hover { background: var(--bg); }
+.tree .f { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.tree .d { font-family: var(--sans); font-size: 0.82rem; color: var(--muted); }
+.tree .hl .f { color: var(--good); font-weight: 500; }
+.tree .hm .f { color: var(--accent); font-weight: 500; }
+@media (max-width: 560px) { .tree li { grid-template-columns: 1fr; gap: 0; } }
+
+/* spec sheet */
+.spec { display: grid; grid-template-columns: minmax(0, 10rem) minmax(0, 1fr); margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.spec dt, .spec dd { margin: 0; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: 0.88rem; min-width: 0; }
+.spec dt { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent); background: var(--bg); }
+.spec dt:last-of-type, .spec dd:last-of-type { border-bottom: none; }
+@media (max-width: 560px) { .spec { grid-template-columns: 1fr; } .spec dt { border-bottom: none; padding-bottom: 2px; } }
+
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.tablewrap table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 0.88rem; }
+.tablewrap th, .tablewrap td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.tablewrap thead th { font-size: 0.8rem; color: var(--muted); font-weight: 600; background: var(--bg); }
+.tablewrap tbody th { font-weight: 500; width: 30%; }
+.tablewrap tr:last-child th, .tablewrap tr:last-child td { border-bottom: none; }
+
+/* eval bar */
+.evalbar { display: flex; height: 28px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); font-size: 0.78rem; font-weight: 600; }
+.evalbar div { display: flex; align-items: center; justify-content: center; white-space: nowrap; overflow: hidden; }
+.ev-y { background: var(--local); color: var(--good); }
+.ev-n { background: var(--outside); color: var(--muted); border-left: 1px solid var(--line); }
+.ev-e { background: var(--key-bg); color: var(--key); border-left: 1px solid var(--line); }
+
+/* asymmetry */
+.scale { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.scale > div { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.scale .cheap { background: var(--local); }
+.scale .costly { background: var(--key-bg); }
+.scale b { font-size: 0.9rem; }
+.scale small { color: var(--muted); font-size: 0.8rem; }
+
+/* timeline */
+.timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.timeline li { display: grid; grid-template-columns: 6.5rem 18px minmax(0, 1fr); gap: 10px; align-items: start; }
+.timeline .date { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); padding-top: 2px; font-variant-numeric: tabular-nums; }
+.timeline .rail { position: relative; align-self: stretch; }
+.timeline .rail::before { content: ""; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: var(--line); }
+.timeline li:first-child .rail::before { top: 8px; }
+.timeline li:last-child .rail::before { bottom: calc(100% - 10px); }
+.timeline .rail::after { content: ""; position: absolute; left: 4px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); }
+.timeline .rail.p::after { border-color: var(--good); }
+.timeline .ev { padding-bottom: 14px; font-size: 0.9rem; }
+.timeline .ev small { display: block; color: var(--muted); font-size: 0.8rem; }
+
+.note { font-size: 0.86rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; }
+.living { background: var(--surface); border: 1px dashed var(--accent); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+@media (prefers-reduced-motion: no-preference) { .map a { transition: border-color .15s; } }
+</style>
+
+<main>
+  <header class="prose" style="display:flex;flex-direction:column;gap:14px">
+    <span class="eyebrow">Retainer · agent interface · living doc</span>
+    <h1>Retainer MCP and the Claude Code plugin</h1>
+    <p class="lead">How agents reach Retainer: one MCP endpoint on the server, a small stdio bridge for clients that need one, and a Claude Code plugin that adds the connection plus a hook that logs what your chats teach Claude.</p>
+    <div class="status">
+      <span>Updated <b>2026-11-22</b></span>
+      <span>Tools <b>35</b></span>
+      <span>Guides <b>4</b></span>
+      <span>Plugin <b>0.2.1</b></span>
+    </div>
+    <nav class="map" aria-label="Sections">
+      <a href="#pieces">1. The three pieces</a>
+      <a href="#request">2. One request</a>
+      <a href="#surface">3. What an agent gets</a>
+      <a href="#connect">4. Connecting</a>
+      <a href="#playbook">5. How agents write</a>
+      <a href="#plugin">6. The plugin</a>
+      <a href="#hook">7. The CRM check hook</a>
+      <a href="#history">8. History and log</a>
+    </nav>
+  </header>
+
+  <!-- 1 -->
+  <section id="pieces">
+    <span class="eyebrow">1 · The big picture</span>
+    <h2>Three pieces. Only one holds the tools.</h2>
+    <p class="prose">All tools live on the server, at <code>/mcp</code>. The bridge and the plugin only carry connections to it, so a new tool reaches every agent without a client update.</p>
+
+    <div class="layers">
+      <div class="layer t">
+        <span class="where">On the Retainer server · AGPL</span>
+        <h3>MCP endpoint</h3>
+        <p>Streamable HTTP at <code>/mcp</code>. Server instructions, 35 tools, 4 guides that double as prompts. Each tool calls the same service as its REST route.</p>
+        <span class="path">packages/server/src/mcp/</span>
+      </div>
+      <div class="layer l">
+        <span class="where">On your machine · MIT</span>
+        <h3>stdio bridge</h3>
+        <p><code>@retainer/mcp</code>. For clients that only start local processes. Relays messages unchanged between stdin/stdout and <code>/mcp</code>, with an API key.</p>
+        <span class="path">packages/mcp/</span>
+      </div>
+      <div class="layer l">
+        <span class="where">In Claude Code · MIT</span>
+        <h3>Claude Code plugin</h3>
+        <p>Adds the MCP server (OAuth sign-in) and a Stop hook that checks each turn for something your CRM should keep.</p>
+        <span class="path">plugins/retainer/</span>
+      </div>
+    </div>
+
+    <div class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 460" role="img" aria-label="Agent clients connect to the Retainer server's /mcp endpoint over HTTP, or through the local stdio bridge. Each request is authenticated, rate limited, gets its own MCP server built for the caller, and runs a tool that calls the same services as the REST API, which read and write Postgres.">
+        <defs>
+          <marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+        </defs>
+        <rect x="10" y="12" width="270" height="436" rx="12" class="z-out"/>
+        <text x="26" y="34" class="zlabel">AGENT CLIENTS</text>
+
+        <rect x="26" y="52" width="238" height="58" rx="8" class="b-out"/>
+        <text x="145" y="77" text-anchor="middle">Claude Code + plugin</text>
+        <text x="145" y="95" text-anchor="middle" class="small">HTTP · OAuth sign-in</text>
+        <rect x="26" y="126" width="238" height="58" rx="8" class="b-out"/>
+        <text x="145" y="151" text-anchor="middle">Claude web app</text>
+        <text x="145" y="169" text-anchor="middle" class="small">custom connector · OAuth</text>
+        <rect x="26" y="200" width="238" height="58" rx="8" class="b-out"/>
+        <text x="145" y="225" text-anchor="middle">Codex, Cursor, others</text>
+        <text x="145" y="243" text-anchor="middle" class="small">HTTP · OAuth or API key</text>
+        <rect x="26" y="286" width="238" height="58" rx="8" class="b-out"/>
+        <text x="145" y="311" text-anchor="middle">stdio-only clients</text>
+        <text x="145" y="329" text-anchor="middle" class="small">e.g. a Claude Desktop config</text>
+        <rect x="26" y="370" width="238" height="58" rx="8" class="b-local"/>
+        <text x="145" y="395" text-anchor="middle">@retainer/mcp bridge</text>
+        <text x="145" y="413" text-anchor="middle" class="small">stdio ⇄ HTTP · API key</text>
+        <line x1="145" y1="344" x2="145" y2="368" class="arrow" marker-end="url(#ah1)"/>
+
+        <rect x="300" y="12" width="650" height="436" rx="12" class="z-trusted"/>
+        <text x="316" y="34" class="zlabel">RETAINER SERVER</text>
+
+        <rect x="320" y="52" width="280" height="300" rx="10" class="b-trusted"/>
+        <text x="460" y="76" text-anchor="middle" style="font-weight:600">/mcp · Streamable HTTP</text>
+        <rect x="336" y="90" width="248" height="50" rx="6" class="b-step"/>
+        <text x="460" y="111" text-anchor="middle">1 · authenticate</text>
+        <text x="460" y="128" text-anchor="middle" class="small">API key or OAuth token → caller</text>
+        <rect x="336" y="150" width="248" height="50" rx="6" class="b-step"/>
+        <text x="460" y="171" text-anchor="middle">2 · rate limit</text>
+        <text x="460" y="188" text-anchor="middle" class="small">per workspace, per minute</text>
+        <rect x="336" y="210" width="248" height="50" rx="6" class="b-step"/>
+        <text x="460" y="231" text-anchor="middle">3 · build an McpServer</text>
+        <text x="460" y="248" text-anchor="middle" class="small">for this caller · stateless</text>
+        <rect x="336" y="270" width="248" height="50" rx="6" class="b-step"/>
+        <text x="460" y="291" text-anchor="middle">4 · tool → run()</text>
+        <text x="460" y="308" text-anchor="middle" class="small">check scope, call the service</text>
+
+        <rect x="320" y="372" width="280" height="56" rx="8" class="b-trusted"/>
+        <text x="460" y="396" text-anchor="middle">REST /v1</text>
+        <text x="460" y="414" text-anchor="middle" class="small">same auth, same rate limit</text>
+
+        <rect x="630" y="150" width="150" height="170" rx="8" class="b-trusted"/>
+        <text x="705" y="184" text-anchor="middle">Services</text>
+        <text x="705" y="206" text-anchor="middle" class="small">validation</text>
+        <text x="705" y="222" text-anchor="middle" class="small">write rules</text>
+        <text x="705" y="238" text-anchor="middle" class="small">conflict resolution</text>
+        <text x="705" y="254" text-anchor="middle" class="small">error messages</text>
+        <text x="705" y="294" text-anchor="middle" class="small">one copy for MCP + REST</text>
+
+        <rect x="810" y="185" width="125" height="100" rx="8" class="b-trusted"/>
+        <text x="872" y="228" text-anchor="middle">Postgres</text>
+        <text x="872" y="248" text-anchor="middle" class="small">caller's workspace</text>
+
+        <line x1="264" y1="81" x2="334" y2="110" class="arrow" marker-end="url(#ah1)"/>
+        <line x1="264" y1="155" x2="334" y2="114" class="arrow" marker-end="url(#ah1)"/>
+        <line x1="264" y1="229" x2="334" y2="118" class="arrow" marker-end="url(#ah1)"/>
+        <line x1="264" y1="399" x2="334" y2="124" class="arrow" marker-end="url(#ah1)"/>
+        <line x1="584" y1="295" x2="628" y2="262" class="arrow" marker-end="url(#ah1)"/>
+        <line x1="600" y1="400" x2="650" y2="322" class="arrow" marker-end="url(#ah1)"/>
+        <line x1="782" y1="235" x2="808" y2="235" class="arrow" marker-end="url(#ah1)" marker-start="url(#ah1)"/>
+
+        <text x="630" y="380" style="font-weight:600">No model calls in the core.</text>
+        <text x="630" y="400" class="small">Agents decide what to write.</text>
+        <text x="630" y="416" class="small">Retainer validates, stores and retrieves.</text>
+      </svg>
+      </div>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--outside)"></i>Agent clients</span>
+        <span><i class="sw" style="background:var(--local);border:1px solid var(--local-line)"></i>Runs on your machine</span>
+        <span><i class="sw" style="background:var(--trusted)"></i>Retainer server</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="request">
+    <span class="eyebrow">2 · One request</span>
+    <h2>Every call builds a fresh server for one caller</h2>
+    <p class="prose">There are no MCP sessions. Each HTTP request is authenticated on its own, and the workspace and actor come from the credential, so no tool takes either as input.</p>
+
+    <div class="chain" aria-label="Request pipeline">
+      <div class="node o"><span class="n">request</span>POST /mcp<small>Bearer API key or OAuth token</small></div>
+      <span class="arr">→</span>
+      <div class="node t"><span class="n">middleware</span>authenticate<small>same as REST · yields the caller: workspace, actor, scopes</small></div>
+      <span class="arr">→</span>
+      <div class="node t"><span class="n">middleware</span>rate limit<small>per workspace, counted in Postgres</small></div>
+      <span class="arr">→</span>
+      <div class="node t"><span class="n">createMcpServer</span>tools for this caller<small>routine tools only if routines are on</small></div>
+      <span class="arr">→</span>
+      <div class="node t"><span class="n">run()</span>scope check, then service<small>errors mapped exactly like REST</small></div>
+    </div>
+
+    <div class="two">
+      <div class="panel">
+        <h3>What a tool returns</h3>
+<pre><code>// success: JSON as text and as structuredContent
+{ "content": [{ "type": "text", "text": "{…}" }],
+  "structuredContent": { … } }
+
+// failure: the same body REST returns
+{ "isError": true,
+  "structuredContent": { "error": {
+      "code": "invalid_request",
+      "message": "what was wrong, what is allowed",
+      "details": { … } } } }</code></pre>
+        <p class="sub">The server instructions end with "read the message and retry", so error text is written for agents to act on.</p>
+      </div>
+      <div class="panel">
+        <h3>Deliberate choices</h3>
+        <ul class="ticks dot">
+          <li><span><b>Stateless.</b> Fits Lambda: nothing to keep between requests.</span></li>
+          <li><span><b>No list-change notifications.</b> The tool and prompt lists are fixed, and a listen stream would stay open until Lambda times out (#47).</span></li>
+          <li><span><b>Generic tools.</b> One <code>upsert_record</code> for every object, so a workspace's custom objects never change the tool list.</span></li>
+          <li><span><b>Run tokens are refused.</b> An extension run uses REST only, so it can't reach tools beyond its function's needs.</span></li>
+          <li><span><b>The key stops at the middleware.</b> Tools get the caller, never the token.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section id="surface">
+    <span class="eyebrow">3 · What an agent gets</span>
+    <h2>Instructions, tools, guides, prompts</h2>
+    <p class="prose">On connect, the agent receives one block of server instructions and the tool list. Longer how-tos stay out of the context until needed: the agent pulls them with <code>get_guide</code>, or a person starts one from the <code>/</code> menu.</p>
+
+    <div class="surface">
+      <div class="sbox"><span class="big">1</span><h3>Server instructions</h3><p>Start with <code>describe_schema</code>, load memory, the write order after a conversation, when to log from chat.</p></div>
+      <div class="sbox"><span class="big">35</span><h3>Tools</h3><p>Seven families, below. 27 when routines are off.</p></div>
+      <div class="sbox"><span class="big">4</span><h3>Guides</h3><p>Read with <code>get_guide(name)</code>: discover_schema, schema_design, memory, log_from_chat.</p></div>
+      <div class="sbox"><span class="big">4</span><h3>Prompts</h3><p>The same guides, started by a person, e.g. <code>/mcp__retainer__discover_schema</code>.</p></div>
+    </div>
+
+    <div class="figure">
+      <h3>35 tools by the scope they need</h3>
+      <div class="scopebar" role="img" aria-label="25 read tools, 6 write tools, 4 schema:write tools">
+        <div class="sb-r" style="flex:25">read · 25</div>
+        <div class="sb-w" style="flex:6">write · 6</div>
+        <div class="sb-s" style="flex:4">schema · 4</div>
+      </div>
+      <p class="caption">Most of the surface is reading. Only 10 tools change anything, and the 4 schema tools need <code>schema:write</code> on the key or token.</p>
+    </div>
+
+    <div class="families">
+      <div class="fam">
+        <header><h3>Setup and guidance</h3><span class="count">4</span></header>
+        <p>Learn the workspace, start one from a template, read a guide.</p>
+        <div class="tools"><span class="t r">describe_schema</span><span class="t r">get_guide</span><span class="t r">list_templates</span><span class="t s">apply_template</span></div>
+      </div>
+      <div class="fam">
+        <header><h3>Read</h3><span class="count">7</span></header>
+        <p>Find records, then pull one record's context or history.</p>
+        <div class="tools"><span class="t r">search</span><span class="t r">query_records</span><span class="t r">get_record</span><span class="t r">get_context</span><span class="t r">get_timeline</span><span class="t r">list_comments</span><span class="t r">get_gmail_messages</span></div>
+      </div>
+      <div class="fam">
+        <header><h3>Write</h3><span class="count">5</span></header>
+        <p>Log what happened, write what was learned, grow the schema.</p>
+        <div class="tools"><span class="t w">log_event</span><span class="t w">upsert_record</span><span class="t w">remember</span><span class="t s">propose_schema_change</span><span class="t s">move_events</span></div>
+      </div>
+      <div class="fam">
+        <header><h3>Files</h3><span class="count">4</span></header>
+        <p>Upload up to 25 MiB through a signed URL, never as tool JSON.</p>
+        <div class="tools"><span class="t w">create_file_upload</span><span class="t w">finalize_file</span><span class="t r">get_file</span><span class="t r">download_file</span></div>
+      </div>
+      <div class="fam">
+        <header><h3>Change feed</h3><span class="count">2</span></header>
+        <p>Commit-ordered record changes as IDs and field keys, with a cursor.</p>
+        <div class="tools"><span class="t r">list_changes</span><span class="t r">get_change</span></div>
+      </div>
+      <div class="fam">
+        <header><h3>Extensions</h3><span class="count">5</span></header>
+        <p>Inspect installations and runs. Draft a mapping for an admin to approve.</p>
+        <div class="tools"><span class="t r">list_extensions</span><span class="t r">get_extension</span><span class="t r">list_extension_connections</span><span class="t r">list_extension_runs</span><span class="t s">preview_extension</span></div>
+      </div>
+      <div class="fam">
+        <header><h3>Routines</h3><span class="count">8</span></header>
+        <p>Write, check and dry-run a routine, then propose it for review.</p>
+        <div class="tools"><span class="t r">get_routine_capabilities</span><span class="t r">validate_routine</span><span class="t r">preview_routine</span><span class="t r">get_routine_preview</span><span class="t r">get_routine_job</span><span class="t w">propose_routine</span><span class="t r">list_routines</span><span class="t r">get_routine</span></div>
+        <span class="cond">Only registered when the server has routines on</span>
+      </div>
+    </div>
+    <div class="legend">
+      <span><span class="t r">read</span></span>
+      <span><span class="t w">write</span></span>
+      <span><span class="t s">schema:write</span></span>
+    </div>
+
+    <h3>The four guides</h3>
+    <div class="four">
+      <div class="dcard"><span class="q">discover_schema</span><p>Explore the user's own data, propose a schema with evidence, apply it once they agree. Prompt takes an optional <code>sources</code>.</p></div>
+      <div class="dcard"><span class="q">schema_design</span><p>Start lean; prefer events, facts and tasks over new objects; grow fields from evidence. Also how to review a schema.</p></div>
+      <div class="dcard"><span class="q">memory</span><p>What goes in <code>workspace</code> (how the business works) vs <code>me</code> (the person), and what belongs on a record.</p></div>
+      <div class="dcard"><span class="q">log_from_chat</span><p>What a chat holds that is worth keeping, which source to cite, and the order of writes. The hook points Claude here.</p></div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section id="connect">
+    <span class="eyebrow">4 · Connecting</span>
+    <h2>Two credentials reach /mcp</h2>
+    <p class="prose">An API key, made by an admin for one agent, or an OAuth token, which a person grants by signing in. OAuth needs accounts mode, which the hosted service runs.</p>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th></th><th>API key</th><th>OAuth token</th><th>Extension run token</th></tr></thead>
+        <tbody>
+          <tr><th>Who makes it</th><td>An admin, in Settings → Agents or with <code>retainer key create</code></td><td>A person, by signing in and choosing Allow</td><td>The coordinator, per run</td></tr>
+          <tr><th>Acts as</th><td>The key's <code>agent</code> actor, e.g. <code>agent:inbox</code></td><td>"Claude for &lt;name&gt;", an <code>agent</code> actor</td><td>The extension</td></tr>
+          <tr><th>Scopes</th><td>Set on the key: <code>read</code>, <code>write</code>, <code>schema:write</code></td><td>What the app asked for, capped by the person's role</td><td>What the function declared</td></tr>
+          <tr><th>Used by</th><td>The stdio bridge, scripts, self-hosted agents</td><td>The plugin, Claude web, Codex</td><td>REST only</td></tr>
+          <tr><th>Reaches /mcp</th><td class="on">●</td><td class="on">●</td><td class="off">○</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="figure">
+      <h3>OAuth sign-in, as the plugin and Claude web do it</h3>
+      <div class="scroll">
+      <svg viewBox="0 0 960 400" role="img" aria-label="The agent client calls /mcp without a token and gets 401 with resource metadata. It opens the sign-in page; the person signs in, picks a workspace and allows. The client gets a token and calls /mcp with it; Retainer builds the caller as Claude for the person, an agent actor.">
+        <defs>
+          <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+        </defs>
+        <rect x="15" y="16" width="150" height="44" rx="8" class="b-out"/><text x="90" y="43" text-anchor="middle">You, in a browser</text>
+        <rect x="225" y="16" width="150" height="44" rx="8" class="b-out"/><text x="300" y="43" text-anchor="middle">Agent client</text>
+        <rect x="445" y="16" width="150" height="44" rx="8" class="b-trusted"/><text x="520" y="43" text-anchor="middle">Retainer /mcp</text>
+        <rect x="675" y="16" width="170" height="44" rx="8" class="b-trusted"/><text x="760" y="38" text-anchor="middle">Retainer accounts</text><text x="760" y="53" text-anchor="middle" class="small">Better Auth, /account</text>
+        <line x1="90" y1="60" x2="90" y2="390" class="life"/>
+        <line x1="300" y1="60" x2="300" y2="390" class="life"/>
+        <line x1="520" y1="60" x2="520" y2="390" class="life"/>
+        <line x1="760" y1="60" x2="760" y2="390" class="life"/>
+
+        <line x1="302" y1="96" x2="518" y2="96" class="arrow" marker-end="url(#ah2)"/>
+        <text x="312" y="88" class="small">POST /mcp, no token</text>
+        <line x1="518" y1="130" x2="302" y2="130" class="arrow" marker-end="url(#ah2)"/>
+        <text x="312" y="122" class="small">401 · points to /.well-known/oauth-protected-resource</text>
+        <line x1="298" y1="168" x2="92" y2="168" class="arrow" marker-end="url(#ah2)"/>
+        <text x="104" y="160" class="small">opens the sign-in page</text>
+        <line x1="92" y1="206" x2="758" y2="206" class="arrow-good" marker-end="url(#ah2)"/>
+        <text x="104" y="198" class="goodtxt" style="font-size:12px">sign in · pick the workspace · review · Allow</text>
+        <line x1="758" y1="244" x2="302" y2="244" class="arrow" marker-end="url(#ah2)"/>
+        <text x="540" y="236" class="small">access token</text>
+        <line x1="302" y1="284" x2="518" y2="284" class="arrow" marker-end="url(#ah2)"/>
+        <text x="312" y="276" class="small">POST /mcp, Bearer token</text>
+        <rect x="532" y="296" width="214" height="52" rx="6" class="z-trusted"/>
+        <text x="542" y="316" class="small">caller = "Claude for &lt;name&gt;"</text>
+        <text x="542" y="334" class="small">agent actor · role-capped scopes</text>
+        <line x1="518" y1="370" x2="302" y2="370" class="arrow" marker-end="url(#ah2)"/>
+        <text x="312" y="362" class="small">tool results</text>
+      </svg>
+      </div>
+      <p class="caption">One connection = one workspace. To use another, connect again and pick it. Disconnecting, removing the person or lowering their role applies on the next request.</p>
+    </div>
+
+    <div class="two">
+      <div class="panel">
+        <h3>An agent that only has the URL</h3>
+        <p class="sub">An anonymous <code>GET /mcp</code> returns plain-text setup steps (a browser is redirected to <code>/mcp/setup</code>). They cover Codex and Claude Code, re-auth and workspace checks. Every <code>/mcp</code> response also carries a <code>Link: rel="help"</code> header to them.</p>
+      </div>
+      <div class="panel">
+        <h3>The stdio bridge</h3>
+<pre><code>"retainer": {
+  "command": "npx",
+  "args": ["-y", "@retainer/mcp"],
+  "env": {
+    "RETAINER_URL": "https://retainer.example",
+    "RETAINER_API_KEY": "rtn_…" } }</code></pre>
+        <p class="sub">Diagnostics go to stderr only. A rejected key fails with a message naming <code>RETAINER_API_KEY</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section id="playbook">
+    <span class="eyebrow">5 · How agents write</span>
+    <h2>The server instructions teach one routine</h2>
+    <p class="prose">Retainer never reads conversations. The agent does, then writes in a fixed order so every value can cite where it came from.</p>
+
+    <h3>At the start of a session</h3>
+    <div class="chain" aria-label="Session start">
+      <div class="node t">describe_schema<small>objects, fields, value formats, <code>initialized</code></small></div>
+      <span class="arr">→</span>
+      <div class="node k">Not initialized?<small>follow <code>discover_schema</code>, apply only after the user agrees</small></div>
+      <span class="arr">→</span>
+      <div class="node t">get_context("workspace")<small>shared memory: how the business works</small></div>
+      <span class="arr">→</span>
+      <div class="node t">get_context("me")<small>if the credential works for a person</small></div>
+    </div>
+
+    <h3>After a meeting, call, email thread or chat</h3>
+    <div class="chain" aria-label="Write order">
+      <div class="node o"><span class="n">step 1</span>log_event<small>type, channel, time, title, summary, externalId, participants, about. Keep the id.</small></div>
+      <span class="arr">→</span>
+      <div class="node o"><span class="n">step 2</span>upsert_record<small><code>source</code> = that event, so an older email can't overwrite a newer value</small></div>
+      <span class="arr">→</span>
+      <div class="node o"><span class="n">step 3</span>remember<small>facts that don't fit a field, citing the same event</small></div>
+      <span class="arr">→</span>
+      <div class="node o"><span class="n">step 4</span>upsert_record task<small>for what someone committed to</small></div>
+    </div>
+    <p class="note">Each call is its own short write, so an agent can stop and resume. Logging the same <code>channel</code> + <code>externalId</code> again returns the same event and only adds missing participants and <code>about</code> records.</p>
+
+    <h3>What a write can come back as</h3>
+    <div class="three">
+      <div class="dcard"><span class="pill ok">applied</span><p>It is now the value.</p></div>
+      <div class="dcard"><span class="pill held">pending_review</span><p>A person set a different value. Yours waits for their approval, so the agent must say "waiting", not "done".</p></div>
+      <div class="dcard"><span class="pill gray">superseded</span><p>Kept in history. A newer or higher-precedence value stands.</p></div>
+    </div>
+
+    <div class="two">
+      <div class="panel">
+        <h3>Guardrails built into the tools</h3>
+        <ul class="ticks yes">
+          <li><span><code>upsert_record</code> finds by <code>id</code> or a unique <code>match</code>, and fails if nothing matches unless <code>ifMissing: "create"</code>. "Update Dana's address" can't make a second Dana.</span></li>
+          <li><span>Unmatched participants come back with a reason. Retainer never creates records on its own.</span></li>
+          <li><span>Adding fields applies at once. Renames and removals wait for a person.</span></li>
+          <li><span>Validation errors name the field and the expected format.</span></li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>What agents can't do</h3>
+        <ul class="ticks no">
+          <li><span>Write comments. Those are people talking to people (403).</span></li>
+          <li><span>Cite a comment as a source.</span></li>
+          <li><span>Run <code>move_events</code> for real. Agents pass <code>dryRun: true</code>; an admin person runs it.</span></li>
+          <li><span>Delete a fact, or supersede one a person wrote.</span></li>
+          <li><span>Put customer knowledge in <code>me</code>.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section id="plugin">
+    <span class="eyebrow">6 · The plugin</span>
+    <h2>A connection plus one hook</h2>
+    <p class="prose">The plugin has no tools of its own. It points Claude Code at the hosted <code>/mcp</code> and adds a background check after every turn.</p>
+
+    <div class="chain" aria-label="Install steps">
+      <div class="node o"><span class="n">1</span>/plugin marketplace add<small><code>Tamloot-cc/Retainer</code></small></div>
+      <span class="arr">→</span>
+      <div class="node o"><span class="n">2</span>/plugin install<small><code>retainer@retainer</code></small></div>
+      <span class="arr">→</span>
+      <div class="node o"><span class="n">3</span>/mcp → sign in<small>pick <code>plugin:retainer:retainer</code></small></div>
+      <span class="arr">→</span>
+      <div class="node t"><span class="n">4</span>Pick the workspace<small>in Retainer, in the browser</small></div>
+    </div>
+
+    <div class="two">
+      <div class="panel">
+        <h3>What's in the folder</h3>
+        <ul class="tree">
+          <li class="hm"><span class="f">.mcp.json</span><span class="d">HTTP server at <code>${RETAINER_URL:-https://retainer.tamloot.cc}/mcp</code></span></li>
+          <li class="hl"><span class="f">hooks/hooks.json</span><span class="d">One <code>Stop</code> hook: <code>asyncRewake</code>, 120 s timeout</span></li>
+          <li><span class="f">scripts/crm-check.sh</span><span class="d">Off switch, then finds Node</span></li>
+          <li><span class="f">scripts/crm-check.mjs</span><span class="d">The hook: state, classifier call, wake</span></li>
+          <li><span class="f">scripts/turn.mjs</span><span class="d">Pure functions: read the turn, skip rules, prompt, messages</span></li>
+          <li><span class="f">scripts/turn.test.mjs</span><span class="d">Unit tests for turn.mjs</span></li>
+          <li><span class="f">eval/cases.json, run.mjs</span><span class="d">21 labeled turns, run against Haiku</span></li>
+          <li><span class="f">.claude-plugin/plugin.json</span><span class="d">Name, version 0.2.1</span></li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Who decides what</h3>
+        <table class="grid-access">
+          <thead><tr><th></th><th>Hook</th><th>Claude</th><th>Server</th></tr></thead>
+          <tbody>
+            <tr><td><b>When</b> to look again</td><td class="on">●</td><td class="off">○</td><td class="off">○</td></tr>
+            <tr><td><b>What</b> to write</td><td class="off">○</td><td class="on">●</td><td class="off">○</td></tr>
+            <tr><td>The rules for logging</td><td class="off">○</td><td class="off">○</td><td class="on">●</td></tr>
+            <tr><td>Validate and store</td><td class="off">○</td><td class="off">○</td><td class="on">●</td></tr>
+          </tbody>
+        </table>
+        <p class="sub">The rules live in the server's <code>log_from_chat</code> guide, so they improve without a plugin update. The hook never talks to Retainer.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section id="hook">
+    <span class="eyebrow">7 · The CRM check hook</span>
+    <h2>After each turn: filter, ask Haiku, maybe wake Claude</h2>
+    <p class="prose">The check runs in the background, so you never wait for it. A cheap model makes a yes/no call; only on yes does Claude wake, read the guide and decide what, if anything, to log.</p>
+
+    <div class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 590" role="img" aria-label="Sequence: you send a prompt, Claude replies and the turn ends. Claude Code fires the Stop hook in the background. The hook reads the transcript, applies skip filters, and sends the turn text to Claude Haiku through claude -p under your sign-in. Haiku answers log true or false. On true the hook exits with code 2 and a static wake message. Claude reads the log_from_chat guide from Retainer, searches, logs the event and writes values, then tells you in one line.">
+        <defs>
+          <marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+          <marker id="ah3k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-key"/></marker>
+          <marker id="ah3g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-good"/></marker>
+        </defs>
+        <rect x="350" y="8" width="420" height="574" rx="12" class="z-local"/>
+        <text x="362" y="578" class="zlabel">YOUR MACHINE · BACKGROUND</text>
+
+        <rect x="10" y="16" width="120" height="44" rx="8" class="b-out"/><text x="70" y="43" text-anchor="middle">You</text>
+        <rect x="165" y="16" width="150" height="44" rx="8" class="b-out"/><text x="240" y="38" text-anchor="middle">Claude Code</text><text x="240" y="53" text-anchor="middle" class="small">your session</text>
+        <rect x="365" y="16" width="150" height="44" rx="8" class="b-local"/><text x="440" y="38" text-anchor="middle">Stop hook</text><text x="440" y="53" text-anchor="middle" class="small">crm-check.mjs</text>
+        <rect x="570" y="16" width="180" height="44" rx="8" class="b-model"/><text x="660" y="38" text-anchor="middle">Claude Haiku</text><text x="660" y="53" text-anchor="middle" class="small">claude -p, your sign-in</text>
+        <rect x="790" y="16" width="160" height="44" rx="8" class="b-trusted"/><text x="870" y="43" text-anchor="middle">Retainer /mcp</text>
+        <line x1="70" y1="60" x2="70" y2="560" class="life"/>
+        <line x1="240" y1="60" x2="240" y2="560" class="life"/>
+        <line x1="440" y1="60" x2="440" y2="560" class="life"/>
+        <line x1="660" y1="60" x2="660" y2="560" class="life"/>
+        <line x1="870" y1="60" x2="870" y2="560" class="life"/>
+
+        <line x1="72" y1="96" x2="238" y2="96" class="arrow" marker-end="url(#ah3)"/>
+        <text x="82" y="88" class="small">prompt</text>
+        <line x1="238" y1="126" x2="72" y2="126" class="arrow" marker-end="url(#ah3)"/>
+        <text x="82" y="118" class="small">reply · turn ends</text>
+        <line x1="242" y1="164" x2="438" y2="164" class="arrow" marker-end="url(#ah3)"/>
+        <text x="252" y="156" class="small">Stop event (async)</text>
+        <text x="82" y="164" class="small" style="font-style:italic">you keep working</text>
+
+        <rect x="450" y="182" width="190" height="56" rx="6" class="b-local"/>
+        <text x="460" y="204" class="small">read the transcript tail</text>
+        <text x="460" y="222" class="small">7 skip filters (below)</text>
+
+        <line x1="442" y1="272" x2="658" y2="272" class="arrow-key" marker-end="url(#ah3k)"/>
+        <text x="452" y="264" class="small">&lt;turn&gt; text on stdin</text>
+        <line x1="658" y1="306" x2="442" y2="306" class="arrow-key" marker-end="url(#ah3k)"/>
+        <text x="500" y="298" class="keytxt" style="font-size:11px">{ log, what }</text>
+        <text x="452" y="330" class="small">no → one log line, exit 0</text>
+
+        <line x1="438" y1="362" x2="242" y2="362" class="arrow-good" marker-end="url(#ah3g)"/>
+        <text x="252" y="354" class="goodtxt" style="font-size:11px">yes → exit 2 + wake message</text>
+
+        <line x1="242" y1="402" x2="868" y2="402" class="arrow" marker-end="url(#ah3)"/>
+        <text x="252" y="394" class="small">get_guide("log_from_chat")</text>
+        <line x1="242" y1="440" x2="868" y2="440" class="arrow" marker-end="url(#ah3)"/>
+        <text x="252" y="432" class="small">search · get_context on everyone the turn names</text>
+        <line x1="242" y1="478" x2="868" y2="478" class="arrow" marker-end="url(#ah3)"/>
+        <text x="252" y="470" class="small">log_event · upsert_record · remember</text>
+        <text x="252" y="494" class="small mono">channel "claude-code" · externalId "&lt;session&gt;:&lt;turn&gt;"</text>
+        <line x1="238" y1="530" x2="72" y2="530" class="arrow" marker-end="url(#ah3)"/>
+        <text x="82" y="522" class="small">one line: what was logged</text>
+      </svg>
+      </div>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--local)"></i>Runs on your machine, in the background</span>
+        <span><i class="sw" style="background:var(--key-bg);border:1px dashed var(--key)"></i>Model call, under your Claude account</span>
+        <span><i class="sw" style="background:var(--trusted)"></i>Retainer, reached only by Claude's own tool calls</span>
+      </div>
+    </div>
+
+    <div class="two">
+      <div class="panel">
+        <h3>The skip filters, in order</h3>
+        <ol class="gates">
+          <li><span class="g">1</span><span><code>RETAINER_CRM_HOOK=off</code></span><span class="skip">exit</span></li>
+          <li><span class="g">2</span><span>Claude was just woken by this hook</span><span class="skip">skip</span></li>
+          <li><span class="g">3</span><span>This turn was already checked</span><span class="skip">skip</span></li>
+          <li><span class="g">4</span><span>A task or the hook started it, not a person</span><span class="skip">skip</span></li>
+          <li><span class="g">5</span><span>A slash command</span><span class="skip">skip</span></li>
+          <li><span class="g">6</span><span>The turn already used a Retainer tool</span><span class="skip">skip</span></li>
+          <li><span class="g">7</span><span>Under 200 characters, with the turn before</span><span class="skip">skip</span></li>
+          <li class="final"><span class="g">→</span><span>Ask Haiku</span><span class="go">classify</span></li>
+        </ol>
+      </div>
+      <div class="panel">
+        <h3>The classifier call</h3>
+        <dl class="spec" style="border:none;border-radius:0">
+          <dt>Runs</dt><dd><code>claude -p --safe-mode --model haiku</code>: no CLAUDE.md, hooks, plugins, MCP or skills</dd>
+          <dt>Tools</dt><dd>None (<code>--tools ""</code>)</dd>
+          <dt>Input</dt><dd>The turn in <code>&lt;turn&gt;</code> (≤ 12,000 chars, trimmed in the middle) and the end of the turn before in <code>&lt;previous_turn&gt;</code> (≤ 3,000)</dd>
+          <dt>Output</dt><dd><code>{"log": bool, "what": "one line"}</code>, enforced with <code>--json-schema</code></dd>
+          <dt>Timeout</dt><dd>90 s, then killed</dd>
+        </dl>
+      </div>
+    </div>
+
+    <h3>What Haiku is told</h3>
+    <div class="two">
+      <div class="panel">
+        <ul class="ticks yes">
+          <li><span>A conversation had or scheduled with someone named</span></li>
+          <li><span>Someone's contact details, role, organization or needs</span></li>
+          <li><span>A tracked thing that started, changed, stalled or ended</span></li>
+          <li><span>A promise or follow-up between the person and someone else</span></li>
+          <li><span>An email, event, note or transcript Claude read about someone</span></li>
+        </ul>
+      </div>
+      <div class="panel">
+        <ul class="ticks no">
+          <li><span>The person's own engineering work: code, deploys, CI, tools</span></li>
+          <li><span>Talk about the CRM itself and its data model</span></li>
+          <li><span>How-things-work questions or public research</span></li>
+          <li><span>A lookup that found nothing</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>Why it's built this way</h3>
+    <div class="two">
+      <div class="dcard">
+        <span class="q">Leans to yes</span>
+        <div class="scale">
+          <div class="cheap"><b>Needless wake</b><small>Claude says "nothing to log" in one line</small></div>
+          <div class="costly"><b>Missed turn</b><small>The information is gone</small></div>
+        </div>
+        <p>When unsure, Haiku answers yes. Claude is the careful second look.</p>
+      </div>
+      <div class="dcard">
+        <span class="q">Static wake message</span>
+        <p>Haiku's <code>what</code> line goes to the log only. Claude gets fixed text plus safe IDs, so a turn that quotes a customer's email can't steer it. The turn's tags are also broken (<code>&lt;turn_</code>) so chat text can't close its own frame.</p>
+      </div>
+      <div class="dcard">
+        <span class="q">No model in Retainer</span>
+        <p>The classifier runs on your machine, under your Claude sign-in, and sends nothing to Retainer. Retainer's core still never calls a model.</p>
+      </div>
+      <div class="dcard">
+        <span class="q">You may have moved on</span>
+        <p>The wake names which turn to reread ("the turn you started 2 messages before your latest one") and ends with "Do not resume any earlier task."</p>
+      </div>
+    </div>
+
+    <h3>When something goes wrong</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Situation</th><th>What Claude tells you</th><th>How often</th></tr></thead>
+        <tbody>
+          <tr><th>Node.js not found</th><td>Install Node 20+, or set <code>RETAINER_CRM_HOOK=off</code></td><td>Once, ever</td></tr>
+          <tr><th><code>claude -p</code> sign-in expired</th><td>Run <code>claude auth login</code></td><td>Once a day</td></tr>
+          <tr><th>3 failures in a row, any other reason</th><td>Where <code>crm-check.log</code> is, and the off switch</td><td>Once a day</td></tr>
+          <tr><th>Woken, but Retainer tools missing</th><td>Run <code>/mcp</code> and sign in, or turn the check off</td><td>Each wake</td></tr>
+          <tr><th>Any other error</th><td>Nothing. Logged, exit 0</td><td>Never shown</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">State lives in <code>~/.claude/plugins/data/&lt;plugin&gt;/</code>: <code>crm-check.log</code> has every decision and why; <code>state.json</code> holds the last checked turn per session (last 200 sessions) and the failure counters. Several sessions write it at once, so each update re-reads the file first.</p>
+
+    <div class="figure">
+      <h3>The eval set</h3>
+      <div class="evalbar" role="img" aria-label="21 cases: 13 expect yes, 6 expect no, 2 either">
+        <div class="ev-y" style="flex:13">yes · 13</div>
+        <div class="ev-n" style="flex:6">no · 6</div>
+        <div class="ev-e" style="flex:2">either · 2</div>
+      </div>
+      <p class="caption"><code>node eval/run.mjs --runs 5</code> runs each case 5 times against Haiku and reports how often it says yes. <code>--scripts</code> compares two versions of <code>turn.mjs</code> on the same cases. Not part of <code>pnpm test</code>.</p>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section id="history">
+    <span class="eyebrow">8 · History and log</span>
+    <h2>How it got here</h2>
+    <ol class="timeline">
+      <li><span class="date">2026-11-07</span><span class="rail"></span><div class="ev">#42 OAuth on /mcp, per-workspace rate limit<small>Claude web connects without a key</small></div></li>
+      <li><span class="date">2026-11-07</span><span class="rail"></span><div class="ev">#47 Stop advertising list changes<small>no long-lived listen stream on Lambda</small></div></li>
+      <li><span class="date">2026-11-08</span><span class="rail"></span><div class="ev">#50 Value formats in describe_schema<small>errors name the expected shape</small></div></li>
+      <li><span class="date">2026-11-08</span><span class="rail p"></span><div class="ev">#65 Claude Code plugin<small>MCP server + Stop hook + log_from_chat guide</small></div></li>
+      <li><span class="date">2026-11-08</span><span class="rail"></span><div class="ev">#67 Workspace and personal memory<small><code>workspace</code> and <code>me</code>, the memory guide</small></div></li>
+      <li><span class="date">2026-11-08</span><span class="rail"></span><div class="ev">#68 Resolve unmatched participants on re-log</div></li>
+      <li><span class="date">2026-11-09</span><span class="rail p"></span><div class="ev">#69, #71 Classifier catches missed turns, fits any schema<small>previous-turn context, eval set</small></div></li>
+      <li><span class="date">2026-11-09</span><span class="rail"></span><div class="ev">#70 log_from_chat: scheduled meetings, linking a new person</div></li>
+      <li><span class="date">2026-11-17</span><span class="rail"></span><div class="ev">#116 Hosted onboarding<small>setup text at <code>/mcp/setup</code></small></div></li>
+      <li><span class="date">2026-11-20</span><span class="rail"></span><div class="ev">#128 Routine tools<small>8 tools, registered when routines are on</small></div></li>
+    </ol>
+    <div class="legend">
+      <span><i class="sw" style="border:2px solid var(--accent);border-radius:50%"></i>Server MCP</span>
+      <span><i class="sw" style="border:2px solid var(--good);border-radius:50%"></i>Plugin</span>
+    </div>
+
+    <div class="living">
+      <h3>Noticed while writing this</h3>
+      <ul class="ticks dot">
+        <li><span><code>docs/agents.md</code> lists 15 tools. The server registers 35: the files, change feed, extension and routine tools, and <code>get_gmail_messages</code>, are missing from that table.</span></li>
+      </ul>
+    </div>
+
+    <div class="living">
+      <h3>Page log</h3>
+      <div class="tablewrap" style="border:none">
+        <table style="min-width:0">
+          <thead><tr><th style="width:8rem">Date</th><th>Change</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">2026-11-22</td><td>First version, from main at <code>e831514</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
