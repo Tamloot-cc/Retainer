@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ExtensionManifest } from '@retainer/extension';
+import type { BindingWriteStamp, ExtensionManifest } from '@retainer/extension';
 import { generateKeyPair } from 'jose';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
@@ -8,7 +8,7 @@ import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { ChangeMaintenance } from '../../src/worker/changes.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { extensionFixture } from '../helpers/extensions.js';
+import { bindingStamp, extensionFixture } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
 const workspaceIds: string[] = [];
@@ -89,7 +89,21 @@ async function setup(count = 1, standalone = 0, watches?: () => Watch[]) {
     });
   });
   const apps = Array.from({ length: standalone }, () =>
-    extensionFixture({ execution: 'standalone', scopes: ['read', 'write'] }),
+    extensionFixture({
+      execution: 'standalone',
+      scopes: ['read', 'write'],
+      bindings: [
+        {
+          key: 'person',
+          label: 'People',
+          description: 'Person job titles written by the app.',
+          class: 'entity',
+          access: 'write',
+          required: true,
+          fields: [{ key: 'jobTitle', label: 'Job title', types: ['text'], required: true }],
+        },
+      ],
+    }),
   );
   const catalog = new ExtensionCatalog([
     ...manifests.map((manifest) => ({
@@ -123,7 +137,7 @@ async function setup(count = 1, standalone = 0, watches?: () => Watch[]) {
     if (!run) throw new Error('setup missing');
     await queue.complete(run, { status: 'succeeded' });
   }
-  const standaloneKeys: { id: string; key: string }[] = [];
+  const standaloneKeys: { id: string; key: string; bindings: BindingWriteStamp }[] = [];
   for (const manifest of apps) {
     const input = { registrationId: manifest.universalId, version: manifest.version, settings: {} };
     const plan = await app.request('/v1/extensions/preview', { key: keys.admin, body: input });
@@ -138,7 +152,15 @@ async function setup(count = 1, standalone = 0, watches?: () => Watch[]) {
       body: { expectedGeneration: installed.body.generation, scopes: ['read', 'write'] },
     });
     expect(issued.status).toBe(201);
-    standaloneKeys.push({ id: installed.body.id, key: issued.body.key });
+    const current = await app.request(`/v1/extensions/${installed.body.id}/bindings`, {
+      key: issued.body.key,
+    });
+    expect(current.status).toBe(200);
+    standaloneKeys.push({
+      id: installed.body.id,
+      key: issued.body.key,
+      bindings: bindingStamp(current.body, 'person'),
+    });
   }
   async function person(name: string) {
     const result = await app.request('/v1/objects/person/records', {
@@ -169,10 +191,11 @@ async function setup(count = 1, standalone = 0, watches?: () => Watch[]) {
     };
   }
   async function edit(key: string, record: string, jobTitle: string, headers = {}) {
+    const bindings = standaloneKeys.find((app) => app.key === key)?.bindings;
     const result = await app.request(`/v1/records/${record}`, {
       key,
       method: 'PATCH',
-      body: { values: { jobTitle } },
+      body: { values: { jobTitle }, bindings },
       headers,
     });
     expect(result.status).toBe(200);
@@ -1012,7 +1035,7 @@ describe('change trigger coalescing and throttling (R9)', () => {
       h.app.request(`/v1/records/${person}`, {
         key,
         method: 'PATCH',
-        body: { values: { jobTitle: `Caused by ${header}` } },
+        body: { values: { jobTitle: `Caused by ${header}` }, bindings: app.bindings },
         headers: { 'Retainer-Caused-By': header },
       });
     expect((await write(app.key, cursor('999999'))).status).toBe(410);
