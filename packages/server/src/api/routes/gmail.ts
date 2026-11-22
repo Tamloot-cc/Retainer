@@ -26,7 +26,6 @@ import { getSchema } from '../../schema/compiled.js';
 import {
   appendGmailMessage,
   gmailAddressesSchema,
-  gmailConversationPage,
   gmailConversationSchema,
   gmailMessageSchema,
   matchGmailPeople,
@@ -424,20 +423,6 @@ export function gmailRuntimeRoutes(app: Hono<AppEnv>, sql: Sql, catalog: Extensi
         },
         { schema: 'exclusive' },
         { asPerson: false },
-      ),
-    );
-  });
-}
-
-export function gmailReadRoutes(app: Hono<AppEnv>, sql: Sql) {
-  app.get('/events/:id/gmail-messages', requireScope('read'), async (c) => {
-    const caller = c.get('caller');
-    const after = z.uuid().optional().parse(c.req.query('after')) ?? null;
-    const id = idParam(c);
-    c.header('Cache-Control', 'no-store');
-    return c.json(
-      await withRead(sql, caller, (tx, schema) =>
-        gmailConversationPage(tx, caller.workspaceId, id, after, schema.eventTypeIds),
       ),
     );
   });

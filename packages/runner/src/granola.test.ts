@@ -1,8 +1,9 @@
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import type { Invocation, VerificationInvocation } from '@retainer/extension';
+import { EVENT_CONTENT_MAX } from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { executeGranola, granolaParticipants } from './granola.js';
+import { executeGranola, granolaParticipants, granolaTranscriptText } from './granola.js';
 import { GRANOLA, granolaManifest, granolaNote } from './granola-contract.js';
 import { GranolaProvider } from './granola-provider.js';
 import { verifyWebhook } from './webhooks.js';
@@ -159,6 +160,27 @@ describe('reviewed Granola contract and bounded provider transport', () => {
       code: 'provider_pagination_stalled',
     });
   });
+  it('turns a transcript into one line per segment, naming the speaker it knows', () => {
+    const segment = (speaker: Record<string, string>, text: string) => ({
+      speaker: { source: 'microphone', ...speaker },
+      text,
+      start_time: '2026-11-10T10:00:00Z',
+      end_time: '2026-11-10T10:01:00Z',
+    });
+    expect(
+      granolaTranscriptText([
+        segment({ name: 'Dana' }, 'Shall we start?'),
+        segment({ diarization_label: 'Speaker B' }, 'Yes.'),
+        segment({}, 'Unattributed line.'),
+      ]),
+    ).toBe('Dana: Shall we start?\nSpeaker B: Yes.\nUnattributed line.');
+    expect(granolaTranscriptText(null)).toBeUndefined();
+    expect(granolaTranscriptText([segment({}, '  ')])).toBeUndefined();
+    const long = granolaTranscriptText([segment({}, 'x'.repeat(EVENT_CONTENT_MAX + 10))]);
+    expect(long).toHaveLength(EVENT_CONTENT_MAX);
+    expect(long?.endsWith('[Transcript cut: it is longer than Retainer keeps.]')).toBe(true);
+  });
+
   it('derives contact evidence only from explicit owner-organizer equality', () => {
     const original = granolaNote.parse(note());
     expect(granolaParticipants(original)).toEqual([

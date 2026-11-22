@@ -331,6 +331,11 @@ async function findMentions(
       ? tx`false`
       : tx`exists (select 1 from unnest(${names as string[]}::text[]) n
           where search @@ ${phraseQuery(tx, tx`n`)})`;
+  const bodyNameQuery =
+    names.length === 0
+      ? tx`false`
+      : tx`exists (select 1 from unnest(${names as string[]}::text[]) n
+          where b.search @@ ${phraseQuery(tx, tx`n`)})`;
   const records = await tx<{ id: string }[]>`
     select id from records
     where workspace_id = ${workspaceId} and deleted_at is null
@@ -351,7 +356,10 @@ async function findMentions(
     where workspace_id = ${workspaceId} and deleted_at is null
       and object_type_id = any(${schema.eventTypeIds}::uuid[])
       and id <> all(${recordIds as string[]}::uuid[])
-      and (${nameQuery} or data::text ilike any(${patterns}::text[]))
+      and (${nameQuery} or data::text ilike any(${patterns}::text[])
+        -- An email's body or a transcript can name them too.
+        or exists (select 1 from event_bodies b where b.event_id = records.id
+          and (${bodyNameQuery} or b.body ilike any(${patterns}::text[]))))
     order by id limit ${CANDIDATE_LIMIT}`;
   return {
     records: records.map((r) => r.id),

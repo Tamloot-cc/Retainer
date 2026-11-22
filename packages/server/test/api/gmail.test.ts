@@ -429,7 +429,7 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
   expect(profileReads).toBe(2);
   await poll();
   expect(
-    await db.owner`select 1 from gmail_messages where workspace_id=${workspace.id}`,
+    await db.owner`select 1 from event_bodies where workspace_id=${workspace.id}`,
   ).toHaveLength(2);
 
   revoked = true;
@@ -441,11 +441,11 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
     settings: { gmailAddress: 'mailbox@example.test' },
   });
 
-  const [evidence] = await db.owner<{ id: string }[]>`select event_id as id from gmail_messages
+  const [evidence] = await db.owner<{ id: string }[]>`select event_id as id from event_bodies
     where workspace_id=${workspace.id} order by occurred_at,event_id limit 1`;
-  const read = await t.request(`/v1/events/${evidence?.id}/gmail-messages`, { key: keys.member });
+  const read = await t.request(`/v1/events/${evidence?.id}/content`, { key: keys.member });
   expect(read.status).toBe(200);
-  expect(read.body.messages.map((row: { body: string }) => row.body)).toEqual([
+  expect(read.body.parts.map((part: { text: string }) => part.text)).toEqual([
     'Body for eligible',
     'Body for targeted',
   ]);
@@ -457,8 +457,7 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
   await runWorker('disconnect');
   expect(deleted.at(-1)).toBe('dedicated-test');
   expect(
-    (await t.request(`/v1/events/${evidence?.id}/gmail-messages`, { key: keys.member })).body
-      .messages,
+    (await t.request(`/v1/events/${evidence?.id}/content`, { key: keys.member })).body.parts,
   ).toHaveLength(2);
   const latePerson = await addPerson('late@example.test');
   expect(await db.owner`select 1 from event_links where record_id=${latePerson}`).toHaveLength(0);
@@ -468,7 +467,7 @@ it('connects with consent, imports qualifying Gmail text, backfills new People, 
   });
   expect(forgotten.status, JSON.stringify(forgotten.body)).toBe(200);
   expect(
-    await db.owner`select 1 from gmail_messages where workspace_id=${workspace.id}`,
+    await db.owner`select 1 from event_bodies where workspace_id=${workspace.id}`,
   ).toHaveLength(0);
   expect(
     await db.owner`select 1 from gmail_deliveries where workspace_id=${workspace.id}`,

@@ -1298,8 +1298,9 @@ with the same intent API. Storage adapters and product endpoints live in the ope
 repo. Signed downloads last at most 60 seconds and are issued only after current
 record visibility checks. Force attachment disposition for unsafe content and
 never execute uploaded HTML/SVG. Do not serve public stable URLs or fetch arbitrary
-remote URLs on behalf of a client. The UI shows transcript download/open; full-text
-transcript search and streaming media are deferred.
+remote URLs on behalf of a client. The UI shows transcript download/open; streaming
+media is deferred. A source may also send a transcript's text as the event's
+`content` (ARCHITECTURE.md 1.3), which agents read and search; Granola does.
 
 Erasure first removes authorization and reference visibility in the DB transaction,
 then durable deletion jobs remove objects and their retained storage versions.

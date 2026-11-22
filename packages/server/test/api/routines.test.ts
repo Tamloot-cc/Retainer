@@ -2099,8 +2099,8 @@ describe('routines', () => {
       [first, '2026-11-10T10:00:00Z'],
       [reply, '2026-11-10T11:00:00Z'],
     ] as const)
-      await db.owner`insert into gmail_messages(event_id,workspace_id,thread_group_id,occurred_at,body)
-        values(${id},${s.workspace},${thread},${at},'')`;
+      await db.owner`insert into event_bodies(event_id,workspace_id,thread_id,occurred_at,body,search)
+        values(${id},${s.workspace},${thread},${at},'','')`;
     const listed = await s.app.request('/v1/objects/conversation/query', {
       key: s.keys.admin,
       body: {},

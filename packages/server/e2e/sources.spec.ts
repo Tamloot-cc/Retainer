@@ -19,6 +19,8 @@ test('shows current provider evidence once and preserves immutable historical re
   await expect(page.getByRole('button', { name: 'Add participant…', exact: true })).toHaveCount(0);
   await page.goto(`${r.url}/app/r/${source.currentEventId}`);
   await expect(page.getByText(/This is the current provider revision/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Full text' })).toBeVisible();
+  await expect(page.getByText(/We need the quote before the end of the month/)).toBeVisible();
   await expect(
     page.getByRole('link', { name: 'Original provider note', exact: true }),
   ).toBeVisible();

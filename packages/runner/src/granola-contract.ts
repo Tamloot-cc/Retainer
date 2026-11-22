@@ -135,7 +135,7 @@ export function granolaManifest(build: {
     name: 'granola',
     version: build.version ?? '1.0.0',
     description:
-      'Import shared summaries and transcript files from an explicitly shared Granola API credential. Private notes and photos are excluded.',
+      'Import shared summaries and transcripts, as text and as files, from an explicitly shared Granola API credential. Private notes and photos are excluded.',
     packageDigest: build.packageDigest,
     serverRange: build.serverRange,
     runtimeVersion: 'node24',

@@ -168,29 +168,30 @@ const event: EventDetails = {
 };
 
 describe('EventDetailsView', () => {
-  it('shows Gmail message text literally and appends additional messages in order', async () => {
+  it("shows an event's full text literally and appends further parts in order", async () => {
     const first = {
       id: 'mail-1',
       occurredAt: event.occurredAt,
       originalDate: null,
-      body: '<b>First message</b>',
+      text: '<b>First message</b>',
     };
-    const second = { ...first, id: 'mail-2', body: 'Second message' };
-    vi.spyOn(api, 'gmailMessages').mockImplementation(async (_id, after) =>
-      after ? { messages: [second], nextAfter: null } : { messages: [first], nextAfter: first.id },
+    const second = { ...first, id: 'mail-2', text: 'Second message' };
+    vi.spyOn(api, 'eventContent').mockImplementation(async (_id, after) =>
+      after ? { parts: [second], nextAfter: null } : { parts: [first], nextAfter: first.id },
     );
     renderIn(
-      <EventDetailsView id="e1" event={{ ...event, channel: 'gmail', gmail: true }} editable />,
+      <EventDetailsView id="e1" event={{ ...event, channel: 'gmail', content: true }} editable />,
     );
     const body = await screen.findByText('<b>First message</b>');
     expect(body.querySelector('b')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Add participant…' })).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: 'Load more messages' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Load more' }));
     expect(await screen.findByText('Second message')).toBeTruthy();
     const list = body.closest('ol');
-    expect(
-      [...(list?.querySelectorAll('li p') ?? [])].map((message) => message.textContent),
-    ).toEqual([first.body, second.body]);
+    expect([...(list?.querySelectorAll('li p') ?? [])].map((part) => part.textContent)).toEqual([
+      first.text,
+      second.text,
+    ]);
   });
   it('explains superseded provider evidence and keeps its participants immutable', async () => {
     renderIn(

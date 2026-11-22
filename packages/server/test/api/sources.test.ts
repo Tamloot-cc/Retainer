@@ -1075,6 +1075,60 @@ describe('managed source evidence with real RLS Postgres', () => {
       await db.owner`select email from source_participants where item_id=${s.itemId}`,
     ).toHaveLength(0);
   });
+  it('stores the full text a source event carries, serves it and finds it by search', async () => {
+    const h = await setup(),
+      source = await h.item();
+    const content = 'Dana: the budget for the zebrafinch rollout is approved.';
+    const meeting = { ...h.event('Weekly sync'), content };
+    const synced = await h.sync(source.key, source.itemId, '1', null, meeting);
+    expect(synced.status, JSON.stringify(synced.body)).toBe(200);
+    const eventId = synced.body.eventId as string;
+    // The content is part of the canonical event: a replay is the same import, a change is not.
+    expect((await h.sync(source.key, source.itemId, '1', null, meeting)).body).toEqual(synced.body);
+    const changed = await h.sync(source.key, source.itemId, '1', null, {
+      ...meeting,
+      content: 'Something else.',
+    });
+    expect(changed.status).toBe(409);
+
+    const read = await h.app.request(`/v1/events/${eventId}`, { key: h.keys.agent });
+    expect(read.body.event.content).toBe(true);
+    const page = await h.app.request(`/v1/events/${eventId}/content`, { key: h.keys.agent });
+    expect(page.status).toBe(200);
+    expect(page.body).toEqual({
+      parts: [
+        { id: eventId, occurredAt: '2026-11-10T10:00:00.000Z', originalDate: null, text: content },
+      ],
+      nextAfter: null,
+    });
+
+    const byContent = await h.app.request('/v1/search', {
+      key: h.keys.agent,
+      body: { query: 'zebrafinch' },
+    });
+    expect(byContent.body.events).toEqual([
+      expect.objectContaining({ id: eventId, title: 'Weekly sync', match: 'content' }),
+    ]);
+    const byTitle = await h.app.request('/v1/search', {
+      key: h.keys.agent,
+      body: { query: 'weekly' },
+    });
+    expect(byTitle.body.events).toHaveLength(1);
+    expect(byTitle.body.events[0]).not.toHaveProperty('match');
+
+    // An event without content has nothing more to read, and says so.
+    await h.queue.complete(source.run, { status: 'succeeded' });
+    const other = await h.item();
+    const plain = await h.sync(other.key, other.itemId, '1', null, h.event('No transcript'));
+    const plainId = plain.body.eventId as string;
+    expect(
+      (await h.app.request(`/v1/events/${plainId}`, { key: h.keys.agent })).body.event,
+    ).not.toHaveProperty('content');
+    const missing = await h.app.request(`/v1/events/${plainId}/content`, { key: h.keys.agent });
+    expect(missing.status).toBe(404);
+    expect(missing.body.error.message).toContain('has no stored content');
+  });
+
   it('imports a finalized transcript by permanent field key and distinguishes a transient miss from verified deletion', async () => {
     const h = await setup(),
       s = await h.item();

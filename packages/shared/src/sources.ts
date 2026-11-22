@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { isoDateTimeSchema } from './values.js';
 
+/** The longest full text an event may carry (an email's body, a transcript), in characters. */
+export const EVENT_CONTENT_MAX = 256_000;
+
 /** Fixed enumeration bounds; provider cursors and contact data never belong here. */
 export const sourceScanSchema = z
   .strictObject({
@@ -29,6 +32,8 @@ export type SourceEventImport = {
     occurredAt: string;
     title: string;
     summary?: string;
+    /** The full text behind the event (a transcript, a message body), at most EVENT_CONTENT_MAX characters. */
+    content?: string;
     fields?: Record<string, unknown>;
     participants?: { email: string; name?: string; contacted?: boolean }[];
     about?: string[];

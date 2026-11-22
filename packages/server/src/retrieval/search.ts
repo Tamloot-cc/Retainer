@@ -163,8 +163,10 @@ async function searchFacts(
 
 /**
  * Live events of visible types, by their searchable fields (title and
- * summary at least). Internal notes are left out: their text is the fact's,
- * found (or hidden) with the fact itself.
+ * summary at least) or their full text (1.3). A thread shows as its newest
+ * event, found by the text of any of its messages. Internal notes are left
+ * out: their text is the fact's, found (or hidden) with the fact itself.
+ * Matches on the title or summary rank above matches on the full text only.
  */
 async function searchEvents(
   tx: Tx,
@@ -172,6 +174,7 @@ async function searchEvents(
   schema: CompiledSchema,
   input: SearchInput,
 ): Promise<EventHit[]> {
+  const prefix = prefixQuery(tx, input.query);
   const rows = await tx<
     {
       id: string;
@@ -179,21 +182,48 @@ async function searchEvents(
       data: Record<string, unknown>;
       occurred_at: Date;
       records: string[];
+      own: boolean;
     }[]
   >`
-    select r.id, r.object_type_id, r.data, e.occurred_at,
+    -- Each index finds its own candidates: events by their title and summary,
+    -- bodies by their full text. A body hit in a thread counts for the
+    -- thread's newest event, the one activity shows.
+    with body_hits as (
+      select b.event_id, b.thread_id from event_bodies b
+      where b.workspace_id = ${workspaceId} and b.search @@ ${prefix}
+    ), by_body as (
+      select event_id as id from body_hits where thread_id is null
+      union
+      select newest.event_id from (select distinct thread_id from body_hits) t
+      cross join lateral (
+        select n.event_id from event_bodies n
+        where n.workspace_id = ${workspaceId} and n.thread_id = t.thread_id
+        order by n.occurred_at desc, n.event_id desc limit 1
+      ) newest
+    ), candidates as (
+      select id, true as own from records
+      where workspace_id = ${workspaceId} and deleted_at is null
+        and object_type_id = any(${schema.eventTypeIds}::uuid[])
+        and search @@ ${prefix}
+      union all
+      select id, false from by_body
+    ), hits as (
+      select id, bool_or(own) as own from candidates group by id
+    )
+    select r.id, r.object_type_id, r.data, e.occurred_at, h.own,
       array(
         select l.record_id from event_links l
         join records t on t.id = l.record_id and t.deleted_at is null
           and t.object_type_id = any(${schema.visibleObjectIds}::uuid[])
         where l.event_id = r.id
         order by l.position) as records
-    from records r
+    from hits h
+    join records r on r.id = h.id
     join event_records e on e.record_id = r.id
     where r.workspace_id = ${workspaceId} and r.deleted_at is null
       and ${currentActivityEvidence(tx, tx`r.id`)}
       and r.object_type_id = any(${schema.eventTypeIds}::uuid[])
-      and r.search @@ ${prefixQuery(tx, input.query)}
+    -- Hits found only in the full text rank 0 here, below title and summary matches.
     order by ${rank(tx, 'r.search', input.query)}, e.occurred_at desc, r.id
     limit ${input.limit}`;
   return rows.map((row) => {
@@ -204,6 +234,7 @@ async function searchEvents(
       occurredAt: row.occurred_at.toISOString(),
       ...eventText(object, row.data),
       records: [...new Set(row.records)],
+      ...(row.own ? {} : { match: 'content' as const }),
     };
   });
 }

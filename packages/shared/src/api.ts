@@ -393,8 +393,11 @@ export type Participant = MatchedParticipant | UnmatchedParticipant;
 export type Participants = { matched: MatchedParticipant[]; unmatched: UnmatchedParticipant[] };
 /** An event record's built-in columns and links (1.3), beside its fields. */
 export type EventDetails = {
-  /** This event is immutable message evidence in an imported Gmail conversation. */
-  gmail?: true;
+  /**
+   * The event has full text beyond its summary (an email's body, a
+   * transcript): read it with `GET /v1/events/:id/content` or get_event_content.
+   */
+  content?: true;
   /** Managed evidence is immutable; explicit reads preserve superseded citations. */
   source?: {
     sourceItemId: string;
@@ -789,6 +792,15 @@ export type EventHit = {
   summary: string | null;
   /** Live records linked to it, as participants or `about`; possibly none or several. */
   records: string[];
+  /** "content" when the words matched only the event's full text, not its title or summary. */
+  match?: 'content';
+};
+/** The full text behind an event, oldest part first (1.3). */
+export type EventContentPage = {
+  /** One part for a standalone event; each message, for a conversation thread. */
+  parts: { id: string; occurredAt: string; originalDate: string | null; text: string }[];
+  /** Pass as `after` for the next page; null on the last page. */
+  nextAfter: string | null;
 };
 /** Each list is ranked on its own; scores are not comparable across lists. */
 export type SearchResult = {

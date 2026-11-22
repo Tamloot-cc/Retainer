@@ -1,5 +1,6 @@
 import type {
   AddedLinks,
+  EventContentPage,
   LogEventResult,
   MoveEventsResult,
   PresentedRecord,
@@ -14,6 +15,7 @@ import { deletePersonalMemory, type PersonalMemoryCounts } from '../privacy/pers
 import { getRecord } from '../records/read.js';
 import { eventsAmong, withRead, withWrite } from '../records/service.js';
 import { softDeleteRecord } from '../records/write.js';
+import { eventContentPage } from './event-bodies.js';
 import type { AddLinksInput } from './event-links.js';
 import {
   addEventLinks,
@@ -55,6 +57,18 @@ export async function readEvent(sql: Sql, caller: Caller, id: string): Promise<P
     if (!record.event) throw notFound('event', { id });
     return record;
   });
+}
+
+/** The full text behind an event, or its whole thread, oldest first (1.3). */
+export async function readEventContent(
+  sql: Sql,
+  caller: Caller,
+  id: string,
+  after: string | null,
+): Promise<EventContentPage> {
+  return withRead(sql, caller, (tx, schema) =>
+    eventContentPage(tx, caller.workspaceId, id, after, schema.eventTypeIds),
+  );
 }
 
 export async function addEventLinksFor(
