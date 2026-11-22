@@ -39,7 +39,7 @@ describe('last-contact adapter', () => {
         ...manifest,
         lastContact: {
           ...manifest.lastContact,
-          fields: [{ objectId: randomUUID(), fieldId: randomUUID() }],
+          destinations: ['missing'],
         },
       }),
     ).toThrow(/last.contact/i);
