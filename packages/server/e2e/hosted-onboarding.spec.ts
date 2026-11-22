@@ -99,6 +99,8 @@ test('web first: copy the exact workspace, verify over MCP, and wait for the app
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
   await a.signIn(context, DANA);
   await page.reload();
+  await expect(page.getByLabel('Template')).toHaveValue('');
+  await page.getByRole('button', { name: 'Create workspace' }).click();
 
   const copy = page.getByRole('button', { name: 'Copy setup prompt' });
   await expect(copy).toBeVisible();
@@ -200,6 +202,7 @@ test('agent first: sign in and provision, cancel, then reuse the same workspace 
   await expect(page).toHaveURL(/\/app\/oauth\/sign-in\?/);
   await a.signIn(context, DANA);
   await page.reload();
+  await page.getByRole('button', { name: 'Create workspace' }).click();
   await expect(page.getByRole('radio', { name: /My workspace/ })).toBeChecked();
   await page.getByRole('button', { name: 'Cancel' }).click();
   await expect(page).toHaveURL(/error=access_denied/);
@@ -216,6 +219,25 @@ test('agent first: sign in and provision, cancel, then reuse the same workspace 
     objects: [],
   });
   expect(await a.owner`select id from workspaces`).toEqual(rows);
+});
+
+test('hosted sign-up can copy Starter when creating the workspace', async ({
+  page,
+  context,
+  accounts: a,
+}) => {
+  await a.signIn(context, DANA);
+  await page.goto(`${a.url}/app/`);
+  await page.getByLabel('Template').selectOption('starter');
+  await page.getByRole('button', { name: 'Create workspace' }).click();
+  await expect(page.getByRole('group', { name: 'Records' }).getByText('People')).toBeVisible();
+  const [workspace] = await a.owner`select id, templates, initialized_at from workspaces`;
+  expect(workspace?.templates).toMatchObject([{ name: 'starter', version: 1 }]);
+  expect(workspace?.initialized_at).toBeTruthy();
+  const [email] = await a.owner`
+    select is_unique from fields f join object_types o on o.id = f.object_type_id
+    where o.workspace_id = ${workspace?.id} and o.name_singular = 'person' and f.name = 'emails'`;
+  expect(email?.is_unique).toBe(true);
 });
 
 async function invite(owner: BrowserContext, url: string) {

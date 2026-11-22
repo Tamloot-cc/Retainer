@@ -193,6 +193,7 @@ export async function ensureDefaultWorkspace(
   person: Person,
   skipInvitation: boolean,
   publicOrigin: string,
+  template?: string,
 ): Promise<Workspace | null> {
   const id = await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(${FIRST_WORKSPACE_LOCK}, hashtext(${person.id}))`;
@@ -206,7 +207,13 @@ export async function ensureDefaultWorkspace(
     if (existing) return existing.id;
     if (!skipInvitation && (await invitationsFor(tx, person)).length > 0) return null;
     const organizationId = await organizationForPerson(tx, person);
-    return insertWorkspace(tx, person, organizationId, { name: 'My workspace' }, publicOrigin);
+    return insertWorkspace(
+      tx,
+      person,
+      organizationId,
+      { name: 'My workspace', template },
+      publicOrigin,
+    );
   });
   return id ? getWorkspace(sql, id) : null;
 }

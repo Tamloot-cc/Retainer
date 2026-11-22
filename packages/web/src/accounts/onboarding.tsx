@@ -1,6 +1,6 @@
 import { hostedClientId } from '@retainer/shared';
-import { useQuery } from '@tanstack/react-query';
-import { type FormEvent, useEffect, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { type FormEvent, useState } from 'react';
 import {
   type Account,
   account as accountApi,
@@ -12,6 +12,7 @@ import { describeOperation } from '../routes/schema/schema-model.js';
 import { Button, Input, Label, Muted, Notice, Stack } from '../ui/index.js';
 import { type AccountState, managed } from './context.js';
 import { AccountFrame, InvitationRow } from './screens.js';
+import { WorkspaceTemplateField } from './workspace-template.js';
 
 function canCreateWorkspace(account: Account) {
   return account.organizations.length === 0 || managed(account).length > 0;
@@ -30,20 +31,18 @@ export function NeedWorkspace({
   const canCreate = canCreateWorkspace(account);
   const invited = account.invitations.length > 0;
   const [skipInvitation, setSkipInvitation] = useState(false);
-  const provision = useQuery({
-    queryKey: ['onboarding-workspace', account.user.id, oauthQuery, skipInvitation],
-    enabled: canCreate && (!invited || skipInvitation),
-    queryFn: () =>
-      accountApi.ensureWorkspace({ skipInvitation, ...(oauthQuery ? { oauthQuery } : {}) }),
-    retry: false,
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+  const provision = useMutation({
+    mutationFn: (template?: string) =>
+      accountApi.ensureWorkspace({ skipInvitation, oauthQuery, template }),
+    onSuccess: ({ workspace }) => {
+      if (workspace) onWorkspace(workspace);
+    },
   });
-  const workspace = provision.data?.workspace;
-  useEffect(() => {
-    if (workspace) onWorkspace(workspace);
-  }, [workspace, onWorkspace]);
+  function create(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const template = String(new FormData(event.currentTarget).get('template') ?? '');
+    provision.mutate(template || undefined);
+  }
 
   return (
     <Stack>
@@ -69,17 +68,21 @@ export function NeedWorkspace({
       ) : null}
       {!canCreate ? (
         <Notice>Ask an owner or admin of your organization to add you to a workspace.</Notice>
-      ) : provision.error ? (
-        <>
-          <Notice error>{provision.error.message}</Notice>
-          <div>
-            <Button onClick={() => void provision.refetch()}>Try again</Button>
-          </div>
-        </>
-      ) : provision.isFetching || workspace ? (
-        <Notice>Getting your workspace ready…</Notice>
-      ) : provision.data ? (
-        <Notice>An invitation is waiting for you. Reload this page to see it.</Notice>
+      ) : !invited || skipInvitation ? (
+        <form onSubmit={create}>
+          <Stack>
+            <WorkspaceTemplateField />
+            {provision.error ? <Notice error>{provision.error.message}</Notice> : null}
+            {provision.data && !provision.data.workspace ? (
+              <Notice>An invitation is waiting for you. Reload this page to see it.</Notice>
+            ) : null}
+            <div>
+              <Button disabled={provision.isPending} type="submit" variant="primary">
+                {provision.isPending ? 'Creating workspace…' : 'Create workspace'}
+              </Button>
+            </div>
+          </Stack>
+        </form>
       ) : null}
     </Stack>
   );

@@ -144,7 +144,8 @@ export const account = {
   me: () => call<Account>('/account'),
   /** The providers this server signs people in with; needs no session. */
   providers: () => call<{ providers: SignInProvider[] }>('/account/providers'),
-  ensureWorkspace: (input: { skipInvitation: boolean; oauthQuery?: string }) =>
+  templates: () => call<{ templates: { name: string; label: string }[] }>('/account/templates'),
+  ensureWorkspace: (input: { skipInvitation: boolean; oauthQuery?: string; template?: string }) =>
     call<{ workspace: Workspace | null }>('/account/onboarding/workspace', {
       method: 'POST',
       body: input,
