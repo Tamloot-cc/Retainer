@@ -1,5 +1,6 @@
+import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
-import { initialSettings } from './model';
+import { appLinksKey, initialSettings, queryKey } from './model';
 
 const setting = { type: 'string', label: 'Days', required: true, secret: false, reconnect: false };
 const release = (settings: Record<string, unknown>) =>
@@ -24,5 +25,14 @@ describe('initialSettings', () => {
         installation({ days: 2, nangoIntegrationId: 'google-mail' }),
       ),
     ).toEqual({ days: 2 });
+  });
+});
+
+describe('appLinksKey', () => {
+  it('is refreshed with the extensions, so the sidebar shows an app as soon as it is installed', async () => {
+    const client = new QueryClient();
+    client.setQueryData(appLinksKey('w1'), { links: [] });
+    await client.invalidateQueries({ queryKey });
+    expect(client.getQueryState(appLinksKey('w1'))?.isInvalidated).toBe(true);
   });
 });

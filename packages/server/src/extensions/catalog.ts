@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
-import { defineExtension, type ExtensionManifest, supportsServer } from '@retainer/extension';
+import {
+  defineExtension,
+  type ExtensionManifest,
+  runsHostedCode,
+  supportsServer,
+} from '@retainer/extension';
 import { z } from 'zod';
 import { AppError } from '../errors.js';
 import type { RuntimeCatalog } from '../extension-runtime/availability.js';
@@ -24,7 +29,8 @@ export class ExtensionCatalog {
     const actors = new Map<string, string>();
     const connections = new Map<string, string>();
     const locators = new Map<string, string>();
-    const clients = new Map<string, string>();
+    const clients = new Map<string, string>(),
+      clientOwners = new Map<string, string>();
     for (const release of releases) {
       const manifest = defineExtension(release.manifest);
       const connection = connections.get(manifest.universalId);
@@ -46,7 +52,14 @@ export class ExtensionCatalog {
         const prior = clients.get(manifest.universalId);
         if (prior && prior !== manifest.oauthClientId)
           throw new Error('registration OAuth client cannot change across releases');
+        // One registration per client: a workspace has one installation per
+        // registration, so a client names at most one installation in it,
+        // which app sign-in's token exchange relies on (extensions spec 8).
+        const owner = clientOwners.get(manifest.oauthClientId);
+        if (owner && owner !== manifest.universalId)
+          throw new Error('an OAuth client belongs to one registration');
         clients.set(manifest.universalId, manifest.oauthClientId);
+        clientOwners.set(manifest.oauthClientId, manifest.universalId);
       }
       const priorActor = actors.get(manifest.universalId);
       if (priorActor && priorActor !== release.actorCeiling)
@@ -68,7 +81,7 @@ export class ExtensionCatalog {
       ),
       resolve: (id: string, version: string) => {
         const release = this.get(id, version);
-        if (release.manifest.execution === 'hosted' && release.runtimeEnabled !== true)
+        if (runsHostedCode(release.manifest) && release.runtimeEnabled !== true)
           throw new AppError(
             409,
             'incompatible_runtime',

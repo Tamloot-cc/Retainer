@@ -4,8 +4,10 @@ import type { CallerPerson, InstallationBinding, RunBinding } from '../caller.js
 import type { ChangeCollector } from '../changes/collect.js';
 import { isUuid } from '../db/ids.js';
 import type { AssertionStatus, ReviewReason } from '../db/schema.js';
+import { preciseTimestamp } from '../db/timestamps.js';
 import { jsonValue, type Tx } from '../db/tx.js';
 import { AppError, notFound, profileNotSupported } from '../errors.js';
+import { readOnlyFieldsFor, refuseOwnedWrite } from '../extension-runtime/owned-fields.js';
 import { attachFileReferences, validateFileReferences } from '../files/references.js';
 import { isSuppressed, suppressedOf, suppressibleHandles } from '../privacy/suppression.js';
 import type { CompiledObject, CompiledSchema } from '../schema/compiled.js';
@@ -62,7 +64,6 @@ export type LockedRecord = {
   id: string;
   object_type_id: string;
   data: Record<string, unknown>;
-  updated_at: Date;
   deleted_at: Date | null;
   merged_into_id: string | null;
 };
@@ -144,7 +145,7 @@ export async function resolveRecordId(tx: Tx, workspaceId: string, id: string): 
 export async function lockRecord(tx: Tx, workspaceId: string, id: string): Promise<LockedRecord> {
   const canonical = await resolveRecordId(tx, workspaceId, id);
   const [row] = await tx<LockedRecord[]>`
-    select id, object_type_id, data, updated_at, deleted_at, merged_into_id from records
+    select id, object_type_id, data, deleted_at, merged_into_id from records
     where id = ${canonical} and workspace_id = ${workspaceId}
     for no key update`;
   if (!row) throw notFound('record', { id });
@@ -332,20 +333,25 @@ export async function writeFields(
       'immutable_source_revision',
       'managed evidence is immutable; import a new source revision',
     );
-  if (
-    options.expectedUpdatedAt !== undefined &&
-    record.updated_at.getTime() !== new Date(options.expectedUpdatedAt).getTime()
-  ) {
-    throw new AppError(412, 'stale_write', 'the record changed since expectedUpdatedAt', {
-      updatedAt: record.updated_at.toISOString(),
-    });
+  if (options.expectedUpdatedAt !== undefined) {
+    // Compared by the database, at its microsecond precision: a JavaScript
+    // Date would let two changes in one millisecond share a precondition.
+    const [current] = await tx<{ same: boolean; updated_at: string }[]>`
+      select updated_at = ${options.expectedUpdatedAt}::timestamptz as same,
+        ${tx.unsafe(preciseTimestamp('updated_at'))} as updated_at
+      from records where id = ${record.id}`;
+    if (!current?.same)
+      throw new AppError(412, 'stale_write', 'the record changed since expectedUpdatedAt', {
+        updatedAt: current?.updated_at,
+      });
   }
+  const fields = [...writes.keys()];
+  const fieldIds = fields.map((f) => f.id as string);
+  refuseOwnedWrite(await readOnlyFieldsFor(tx, context, fieldIds), fields);
   await validateFileReferences(tx, context, record.id, writes);
   await checkRelationTargets(tx, context, object, writes);
   if (!options.skipSuppressionCheck) await checkSuppressed(tx, context, record, writes);
 
-  const fields = [...writes.keys()];
-  const fieldIds = fields.map((f) => f.id as string);
   const [clock] = await tx<{ now: Date }[]>`select clock_timestamp() as now`;
   const observedAt = options.observedAt ?? (clock?.now as Date);
   const confidence = options.confidence ?? 1;
@@ -453,14 +459,12 @@ async function applyWinners(
   }
 
   const { label, body } = searchTextOf(object.state.fields, object.labelField, data);
-  const [updated] = await tx<{ updated_at: Date }[]>`
+  await tx`
     update records set data = ${tx.json(jsonValue(data))}, label = ${label},
       search = ${searchVector(tx, label, body)}, updated_at = clock_timestamp(),
       updated_by = ${tx.json(context.actor)}
-    where id = ${record.id}
-    returning updated_at`;
+    where id = ${record.id}`;
   record.data = data;
-  record.updated_at = updated?.updated_at ?? record.updated_at;
 }
 
 /**
@@ -546,7 +550,7 @@ export async function lockRecordsForUpdate(
 ): Promise<LockedRecord[]> {
   if (ids.length === 0) return [];
   return tx<LockedRecord[]>`
-    select id, object_type_id, data, updated_at, deleted_at, merged_into_id from records
+    select id, object_type_id, data, deleted_at, merged_into_id from records
     where workspace_id = ${workspaceId} and id = any(${[...ids].sort()}::uuid[])
     order by id for update`;
 }
@@ -698,7 +702,7 @@ export async function insertRecord(
     insert into records (workspace_id, object_type_id, created_by, updated_by, private_to_user)
     values (${context.workspaceId}, ${object.id}, ${tx.json(context.actor)},
       ${tx.json(context.actor)}, ${privateTo})
-    returning id, object_type_id, data, updated_at, deleted_at, merged_into_id`;
+    returning id, object_type_id, data, deleted_at, merged_into_id`;
   if (row) context.changes?.created(row.id);
   return row as LockedRecord;
 }
@@ -783,6 +787,12 @@ export async function softDeleteRecord(
       recordId: rootId,
     });
   }
+  await refuseOwnedRecordChange(
+    tx,
+    context,
+    locked.filter((r) => !r.deleted_at),
+    'delete',
+  );
   if (context.managedTaskRemovalIds) {
     const [edited] = await tx`select 1 from source_tasks t where t.record_id=any(${sorted}::uuid[])
       and (t.state='detached' or exists(select 1 from field_assertions a where a.record_id=t.record_id and a.actor->>'type'='user')) limit 1`;
@@ -794,6 +804,36 @@ export async function softDeleteRecord(
       );
   }
   return markDeleted(tx, context, sorted);
+}
+
+/**
+ * Refuses to merge or delete a record whose unique field is installation-owned
+ * unless the caller is that installation (extensions spec 8). Merging needs a
+ * person, so in practice nobody merges such a record. A merge could
+ * make two of the app's records resolve to one, and a person's delete would
+ * strand the app's record. Admin `forget` erases through its own path.
+ */
+export async function refuseOwnedRecordChange(
+  tx: Tx,
+  context: WriteContext,
+  records: readonly Pick<LockedRecord, 'object_type_id'>[],
+  action: 'merge' | 'delete',
+) {
+  const readOnly = await readOnlyFieldsFor(tx, context);
+  if (readOnly.size === 0) return;
+  for (const record of records) {
+    const object = context.schema.objectsById.get(record.object_type_id);
+    const key = object?.activeFields.find((f) => f.isUnique && f.id && readOnly.has(f.id));
+    if (object && key)
+      throw new AppError(
+        403,
+        'installation_owned',
+        action === 'merge'
+          ? `this ${object.name} belongs to the app that added it, so it cannot be merged`
+          : `this ${object.name} belongs to the app that added it; only that app can delete it`,
+        { field: key.name },
+      );
+  }
 }
 
 /** Sets `deleted_at` on locked records, returning those it deleted now. */

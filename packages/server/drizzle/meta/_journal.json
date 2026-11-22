@@ -925,6 +925,20 @@
       "when": 1795373532764,
       "tag": "0131_drop_gmail_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1795383501802,
+      "tag": "0132_extension_job_run_credential",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1795383503243,
+      "tag": "0133_standalone_app_platform",
+      "breakpoints": true
     }
   ]
 }

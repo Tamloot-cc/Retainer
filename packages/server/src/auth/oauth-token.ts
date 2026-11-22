@@ -43,6 +43,8 @@ export function oauthSettings(publicOrigin: string): OAuthSettings {
 }
 
 export const INSTALLATION_CLAIM = 'installation_id';
+/** An app sign-in's ID token: the person's role in the workspace (extensions spec 8). */
+export const WORKSPACE_ROLE_CLAIM = 'workspace_role';
 export const GRANT_CLAIM = 'grant_id';
 export const GENERATION_CLAIM = 'grant_generation';
 export function installationOAuthSettings(publicOrigin: string): OAuthSettings {

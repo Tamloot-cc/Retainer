@@ -14,6 +14,7 @@ import {
   lockRecordsForUpdate,
   objectOf,
   recomputeFields,
+  refuseOwnedRecordChange,
   resolveRecordId,
   type WriteContext,
   writeFields,
@@ -156,6 +157,7 @@ export async function mergeRecords(
       });
     }
   }
+  await refuseOwnedRecordChange(tx, context, [survivor, merged], 'merge');
   const object = objectOf(context.schema, survivor);
   if (object.isEvent) {
     throw new AppError(

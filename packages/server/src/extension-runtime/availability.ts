@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { ExtensionManifest } from '@retainer/extension';
+import { type ExtensionManifest, runsHostedCode } from '@retainer/extension';
 import { AppError } from '../errors.js';
 import { stableJson } from '../stable-json.js';
 
@@ -20,6 +20,17 @@ export type RuntimeCatalog = {
 export type ReleaseResolution =
   | { available: true; manifest: ExtensionManifest }
   | { available: false; code: 'incompatible_runtime' | 'release_unavailable' };
+
+/**
+ * The sidebar link a release offers and the OAuth client it signs members in
+ * with (extensions spec 8), or null: only a standalone release has them.
+ */
+export function sidebarSignIn(
+  manifest: ExtensionManifest,
+): { link: NonNullable<ExtensionManifest['sidebarLink']>; clientId: string } | null {
+  const { execution, sidebarLink: link, oauthClientId: clientId } = manifest;
+  return execution === 'standalone' && link && clientId ? { link, clientId } : null;
+}
 
 export function resolveRelease(catalog: RuntimeCatalog, pin: Pin): ReleaseResolution {
   try {
@@ -51,8 +62,8 @@ export function requireRelease(catalog: RuntimeCatalog, pin: Pin) {
 
 /**
  * Whether this process can run the pin: it resolves and, when the process
- * knows its deployed executables (`activation`), a hosted release has one.
- * Without `activation` the answer is the catalog's alone.
+ * knows its deployed executables (`activation`), a release that runs hosted
+ * code has one. Without `activation` the answer is the catalog's alone.
  */
 export function releaseAvailability(
   catalog: RuntimeCatalog,
@@ -62,7 +73,7 @@ export function releaseAvailability(
   const result = resolveRelease(catalog, pin);
   if (
     result.available &&
-    result.manifest.execution === 'hosted' &&
+    runsHostedCode(result.manifest) &&
     activation &&
     !activation.has(pin.release_digest)
   )
@@ -73,9 +84,10 @@ export function releaseAvailability(
 /**
  * The (registration, release digest) pairs this process can run now: they
  * resolve in its catalog (server range, `runtimeEnabled`) and, when it knows
- * its deployed executables (`activation`), a hosted release has one. Parallel
- * arrays, passed to the `*_due` discovery functions; work pinned to any other
- * release stays queued, untouched, for a worker that can run it.
+ * its deployed executables (`activation`), a release that runs hosted code
+ * has one. Parallel arrays, passed to the `*_due` discovery functions; work
+ * pinned to any other release stays queued, untouched, for a worker that can
+ * run it.
  */
 export function runnableReleases(catalog: RuntimeCatalog, activation?: ReadonlySet<string>) {
   const registrations: string[] = [],

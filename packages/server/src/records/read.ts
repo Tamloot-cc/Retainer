@@ -1,4 +1,5 @@
 import { type Actor, isCollectionRelation, type PresentedRecord } from '@retainer/shared';
+import { preciseTimestamp } from '../db/timestamps.js';
 import type { Tx } from '../db/tx.js';
 import { AppError, notFound, profileNotSupported } from '../errors.js';
 import { eventDetails } from '../memory/event-links.js';
@@ -14,22 +15,33 @@ export type RecordRow = {
   data: Record<string, unknown>;
   label: string | null;
   created_at: Date;
-  updated_at: Date;
+  /** At the database's microsecond precision (`recordColumns`), so a precondition is exact. */
+  updated_at: string;
   created_by: Actor;
   updated_by: Actor;
 };
 
-export const RECORD_COLUMNS = [
+const RECORD_COLUMNS = [
   'id',
   'workspace_id',
   'object_type_id',
   'data',
   'label',
   'created_at',
-  'updated_at',
   'created_by',
   'updated_by',
 ] as const;
+
+/** The columns `RecordRow` reads, from `records` or its alias. Fixed text only. */
+export function recordColumns(tx: Tx, alias?: string) {
+  const prefix = alias ? `${alias}.` : '';
+  return tx.unsafe(
+    [
+      ...RECORD_COLUMNS.map((c) => `${prefix}${c}`),
+      `${preciseTimestamp(`${prefix}updated_at`)} as updated_at`,
+    ].join(', '),
+  );
+}
 
 const INVERSE_LIMIT = 100;
 
@@ -112,7 +124,7 @@ export async function presentRecords(
       label: row.label,
       fields,
       createdAt: row.created_at.toISOString(),
-      updatedAt: row.updated_at.toISOString(),
+      updatedAt: row.updated_at,
       createdBy: row.created_by,
       updatedBy: row.updated_by,
       ...(event ? { event } : {}),
@@ -148,7 +160,7 @@ export async function findLiveRecord(
 ): Promise<RecordRow> {
   const canonical = await resolveRecordId(tx, workspaceId, id);
   const [row] = await tx<(RecordRow & { deleted_at: Date | null })[]>`
-    select ${tx(RECORD_COLUMNS)}, deleted_at from records
+    select ${recordColumns(tx)}, deleted_at from records
     where id = ${canonical} and workspace_id = ${workspaceId}`;
   const object = row && schema.objectsById.get(row.object_type_id);
   if (object?.profile) throw profileNotSupported(id);

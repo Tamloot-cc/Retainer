@@ -1840,6 +1840,8 @@ export const extensionJobs = pgTable(
      * release at claim. Broker admission releases only these (extensions spec §8).
      */
     runSecrets: text('run_secrets').array(),
+    /** The pinned release's standalone tool needs a live app credential at broker admission. */
+    runRequiresCredential: boolean('run_requires_credential').notNull().default(false),
     status: text('status').notNull().default('queued'),
     leaseOwner: text('lease_owner'),
     fence: bigint('fence', { mode: 'number' }).notNull().default(0),

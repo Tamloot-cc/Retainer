@@ -32,8 +32,9 @@ const upsertRecordInput = z.strictObject({
       "Field name to value, in its type's format from describe_schema's valueFormats. " +
         'Composite fields (emails, phones, links, money, full_name, address) are replaced whole, so include the values to keep. null clears a field. ' +
         'A many_to_many relation takes the whole list of record IDs ([] clears it): read ' +
-        'the record first and send every member to keep. Fields marked readOnly (isInverse) ' +
-        'are written from the other side.',
+        'the record first and send every member to keep. Fields marked readOnly are not yours ' +
+        'to write: an inverse relation (isInverse) is written from the other side, and any ' +
+        'other is written only by the app that added it.',
     ),
   ifMissing: upsertInputSchema.shape.ifMissing.describe(
     'When id or match finds nothing: "fail" (default) or "create". Use "create" only ' +

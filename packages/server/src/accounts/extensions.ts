@@ -1,6 +1,10 @@
+import { SIDEBAR_INSTALLATION_PARAM } from '@retainer/extension';
+import { OAUTH_SCOPES, type WorkspaceRole } from '@retainer/shared';
 import type { Sql } from '../db/client.js';
+import { isUuid } from '../db/ids.js';
 import { inWorkspaceTransaction, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
+import { resolveRelease, sidebarSignIn } from '../extension-runtime/availability.js';
 import { lockExtension } from '../extension-runtime/locks.js';
 import { ExtensionCatalog } from '../extensions/catalog.js';
 import { lockWorkspaceOrganization } from '../workspaces/organizations.js';
@@ -209,4 +213,129 @@ async function discardPending(sql: Sql, workspace: string, id: string) {
       await scoped`delete from extension_credentials where id=${id} and pending`;
     });
   });
+}
+
+/** The scopes an app sign-in asks for, exactly (extensions spec 8). */
+export const APP_SIGN_IN_SCOPES = ['openid', 'email', 'profile'] as const;
+export const IDENTITY_SCOPES: ReadonlySet<string> = new Set(APP_SIGN_IN_SCOPES);
+/** What an agent's key may have, and what a client gets when it names no scope. */
+export const AGENT_OAUTH_SCOPES = [...OAUTH_SCOPES, 'offline_access'];
+
+/** Exactly the app sign-in scopes, in any order. */
+export const isAppSignInScopes = (scopes: readonly string[]) =>
+  scopes.length === APP_SIGN_IN_SCOPES.length &&
+  APP_SIGN_IN_SCOPES.every((scope) => scopes.includes(scope));
+
+/** An authorization request that signs a person in to a standalone app. */
+export type AppSignInRequest = { clientId: string; redirectUri: string; installationId: string };
+
+/**
+ * Whether an authorization request asks who the person is, and if so that it
+ * is exactly an app sign-in: `openid email profile`, no API resource, one
+ * client and redirect, and the installation its sidebar link named. Any other
+ * request for identity is refused, so the consent page never grants it.
+ * These parameters remain untrusted; `appSignInTarget` checks them.
+ */
+export function appSignInRequest(query: URLSearchParams): AppSignInRequest | null {
+  const scope = query.getAll('scope');
+  const scopes = scope.flatMap((value) => value.split(' ').filter(Boolean));
+  if (!scopes.some((s) => IDENTITY_SCOPES.has(s))) return null;
+  const [clientId] = query.getAll('client_id');
+  const [redirectUri] = query.getAll('redirect_uri');
+  const [installationId] = query.getAll(SIDEBAR_INSTALLATION_PARAM);
+  if (
+    scope.length !== 1 ||
+    !isAppSignInScopes(scopes) ||
+    query.getAll('resource').length ||
+    query.has('claims') ||
+    (query.get('prompt') ?? '').split(' ').includes('consent') ||
+    query.getAll('client_id').length !== 1 ||
+    query.getAll('redirect_uri').length !== 1 ||
+    query.getAll(SIDEBAR_INSTALLATION_PARAM).length !== 1 ||
+    !clientId ||
+    !redirectUri ||
+    !installationId ||
+    !isUuid(installationId)
+  )
+    throw new AppError(
+      400,
+      'invalid_request',
+      `An app signs a person in with exactly "${APP_SIGN_IN_SCOPES.join(' ')}", no resource, and the ${SIDEBAR_INSTALLATION_PARAM} its sidebar link named.`,
+    );
+  return { clientId, redirectUri, installationId };
+}
+
+/**
+ * The installation an app sign-in is for, and the person's role in its
+ * workspace, or null when the sign-in is not allowed: the installation is
+ * active on a reviewed standalone release that pins this client and declares
+ * a sidebar link, and the person is a member of its workspace. Checked when
+ * the code is issued and again when the ID token is (extensions spec 8).
+ * Without `installationId`, the workspace's one such installation.
+ */
+export async function appSignInTarget(
+  sql: Sql,
+  catalog: ExtensionCatalog,
+  input: { userId: string; clientId: string } & (
+    | { installationId: string; redirectUri: string; workspaceId?: never }
+    | { workspaceId: string; installationId?: never; redirectUri?: never }
+  ),
+): Promise<{ workspaceId: string; installationId: string; role: WorkspaceRole } | null> {
+  return (await sql.begin(async (tx) => {
+    const workspaceId = input.installationId
+      ? (
+          await tx<{ workspace_id: string | null }[]>`
+            select retainer_extension_installation_workspace(${input.installationId}::uuid) as workspace_id`
+        )[0]?.workspace_id
+      : input.workspaceId;
+    if (!workspaceId) return null;
+    let role: WorkspaceRole;
+    try {
+      ({ role } = await workspaceAccess(
+        tx,
+        { id: input.userId, name: '', email: '' },
+        workspaceId,
+      ));
+    } catch (error) {
+      if (error instanceof AppError && error.status === 404) return null;
+      throw error;
+    }
+    const [client] = await tx<{ redirect_uris: string[] }[]>`
+      select redirect_uris from oauth_clients where client_id=${input.clientId} and disabled is not true`;
+    if (!client || (input.redirectUri && !client.redirect_uris.includes(input.redirectUri)))
+      return null;
+    await tx`set local role retainer_app`;
+    return inWorkspaceTransaction(tx, workspaceId, async (scoped) => {
+      const rows = await scoped<Installation[]>`select * from extension_installations
+        where state='active' ${input.installationId ? scoped`and id=${input.installationId}` : scoped``}`;
+      const matching = rows.filter((row) => {
+        const resolution = resolveRelease(catalog.runtime, row);
+        return (
+          resolution.available && sidebarSignIn(resolution.manifest)?.clientId === input.clientId
+        );
+      });
+      const [only] = matching;
+      return matching.length === 1 && only ? { workspaceId, installationId: only.id, role } : null;
+    });
+  })) as { workspaceId: string; installationId: string; role: WorkspaceRole } | null;
+}
+
+/**
+ * Lets the person's request through without a consent page: approving the
+ * installation covered sign-in for its workspace's members (extensions spec
+ * 8). Better Auth skips its consent page when it finds a consent for the
+ * client, person and reference; it looks for this one only while this
+ * request's reference is the workspace (`Auth.forWorkspace`). It
+ * grants identity scopes only, and is never listed as a connected app.
+ */
+export async function recordAppSignIn(
+  sql: Sql,
+  input: { userId: string; clientId: string; workspaceId: string },
+) {
+  await sql`insert into oauth_consents(client_id,user_id,reference_id,scopes,created_at,updated_at)
+    values(${input.clientId},${input.userId},${input.workspaceId},${[...APP_SIGN_IN_SCOPES]},now(),now())
+    on conflict(client_id,user_id,reference_id) do update
+      set scopes=array(select distinct unnest(oauth_consents.scopes||excluded.scopes) order by 1),
+        updated_at=now()
+      where not oauth_consents.scopes @> excluded.scopes`;
 }

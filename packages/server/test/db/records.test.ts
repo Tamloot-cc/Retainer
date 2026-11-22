@@ -364,6 +364,45 @@ describe('precedence and review (rules 2.2, 2.3)', () => {
       }),
     ).rejects.toMatchObject({ status: 412, code: 'stale_write' });
   });
+
+  it('exposes and compares updatedAt at microsecond precision', async () => {
+    const created = await createRecord(app, as(USER), 'person', { emails: email() });
+    // Two changes in one millisecond: only the microseconds tell them apart.
+    await db.owner`update records set updated_at = '2026-11-21T10:00:00.123456Z' where id = ${created.id}`;
+    const read = await readRecord(app, as(USER), created.id);
+    expect(read.updatedAt).toBe('2026-11-21T10:00:00.123456Z');
+    await expect(
+      patchRecord(app, as(USER), created.id, {
+        values: { jobTitle: 'A' },
+        expectedUpdatedAt: '2026-11-21T10:00:00.123Z',
+      }),
+    ).rejects.toMatchObject({
+      status: 412,
+      code: 'stale_write',
+      details: { updatedAt: '2026-11-21T10:00:00.123456Z' },
+    });
+    const written = await patchRecord(app, as(USER), created.id, {
+      values: { jobTitle: 'A' },
+      expectedUpdatedAt: read.updatedAt,
+    });
+    expect(written.record.updatedAt).toMatch(/\.\d{6}Z$/);
+  });
+
+  it('lets one of two concurrent writes with the same expectedUpdatedAt through', async () => {
+    const created = await createRecord(app, as(USER), 'person', { emails: email() });
+    const results = await Promise.allSettled(
+      ['A', 'B'].map((jobTitle) =>
+        patchRecord(app, as(USER), created.id, {
+          values: { jobTitle },
+          expectedUpdatedAt: created.record.updatedAt,
+        }),
+      ),
+    );
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((r) => r.status === 'rejected')).toMatchObject({
+      reason: { status: 412, code: 'stale_write' },
+    });
+  });
 });
 
 describe('upsert by match (6.2)', () => {

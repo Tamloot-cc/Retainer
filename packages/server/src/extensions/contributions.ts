@@ -26,6 +26,15 @@ export const OVERRIDABLE = {
   field: ['label', 'description'],
 } as const;
 
+type FieldDefinition = Extract<SchemaContribution, { kind: 'field' }>['definition'];
+/**
+ * A contributed field as the schema engine takes it. Who may write it is the
+ * installation's, recorded with the contribution, not the field's.
+ */
+function schemaField({ installationOwned: _owned, ...field }: FieldDefinition) {
+  return field;
+}
+
 /**
  * Additive releases preserve local names, deprecation and omitted elements.
  * Each owned contribution's stored definition is the publisher base it was
@@ -78,10 +87,7 @@ export function contributionOperations(
       );
     }
   };
-  const field = (
-    objectId: string,
-    definition: Extract<SchemaContribution, { kind: 'field' }>['definition'],
-  ) => {
+  const field = (objectId: string, definition: FieldDefinition) => {
     const object = current.objects.find((o) => o.universalId === objectId);
     const live = object?.fields.find((f) => f.universalId === definition.universalId);
     const anyLive = current.objects
@@ -94,11 +100,12 @@ export function contributionOperations(
       // Deleted before deletion was refused, or new on a deleted object: stays absent.
       if (retired.has(definition.universalId)) return;
       if (object?.status === 'deprecated') conflict(objectId, ['status']);
-      operations.push({ op: 'create_field', object: objectId, field: definition });
+      operations.push({ op: 'create_field', object: objectId, field: schemaField(definition) });
       return;
     }
     if (!prior) conflict(definition.universalId, ['ownership'], 'schema_binding_conflict');
     const structural = [
+      'installationOwned',
       'name',
       'type',
       'settings',
@@ -132,7 +139,10 @@ export function contributionOperations(
           )
         )
           conflict(f.universalId, ['ownership'], 'schema_binding_conflict');
-      operations.push({ op: 'create_object', object: definition });
+      operations.push({
+        op: 'create_object',
+        object: { ...definition, fields: definition.fields.map(schemaField) },
+      });
       continue;
     }
     if (!prior || prior.element_id !== live.id)

@@ -8,6 +8,7 @@ import {
   functionScopes,
   functionSecrets,
   lifecycleInputSchema,
+  runsHostedCode,
 } from './index.js';
 
 export const fixture = () => ({
@@ -901,5 +902,87 @@ describe('configure contract', () => {
     expect(() => defineExtension({ ...fixture(), settings: {}, functions: [configure()] })).toThrow(
       'configure',
     );
+  });
+});
+
+describe('standalone apps (spec 8)', () => {
+  const tool = (kind: string = 'tool') => ({
+    universalId: randomUUID(),
+    name: kind === 'tool' ? 'find_slots' : kind,
+    description: 'Finds open times.',
+    handlerDigest: 'b'.repeat(64),
+    trigger:
+      kind === 'tool'
+        ? {
+            kind,
+            title: 'Find open times',
+            effect: 'read',
+            connection: 'workspace',
+            outputSchema: { type: 'object', additionalProperties: false },
+          }
+        : { kind },
+    inputSchema: { type: 'object', additionalProperties: false },
+  });
+  const standalone = (extra: Record<string, unknown> = {}) => ({
+    ...fixture(),
+    execution: 'standalone',
+    oauthClientId: 'app-client',
+    ...extra,
+  });
+  it('may declare tools and jobs, which run as hosted code', () => {
+    const manifest = defineExtension(standalone({ functions: [tool(), tool('job')] }));
+    expect(runsHostedCode(manifest)).toBe(true);
+    expect(runsHostedCode(defineExtension(standalone()))).toBe(false);
+    expect(runsHostedCode(defineExtension(fixture()))).toBe(true);
+  });
+  it('declares no function that needs a setup or cleanup job', () => {
+    for (const kind of ['install', 'uninstall'])
+      expect(() => defineExtension(standalone({ functions: [tool(kind)] }))).toThrow(
+        'only tool and job',
+      );
+  });
+  it('links from the sidebar only with an OAuth client and a plain path', () => {
+    const link = { label: 'Planner', icon: 'calendar', path: '/start' };
+    expect(defineExtension(standalone({ sidebarLink: link })).sidebarLink).toEqual(link);
+    const { oauthClientId: _client, ...keyMode } = standalone();
+    expect(() => defineExtension({ ...keyMode, sidebarLink: link })).toThrow('OAuth client');
+    for (const path of ['start', '//evil.example/x', '/start?x=1', '/start#x', '/\\evil'])
+      expect(() => defineExtension(standalone({ sidebarLink: { ...link, path } }))).toThrow();
+    expect(() =>
+      defineExtension(standalone({ sidebarLink: { ...link, icon: 'rocket' } })),
+    ).toThrow();
+  });
+  it('owns contributed fields, but never a mapped output', () => {
+    const owned = {
+      universalId: randomUUID(),
+      name: 'orderId',
+      label: 'Order ID',
+      type: 'text',
+      installationOwned: true,
+    };
+    const object = {
+      universalId: randomUUID(),
+      nameSingular: 'order',
+      namePlural: 'orders',
+      labelSingular: 'Order',
+      labelPlural: 'Orders',
+      fields: [owned],
+    };
+    expect(
+      defineExtension(standalone({ schema: [{ kind: 'object', definition: object }] })).schema,
+    ).toHaveLength(1);
+    const writer = { ...tool('job'), name: 'fill', mappedWrite: true };
+    expect(() =>
+      defineExtension({
+        ...fixture(),
+        functions: [writer],
+        mapping: {
+          objectId: object.universalId,
+          outputs: [
+            { key: 'id', label: 'ID', description: 'An ID', types: ['text'], field: owned },
+          ],
+        },
+      }),
+    ).toThrow('installation-owned');
   });
 });

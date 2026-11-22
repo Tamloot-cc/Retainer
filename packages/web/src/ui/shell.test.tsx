@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { objectIcon, Shell } from './shell.js';
+import { objectIcon, Shell, type ShellApp } from './shell.js';
 
 vi.mock('@tanstack/react-router', async (original) => ({
   ...(await original<typeof import('@tanstack/react-router')>()),
@@ -12,12 +12,16 @@ vi.mock('@tanstack/react-router', async (original) => ({
   ),
 }));
 
-function shell(collapsed: boolean, options: { accounts?: boolean; routines?: boolean } = {}) {
+function shell(
+  collapsed: boolean,
+  options: { accounts?: boolean; routines?: boolean; apps?: ShellApp[] } = {},
+) {
   localStorage.setItem('retainer:sidebar:collapsed', collapsed ? '1' : '0');
   render(
     <Shell
       workspace="Acme"
       routinesAvailable={options.routines}
+      {...(options.apps ? { apps: options.apps } : {})}
       {...(options.accounts
         ? {
             accounts: {
@@ -65,6 +69,22 @@ describe('the sidebar', () => {
         .map((link) => link.textContent),
     ).toEqual(['Home', 'Review inbox']);
     expect(screen.getByRole('button', { name: 'Account: Dana Levi' })).toBeTruthy();
+  });
+
+  it('opens each installed app’s link in a new tab, under Apps', () => {
+    const url = 'https://app.example/start?retainer_installation=i1';
+    shell(false, { apps: [{ installationId: 'i1', label: 'Planner', icon: 'calendar', url }] });
+    const link = within(screen.getByRole('group', { name: 'Apps' })).getByRole('link', {
+      name: 'Planner',
+    });
+    expect(link.getAttribute('href')).toBe(url);
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('shows no Apps group without an app link', () => {
+    shell(false);
+    expect(screen.queryByRole('group', { name: 'Apps' })).toBeNull();
   });
 
   it('gathers the pages that set the workspace up at the bottom, with Settings', () => {

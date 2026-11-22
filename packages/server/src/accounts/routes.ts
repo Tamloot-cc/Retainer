@@ -8,13 +8,22 @@ import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
 import { requireWebHeader } from '../auth/session.js';
 import type { Sql } from '../db/client.js';
-import { AppError } from '../errors.js';
-import type { ExtensionCatalog } from '../extensions/catalog.js';
+import { AppError, forbidden } from '../errors.js';
+import { ExtensionCatalog } from '../extensions/catalog.js';
 import { idParam, readBody, zodError } from '../http/request.js';
 import { errorResponse, toAppError } from '../http/response.js';
 import { type Auth, CLIENT_IP_HEADER } from './auth.js';
 import * as connections from './connections.js';
-import { consentInstallation, installationOptions, installationRequest } from './extensions.js';
+import {
+  AGENT_OAUTH_SCOPES,
+  appSignInRequest,
+  appSignInTarget,
+  consentInstallation,
+  IDENTITY_SCOPES,
+  installationOptions,
+  installationRequest,
+  recordAppSignIn,
+} from './extensions.js';
 import type { Person } from './people.js';
 import * as people from './people.js';
 
@@ -48,6 +57,7 @@ export type AccountsDeps = {
 
 export function createAccountsApp(deps: AccountsDeps) {
   const app = new Hono<AccountsEnv>();
+  const catalog = deps.extensionCatalog ?? new ExtensionCatalog();
   app.onError((error, c) => errorResponse(c, toAppError(error)));
   app.notFound((c) =>
     errorResponse(c, new AppError(404, 'not_found', `no route for ${c.req.method} ${c.req.path}`)),
@@ -69,7 +79,52 @@ export function createAccountsApp(deps: AccountsDeps) {
     if (CLOSED_AUTH_PATHS.has(c.req.path)) {
       throw new AppError(404, 'not_found', `no route for ${c.req.method} ${c.req.path}`);
     }
-    return deps.auth.handler(new Request(c.req.raw, { headers: forwarded(c) }));
+    let request = new Request(c.req.raw, { headers: forwarded(c) });
+    if (c.req.method === 'GET' && c.req.path === AUTHORIZE_PATH) {
+      // A request that names no scope gets the client's registered scopes
+      // (the agent scopes for a client with none). Every registered client
+      // may ask for the identity scopes, so they are left out: only an app
+      // sign-in may ask for them, by name.
+      const url = new URL(request.url);
+      if (!url.searchParams.has('scope')) {
+        const [client] = await sql<{ scopes: string[] | null }[]>`
+          select scopes from oauth_clients where client_id=${url.searchParams.get('client_id') ?? ''}`;
+        url.searchParams.set(
+          'scope',
+          (client?.scopes ?? AGENT_OAUTH_SCOPES)
+            .filter((scope) => !IDENTITY_SCOPES.has(scope))
+            .join(' '),
+        );
+        request = new Request(url, request);
+      }
+      // Signing in to a standalone app from its sidebar link: no consent
+      // page, decided per request (extensions spec 8). Any other request for
+      // the person's identity is refused here.
+      const signIn = appSignInRequest(new URL(c.req.url).searchParams);
+      // The app's own request arrives from its site without Retainer's
+      // session cookie; Better Auth sends it to the sign-in page, which
+      // comes back here with the cookie and the same parameters.
+      const session = signIn ? await deps.auth.getSession(request.headers) : null;
+      if (signIn && session) {
+        const target = await appSignInTarget(sql, catalog, {
+          userId: session.user.id,
+          clientId: signIn.clientId,
+          installationId: signIn.installationId,
+          redirectUri: signIn.redirectUri,
+        });
+        if (!target)
+          throw forbidden(
+            'This app is not installed in a workspace you belong to, or it cannot sign you in.',
+          );
+        await recordAppSignIn(sql, {
+          userId: session.user.id,
+          clientId: signIn.clientId,
+          workspaceId: target.workspaceId,
+        });
+        return deps.auth.forWorkspace(request, target.workspaceId);
+      }
+    }
+    return deps.auth.handler(request);
   });
 
   // RFC 8414: OAuth clients find the authorization server's metadata at the
@@ -289,6 +344,9 @@ export function createAccountsApp(deps: AccountsDeps) {
       body: JSON.stringify({ accept, oauth_query: body.oauth_query }),
     });
     if (!accept || !workspaceId) return deps.auth.handler(request);
+    // An app sign-in never shows this page; nothing else may ask for identity.
+    if (appSignInRequest(new URLSearchParams(body.oauth_query)))
+      throw new AppError(400, 'invalid_request', 'Open the app from Retainer to sign in to it.');
     const grant = installationRequest(body.oauth_query, deps.publicOrigin);
     if (grant) {
       if (!body.installationId || !body.expectedGeneration)
@@ -301,7 +359,7 @@ export function createAccountsApp(deps: AccountsDeps) {
         expectedGeneration: body.expectedGeneration,
         grant,
         ...(deps.extensionCatalog ? { catalog: deps.extensionCatalog } : {}),
-        record: (referenceId) => deps.auth.consent(request, referenceId),
+        record: (referenceId) => deps.auth.forWorkspace(request, referenceId),
       });
     }
     if (body.installationId || body.expectedGeneration)
@@ -317,7 +375,7 @@ export function createAccountsApp(deps: AccountsDeps) {
       );
     }
     return connections.recordConsent(sql, c.get('person'), workspaceId, () =>
-      deps.auth.consent(request, workspaceId),
+      deps.auth.forWorkspace(request, workspaceId),
     );
   });
 
@@ -351,6 +409,8 @@ async function requireCurrentAuthorization(auth: Auth, query: string) {
     );
   }
 }
+
+const AUTHORIZE_PATH = '/account/auth/oauth2/authorize';
 
 /**
  * Better Auth routes Retainer does not expose. Consent goes through

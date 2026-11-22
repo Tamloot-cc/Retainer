@@ -42,16 +42,22 @@ describe('operator runtime configuration and dedicated key-mode control', () => 
     }
   });
   it.each([
-    { kind: 'job', driver: 'launcher' },
-    { kind: 'configure', driver: 'launcher' },
-    { kind: 'job', driver: 'lambda' },
-    { kind: 'configure', driver: 'lambda' },
+    { kind: 'job', driver: 'launcher', execution: 'hosted' },
+    { kind: 'configure', driver: 'launcher', execution: 'hosted' },
+    { kind: 'job', driver: 'lambda', execution: 'hosted' },
+    { kind: 'configure', driver: 'lambda', execution: 'hosted' },
+    // The hosted catalog must load the tool kind before any bundle with one
+    // reaches it (an unknown kind stopped catalog loading on 2026-11-15).
+    { kind: 'tool', driver: 'lambda', execution: 'hosted' },
+    // A standalone app's tools follow the hosted rules (extensions spec 8).
+    { kind: 'tool', driver: 'lambda', execution: 'standalone' },
   ] as const)(
-    'activates $kind with $driver only when its complete immutable executable map matches',
-    async ({ kind, driver }) => {
+    'activates $execution $kind with $driver only when its complete immutable executable map matches',
+    async ({ kind, driver, execution }) => {
       const { publicKey } = generateKeyPairSync('ed25519');
       const functionId = crypto.randomUUID();
       const manifest = extensionFixture({
+        execution,
         settings: {
           enabled: {
             type: 'boolean',
@@ -68,7 +74,16 @@ describe('operator runtime configuration and dedicated key-mode control', () => 
             description: 'Fixture',
             handlerDigest: 'b'.repeat(64),
             timeoutSeconds: 120,
-            trigger: { kind },
+            trigger:
+              kind === 'tool'
+                ? {
+                    kind,
+                    title: 'Fixture tool',
+                    effect: 'read',
+                    connection: 'workspace',
+                    outputSchema: { type: 'object', additionalProperties: false },
+                  }
+                : { kind },
             scopes: ['read'],
             inputSchema: { type: 'object', additionalProperties: false },
           },

@@ -1,3 +1,4 @@
+import { runsHostedCode } from '@retainer/extension';
 import { ROUTINE_RUNNER_FUNCTION_ID, ROUTINE_RUNNER_REGISTRATION_ID } from '@retainer/shared';
 import { importJWK, importPKCS8, importSPKI } from 'jose';
 import { z } from 'zod';
@@ -139,7 +140,7 @@ export async function extensionServices(
     const activationReady = new Set<string>();
     if (tokens && registry) {
       for (const release of catalog.list()) {
-        if (!release.runtimeEnabled || release.manifest.execution !== 'hosted') continue;
+        if (!release.runtimeEnabled || !runsHostedCode(release.manifest)) continue;
         for (const fn of release.manifest.functions) {
           if (['route', 'serverRoute'].includes(fn.trigger.kind)) {
             if (

@@ -5,6 +5,7 @@ import type { Sql } from '../db/client.js';
 import { inWorkspace, lockSchemaShared } from '../db/tx.js';
 import { readWorkspace } from '../db/workspaces.js';
 import { admitCaller } from '../extension-runtime/admission.js';
+import { readOnlyFieldsFor } from '../extension-runtime/owned-fields.js';
 import { getSchema } from '../schema/compiled.js';
 import { BUILT_INS, memoryBuiltIn } from './built-ins.js';
 import { runSchemaChange, type SchemaChangeResult } from './engine.js';
@@ -22,11 +23,13 @@ export async function describeSchema(sql: Sql, caller: Caller): Promise<SchemaDe
   return inWorkspace(sql, workspaceId, async (tx) => {
     await lockSchemaShared(tx, workspaceId);
     await admitCaller(tx, caller, false, 'runtime');
-    const [workspace, schema] = await Promise.all([
+    // An installation's own fields are read-only to everyone but it.
+    const [workspace, schema, readOnly] = await Promise.all([
       readWorkspace(tx, workspaceId),
       getSchema(tx, workspaceId),
+      readOnlyFieldsFor(tx, caller),
     ]);
-    const objects = presentSchema(schema);
+    const objects = presentSchema(schema, readOnly);
     return {
       workspace: {
         id: workspace.id,

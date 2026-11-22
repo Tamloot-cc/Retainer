@@ -1,12 +1,19 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
+import type { ExtensionAppLink, SidebarIcon } from '@retainer/extension';
 import { Link } from '@tanstack/react-router';
 import {
+  AppWindow,
+  CalendarDays,
+  ChartColumn,
   ChevronDown,
   ChevronsUpDown,
+  Clock,
+  FileText,
   House,
   Inbox,
   LogOut,
   type LucideIcon,
+  Mail,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -15,6 +22,7 @@ import {
   Settings,
   Shapes,
   UserCog,
+  UsersRound,
   Workflow,
   X,
 } from 'lucide-react';
@@ -68,12 +76,25 @@ type ShellProps = {
   objects: ShellObject[];
   inboxCount?: number;
   routinesAvailable?: boolean;
+  /** Apps installed in the workspace that people open signed in, each on its own site. */
+  apps?: ShellApp[];
   /** Developer view, switched from the account menu. */
   developer: boolean;
   onDeveloperChange: (on: boolean) => void;
   onSignOut: () => void;
   onSearch: () => void;
   children: ReactNode;
+};
+
+export type ShellApp = Pick<ExtensionAppLink, 'installationId' | 'label' | 'icon' | 'url'>;
+const APP_ICONS: Record<SidebarIcon, LucideIcon> = {
+  app: AppWindow,
+  calendar: CalendarDays,
+  clock: Clock,
+  mail: Mail,
+  chart: ChartColumn,
+  file: FileText,
+  users: UsersRound,
 };
 
 export function Shell({ children, ...props }: ShellProps) {
@@ -242,6 +263,7 @@ function Sidebar({
   objects,
   inboxCount,
   routinesAvailable,
+  apps,
   developer,
   onDeveloperChange,
   onSignOut,
@@ -397,6 +419,13 @@ function Sidebar({
         <NavGroup label="Activity" collapsed={collapsed}>
           {objectLinks('event')}
         </NavGroup>
+        {apps?.length ? (
+          <NavGroup label="Apps" collapsed={collapsed}>
+            {apps.map((app) => (
+              <AppLink key={app.installationId} app={app} collapsed={collapsed} />
+            ))}
+          </NavGroup>
+        ) : null}
         <div className="flex-1" />
         <NavGroup label="Workspace" collapsed={collapsed}>
           {routinesAvailable ? (
@@ -531,6 +560,24 @@ const navItem = (collapsed: boolean) =>
     'data-[status=active]:bg-selection data-[status=active]:font-medium data-[status=active]:text-selection-foreground',
     collapsed ? 'mx-auto w-8 justify-center' : 'px-2',
   );
+
+/** An app on its own site: it opens in a new tab, where Retainer signs the person in. */
+function AppLink({ app, collapsed }: { app: ShellApp; collapsed: boolean }) {
+  const Icon = APP_ICONS[app.icon];
+  return (
+    <a
+      href={app.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={collapsed ? app.label : undefined}
+      title={collapsed ? app.label : undefined}
+      className={navItem(collapsed)}
+    >
+      <Icon size={16} className="shrink-0" />
+      {collapsed ? null : <span className="truncate">{app.label}</span>}
+    </a>
+  );
+}
 
 function NavLink({
   to,

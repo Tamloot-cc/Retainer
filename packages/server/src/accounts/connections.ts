@@ -1,3 +1,4 @@
+import { OAUTH_SCOPES } from '@retainer/shared';
 import type { Sql } from '../db/client.js';
 import { forbidden, notFound } from '../errors.js';
 import { endGrants, lockWorkspaceOrganization } from '../workspaces/organizations.js';
@@ -39,7 +40,7 @@ const toConnection = (row: ConnectionRow): Connection => ({
   app: { name: row.app_name, uri: row.app_uri },
   workspace: { id: row.workspace_id, slug: row.workspace_slug, name: row.workspace_name },
   person: { id: row.user_id, name: row.user_name, email: row.user_email },
-  scopes: row.scopes.filter((s) => s !== 'offline_access'),
+  scopes: row.scopes.filter((s) => (OAUTH_SCOPES as readonly string[]).includes(s)),
   connectedAt: row.created_at.toISOString(),
 });
 
@@ -53,7 +54,9 @@ function connections(sql: Sql, where: ReturnType<Sql>) {
     join oauth_clients c on c.client_id = oc.client_id
     join workspaces w on w.id = oc.reference_id and w.deletion_scheduled_at is null
     join users u on u.id = oc.user_id
-    where ${where}
+    -- An app sign-in (identity scopes alone) is not a connection: it grants
+    -- no access and lasts while the app's installation does.
+    where ${where} and oc.scopes && ${[...OAUTH_SCOPES]}::text[]
     order by oc.created_at desc, oc.id`;
 }
 

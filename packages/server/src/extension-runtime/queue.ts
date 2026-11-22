@@ -85,6 +85,7 @@ type Installation = {
   release_digest: string;
   generation: number;
   state: string;
+  grant_generation: number;
   setup_kind: string;
   last_error: string | null;
   activated_at: Date | null;
@@ -1088,6 +1089,21 @@ export class ExtensionQueue {
       const target = { ...installation, version: pin.version, release_digest: job.release_digest };
       const manifest = this.runnableRelease(target);
       if (!manifest) return null;
+      const requiresCredential = manifest.execution === 'standalone' && job.trigger_kind === 'tool';
+      if (requiresCredential) {
+        // installation() holds the same exclusive registration lock as credential revocation.
+        const [credential] = await tx<
+          { live: boolean }[]
+        >`select retainer_extension_credential_live(
+          ${workspace}::uuid,${installation.id}::uuid,${installation.grant_generation}) as live`;
+        if (!credential?.live) {
+          await tx`update extension_jobs set status='cancelled',code='connection_required',
+            lease_owner=null,lease_until=null,run_until=null,updated_at=now() where id=${id}`;
+          await tx`update extension_attempts set status='cancelled',code='connection_required',finished_at=now()
+            where job_id=${id} and finished_at is null`;
+          return null;
+        }
+      }
       if (
         manifest.connection === 'member' &&
         !job.connection_id &&
@@ -1143,7 +1159,7 @@ export class ExtensionQueue {
           : tx`clock_timestamp()+${timeout + RUN_GRACE_SECONDS}*interval '1 second'`;
       const [claimed] = await tx<
         (Job & { handler_deadline: Date })[]
-      >`update extension_jobs set status='running',lease_owner=${owner},run_secrets=${secrets}::text[],
+      >`update extension_jobs set status='running',lease_owner=${owner},run_secrets=${secrets}::text[],run_requires_credential=${requiresCredential},
         fence=fence+1,lease_until=least(clock_timestamp()+least(60,${timeout + RUN_GRACE_SECONDS})*interval '1 second',${runUntil}),run_until=${runUntil},attempt=attempt+1,cycle_attempt=cycle_attempt+1,updated_at=now()
         where id=${id} returning *,run_until-${RUN_GRACE_SECONDS}*interval '1 second' as handler_deadline`;
       if (!claimed) throw new Error('claim returned no row');

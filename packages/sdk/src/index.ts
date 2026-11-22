@@ -788,6 +788,30 @@ export class RetainerClient {
   extensions(signal?: AbortSignal) {
     return this.get<{ installations: ExtensionInstallation[] }>('/v1/extensions', {}, signal);
   }
+  /** Standalone apps' sidebar links for the workspace's members (extensions spec 8). */
+  extensionLinks(signal?: AbortSignal) {
+    return this.get<{ links: import('@retainer/extension').ExtensionAppLink[] }>(
+      '/v1/extensions/links',
+      {},
+      signal,
+    );
+  }
+  /**
+   * A standalone app's own credential writes its installation's generated
+   * secret, with revision CAS (extensions spec 8). A `409 revision_conflict`
+   * carries the current revision in its details, never the value.
+   */
+  writeGeneratedSecret(
+    installationId: string,
+    name: string,
+    input: { expectedRevision: number | null; value: string },
+  ) {
+    return this.send<{ revision: number }>(
+      'PUT',
+      `/v1/extensions/${encodeURIComponent(installationId)}/generated-secrets/${encodeURIComponent(name)}`,
+      input,
+    );
+  }
   extension(id: string, signal?: AbortSignal) {
     return this.get<
       ExtensionInstallation & {

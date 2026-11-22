@@ -76,21 +76,34 @@ export class ChangeCollector {
     let chain = job?.cause ?? [],
       depth = job ? (job.cause_depth ?? job.cause.length) : 0;
     const causedBy = caller.installation?.causedBy;
-    if (!caller.run && causedBy) {
-      // A standalone app has no server-side job; it names the change it
-      // answers and inherits that change's chain, which only excludes
-      // installations. The inherited hops are not server-derived, so they
-      // add no depth: this write is the app's own first hop.
-      const [change] = await tx<
-        { cause: string[] }[]
-      >`select cause from record_changes where workspace_id=${caller.workspaceId} and position=${causedBy}::bigint`;
-      if (!change)
+    if (!caller.run && caller.installation && causedBy) {
+      // A standalone app has no server-side job; it names the changes and
+      // its own tool calls it answers and inherits their chains, which only
+      // exclude installations and routines. The inherited hops are not
+      // server-derived, so they add no depth: this write is the app's own
+      // first hop.
+      const changes = causedBy.changes.length
+        ? await tx<{ cause: string[] }[]>`select cause from record_changes
+            where workspace_id=${caller.workspaceId} and position=any(${causedBy.changes}::bigint[])`
+        : [];
+      if (changes.length !== causedBy.changes.length)
         throw new AppError(
           410,
           'cursor_expired',
-          'the change named by Retainer-Caused-By is not in the feed; it expired or never existed',
+          'a change named by Retainer-Caused-By is not in the feed; it expired or never existed',
         );
-      chain = change.cause;
+      const calls = causedBy.toolCalls.length
+        ? await tx<{ cause: string[] }[]>`select cause from extension_jobs
+            where installation_id=${caller.installation.installationId} and trigger_kind='tool'
+              and id=any(${causedBy.toolCalls}::uuid[])`
+        : [];
+      if (calls.length !== causedBy.toolCalls.length)
+        throw new AppError(
+          410,
+          'cause_expired',
+          "a tool call named by Retainer-Caused-By is not one of this app's retained tool calls; write without it",
+        );
+      chain = [...new Set([...changes, ...calls].flatMap((row) => row.cause))];
       depth = 0;
     }
     if (caller.routine) {

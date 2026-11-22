@@ -26,7 +26,7 @@ import {
 import { type CompiledObject, type CompiledSchema, objectNamed } from '../schema/compiled.js';
 import type { FieldState } from '../schema/types.js';
 import { normalizeDomain, normalizeEmail, normalizePhone } from './derive.js';
-import { presentRecords, RECORD_COLUMNS, type RecordRow } from './read.js';
+import { presentRecords, type RecordRow, recordColumns } from './read.js';
 import { relationReferences } from './references.js';
 import { plainPrefixQuery } from './search-sql.js';
 import { normalizeFieldValue } from './values.js';
@@ -566,9 +566,8 @@ export async function queryRecords(
   input: QueryInput,
 ): Promise<RecordPage> {
   const offset = decodeCursor(input.cursor);
-  const columns = RECORD_COLUMNS.map((c) => `r.${c}`);
   const rows = await tx<RecordRow[]>`
-    select ${tx.unsafe(columns.join(', '))} from records r
+    select ${recordColumns(tx, 'r')} from records r
     where ${matchingRecords(tx, workspaceId, schema, object, input)}
     order by ${compileSort(tx, object, input.sort)}
     limit ${input.limit + 1} offset ${offset}`;
@@ -714,9 +713,8 @@ export async function queryEvents(
         eventCondition(tx, schema, name, condition),
       )
     : tx`true`;
-  const columns = RECORD_COLUMNS.map((c) => `r.${c}`);
   const rows = await tx<RecordRow[]>`
-    select ${tx.unsafe(columns.join(', '))}
+    select ${recordColumns(tx, 'r')}
     from records r
     join event_records e on e.record_id = r.id and e.workspace_id = r.workspace_id
     where r.workspace_id = ${workspaceId}
