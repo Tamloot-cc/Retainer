@@ -332,15 +332,16 @@ export function resolveBindingPlan(
               (field) => field.name === fieldChoice.field && eligibleField(field, rule),
             )
           : undefined;
-      if (
-        fieldChoice.action === 'existing' &&
-        (!target ||
-          (rule.owned && prior?.destinations[key]?.fields[rule.key]?.id !== target.universalId))
-      ) {
+      const retainedOwned =
+        priorDeclaration?.fields.some((field) => field.key === rule.key && field.owned) &&
+        prior?.destinations[key]?.fields[rule.key]?.id === target?.universalId;
+      if (fieldChoice.action === 'existing' && (!target || (rule.owned && !retainedOwned))) {
         issues.push({
           binding: key,
           field: rule.key,
-          message: `Choose an eligible field for ${rule.label}.`,
+          message: rule.installationOwned
+            ? `Create ${rule.label}. This field must belong to the installation.`
+            : `Choose an eligible field for ${rule.label}.`,
         });
         continue;
       }

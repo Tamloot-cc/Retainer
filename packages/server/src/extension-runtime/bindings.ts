@@ -5,7 +5,6 @@ import type {
   ExtensionManifest,
 } from '@retainer/extension';
 import { HIDDEN_TYPE_IDS } from '@retainer/shared';
-import type { Tx } from '../db/tx.js';
 import type { FieldState, ObjectState, SchemaState } from '../schema/types.js';
 
 export type StoredBinding = {
@@ -241,30 +240,4 @@ export function checkStandaloneBindingWrite(
       )
     );
   });
-}
-
-export async function installationOnlyFields(tx: Tx, workspaceId: string, objectId?: string) {
-  const plans = await tx<{ id: string; bindings: StoredBindingPlan }[]>`
-    select id, bindings from extension_installations
-    where workspace_id = ${workspaceId} and state <> 'uninstalled' and bindings is not null
-      ${
-        objectId
-          ? tx`and exists (
-        select 1 from jsonb_each(bindings->'destinations') as entry
-        where entry.value->'objects' ? ${objectId}
-      )`
-          : tx``
-      }`;
-  const owners = new Map<string, string>();
-  for (const plan of plans) {
-    for (const binding of plan.bindings.declarations) {
-      const destination = plan.bindings.destinations[binding.key];
-      if (!destination || (objectId && !destination.objects.includes(objectId))) continue;
-      for (const field of binding.fields) {
-        const id = destination.fields[field.key]?.id;
-        if (field.installationOnly && id) owners.set(id, plan.id);
-      }
-    }
-  }
-  return owners;
 }

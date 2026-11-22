@@ -49,12 +49,6 @@ const field = z.strictObject({
   isUnique: z.boolean().optional(),
   isFilterable: z.boolean().optional(),
   isSearchable: z.boolean().optional(),
-  /**
-   * Only the installation that contributed the field writes it: Retainer
-   * refuses other writers and presents it read-only, and only that
-   * installation may merge or delete a record whose unique field it is.
-   */
-  installationOwned: z.literal(true).optional(),
   settings: z
     .strictObject({
       options: z
@@ -196,7 +190,7 @@ export const functionSchema = functionDefinition.refine(
 const toolDefinition = functionDefinition
   .omit({ trigger: true })
   .extend({ ...toolTrigger.omit({ kind: true }).shape, name: toolName });
-/** Field types a mapped output can target: scalar values only in v1. */
+/** A field destination declared by an extension binding. */
 const bindingFieldSchema = z.strictObject({
   key: bindingKeySchema,
   label,
@@ -205,7 +199,7 @@ const bindingFieldSchema = z.strictObject({
   required: z.boolean(),
   lookup: z.literal(true).optional(),
   owned: z.literal(true).optional(),
-  installationOnly: z.literal(true).optional(),
+  installationOwned: z.literal(true).optional(),
   target: bindingKeySchema.optional(),
   values: z.array(name).min(1).max(200).optional(),
   create: field.optional(),
@@ -582,8 +576,7 @@ function checkBindings(manifest: ExtensionManifest): void {
           (field.types.join() !== 'select' ||
             new Set(field.values).size !== field.values.length)) ||
         (field.owned && (!field.create || field.lookup)) ||
-        (field.installationOnly &&
-          (!binding.owned || field.lookup || manifest.execution !== 'standalone')) ||
+        (field.installationOwned && !field.owned) ||
         (field.create && !field.types.includes(field.create.type))
       )
         throw new Error(`unsupported_manifest: invalid field ${binding.key}.${field.key}`);

@@ -56,7 +56,6 @@ import {
   MAX_MERGE_HOPS,
   markDeleted,
   objectOf,
-  requireInstallationFields,
   resolveRecordId,
   softDeleteRecord,
   UniqueConflictError,
@@ -705,12 +704,6 @@ export async function mergeRecord(
         }
         const target = await getRecord(tx, caller.workspaceId, context.schema, id);
         const object = requireObject(context.schema, target.object);
-        await requireInstallationFields(
-          tx,
-          context,
-          object,
-          object.activeFields.filter((field) => field.isUnique),
-        );
         await requireStandaloneBinding(
           tx,
           context,

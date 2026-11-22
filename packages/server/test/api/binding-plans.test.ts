@@ -35,7 +35,8 @@ const manifest = extensionFixture({
           label: 'Status',
           types: ['text'],
           required: true,
-          installationOnly: true,
+          owned: true,
+          installationOwned: true,
           create: { universalId: randomUUID(), name: 'status', label: 'Status', type: 'text' },
         },
         {
@@ -73,7 +74,23 @@ const contacts = extensionFixture({
       required: true,
       creates: true,
       match: 'addresses',
-      fields: [{ key: 'addresses', label: 'Addresses', types: ['emails'], required: true }],
+      fields: [
+        { key: 'addresses', label: 'Addresses', types: ['emails'], required: true },
+        {
+          key: 'importState',
+          label: 'Import state',
+          types: ['text'],
+          required: false,
+          owned: true,
+          installationOwned: true,
+          create: {
+            universalId: randomUUID(),
+            name: 'importState',
+            label: 'Import state',
+            type: 'text',
+          },
+        },
+      ],
     },
   ],
 });
@@ -346,4 +363,51 @@ it('names duplicate records before asking the admin to approve a unique match fi
   expect(review.status, JSON.stringify(review.body)).toBe(422);
   expect(review.body.error.code).toBe('bindings_invalid');
   expect(review.body.error.message).toContain('First customer, Second customer');
+});
+
+it('refuses to make an existing workspace field installation-owned', async () => {
+  const h = await setup();
+  expect(
+    (
+      await h.change([
+        {
+          op: 'create_object',
+          object: {
+            nameSingular: 'subscriber',
+            namePlural: 'subscribers',
+            labelSingular: 'Subscriber',
+            labelPlural: 'Subscribers',
+            labelField: 'name',
+            fields: [
+              { name: 'name', label: 'Name', type: 'text' },
+              { name: 'addresses', label: 'Addresses', type: 'emails' },
+              { name: 'status', label: 'Status', type: 'text' },
+            ],
+          },
+        },
+      ])
+    ).status,
+  ).toBe(200);
+  const review = await h.app.request('/v1/extensions/preview', {
+    key: h.key,
+    body: {
+      registrationId: contacts.universalId,
+      version: contacts.version,
+      settings: {},
+      bindings: {
+        contacts: {
+          action: 'existing',
+          objects: ['subscriber'],
+          fields: { importState: { action: 'existing', field: 'status' } },
+        },
+      },
+    },
+  });
+  expect(review.status, JSON.stringify(review.body)).toBe(422);
+  expect(review.body.error.code).toBe('bindings_invalid');
+  expect(review.body.error.details.bindings).toContainEqual({
+    binding: 'contacts',
+    field: 'importState',
+    message: 'Create Import state. This field must belong to the installation.',
+  });
 });

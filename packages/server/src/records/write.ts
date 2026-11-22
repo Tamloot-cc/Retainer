@@ -7,7 +7,6 @@ import type { AssertionStatus, ReviewReason } from '../db/schema.js';
 import { preciseTimestamp } from '../db/timestamps.js';
 import { jsonValue, type Tx } from '../db/tx.js';
 import { AppError, notFound, profileNotSupported } from '../errors.js';
-import { installationOnlyFields } from '../extension-runtime/bindings.js';
 import { readOnlyFieldsFor, refuseOwnedWrite } from '../extension-runtime/owned-fields.js';
 import { attachFileReferences, validateFileReferences } from '../files/references.js';
 import { isSuppressed, suppressedOf, suppressibleHandles } from '../privacy/suppression.js';
@@ -319,27 +318,6 @@ async function checkSuppressed(
  * update `data`, `record_links`, `record_identifiers`, label and search in
  * the same transaction.
  */
-export async function requireInstallationFields(
-  tx: Tx,
-  context: WriteContext,
-  object: CompiledObject,
-  fields: Iterable<FieldState>,
-) {
-  const ids = [...fields];
-  if (!ids.length) return;
-  const owners = await installationOnlyFields(tx, context.workspaceId, object.state.universalId);
-  const blocked = ids.find((field) => {
-    const owner = owners.get(field.universalId);
-    return owner && owner !== context.installation?.installationId;
-  });
-  if (blocked)
-    throw new AppError(
-      403,
-      'installation_owned',
-      `Only the extension that manages ${object.state.labelSingular} may change ${blocked.label}.`,
-    );
-}
-
 export async function writeFields(
   tx: Tx,
   context: WriteContext,
@@ -348,7 +326,6 @@ export async function writeFields(
   writes: Map<FieldState, unknown>,
   options: WriteOptions = {},
 ): Promise<Record<string, FieldWriteStatus>> {
-  await requireInstallationFields(tx, context, object, writes.keys());
   const [managed] = await tx`select 1 from source_revisions where event_id=${record.id}`;
   if (managed)
     throw new AppError(
