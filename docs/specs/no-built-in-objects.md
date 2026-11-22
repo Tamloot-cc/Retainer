@@ -1,6 +1,6 @@
 # Workspaces without built-in objects
 
-Status: proposed, 2026-11-22. Amends [ARCHITECTURE.md](../../ARCHITECTURE.md)
+Status: accepted, 2026-11-22. Amends [ARCHITECTURE.md](../../ARCHITECTURE.md)
 1.1 (protection), 3 (seeding and upgrades), 3.1 (base objects and templates)
 and 6.2 (`get_context`); [extensions.md](extensions.md) §7 (installation),
 §9.4 (change triggers), §9.5 (last contact) and §10 (source ingestion);
@@ -421,6 +421,8 @@ There are no users, so nothing stays backward compatible.
 - **Installations** get one migration: each is bound to the objects and
   fields its current release named by fixed ID, so connected sources keep
   running. Anything that can't be bound that way shows Needs setup.
+  Existing `tamlootTaskId` fields stop being contributions and stay as
+  ordinary fields the workspace may delete.
 - **Hosted:** the rebuilt bundles need the usual release steps in
   `retainer-cloud` (the tfvars apply, `RETAINER_EXTENSION_BUNDLES` and the
   cloud allowlist).
@@ -491,24 +493,25 @@ Two PRs.
    proposals, drift, all six extensions moved over, the migration, and the
    rebuilt bundles with their hosted release steps.
 
-## 11. Decisions and open questions
+## 11. Decisions
 
 Decided (2026-11-22):
 
 - No built-in objects and no roles. Extensions assume no structure.
 - Open items come from closed options. Ordering them by due date is left out.
 - A model may propose bindings; a person approves them.
-
-Open:
-
-- **Task identity field.** Tamloot adds `tamlootTaskId` to the task object
-  so that a unique claim catches the same task arriving from two accounts
-  (`sources/tasks.ts:222`). `source_tasks` already keeps the external ID and
-  record per account (`source_tasks_identity_uq`). Lean: drop the field and
-  enforce uniqueness per installation in `source_tasks`, so extensions add no
-  hidden ID fields to the user's objects. To confirm while implementing PR 2.
-- **Several objects for a write binding.** A workspace with Internal Tasks and
+- **No task identity field.** Tamloot added `tamlootTaskId` to the task
+  object so that a unique claim catches the same task arriving from two
+  accounts (`sources/tasks.ts:222`). `source_tasks` already keeps the external
+  ID and record per account (`source_tasks_identity_uq`). The field is dropped,
+  and `source_tasks` enforces uniqueness per installation, so extensions add
+  no hidden ID fields to the user's objects. `source.tasks.identityFieldId`
+  leaves the manifest.
+- **One object per write binding.** A workspace with Internal Tasks and
   External Tasks binds Tamloot's tasks to one of them. Writing to several
-  would need a rule for picking one per task. Not in v1.
-- **The clash suffix.** Prefix or suffix, and whether the admin's agent
-  should name it instead.
+  would need a rule for picking one per record; not in v1. A `read` event
+  binding may still name several event types (§5.3).
+- **Name clashes get the extension's name.** A `create` object whose name is
+  taken is proposed as `<extension><Name>` with the label
+  "<Plural> (<Extension>)", and the admin may rename it before approving
+  (§5.4).
