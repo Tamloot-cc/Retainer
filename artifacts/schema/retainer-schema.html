@@ -222,7 +222,7 @@ svg .bar-alt { fill: var(--ws-line); }
   <header class="prose" style="display:flex;flex-direction:column;gap:14px">
     <span class="eyebrow">Retainer · schema design</span>
     <h1>Retainer schema: today and proposed</h1>
-    <p class="lead">Today every workspace is expected to have four built-in objects, and Retainer's own features and every extension find them by fixed IDs. The accepted design removes them: the workspace's schema is its own, core features read generic marks, and each extension gets an approved plan of where its data goes.</p>
+    <p class="lead">Today every workspace is expected to have four built-in objects, and Retainer's own features and every extension find them by fixed IDs. The accepted design removes them: the workspace's schema is its own, core gives no field a special meaning, and each extension gets an approved plan of where its data goes.</p>
     <div class="status">
       <span>Spec <b>docs/specs/no-built-in-objects.md</b></span>
       <span>Status <b>accepted, 2026-11-22</b></span>
@@ -234,7 +234,7 @@ svg .bar-alt { fill: var(--ws-line); }
       <a href="#why">2. What broke</a>
       <a href="#moves">3. Three changes</a>
       <a href="#workspace" class="sub">4. Workspaces and templates</a>
-      <a href="#open" class="sub">5. Open items</a>
+      <a href="#open" class="sub">5. Linked records</a>
       <a href="#bindings" class="sub">6. Bindings</a>
       <a href="#review" class="sub">7. Install review</a>
       <a href="#plan" class="sub">8. The plan over time</a>
@@ -251,7 +251,7 @@ svg .bar-alt { fill: var(--ws-line); }
     <p class="prose">Today, Retainer assumes four objects exist. In the proposal, the agent designs the schema, and Retainer and its extensions adapt to it.</p>
     <div class="figure">
       <div class="scroll">
-      <svg viewBox="0 0 960 400" role="img" aria-label="Today: Retainer core and extensions find Person, Company, Task and Conversation by fixed IDs; agent-made objects sit beside them. Proposed: the workspace has only its own objects; core reads closed marks on any object, and each extension writes through an installation plan the admin approved.">
+      <svg viewBox="0 0 960 400" role="img" aria-label="Today: Retainer core and extensions find Person, Company, Task and Conversation by fixed IDs; agent-made objects sit beside them. Proposed: the workspace has only its own objects; core lists linked records in any object, and each extension writes through an installation plan the admin approved.">
         <defs>
           <marker id="h1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
           <marker id="h1f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-fixed"/></marker>
@@ -302,7 +302,7 @@ svg .bar-alt { fill: var(--ws-line); }
         <!-- proposed -->
         <rect x="500" y="40" width="200" height="58" rx="8" class="b-trusted"/>
         <text x="600" y="64" text-anchor="middle">Retainer core</text>
-        <text x="600" y="82" text-anchor="middle" class="small">reads generic marks only</text>
+        <text x="600" y="82" text-anchor="middle" class="small">no object has a special meaning</text>
         <rect x="740" y="40" width="204" height="58" rx="8" class="b-ext"/>
         <text x="842" y="64" text-anchor="middle">Extensions</text>
         <text x="842" y="82" text-anchor="middle" class="small">declare bindings, own words</text>
@@ -318,19 +318,19 @@ svg .bar-alt { fill: var(--ws-line); }
         <text x="563" y="258" text-anchor="middle" class="tiny">any name</text>
         <rect x="620" y="212" width="98" height="64" rx="8" class="b-ws"/>
         <text x="669" y="238" text-anchor="middle">task</text>
-        <text x="669" y="258" text-anchor="middle" class="tiny">status: done ✓</text>
+        <text x="669" y="258" text-anchor="middle" class="tiny">any statuses</text>
         <rect x="726" y="212" width="98" height="64" rx="8" class="b-ws"/>
         <text x="775" y="238" text-anchor="middle">meeting</text>
         <text x="775" y="258" text-anchor="middle" class="tiny">event type</text>
         <rect x="832" y="212" width="98" height="64" rx="8" class="b-ws"/>
         <text x="881" y="238" text-anchor="middle">deal</text>
-        <text x="881" y="258" text-anchor="middle" class="tiny">stage: won ✓ lost ✓</text>
+        <text x="881" y="258" text-anchor="middle" class="tiny">any stages</text>
         <text x="514" y="304" class="small">every object is the workspace's own: no fixed IDs, nothing protected</text>
-        <text x="514" y="324" class="small">✓ = an option marked closed</text>
+        <text x="514" y="324" class="small">core lists what links to a record; the agent judges it</text>
 
         <path d="M600,100 C600,150 600,180 640,208" class="arrow" marker-end="url(#h1)"/>
-        <text x="508" y="146" class="small">reads closed marks,</text>
-        <text x="508" y="160" class="small">on any object</text>
+        <text x="508" y="146" class="small">lists linked records,</text>
+        <text x="508" y="160" class="small">in any object</text>
         <line x1="800" y1="160" x2="676" y2="208" class="arrow-plan" marker-end="url(#h1p)"/>
         <line x1="820" y1="160" x2="775" y2="208" class="arrow-plan" marker-end="url(#h1p)"/>
         <line x1="760" y1="160" x2="580" y2="208" class="arrow-plan" marker-end="url(#h1p)"/>
@@ -360,7 +360,7 @@ svg .bar-alt { fill: var(--ws-line); }
         <span class="tag">Proposed</span>
         <ul class="ticks dot">
           <li><span>No built-ins. The four become a <code>starter</code> template</span></li>
-          <li><span>Core reads one generic mark: <code>closed</code> on select options</span></li>
+          <li><span>Core reads structure only: relations, field types. Open tasks become linked records</span></li>
           <li><span>Extensions name nothing; each installation holds a plan</span></li>
           <li><span>A person approves every plan. A model may propose one</span></li>
         </ul>
@@ -405,12 +405,12 @@ svg .bar-alt { fill: var(--ws-line); }
       <div class="dcard">
         <span class="q">Roles</span>
         <span class="chip muted">Rejected</span>
-        <p>Tag your own objects as "plays Task". Once extensions stop depending on built-ins, only open tasks needs a tag, and closed marks cover that.</p>
+        <p>Tag your own objects as "plays Task". Once extensions stop depending on built-ins, only open tasks needs a tag, and a generic linked-records list covers that.</p>
       </div>
       <div class="dcard">
         <span class="q">Nothing built in</span>
         <span class="chip closed">Chosen</span>
-        <p>Core reads generic marks. Extensions bind to whatever the workspace has, through a plan a person approves.</p>
+        <p>Core gives no field a special meaning. Extensions bind to whatever the workspace has, through a plan a person approves.</p>
       </div>
     </div>
   </section>
@@ -428,8 +428,8 @@ svg .bar-alt { fill: var(--ws-line); }
       </li>
       <li class="z-t">
         <span class="n">2 · section 5</span>
-        <h3>Closed options drive open items</h3>
-        <p>Any select option can be marked <code>closed</code>. Linked records with no closed value are "open items", in any object.</p>
+        <h3>Open tasks become linked records</h3>
+        <p>Every record linked to this one, in any object, with its select values. The agent decides what's open.</p>
         <span class="chip pr1">PR 1</span>
       </li>
       <li class="z-p">
@@ -500,46 +500,53 @@ svg .bar-alt { fill: var(--ws-line); }
 
   <!-- 5 -->
   <section id="open">
-    <span class="eyebrow">5 · Layer: closed options and open items</span>
-    <h2>One mark replaces the Task object as far as core is concerned</h2>
-    <p class="prose">Open tasks needed to know which object holds tasks and which status means done. A <code>closed</code> mark on select options answers the second question for any object, which makes the first one unnecessary.</p>
-
-    <div class="two">
-      <div class="panel">
-        <h3>Mark the end states</h3>
-        <div class="opts"><span class="opt">todo</span><span class="opt">in_progress</span><span class="opt">idea</span><span class="opt c">done</span><span class="opt c">dropped</span></div>
-        <p class="sub"><code>task.status</code></p>
-        <div class="opts"><span class="opt">lead</span><span class="opt">negotiation</span><span class="opt c">won</span><span class="opt c">lost</span></div>
-        <p class="sub"><code>deal.stage</code></p>
-<pre><code>{ "label": "Done", "value": "done", "closed": true }</code></pre>
-      </div>
-      <div class="panel">
-        <h3>Rules</h3>
-        <ul class="ticks dot">
-          <li><span>Any select field on an entity object. Not multi-select</span></li>
-          <li><span>Marking follows the approval rule for relabeling an option</span></li>
-          <li><span>The guide: mark only work items (tasks, deals, applications), not lifecycle tags on people or companies</span></li>
-          <li><span>Templates ship with their end states marked</span></li>
-          <li><span>An empty value counts as open</span></li>
-        </ul>
-      </div>
-    </div>
+    <span class="eyebrow">5 · Layer: linked records</span>
+    <h2>Retainer lists what links to a record. The agent judges it.</h2>
+    <p class="prose">Open tasks needed Retainer to know which object holds tasks and which status means done. Linked records need neither: they list every record that points to this one, or that it points to, in any object, with its select values.</p>
 
     <div class="figure">
-      <h3>The open items of Acme</h3>
+      <h3>The linked records of Acme</h3>
       <div class="openmock">
         <div class="rec"><span class="k">company</span><span class="v">Acme</span><span class="caption">every record linked to it, in either direction</span></div>
         <div class="links">
-          <div class="lrow"><span class="obj">task</span><span class="ttl">Send SSO docs to Noa</span><span class="chip open">todo</span><span class="verdict in">open item</span></div>
-          <div class="lrow"><span class="obj">deal</span><span class="ttl">Acme renewal</span><span class="chip open">negotiation</span><span class="verdict in">open item</span></div>
-          <div class="lrow"><span class="obj">task</span><span class="ttl">Book kickoff</span><span class="chip muted">empty</span><span class="verdict in">open item</span></div>
-          <div class="lrow out"><span class="obj">task</span><span class="ttl">Draft proposal</span><span class="chip closed">done</span><span class="verdict no">closed</span></div>
-          <div class="lrow out"><span class="obj">person</span><span class="ttl">Noa Levi</span><span class="chip muted">no closed options</span><span class="verdict no">never listed</span></div>
-          <div class="lrow out"><span class="obj">meeting</span><span class="ttl">QBR, 12 Nov</span><span class="chip muted">event</span><span class="verdict no">never listed</span></div>
+          <div class="lrow"><span class="obj">task</span><span class="ttl">Send SSO docs to Noa</span><span class="chip muted">status: todo</span><span class="verdict in">listed</span></div>
+          <div class="lrow"><span class="obj">task</span><span class="ttl">Draft proposal</span><span class="chip muted">status: done</span><span class="verdict in">listed</span></div>
+          <div class="lrow"><span class="obj">deal</span><span class="ttl">Acme renewal</span><span class="chip muted">stage: negotiation</span><span class="verdict in">listed</span></div>
+          <div class="lrow"><span class="obj">person</span><span class="ttl">Noa Levi</span><span class="chip muted">via company</span><span class="verdict in">listed</span></div>
+          <div class="lrow out"><span class="obj">meeting</span><span class="ttl">QBR, 12 Nov</span><span class="chip muted">event</span><span class="verdict no">in recent events</span></div>
         </div>
       </div>
-      <p class="caption">One read serves <code>get_context</code>, the record page's Open tab and its count: <code>GET /v1/records/:id/open-items</code>, one bounded page ordered by last update, grouped by object for display.</p>
+      <p class="caption">One read serves <code>get_context</code>, the record page's Linked tab and its count: <code>GET /v1/records/:id/linked</code>, one bounded page ordered by last update, grouped by object for display.</p>
     </div>
+
+    <div class="two">
+      <div class="panel today">
+        <span class="tag">Today · open tasks</span>
+        <ul class="ticks dot">
+          <li><span>Only records of the built-in Task</span></li>
+          <li><span>Hides tasks whose status is <code>done</code></span></li>
+          <li><span>Tasks tab shown only when the built-in Task exists</span></li>
+          <li><span>Records linking to Acme that aren't tasks are missing from <code>get_context</code></span></li>
+        </ul>
+      </div>
+      <div class="panel next">
+        <span class="tag">Proposed · linked records</span>
+        <ul class="ticks dot">
+          <li><span>Any entity object, linked either way</span></li>
+          <li><span>Each item shows its select values, done ones included</span></li>
+          <li><span>Linked tab on every entity record</span></li>
+          <li><span>To see only open items, the agent filters with <code>query_records</code></span></li>
+        </ul>
+      </div>
+    </div>
+<pre><code>"linkedRecords": [
+  { "object": "task", "total": 3, "items": [
+      { "title": "Send SSO docs to Noa", "via": "company", "selects": { "status": "todo" } },
+      { "title": "Draft proposal",       "via": "company", "selects": { "status": "done" } } ] },
+  { "object": "deal", "total": 1, "items": [
+      { "title": "Acme renewal", "via": "company", "selects": { "stage": "negotiation" } } ] }
+]</code></pre>
+    <p class="note">A <code>closed</code> mark on select options was in the spec through five review rounds, then dropped: it added a schema concept, guide rules, template marks, a migration and an install check, only to tell Retainer what "done" means. The agent that designed the statuses already knows.</p>
   </section>
 
   <!-- 6 -->
@@ -550,7 +557,7 @@ svg .bar-alt { fill: var(--ws-line); }
 
     <div class="figure">
       <div class="scroll">
-      <svg viewBox="0 0 960 470" role="img" aria-label="Tamloot's bindings meeting, task and person, with their fields and values, map through the installation plan to Co-Retainer's conversation, task and contact objects. Status value open maps to todo and done maps to done, both directions matching the closed mark. The person match field maps to a unique emails field.">
+      <svg viewBox="0 0 960 470" role="img" aria-label="Tamloot's bindings meeting, task and person, with their fields and values, map through the installation plan to Co-Retainer's conversation, task and contact objects. Status value open maps to todo and done maps to done. The person match field maps to a unique emails field.">
         <defs>
           <marker id="h6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-plan"/></marker>
         </defs>
@@ -588,7 +595,7 @@ svg .bar-alt { fill: var(--ws-line); }
         <text x="48" y="208" class="mono">title</text>
         <text x="48" y="228" class="mono">status</text>
         <text x="70" y="248" class="small">open</text>
-        <text x="70" y="268" class="small">done (closed)</text>
+        <text x="70" y="268" class="small">done</text>
         <text x="48" y="290" class="mono">person → binding person</text>
 
         <rect x="662" y="166" width="264" height="132" rx="8" class="b-ws"/>
@@ -597,7 +604,7 @@ svg .bar-alt { fill: var(--ws-line); }
         <text x="676" y="208" class="mono">title</text>
         <text x="676" y="228" class="mono">status</text>
         <text x="700" y="248" class="small">todo</text>
-        <text x="700" y="268" class="small">done ✓ closed</text>
+        <text x="700" y="268" class="small">done</text>
         <text x="676" y="290" class="mono">linkedTo → contact</text>
 
         <line x1="300" y1="184" x2="660" y2="184" class="arrow-plan" marker-end="url(#h6)"/>
@@ -606,8 +613,8 @@ svg .bar-alt { fill: var(--ws-line); }
         <line x1="300" y1="224" x2="660" y2="224" class="arrow-plan" marker-end="url(#h6)"/>
         <line x1="104" y1="244" x2="694" y2="244" class="arrow-plan" marker-end="url(#h6)"/>
         <text x="480" y="239" text-anchor="middle" class="small">open → todo</text>
-        <line x1="160" y1="264" x2="694" y2="264" class="arrow-plan" marker-end="url(#h6)"/>
-        <text x="480" y="259" text-anchor="middle" class="small">done → done · closed matches both ways</text>
+        <line x1="104" y1="264" x2="694" y2="264" class="arrow-plan" marker-end="url(#h6)"/>
+        <text x="480" y="259" text-anchor="middle" class="small">done → done</text>
         <line x1="300" y1="286" x2="660" y2="286" class="arrow-plan" marker-end="url(#h6)"/>
         <text x="480" y="281" text-anchor="middle" class="small">relation to the person target</text>
 
@@ -686,7 +693,7 @@ svg .bar-alt { fill: var(--ws-line); }
       <div class="dcard"><span class="q">Match field unique</span><p>When the plan creates people, the emails field must be unique. The review can include making it unique.</p><span class="chip ws">fixable in review</span></div>
       <div class="dcard"><span class="q">Required fields covered</span><p>Every required field of an object the extension creates records in must be one it fills. The review can make others optional.</p><span class="chip ws">fixable in review</span></div>
       <div class="dcard"><span class="q">No shared destinations</span><p>Two outputs can't write one field, and nothing writes the lookup field.</p><span class="chip muted">refused</span></div>
-      <div class="dcard"><span class="q">Closed matches both ways</span><p><code>done</code> needs a closed option, <code>open</code> an open one. An install never changes an existing option's mark.</p><span class="chip muted">refused</span></div>
+      <div class="dcard"><span class="q">Eligible targets only</span><p>Hidden types, inverse relations, read-only fields and event core fields can't be bound.</p><span class="chip muted">refused</span></div>
     </div>
     <p class="note">The review never shows "the schema change is invalid" alone. Each problem is in plain words, next to the binding it concerns.</p>
   </section>
@@ -736,7 +743,7 @@ svg .bar-alt { fill: var(--ws-line); }
     </div>
 
     <div class="spec">
-      <dt>1 · Holds</dt><dd>While installed, the schema engine refuses any change after which the install's checks would fail: deleting a bound field, un-marking a bound closed option, dropping uniqueness on a match field, adding a required field it can't fill.</dd>
+      <dt>1 · Holds</dt><dd>While installed, the schema engine refuses any change after which the install's checks would fail: deleting a bound field, removing a bound option, dropping uniqueness on a match field, adding a required field it can't fill.</dd>
       <dt>2 · Re-plan</dt><dd>The only way to change the plan. It stops old runs, applies the new plan's schema, re-runs setup and re-verifies connections, and keeps pending change work.</dd>
       <dt>3 · History stays</dt><dd>A re-plan never moves imported data (below).</dd>
       <dt>4 · Uninstall</dt><dd>Releases everything. A reinstall proposes surviving destinations again and creates replacements for deleted owned parts.</dd>
@@ -850,12 +857,12 @@ svg .bar-alt { fill: var(--ws-line); }
     <h2>Two PRs. The first stands alone.</h2>
     <div class="two">
       <div class="panel" style="border-top:3px solid var(--accent)">
-        <span class="chip pr1">PR 1 · closed options and open items</span>
+        <span class="chip pr1">PR 1 · linked records</span>
         <ul class="ticks dot">
-          <li><span>The <code>closed</code> mark, on today's schema</span></li>
-          <li><span>End states marked in the base definitions and every template</span></li>
-          <li><span>Migration: existing workspaces get the marks, so done tasks never show as open</span></li>
-          <li><span>Open-items read, <code>get_context</code>, the Open tab, guide text</span></li>
+          <li><span>The linked read, on today's schema</span></li>
+          <li><span><code>linkedRecords</code> in <code>get_context</code>, replacing <code>openTasks</code></span></li>
+          <li><span>The Linked tab on every entity record</span></li>
+          <li><span>No migration needed</span></li>
         </ul>
       </div>
       <div class="panel" style="border-top:3px solid var(--plan)">
@@ -901,9 +908,10 @@ svg .bar-alt { fill: var(--ws-line); }
           <tr><th>3</th><td>Pinned bindings follow the contribution rule; editable changes re-run setup</td></tr>
           <tr><th>4</th><td>The pinned/editable split goes: one plan, guarded by the install's own checks, changed only by a re-plan; history stays</td></tr>
           <tr><th>5</th><td>Reviewers accept the plan. Six one-line fixes: <code>createPeople</code> in the plan, released fields, task detachment, pending work, stable field IDs</td></tr>
+          <tr><th>After</th><td>The <code>closed</code> mark is dropped. Open items become linked records, and the agent judges what's open</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="note">Out of scope by decision: due-date ordering of open items, writing one binding to several objects, and moving a source's imported history to another object.</p>
+    <p class="note">Out of scope by decision: an "open" filter or due-date ordering in core, writing one binding to several objects, and moving a source's imported history to another object.</p>
   </section>
 </main>
