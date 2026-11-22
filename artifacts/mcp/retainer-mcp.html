@@ -381,7 +381,7 @@ svg .goodtxt { fill: var(--good); font-weight: 600; }
     <h2>Every call builds a fresh server for one caller</h2>
     <p class="prose">There are no MCP sessions. Each HTTP request is authenticated on its own, and the workspace and actor come from the credential, so no tool takes either as input.</p>
 
-    <div class="chain" aria-label="Request pipeline">
+    <div class="chain">
       <div class="node o"><span class="n">request</span>POST /mcp<small>Bearer API key or OAuth token</small></div>
       <span class="arr">→</span>
       <div class="node t"><span class="n">middleware</span>authenticate<small>same as REST · yields the caller: workspace, actor, scopes</small></div>
@@ -579,7 +579,7 @@ svg .goodtxt { fill: var(--good); font-weight: 600; }
     <p class="prose">Retainer never reads conversations. The agent does, then writes in a fixed order so every value can cite where it came from.</p>
 
     <h3>At the start of a session</h3>
-    <div class="chain" aria-label="Session start">
+    <div class="chain">
       <div class="node t">describe_schema<small>objects, fields, value formats, <code>initialized</code></small></div>
       <span class="arr">→</span>
       <div class="node k">Not initialized?<small>follow <code>discover_schema</code>, apply only after the user agrees</small></div>
@@ -590,7 +590,7 @@ svg .goodtxt { fill: var(--good); font-weight: 600; }
     </div>
 
     <h3>After a meeting, call, email thread or chat</h3>
-    <div class="chain" aria-label="Write order">
+    <div class="chain">
       <div class="node o"><span class="n">step 1</span>log_event<small>type, channel, time, title, summary, externalId, participants, about. Keep the id.</small></div>
       <span class="arr">→</span>
       <div class="node o"><span class="n">step 2</span>upsert_record<small><code>source</code> = that event, so an older email can't overwrite a newer value</small></div>
@@ -637,7 +637,7 @@ svg .goodtxt { fill: var(--good); font-weight: 600; }
     <h2>A connection plus one hook</h2>
     <p class="prose">The plugin has no tools of its own. It points Claude Code at the hosted <code>/mcp</code> and adds a background check after every turn.</p>
 
-    <div class="chain" aria-label="Install steps">
+    <div class="chain">
       <div class="node o"><span class="n">1</span>/plugin marketplace add<small><code>Tamloot-cc/Retainer</code></small></div>
       <span class="arr">→</span>
       <div class="node o"><span class="n">2</span>/plugin install<small><code>retainer@retainer</code></small></div>
