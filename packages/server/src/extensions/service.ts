@@ -10,6 +10,7 @@ import {
   type ExtensionPreview,
   functionSecrets,
   MODEL_USE_NOTICE,
+  mergeBindingChoices,
   newestReleases,
   releaseUses,
   runsHostedCode,
@@ -53,6 +54,7 @@ import { getSchema } from '../schema/compiled.js';
 import { loadSchemaState } from '../schema/load.js';
 import { deriveUuid } from '../schema-engine/apply.js';
 import { planSchemaChange, runSchemaChange, SYSTEM_ACTOR } from '../schema-engine/engine.js';
+import { checkExistingRecords, SchemaCheckError } from '../schema-engine/persist.js';
 import { detachEditedTasks } from '../sources/task-detach.js';
 import {
   createViewInTransaction,
@@ -690,13 +692,28 @@ export class Extensions {
       where s.installation_id = ${existing.id} and s.release_digest = ${release.digest}
         and j.generation = ${existing.generation} and j.status = 'succeeded'`
         : [];
-    const choices = { ...proposal?.choices, ...configured?.bindings, ...input.bindings };
+    const choices = mergeBindingChoices(proposal?.choices, configured?.bindings, input.bindings);
     const bound = manifest.bindings
       ? resolveBindingPlan(current, manifest, choices, existing?.bindings, people)
       : undefined;
     const operations = bound?.operations ?? [];
     const notices = bound?.notices ?? [];
     const planned = planSchemaChange(current, operations, 'workspace');
+    if (bound && operations.length) {
+      try {
+        await checkExistingRecords(tx, caller.workspaceId, current, planned.desired, planned.ops);
+      } catch (error) {
+        if (!(error instanceof SchemaCheckError)) throw error;
+        const records = await tx<{ id: string; label: string | null }[]>`
+          select id, label from records where workspace_id = ${caller.workspaceId}
+            and id = any(${error.recordIds}::uuid[]) order by label, id`;
+        const labels = records.map((record) => record.label || record.id).join(', ');
+        throw new AppError(422, 'bindings_invalid', `${error.message}. Records: ${labels}.`, {
+          recordIds: error.recordIds,
+          issues: error.issues,
+        });
+      }
+    }
     const views = manifest.views.flatMap((view) => {
       const destination = bound?.plan.destinations[view.binding];
       const objectId = destination?.objects[0];

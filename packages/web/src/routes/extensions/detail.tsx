@@ -68,7 +68,7 @@ import { SettingFields } from './setting-fields.js';
 import { ExtensionCard, ExtensionFacts } from './surface.js';
 
 type Settings = Installation['settings'];
-type Tab = 'overview' | 'connections' | 'mapping' | 'settings' | 'runs' | 'credentials';
+type Tab = 'overview' | 'connections' | 'bindings' | 'settings' | 'runs' | 'credentials';
 
 /** `/extensions/:id`: one installed extension, its state up top and the rest in tabs. */
 /** Every extension page's breadcrumb leads back to the list. */
@@ -167,7 +167,7 @@ function InstalledExtension({
     ...(manifest?.bindings?.length && !gone
       ? [
           {
-            value: 'mapping' as const,
+            value: 'bindings' as const,
             label: 'Bindings',
             hint: 'Which field each value this extension finds is written to.',
           },
@@ -303,7 +303,7 @@ function InstalledExtension({
             void setSearch({ tab: 'runs' });
           }}
         />
-      ) : tab === 'mapping' && release ? (
+      ) : tab === 'bindings' && release ? (
         <MappingSummary release={release} installation={installation} admin={admin} />
       ) : tab === 'settings' && release ? (
         <SettingsForm
@@ -460,7 +460,7 @@ function SettingsForm({
       }),
     onSuccess: (updated) => onSaved(updated.settingsRevision),
   });
-  if (!hasInstallationSettings(release))
+  if (!hasInstallationSettings(release, 'createPeople'))
     return <Empty quiet title="This extension has no settings" />;
   return (
     <form
@@ -493,6 +493,7 @@ function SettingsForm({
         <fieldset disabled={save.isPending} className="flex flex-col gap-4">
           <SettingFields
             release={release}
+            omitSetting="createPeople"
             values={values}
             secrets={{}}
             existing={installation}
@@ -528,7 +529,7 @@ function MappingSummary({
   const suggest = useMutation({
     mutationFn: async () => {
       await api.configureExtension(installation.id);
-      void navigate({ to: '/extensions/$id/mapping', params: { id: installation.id } });
+      void navigate({ to: '/extensions/$id/bindings', params: { id: installation.id } });
     },
   });
   const detail = useQuery({
@@ -557,7 +558,7 @@ function MappingSummary({
             </Button>
           ) : null}
           <Button asChild>
-            <Link to="/extensions/$id/mapping" params={{ id: installation.id }}>
+            <Link to="/extensions/$id/bindings" params={{ id: installation.id }}>
               Change setup
             </Link>
           </Button>

@@ -369,10 +369,10 @@ const routeTree = rootRoute.addChildren([
   }),
   createRoute({
     getParentRoute: () => rootRoute,
-    path: '/extensions/$id/mapping',
+    path: '/extensions/$id/bindings',
     component: lazyRouteComponent(
       () => import('./routes/extensions/setup.js'),
-      'ExtensionMappingPage',
+      'ExtensionBindingsPage',
     ),
   }),
   routinesRoute.addChildren([

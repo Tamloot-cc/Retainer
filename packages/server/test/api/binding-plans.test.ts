@@ -60,7 +60,27 @@ const manifest = extensionFixture({
     },
   ],
 });
-const catalog = new ExtensionCatalog([{ manifest, actorCeiling: 'integration' }]);
+const contacts = extensionFixture({
+  name: 'contacts',
+  createPeople: 'everyone',
+  bindings: [
+    {
+      key: 'contacts',
+      label: 'Contacts',
+      description: 'Contacts created by the extension.',
+      class: 'entity',
+      access: 'write',
+      required: true,
+      creates: true,
+      match: 'addresses',
+      fields: [{ key: 'addresses', label: 'Addresses', types: ['emails'], required: true }],
+    },
+  ],
+});
+const catalog = new ExtensionCatalog([
+  { manifest, actorCeiling: 'integration' },
+  { manifest: contacts, actorCeiling: 'integration' },
+]);
 const installation = {
   registrationId: manifest.universalId,
   version: manifest.version,
@@ -280,4 +300,50 @@ it('releases an uninstalled object and replaces its deleted contribution with fr
   expect(objects).toHaveLength(1);
   expect(objects[0].elementId).not.toBe(original.elementId);
   expect(objects[0].universalId).not.toBe(original.universalId);
+});
+
+it('names duplicate records before asking the admin to approve a unique match field', async () => {
+  const h = await setup();
+  expect(
+    (
+      await h.change([
+        {
+          op: 'create_object',
+          object: {
+            nameSingular: 'customer',
+            namePlural: 'customers',
+            labelSingular: 'Customer',
+            labelPlural: 'Customers',
+            labelField: 'name',
+            fields: [
+              { name: 'name', label: 'Name', type: 'text' },
+              { name: 'addresses', label: 'Addresses', type: 'emails' },
+            ],
+          },
+        },
+      ])
+    ).status,
+  ).toBe(200);
+  for (const name of ['First customer', 'Second customer']) {
+    expect(
+      (
+        await h.app.request('/v1/objects/customer/records', {
+          key: h.key,
+          body: { values: { name, addresses: 'shared@example.test' } },
+        })
+      ).status,
+    ).toBe(201);
+  }
+  const review = await h.app.request('/v1/extensions/preview', {
+    key: h.key,
+    body: {
+      registrationId: contacts.universalId,
+      version: contacts.version,
+      settings: {},
+      bindings: { contacts: { action: 'existing', objects: ['customer'] } },
+    },
+  });
+  expect(review.status, JSON.stringify(review.body)).toBe(422);
+  expect(review.body.error.code).toBe('bindings_invalid');
+  expect(review.body.error.message).toContain('First customer, Second customer');
 });

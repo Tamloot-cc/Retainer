@@ -1,7 +1,8 @@
-import type {
-  ExtensionBinding,
-  ExtensionBindingChoices,
-  ExtensionManifest,
+import {
+  type ExtensionBinding,
+  type ExtensionBindingChoices,
+  type ExtensionManifest,
+  mergeBindingChoices,
 } from '@retainer/extension';
 import { AppError } from '../errors.js';
 import {
@@ -191,7 +192,12 @@ export function resolveBindingPlan(
   for (const declaration of declarations) {
     const key = declaration.key;
     const previous = prior && fromPrior(state, declaration, prior);
-    const choice = structuredClone(choices?.[key] ?? previous ?? defaultChoice(state, declaration));
+    const choice = structuredClone(
+      mergeBindingChoices(
+        previous && { [key]: previous },
+        choices?.[key] && { [key]: choices[key] },
+      )[key] ?? defaultChoice(state, declaration),
+    );
     review[key] = choice;
     if (choice.action === 'skip') {
       plan.destinations[key] = null;

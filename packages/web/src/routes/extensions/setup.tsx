@@ -3,6 +3,7 @@ import {
   type ExtensionInstallInput,
   type ExtensionSuggestions,
   MODEL_USE_NOTICE,
+  mergeBindingChoices,
   releaseUses,
 } from '@retainer/extension';
 import { RetainerApiError } from '@retainer/sdk';
@@ -58,8 +59,8 @@ type Preview = Awaited<ReturnType<typeof api.previewExtension>>;
 type Plan = { preview: Preview; input: Parameters<typeof api.previewExtension>[0]; key: string };
 type DiffOp = { kind: string; [key: string]: unknown };
 /** What the flow does: a first install (or a reinstall), or a change to an installed extension. */
-type SetupMode = 'install' | 'upgrade' | 'reconnect' | 'mapping';
-type Step = 'settings' | 'mapping' | 'review';
+type SetupMode = 'install' | 'upgrade' | 'reconnect' | 'bindings';
+type Step = 'settings' | 'bindings' | 'review';
 
 const VIEW_ACTIONS = {
   create: 'Create',
@@ -72,11 +73,11 @@ const TITLES: Record<SetupMode, (name: string) => string> = {
   install: (name) => `Set up ${name}`,
   upgrade: (name) => `Upgrade ${name}`,
   reconnect: (name) => `Reconnect ${name}`,
-  mapping: (name) => `Change ${name} setup`,
+  bindings: (name) => `Change ${name} setup`,
 };
 const STEP_LABELS: Record<Step, string> = {
   settings: 'Connect',
-  mapping: 'Choose bindings',
+  bindings: 'Choose bindings',
   review: 'Review and approve',
 };
 
@@ -103,7 +104,7 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
   const [phase, setPhase] = useState<'checking' | 'access' | 'waiting' | 'review'>(
     props.mode === 'upgrade' && props.installation
       ? 'checking'
-      : props.mode === 'mapping' || props.installation?.state === 'configuring'
+      : props.mode === 'bindings' || props.installation?.state === 'configuring'
         ? 'waiting'
         : 'access',
   );
@@ -215,7 +216,7 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
       {cancel.error ? <Notice error>{cancel.error.message}</Notice> : null}
       {installation ? (
         <Button disabled={again.isPending} onClick={() => again.mutate()}>
-          {props.mode === 'mapping' ? 'Suggest bindings' : 'Suggest again'}
+          {props.mode === 'bindings' ? 'Suggest bindings' : 'Suggest again'}
         </Button>
       ) : null}
       {props.mode === 'upgrade' ? (
@@ -258,26 +259,24 @@ function BasicExtensionSetup({
   const { schema } = useWorkspace();
   const retained = installation?.state !== 'uninstalled' ? installation : undefined;
   const reconnect = mode === 'reconnect',
-    editMapping = mode === 'mapping' && !!retained,
+    editBindings = mode === 'bindings' && !!retained,
     upgrade = mode === 'upgrade' && !!retained;
   const declarations = release.manifest.bindings;
   const showBindings = !accessOnly && !!declarations?.length && !reconnect;
   const turnOn = retained?.state === 'configuring' && !accessOnly;
   const hasSettings =
-    (!editMapping || !!declarations) &&
+    (!editBindings || !!declarations) &&
     (hasInstallationSettings(release) || (reconnect && !!release.manifest.source));
   const steps: Step[] = [
     ...(hasSettings ? (['settings'] as const) : []),
-    ...(showBindings ? (['mapping'] as const) : []),
+    ...(showBindings ? (['bindings'] as const) : []),
     'review',
   ];
   const [step, setStep] = useState(0);
   const current = steps[step] ?? 'review';
-  const [bound, setBound] = useState<ExtensionBindingChoices>(() => ({
-    ...bindingChoices,
-    ...release.bindingProposal?.choices,
-    ...suggestions?.bindings,
-  }));
+  const [bound, setBound] = useState<ExtensionBindingChoices>(() =>
+    mergeBindingChoices(bindingChoices, release.bindingProposal?.choices, suggestions?.bindings),
+  );
   const [bindingIssues, setBindingIssues] = useState<BindingReviewIssue[]>(() =>
     Object.entries(suggestions?.issues ?? {}).map(([path, message]) => {
       const [binding, field] = path.split('.');
@@ -344,7 +343,7 @@ function BasicExtensionSetup({
             | { bindings?: BindingReviewIssue[]; issues?: { path: string; message: string }[] }
             | undefined;
           setBindingIssues(details?.bindings ?? []);
-          const at = steps.indexOf('mapping');
+          const at = steps.indexOf('bindings');
           if (at >= 0) setStep(at);
         }
         throw error;
@@ -362,7 +361,7 @@ function BasicExtensionSetup({
       };
       if (accessOnly && retained) return api.approveExtensionAccess(retained.id, input, plan.key);
       if (turnOn && retained) return api.turnOnExtension(retained.id, input, plan.key);
-      if (editMapping && retained) return api.upgradeExtension(retained.id, input, plan.key);
+      if (editBindings && retained) return api.upgradeExtension(retained.id, input, plan.key);
       if (reconnect && retained) return api.reconnectExtension(retained.id, input, plan.key);
       if (upgrade && retained) return api.upgradeExtension(retained.id, input, plan.key);
       return api.installExtension(input, plan.key);
@@ -382,7 +381,7 @@ function BasicExtensionSetup({
   const last = step === steps.length - 2;
   const reviewLabel = reconnect
     ? 'Review reconnect'
-    : editMapping
+    : editBindings
       ? 'Review new plan'
       : upgrade
         ? 'Review upgrade'
@@ -461,7 +460,7 @@ function BasicExtensionSetup({
         </ExtensionCard>
       </Form>
     );
-  else if (current === 'mapping')
+  else if (current === 'bindings')
     body = (
       <Form onSubmit={next}>
         <ExtensionCard title="Bindings" icon={LayoutList} actions={actions}>
@@ -518,7 +517,7 @@ function BasicExtensionSetup({
                 ? 'Approving…'
                 : reconnect
                   ? 'Approve reconnect'
-                  : editMapping
+                  : editBindings
                     ? 'Approve new plan'
                     : accessOnly
                       ? 'Approve access'
@@ -796,7 +795,7 @@ function ChangePage({ mode }: { mode: Exclude<SetupMode, 'install'> }) {
   const detail = useQuery({
     queryKey: detailKey(id),
     queryFn: ({ signal }) => api.extension(id, signal),
-    enabled: mode === 'mapping' || mode === 'upgrade',
+    enabled: mode === 'bindings' || mode === 'upgrade',
   });
   const installation = data?.installed.find((i) => i.id === id);
   const currentRelease = installation && installedRelease(data?.releases ?? [], installation);
@@ -817,7 +816,7 @@ function ChangePage({ mode }: { mode: Exclude<SetupMode, 'install'> }) {
         />
       </SetupPage>
     );
-  if (!data || (['mapping', 'upgrade'].includes(mode) && !detail.data))
+  if (!data || (['bindings', 'upgrade'].includes(mode) && !detail.data))
     return (
       <SetupPage title={title}>
         <Loading>Loading extension…</Loading>
@@ -837,7 +836,7 @@ function ChangePage({ mode }: { mode: Exclude<SetupMode, 'install'> }) {
         ? mode === 'upgrade'
           ? 'This extension is already on the newest version.'
           : 'This server no longer offers the installed version.'
-        : mode === 'mapping' && !release.manifest.bindings
+        : mode === 'bindings' && !release.manifest.bindings
           ? 'This extension has no bindings to edit.'
           : null;
   if (problem || !installation || !release)
@@ -864,4 +863,4 @@ function ChangePage({ mode }: { mode: Exclude<SetupMode, 'install'> }) {
 }
 export const ExtensionUpgradePage = () => <ChangePage mode="upgrade" />;
 export const ExtensionReconnectPage = () => <ChangePage mode="reconnect" />;
-export const ExtensionMappingPage = () => <ChangePage mode="mapping" />;
+export const ExtensionBindingsPage = () => <ChangePage mode="bindings" />;

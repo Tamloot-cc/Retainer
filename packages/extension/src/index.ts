@@ -263,6 +263,46 @@ export const bindingChoicesSchema = z.record(
 );
 export type ExtensionBindingChoices = z.infer<typeof bindingChoicesSchema>;
 
+/** Later proposals take precedence, retaining suggestions for the same target. */
+export function mergeBindingChoices(
+  ...proposals: (ExtensionBindingChoices | null | undefined)[]
+): ExtensionBindingChoices {
+  const result: ExtensionBindingChoices = {};
+  for (const proposal of proposals) {
+    for (const [key, choice] of Object.entries(proposal ?? {})) {
+      const prior = result[key];
+      if (
+        !prior ||
+        prior.action === 'skip' ||
+        choice.action === 'skip' ||
+        prior.action !== choice.action ||
+        (prior.action === 'existing' &&
+          choice.action === 'existing' &&
+          (prior.objects.length !== choice.objects.length ||
+            !prior.objects.every((object, index) => object === choice.objects[index])))
+      ) {
+        result[key] = choice;
+        continue;
+      }
+      const fields = { ...prior.fields };
+      for (const [fieldKey, field] of Object.entries(choice.fields ?? {})) {
+        const previous = fields[fieldKey];
+        fields[fieldKey] =
+          (previous?.action === 'existing' &&
+            field.action === 'existing' &&
+            previous.field === field.field) ||
+          (previous?.action === 'create' &&
+            field.action === 'create' &&
+            previous.name === field.name)
+            ? { ...field, values: { ...previous.values, ...field.values } }
+            : field;
+      }
+      result[key] = { ...prior, ...choice, fields };
+    }
+  }
+  return result;
+}
+
 export const bindingWriteStampSchema = z.strictObject({
   bindings_revision: z.number().int().positive(),
   objectId: uuid,
@@ -961,8 +1001,6 @@ export function defineExtension(value: unknown): ExtensionManifest {
       )
         throw new Error('unsupported_manifest: source jobs accept only a local sourceItemId');
     }
-  }
-  for (const view of manifest.views) {
   }
   checkBoundWrites(manifest);
   return manifest;

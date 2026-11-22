@@ -335,19 +335,12 @@ view edited after the preview fails the commit with `stale_plan`. Names, types,
 settings (options), nullability, uniqueness, filterability and searchability are
 structural and stay `409 upgrade_conflict`. Do not silently adopt unrelated fields with matching names.
 
-Contributed objects and fields belong to the installation while it is not
-`uninstalled`: the schema engine refuses `delete_object` and `delete_field`
-(directly, by cascade, or when a person approves an earlier proposal) with
-`422 schema_invalid` naming the element and the blocking installation and
-registration, and points to renaming/relabelling or uninstalling first. This
-also blocks deleting a workspace's own object while an extension has added a
-field or relation to it, because the cascade would delete the contribution.
-The check runs under the exclusive schema lock, so it serializes with an
-install or upgrade that contributes the same element. As in Twenty, only presentation is workspace-local. A
-contribution deleted before this rule is treated as absent: plans don't
-recreate it, skip new fields of a deleted object, skip new views over it with a
-warning, and accept triggers on it (they never fire), so upgrade and enable
-still work. Managed source event types must still be active.
+Approved bindings hold while the installation is active, including when runs
+are paused. The schema engine validates the proposed schema against all
+affected binding plans under the exclusive schema lock. If a change would
+break a plan, it returns `422 schema_invalid` and names the extension and
+binding. Rename and presentation changes preserve stable destination IDs.
+Approve a new plan to change destinations, or uninstall to release the plan.
 
 An upgrade may supply pending secret references for secret settings the
 installation does not store, so a release that adds a required secret can be
