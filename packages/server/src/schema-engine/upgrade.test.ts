@@ -2,6 +2,7 @@ import { INTERNAL_NOTE_TYPE_ID } from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
 import type { SchemaState } from '../schema/types.js';
 import { INTERNAL_OPERATIONS, SEED_OPERATIONS, STARTER_EVENT_TYPE_IDS } from '../templates/base.js';
+import { definitionsDigest } from '../templates/definitions.js';
 import { STARTER_ENTITY_OPERATIONS, STARTER_OBJECT_IDS, TEMPLATES } from '../templates/index.js';
 import { definitionsFor } from '../workspaces/upgrade.js';
 import { applyOperations } from './apply.js';
@@ -283,6 +284,13 @@ describe('protection on upgrade', () => {
 });
 
 describe('definitionsFor', () => {
+  it('changes the digest when field or option protection changes', () => {
+    const digest = definitionsFor().digest;
+    expect(definitionsDigest(new Set(), new Map())).toBe(digest);
+    expect(definitionsDigest(new Set(['field']), new Map())).not.toBe(digest);
+    expect(definitionsDigest(new Set(), new Map([['field', ['option']]]))).not.toBe(digest);
+  });
+
   it('contains only the hidden definitions', () => {
     expect(definitionsFor().operations).toEqual(INTERNAL_OPERATIONS);
   });
