@@ -680,7 +680,8 @@ export class Sources {
                   ? (metadata?.sha256 ?? metadata)
                   : metadata;
               });
-      } else canonicalFields[canonicalKey] = isMapped ? value : normalized;
+      } else
+        canonicalFields[canonicalKey] = isMapped && !projection?.canonicalType ? value : normalized;
     }
     const listed = [...new Map(input.event.participants.map((p) => [p.email, p])).values()].sort(
       (a, b) => a.email.localeCompare(b.email),
@@ -1004,7 +1005,7 @@ export class Sources {
             requestHash({ providerRevision: item.provider_revision }),
           );
           if (
-            previous?.projection?.canonicalType &&
+            previous?.projection &&
             Object.keys(input.event.fields).every(
               (key) => !normalized.projection?.fields[key] || !!previous.projection?.fields[key],
             )
@@ -1016,7 +1017,7 @@ export class Sources {
               input,
               previous.projection,
             );
-            unchanged = current.content_digest === comparable.digest;
+            unchanged = previous.content_digest === comparable.digest;
           }
         }
         let result: SourceResult;

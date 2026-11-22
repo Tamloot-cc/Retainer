@@ -1,4 +1,4 @@
-import { BASE_EVENT_TYPE_IDS } from '../src/templates/base.js';
+import { STARTER_EVENT_TYPE_IDS } from '../src/templates/base.js';
 import { extensionFixture } from '../test/helpers/extensions.js';
 
 export const sourceManifest = extensionFixture({
@@ -10,7 +10,7 @@ export const sourceManifest = extensionFixture({
     identity: 'account',
     verifyFunctionId: 'cb77e041-009f-4677-bb52-d34a6599aa3d',
     syncFunctionIds: ['8ce44dc0-f84b-4730-8cf3-2e4c8df70d77'],
-    eventTypeIds: [BASE_EVENT_TYPE_IDS.conversation],
+    eventTypeIds: [STARTER_EVENT_TYPE_IDS.conversation],
     revisionOrder: 'integer',
   },
   functions: [

@@ -22,6 +22,7 @@ test('a new person signs in, names a workspace and lands in it as its admin', as
   await expect(page.getByRole('heading', { name: 'Welcome, Ana' })).toBeVisible();
   await expect(page.getByText('organization', { exact: false })).not.toBeVisible();
   await page.getByLabel('Name your workspace').fill('Ana Sales');
+  await page.getByLabel('Template').selectOption('starter');
   await page.getByRole('button', { name: 'Create workspace' }).click();
 
   await expect(page).toHaveURL(new RegExp(`${a.url}/app/w/ana-sales-[a-z2-9]{4}/$`));
@@ -47,6 +48,7 @@ test('an invited person accepts with the link and gets the role they were given'
   await a.signIn(context, { email: 'olga@example.test', name: 'Olga Owner' });
   await page.goto(`${a.url}/app/`);
   await page.getByLabel('Name your workspace').fill('Acme');
+  await page.getByLabel('Template').selectOption('starter');
   await page.getByRole('button', { name: 'Create workspace' }).click();
   await expect(page).toHaveURL(/\/app\/w\/acme-/);
   const workspaceUrl = page.url();
@@ -105,6 +107,7 @@ test('an admin creates an agent key, sees it once, and revokes it', async ({
   await a.signIn(context, { email: 'kim@example.test', name: 'Kim' });
   await page.goto(`${a.url}/app/`);
   await page.getByLabel('Name your workspace').fill('Keys');
+  await page.getByLabel('Template').selectOption('starter');
   await page.getByRole('button', { name: 'Create workspace' }).click();
   await expect(page).toHaveURL(/\/app\/w\/keys-/);
   await page.goto(`${page.url()}settings?tab=agents`);
@@ -140,11 +143,13 @@ test('switching workspaces is a page load to the other address', async ({
   await a.signIn(context, { email: 'sam@example.test', name: 'Sam' });
   await page.goto(`${a.url}/app/`);
   await page.getByLabel('Name your workspace').fill('First');
+  await page.getByLabel('Template').selectOption('starter');
   await page.getByRole('button', { name: 'Create workspace' }).click();
   await expect(page).toHaveURL(/\/app\/w\/first-/);
   await page.getByRole('button', { name: 'Workspace: First' }).click();
   await page.getByRole('menuitem', { name: 'New workspace' }).click();
   await page.getByRole('textbox', { name: 'Name' }).fill('Second');
+  await page.getByLabel('Template').selectOption('starter');
   await page.getByRole('button', { name: 'Create workspace' }).click();
   await expect(page).toHaveURL(/\/app\/w\/second-/);
 
@@ -189,6 +194,7 @@ test('a person adds a passkey and signs in with it', async ({
   await a.signIn(context, { email: 'pat@example.test', name: 'Pat' });
   await page.goto(`${a.url}/app/`);
   await page.getByLabel('Name your workspace').fill('Passkeys');
+  await page.getByLabel('Template').selectOption('starter');
   await page.getByRole('button', { name: 'Create workspace' }).click();
   await expect(page).toHaveURL(/\/app\/w\/passkeys-/);
   const workspaceUrl = page.url();

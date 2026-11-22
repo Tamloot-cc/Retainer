@@ -312,165 +312,171 @@ test('finds records, facts and events across objects with the command palette', 
   await expect(page.getByText('Wants quarterly invoices')).toBeVisible();
 });
 
-test('saves a board view, totals its columns, and moves a card from the keyboard', async ({
-  page,
-  retainer: r,
-}) => {
-  await r.request('/templates/sales/apply', {});
-  for (const [name, stage, amount] of [
-    ['Acme renewal', 'lead', 10_000],
-    ['Globex pilot', 'lead', 5_000],
-    ['Hooli platform', 'qualified', 20_000],
-  ] as const)
-    await r.request('/objects/deal/records', { values: { name, stage, amount: usd(amount) } });
-  await r.request('/objects/deal/records', { values: { name: 'Unscoped inbound' } });
-  await signIn(page, r.url, r.keys.user);
-  // By the plural name, which the address also takes; views are the object's either way.
-  await page.goto(`${r.url}/app/o/deals`);
+test.describe('Sales workspace', () => {
+  test.use({ workspaceTemplate: 'sales' });
 
-  await page.getByRole('button', { name: 'View: All deals' }).click();
-  await page.getByRole('menuitem', { name: 'New view…' }).click();
-  const dialog = page.getByRole('dialog', { name: 'New view' });
-  await dialog.getByRole('textbox', { name: 'Name' }).fill('Pipeline');
-  await dialog.getByRole('button', { name: 'Board', exact: true }).click();
-  // The object's only single select is the default.
-  await expect(dialog.getByRole('button', { name: /^Group by/ })).toContainText('Stage');
-  await dialog.getByRole('button', { name: 'Create view' }).click();
-  await expect(dialog).not.toBeVisible();
-  await expect(page.getByRole('button', { name: 'View: Pipeline' })).toBeVisible();
-  const viewId = new URL(page.url()).searchParams.get('view');
-  expect(viewId).toBeTruthy();
-
-  await expect(page.getByRole('region', { name: 'Lead, 2' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Qualified, 1' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'No stage, 1' })).toBeVisible();
-
-  // A column total is a view setting, saved for everyone.
-  await page.getByRole('button', { name: 'Options' }).click();
-  await page.getByRole('button', { name: /^Column total/ }).click();
-  await page.getByRole('option', { name: 'Sum of Amount' }).click();
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('region', { name: 'Lead, 2' })).toContainText('Sum');
-  await expect
-    .poll(async () => (await r.request(`/views/${viewId}`)).groupAggregate)
-    .toEqual({ field: 'amount', op: 'sum' });
-
-  await moveByKeyboard(
+  test('saves a board view, totals its columns, and moves a card from the keyboard', async ({
     page,
-    page.getByRole('button', { name: 'Globex pilot' }),
-    'ArrowRight',
-    'the Lead column',
-    'the Qualified column',
-  );
-  await expect(page.getByRole('region', { name: 'Qualified, 2' })).toContainText('Globex pilot');
-  await expect(page.getByRole('region', { name: 'Lead, 1' })).toBeVisible();
-  // The card moves at once; the write lands just after.
-  await expect
-    .poll(async () => {
-      const found = await r.request('/objects/deal/query', {
-        filter: { name: { eq: 'Globex pilot' } },
-      });
-      return [found.records[0].fields.stage, found.records[0].updatedBy];
-    })
-    .toEqual(['qualified', { type: 'user', id: 'dana' }]);
-  const card = page.getByRole('button', { name: 'Globex pilot' });
-  await card.press('Enter');
-  await expect(page.getByRole('dialog', { name: 'Globex pilot' })).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(card).toBeFocused();
-  await page.screenshot({ path: '/tmp/retainer-web-board.png' });
+    retainer: r,
+  }) => {
+    for (const [name, stage, amount] of [
+      ['Acme renewal', 'lead', 10_000],
+      ['Globex pilot', 'lead', 5_000],
+      ['Hooli platform', 'qualified', 20_000],
+    ] as const)
+      await r.request('/objects/deal/records', { values: { name, stage, amount: usd(amount) } });
+    await r.request('/objects/deal/records', { values: { name: 'Unscoped inbound' } });
+    await signIn(page, r.url, r.keys.user);
+    // By the plural name, which the address also takes; views are the object's either way.
+    await page.goto(`${r.url}/app/o/deals`);
 
-  // Coming back to the object opens the view used last.
-  await page.getByRole('link', { name: 'People', exact: true }).click();
-  await page.getByRole('link', { name: 'Deals', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'View: Pipeline' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Qualified, 2' })).toBeVisible();
-});
+    await page.getByRole('button', { name: 'View: All deals' }).click();
+    await page.getByRole('menuitem', { name: 'New view…' }).click();
+    const dialog = page.getByRole('dialog', { name: 'New view' });
+    await dialog.getByRole('textbox', { name: 'Name' }).fill('Pipeline');
+    await dialog.getByRole('button', { name: 'Board', exact: true }).click();
+    // The object's only single select is the default.
+    await expect(dialog.getByRole('button', { name: /^Group by/ })).toContainText('Stage');
+    await dialog.getByRole('button', { name: 'Create view' }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(page.getByRole('button', { name: 'View: Pipeline' })).toBeVisible();
+    const viewId = new URL(page.url()).searchParams.get('view');
+    expect(viewId).toBeTruthy();
 
-test('places records on a calendar and moves one to another day', async ({ page, retainer: r }) => {
-  await r.request('/templates/sales/apply', {});
-  await r.request('/objects/deal/records', {
-    values: { name: 'Acme renewal', closeDate: '2026-03-11' },
+    await expect(page.getByRole('region', { name: 'Lead, 2' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Qualified, 1' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'No stage, 1' })).toBeVisible();
+
+    // A column total is a view setting, saved for everyone.
+    await page.getByRole('button', { name: 'Options' }).click();
+    await page.getByRole('button', { name: /^Column total/ }).click();
+    await page.getByRole('option', { name: 'Sum of Amount' }).click();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('region', { name: 'Lead, 2' })).toContainText('Sum');
+    await expect
+      .poll(async () => (await r.request(`/views/${viewId}`)).groupAggregate)
+      .toEqual({ field: 'amount', op: 'sum' });
+
+    await moveByKeyboard(
+      page,
+      page.getByRole('button', { name: 'Globex pilot' }),
+      'ArrowRight',
+      'the Lead column',
+      'the Qualified column',
+    );
+    await expect(page.getByRole('region', { name: 'Qualified, 2' })).toContainText('Globex pilot');
+    await expect(page.getByRole('region', { name: 'Lead, 1' })).toBeVisible();
+    // The card moves at once; the write lands just after.
+    await expect
+      .poll(async () => {
+        const found = await r.request('/objects/deal/query', {
+          filter: { name: { eq: 'Globex pilot' } },
+        });
+        return [found.records[0].fields.stage, found.records[0].updatedBy];
+      })
+      .toEqual(['qualified', { type: 'user', id: 'dana' }]);
+    const card = page.getByRole('button', { name: 'Globex pilot' });
+    await card.press('Enter');
+    await expect(page.getByRole('dialog', { name: 'Globex pilot' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(card).toBeFocused();
+    await page.screenshot({ path: '/tmp/retainer-web-board.png' });
+
+    // Coming back to the object opens the view used last.
+    await page.getByRole('link', { name: 'People', exact: true }).click();
+    await page.getByRole('link', { name: 'Deals', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'View: Pipeline' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Qualified, 2' })).toBeVisible();
   });
-  await r.request('/objects/deal/records', { values: { name: 'Undated deal' } });
-  const view = await r.request(
-    '/objects/deal/views',
-    { name: 'Closing', kind: 'calendar', dateField: 'closeDate' },
-    r.keys.user,
-  );
-  await signIn(page, r.url, r.keys.user);
-  await page.goto(`${r.url}/app/o/deal?view=${view.id}&month=2026-03`);
-  await expect(page.getByText('March 2026')).toBeVisible();
-  await expect(page.getByText('1 without a close date')).toBeVisible();
-  const day = (label: string) =>
-    page.getByRole('heading', { name: label, exact: true }).locator('..');
-  const entry = day('Wednesday, March 11').getByRole('button', { name: 'Acme renewal' });
-  await expect(entry).toBeVisible();
 
-  await moveByKeyboard(page, entry, 'ArrowRight', 'Wednesday, March 11', 'Thursday, March 12');
-  await expect(
-    day('Thursday, March 12').getByRole('button', { name: 'Acme renewal' }),
-  ).toBeVisible();
-  await expect
-    .poll(async () => {
-      const found = await r.request('/objects/deal/query', {
-        filter: { name: { eq: 'Acme renewal' } },
-      });
-      return found.records[0].fields.closeDate;
-    })
-    .toBe('2026-03-12');
-  await expect(page.getByRole('dialog')).not.toBeVisible();
+  test('places records on a calendar and moves one to another day', async ({
+    page,
+    retainer: r,
+  }) => {
+    await r.request('/objects/deal/records', {
+      values: { name: 'Acme renewal', closeDate: '2026-03-11' },
+    });
+    await r.request('/objects/deal/records', { values: { name: 'Undated deal' } });
+    const view = await r.request(
+      '/objects/deal/views',
+      { name: 'Closing', kind: 'calendar', dateField: 'closeDate' },
+      r.keys.user,
+    );
+    await signIn(page, r.url, r.keys.user);
+    await page.goto(`${r.url}/app/o/deal?view=${view.id}&month=2026-03`);
+    await expect(page.getByText('March 2026')).toBeVisible();
+    await expect(page.getByText('1 without a close date')).toBeVisible();
+    const day = (label: string) =>
+      page.getByRole('heading', { name: label, exact: true }).locator('..');
+    const entry = day('Wednesday, March 11').getByRole('button', { name: 'Acme renewal' });
+    await expect(entry).toBeVisible();
 
-  // Clicking an entry opens the record; the month is in the address.
-  const movedEntry = page.getByRole('button', { name: 'Acme renewal' });
-  await movedEntry.click();
-  await expect(page.getByRole('dialog', { name: 'Acme renewal' })).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(movedEntry).toBeFocused();
-  await page.getByRole('button', { name: 'Next month' }).click();
-  await expect(page.getByText('April 2026')).toBeVisible();
-  expect(new URL(page.url()).searchParams.get('month')).toBe('2026-04');
-  await page.screenshot({ path: '/tmp/retainer-web-calendar.png' });
-});
+    await moveByKeyboard(page, entry, 'ArrowRight', 'Wednesday, March 11', 'Thursday, March 12');
+    await expect(
+      day('Thursday, March 12').getByRole('button', { name: 'Acme renewal' }),
+    ).toBeVisible();
+    await expect
+      .poll(async () => {
+        const found = await r.request('/objects/deal/query', {
+          filter: { name: { eq: 'Acme renewal' } },
+        });
+        return found.records[0].fields.closeDate;
+      })
+      .toBe('2026-03-12');
+    await expect(page.getByRole('dialog')).not.toBeVisible();
 
-test('moves a record from a busy day\'s "more" panel', async ({ page, retainer: r }) => {
-  await r.request('/templates/sales/apply', {});
-  for (const name of ['Alpha deal', 'Beta deal', 'Gamma deal', 'Delta deal']) {
-    await r.request('/objects/deal/records', { values: { name, closeDate: '2026-03-11' } });
-  }
-  const view = await r.request(
-    '/objects/deal/views',
-    { name: 'Closing', kind: 'calendar', dateField: 'closeDate' },
-    r.keys.user,
-  );
-  await signIn(page, r.url, r.keys.user);
-  await page.goto(`${r.url}/app/o/deal?view=${view.id}&month=2026-03`);
-  const day = (label: string) =>
-    page.getByRole('heading', { name: label, exact: true }).locator('..');
-  // Three fit; the day shows two and "2 more".
-  const more = day('Wednesday, March 11').getByRole('button', { name: '2 more' });
-  await more.click();
-  const panel = page.getByRole('dialog', { name: 'Wednesday, March 11' });
-  const last = panel.getByRole('button', { name: 'Delta deal' });
-  await expect(last).toBeVisible();
-  await last.press('Enter');
-  await expect(page.getByRole('dialog', { name: 'Delta deal' })).toBeVisible();
-  await expect(panel).toBeHidden();
-  await page.keyboard.press('Escape');
-  await expect(more).toBeFocused();
-  await more.click();
+    // Clicking an entry opens the record; the month is in the address.
+    const movedEntry = page.getByRole('button', { name: 'Acme renewal' });
+    await movedEntry.click();
+    await expect(page.getByRole('dialog', { name: 'Acme renewal' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(movedEntry).toBeFocused();
+    await page.getByRole('button', { name: 'Next month' }).click();
+    await expect(page.getByText('April 2026')).toBeVisible();
+    expect(new URL(page.url()).searchParams.get('month')).toBe('2026-04');
+    await page.screenshot({ path: '/tmp/retainer-web-calendar.png' });
+  });
 
-  // From the keyboard it starts over its own day, not the days the panel covers.
-  await moveByKeyboard(page, last, 'ArrowRight', 'Wednesday, March 11', 'Thursday, March 12');
-  await expect(day('Thursday, March 12').getByRole('button', { name: 'Delta deal' })).toBeVisible();
-  await expect
-    .poll(async () => {
-      const found = await r.request('/objects/deal/query', {
-        filter: { name: { eq: 'Delta deal' } },
-      });
-      return found.records[0].fields.closeDate;
-    })
-    .toBe('2026-03-12');
+  test('moves a record from a busy day\'s "more" panel', async ({ page, retainer: r }) => {
+    for (const name of ['Alpha deal', 'Beta deal', 'Gamma deal', 'Delta deal']) {
+      await r.request('/objects/deal/records', { values: { name, closeDate: '2026-03-11' } });
+    }
+    const view = await r.request(
+      '/objects/deal/views',
+      { name: 'Closing', kind: 'calendar', dateField: 'closeDate' },
+      r.keys.user,
+    );
+    await signIn(page, r.url, r.keys.user);
+    await page.goto(`${r.url}/app/o/deal?view=${view.id}&month=2026-03`);
+    const day = (label: string) =>
+      page.getByRole('heading', { name: label, exact: true }).locator('..');
+    // Three fit; the day shows two and "2 more".
+    const more = day('Wednesday, March 11').getByRole('button', { name: '2 more' });
+    await more.click();
+    const panel = page.getByRole('dialog', { name: 'Wednesday, March 11' });
+    const last = panel.getByRole('button', { name: 'Delta deal' });
+    await expect(last).toBeVisible();
+    await last.press('Enter');
+    await expect(page.getByRole('dialog', { name: 'Delta deal' })).toBeVisible();
+    await expect(panel).toBeHidden();
+    await page.keyboard.press('Escape');
+    await expect(more).toBeFocused();
+    await more.click();
+
+    // From the keyboard it starts over its own day, not the days the panel covers.
+    await moveByKeyboard(page, last, 'ArrowRight', 'Wednesday, March 11', 'Thursday, March 12');
+    await expect(
+      day('Thursday, March 12').getByRole('button', { name: 'Delta deal' }),
+    ).toBeVisible();
+    await expect
+      .poll(async () => {
+        const found = await r.request('/objects/deal/query', {
+          filter: { name: { eq: 'Delta deal' } },
+        });
+        return found.records[0].fields.closeDate;
+      })
+      .toBe('2026-03-12');
+  });
 });
 
 test('keeps a changed filter as unsaved until the view is saved or reset', async ({

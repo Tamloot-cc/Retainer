@@ -18,6 +18,7 @@ test('a new person continues with Microsoft and names their workspace', async ({
   await page.getByRole('button', { name: 'Continue with Microsoft' }).click();
   await expect(page.getByRole('heading', { name: 'Welcome, Mia' })).toBeVisible();
   await page.getByLabel('Name your workspace').fill('Mia Sales');
+  await page.getByLabel('Template').selectOption('starter');
   await page.getByRole('button', { name: 'Create workspace' }).click();
   await expect(page).toHaveURL(/\/app\/w\/mia-sales-/);
   await expect(page.getByRole('button', { name: 'Account: Mia Personal' })).toContainText('Admin');
@@ -64,6 +65,7 @@ test('an invited person signs in with a verified work account and accepts', asyn
   await a.signIn(context, { email: 'olga@example.test', name: 'Olga Owner' });
   await page.goto(`${a.url}/app/`);
   await page.getByLabel('Name your workspace').fill('Acme');
+  await page.getByLabel('Template').selectOption('starter');
   await page.getByRole('button', { name: 'Create workspace' }).click();
   await expect(page).toHaveURL(/\/app\/w\/acme-/);
   const workspaceUrl = page.url();

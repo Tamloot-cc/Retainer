@@ -4,7 +4,7 @@ import type { Sql } from '../../src/db/client.js';
 import { inWorkspace } from '../../src/db/tx.js';
 import { runSchemaChange, SYSTEM_ACTOR } from '../../src/schema-engine/engine.js';
 import type { SchemaOperation } from '../../src/schema-engine/operations.js';
-import { BASE_EVENT_OPERATIONS, BASE_OPERATIONS } from '../../src/templates/index.js';
+import { STARTER_ENTITY_OPERATIONS, STARTER_EVENT_OPERATIONS } from '../../src/templates/index.js';
 import { definitionsFor, upgradeWorkspaces } from '../../src/workspaces/upgrade.js';
 import { createWorkspace } from '../../src/workspaces/workspaces.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
@@ -37,7 +37,7 @@ async function legacyWorkspace(slug: string, extra: SchemaOperation[] = []) {
       workspaceId,
       actor: SYSTEM_ACTOR,
       scopes: [],
-      operations: BASE_OPERATIONS,
+      operations: STARTER_ENTITY_OPERATIONS,
       owner: 'system',
       trusted: true,
     });
@@ -127,7 +127,7 @@ describe('upgrading workspaces to the internal definitions', () => {
   });
 
   it('logs how many about links to events a workspace has, and leaves them (C4)', async () => {
-    const { workspaceId, key } = await legacyWorkspace('linked-events', BASE_EVENT_OPERATIONS);
+    const { workspaceId, key } = await legacyWorkspace('linked-events', STARTER_EVENT_OPERATIONS);
     await upgradeWorkspaces(owner);
     const a = await logCall(key);
     const b = await logCall(key);

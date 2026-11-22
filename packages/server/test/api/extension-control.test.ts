@@ -8,7 +8,7 @@ import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { runSchemaChange } from '../../src/schema-engine/engine.js';
-import { BASE_OBJECT_IDS } from '../../src/templates/base.js';
+import { STARTER_OBJECT_IDS } from '../../src/templates/base.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
@@ -101,7 +101,7 @@ const reV1 = extensionFixture({
   schema: [
     {
       kind: 'field',
-      objectId: BASE_OBJECT_IDS.company,
+      objectId: STARTER_OBJECT_IDS.company,
       definition: { universalId: randomUUID(), name: 'reTier', label: 'Tier', type: 'text' },
     },
   ],
@@ -113,7 +113,7 @@ const reV2 = extensionFixture({
     ...reV1.schema,
     {
       kind: 'field',
-      objectId: BASE_OBJECT_IDS.company,
+      objectId: STARTER_OBJECT_IDS.company,
       definition: { universalId: reFieldId, name: 'reScore', label: 'Score', type: 'number' },
     },
   ],

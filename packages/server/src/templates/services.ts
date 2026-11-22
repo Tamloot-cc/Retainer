@@ -1,4 +1,4 @@
-import { BASE_OBJECT_IDS } from './base.js';
+import { STARTER_OBJECT_IDS } from './base.js';
 import type { Template } from './types.js';
 
 const PROJECT = '8ed633e3-7356-4174-b090-8780fd291f31';
@@ -69,7 +69,7 @@ export const services: Template = {
             name: 'company',
             label: 'Client',
             type: 'relation',
-            settings: { targetObject: BASE_OBJECT_IDS.company, inverseField: 'projects' },
+            settings: { targetObject: STARTER_OBJECT_IDS.company, inverseField: 'projects' },
           },
           {
             universalId: '0467b648-12ca-4fb5-88aa-b6b2bd15eeb0',
@@ -77,7 +77,7 @@ export const services: Template = {
             label: 'Primary contact',
             description: "The client's main contact for the project.",
             type: 'relation',
-            settings: { targetObject: BASE_OBJECT_IDS.person, inverseField: 'projects' },
+            settings: { targetObject: STARTER_OBJECT_IDS.person, inverseField: 'projects' },
           },
         ],
       },
@@ -131,7 +131,7 @@ export const services: Template = {
             name: 'company',
             label: 'Client',
             type: 'relation',
-            settings: { targetObject: BASE_OBJECT_IDS.company, inverseField: 'proposals' },
+            settings: { targetObject: STARTER_OBJECT_IDS.company, inverseField: 'proposals' },
           },
           {
             universalId: '5543d8b0-3393-4e37-8aa0-5d85f009e9a8',

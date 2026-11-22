@@ -7,7 +7,7 @@ import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { Extensions } from '../../src/extensions/service.js';
-import { BASE_OBJECT_IDS } from '../../src/templates/base.js';
+import { STARTER_OBJECT_IDS } from '../../src/templates/base.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
@@ -61,7 +61,7 @@ const mapped = extensionFixture({
   ...base,
   version: '3.0.0',
   mapping: {
-    objectId: BASE_OBJECT_IDS.company,
+    objectId: STARTER_OBJECT_IDS.company,
     outputs: [
       { key: 'company_name', label: 'Company name', description: 'Company name', types: ['text'] },
     ],

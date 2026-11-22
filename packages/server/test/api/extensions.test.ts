@@ -3,7 +3,7 @@ import { defineExtension } from '@retainer/extension';
 import { RetainerClient } from '@retainer/sdk';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
-import { BASE_OBJECT_IDS } from '../../src/templates/base.js';
+import { STARTER_OBJECT_IDS } from '../../src/templates/base.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 
@@ -31,7 +31,7 @@ const manifest = defineExtension({
   schema: [
     {
       kind: 'field',
-      objectId: BASE_OBJECT_IDS.company,
+      objectId: STARTER_OBJECT_IDS.company,
       definition: {
         universalId: fieldId,
         name: 'fixtureStatus',
@@ -43,7 +43,7 @@ const manifest = defineExtension({
   views: [
     {
       universalId: viewId,
-      objectId: BASE_OBJECT_IDS.company,
+      objectId: STARTER_OBJECT_IDS.company,
       name: 'Fixture companies',
       kind: 'table',
       fieldIds: [fieldId],

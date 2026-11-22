@@ -16,7 +16,7 @@ import { RunTokens } from '../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../src/extensions/catalog.js';
 import { parseOAuthClients } from '../src/extensions/oauth-clients.js';
 import { createFileServer, LocalFileStorage } from '../src/file-storage/local.js';
-import { BASE_EVENT_TYPE_IDS, BASE_OBJECT_IDS } from '../src/templates/base.js';
+import { STARTER_EVENT_TYPE_IDS, STARTER_OBJECT_IDS } from '../src/templates/base.js';
 import { consolidateWorkspace } from '../src/worker/consolidate.js';
 import { createWorkspace } from '../src/workspaces/workspaces.js';
 import { extensionFixture as manifestFixture } from '../test/helpers/extensions.js';
@@ -45,7 +45,7 @@ export const browserExtensionManifest = manifestFixture({
   schema: [
     {
       kind: 'field',
-      objectId: BASE_OBJECT_IDS.company,
+      objectId: STARTER_OBJECT_IDS.company,
       definition: {
         universalId: '2384b956-709d-4edc-8aab-807c51027565',
         name: 'fixtureStatus',
@@ -249,6 +249,7 @@ export const BROWSER_OAUTH_AUTHORIZE = 'https://provider.test/oauth/start';
 export const test = base.extend<
   {
     routineFixture: boolean;
+    workspaceTemplate: 'starter' | 'sales';
     retainer: {
       url: string;
       keys: { user: string; writer: string; agent: string; reader: string; other: string };
@@ -281,6 +282,7 @@ export const test = base.extend<
   }
 >({
   routineFixture: [false, { option: true }],
+  workspaceTemplate: ['starter', { option: true }],
   extensionFixture: [false, { option: true, scope: 'worker' }],
   standaloneFixture: [false, { option: true, scope: 'worker' }],
   fileStorage: [false, { option: true, scope: 'worker' }],
@@ -295,6 +297,7 @@ export const test = base.extend<
       browserName: _browserName,
       extensionFixture,
       routineFixture,
+      workspaceTemplate,
       standaloneFixture,
       fileStorage: withFiles,
       sourceFixture,
@@ -317,7 +320,7 @@ export const test = base.extend<
     dbUrl.pathname = `/${name}`;
     const owner = createSql(dbUrl.toString()),
       sql = createSql(dbUrl.toString(), { role: RUNTIME_ROLE });
-    const workspace = await createWorkspace(owner, { name: 'Acme', template: 'starter' }),
+    const workspace = await createWorkspace(owner, { name: 'Acme', template: workspaceTemplate }),
       other = await createWorkspace(owner, { name: 'Other workspace', template: 'starter' });
     const user = (
       await createApiKey(owner, {
@@ -698,7 +701,7 @@ export const test = base.extend<
           )
         ).record;
       const event = {
-        type: BASE_EVENT_TYPE_IDS.conversation,
+        type: STARTER_EVENT_TYPE_IDS.conversation,
         occurredAt: '2026-11-10T10:00:00Z',
         title: 'Original provider note',
         participants: [{ email: 'source-browser@fixture.test' }],

@@ -1,8 +1,8 @@
-import { BASE_OBJECT_IDS } from './base.js';
+import { STARTER_OBJECT_IDS } from './base.js';
 import { TEMPLATES, type Template, templateOperations } from './index.js';
 
 const BASE_NAMES = new Map<string, string>(
-  Object.entries(BASE_OBJECT_IDS).map(([name, id]) => [id, name]),
+  Object.entries(STARTER_OBJECT_IDS).map(([name, id]) => [id, name]),
 );
 
 export type TemplateView = {

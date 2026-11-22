@@ -5,7 +5,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
-import { BASE_OBJECT_IDS } from '../../src/templates/base.js';
+import { STARTER_OBJECT_IDS } from '../../src/templates/base.js';
 import { ChangeMaintenance } from '../../src/worker/changes.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
@@ -61,7 +61,7 @@ async function setup(count = 1, standalone = 0, watches?: (jobTitle: string) => 
           trigger: {
             kind: 'change',
             ...(triggers?.[i] ?? {
-              objectId: BASE_OBJECT_IDS.person,
+              objectId: STARTER_OBJECT_IDS.person,
               fieldIds: [field.universal_id],
             }),
           },
@@ -217,9 +217,9 @@ async function setup(count = 1, standalone = 0, watches?: (jobTitle: string) => 
 describe('transactional change dispatch with real Postgres', () => {
   it('queues one job per watching installation for a schema-level deprecation', async () => {
     const h = await setup(0, 0, (jobTitle) => [
-      { objectId: BASE_OBJECT_IDS.person, fieldIds: [] },
-      { objectId: BASE_OBJECT_IDS.person, fieldIds: [jobTitle] },
-      { objectId: BASE_OBJECT_IDS.company, fieldIds: [] },
+      { objectId: STARTER_OBJECT_IDS.person, fieldIds: [] },
+      { objectId: STARTER_OBJECT_IDS.person, fieldIds: [jobTitle] },
+      { objectId: STARTER_OBJECT_IDS.company, fieldIds: [] },
     ]);
     const [whole, other, company] = h.ids;
     if (!whole || !other || !company) throw new Error('installations missing');
@@ -304,12 +304,12 @@ describe('transactional change dispatch with real Postgres', () => {
     const domain = 'bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641';
     const h = await setup(1, 0, () => [
       {
-        objectId: BASE_OBJECT_IDS.company,
+        objectId: STARTER_OBJECT_IDS.company,
         fieldIds: [domain],
         related: false,
         operations: ['create', 'update'],
       },
-      { objectId: BASE_OBJECT_IDS.company, fieldIds: [domain] },
+      { objectId: STARTER_OBJECT_IDS.company, fieldIds: [domain] },
     ]);
     const [narrow, legacy] = h.ids as [string, string];
     const dispatch = async () => [
@@ -353,7 +353,7 @@ describe('transactional change dispatch with real Postgres', () => {
       never = randomUUID();
     // A field this workspace never had doesn't block the install.
     const h = await setup(1, 0, (jobTitle) => [
-      { objectId: BASE_OBJECT_IDS.person, fieldIds: [jobTitle, name, never] },
+      { objectId: STARTER_OBJECT_IDS.person, fieldIds: [jobTitle, name, never] },
     ]);
     const id = h.ids[0] as string;
     const fired = async () => {
@@ -1100,7 +1100,7 @@ describe('change triggers on retired contributions', () => {
           },
         },
       ],
-      functions: [fn(onTicket, objectId), fn(onPerson, BASE_OBJECT_IDS.person)],
+      functions: [fn(onTicket, objectId), fn(onPerson, STARTER_OBJECT_IDS.person)],
     });
     const catalog = new ExtensionCatalog([
       { manifest, actorCeiling: 'integration', runtimeEnabled: true },

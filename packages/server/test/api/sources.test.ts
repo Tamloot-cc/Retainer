@@ -11,7 +11,7 @@ import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { createFileServer, LocalFileStorage } from '../../src/file-storage/local.js';
 import { requestHash } from '../../src/idempotency.js';
-import { BASE_EVENT_TYPE_IDS } from '../../src/templates/base.js';
+import { STARTER_EVENT_TYPE_IDS } from '../../src/templates/base.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
@@ -74,7 +74,7 @@ async function setup(
       verifyFunctionId: verifyId,
       syncFunctionIds: [syncId],
       scanFunctionIds: [backfillId],
-      eventTypeIds: [BASE_EVENT_TYPE_IDS.conversation],
+      eventTypeIds: [STARTER_EVENT_TYPE_IDS.conversation],
       revisionOrder: 'integer',
     },
     functions: [
@@ -178,7 +178,7 @@ async function setup(
     return { itemId, ...(await start(itemId)) };
   }
   const event = (title = 'First', participants: { email: string; contacted?: boolean }[] = []) => ({
-    type: BASE_EVENT_TYPE_IDS.conversation,
+    type: STARTER_EVENT_TYPE_IDS.conversation,
     occurredAt: '2026-11-10T10:00:00Z',
     title,
     participants,

@@ -8,7 +8,7 @@ import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
-import { BASE_EVENT_TYPE_IDS } from '../../src/templates/base.js';
+import { STARTER_EVENT_TYPE_IDS } from '../../src/templates/base.js';
 import { IngressLimiter } from '../../src/webhooks/limiter.js';
 import { Webhooks } from '../../src/webhooks/service.js';
 import { ChangeMaintenance } from '../../src/worker/changes.js';
@@ -36,7 +36,7 @@ const manifest = extensionFixture({
     identity: 'account',
     verifyFunctionId: setupId,
     syncFunctionIds: [syncId],
-    eventTypeIds: [BASE_EVENT_TYPE_IDS.conversation],
+    eventTypeIds: [STARTER_EVENT_TYPE_IDS.conversation],
     revisionOrder: 'opaque',
   },
   settings: {

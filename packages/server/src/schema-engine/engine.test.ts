@@ -1,12 +1,12 @@
 import { INTERNAL_NOTE_TYPE_ID } from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
 import type { SchemaState } from '../schema/types.js';
-import { BASE_EVENT_TYPE_IDS } from '../templates/base.js';
+import { STARTER_EVENT_TYPE_IDS } from '../templates/base.js';
 import {
-  BASE_EVENT_OPERATIONS,
-  BASE_OBJECT_IDS,
-  BASE_OPERATIONS,
   INTERNAL_OPERATIONS,
+  STARTER_ENTITY_OPERATIONS,
+  STARTER_EVENT_OPERATIONS,
+  STARTER_OBJECT_IDS,
   TEMPLATES,
 } from '../templates/index.js';
 import { applyOperations, coreFieldUniversalId, deriveUuid } from './apply.js';
@@ -35,7 +35,7 @@ function issuesOf(state: SchemaState, operations: SchemaOperation[]) {
   return issues.length > 0 ? issues : validateSchema(desired);
 }
 
-const base = applyValid(EMPTY, BASE_OPERATIONS, 'system');
+const base = applyValid(EMPTY, STARTER_ENTITY_OPERATIONS, 'system');
 
 const field = (state: SchemaState, object: string, name: string) =>
   state.objects
@@ -45,14 +45,14 @@ const field = (state: SchemaState, object: string, name: string) =>
 describe('base objects', () => {
   it('creates person, company and task with fixed universal IDs', () => {
     expect(base.objects.map((o) => [o.nameSingular, o.universalId])).toEqual([
-      ['company', BASE_OBJECT_IDS.company],
-      ['person', BASE_OBJECT_IDS.person],
-      ['task', BASE_OBJECT_IDS.task],
+      ['company', STARTER_OBJECT_IDS.company],
+      ['person', STARTER_OBJECT_IDS.person],
+      ['task', STARTER_OBJECT_IDS.task],
     ]);
   });
 
   it('derives the same inverse fields every time', () => {
-    const again = applyValid(EMPTY, BASE_OPERATIONS, 'system');
+    const again = applyValid(EMPTY, STARTER_ENTITY_OPERATIONS, 'system');
     expect(field(again, 'company', 'people')?.universalId).toBe(
       field(base, 'company', 'people')?.universalId,
     );
@@ -61,7 +61,7 @@ describe('base objects', () => {
       type: 'relation',
       settings: {
         relationCardinality: 'one_to_many',
-        targetObjectId: BASE_OBJECT_IDS.person,
+        targetObjectId: STARTER_OBJECT_IDS.person,
         inverseFieldId: company?.universalId,
       },
     });
@@ -269,7 +269,7 @@ describe('schema-level change keys', () => {
 
 describe('protection', () => {
   it('protects hidden types and event core fields', () => {
-    const state = applyValid(base, [...BASE_EVENT_OPERATIONS, ...INTERNAL_OPERATIONS], 'system');
+    const state = applyValid(base, [...STARTER_EVENT_OPERATIONS, ...INTERNAL_OPERATIONS], 'system');
     expect(state.objects.filter((o) => o.isProtected).map((o) => o.nameSingular)).toEqual([
       'internalNote',
       'workspaceProfile',
@@ -363,13 +363,13 @@ describe('polymorphic relations', () => {
   it('stores every allowed target, and one target as an ordinary relation', () => {
     const state = applyValid(base, [customer({ targetObjects: ['company', 'person'] })]);
     expect(field(state, 'task', 'customer')?.settings).toMatchObject({
-      targetObjectIds: [BASE_OBJECT_IDS.company, BASE_OBJECT_IDS.person],
+      targetObjectIds: [STARTER_OBJECT_IDS.company, STARTER_OBJECT_IDS.person],
       relationCardinality: 'many_to_one',
     });
     expect(field(state, 'task', 'customer')?.settings.targetObjectId).toBeUndefined();
     const single = applyValid(base, [customer({ targetObjects: ['company', 'company'] })]);
     expect(field(single, 'task', 'customer')?.settings).toMatchObject({
-      targetObjectId: BASE_OBJECT_IDS.company,
+      targetObjectId: STARTER_OBJECT_IDS.company,
     });
     const set = applyValid(base, [
       customer({ targetObjects: ['company', 'person'], relationCardinality: 'many_to_many' }),
@@ -518,7 +518,7 @@ describe('event rollups', () => {
 describe('event types', () => {
   const seeded = applyValid(
     base,
-    [...BASE_EVENT_OPERATIONS, ...INTERNAL_OPERATIONS] as SchemaOperation[],
+    [...STARTER_EVENT_OPERATIONS, ...INTERNAL_OPERATIONS] as SchemaOperation[],
     'system',
   );
   const object = (state: SchemaState, name: string) =>
@@ -538,7 +538,7 @@ describe('event types', () => {
   it('seeds the base event types and the internal-note type with fixed universal IDs', () => {
     const events = seeded.objects.filter((o) => o.class === 'event');
     expect(Object.fromEntries(events.map((o) => [o.nameSingular, o.universalId]))).toEqual({
-      conversation: BASE_EVENT_TYPE_IDS.conversation,
+      conversation: STARTER_EVENT_TYPE_IDS.conversation,
       internalNote: INTERNAL_NOTE_TYPE_ID,
     });
     // Base event types can be deleted when unused; the internal one cannot.
@@ -566,7 +566,7 @@ describe('event types', () => {
   });
 
   it('derives the same core field IDs for a code-defined type every time', () => {
-    const again = applyValid(base, BASE_EVENT_OPERATIONS as SchemaOperation[], 'system');
+    const again = applyValid(base, STARTER_EVENT_OPERATIONS as SchemaOperation[], 'system');
     const ids = (state: SchemaState) =>
       object(state, 'conversation')?.fields.map((f) => f.universalId);
     expect(ids(again)).toEqual(ids(seeded));

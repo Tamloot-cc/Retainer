@@ -1,8 +1,8 @@
 import { INTERNAL_NOTE_TYPE_ID } from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
 import type { SchemaState } from '../schema/types.js';
-import { BASE_EVENT_TYPE_IDS, INTERNAL_OPERATIONS, SEED_OPERATIONS } from '../templates/base.js';
-import { BASE_OBJECT_IDS, BASE_OPERATIONS, TEMPLATES } from '../templates/index.js';
+import { INTERNAL_OPERATIONS, SEED_OPERATIONS, STARTER_EVENT_TYPE_IDS } from '../templates/base.js';
+import { STARTER_ENTITY_OPERATIONS, STARTER_OBJECT_IDS, TEMPLATES } from '../templates/index.js';
 import { definitionsFor } from '../workspaces/upgrade.js';
 import { applyOperations } from './apply.js';
 import { classifyOp, diffSchemas } from './diff.js';
@@ -24,7 +24,7 @@ function applyValid(
 }
 
 /** A workspace as created before event types existed: base entity objects only. */
-const legacy = applyValid(EMPTY, BASE_OPERATIONS);
+const legacy = applyValid(EMPTY, STARTER_ENTITY_OPERATIONS);
 const seeded = applyValid(EMPTY, SEED_OPERATIONS);
 const clinic = TEMPLATES.clinic.operations;
 const realEstate = TEMPLATES.real_estate.operations;
@@ -79,16 +79,16 @@ describe('planUpgrade', () => {
       'memberProfile',
     ]);
     expect(upgraded.objects.filter((o) => o.class === 'event').map((o) => o.universalId)).toEqual([
-      BASE_EVENT_TYPE_IDS.conversation,
+      STARTER_EVENT_TYPE_IDS.conversation,
       INTERNAL_NOTE_TYPE_ID,
     ]);
     // Core fields get the IDs a new workspace gets.
     const ids = (state: SchemaState) =>
-      objectOf(state, BASE_EVENT_TYPE_IDS.conversation)?.fields.map((f) => f.universalId);
+      objectOf(state, STARTER_EVENT_TYPE_IDS.conversation)?.fields.map((f) => f.universalId);
     expect(ids(upgraded)).toEqual(ids(seeded));
-    expect(objectOf(upgraded, BASE_EVENT_TYPE_IDS.conversation)?.fields.map((f) => f.name)).toEqual(
-      ['title', 'summary', 'medium', 'transcript'],
-    );
+    expect(
+      objectOf(upgraded, STARTER_EVENT_TYPE_IDS.conversation)?.fields.map((f) => f.name),
+    ).toEqual(['title', 'summary', 'medium', 'transcript']);
   });
 
   it('gives a workspace seeded with the old event types a conversation, and keeps the old types', () => {
@@ -117,7 +117,7 @@ describe('planUpgrade', () => {
     expect(created(upgrade(old, SEED_OPERATIONS).operations)).toEqual([]);
     const never = {
       ...old,
-      objects: old.objects.filter((o) => o.universalId !== BASE_EVENT_TYPE_IDS.conversation),
+      objects: old.objects.filter((o) => o.universalId !== STARTER_EVENT_TYPE_IDS.conversation),
     };
     const { operations, conflicts, upgraded } = upgrade(never, SEED_OPERATIONS);
     expect(conflicts).toEqual([]);
@@ -146,11 +146,11 @@ describe('planUpgrade', () => {
     expect(conflicts).toEqual([]);
     expect(created(operations)).not.toContain('person');
     // The clinic's appointment points at the renamed object; its person fields land on it.
-    const contact = objectOf(upgraded, BASE_OBJECT_IDS.person);
+    const contact = objectOf(upgraded, STARTER_OBJECT_IDS.person);
     expect(contact?.nameSingular).toBe('contact');
     const appointment = named(upgraded, 'appointment');
     const relation = appointment?.fields.find((f) => f.type === 'relation');
-    expect(relation?.settings.targetObjectId).toBe(BASE_OBJECT_IDS.person);
+    expect(relation?.settings.targetObjectId).toBe(STARTER_OBJECT_IDS.person);
     expect(contact?.fields.map((f) => f.name)).toEqual(
       expect.arrayContaining(['dateOfBirth', 'appointments']),
     );

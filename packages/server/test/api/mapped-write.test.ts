@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
-import { BASE_OBJECT_IDS } from '../../src/templates/base.js';
+import { STARTER_OBJECT_IDS } from '../../src/templates/base.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
@@ -15,7 +15,7 @@ const manifest = extensionFixture({
   requestedActor: 'agent',
   scopes: ['read', 'write'],
   mapping: {
-    objectId: BASE_OBJECT_IDS.company,
+    objectId: STARTER_OBJECT_IDS.company,
     lookup: { fieldId: DOMAIN, type: 'links' },
     outputs: [
       {
@@ -59,7 +59,7 @@ const manifest = extensionFixture({
       timeoutSeconds: 60,
       trigger: {
         kind: 'change',
-        objectId: BASE_OBJECT_IDS.company,
+        objectId: STARTER_OBJECT_IDS.company,
         fieldIds: [DOMAIN],
         related: false,
         operations: ['create', 'update'],

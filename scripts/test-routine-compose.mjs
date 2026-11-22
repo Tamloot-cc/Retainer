@@ -127,6 +127,12 @@ try {
     baseUrl: origin,
     apiKey: await key('Builder', 'agent:compose-builder', 'read,write'),
   });
+  const starter = await admin.applyTemplate('starter');
+  const applied =
+    starter.status === 'proposed'
+      ? await admin.decideSchemaChange(starter.change.id, 'approve')
+      : starter;
+  assert.equal(applied.status, 'applied');
   await admin.proposeSchemaChange(
     [
       {

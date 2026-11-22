@@ -554,7 +554,9 @@ describe('company enrichment through a fake Exa', () => {
       body: { operations: [{ op: 'delete_field', object: 'company', field: 'headquarters' }] },
     });
     expect(changed.status).toBe(422);
-    expect(changed.body.error.details.issues[0].message).toContain('Change CompanyEnrichment');
+    expect(changed.body.error.details.issues[0].message).toMatch(
+      /change company.enrichment's setup first/i,
+    );
   });
 });
 

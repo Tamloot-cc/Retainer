@@ -1,11 +1,12 @@
 import { expect, test } from './fixtures.js';
 import { signIn } from './helpers.js';
 
+test.use({ workspaceTemplate: 'sales' });
+
 test('Home combines conversations and grouped record updates, preserves filters, and opens details', async ({
   page,
   retainer: r,
 }) => {
-  await r.request('/templates/sales/apply', {});
   const acme = (
     await r.request(
       '/objects/company/records',

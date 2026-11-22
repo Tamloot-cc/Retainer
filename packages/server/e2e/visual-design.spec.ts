@@ -97,65 +97,68 @@ for (const mode of [
   });
 }
 
-test('category identity follows records through tables, boards, calendars and Schema', async ({
-  page,
-  retainer: r,
-}) => {
-  await r.request('/templates/sales/apply', {});
-  await r.request(
-    '/objects/deal/records',
-    { values: { name: 'Acme renewal', stage: 'qualified', closeDate: '2026-03-11' } },
-    r.keys.user,
-  );
-  const board = await r.request(
-    '/objects/deal/views',
-    { name: 'Pipeline', kind: 'board', groupBy: 'stage' },
-    r.keys.user,
-  );
-  const calendar = await r.request(
-    '/objects/deal/views',
-    { name: 'Closing', kind: 'calendar', dateField: 'closeDate' },
-    r.keys.user,
-  );
-  await signIn(page, r.url, r.keys.user);
-  await page.goto(`${r.url}/app/o/deal`);
-  const tag = page.getByRole('region', { name: 'Deals' }).getByText('Qualified', { exact: true });
-  await expect(tag).toBeVisible();
-  const color = await tag.getAttribute('data-color');
-  await page.getByRole('button', { name: 'Columns', exact: true }).click();
-  await page.keyboard.press('Escape');
-  await page.goto(`${r.url}/app/o/deal?view=${board.id}`);
-  const column = page.getByRole('region', { name: 'Qualified, 1' });
-  await expect(column).toBeVisible();
-  await expect(column.locator('header [data-color]').first()).toHaveAttribute(
-    'data-color',
-    color as string,
-  );
-  await capture(page, 'board-light');
-  await page.emulateMedia({ colorScheme: 'dark' });
-  await capture(page, 'board-dark');
-  await page.goto(`${r.url}/app/o/deal?view=${calendar.id}&month=2026-03`);
-  const entry = page.getByRole('button', { name: 'Acme renewal, Stage: Qualified', exact: true });
-  await expect(entry).toBeVisible();
-  await expect(entry.getByRole('img', { name: 'Stage: Qualified' })).toHaveAttribute(
-    'data-color',
-    color as string,
-  );
-  await capture(page, 'calendar-dark');
-  await page.emulateMedia({ colorScheme: 'light' });
-  await capture(page, 'calendar-light');
-  await page.goto(`${r.url}/app/schema?object=deal`);
-  await expect(page.getByRole('heading', { name: 'Deals', exact: true })).toBeVisible();
-  await expect(
-    page
-      .getByRole('button', { name: /^Deals/ })
-      .locator('svg')
-      .first(),
-  ).toHaveAttribute('data-color', 'coral');
-  await capture(page, 'schema-light');
-  await page.setViewportSize({ width: 390, height: 844 });
-  await noHorizontalOverflow(page);
-  await capture(page, 'schema-mobile');
+test.describe('Sales workspace', () => {
+  test.use({ workspaceTemplate: 'sales' });
+
+  test('category identity follows records through tables, boards, calendars and Schema', async ({
+    page,
+    retainer: r,
+  }) => {
+    await r.request(
+      '/objects/deal/records',
+      { values: { name: 'Acme renewal', stage: 'qualified', closeDate: '2026-03-11' } },
+      r.keys.user,
+    );
+    const board = await r.request(
+      '/objects/deal/views',
+      { name: 'Pipeline', kind: 'board', groupBy: 'stage' },
+      r.keys.user,
+    );
+    const calendar = await r.request(
+      '/objects/deal/views',
+      { name: 'Closing', kind: 'calendar', dateField: 'closeDate' },
+      r.keys.user,
+    );
+    await signIn(page, r.url, r.keys.user);
+    await page.goto(`${r.url}/app/o/deal`);
+    const tag = page.getByRole('region', { name: 'Deals' }).getByText('Qualified', { exact: true });
+    await expect(tag).toBeVisible();
+    const color = await tag.getAttribute('data-color');
+    await page.getByRole('button', { name: 'Columns', exact: true }).click();
+    await page.keyboard.press('Escape');
+    await page.goto(`${r.url}/app/o/deal?view=${board.id}`);
+    const column = page.getByRole('region', { name: 'Qualified, 1' });
+    await expect(column).toBeVisible();
+    await expect(column.locator('header [data-color]').first()).toHaveAttribute(
+      'data-color',
+      color as string,
+    );
+    await capture(page, 'board-light');
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await capture(page, 'board-dark');
+    await page.goto(`${r.url}/app/o/deal?view=${calendar.id}&month=2026-03`);
+    const entry = page.getByRole('button', { name: 'Acme renewal, Stage: Qualified', exact: true });
+    await expect(entry).toBeVisible();
+    await expect(entry.getByRole('img', { name: 'Stage: Qualified' })).toHaveAttribute(
+      'data-color',
+      color as string,
+    );
+    await capture(page, 'calendar-dark');
+    await page.emulateMedia({ colorScheme: 'light' });
+    await capture(page, 'calendar-light');
+    await page.goto(`${r.url}/app/schema?object=deal`);
+    await expect(page.getByRole('heading', { name: 'Deals', exact: true })).toBeVisible();
+    await expect(
+      page
+        .getByRole('button', { name: /^Deals/ })
+        .locator('svg')
+        .first(),
+    ).toHaveAttribute('data-color', 'coral');
+    await capture(page, 'schema-light');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await noHorizontalOverflow(page);
+    await capture(page, 'schema-mobile');
+  });
 });
 
 test('actor attribution keeps its identity from review into record history', async ({

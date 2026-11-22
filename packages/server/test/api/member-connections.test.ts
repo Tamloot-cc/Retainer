@@ -12,7 +12,11 @@ import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { uninstallForWorkspaceDeletion } from '../../src/extension-runtime/workspace-deletion.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { Extensions } from '../../src/extensions/service.js';
-import { BASE_EVENT_TYPE_IDS, BASE_FIELD_IDS, BASE_OBJECT_IDS } from '../../src/templates/base.js';
+import {
+  STARTER_EVENT_TYPE_IDS,
+  STARTER_FIELD_IDS,
+  STARTER_OBJECT_IDS,
+} from '../../src/templates/base.js';
 import { ChangeMaintenance } from '../../src/worker/changes.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
@@ -72,9 +76,9 @@ const manifest = extensionFixture({
   },
   source: {
     tasks: {
-      objectId: BASE_OBJECT_IDS.task,
+      objectId: STARTER_OBJECT_IDS.task,
       titleFieldId: '5f37aa96-fac8-4572-9647-6b0da5d6d0c8',
-      statusFieldId: BASE_FIELD_IDS.taskStatus,
+      statusFieldId: STARTER_FIELD_IDS.taskStatus,
       personFieldId: '3d66fcfe-2e9c-4aeb-a88a-7d6b3c2194ba',
       statuses: { open: 'todo', done: 'done' },
     },
@@ -83,7 +87,7 @@ const manifest = extensionFixture({
     verifyFunctionId: connectId,
     syncFunctionIds: [syncId],
     scanFunctionIds: [pollId],
-    eventTypeIds: [BASE_EVENT_TYPE_IDS.conversation],
+    eventTypeIds: [STARTER_EVENT_TYPE_IDS.conversation],
     revisionOrder: 'integer',
   },
   functions: [
@@ -722,7 +726,7 @@ async function memberTasks(h: Setup, key: string, accountId: string) {
       providerRevision: '1',
       expectedRevisionId: null,
       event: {
-        type: BASE_EVENT_TYPE_IDS.conversation,
+        type: STARTER_EVENT_TYPE_IDS.conversation,
         occurredAt: '2026-01-01T12:00:00Z',
         title: 'Meeting',
         summary: 'a'.repeat(21000),
@@ -966,7 +970,7 @@ describe('managed task schema and identity safety', () => {
         providerRevision: '1',
         expectedRevisionId: null,
         event: {
-          type: BASE_EVENT_TYPE_IDS.conversation,
+          type: STARTER_EVENT_TYPE_IDS.conversation,
           title: 'New meeting',
           occurredAt: '2026-01-02T12:00:00Z',
         },

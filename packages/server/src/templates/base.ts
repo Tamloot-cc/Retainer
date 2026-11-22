@@ -5,25 +5,25 @@ import {
 } from '@retainer/shared';
 import type { SchemaOperation } from '../schema-engine/operations.js';
 
-export const BASE_OBJECT_IDS = {
+export const STARTER_OBJECT_IDS = {
   company: '1f24f94d-6bc5-4955-b6ab-ac946e2b140a',
   person: '7e87d873-8c93-4786-9a0b-95447310c8d3',
   task: 'd0690d5f-d7f4-47ce-8007-0a81a276a70b',
 } as const;
 
-/** Base fields that server code reads directly, such as open tasks in context packs. */
-export const BASE_FIELD_IDS = {
+/** Stable field identities shared by Starter and the templates that extend it. */
+export const STARTER_FIELD_IDS = {
   taskStatus: '107158ae-ba0f-482e-afe1-5e45bd6ccfd6',
   taskDueDate: '368276ea-604d-4dcd-b6ad-796431a84a06',
-  /** The company website; extensions look companies up by it (not protected). */
+  /** The company website in the Starter template. */
   companyDomain: 'bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641',
 } as const;
 
-export const BASE_EVENT_TYPE_IDS = {
+export const STARTER_EVENT_TYPE_IDS = {
   conversation: '564ad764-a57c-4741-ad63-61604fa4cf5a',
 } as const;
 
-export const BASE_EVENT_FIELD_IDS = {
+export const STARTER_EVENT_FIELD_IDS = {
   conversationMedium: '6475aaeb-54ab-4e7c-8e43-d1a4469a12a0',
   conversationTranscript: 'fe832d36-cccb-48e4-8423-942e793741f9',
 } as const;
@@ -35,15 +35,14 @@ export { INTERNAL_NOTE_TYPE_ID };
  * and chats are all conversations: `medium` says which, and stays editable
  * after logging. Every other event type comes from a template or an agent: one
  * for events whose fields a conversation would never use, such as a payment
- * or a form submission. `note` keeps its universal ID, but is not seeded. The
- * schema engine adds its core title and summary fields (6.1). It is not
- * protected: a workspace can delete it if it does not use it.
+ * or a form submission. The schema engine adds the core title and summary
+ * fields (6.1). The workspace can change or delete the event type.
  */
-export const BASE_EVENT_OPERATIONS: SchemaOperation[] = [
+export const STARTER_EVENT_OPERATIONS: SchemaOperation[] = [
   {
     op: 'create_object',
     object: {
-      universalId: BASE_EVENT_TYPE_IDS.conversation,
+      universalId: STARTER_EVENT_TYPE_IDS.conversation,
       class: 'event',
       nameSingular: 'conversation',
       namePlural: 'conversations',
@@ -52,7 +51,7 @@ export const BASE_EVENT_OPERATIONS: SchemaOperation[] = [
       description: 'A meeting, call, email thread or chat between people.',
       fields: [
         {
-          universalId: BASE_EVENT_FIELD_IDS.conversationMedium,
+          universalId: STARTER_EVENT_FIELD_IDS.conversationMedium,
           name: 'medium',
           label: 'Medium',
           description:
@@ -70,7 +69,7 @@ export const BASE_EVENT_OPERATIONS: SchemaOperation[] = [
           },
         },
         {
-          universalId: BASE_EVENT_FIELD_IDS.conversationTranscript,
+          universalId: STARTER_EVENT_FIELD_IDS.conversationTranscript,
           name: 'transcript',
           label: 'Transcript',
           description: 'Transcript files attached to this conversation revision.',
@@ -131,11 +130,11 @@ export const INTERNAL_OPERATIONS: SchemaOperation[] = [
   },
 ];
 
-export const BASE_OPERATIONS: SchemaOperation[] = [
+export const STARTER_ENTITY_OPERATIONS: SchemaOperation[] = [
   {
     op: 'create_object',
     object: {
-      universalId: BASE_OBJECT_IDS.company,
+      universalId: STARTER_OBJECT_IDS.company,
       nameSingular: 'company',
       namePlural: 'companies',
       labelSingular: 'Company',
@@ -170,7 +169,7 @@ export const BASE_OPERATIONS: SchemaOperation[] = [
   {
     op: 'create_object',
     object: {
-      universalId: BASE_OBJECT_IDS.person,
+      universalId: STARTER_OBJECT_IDS.person,
       nameSingular: 'person',
       namePlural: 'people',
       labelSingular: 'Person',
@@ -221,7 +220,7 @@ export const BASE_OPERATIONS: SchemaOperation[] = [
           label: 'Company',
           description: 'Where the person works.',
           type: 'relation',
-          settings: { targetObject: BASE_OBJECT_IDS.company, inverseField: 'people' },
+          settings: { targetObject: STARTER_OBJECT_IDS.company, inverseField: 'people' },
         },
       ],
     },
@@ -229,7 +228,7 @@ export const BASE_OPERATIONS: SchemaOperation[] = [
   {
     op: 'create_object',
     object: {
-      universalId: BASE_OBJECT_IDS.task,
+      universalId: STARTER_OBJECT_IDS.task,
       nameSingular: 'task',
       namePlural: 'tasks',
       labelSingular: 'Task',
@@ -245,7 +244,7 @@ export const BASE_OPERATIONS: SchemaOperation[] = [
           isSearchable: true,
         },
         {
-          universalId: BASE_FIELD_IDS.taskStatus,
+          universalId: STARTER_FIELD_IDS.taskStatus,
           name: 'status',
           label: 'Status',
           type: 'select',
@@ -258,7 +257,7 @@ export const BASE_OPERATIONS: SchemaOperation[] = [
           },
         },
         {
-          universalId: BASE_FIELD_IDS.taskDueDate,
+          universalId: STARTER_FIELD_IDS.taskDueDate,
           name: 'dueDate',
           label: 'Due date',
           type: 'date',
@@ -276,7 +275,7 @@ export const BASE_OPERATIONS: SchemaOperation[] = [
           label: 'Person',
           description: 'The person the task is about.',
           type: 'relation',
-          settings: { targetObject: BASE_OBJECT_IDS.person, inverseField: 'tasks' },
+          settings: { targetObject: STARTER_OBJECT_IDS.person, inverseField: 'tasks' },
         },
         {
           universalId: 'f6b83a8c-c809-4af4-b03a-f4753e10df32',
@@ -284,7 +283,7 @@ export const BASE_OPERATIONS: SchemaOperation[] = [
           label: 'Company',
           description: 'The company the task is about.',
           type: 'relation',
-          settings: { targetObject: BASE_OBJECT_IDS.company, inverseField: 'tasks' },
+          settings: { targetObject: STARTER_OBJECT_IDS.company, inverseField: 'tasks' },
         },
       ],
     },
@@ -293,7 +292,7 @@ export const BASE_OPERATIONS: SchemaOperation[] = [
 
 /** Everything a new workspace is seeded with, and what upgrades bring older ones to (3). */
 export const SEED_OPERATIONS: SchemaOperation[] = [
-  ...BASE_OPERATIONS,
-  ...BASE_EVENT_OPERATIONS,
+  ...STARTER_ENTITY_OPERATIONS,
+  ...STARTER_EVENT_OPERATIONS,
   ...INTERNAL_OPERATIONS,
 ];

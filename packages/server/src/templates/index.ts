@@ -1,4 +1,4 @@
-import { BASE_EVENT_OPERATIONS, BASE_OPERATIONS } from './base.js';
+import { STARTER_ENTITY_OPERATIONS, STARTER_EVENT_OPERATIONS } from './base.js';
 import { clinic } from './clinic.js';
 import { realEstate } from './real-estate.js';
 import { recruiting } from './recruiting.js';
@@ -7,10 +7,10 @@ import { services } from './services.js';
 import type { Template, TemplateName } from './types.js';
 
 export {
-  BASE_EVENT_OPERATIONS,
-  BASE_OBJECT_IDS,
-  BASE_OPERATIONS,
   INTERNAL_OPERATIONS,
+  STARTER_ENTITY_OPERATIONS,
+  STARTER_EVENT_OPERATIONS,
+  STARTER_OBJECT_IDS,
 } from './base.js';
 export { TEMPLATE_NAMES, type Template, type TemplateName } from './types.js';
 
@@ -25,7 +25,7 @@ export const TEMPLATES: Record<TemplateName, Template> = {
     version: 1,
     label: 'Starter',
     description: 'People, companies, tasks and conversations',
-    operations: [...BASE_OPERATIONS, ...BASE_EVENT_OPERATIONS],
+    operations: [...STARTER_ENTITY_OPERATIONS, ...STARTER_EVENT_OPERATIONS],
   },
 };
 

@@ -12,6 +12,7 @@ test('a person gives an agent their memory, then reviews, removes and clears it'
   await a.signIn(context, { email: 'noa@example.test', name: 'Noa' });
   await page.goto(`${a.url}/app/`);
   await page.getByLabel('Name your workspace').fill('Memory');
+  await page.getByLabel('Template').selectOption('starter');
   await page.getByRole('button', { name: 'Create workspace' }).click();
   await expect(page).toHaveURL(/\/app\/w\/memory-/);
   const settings = `${page.url()}settings`;

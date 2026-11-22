@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
-import { BASE_OBJECT_IDS } from '../../src/templates/base.js';
+import { STARTER_OBJECT_IDS } from '../../src/templates/base.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
@@ -29,7 +29,7 @@ async function setup() {
   const setupId = randomUUID(),
     computeId = randomUUID(),
     otherId = randomUUID();
-  const fields = [BASE_OBJECT_IDS.person, BASE_OBJECT_IDS.company].map((objectId) => ({
+  const fields = [STARTER_OBJECT_IDS.person, STARTER_OBJECT_IDS.company].map((objectId) => ({
     objectId,
     fieldId: randomUUID(),
   }));
