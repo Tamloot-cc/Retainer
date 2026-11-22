@@ -8,8 +8,8 @@ import {
   functionScopes,
   functionSecrets,
   lifecycleInputSchema,
-  runsHostedCode,
   mergeBindingChoices,
+  runsHostedCode,
 } from './index.js';
 
 export const fixture = () => ({
@@ -890,19 +890,33 @@ describe('standalone apps (spec 8)', () => {
   });
   it('requires the installation to contribute every installation-owned field', () => {
     const field = {
-      key: 'orderId', label: 'Order ID', types: ['text'], required: true,
-      installationOwned: true, owned: true,
+      key: 'orderId',
+      label: 'Order ID',
+      types: ['text'],
+      required: true,
+      installationOwned: true,
+      owned: true,
       create: { universalId: randomUUID(), name: 'orderId', label: 'Order ID', type: 'text' },
     };
     const binding = {
-      key: 'order', label: 'Orders', description: 'Tracks order IDs.',
-      class: 'entity', access: 'write', required: true, fields: [field],
+      key: 'order',
+      label: 'Orders',
+      description: 'Tracks order IDs.',
+      class: 'entity',
+      access: 'write',
+      required: true,
+      fields: [field],
     };
-    expect(defineExtension(standalone({ bindings: [binding] })).bindings?.[0]?.fields[0])
-      .toMatchObject({ installationOwned: true, owned: true });
-    expect(() => defineExtension(standalone({
-      bindings: [{ ...binding, fields: [{ ...field, owned: undefined }] }],
-    }))).toThrow('invalid field order.orderId');
+    expect(
+      defineExtension(standalone({ bindings: [binding] })).bindings?.[0]?.fields[0],
+    ).toMatchObject({ installationOwned: true, owned: true });
+    expect(() =>
+      defineExtension(
+        standalone({
+          bindings: [{ ...binding, fields: [{ ...field, owned: undefined }] }],
+        }),
+      ),
+    ).toThrow('invalid field order.orderId');
   });
 });
 

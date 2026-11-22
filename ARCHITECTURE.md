@@ -733,16 +733,17 @@ object deletes its views with it.
    belief snapshots are deferred: the schema has no supersession-event
    timestamp or append-only history of validity edits.
 7. **An installation-owned field is written only by its installation.** A
-   standalone app may mark the fields it contributes `installationOwned`
-   (extensions spec 8): values the app is the system of record for, such as
+   binding may mark an owned field `installationOwned` (extensions spec 6)
+   for values the app controls, such as
    an order's ID or status. Any other writer, a person included, gets `403
    installation_owned`, so precedence never lets a person's value outrank
    the app's. A record whose object has an owned unique field is the app's
    copy of its own data: only the app deletes it, and nobody merges it. An
-   admin's `forget` still erases it (2.1). Ownership is read from the
-   installation's contributions on every write and ends when the app is
-   uninstalled; the fields then belong to the workspace like any other.
-   Schema reads mark owned fields `readOnly` for everyone but the owner.
+   admin's `forget` still erases it (2.1). Writes check the approved binding
+   plan. An approved re-plan or uninstall can release a field. Provider
+   retractions use the same deletion check and leave the source item and
+   event intact if the check refuses the write. Schema reads mark the fields
+   `readOnly` for everyone but the owning installation.
 
 ### 2.1 Deletion and privacy
 

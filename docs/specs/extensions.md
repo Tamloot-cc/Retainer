@@ -227,8 +227,10 @@ A release declares the bindings its capabilities use. Each installation
 stores an approved plan that selects an object, fields and select options
 for each binding, or skips optional bindings. A read binding can select
 multiple event types. An owned object or field is created as a contribution.
-Value permissions follow the normal assertion rules, with the separate
-installation-only permission for standalone fields that declare it.
+Value permissions follow the normal assertion rules. An owned field can
+declare `installationOwned` to reserve writes to the installation that
+created it. The plan can keep that field on a re-plan and release it on
+uninstall. An existing workspace field cannot be adopted as owned.
 
 See [the binding contract](no-built-in-objects.md#52-manifest) for declaration
 and destination shapes.
