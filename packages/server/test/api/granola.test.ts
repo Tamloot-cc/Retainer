@@ -237,7 +237,7 @@ async function setup() {
 }
 
 describe('Granola provider fixture through real API, RLS Postgres and file byte storage', () => {
-  it('imports history, stores complete transcripts as files, preserves edits and reports unavailable notes without deleting evidence', async () => {
+  it('imports history, stores complete transcripts as files and content, preserves edits and reports unavailable notes without deleting evidence', async () => {
     const h = await setup();
     expect(await h.drain()).toEqual([
       { status: 'succeeded' },
@@ -261,7 +261,13 @@ describe('Granola provider fixture through real API, RLS Postgres and file byte 
       { text: 'Transcript version 1' },
     ]);
     expect(h.seenApiBodies.join('\n')).not.toContain('MUST NEVER LEAVE PROVIDER');
-    expect(h.seenApiBodies.join('\n')).not.toContain('Transcript version 1');
+    // The transcript's text is also the event's content, so agents can read and search it.
+    const content = await h.app.request(`/v1/events/${initial[0]?.event_id}/content`, {
+      key: h.keys.admin,
+    });
+    expect(content.body.parts.map((part: { text: string }) => part.text)).toEqual([
+      'Owner: Transcript version 1',
+    ]);
     expect(h.seenApiBodies.join('\n')).not.toContain('NEVER-FETCH');
     const status = await h.app.request(`/v1/extensions/${h.id}/source-sync`, { key: h.keys.admin });
     expect(status.body).toMatchObject({ activeScan: null, pendingItems: 0, failedItems: 0 });

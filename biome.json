@@ -12,6 +12,7 @@
       "!**/.claude",
       "!**/drizzle/meta",
       "!**/*.md",
+      "!artifacts/**",
       "!docs/experiments/**/*.json"
     ]
   },

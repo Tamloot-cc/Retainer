@@ -57,12 +57,12 @@ Every schema row carries:
 #### Protection
 
 Server code finds the schema elements it depends on by universal ID, never
-by API name, and the engine protects each of them. Today these are the base
-objects `person`, `company` and `task`, the fields `task.status` and
-`task.dueDate` (open tasks in context packs, 6.2), and the hidden
-internal-note event type (1.3). The list lives in
-`schema-engine/protection.ts`; any new server dependency on a schema
-element protects it in the same change. The core `title` and `summary`
+by API name, and the engine protects each of them. Protection currently
+covers the base objects `person`, `company` and `task`, the fields
+`task.status` and `task.dueDate`, and the hidden types:
+the internal-note event type and the workspace and member profiles (1.3). The
+list lives in `schema-engine/protection.ts`; any new server dependency on a
+schema element protects it in the same change. The core `title` and `summary`
 fields of every event type are protected the same way. The base event type
 itself is not: an unused one can be deleted like any object.
 
@@ -79,8 +79,8 @@ itself is not: an unused one can be deleted like any object.
 `describe_schema` shows `isProtected` on objects and fields and
 `protectedOptions` on fields, and marks base elements with `baseObject`
 (`person`, `company`, `task`) or `baseField` (`taskStatus`,
-`taskDueDate`), so a client finds them after a rename without reading
-universal IDs.
+`taskDueDate`, and the unprotected `companyDomain`), so a client finds them
+after a rename without reading universal IDs.
 
 New hosted workspaces start with `schema_from_scratch` and seed only the
 hidden note and memory types. Their first applied change with a visible
@@ -175,11 +175,12 @@ Sets filter with `containsAny` and `containsAll` (lists of record IDs) and
 #### Actor
 
 Every write carries an actor: `{ type, id, name? }` where `type` is `user`,
-`agent`, `integration`, or `system`. The API key decides the actor; callers
-cannot claim to be someone else. The server's own `system` actor
-(`retainer`) seeds base objects and applies a template chosen at workspace
-creation; merges are attributed to the merging user, and the consolidator
-writes no actor-stamped rows.
+`agent`, `integration`, or `system`. The credential decides the actor (an API
+key, a person's session or an app's OAuth token); callers cannot claim to be
+someone else. The server's own `system` actor (`retainer`) seeds base objects
+and applies a template chosen at workspace creation, and `system:operator`
+records the operator CLI's membership changes; merges are attributed to the
+merging user, and the consolidator writes no actor-stamped rows.
 
 ### 1.2 Records
 
@@ -296,11 +297,12 @@ change to an object is its history (assertions and the timeline), never an
 event, and a person's remark about a record is a comment (below), never an
 event. The `schema_design` guide gives agents this test with examples.
 
-Every workspace has the base event type `conversation`, with a universal ID
-(3.1). `note` is no longer in the base template, but keeps its universal ID,
-so a template or agent that adds a `note` event type gets the same identity;
-a workspace from before this keeps its notes and may delete the type. A
-conversation's kind is its `medium` field, a
+A workspace seeded with the standard types has the base event type
+`conversation`, with a universal ID (3.1); one designed from scratch (1.1)
+starts without it. `note` is no longer in the base template, but keeps its
+universal ID, so a template or agent that adds a `note` event type gets the
+same identity; a workspace from before this keeps its notes and may delete
+the type. A conversation's kind is its `medium` field, a
 nullable, filterable select with the options `meeting`, `call`, `email`
 and `message` (workspaces may add more), not its type: a field can be
 corrected after logging with `upsert_record`, while an event's type changes
@@ -311,12 +313,14 @@ logging, and must tell apart sources whose IDs could overlap. `medium` is
 what happened; it is optional, and an agent that can't tell leaves it
 empty. A workspace adds an event type only for events whose fields a
 conversation would never use: a payment (an amount, an invoice), a form
-submission, a site visit. Details such as duration, direction or a
-recording link are optional fields on `conversation`. The base type is not
-protected. `describe_schema` marks it with `baseObject` (`conversation`, or
-`note` where one exists) and the medium with
-`baseField: "conversationMedium"`, so clients find them after a rename. Creating an object with
-`class: "event"` gives it two core fields, with roles `title` and
+submission, a site visit. `conversation` also has a `transcript` field of
+type `files` ([docs/files.md](docs/files.md)). Details such as duration,
+direction or a recording link are optional fields a workspace may add to it.
+The base type is not protected. `describe_schema` marks it with `baseObject`
+(`conversation`, or `note` where one exists), the medium with
+`baseField: "conversationMedium"` and the transcript with
+`conversationTranscript`, so clients find them after a rename. Creating an
+object with `class: "event"` gives it two core fields, with roles `title` and
 `summary`: searchable text, protected (1.1), and `title` is the label
 field. The rest of an event type's fields are ordinary fields. The names
 `type`, `occurredAt`, `channel`, `externalId`, `participants`, `about`,
@@ -419,6 +423,25 @@ type: filter them with `query_records` on that type. Each item carries
 cursors work as for one object. With `include: ["relationReferences"]`,
 the references cover relation values, participants, candidates and
 `about` records.
+
+#### An event's full text
+
+Some events carry more text than a summary holds: an email's body, a
+meeting's transcript. It is stored in `event_bodies`, one immutable row per
+event, apart from `records.data`, so a long text never truncates the
+summary or enters field history. A Gmail message stores its body, and a
+source import may send `content` with its event (Granola sends the
+transcript as text, beside the transcript file). Events that share a
+`thread_id` read as one conversation, oldest first: every message of a
+Gmail thread is its own citable event, and activity, search and queries
+show the thread through its newest one.
+
+`get_event_content` and `GET /v1/events/:id/content` return the text, five
+parts per page; any event of a thread returns the whole thread. An event
+with a body has `content: true` in its `event` details. Search matches the
+body too (5.1). A body is deleted with its event, and erasing one event of
+a thread erases the thread. Forgetting a person lists, for review, the
+events whose body names them or carries one of their handles (2.1).
 
 #### Rollups
 
@@ -681,7 +704,8 @@ object deletes its views with it.
    an event: the agent passes one, or `remember` creates an internal note
    for it (1.3). A source must be a live event record of a visible type in
    the same workspace: an entity is refused (`invalid_source`), a deleted
-   event too (`source_retracted`).
+   event too (`source_retracted`), and so is a source revision a later import
+   replaced (`source_superseded`; extensions spec §10).
 2. **Precedence decides a field's value**:
    `user` > `integration` > `agent` > `system`. Within the same precedence,
    the assertion with the latest
@@ -809,9 +833,10 @@ only, and must not resurrect deleted content. Delete idempotency responses
 and error text containing erased content too.
 
 Routines need more: a routine's code can read
-any record, and reads are not tracked, so `forget` deletes every stored tool
+any record, and reads are not tracked, so `forget` clears every stored tool
 and model result and every run's output in the workspace, in the same
-transaction, and fences each routine run in flight so its next effect is
+transaction, cancels the extension jobs routine runs started, and fences
+every unfinished routine run, queued or in flight, so its next effect is
 refused and it ends as `erased` (`routine-runtime/admission.ts`,
 [routines.md](docs/specs/routines.md) §6.6).
 
@@ -826,11 +851,11 @@ How this is built:
   it or carries one of those handles. A forgotten event record is erased
   as an event.
 - **Boundary.** A workspace advisory lock. Every write takes it in shared
-  mode after the schema lock; `forget` takes it exclusively, so it waits
-  for in-flight writes and blocks new ones until it commits. A record
-  write with a suppressed email or phone fails with `409 suppressed`,
-  naming the field but not the value. A suppressed participant handle is
-  stored as `null` with the reason `suppressed`.
+  mode, before the schema lock (`lockForWrite` in `db/tx.ts`); `forget`
+  takes it exclusively, so it waits for in-flight writes and blocks new
+  ones until it commits. A record write with a suppressed email or phone fails
+  with `409 suppressed`, naming the field but not the value. A suppressed
+  participant handle is stored as `null` with the reason `suppressed`.
 - **Key.** The HMAC key is `RETAINER_SUPPRESSION_KEY` (at least 32
   characters), kept outside the database so a dump alone does not reveal
   the handles. The HMAC covers the workspace ID, kind and normalized
@@ -902,7 +927,8 @@ person or agent). Same pattern as Twenty's migration engine:
 5. **Classify** each operation:
    - Additive: create object, create an optional non-unique field, add or
      relabel a select option, change a label, description or label field,
-     mark a field filterable/searchable.
+     mark a field filterable/searchable, turn `rollUpEvents` on or off,
+     protect an object or field (1.1).
    - Destructive: everything else: rename, remove option, delete field or
      object, add a required or unique field, change a field's required or
      unique flag either way, unmark filterable/searchable.
@@ -953,9 +979,11 @@ claims are populated atomically when uniqueness is enabled.
 
 In v1, deleting schema metadata means deprecating it and hiding it from new
 writes, not cascading away assertions. Deleting an object also deprecates
-relations that point at it; protected objects and fields (1.1) and an
-object's label field cannot be deleted. Removing an option needs approval
-and fails while live records use it. A relation's target, cardinality and `onDelete` are fixed once
+relations whose only target it is; a relation that may also point at other
+objects blocks the delete until it is replaced (1.1); protected objects and
+fields (1.1) and an object's label field cannot be deleted. Removing an option
+needs approval and fails while live records use it. A relation's target,
+cardinality and `onDelete` are fixed once
 created; there is no operation to change them.
 
 Standard objects ship as code (definitions with fixed `universal_id`s) and
@@ -984,11 +1012,16 @@ reported and keeps its schema; the others still run
 
 ### 3.1 Base objects and templates
 
-Every workspace is created with three base objects: `person` (name, emails,
+A workspace created by the operator CLI (7.1), or in the web app with a
+template, is seeded with three base objects: `person` (name, emails,
 phones, address, job title, company), `company` (name, domain, address,
 people) and `task` (title, status, due date, assignee, person, company),
-the base event type `conversation` (with `medium`), and the hidden
-internal-note type (1.3). Nobody builds a workspace from scratch.
+the base event type `conversation` (with `medium` and `transcript`), and the
+hidden types (1.3): the internal note and the workspace and member profiles,
+plus the workspace's profile record. A workspace created in the web app on
+the hosted service without a template is designed from scratch
+(`schema_from_scratch`, 1.1): it gets only the hidden types, and its first
+agent builds the rest with the `discover_schema` guide (6.2).
 
 Templates add the objects and fields a kind of business needs. They ship
 as code in `packages/server/src/templates/`, with fixed `universal_id`s
@@ -1033,20 +1066,34 @@ The workspace records which templates it has applied, with their versions
 ```
  AI agents ── MCP ───┐
  Apps / SDK ── REST ─┤──► API server ─────────────► Postgres
- Integrations ───────┘                              schema · records ·
-                                │                     memory · job queue
-                                ▼                          ▲
-                            Workers ───────────────────────┘
-                            └─ consolidate (scheduled)
+ Integrations ───────┘        │                     schema · records ·
+                              │                     memory · job queue ·
+                              ▼                     change feed
+                          Workers ─────────────────────▲
+                          ├─ consolidator (scheduled)
+                          ├─ extension executor ──► sandbox (runner)
+                          ├─ routine executor ────► sandbox (runner)
+                          ├─ change dispatch and retention
+                          └─ file storage maintenance
 ```
 
-One Docker image, started with a role: `api`, `worker`, `control` (accounts
-mode, 7.3) or `all`.
+One Docker image, started with a role: `api` (REST, MCP and the web app),
+`worker` (the background work below), `control` (accounts mode, 7.3:
+`/account` only), `extensions` (the extension control API and secret broker
+on their own), `files` (the worker's loops, including file storage
+maintenance) or `all`.
+A worker process runs the consolidator (4.2) on its timer; the extension
+executor, a continuous loop that claims due extension jobs and runs them in
+the sandbox (4.5); the routine executor, every second (4.7); change dispatch
+and retention, every second, which turns the change feed
+([extensions spec](docs/specs/extensions.md) §9.4) into extension and
+routine work and prunes it; and file storage maintenance, every minute, when
+file storage is configured ([docs/files.md](docs/files.md)).
 Postgres is the only dependency, with the standard `pg_trgm`, `btree_gin`
 and `unaccent` extensions for search (5.1); the job queue runs on Postgres
 too. The core calls no language model. A model API key
-(`RETAINER_MODEL_API_KEY`) is optional: it lets extensions call a model
-through the model proxy (docs/specs/extensions-model-calls.md).
+(`RETAINER_MODEL_API_KEY`) is optional: it lets extensions and routines call a
+model through the model proxy (docs/specs/extensions-model-calls.md).
 
 The same code also runs as AWS Lambda functions
 (`packages/server/src/lambda/`), which is how the hosted service runs; its
@@ -1055,7 +1102,13 @@ infrastructure lives outside this repo. `api` serves the Hono app behind API Gat
 migrations and the operator CLI. What the container does on start
 (migrations, the first-boot key, the search rebuild) the deploy does once
 through `ops`, with the API stopped, so a cold start never migrates and no
-key is printed to the logs. In accounts mode a `control` function serves
+key is printed to the logs. `executor` claims and runs extension jobs and
+routine runs (4.5, 4.7); `changes` runs change dispatch, routine matching and
+schedules; `files` runs file storage maintenance; `extensions` serves the
+extension control API and secret broker; `model` is the model proxy, outside
+the database's VPC, the only function holding the Anthropic key; and
+`maintenance` answers "Retainer is updating" during a deploy, with no
+database. In accounts mode a `control` function serves
 `/account` (7.3), and an hourly scheduled run of it removes workspaces whose
 deletion is over 7 days old (2.1); in a container the `control` or `all`
 process does that. With `RETAINER_EDGE_SECRET` set, `api` and `control`
@@ -1213,10 +1266,12 @@ conversation means is made by the agent, with the agent's own model. This keeps
 the core deterministic and testable, keeps full conversations with the agent,
 and keeps a self-hosted Retainer working without a model key.
 
-Extensions are the exception: their code may call a model, with Retainer's key,
-through the model proxy (docs/specs/extensions-model-calls.md). Without a key
-the proxy answers `503 model_unavailable`, and each extension works without a
-model.
+Extensions and routines are the exceptions: their code may call a model, with
+Retainer's key, through the model proxy (docs/specs/extensions-model-calls.md).
+A routine gets a model only when its manifest says so, within a daily cap per
+workspace (`RETAINER_ROUTINE_MODEL_CALLS_PER_DAY`, 1,000 by default). Without a
+key the proxy answers `503 model_unavailable`, and each extension works without
+a model.
 
 ---
 
@@ -1303,6 +1358,37 @@ the workspace grant intact; hard user deletion can remove library refresh tokens
 An admin disconnects it in Extensions, deleting its library reference and tokens.
 Person-bound MCP authorization and membership rules remain separate (7.3).
 
+### 4.7 Routines
+
+A routine is a workspace's own standing instruction: a trigger, an optional
+condition and TypeScript code that a builder agent wrote from a person's
+description, approved by an admin
+([routines spec](docs/specs/routines.md)). Retainer never runs that code
+itself.
+
+- **Matching is data only.** Each routine reads the change feed with its own
+  cursor, set to the feed's head at approval, so it never runs on past
+  events. A scheduler fires time triggers once per due time
+  (`routine_firings`). Matching queues a run; the run sees the record as it is
+  when it starts, so rapid edits fold into one run.
+- **Running.** The routine executor claims due runs under a lease, checks the
+  condition and the holds (a paused routine, `oncePerRecord`, a changed tool
+  contract), then starts the first-party runner bundle (`packages/runner`) in
+  a fresh, closed process with no files, environment or network of its own.
+  In Compose that is a runner container; on the hosted service the `executor`
+  function polls routines beside extension jobs.
+- **Authority.** The run token is bound to one run, has agent rank and can
+  call only the tools its manifest lists. Every read and effect goes through
+  the API under the write rules (2), so a routine writes as an agent.
+- **Effects are numbered.** Each write, tool call and model call is recorded
+  by run and position. A retry replays the recorded results, so nothing
+  happens twice in Retainer, and ends as `diverged` if it takes another path.
+  Delivery is at least once; an outside effect repeats only if its tool
+  ignores the call's key.
+- After three failed runs in a row the routine pauses. `forget` clears
+  routine content (2.1), and a merge moves runs and firings to the survivor
+  (`routine-runtime/merge.ts`).
+
 ## 5. Read paths
 
 | Operation                          | What it returns                                                                                                                                    |
@@ -1311,7 +1397,7 @@ Person-bound MCP authorization and membership rules remain separate (7.3).
 | `query_records`                    | Structured filter, sort and pagination over one object; for an event type, its built-in columns and `linked`; `event` for every type at once (1.3) |
 | `get_record`                       | One record with its fields and links; an event also with its built-in columns, participants and `about`                                            |
 | `search`                           | Keyword search (Postgres full-text) across records, events and facts                                                                               |
-| `get_context(record, tokenBudget)` | A ready-to-use pack: key fields, current facts, open tasks, recent events, fitted to the budget                                                    |
+| `get_context(record, tokenBudget)` | A ready-to-use pack: current fields, linked records, facts and recent events, fitted to the budget                                                 |
 | `get_timeline(record, filters)`    | The record's history, newest first: events, asserted field values and facts (6.2)                                                                  |
 
 `builtIns` lists facts, apart from `objects`, so a person reading the
@@ -1343,18 +1429,23 @@ folding). No embeddings, no BM25 extension.
 
 #### What is indexed
 
-| Source    | Search text                                                                                                                                     | Column and index                                     |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `records` | Values of `is_searchable` fields, plus the domain of each email and link; the label field (usually the name, an event's title) weighted highest | `search tsvector`, GIN on `(workspace_id, search)`   |
-| `records` | The label field as plain text, e.g. "Dana Levi"                                                                                                 | `label text`, trigram GIN on `(workspace_id, label)` |
-| `facts`   | `content`                                                                                                                                       | `search tsvector`, GIN on `(workspace_id, search)`   |
+| Source         | Search text                                                                                                                                     | Column and index                                     |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `records`      | Values of `is_searchable` fields, plus the domain of each email and link; the label field (usually the name, an event's title) weighted highest | `search tsvector`, GIN on `(workspace_id, search)`   |
+| `records`      | The label field as plain text, e.g. "Dana Levi"                                                                                                 | `label text`, trigram GIN on `(workspace_id, label)` |
+| `facts`        | `content`                                                                                                                                       | `search tsvector`, GIN on `(workspace_id, search)`   |
+| `event_bodies` | An event's full text (1.3)                                                                                                                      | `search tsvector`, GIN on `(workspace_id, search)`   |
 
 The server computes every `search` and `label` value in the same
 transaction that writes the row (for records, the one that recomputes
 `records.data`). They are not Postgres generated columns, because which
 record fields are searchable lives in schema metadata. Events are records,
 so they share the records index; an event's title and summary are always
-searchable (1.3). Each fact carries its `record_id` and each event hit its
+searchable (1.3). An event's full text has its own vector in `event_bodies`,
+written with the body; search matches it too, and a hit found only there
+says `match: "content"`. A thread is found by any of its messages and
+shown as its newest event. Title and summary matches rank above
+full-text-only matches. Each fact carries its `record_id` and each event hit its
 linked record IDs (possibly none or several), so a hit on a fact or event
 also points to records.
 
@@ -1462,6 +1553,7 @@ composes `search`, `query_records` and `get_context` with its own model.
 | `GET /v1/records/:id/events`                      | Paginated events attached to a record, newest first, each with `via`; `link` narrows to participant, about or field (1.3)               |
 | `GET /v1/assertions/:id`                          | One assertion, including status and review details                                                                                      |
 | `GET /v1/events/:id/claims`                       | Paginated assertions and facts citing an event                                                                                          |
+| `GET /v1/records/:id/linked`                      | Paginated linked records across entity objects, with per-object totals and an optional `object` filter                                  |
 | `GET /v1/records/:id/context`                     | Context pack                                                                                                                            |
 | `GET /v1/records/:id/timeline`                    | The record's timeline (6.2): `types`, `fields`, `eventTypes` (comma-separated), `from`, `to`, `limit`, `cursor`                         |
 | `POST /v1/records/:id/merge`                      | Merge another record into this one                                                                                                      |
@@ -1481,16 +1573,28 @@ composes `search`, `query_records` and `get_context` with its own model.
 | `DELETE /v1/events/:id/participants/:pid`         | Remove a participant (a person only)                                                                                                    |
 | `DELETE /v1/events/:id/about/:recordId`           | Remove an `about` record (a person only)                                                                                                |
 | `POST /v1/search`                                 | Keyword search (5.1)                                                                                                                    |
+| `POST /v1/feed/query`                             | The workspace's Home feed, a read projection of recent changes (FRONTEND.md 5.3c)                                                       |
+| `GET /v1/changes` · `/:position`                  | The change feed: committed changes in order, for extensions, routines and outside agents (extensions spec §9.4)                         |
+| `POST /v1/records/me/forget`                      | Clear the caller's own personal memory ("Clear all", 1.3)                                                                               |
+| `PUT /v1/workspace/time-zone`                     | Set the workspace's IANA time zone, used by routine time triggers (`admin`)                                                             |
+| `GET /v1/events/:id/content`                      | The full text behind an event (an email's body, a transcript), or its whole thread (1.3)                                                |
+| `/v1/files/*`                                     | Upload intents, finalize, metadata, short-lived downloads and erasure status (docs/files.md)                                            |
+| `/v1/extensions/*`                                | Install, approve, configure, connect, keys, runs and source imports; `runtime/*` serves runs and the model proxy                        |
+| `/v1/routines/*`                                  | Build, validate, preview, approve, test, pause and run routines; `runtime/*` serves routine runs (routines spec)                        |
 
 Web sign-in and sign-out use `POST` and `DELETE /auth/session`, outside
-`/v1`; see section 7 for cookie and CSRF rules. `GET /health`, also outside
-`/v1` and needing no key, reports the version and database status (503
-when the database is unreachable). Record reads optionally include
+`/v1`; see section 7 for cookie and CSRF rules. Also outside `/v1`:
+`POST /extensions/hooks/…` receives providers' webhooks (extensions spec
+§9.3), `/mcp` and `/mcp/setup` (6.2), `/.well-known/oauth-protected-resource`,
+`/account` in accounts mode (7.3) and the web app at `/app`. `GET /health`,
+also outside `/v1` and needing no key, reports the version and database status
+(503 when the database is unreachable). Record reads optionally include
 winning provenance, pending previews and relation references. Review responses
 include totals and separate cursors for each collection (FRONTEND.md 9.1).
 
 An OpenAPI document generated per workspace from its schema is planned but
-not built yet; docs/rest-api.md lists every route.
+not built yet. docs/rest-api.md lists the core routes; files, extensions and
+routines are described in docs/files.md and their specs.
 
 ### 6.2 MCP
 
@@ -1498,7 +1602,7 @@ Hosted on the API server at `/mcp` (Streamable HTTP). `@retainer/mcp` is a
 small stdio bridge for local clients that only speak stdio. In accounts mode,
 clients that cannot use an API key, such as Claude's web app, connect over
 OAuth (7.3); person OAuth tokens target `/mcp`, while separately approved
-installation OAuth tokens target `/v1` (4.5).
+installation OAuth tokens target `/v1` (4.6).
 
 Tools are generic, not one per object. Custom objects would otherwise grow
 the tool list without limit and break clients' tool caching.
@@ -1508,6 +1612,16 @@ the tool list without limit and break clients' tool caching.
 `log_event`, `remember`, `propose_schema_change`, `move_events`. Events are listed with
 `query_records` on their type, or on `event` for every type at once, so no
 tool is needed per event type.
+
+Beside these core tools: `list_changes` and `get_change` read the change
+feed; `create_file_upload`, `finalize_file`, `get_file` and `download_file`
+handle files (docs/files.md); `list_extensions`, `get_extension`,
+`list_extension_connections`, `list_extension_runs` and `preview_extension`
+inspect extensions; `get_event_content` reads the full text behind an event
+(1.3); and, when routines are available, `list_routines`, `get_routine`,
+`get_routine_capabilities`, `validate_routine`, `preview_routine`,
+`get_routine_preview`, `propose_routine` and `get_routine_job` build and
+inspect routines (4.7).
 
 `remember`, `get_context` and `get_timeline` also take `workspace` and `me`
 for workspace and personal memory (1.3). `describe_schema` lists them as the
@@ -1674,6 +1788,19 @@ same idempotency key returns the same response.
 in this shape, newest `validFrom` first, listing only live sources. It pages
 with `limit` (default 100, at most 500) and `cursor`.
 
+`GET /v1/records/:id/linked` returns `{ items, totals, nextCursor }`.
+Each item has `id`, `title`, `object`, `via` (the relation field's API
+name and owning side in `{ field, on }`), and `selects` (stored select
+values by field API name). The read follows active relations in either direction and includes each readable
+entity once, excluding the anchor itself and deleted, merged and private
+records. It sorts by `updated_at` and ID, newest first. Use `object` with a
+singular or plural entity API name to narrow the page and its per-object
+`totals`. Unknown names return 404 and event types return 400. The
+default `limit` is 50 and the maximum is 200. Pass `nextCursor` back with
+the same filter to continue. Context fits a prefix of one budget-sized page
+and groups it by object, with each group's full count and the number of
+omitted records across all objects in `omitted.linkedRecords`.
+
 ```
 → get_context { "record": "rec_5a1…", "tokenBudget": 1500 }
 ← { "record": {
@@ -1681,14 +1808,18 @@ with `limit` (default 100, at most 500) and `cursor`.
       "fields": {
         "jobTitle": { "value": "Head of Data", "writtenBy": { "type": "user", … }, "observedAt": "…" },
         … } },
-    "openTasks": [ { "id": "rec_c40…", "title": "Send SSO docs to Noa", "status": "todo", "dueDate": "2026-11-04" } ],
+    "linkedRecords": [
+      { "object": "task", "total": 1, "items": [
+        { "id": "rec_c40…", "title": "Send SSO docs to Noa", "via": { "field": "person", "on": "linked" }, "selects": { "status": "todo" } }
+      ] }
+    ],
     "facts": [ { "id": "fct_1e2…", "content": "Needs SSO before agreeing to a pilot",
                  "validFrom": "2026-10-21T09:00:00Z", "writtenBy": { "type": "agent", … },
                  "sources": [ "evt_9d0…" ] } ],
     "recentEvents": [ { "id": "evt_9d0…", "type": "conversation", "occurredAt": "2026-10-21T09:00:00Z",
                         "title": "Globex data-platform demo", "summary": "…",
                         "via": { "kind": "participant" } } ],
-    "omitted": { "openTasks": 0, "facts": 4, "recentEvents": 11 },
+    "omitted": { "linkedRecords": 0, "facts": 4, "recentEvents": 11 },
     "tokenEstimate": 1380 }
 ```
 
@@ -1697,11 +1828,10 @@ A context pack is assembled by fixed rules (5):
 - The record's current field values are always included, each with who
   wrote it and when it was observed, so a value is never mistaken for a
   stated fact. The budget applies to the sections after it.
-- The other sections fill in this order until the budget is spent: open
-  tasks (tasks linked to the record through an active relation field whose
-  status is not `done`, earliest due date first, undated last), current facts (not superseded or retracted,
+- The other sections take one item per round until the budget is spent:
+  linked records, current facts (not superseded or retracted,
   newest `validFrom` first; a fact resting only on an internal note is
-  marked `internal: true`), then recent events in the record's history
+  marked `internal: true`), and recent events in the record's history
   (attached directly or rolled up, newest first, each once with `via`, 1.3,
   without internal notes, whose text is already a fact). Items
   are never cut mid-text; a section stops at the last whole item that fits.
@@ -1835,8 +1965,9 @@ docker compose exec retainer retainer key revoke <key-id>
 people create workspaces and agent keys in the web app (7.3), and the CLI also
 manages organizations and members (`org create`, `org list`, `member add`,
 `workspace move`, and `--org` on `workspace create`), quotas (`org limit`) and
-deleted workspaces (`workspace restore`, `workspace purge`). There is no
-instance-wide admin HTTP API.
+deleted workspaces (`workspace restore`, `workspace purge`). `model usage`
+reports daily model calls and `extension connections` reports member
+connection health. There is no instance-wide admin HTTP API.
 
 ### 7.2 Per-record access
 
@@ -1863,7 +1994,14 @@ enforcement. Until then, new code keeps that path open:
    return the public signing keys and a connected app's person, role and
    workspace, `retainer_workspaces_due` (4.2), which returns workspace IDs
    only, and `retainer_erase_private_derivatives`, which `forget` calls to
-   delete private copies of what it erases and which returns nothing. Extension
+   delete private copies of what it erases and which returns nothing.
+   Routines add `retainer_routine_admin` (who may approve) and
+   `retainer_set_workspace_time_zone`; standalone installations add
+   `retainer_lookup_extension_key` and `retainer_oauth_reference` (4.6).
+   Discovery functions that return due IDs (extension jobs and changes,
+   routine runs, schedules and retention, file maintenance, change retention
+   and model-call pruning) are granted only to the `retainer_executor` role.
+   Extension
    capabilities adopt/retire encrypted secrets, expose bounded secret metadata,
    discover due identifiers, arbitrate execution slots and queue file deletion.
    Webhook routing resolves only one candidate from an opaque binding or a
@@ -1956,8 +2094,10 @@ routes under `/account` take a session cookie only, so an agent's key can never
 create a key, a member or a workspace.
 
 **Where it runs.** On AWS, a `control` function loads Better Auth and serves
-`/account` and the OAuth metadata. It is the only function with internet, through a
-NAT gateway, because Google and Microsoft sign-in and OAuth client metadata need it. The `api`,
+`/account` and the OAuth metadata. It is the only function inside the
+database's VPC with internet, through a NAT gateway, because Google and
+Microsoft sign-in and OAuth client metadata need it. The `model` function (4)
+runs outside the VPC, with no database access. The `api`,
 `consolidate` and `ops` functions keep no route to the internet, and `api` does not
 import Better Auth: only an `accounts` module does, and only `index` and
 `lambda/control.ts` import that. In a container with `RETAINER_ROLE=all`, everything runs in one process.
@@ -2006,15 +2146,18 @@ a pool of its own.
 
 ## 8. Repository layout
 
-| Path              | License  | Contents                                                |
-| ----------------- | -------- | ------------------------------------------------------- |
-| `packages/shared` | MIT      | Field types, composite shapes, actor, schema types      |
-| `packages/server` | AGPL-3.0 | API, MCP endpoint, workers, schema engine, database     |
-| `packages/sdk`    | MIT      | TypeScript client                                       |
-| `packages/web`    | MIT      | Optional static React app for people                    |
-| `packages/mcp`    | MIT      | stdio bridge to the hosted MCP endpoint                 |
-| `docker/`         | AGPL-3.0 | Dockerfile and Compose file                             |
-| `docs/`           | AGPL-3.0 | Guides, plus design records in `specs/` and `research/` |
+| Path                 | License  | Contents                                                                 |
+| -------------------- | -------- | ------------------------------------------------------------------------ |
+| `packages/shared`    | MIT      | Field types, composite shapes, actor, schema types                       |
+| `packages/server`    | AGPL-3.0 | API, MCP endpoint, workers, schema engine, database                      |
+| `packages/sdk`       | MIT      | TypeScript client                                                        |
+| `packages/web`       | MIT      | Optional static React app for people                                     |
+| `packages/mcp`       | MIT      | stdio bridge to the hosted MCP endpoint                                  |
+| `packages/extension` | MIT      | Build-time contracts for extensions (`@retainer/extension`)              |
+| `packages/runner`    | MIT      | Runs first-party extension functions and routine code in fresh processes |
+| `plugins/retainer`   | MIT      | Claude Code plugin: the MCP server and a Stop hook that logs from chats  |
+| `docker/`            | AGPL-3.0 | Dockerfile and Compose file                                              |
+| `docs/`              | AGPL-3.0 | Guides, plus design records in `specs/` and `research/`                  |
 
 ### Server layers
 
@@ -2043,7 +2186,8 @@ Retainer's core never calls a model.
 
 ## 9. Stack
 
-TypeScript on Node 26, pnpm workspaces, Hono, postgres.js with plain SQL,
+TypeScript on Node 26 (the extension and routine runner image uses Node
+24), pnpm workspaces, Hono, postgres.js with plain SQL,
 Drizzle for table definitions and drizzle-kit migrations, Zod, the
 official MCP TypeScript SDK, and Better Auth with its JWT, MCP and client
 metadata plugins for signing people in and for OAuth (accounts mode only, in the
@@ -2097,8 +2241,8 @@ model inside it, so every layer except 5 is deterministic.
 Browser tests use Playwright against the built app and real Postgres, with a
 fresh database cloned from a migrated template per test. Run `pnpm build`
 then `pnpm test:web`; CI runs these beside the other layers, in parallel.
-The Docker tests (extension sandbox, extensions and file storage in Compose)
-run locally with `pnpm test:docker` and in a release, not on every push.
+The Docker tests (extension sandbox; extensions, routines and file storage in
+Compose) run locally with `pnpm test:docker` and in a release, not on every push.
 
 ### Rules
 
@@ -2117,10 +2261,11 @@ run locally with `pnpm test:docker` and in a release, not on every push.
 
 ### CI
 
-A GitHub Actions workflow runs on every PR and on `main`: lint, build,
-typecheck, layers 1–4, then the browser tests, with Postgres as a service
-container. Pushing a `v*` tag runs the release workflow, which reruns CI
-before publishing (docs/releasing.md). CI needs no API keys: tests fake the
+A GitHub Actions workflow runs on every PR and push to `main` that changes
+more than Markdown: lint and typecheck, layers 1–4 and the browser tests run
+as parallel jobs, with Postgres as a service container. Pushing a `v*` tag
+runs the release workflow, which reruns CI with the Docker tests before
+publishing (docs/releasing.md). CI needs no API keys: tests fake the
 model provider at the HTTP boundary.
 
 PRs changing database migrations also run an advisory [migration compatibility

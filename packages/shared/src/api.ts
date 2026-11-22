@@ -163,14 +163,14 @@ export type PresentedRecord = {
   counts?: RecordCounts;
 };
 /**
- * How many items a record's tabs hold. `facts` and `openTasks` are for
- * entities, `claims` for events. Activity has no count: gathering a wide
+ * How many items a record's tabs hold. `linked` is shown on
+ * entities and `claims` on events. Activity has no count: gathering a wide
  * rollup fan-out to count it is what the rollup query avoids (1.3).
  */
 export type RecordCounts = {
   comments: number;
   facts: number;
-  openTasks: number;
+  linked: number;
   claims: number;
 };
 /**
@@ -393,8 +393,11 @@ export type Participant = MatchedParticipant | UnmatchedParticipant;
 export type Participants = { matched: MatchedParticipant[]; unmatched: UnmatchedParticipant[] };
 /** An event record's built-in columns and links (1.3), beside its fields. */
 export type EventDetails = {
-  /** This event is immutable message evidence in an imported Gmail conversation. */
-  gmail?: true;
+  /**
+   * The event has full text beyond its summary (an email's body, a
+   * transcript): read it with `GET /v1/events/:id/content` or get_event_content.
+   */
+  content?: true;
   /** Managed evidence is immutable; explicit reads preserve superseded citations. */
   source?: {
     sourceItemId: string;
@@ -789,6 +792,15 @@ export type EventHit = {
   summary: string | null;
   /** Live records linked to it, as participants or `about`; possibly none or several. */
   records: string[];
+  /** "content" when the words matched only the event's full text, not its title or summary. */
+  match?: 'content';
+};
+/** The full text behind an event, oldest part first (1.3). */
+export type EventContentPage = {
+  /** One part for a standalone event; each message, for a conversation thread. */
+  parts: { id: string; occurredAt: string; originalDate: string | null; text: string }[];
+  /** Pass as `after` for the next page; null on the last page. */
+  nextAfter: string | null;
 };
 /** Each list is ranked on its own; scores are not comparable across lists. */
 export type SearchResult = {
@@ -802,11 +814,24 @@ export type SearchResult = {
 export type ContextInput = { tokenBudget?: number };
 /** A current field value with who wrote it and when it was true at the source. */
 export type ContextField = { value: unknown; writtenBy: Actor; observedAt: string };
-export type OpenTask = {
+export type LinkedRecord = {
   id: string;
   title: string | null;
-  status: unknown;
-  dueDate: unknown;
+  object: string;
+  /** The relation field's API name and which record owns it. */
+  via: { field: string; on: 'anchor' | 'linked' };
+  selects: Record<string, unknown>;
+};
+export type LinkedRecordPage = {
+  items: LinkedRecord[];
+  nextCursor: string | null;
+  /** Counts by object API name, across all pages for the selected filter. */
+  totals: Record<string, number>;
+};
+export type LinkedRecordGroup = {
+  object: string;
+  total: number;
+  items: Omit<LinkedRecord, 'object'>[];
 };
 export type ContextFact = {
   id: string;
@@ -825,18 +850,18 @@ export type ContextPack = {
     label: string | null;
     fields: Record<string, ContextField>;
   };
-  openTasks: OpenTask[];
+  linkedRecords: LinkedRecordGroup[];
   facts: ContextFact[];
   /** Events attached to the record, newest first, each with how (`via`). */
   recentEvents: EventItem[];
   /** Items of each section left out to fit the budget. */
-  omitted: { openTasks: number; facts: number; recentEvents: number };
+  omitted: { linkedRecords: number; facts: number; recentEvents: number };
   tokenEstimate: number;
 };
 /**
  * `get_context("workspace")` and `get_context("me")` (personal memory spec
  * 4.4): a profile's current facts, newest first, fitted to the budget. It
- * has no fields, tasks or events.
+ * contains facts only.
  */
 export type ProfileContextPack = {
   profile: ProfileAlias;

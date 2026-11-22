@@ -13,6 +13,7 @@ import {
   nangoRequest,
   readResponse,
 } from '@retainer/extension/nango-gmail';
+import { EVENT_CONTENT_MAX } from '@retainer/shared';
 import { z } from 'zod';
 import {
   excludedGmailMessage,
@@ -218,7 +219,7 @@ export class GmailProvider {
     if (excludedGmailMessage(full.labelIds)) return { kind: 'ineligible' as const };
     const body = gmailMessageText(full.payload);
     if (!body) return { kind: 'no_text' as const };
-    if (body.length > 256_000) throw new GmailProviderError('provider_content_too_large');
+    if (body.length > EVENT_CONTENT_MAX) throw new GmailProviderError('provider_content_too_large');
     return {
       kind: 'ok' as const,
       value: {

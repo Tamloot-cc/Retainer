@@ -772,11 +772,12 @@ export async function softDeleteRecord(
 ): Promise<string[]> {
   const rootId = await resolveRecordId(tx, context.workspaceId, id);
   // Collect first, then lock everything in sorted order.
-  const gmailEvents = await tx<{ id: string }[]>`
-    select m.event_id as id from gmail_messages m where m.workspace_id=${context.workspaceId}
-      and m.thread_group_id=(select thread_group_id from gmail_messages where event_id=${rootId})`;
+  // Deleting one event of a thread deletes the whole conversation.
+  const threadEvents = await tx<{ id: string }[]>`
+    select m.event_id as id from event_bodies m where m.workspace_id=${context.workspaceId}
+      and m.thread_id=(select thread_id from event_bodies where event_id=${rootId})`;
   const sorted = [
-    ...(await cascadeSet(tx, context.schema, [rootId, ...gmailEvents.map((r) => r.id)])),
+    ...(await cascadeSet(tx, context.schema, [rootId, ...threadEvents.map((r) => r.id)])),
   ].sort();
   const locked = await lockRecordsForUpdate(tx, context.workspaceId, sorted);
   const root = locked.find((r) => r.id === rootId);

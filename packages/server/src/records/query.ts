@@ -480,7 +480,8 @@ function decodeCursor(cursor: string | undefined): number {
  * a `where` clause over `records r`. The list and its totals share it, so
  * they always count the same records.
  *
- * Lists show activity: an older message of a Gmail thread is left out. A
+ * Lists show activity: an older event of a thread (an email's earlier
+ * messages) is left out. A
  * routine acts on every live record (routines spec §4.3), so it passes
  * `evidence: 'source'`, which leaves out only superseded revisions.
  */

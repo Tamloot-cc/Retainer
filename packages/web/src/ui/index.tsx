@@ -535,19 +535,17 @@ export function Tabs({
 }
 /**
  * Links to the record page, or with `inSheet` opens it in the current list's sheet
- * (`?record=`). `struck` is for a record that no longer needs doing, such as a done task.
+ * (`?record=`).
  */
 export function RecordLink({
   id,
   inSheet = false,
-  struck = false,
   avatar,
   wrap = false,
   children,
 }: {
   id: string;
   inSheet?: boolean;
-  struck?: boolean;
   avatar?: ReactNode;
   /** Show the full name over multiple lines instead of truncating. */
   wrap?: boolean;
@@ -557,7 +555,7 @@ export function RecordLink({
   const className = cn(
     'inline-flex min-w-0 max-w-full items-center gap-1.5 font-medium',
     avatar ? 'group/record' : textClassName,
-    struck ? 'text-muted-foreground line-through' : !avatar && 'hover:underline',
+    !avatar && 'hover:underline',
   );
   const content = avatar ? (
     <>

@@ -13,6 +13,7 @@ import { AppError, forbidden, notFound } from '../errors.js';
 import { admitCaller, admitRun } from '../extension-runtime/admission.js';
 import { cancelRuns, lockExtension } from '../extension-runtime/locks.js';
 import { requestHash } from '../idempotency.js';
+import { storeEventBody } from '../memory/event-bodies.js';
 import { logEvent, retractEventClaims } from '../memory/events.js';
 import { isEventIdentitySuppressed, isSuppressed, suppressedOf } from '../privacy/suppression.js';
 import { withRead, withWrite } from '../records/service.js';
@@ -598,6 +599,8 @@ export class Sources {
       occurredAt: new Date(input.event.occurredAt).toISOString(),
       title: input.event.title,
       summary: input.event.summary ?? '',
+      // stableJson drops an undefined content, so events without one keep their digests.
+      content: input.event.content,
       fields: canonicalFields,
       participants: people,
       about: [...new Set(input.event.about)].sort(),
@@ -831,6 +834,13 @@ export class Sources {
               about: input.event.about,
             },
           );
+          if (input.event.content !== undefined)
+            await storeEventBody(tx, caller.workspaceId, {
+              eventId: event.id,
+              threadId: null,
+              occurredAt: new Date(input.event.occurredAt),
+              body: input.event.content,
+            });
           if (current) {
             await context.changes?.capture(tx, current.event_id, 'supersede');
             await tx`update source_revisions set is_current=false where id=${current.id}`;

@@ -242,7 +242,6 @@ function validateSearch(raw: Record<string, unknown>): ViewSearch {
     'field',
     'status',
     'fields',
-    'tasks',
     'eventTypes',
     'q',
     'channel',

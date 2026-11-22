@@ -2504,26 +2504,37 @@ export const sourceRevisions = pgTable(
     }),
   ],
 ).enableRLS();
-/** Immutable Gmail message evidence. Messages in a thread have one activity entry. */
-export const gmailMessages = pgTable(
-  'gmail_messages',
+/**
+ * The full text behind an event, kept out of `records.data` so a long email or
+ * transcript never truncates the event's summary (1.3). Any source can store
+ * one: a Gmail message, a meeting transcript. Events that share a `thread_id`
+ * read as one conversation, oldest first, and activity shows the newest one.
+ * Immutable: a changed source logs a new event with a new body.
+ */
+export const eventBodies = pgTable(
+  'event_bodies',
   {
     eventId: uuid('event_id').primaryKey(),
     workspaceId: workspaceId(),
-    threadGroupId: uuid('thread_group_id').notNull(),
+    threadId: uuid('thread_id'),
     occurredAt: timestamptz('occurred_at').notNull(),
+    /** The date the source itself reported, when it differs from occurred_at. */
     originalDate: timestamptz('original_date'),
     body: text('body').notNull(),
+    search: tsvector('search').notNull(),
   },
   (t) => [
-    unique('gmail_messages_ws_id_uq').on(t.workspaceId, t.eventId),
+    unique('event_bodies_ws_id_uq').on(t.workspaceId, t.eventId),
     tenantFk(
-      'gmail_messages_event_fk',
+      'event_bodies_event_fk',
       [t.workspaceId, t.eventId],
       [records.workspaceId, records.id],
     ),
-    index('gmail_messages_thread_idx').on(t.workspaceId, t.threadGroupId, t.occurredAt, t.eventId),
-    pgPolicy('gmail_messages_workspace', {
+    index('event_bodies_thread_idx')
+      .on(t.workspaceId, t.threadId, t.occurredAt, t.eventId)
+      .where(sql`${t.threadId} is not null`),
+    index('event_bodies_search_gin').using('gin', t.workspaceId, t.search),
+    pgPolicy('event_bodies_workspace', {
       for: 'all',
       to: 'retainer_app',
       using: sql`${t.workspaceId}=nullif(current_setting('app.workspace_id',true),'')::uuid`,
@@ -2560,7 +2571,7 @@ export const gmailDeliveries = pgTable(
     tenantFk(
       'gmail_deliveries_message_fk',
       [t.workspaceId, t.messageId],
-      [gmailMessages.workspaceId, gmailMessages.eventId],
+      [eventBodies.workspaceId, eventBodies.eventId],
     ),
     index('gmail_deliveries_connection_idx').on(t.connectionId),
     index('gmail_deliveries_thread_idx').on(t.workspaceId, t.connectionId, t.providerThreadId),

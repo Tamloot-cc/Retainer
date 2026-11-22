@@ -177,7 +177,7 @@ export function EventDetailsView({
   const { session } = useWorkspace(),
     client = useQueryClient(),
     apiName = useApiName();
-  const editable = allowEditing && !event.source && !event.gmail;
+  const editable = allowEditing && !event.source && !event.content;
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   /** Runs one link change and refreshes; true when it succeeded. */
@@ -225,7 +225,7 @@ export function EventDetailsView({
         </Notice>
       ) : null}
       {error ? <Notice error>{error}</Notice> : null}
-      {event.gmail ? <GmailMessages eventId={id} /> : null}
+      {event.content ? <EventContent eventId={id} /> : null}
       <PropertyList>
         <Property label="Occurred" apiName={apiName('occurredAt')}>
           {new Date(event.occurredAt).toLocaleString()}
@@ -426,38 +426,39 @@ export function AddAbout({
   );
 }
 
-function GmailMessages({ eventId }: { eventId: string }) {
+/** The full text behind an event: an email thread's messages, or a meeting's transcript. */
+function EventContent({ eventId }: { eventId: string }) {
   const { session } = useWorkspace();
-  const messages = useInfiniteQuery({
-    queryKey: [session.workspace.id, 'gmail-messages', eventId],
+  const content = useInfiniteQuery({
+    queryKey: [session.workspace.id, 'event-content', eventId],
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam, signal }) => api.gmailMessages(eventId, pageParam ?? undefined, signal),
+    queryFn: ({ pageParam, signal }) => api.eventContent(eventId, pageParam ?? undefined, signal),
     getNextPageParam: (page) => page.nextAfter ?? undefined,
   });
-  if (messages.error) return <Notice error>{messages.error.message}</Notice>;
-  if (!messages.data) return <Muted>Loading email messages…</Muted>;
+  if (content.error) return <Notice error>{content.error.message}</Notice>;
+  if (!content.data) return <Muted>Loading the full text…</Muted>;
   return (
     <Stack>
-      <h3 className="font-medium">Email messages</h3>
+      <h3 className="font-medium">Full text</h3>
       <ol className="space-y-4">
-        {messages.data.pages
-          .flatMap((page) => page.messages)
-          .map((message) => (
-            <li key={message.id} className="rounded-md border p-3">
-              <time dateTime={message.originalDate ?? message.occurredAt} className="text-sm">
-                {new Date(message.originalDate ?? message.occurredAt).toLocaleString()}
+        {content.data.pages
+          .flatMap((page) => page.parts)
+          .map((part) => (
+            <li key={part.id} className="rounded-md border p-3">
+              <time dateTime={part.originalDate ?? part.occurredAt} className="text-sm">
+                {new Date(part.originalDate ?? part.occurredAt).toLocaleString()}
               </time>
-              <p className="mt-2 whitespace-pre-wrap break-words text-sm">{message.body}</p>
+              <p className="mt-2 whitespace-pre-wrap break-words text-sm">{part.text}</p>
             </li>
           ))}
       </ol>
-      {messages.hasNextPage ? (
+      {content.hasNextPage ? (
         <Button
           type="button"
-          disabled={messages.isFetchingNextPage}
-          onClick={() => void messages.fetchNextPage()}
+          disabled={content.isFetchingNextPage}
+          onClick={() => void content.fetchNextPage()}
         >
-          Load more messages
+          Load more
         </Button>
       ) : null}
     </Stack>

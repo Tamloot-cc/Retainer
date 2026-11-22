@@ -124,23 +124,19 @@ Check RETAINER_API_KEY.` `retainer-mcp --help` prints its usage and
 Tools are generic, not one per object, so a workspace's custom objects never
 change the tool list.
 
-| Tool                    | What it does                                                                                                                 | Scope          |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| `describe_schema`       | The workspace's objects (entities and event types) and fields, and the built-in facts and comments                           | `read`         |
-| `list_templates`        | Templates and what each would add                                                                                            | `read`         |
-| `apply_template`        | Apply a template to the workspace                                                                                            | `schema:write` |
-| `get_guide`             | Step-by-step instructions for a rare task, e.g. `discover_schema`                                                            | `read`         |
-| `query_records`         | Filter, sort and page the records of one object; for an event type, or `event` for every type, the events linked to a record | `read`         |
-| `get_record`            | One record by ID with its latest comments; merged IDs resolve to the surviving record                                        | `read`         |
-| `list_comments`         | All of a record's comments, which people write for each other; read as context, never cite                                   | `read`         |
-| `search`                | Keyword search across records, events and facts                                                                              | `read`         |
-| `get_context`           | A context pack for one record, fitted to a token budget                                                                      | `read`         |
-| `get_timeline`          | A record's history: events, values asserted for its fields and facts, newest first                                           | `read`         |
-| `upsert_record`         | Create a record, or update one found by `id` or a unique `match`                                                             | `write`        |
-| `log_event`             | Log a conversation (meeting, call, email, chat) or another event type, with who took part and what it is about               | `write`        |
-| `remember`              | Store a plain-language fact about a record, citing an event                                                                  | `write`        |
-| `propose_schema_change` | Add fields or objects (applied at once), or propose destructive changes for a person to approve                              | `schema:write` |
-| `move_events`           | Change the type of logged events, keeping IDs, identity, links and citations; agents run it as a dry run                     | `schema:write` |
+Your MCP client lists every tool with its description and inputs, so this
+page names the groups only. Each tool's scope is checked on every call; a
+missing one returns `forbidden` with the scope it needs.
+
+| Group       | What it covers                                                                              | Scopes                                     |
+| ----------- | ------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Setup       | The workspace's schema, templates and the guides below                                      | `read`, `schema:write` to apply a template |
+| Read        | Search, filter and read records and events, a record's context pack, timeline and comments  | `read`                                     |
+| Write       | Log events, create and update records, remember facts, change the schema                    | `write`, `schema:write` for schema changes |
+| Files       | Upload a file through a signed URL, read a file's details, get a short-lived download link  | `read`, `write`                            |
+| Change feed | Record changes in commit order, for agents that keep a copy in sync                         | `read`                                     |
+| Extensions  | Installed extensions, their connections and runs; preview a mapping for an admin            | `read`, `schema:write` to preview          |
+| Routines    | Check, dry-run and propose a routine for an admin to approve; only on servers with routines | `read`, `write` to propose                 |
 
 `describe_schema` returns `valueFormats`: how to write a value of each field
 type the workspace uses, for example `full_name` as `{ first, last }` and
@@ -307,7 +303,7 @@ Things worth knowing:
   and shows its user. A later sync logs the moved sources as `conversation`
   with the same medium, and they match the moved events.
 - **Reading back.** `get_context` gives the current values (with who wrote
-  each), open tasks, current facts and recent events, rolled-up ones
+  each), linked records grouped by object, current facts and recent events, rolled-up ones
   included (each saying how it is attached, `via`), within
   `tokenBudget` tokens (default 2000, at most 16000). `omitted` counts what
   did not fit.

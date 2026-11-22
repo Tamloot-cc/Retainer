@@ -106,11 +106,11 @@ it('atomically imports, deduplicates across mailboxes and preserves both citatio
   expect(active.status).toBe(200);
   const current = active.body.records;
   expect(current).toHaveLength(1);
-  const page = await h.app.request(`/v1/events/${first.messageId}/gmail-messages`, {
+  const page = await h.app.request(`/v1/events/${first.messageId}/content`, {
     key: h.keys.admin,
   });
   expect(page.status).toBe(200);
-  expect(page.body.messages.map((message: { id: string }) => message.id)).toEqual([
+  expect(page.body.parts.map((part: { id: string }) => part.id)).toEqual([
     first.messageId,
     second.messageId,
   ]);
@@ -124,8 +124,7 @@ it('atomically imports, deduplicates across mailboxes and preserves both citatio
   });
   expect(removed.status).toBe(200);
   expect(
-    (await h.app.request(`/v1/events/${first.messageId}/gmail-messages`, { key: h.keys.admin }))
-      .status,
+    (await h.app.request(`/v1/events/${first.messageId}/content`, { key: h.keys.admin })).status,
   ).toBe(404);
   expect(await h.save(two, { messageId: 'late-message', threadId: 'thread-b' })).toEqual({
     kind: 'removed',
@@ -143,7 +142,6 @@ it('checks targeted matches during the write and isolates Gmail evidence across 
   if (result.kind !== 'imported') throw new Error('missing evidence');
   const other = await setup();
   expect(
-    (await h.app.request(`/v1/events/${result.eventId}/gmail-messages`, { key: other.keys.admin }))
-      .status,
+    (await h.app.request(`/v1/events/${result.eventId}/content`, { key: other.keys.admin })).status,
   ).toBe(404);
 });

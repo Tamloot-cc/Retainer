@@ -1,0 +1,896 @@
+<!doctype html><html lang="en"><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Retainer Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one column, top-down. Each section = one-line lead + a visual. Same visual language as the Retainer Extensions page: Retainer blue, extension/sandbox green, outside grey, amber for things that need attention. */
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --fg: #1b2230; --muted: #5b6577; --line: #d9dee7;
+  --accent: #2d5bd0;
+  --trusted: #e7eefc; --trusted-line: #8fa9e6;
+  --ext: #e5f4ec; --ext-line: #79bf98;
+  --outside: #eef0f3; --outside-line: #a9b1bf;
+  --key: #b86e00; --key-bg: #fff2d9;
+  --good: #1f7a4a; --bad: #b3342b; --bad-bg: #fbe7e5; --code-bg: #eef1f6;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161d; --surface: #1a1f28; --fg: #e4e8ef; --muted: #9aa4b5; --line: #2e3542;
+    --accent: #7ea2ff; --trusted: #1c2943; --trusted-line: #4766a8; --ext: #17302a; --ext-line: #3f8a64;
+    --outside: #232833; --outside-line: #566073; --key: #f0b54a; --key-bg: #3a2c12;
+    --good: #5fcf8f; --bad: #ff7d72; --bad-bg: #3a1c1a; --code-bg: #20262f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161d; --surface: #1a1f28; --fg: #e4e8ef; --muted: #9aa4b5; --line: #2e3542;
+  --accent: #7ea2ff; --trusted: #1c2943; --trusted-line: #4766a8; --ext: #17302a; --ext-line: #3f8a64;
+  --outside: #232833; --outside-line: #566073; --key: #f0b54a; --key-bg: #3a2c12;
+  --good: #5fcf8f; --bad: #ff7d72; --bad-bg: #3a1c1a; --code-bg: #20262f; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 16px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 80px;
+}
+main { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 64px; }
+.prose { max-width: 68ch; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 2.1rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.5rem; font-weight: 600; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; }
+section { display: flex; flex-direction: column; gap: 18px; }
+.eyebrow { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.lead { font-size: 1.1rem; color: var(--muted); }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+p code, li code, td code, dd code, small code, .node code, .note code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+a { color: var(--accent); }
+
+.map { display: flex; flex-wrap: wrap; gap: 8px; }
+.map a { text-decoration: none; font-size: 0.9rem; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--fg); }
+.map a:hover, .map a:focus-visible { border-color: var(--accent); outline: none; }
+.map a.warn { border-color: var(--key); color: var(--key); }
+
+/* zoom levels */
+.zoom { display: flex; gap: 6px; flex-wrap: wrap; font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+.zoom span { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.zoom span.on { color: var(--surface); background: var(--accent); border-color: var(--accent); }
+
+/* diagrams */
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.scroll { overflow-x: auto; }
+.figure svg { display: block; width: 100%; height: auto; }
+.scroll svg { min-width: 760px; }
+.caption { font-size: 0.85rem; color: var(--muted); }
+svg text { font-family: var(--sans); fill: var(--fg); font-size: 13px; }
+svg .small { font-size: 11px; fill: var(--muted); }
+svg .mono { font-family: var(--mono); font-size: 11px; fill: var(--fg); }
+svg .zlabel { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; fill: var(--muted); }
+svg .b-trusted { fill: var(--surface); stroke: var(--trusted-line); stroke-width: 1.5; }
+svg .b-ext { fill: var(--surface); stroke: var(--ext-line); stroke-width: 1.5; }
+svg .b-out { fill: var(--surface); stroke: var(--outside-line); stroke-width: 1.5; }
+svg .b-key { fill: var(--key-bg); stroke: var(--key); stroke-width: 1.6; }
+svg .b-db { fill: var(--surface); stroke: var(--accent); stroke-width: 1.8; }
+svg .z-trusted { fill: var(--trusted); stroke: none; }
+svg .z-ext { fill: var(--ext); stroke: none; }
+svg .z-out { fill: var(--outside); stroke: none; }
+svg .arrow { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+svg .arrow-acc { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+svg .arrow-key { stroke: var(--key); stroke-width: 1.8; fill: none; stroke-dasharray: 6 4; }
+svg .life { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 3 4; }
+svg .head { fill: var(--muted); }
+svg .head-acc { fill: var(--accent); }
+svg .head-key { fill: var(--key); }
+svg .acc { fill: var(--accent); font-weight: 600; }
+svg .good { fill: var(--good); font-weight: 600; }
+svg .keytxt { fill: var(--key); font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.82rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+
+/* layered stack */
+.stack { display: flex; flex-direction: column; gap: 6px; }
+.layer { display: grid; grid-template-columns: minmax(0, 11rem) minmax(0, 1fr); gap: 12px; align-items: center; background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 10px 14px; min-width: 0; }
+.layer .name { font-weight: 600; display: flex; flex-direction: column; gap: 2px; }
+.layer .name small { font-weight: 400; font-size: 0.78rem; color: var(--muted); }
+.layer .tags { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.tag { font-family: var(--mono); font-size: 0.74rem; padding: 1px 7px; border-radius: 5px; background: var(--code-bg); border: 1px solid var(--line); }
+.tag.new { border-color: var(--key); background: var(--key-bg); color: var(--key); }
+.layer.l-meta { border-color: var(--trusted-line); }
+.layer.l-rec { border-color: var(--accent); }
+.layer.l-mem { border-color: var(--ext-line); }
+@media (max-width: 560px) { .layer { grid-template-columns: 1fr; } }
+
+/* step track */
+.track { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(var(--n, 5), minmax(0, 1fr)); gap: 8px; }
+.track li { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.track li.t { border-color: var(--trusted-line); }
+.track li.k { border-color: var(--key); background: var(--key-bg); }
+.track li.e { border-color: var(--ext-line); }
+.track .n { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+.track h3 { font-size: 0.95rem; }
+.track p { font-size: 0.82rem; color: var(--muted); }
+@media (max-width: 860px) { .track { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 460px) { .track { grid-template-columns: 1fr; } }
+
+/* chains */
+.chain { display: flex; align-items: stretch; flex-wrap: wrap; gap: 6px; }
+.node { flex: 1 1 130px; min-width: 0; border-radius: 8px; padding: 8px 10px; font-size: 0.85rem; border: 1.5px solid; display: flex; flex-direction: column; gap: 3px; }
+.node small { color: var(--muted); font-size: 0.75rem; line-height: 1.35; }
+.node.t { background: var(--trusted); border-color: var(--trusted-line); }
+.node.e { background: var(--ext); border-color: var(--ext-line); }
+.node.o { background: var(--outside); border-color: var(--outside-line); }
+.node.k { background: var(--key-bg); border-color: var(--key); }
+.arr { align-self: center; color: var(--muted); font-family: var(--mono); flex: 0 0 auto; }
+
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .two, .three { grid-template-columns: 1fr; } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.panel .sub { font-size: 0.85rem; color: var(--muted); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.card .q { font-family: var(--mono); font-size: 0.74rem; color: var(--accent); letter-spacing: 0.04em; text-transform: uppercase; }
+.card p { font-size: 0.88rem; color: var(--muted); }
+
+.ticks { list-style: none; padding: 0; gap: 7px; font-size: 0.92rem; }
+.ticks li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 6px; }
+.ticks li::before { font-weight: 700; }
+.ticks.yes li::before { content: "✓"; color: var(--good); }
+.ticks.no li::before { content: "✕"; color: var(--bad); }
+.ticks.dot li::before { content: "•"; color: var(--muted); }
+
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.tablewrap table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 0.88rem; }
+.tablewrap th, .tablewrap td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.tablewrap thead th { font-size: 0.8rem; color: var(--muted); font-weight: 600; background: var(--bg); }
+.tablewrap tbody th { font-weight: 500; }
+.tablewrap tr:last-child th, .tablewrap tr:last-child td { border-bottom: none; }
+
+.pill { display: inline-block; font-size: 0.72rem; font-weight: 700; padding: 1px 9px; border-radius: 999px; border: 1.5px solid; white-space: nowrap; }
+.pill.wrong { color: var(--bad); border-color: var(--bad); background: var(--bad-bg); }
+.pill.missing { color: var(--key); border-color: var(--key); background: var(--key-bg); }
+.pill.doc { color: var(--accent); border-color: var(--trusted-line); background: var(--trusted); }
+.pill.stale { color: var(--muted); border-color: var(--line); }
+
+/* precedence ladder */
+.ladder { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; }
+.rung { flex: 1 1 120px; min-width: 0; border-radius: 10px; padding: 10px 12px; border: 1.5px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 2px; }
+.rung b { font-family: var(--mono); font-size: 0.95rem; }
+.rung small { color: var(--muted); font-size: 0.78rem; }
+.rung.r1 { border-color: var(--accent); background: var(--trusted); }
+.rung.r2 { border-color: var(--trusted-line); }
+.gt { align-self: center; font-family: var(--mono); color: var(--muted); font-size: 1.2rem; }
+
+/* budget bar */
+.budget { display: flex; height: 38px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); font-size: 0.78rem; }
+.budget div { display: flex; align-items: center; justify-content: center; padding: 0 6px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.budget .f { background: var(--trusted); flex: 0 0 26%; border-right: 2px solid var(--accent); }
+.budget .t { background: var(--key-bg); flex: 0 0 16%; }
+.budget .fa { background: var(--ext); flex: 0 0 28%; }
+.budget .ev { background: var(--outside); flex: 1 1 auto; }
+
+.note { font-size: 0.86rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; }
+.gapnote { font-size: 0.86rem; border-left: 3px solid var(--key); padding: 6px 12px; background: var(--key-bg); border-radius: 0 8px 8px 0; color: var(--fg); }
+.gapnote a { color: var(--key); font-weight: 600; }
+@media (prefers-reduced-motion: no-preference) { .map a { transition: border-color .15s; } }
+</style>
+
+<main>
+  <header class="prose" style="display:flex;flex-direction:column;gap:14px">
+    <span class="eyebrow">Retainer · ARCHITECTURE.md, visualized</span>
+    <h1>Retainer architecture</h1>
+    <p class="lead">From one sentence down to tables, locks and layers. Each section zooms in one step.</p>
+    <nav class="map" aria-label="Sections">
+      <a href="#idea">1. The idea</a>
+      <a href="#system">2. System</a>
+      <a href="#data">3. Data model</a>
+      <a href="#write">4. A write</a>
+      <a href="#rules">5. Write rules</a>
+      <a href="#events">6. Events</a>
+      <a href="#schema">7. Schema engine</a>
+      <a href="#read">8. Reads</a>
+      <a href="#privacy">9. Deletion</a>
+      <a href="#runtime">10. Runtime</a>
+      <a href="#auth">11. Tenancy and auth</a>
+      <a href="#code">12. Code layout</a>
+    </nav>
+  </header>
+
+  <!-- 1 -->
+  <section id="idea">
+    <span class="eyebrow">1 · The idea</span>
+    <div class="zoom"><span class="on">Concept</span><span>System</span><span>Data</span><span>Rules</span><span>Code</span></div>
+    <h2>Memory for agents that work with CRM data</h2>
+    <p class="prose">Agents read conversations with their own model and decide what to keep. Retainer validates it, resolves conflicts, keeps its history and makes it searchable. It never calls a model itself.</p>
+    <div class="three">
+      <div class="card">
+        <span class="q">Idea 1 · from Twenty</span>
+        <h3>Schema as data</h3>
+        <p>Objects, fields and relations are rows, so a workspace, or an agent in it, can extend the CRM at runtime with no DDL.</p>
+      </div>
+      <div class="card">
+        <span class="q">Idea 2 · after Honcho</span>
+        <h3>Memory with provenance</h3>
+        <p>Every value records who wrote it and which event it came from. Values are claims; the current value is computed from them.</p>
+      </div>
+      <div class="card">
+        <span class="q">Rule · no model in the core</span>
+        <h3>Deterministic</h3>
+        <p>Writes, conflicts, search and consolidation never call a language model. Only extensions may, through the model proxy.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="system">
+    <span class="eyebrow">2 · System</span>
+    <div class="zoom"><span>Concept</span><span class="on">System</span><span>Data</span><span>Rules</span><span>Code</span></div>
+    <h2>Four ways in, one server, one Postgres</h2>
+    <p class="prose">Everything goes through the API server, which enforces the write rules. Postgres is the only dependency: data, jobs and tenant isolation all live there.</p>
+    <div class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 470" role="img" aria-label="AI agents connect over MCP, apps and the SDK over REST, people through the web app, and standalone apps over REST with an installation token. All reach the API server. The API server and background workers read and write one Postgres database. Workers run extension functions and routines in a sandbox, which calls the API back and calls a model only through the model proxy.">
+        <defs>
+          <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+          <marker id="a2k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-key"/></marker>
+        </defs>
+        <rect x="10" y="12" width="190" height="446" rx="12" class="z-out"/>
+        <text x="24" y="34" class="zlabel">WHO USES IT</text>
+        <rect x="220" y="12" width="470" height="446" rx="12" class="z-trusted"/>
+        <text x="236" y="34" class="zlabel">RETAINER · TRUSTED</text>
+        <rect x="710" y="12" width="240" height="446" rx="12" class="z-ext"/>
+        <text x="724" y="34" class="zlabel">SANDBOX · ONE INSTALLATION</text>
+
+        <rect x="26" y="54" width="158" height="56" rx="8" class="b-out"/>
+        <text x="105" y="78" text-anchor="middle">AI agents</text>
+        <text x="105" y="96" text-anchor="middle" class="small">MCP · /mcp</text>
+        <rect x="26" y="126" width="158" height="56" rx="8" class="b-out"/>
+        <text x="105" y="150" text-anchor="middle">Apps and SDK</text>
+        <text x="105" y="168" text-anchor="middle" class="small">REST · /v1</text>
+        <rect x="26" y="198" width="158" height="56" rx="8" class="b-out"/>
+        <text x="105" y="222" text-anchor="middle">People</text>
+        <text x="105" y="240" text-anchor="middle" class="small">web app · /app</text>
+        <rect x="26" y="270" width="158" height="56" rx="8" class="b-out"/>
+        <text x="105" y="294" text-anchor="middle">Standalone apps</text>
+        <text x="105" y="312" text-anchor="middle" class="small">REST · installation token</text>
+        <rect x="26" y="380" width="158" height="56" rx="8" class="b-out"/>
+        <text x="105" y="404" text-anchor="middle">Providers</text>
+        <text x="105" y="422" text-anchor="middle" class="small">Gmail, Granola, Tamloot</text>
+
+        <rect x="240" y="54" width="200" height="128" rx="8" class="b-trusted"/>
+        <text x="340" y="80" text-anchor="middle" style="font-weight:600">API server</text>
+        <text x="340" y="100" text-anchor="middle" class="small">Hono · REST, MCP, web sign-in</text>
+        <text x="340" y="118" text-anchor="middle" class="small">authenticates → Caller</text>
+        <text x="340" y="136" text-anchor="middle" class="small">validates, applies write rules</text>
+        <text x="340" y="160" text-anchor="middle" class="small">/account (control, accounts mode)</text>
+
+        <rect x="240" y="300" width="200" height="136" rx="8" class="b-db"/>
+        <text x="340" y="326" text-anchor="middle" style="font-weight:600">Postgres</text>
+        <text x="340" y="346" text-anchor="middle" class="small">schema · records · memory</text>
+        <text x="340" y="364" text-anchor="middle" class="small">job queue · views · comments</text>
+        <text x="340" y="382" text-anchor="middle" class="small">row-level security per workspace</text>
+        <text x="340" y="400" text-anchor="middle" class="small">full-text search</text>
+        <text x="340" y="420" text-anchor="middle" class="small">the only dependency</text>
+
+        <rect x="470" y="200" width="200" height="110" rx="8" class="b-trusted"/>
+        <text x="570" y="226" text-anchor="middle" style="font-weight:600">Workers</text>
+        <text x="570" y="246" text-anchor="middle" class="small">consolidator (hourly)</text>
+        <text x="570" y="264" text-anchor="middle" class="small">extension + routine jobs</text>
+        <text x="570" y="282" text-anchor="middle" class="small">change feed, files, purge</text>
+
+        <rect x="470" y="356" width="200" height="56" rx="8" class="b-key"/>
+        <text x="570" y="380" text-anchor="middle">Model proxy</text>
+        <text x="570" y="398" text-anchor="middle" class="small">extensions only · holds the key</text>
+
+        <rect x="730" y="190" width="200" height="130" rx="8" class="b-ext"/>
+        <text x="830" y="216" text-anchor="middle" style="font-weight:600">Extension functions</text>
+        <text x="830" y="236" text-anchor="middle" class="small">and routine code</text>
+        <text x="830" y="258" text-anchor="middle" class="small">Lambda (hosted)</text>
+        <text x="830" y="276" text-anchor="middle" class="small">fresh container (Compose)</text>
+        <text x="830" y="298" text-anchor="middle" class="small">short-lived run token</text>
+
+        <rect x="730" y="370" width="200" height="56" rx="8" class="b-out"/>
+        <text x="830" y="394" text-anchor="middle">Anthropic</text>
+        <text x="830" y="412" text-anchor="middle" class="small">via the proxy only</text>
+
+        <line x1="186" y1="82" x2="238" y2="96" class="arrow" marker-end="url(#a2)"/>
+        <line x1="186" y1="154" x2="238" y2="130" class="arrow" marker-end="url(#a2)"/>
+        <line x1="186" y1="226" x2="238" y2="160" class="arrow" marker-end="url(#a2)"/>
+        <line x1="186" y1="298" x2="238" y2="172" class="arrow" marker-end="url(#a2)"/>
+        <line x1="340" y1="184" x2="340" y2="298" class="arrow" marker-end="url(#a2)" marker-start="url(#a2)"/>
+        <line x1="468" y1="270" x2="442" y2="320" class="arrow" marker-end="url(#a2)" marker-start="url(#a2)"/>
+        <line x1="672" y1="250" x2="728" y2="250" class="arrow" marker-end="url(#a2)"/>
+        <text x="676" y="242" class="small">invoke</text>
+        <path d="M770,188 C770,120 600,100 442,110" class="arrow" marker-end="url(#a2)"/>
+        <text x="560" y="94" class="small">read, write through the API</text>
+        <line x1="760" y1="322" x2="672" y2="378" class="arrow-key" marker-end="url(#a2k)"/>
+        <line x1="672" y1="398" x2="728" y2="398" class="arrow-key" marker-end="url(#a2k)"/>
+        <path d="M730,300 C500,470 200,470 186,412" class="arrow" marker-end="url(#a2)"/>
+        <text x="420" y="452" class="small">fetch from providers</text>
+      </svg>
+      </div>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--outside)"></i>Outside Retainer</span>
+        <span><i class="sw" style="background:var(--trusted)"></i>Retainer, trusted, sees every workspace</span>
+        <span><i class="sw" style="background:var(--ext)"></i>Sandboxed code, one installation per run</span>
+        <span><i class="sw" style="background:var(--key-bg);border:1px dashed var(--key)"></i>Model calls</span>
+      </div>
+    </div>
+    <div class="two">
+      <div class="panel">
+        <h3>Self-hosted: one image, a role per process</h3>
+        <div class="chain">
+          <div class="node t"><code>api</code><small>REST, MCP, web</small></div>
+          <div class="node t"><code>worker</code><small>background jobs</small></div>
+          <div class="node t"><code>control</code><small>accounts, sign-in</small></div>
+          <div class="node t"><code>all</code><small>everything in one</small></div>
+        </div>
+        <p class="sub">Docker Compose only. Extension code runs in fresh runner containers behind an egress proxy.</p>
+        <p class="note">Two more roles split work out: <code>extensions</code> (the extension control API and secret broker) and <code>files</code> (the worker loops, with file storage maintenance).</p>
+      </div>
+      <div class="panel">
+        <h3>Hosted: the same code as Lambda functions</h3>
+        <div class="chain">
+          <div class="node t"><code>api</code><small>behind CloudFront + API Gateway</small></div>
+          <div class="node t"><code>consolidate</code><small>scheduled pass</small></div>
+          <div class="node t"><code>ops</code><small>migrations, CLI</small></div>
+          <div class="node t"><code>control</code><small>sign-in, has internet</small></div>
+        </div>
+        <p class="sub">Infrastructure lives in the private <code>retainer-cloud</code> repo; the entry points live here in <code>packages/server/src/lambda/</code>.</p>
+        <p class="note">Six more: <code>executor</code> (extension jobs and routine runs), <code>changes</code> (change dispatch, routine matching), <code>files</code>, <code>extensions</code>, <code>maintenance</code> (the "updating" page during a deploy) and <code>model</code>, the model proxy, outside the database's network.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section id="data">
+    <span class="eyebrow">3 · Data model</span>
+    <div class="zoom"><span>Concept</span><span>System</span><span class="on">Data</span><span>Rules</span><span>Code</span></div>
+    <h2>Three layers in one database</h2>
+    <p class="prose">Metadata describes the shape. Records hold the current values. Memory holds the claims and evidence the values come from. <strong>Record values are a cache</strong>: they can always be rebuilt from the claims.</p>
+    <div class="stack">
+      <div class="layer l-meta">
+        <div class="name">Schema (metadata)<small>The shape of the CRM, as rows</small></div>
+        <div class="tags"><span class="tag">object_types</span><span class="tag">fields</span><span class="tag">schema_changes</span><span class="tag">views</span></div>
+      </div>
+      <div class="layer l-rec">
+        <div class="name">Records<small>Current state, derived</small></div>
+        <div class="tags"><span class="tag">records.data (jsonb)</span><span class="tag">record_links</span><span class="tag">record_identifiers</span><span class="tag">comments</span></div>
+      </div>
+      <div class="layer l-mem">
+        <div class="name">Memory<small>Claims and evidence, kept forever</small></div>
+        <div class="tags"><span class="tag">field_assertions</span><span class="tag">facts</span><span class="tag">fact_sources</span><span class="tag">event_records</span><span class="tag">event_links</span><span class="tag">event_moves</span><span class="tag">event_identity_tombstones</span></div>
+      </div>
+    </div>
+
+    <div class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 330" role="img" aria-label="Field assertions are claims. The winner per field is computed and written to records.data, record_links for relations, and record_identifiers for emails, phones, domains and unique values. Facts are plain-language claims citing events.">
+        <defs>
+          <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-acc"/></marker>
+          <marker id="a3g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+        </defs>
+        <text x="20" y="26" class="zlabel">CLAIMS (MEMORY)</text>
+        <text x="520" y="26" class="zlabel">DERIVED IN THE SAME TRANSACTION (RECORDS)</text>
+
+        <rect x="20" y="40" width="330" height="140" rx="10" class="b-ext"/>
+        <text x="36" y="64" style="font-weight:600">field_assertions · person.jobTitle</text>
+        <text x="36" y="92" class="mono">"Head of Data"  user    2026-10-02</text>
+        <text x="36" y="112" class="mono">"VP Data"       agent   2026-10-21</text>
+        <text x="36" y="132" class="mono">"Analyst"       agent   2025-03-11</text>
+        <text x="36" y="158" class="small">active · pending_review · superseded · retracted</text>
+        <rect x="26" y="78" width="318" height="20" rx="4" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+
+        <rect x="390" y="80" width="100" height="60" rx="30" class="b-key"/>
+        <text x="440" y="106" text-anchor="middle" style="font-weight:600">winner</text>
+        <text x="440" y="124" text-anchor="middle" class="small">rules §5</text>
+
+        <rect x="520" y="40" width="200" height="58" rx="8" class="b-db"/>
+        <text x="620" y="64" text-anchor="middle">records.data</text>
+        <text x="620" y="84" text-anchor="middle" class="small">{ "f_7": "Head of Data" }</text>
+        <rect x="520" y="110" width="200" height="58" rx="8" class="b-db"/>
+        <text x="620" y="134" text-anchor="middle">record_links</text>
+        <text x="620" y="154" text-anchor="middle" class="small">relation winners, one row per edge</text>
+        <rect x="520" y="180" width="200" height="58" rx="8" class="b-db"/>
+        <text x="620" y="204" text-anchor="middle">record_identifiers</text>
+        <text x="620" y="224" text-anchor="middle" class="small">emails, phones, domains, uniques</text>
+        <rect x="740" y="40" width="200" height="58" rx="8" class="b-db"/>
+        <text x="840" y="64" text-anchor="middle">search · label</text>
+        <text x="840" y="84" text-anchor="middle" class="small">tsvector + trigram text</text>
+        <rect x="740" y="180" width="200" height="58" rx="8" class="b-out"/>
+        <text x="840" y="204" text-anchor="middle">Unique claims</text>
+        <text x="840" y="224" text-anchor="middle" class="small">stop duplicate people in races</text>
+
+        <line x1="352" y1="110" x2="388" y2="110" class="arrow-acc" marker-end="url(#a3)"/>
+        <line x1="492" y1="104" x2="518" y2="70" class="arrow-acc" marker-end="url(#a3)"/>
+        <line x1="492" y1="110" x2="518" y2="138" class="arrow-acc" marker-end="url(#a3)"/>
+        <line x1="492" y1="118" x2="518" y2="206" class="arrow-acc" marker-end="url(#a3)"/>
+        <line x1="722" y1="69" x2="738" y2="69" class="arrow-acc" marker-end="url(#a3)"/>
+        <line x1="722" y1="209" x2="738" y2="209" class="arrow" marker-end="url(#a3g)"/>
+
+        <rect x="20" y="206" width="330" height="110" rx="10" class="b-ext"/>
+        <text x="36" y="230" style="font-weight:600">facts · fact_sources</text>
+        <text x="36" y="254" class="small">"Needs SSO before agreeing to a pilot"</text>
+        <text x="36" y="272" class="small">kind stated · valid_from = the event's time</text>
+        <text x="36" y="290" class="small">never deleted by the system, only superseded</text>
+        <text x="36" y="308" class="small">every fact cites an event</text>
+        <text x="520" y="278" class="small">Keys in records.data are field keys, never names: a rename never touches data.</text>
+        <text x="520" y="298" class="small">One records table for every object in every workspace (not a table per object).</text>
+      </svg>
+      </div>
+      <p class="caption">The highlighted claim wins: a person's value outranks newer agent claims (section 5).</p>
+    </div>
+
+    <div class="two">
+      <div class="panel">
+        <h3>Why JSONB and not a table per object</h3>
+        <ul class="ticks yes">
+          <li><span>An agent adds a field as one metadata row: no DDL, locks or partial failures</span></li>
+          <li><span>One fixed schema with normal migrations for self-hosters</span></li>
+          <li><span>Many hosted workspaces without bloating the Postgres catalog</span></li>
+        </ul>
+        <p class="sub">What real tables would give is kept another way: foreign keys on <code>record_links</code>, uniqueness through <code>record_identifiers</code>, and a shared GIN index for filters.</p>
+      </div>
+      <div class="panel">
+        <h3>Field types</h3>
+        <div class="tags" style="display:flex;flex-wrap:wrap;gap:5px">
+          <span class="tag">text</span><span class="tag">number</span><span class="tag">boolean</span><span class="tag">date</span><span class="tag">date_time</span><span class="tag">json</span><span class="tag">select</span><span class="tag">multi_select</span><span class="tag">money</span><span class="tag">emails</span><span class="tag">phones</span><span class="tag">links</span><span class="tag">full_name</span><span class="tag">address</span><span class="tag">relation</span><span class="tag">files</span>
+        </div>
+        <p class="sub">Composite shapes (money, emails, address…) are defined once in <code>@retainer/shared</code>. Relations live in <code>record_links</code>, not in <code>data</code>. File bytes stay in external storage; only immutable file IDs are stored.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section id="write">
+    <span class="eyebrow">4 · A write, end to end</span>
+    <div class="zoom"><span>Concept</span><span>System</span><span class="on">Data</span><span>Rules</span><span>Code</span></div>
+    <h2>After a meeting, an agent makes four calls</h2>
+    <p class="prose">Each call is its own short transaction, so an agent that stops halfway leaves consistent data and can resume. Retainer never creates records on its own.</p>
+    <ol class="track" style="--n:4">
+      <li class="t"><span class="n">1 · log_event</span><h3>Log the event</h3><p>Type, channel, external ID, time, title, summary, participants (emails, phones or IDs), <code>about</code> records.</p></li>
+      <li class="t"><span class="n">2 · upsert_record</span><h3>Update records</h3><p>Cite the event as <code>source</code>, so values carry its date and an older email can't overwrite a newer claim.</p></li>
+      <li class="t"><span class="n">3 · remember</span><h3>Store facts</h3><p>Plain-language facts citing the same event, with an optional quote.</p></li>
+      <li class="t"><span class="n">4 · upsert_record</span><h3>Create tasks</h3><p>Commitments someone made, as <code>task</code> records.</p></li>
+    </ol>
+    <div class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 300" role="img" aria-label="Inside one upsert_record call: authenticate the caller, take the workspace schema lock and privacy lock in shared mode, lock the record row, insert assertions, recompute the touched fields, then update data, links, identifiers and search, and commit.">
+        <defs>
+          <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+        </defs>
+        <text x="20" y="24" class="zlabel">INSIDE ONE upsert_record · ONE TRANSACTION</text>
+        <rect x="20" y="40" width="130" height="74" rx="8" class="b-out"/>
+        <text x="85" y="68" text-anchor="middle">Credential</text>
+        <text x="85" y="88" text-anchor="middle" class="small">key, session or token</text>
+        <text x="85" y="104" text-anchor="middle" class="small">→ actor, scopes</text>
+        <rect x="175" y="40" width="130" height="74" rx="8" class="b-trusted"/>
+        <text x="240" y="68" text-anchor="middle">inWorkspace</text>
+        <text x="240" y="88" text-anchor="middle" class="small">sets app.workspace_id</text>
+        <text x="240" y="104" text-anchor="middle" class="small">for RLS</text>
+        <rect x="330" y="40" width="140" height="74" rx="8" class="b-key"/>
+        <text x="400" y="64" text-anchor="middle">Workspace locks</text>
+        <text x="400" y="84" text-anchor="middle" class="small">1. privacy: shared</text>
+        <text x="400" y="100" text-anchor="middle" class="small">2. schema: shared</text>
+        <rect x="495" y="40" width="140" height="74" rx="8" class="b-key"/>
+        <text x="565" y="64" text-anchor="middle">Record lock</text>
+        <text x="565" y="84" text-anchor="middle" class="small">FOR NO KEY UPDATE</text>
+        <text x="565" y="100" text-anchor="middle" class="small">sorted ID order</text>
+        <rect x="660" y="40" width="130" height="74" rx="8" class="b-ext"/>
+        <text x="725" y="64" text-anchor="middle">Insert</text>
+        <text x="725" y="84" text-anchor="middle" class="small">assertions with</text>
+        <text x="725" y="100" text-anchor="middle" class="small">actor + source</text>
+        <rect x="815" y="40" width="130" height="74" rx="8" class="b-db"/>
+        <text x="880" y="64" text-anchor="middle">Recompute</text>
+        <text x="880" y="84" text-anchor="middle" class="small">touched keys only</text>
+        <text x="880" y="100" text-anchor="middle" class="small">data, links, ids</text>
+        <line x1="152" y1="77" x2="173" y2="77" class="arrow" marker-end="url(#a4)"/>
+        <line x1="307" y1="77" x2="328" y2="77" class="arrow" marker-end="url(#a4)"/>
+        <line x1="472" y1="77" x2="493" y2="77" class="arrow" marker-end="url(#a4)"/>
+        <line x1="637" y1="77" x2="658" y2="77" class="arrow" marker-end="url(#a4)"/>
+        <line x1="792" y1="77" x2="813" y2="77" class="arrow" marker-end="url(#a4)"/>
+
+        <text x="20" y="160" class="zlabel">THE RESPONSE TELLS THE AGENT WHAT HAPPENED, PER FIELD</text>
+        <rect x="20" y="176" width="290" height="100" rx="10" class="b-trusted"/>
+        <text x="40" y="204" class="good">applied</text>
+        <text x="40" y="226" class="small">The claim won. records.data changed.</text>
+        <rect x="335" y="176" width="290" height="100" rx="10" class="b-key"/>
+        <text x="355" y="204" class="keytxt">pending_review</text>
+        <text x="355" y="226" class="small">Newer than a person's value, or below the</text>
+        <text x="355" y="244" class="small">confidence threshold. A person decides.</text>
+        <text x="355" y="262" class="small">The agent should say "waiting for approval".</text>
+        <rect x="650" y="176" width="290" height="100" rx="10" class="b-out"/>
+        <text x="670" y="204" style="font-weight:600">superseded</text>
+        <text x="670" y="226" class="small">Older or lower-ranked. Kept in history,</text>
+        <text x="670" y="244" class="small">can win again if the winner is retracted.</text>
+      </svg>
+      </div>
+      <p class="note">Privacy lock first, then schema (<code>lockForWrite</code> in <code>db/tx.ts</code>), the same order extension imports use.</p>
+    </div>
+    <div class="chain">
+      <div class="node o">Handle<small><code>Dana@Acme.com</code></small></div>
+      <span class="arr">→</span>
+      <div class="node t">Normalize<small>lowercase email, E.164 phone</small></div>
+      <span class="arr">→</span>
+      <div class="node t">Match a unique identifier<small><code>record_identifiers</code></small></div>
+      <span class="arr">→</span>
+      <div class="node e">matched<small>linked to the person</small></div>
+      <span class="arr">or</span>
+      <div class="node k">unmatched<small><code>no_match</code> · <code>phone_only</code> · <code>ambiguous</code> · <code>deleted_record</code> · <code>suppressed</code></small></div>
+    </div>
+    <p class="note">The agent creates the people worth keeping, then logs the same event again with the new record ID. A retry with the same <code>(channel, externalId)</code> returns the same event and only adds links.</p>
+  </section>
+
+  <!-- 5 -->
+  <section id="rules">
+    <span class="eyebrow">5 · Write rules</span>
+    <div class="zoom"><span>Concept</span><span>System</span><span>Data</span><span class="on">Rules</span><span>Code</span></div>
+    <h2>Who wins a field</h2>
+    <p class="prose">First by who wrote it, then by when it was true at the source. The server sets that time: the cited event's time, or the write time.</p>
+    <div class="ladder">
+      <div class="rung r1"><b>user</b><small>a person</small></div><span class="gt">&gt;</span>
+      <div class="rung r2"><b>integration</b><small>a sync or standalone app</small></div><span class="gt">&gt;</span>
+      <div class="rung"><b>agent</b><small>an AI agent's key</small></div><span class="gt">&gt;</span>
+      <div class="rung"><b>system</b><small>seeds, templates</small></div>
+    </div>
+    <p class="note">Ties at the same rank: latest <code>observed_at</code>, then <code>created_at</code>, then assertion ID. The actor always comes from the credential, never the payload.</p>
+
+    <div class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 900 300" role="img" aria-label="Decision for an agent's claim. If the current winner is a user or integration claim and the agent's claim is newer and different, it becomes pending_review. If it is below the workspace confidence threshold, pending_review. If older or equal, superseded. Otherwise it wins and is active.">
+        <defs>
+          <marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+        </defs>
+        <text x="20" y="24" class="zlabel">AN AGENT ASSERTS A VALUE</text>
+        <rect x="20" y="40" width="180" height="60" rx="8" class="b-trusted"/>
+        <text x="110" y="66" text-anchor="middle">Below the workspace</text>
+        <text x="110" y="84" text-anchor="middle">confidence threshold?</text>
+        <rect x="260" y="40" width="200" height="60" rx="8" class="b-trusted"/>
+        <text x="360" y="66" text-anchor="middle">Winner is a person's</text>
+        <text x="360" y="84" text-anchor="middle">or integration's value?</text>
+        <rect x="520" y="40" width="160" height="60" rx="8" class="b-trusted"/>
+        <text x="600" y="66" text-anchor="middle">Agent's claim newer</text>
+        <text x="600" y="84" text-anchor="middle">and different?</text>
+        <rect x="740" y="40" width="140" height="60" rx="8" class="b-key"/>
+        <text x="810" y="76" text-anchor="middle" class="keytxt">pending_review</text>
+        <rect x="20" y="180" width="180" height="60" rx="8" class="b-key"/>
+        <text x="110" y="216" text-anchor="middle" class="keytxt">pending_review</text>
+        <rect x="260" y="180" width="200" height="60" rx="8" class="b-trusted"/>
+        <text x="360" y="206" text-anchor="middle">Normal ranking:</text>
+        <text x="360" y="224" text-anchor="middle" class="small">newer wins at the same rank</text>
+        <rect x="520" y="180" width="160" height="60" rx="8" class="b-out"/>
+        <text x="600" y="216" text-anchor="middle" style="font-weight:600">superseded</text>
+        <rect x="260" y="262" width="200" height="34" rx="8" class="b-trusted"/>
+        <text x="360" y="284" text-anchor="middle" class="good">active, or superseded</text>
+        <line x1="110" y1="102" x2="110" y2="178" class="arrow" marker-end="url(#a5)"/><text x="118" y="146" class="small">yes</text>
+        <line x1="202" y1="70" x2="258" y2="70" class="arrow" marker-end="url(#a5)"/><text x="214" y="62" class="small">no</text>
+        <line x1="462" y1="70" x2="518" y2="70" class="arrow" marker-end="url(#a5)"/><text x="476" y="62" class="small">yes</text>
+        <line x1="682" y1="70" x2="738" y2="70" class="arrow" marker-end="url(#a5)"/><text x="696" y="62" class="small">yes</text>
+        <line x1="360" y1="102" x2="360" y2="178" class="arrow" marker-end="url(#a5)"/><text x="368" y="146" class="small">no</text>
+        <line x1="600" y1="102" x2="600" y2="178" class="arrow" marker-end="url(#a5)"/><text x="608" y="146" class="small">no</text>
+        <line x1="360" y1="242" x2="360" y2="260" class="arrow" marker-end="url(#a5)"/>
+      </svg>
+      </div>
+      <p class="caption">Accepting a pending claim re-asserts it as the reviewing person, keeping its source and time. Agents never silently overwrite people, and are never silently ignored.</p>
+    </div>
+
+    <div class="three">
+      <div class="card"><span class="q">Rule 1</span><h3>Actor and source</h3><p>Every write has an actor. Every fact cites an event; without one, <code>remember</code> logs a hidden internal note to cite.</p></div>
+      <div class="card"><span class="q">Rule 4</span><h3>Always recomputable</h3><p>Pending and rejected claims never count. Deleting an event retracts what cites it and recomputes the fields it was winning.</p></div>
+      <div class="card"><span class="q">Rule 5</span><h3>Serialized per record</h3><p>A row lock around insert + recompute, so two agents never lose each other's values. Deadlocks retry up to three times.</p></div>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section id="events">
+    <span class="eyebrow">6 · Events</span>
+    <div class="zoom"><span>Concept</span><span>System</span><span class="on">Data</span><span>Rules</span><span>Code</span></div>
+    <h2>Things that happened are records too</h2>
+    <p class="prose">An object type is an <code>entity</code> (it has state people change) or an <code>event</code> (it happened and is cited as evidence). Only <code>log_event</code> creates events. The base type is <code>conversation</code>, with a <code>medium</code>: meeting, call, email, message.</p>
+    <p class="note">A hosted workspace created without a template starts from scratch, with only the hidden types; its first agent designs the rest.</p>
+    <div class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 300" role="img" aria-label="An event attaches to records in three ways: participant, about, and through one of its relation fields. A rollup then shows it one hop further on records those records point to, such as a company seeing calls about its deals.">
+        <defs>
+          <marker id="a6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+          <marker id="a6k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-key"/></marker>
+        </defs>
+        <rect x="20" y="100" width="200" height="96" rx="10" class="b-ext"/>
+        <text x="120" y="128" text-anchor="middle" style="font-weight:600">Event: renewal call</text>
+        <text x="120" y="148" text-anchor="middle" class="small">conversation · medium call</text>
+        <text x="120" y="166" text-anchor="middle" class="small">channel zoom · externalId …</text>
+        <text x="120" y="184" text-anchor="middle" class="small">immutable identity</text>
+
+        <rect x="370" y="20" width="170" height="54" rx="8" class="b-trusted"/>
+        <text x="455" y="44" text-anchor="middle">Dana (person)</text>
+        <text x="455" y="62" text-anchor="middle" class="small">via participant</text>
+        <rect x="370" y="122" width="170" height="54" rx="8" class="b-trusted"/>
+        <text x="455" y="146" text-anchor="middle">Acme pilot (deal)</text>
+        <text x="455" y="164" text-anchor="middle" class="small">via about</text>
+        <rect x="370" y="224" width="170" height="54" rx="8" class="b-trusted"/>
+        <text x="455" y="248" text-anchor="middle">Invoice 42</text>
+        <text x="455" y="266" text-anchor="middle" class="small">via field (call.invoice)</text>
+
+        <rect x="700" y="122" width="200" height="54" rx="8" class="b-key"/>
+        <text x="800" y="146" text-anchor="middle">Acme (company)</text>
+        <text x="800" y="164" text-anchor="middle" class="small">via rollup · deal.company</text>
+
+        <line x1="222" y1="130" x2="368" y2="50" class="arrow" marker-end="url(#a6)"/>
+        <line x1="222" y1="148" x2="368" y2="148" class="arrow" marker-end="url(#a6)"/>
+        <line x1="222" y1="166" x2="368" y2="250" class="arrow" marker-end="url(#a6)"/>
+        <line x1="542" y1="149" x2="698" y2="149" class="arrow-key" marker-end="url(#a6k)"/>
+        <text x="560" y="140" class="small">rollUpEvents on deal.company</text>
+        <text x="700" y="210" class="small">One hop, read-time, nothing copied.</text>
+        <text x="700" y="228" class="small">A rolled-up event never rolls up again.</text>
+      </svg>
+      </div>
+      <p class="caption">Every list of a record's events says <code>via</code> how it got there. An event appears once: direct beats rollup.</p>
+    </div>
+    <div class="two">
+      <div class="panel">
+        <h3>Object or event?</h3>
+        <ul class="ticks dot">
+          <li><span><strong>Object</strong>: a task, deal or ticket. Its changes are its history, never events.</span></li>
+          <li><span><strong>Event</strong>: a call, payment or form submission, from a source, cited as evidence.</span></li>
+          <li><span><strong>Comment</strong>: a person's remark on any record. Never evidence; only people write them.</span></li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Hidden built-in types</h3>
+        <ul class="ticks dot">
+          <li><span><strong>Internal note</strong>: what <code>remember</code> cites when no event is given.</span></li>
+          <li><span><strong>Workspace profile</strong> (<code>workspace</code>): how the business works.</span></li>
+          <li><span><strong>Member profile</strong> (<code>me</code>): private to one person, enforced by RLS.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section id="schema">
+    <span class="eyebrow">7 · Schema engine</span>
+    <div class="zoom"><span>Concept</span><span>System</span><span>Data</span><span class="on">Rules</span><span>Code</span></div>
+    <h2>One entry point for every schema change</h2>
+    <p class="prose">Seeds, upgrades, templates, people and agents all go through the same pipeline, under the workspace's exclusive schema lock.</p>
+    <ol class="track" style="--n:6">
+      <li class="t"><span class="n">1</span><h3>Load</h3><p>Current schema, exclusive lock.</p></li>
+      <li class="t"><span class="n">2</span><h3>Apply</h3><p>Operations in memory.</p></li>
+      <li class="t"><span class="n">3</span><h3>Validate</h3><p>Names, reserved words, targets, options.</p></li>
+      <li class="t"><span class="n">4</span><h3>Diff</h3><p>Current vs desired → operations.</p></li>
+      <li class="k"><span class="n">5</span><h3>Classify</h3><p>Additive or destructive.</p></li>
+      <li class="e"><span class="n">6</span><h3>Apply or propose</h3><p><code>schema_version + 1</code>.</p></li>
+    </ol>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Change</th><th>By a person with <code>admin</code></th><th>By anyone else, including an agent with an admin key</th></tr></thead>
+        <tbody>
+          <tr><th>Additive: new object, optional field, new option, label</th><td>Applied</td><td>Applied</td></tr>
+          <tr><th>Destructive: rename, delete, required or unique, remove option</th><td>Applied: the request is the approval</td><td>Stored as <code>proposed</code> until a person approves</td></tr>
+          <tr><th>Change a field's type</th><td colspan="2">Not supported: create a new field instead</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="two">
+      <div class="panel">
+        <h3>Protected elements</h3>
+        <p class="sub">Server code finds what it depends on by universal ID: <code>person</code>, <code>company</code>, <code>task</code>, <code>task.status</code> (its <code>done</code> option), <code>task.dueDate</code>, every event type's <code>title</code> and <code>summary</code>, and the internal-note type. They can be renamed, never deleted or reshaped.</p>
+      </div>
+      <div class="panel">
+        <h3>Templates</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:5px"><span class="tag">sales</span><span class="tag">services</span><span class="tag">clinic</span><span class="tag">real_estate</span><span class="tag">recruiting</span><span class="tag">blank</span></div>
+        <p class="sub">Additive only, so applying one needs no approval. Upgrades add what a workspace never had, matched by universal ID, and never re-create what it deleted.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section id="read">
+    <span class="eyebrow">8 · Reads</span>
+    <div class="zoom"><span>Concept</span><span>System</span><span class="on">Data</span><span>Rules</span><span>Code</span></div>
+    <h2>Six ways to read, all assembled by rules</h2>
+    <p class="prose">No read is summarized by a model: summarizing is the agent's job. There is no <code>ask</code> endpoint.</p>
+    <div class="three">
+      <div class="card"><span class="q">describe_schema</span><p>Objects, fields, built-ins, value formats, whether the workspace is initialized.</p></div>
+      <div class="card"><span class="q">query_records</span><p>Filter, sort, page one object; <code>event</code> for every event type at once.</p></div>
+      <div class="card"><span class="q">get_record</span><p>One record with links; an event with participants and <code>about</code>; newest comments.</p></div>
+      <div class="card"><span class="q">search</span><p>Keywords across records, events and facts. Postgres full-text only.</p></div>
+      <div class="card"><span class="q">get_context</span><p>A pack fitted to a token budget: fields, linked records, facts, recent events.</p></div>
+      <div class="card"><span class="q">get_timeline</span><p>How a record got here: events, field changes and facts, newest first.</p></div>
+    </div>
+
+    <h3>How a search runs</h3>
+    <div class="chain">
+      <div class="node o">"Jose meet"<small>as typed</small></div>
+      <span class="arr">→</span>
+      <div class="node t">websearch_to_tsquery<small>phrases, OR, -word</small></div>
+      <span class="arr">→</span>
+      <div class="node t">Fold + prefix<small>accents off, <code>'jose':* &amp; 'meet':*</code></small></div>
+      <span class="arr">→</span>
+      <div class="node t">3 queries<small>entities · events · facts, ranked by <code>ts_rank_cd</code></small></div>
+      <span class="arr">→</span>
+      <div class="node k">No record hits?<small>trigram on labels: "Dana Levy" finds "Dana Levi"</small></div>
+    </div>
+    <p class="note">Beyond these, MCP has tools for the change feed, files, extensions and routines: 35 tools in all.</p>
+    <p class="note">No embeddings and no BM25: plain Postgres with <code>pg_trgm</code>, <code>btree_gin</code> and <code>unaccent</code>. Every index leads with <code>workspace_id</code>.</p>
+
+    <h3>How a context pack fills its budget</h3>
+    <div class="figure">
+      <div class="budget">
+        <div class="f">Field values (always)</div>
+        <div class="t">Linked records</div>
+        <div class="fa">Current facts</div>
+        <div class="ev">Recent events…</div>
+      </div>
+      <p class="caption">About four characters per token. The default is 2,000 and the maximum is 16,000. The other sections take one item per round, and <code>omitted</code> counts what didn't fit.</p>
+    </div>
+  </section>
+
+  <!-- 9 -->
+  <section id="privacy">
+    <span class="eyebrow">9 · Deletion and privacy</span>
+    <div class="zoom"><span>Concept</span><span>System</span><span>Data</span><span class="on">Rules</span><span>Code</span></div>
+    <h2>Soft delete by default, <code>forget</code> for privacy</h2>
+    <p class="prose">Deleting hides a record and retracts what its events supported. <code>forget</code> erases a person for real, and only a person with <code>admin</code> can run it.</p>
+    <ol class="track" style="--n:5">
+      <li class="k"><span class="n">1</span><h3>Suppress</h3><p>Emails and phones as keyed HMACs, so they can't come back.</p></li>
+      <li class="k"><span class="n">2</span><h3>Erase events</h3><p>Events they took part in, with what rested only on them. Tombstone the identity.</p></li>
+      <li class="k"><span class="n">3</span><h3>Fix the rest</h3><p>Remove inbound relations and recompute surviving records.</p></li>
+      <li class="k"><span class="n">4</span><h3>Hard delete</h3><p>Record, claims, facts, links, identifiers, comments, stored responses.</p></li>
+      <li class="t"><span class="n">5</span><h3>Audit</h3><p>Actor, time and counts only. No names or values.</p></li>
+    </ol>
+    <div class="two">
+      <div class="panel">
+        <h3>What makes it safe</h3>
+        <ul class="ticks yes">
+          <li><span>A workspace privacy lock: writes take it shared, <code>forget</code> exclusively</span></li>
+          <li><span>The HMAC key lives outside the database (<code>RETAINER_SUPPRESSION_KEY</code>)</span></li>
+          <li><span>Routines: stored tool and model results are cleared, and queued or running runs end as <code>erased</code></span></li>
+          <li><span>Candidates for human review: other records mentioning the name</span></li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>What it does not promise</h3>
+        <ul class="ticks no">
+          <li><span>Finding every fact that mentions the person on another record</span></li>
+          <li><span>Redacting only one person from a shared meeting: the whole event goes</span></li>
+          <li><span>Backups: the operator's responsibility</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10 -->
+  <section id="runtime">
+    <span class="eyebrow">10 · Background work</span>
+    <div class="zoom"><span>Concept</span><span class="on">System</span><span>Data</span><span>Rules</span><span>Code</span></div>
+    <h2>The consolidator and the job queue</h2>
+    <p class="prose">The queue is Postgres itself. Every minute a worker asks which workspaces are due and runs each under a per-workspace try-lock, so two workers never run the same one.</p>
+    <div class="two">
+      <div class="panel">
+        <h3>The consolidator does</h3>
+        <ul class="ticks yes">
+          <li><span>Supersede exact duplicate facts (same record, text and validity)</span></li>
+          <li><span>Suggest merges: shared email, phone or URL, or labels with trigram similarity ≥ 0.6</span></li>
+          <li><span>At most 500 new suggestions per kind per run</span></li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>It never</h3>
+        <ul class="ticks no">
+          <li><span>Merges records: a person does, with <code>POST /v1/records/:id/merge</code></span></li>
+          <li><span>Supersedes near-duplicates or contradictions</span></li>
+          <li><span>Calls a model or flags stale values</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="chain">
+      <div class="node t">Lock A and B<small><code>FOR UPDATE</code>, sorted IDs</small></div>
+      <span class="arr">→</span>
+      <div class="node t">Move B's claims<small>assertions, facts, links, comments, participant matches</small></div>
+      <span class="arr">→</span>
+      <div class="node t">Combine emails, phones, links<small>as the merging person</small></div>
+      <span class="arr">→</span>
+      <div class="node e">B soft-deleted<small><code>merged_into_id = A</code>; reads of B return A</small></div>
+    </div>
+    <p class="note">Workers also run the extension and routine executors, change dispatch and file maintenance. Routine code runs in the same closed sandbox, with a run token of agent rank (ARCHITECTURE.md 4.7).</p>
+  </section>
+
+  <!-- 11 -->
+  <section id="auth">
+    <span class="eyebrow">11 · Tenancy and auth</span>
+    <div class="zoom"><span>Concept</span><span class="on">System</span><span>Data</span><span>Rules</span><span>Code</span></div>
+    <h2>Every credential becomes one Caller in one workspace</h2>
+    <p class="prose">The workspace is the security boundary. The application checks access, and Postgres row-level security checks it again on every query.</p>
+    <div class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 290" role="img" aria-label="Five credentials, an API key, a web session cookie, an MCP OAuth token, an installation OAuth token or key, and a run token, are authenticated into one Caller with a workspace, actor, scopes and optional person. The Caller sets app.workspace_id and app.user_id, which row-level security uses.">
+        <defs>
+          <marker id="a11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+        </defs>
+        <text x="20" y="22" class="zlabel">CREDENTIAL</text>
+        <text x="420" y="22" class="zlabel">CALLER</text>
+        <text x="700" y="22" class="zlabel">DATABASE</text>
+        <rect x="20" y="34" width="300" height="40" rx="8" class="b-out"/><text x="34" y="59">API key <tspan class="small">· agents, both modes</tspan></text>
+        <rect x="20" y="84" width="300" height="40" rx="8" class="b-out"/><text x="34" y="109">Session cookie <tspan class="small">· people in the web app</tspan></text>
+        <rect x="20" y="134" width="300" height="40" rx="8" class="b-out"/><text x="34" y="159">MCP OAuth token <tspan class="small">· /mcp, actor agent</tspan></text>
+        <rect x="20" y="184" width="300" height="40" rx="8" class="b-out"/><text x="34" y="209">Installation token or key <tspan class="small">· /v1</tspan></text>
+        <rect x="20" y="234" width="300" height="40" rx="8" class="b-ext"/><text x="34" y="259">Run token <tspan class="small">· one extension run</tspan></text>
+
+        <rect x="400" y="94" width="220" height="120" rx="10" class="b-trusted"/>
+        <text x="510" y="122" text-anchor="middle" style="font-weight:600">Caller</text>
+        <text x="510" y="144" text-anchor="middle" class="small">exactly one workspace</text>
+        <text x="510" y="162" text-anchor="middle" class="small">actor: user · agent · integration · system</text>
+        <text x="510" y="180" text-anchor="middle" class="small">scopes: read · write · schema:write · admin</text>
+        <text x="510" y="198" text-anchor="middle" class="small">person, if the credential names one</text>
+
+        <rect x="700" y="94" width="240" height="120" rx="10" class="b-db"/>
+        <text x="820" y="122" text-anchor="middle" style="font-weight:600">Row-level security</text>
+        <text x="820" y="144" text-anchor="middle" class="small">app.workspace_id on every row</text>
+        <text x="820" y="162" text-anchor="middle" class="small">app.user_id for private memory</text>
+        <text x="820" y="180" text-anchor="middle" class="small">runtime role: no owner, no BYPASSRLS</text>
+        <text x="820" y="198" text-anchor="middle" class="small">narrow SECURITY DEFINER lookups</text>
+
+        <line x1="322" y1="54" x2="398" y2="120" class="arrow" marker-end="url(#a11)"/>
+        <line x1="322" y1="104" x2="398" y2="134" class="arrow" marker-end="url(#a11)"/>
+        <line x1="322" y1="154" x2="398" y2="154" class="arrow" marker-end="url(#a11)"/>
+        <line x1="322" y1="204" x2="398" y2="174" class="arrow" marker-end="url(#a11)"/>
+        <line x1="322" y1="254" x2="398" y2="190" class="arrow" marker-end="url(#a11)"/>
+        <line x1="622" y1="154" x2="698" y2="154" class="arrow" marker-end="url(#a11)"/>
+        <text x="630" y="146" class="small">inWorkspace</text>
+      </svg>
+      </div>
+    </div>
+    <div class="two">
+      <div class="panel">
+        <h3>Key mode (default)</h3>
+        <p class="sub">An operator creates workspaces and keys with the CLI. Self-hosted starts with one workspace and an admin key printed on first boot. The web app signs in with a key, kept in an HTTP-only cookie.</p>
+      </div>
+      <div class="panel">
+        <h3>Accounts mode</h3>
+        <p class="sub">Better Auth in-process: Google, Microsoft or a passkey, no passwords. Organizations, invitations, roles, MCP OAuth for Claude's web app. Roles are bundles of scopes.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:5px"><span class="tag">viewer = read</span><span class="tag">editor = read, write</span><span class="tag">admin = all four</span></div>
+      </div>
+    </div>
+    <p class="note">Human-only actions check the actor, not the scope: <code>forget</code>, destructive schema changes, merges, accepting review items and moving events all need a <code>user</code>. An agent with an admin key still can't do them.</p>
+  </section>
+
+  <!-- 12 -->
+  <section id="code">
+    <span class="eyebrow">12 · Code layout</span>
+    <div class="zoom"><span>Concept</span><span>System</span><span>Data</span><span>Rules</span><span class="on">Code</span></div>
+    <h2>Packages, then the server's six layers</h2>
+    <p class="prose">Server code is AGPL; everything a client imports is MIT. Inside the server, a module imports only its own layer and those below. <code>pnpm lint</code> enforces both.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Package</th><th>License</th><th>Holds</th></tr></thead>
+        <tbody>
+          <tr><th><code>server</code></th><td>AGPL-3.0</td><td>API, MCP, workers, schema engine, database</td></tr>
+          <tr><th><code>shared</code></th><td>MIT</td><td>Field types, composite shapes, actor, schema types</td></tr>
+          <tr><th><code>sdk</code></th><td>MIT</td><td>TypeScript client</td></tr>
+          <tr><th><code>web</code></th><td>MIT</td><td>Optional React app for people</td></tr>
+          <tr><th><code>mcp</code></th><td>MIT</td><td>stdio bridge to the hosted MCP endpoint</td></tr>
+          <tr><th><code>extension</code></th><td>MIT</td><td>SDK for writing extension functions</td></tr>
+          <tr><th><code>runner</code></th><td>MIT</td><td>First-party extension and routine code that runs in the sandbox</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="stack">
+      <div class="layer"><div class="name">Entry<small>start the server, CLI, Lambda</small></div><div class="tags"><span class="tag">index</span><span class="tag">cli</span><span class="tag">lambda</span><span class="tag">egress-proxy</span><span class="tag">extension-launcher</span><span class="tag">file-server</span></div></div>
+      <div class="layer"><div class="name">Interfaces<small>the ways in</small></div><div class="tags"><span class="tag">api</span><span class="tag">mcp</span><span class="tag">worker</span><span class="tag">operator</span><span class="tag">auth</span><span class="tag">http</span><span class="tag">accounts</span><span class="tag">egress</span><span class="tag">model</span><span class="tag">launcher</span><span class="tag">extension-control</span><span class="tag">webhooks</span></div></div>
+      <div class="layer l-meta"><div class="name">Admin<small>schema, workspaces, extensions</small></div><div class="tags"><span class="tag">schema-engine</span><span class="tag">templates</span><span class="tag">workspaces</span><span class="tag">extensions</span><span class="tag">routines</span></div></div>
+      <div class="layer"><div class="name">Features<small>built on records and memory</small></div><div class="tags"><span class="tag">views</span><span class="tag">comments</span><span class="tag">retrieval</span><span class="tag">reads</span></div></div>
+      <div class="layer l-rec"><div class="name">Core<small>the write rules</small></div><div class="tags"><span class="tag">records</span><span class="tag">memory</span><span class="tag">privacy</span><span class="tag">files</span><span class="tag">sources</span><span class="tag">changes</span></div></div>
+      <div class="layer l-mem"><div class="name">Foundation<small>database, reading a schema</small></div><div class="tags"><span class="tag">db</span><span class="tag">schema</span><span class="tag">caller</span><span class="tag">idempotency</span><span class="tag">stable-json</span><span class="tag">config</span><span class="tag">errors</span><span class="tag">log</span><span class="tag">version</span><span class="tag">extension-runtime</span><span class="tag">routine-runtime</span><span class="tag">file-storage</span></div></div>
+    </div>
+    <p class="note">Imports point down only. Core modules may import each other (events are records); nothing else may form a cycle. Only <code>api</code>, <code>extension-control</code>, <code>operator</code> and <code>lambda</code> may import <code>model</code>.</p>
+  </section>
+
+</main>
+
+</body></html>

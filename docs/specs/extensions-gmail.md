@@ -133,7 +133,9 @@ The append transaction rechecks the connection fence, message preparation,
 window and eligible Person before storing evidence. The Conversation appears
 in activity through its latest message. Earlier message event IDs still open
 the conversation and remain valid citations. Read message text through
-`GET /v1/events/:id/gmail-messages` or `get_gmail_messages`.
+`GET /v1/events/:id/content` or `get_event_content`. Bodies live in the
+generic `event_bodies` table (ARCHITECTURE.md 1.3), with the Gmail thread as
+the thread ID; search matches them.
 
 ## Sync and disconnect
 

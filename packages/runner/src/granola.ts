@@ -4,6 +4,7 @@ import { RetainerApiError, RetainerClient } from '@retainer/sdk';
 import {
   BASE_EVENT_FIELD_IDS,
   BASE_EVENT_TYPE_IDS,
+  EVENT_CONTENT_MAX,
   type SourceScan,
   sourceScanSchema,
 } from '@retainer/shared';
@@ -328,6 +329,30 @@ async function enumerate(
     ...(next.done ? { scanComplete: { scanId: scan.scanId, through: scan.through } } : {}),
   });
 }
+/**
+ * A transcript as plain text, one line per segment ("Dana: Let's start."),
+ * so agents can read and search it. A transcript longer than an event's full
+ * text may be keeps its start and says it was cut.
+ */
+export function granolaTranscriptText(
+  transcript: z.infer<typeof granolaNote>['transcript'],
+): string | undefined {
+  if (!transcript?.length) return undefined;
+  const text = transcript
+    .map((segment) => {
+      const { name, attribution, diarization_label: label } = segment.speaker;
+      const speaker = name || attribution || label;
+      return speaker ? `${speaker}: ${segment.text}` : segment.text;
+    })
+    .join('\n')
+    .trim();
+  if (!text) return undefined;
+  const cut = '\n[Transcript cut: it is longer than Retainer keeps.]';
+  return text.length > EVENT_CONTENT_MAX
+    ? text.slice(0, EVENT_CONTENT_MAX - cut.length) + cut
+    : text;
+}
+
 async function importNote(
   sdk: RetainerClient,
   id: string,
@@ -402,6 +427,7 @@ async function importNote(
       type: BASE_EVENT_TYPE_IDS.conversation,
       title: note.title ?? 'Granola meeting',
       summary: note.summary_text,
+      content: granolaTranscriptText(note.transcript),
       occurredAt:
         note.calendar_event?.scheduled_start_time ??
         note.transcript?.[0]?.start_time ??

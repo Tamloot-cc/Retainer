@@ -33,6 +33,7 @@ import type {
   EventQueryInput,
   FactPlace,
   ForgetResult,
+  LinkedRecordPage,
   LogEventInput,
   LogEventResult,
   MergeInput,
@@ -228,6 +229,14 @@ export class RetainerClient {
     return this.get<PresentedRecord>(
       `/v1/records/${encodeURIComponent(id)}`,
       { include: include.join(',') },
+      signal,
+    );
+  }
+  linkedRecords(id: string, options: PageOptions & { object?: string } = {}) {
+    const { signal, ...query } = options;
+    return this.get<LinkedRecordPage>(
+      `/v1/records/${encodeURIComponent(id)}/linked`,
+      query,
       signal,
     );
   }
@@ -715,11 +724,13 @@ export class RetainerClient {
       | { kind: 'no_match' | 'removed' }
     >(`/v1/extensions/${encodeURIComponent(installationId)}/runtime/gmail/messages`, input);
   }
-  gmailMessages(eventId: string, after?: string, signal?: AbortSignal) {
-    return this.get<{
-      messages: { id: string; occurredAt: string; originalDate: string | null; body: string }[];
-      nextAfter: string | null;
-    }>(`/v1/events/${encodeURIComponent(eventId)}/gmail-messages`, { after }, signal);
+  /** The full text behind an event (an email's body, a transcript), or its thread's, oldest first. */
+  eventContent(eventId: string, after?: string, signal?: AbortSignal) {
+    return this.get<import('@retainer/shared').EventContentPage>(
+      `/v1/events/${encodeURIComponent(eventId)}/content`,
+      { after },
+      signal,
+    );
   }
   prepareSourceItem(installationId: string, itemId: string, participants: string[]) {
     return this.post<{ prepared: true }>(

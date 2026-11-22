@@ -901,8 +901,36 @@
     {
       "idx": 128,
       "version": "7",
-      "when": 1795312214834,
-      "tag": "0128_standalone_app_platform",
+      "when": 1795373509364,
+      "tag": "0128_event_bodies",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1795373514199,
+      "tag": "0129_event_bodies_copy",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1795373529363,
+      "tag": "0130_gmail_deliveries_event_bodies",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1795373532764,
+      "tag": "0131_drop_gmail_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1795381626055,
+      "tag": "0132_standalone_app_platform",
       "breakpoints": true
     }
   ]

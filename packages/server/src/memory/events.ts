@@ -549,13 +549,13 @@ export function currentSourceEvidence(tx: Tx, event: Fragment): Fragment {
   return tx`not exists(select 1 from source_revisions revision where revision.event_id=${event} and not revision.is_current)`;
 }
 
-/** Gmail messages remain citable, while activity shows the newest message per thread. */
+/** Every event of a thread remains citable, while activity shows the newest one per thread. */
 export function currentActivityEvidence(tx: Tx, event: Fragment): Fragment {
   return tx`${currentSourceEvidence(tx, event)}
     and not exists(
-      select 1 from gmail_messages m
-      join gmail_messages newer on newer.workspace_id=m.workspace_id
-        and newer.thread_group_id=m.thread_group_id and (newer.occurred_at,newer.event_id)>(m.occurred_at,m.event_id)
+      select 1 from event_bodies m
+      join event_bodies newer on newer.workspace_id=m.workspace_id
+        and newer.thread_id=m.thread_id and (newer.occurred_at,newer.event_id)>(m.occurred_at,m.event_id)
       where m.event_id=${event}
     )`;
 }
