@@ -159,17 +159,42 @@ function dedupe(issues: SchemaIssue[]): SchemaIssue[] {
   });
 }
 
-async function requireEmptyWorkspace(tx: Tx, current: SchemaState, workspaceId: string) {
+async function requireTemplateDestination(
+  tx: Tx,
+  current: SchemaState,
+  workspaceId: string,
+  operations: readonly SchemaOperation[],
+) {
   const [row] = await tx<{ templates: AppliedTemplate[] }[]>`
     select templates from workspaces where id = ${workspaceId}`;
   if (!row) throw notFound('workspace');
-  if (row.templates.length || current.objects.some((o) => !HIDDEN_TYPE_IDS.has(o.universalId))) {
+  if (
+    row.templates.length ||
+    current.objects.some((o) => o.status === 'active' && !HIDDEN_TYPE_IDS.has(o.universalId))
+  ) {
     throw new AppError(
       409,
       'workspace_not_empty',
       'A template can only be copied into an empty workspace. Propose individual schema changes instead.',
     );
   }
+  const retired = new Set(
+    current.objects
+      .filter((object) => object.status === 'deprecated')
+      .map((object) => object.universalId),
+  );
+  const clash = operations.find(
+    (operation) =>
+      operation.op === 'create_object' &&
+      operation.object.universalId &&
+      retired.has(operation.object.universalId),
+  );
+  if (clash?.op === 'create_object')
+    throw new AppError(
+      409,
+      'template_retained_identity',
+      `A deleted object still holds the template identity for ${clash.object.labelSingular}. Propose individual schema changes instead.`,
+    );
 }
 
 async function recordTemplate(
@@ -196,7 +221,8 @@ export async function runSchemaChange(
   await lockPrivacyShared(tx, workspaceId);
   await lockSchemaExclusive(tx, workspaceId);
   const current = await loadSchemaState(tx, workspaceId);
-  if (request.template) await requireEmptyWorkspace(tx, current, workspaceId);
+  if (request.template)
+    await requireTemplateDestination(tx, current, workspaceId, request.operations);
   const { desired, ops } = planSchemaChange(
     current,
     request.operations,
@@ -301,8 +327,8 @@ export async function decideSchemaChange(
     return { status: 'rejected', change, schemaVersion: await schemaVersion(tx, workspaceId) };
   }
 
-  if (row.template) await requireEmptyWorkspace(tx, current, workspaceId);
   const operations = row.request as SchemaOperation[];
+  if (row.template) await requireTemplateDestination(tx, current, workspaceId, operations);
   let planned: ReturnType<typeof planSchemaChange>;
   try {
     planned = planSchemaChange(

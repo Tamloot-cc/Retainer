@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import type { Actor } from '@retainer/shared';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { RUNTIME_ROLE, type Sql } from '../../src/db/client.js';
@@ -13,6 +14,7 @@ import { SchemaValidationError } from '../../src/schema/types.js';
 import { decideSchemaChange, runSchemaChange } from '../../src/schema-engine/engine.js';
 import type { SchemaOperation } from '../../src/schema-engine/operations.js';
 import { applyTemplate } from '../../src/templates/apply.js';
+import { STARTER_OBJECT_IDS } from '../../src/templates/index.js';
 import { createWorkspace } from '../../src/workspaces/workspaces.js';
 import { useTestDatabase } from '../helpers/db.js';
 
@@ -76,6 +78,28 @@ describe('workspace creation', () => {
     expect(changes).toEqual([
       { status: 'applied', requested_by: { type: 'system', id: 'retainer' } },
     ]);
+  });
+
+  it('invalidates the compiled schema once when the protection migration releases old flags', async () => {
+    const affected = await newWorkspace('starter');
+    const other = await newWorkspace('starter');
+    await db.owner`update object_types set is_protected=true where workspace_id=${affected.id} and name_singular='task'`;
+    await db.owner`update fields set is_protected=true where workspace_id=${affected.id} and name='status'`;
+    const cached = await inWorkspace(app, affected.id, (tx) => getSchema(tx, affected.id));
+    expect(cached.objectsByName.get('task')?.state.isProtected).toBe(true);
+    expect(cached.objectsByName.get('task')?.fieldsByName.get('status')?.isProtected).toBe(true);
+    const sql = await readFile(
+      new URL('../../drizzle/0135_release_former_base_schema.sql', import.meta.url),
+      'utf8',
+    );
+    await db.owner.unsafe(sql);
+    const refreshed = await inWorkspace(app, affected.id, (tx) => getSchema(tx, affected.id));
+    expect(refreshed.version).toBe(cached.version + 1);
+    expect(refreshed.objectsByName.get('task')?.state.isProtected).toBe(false);
+    expect(refreshed.objectsByName.get('task')?.fieldsByName.get('status')?.isProtected).toBe(
+      false,
+    );
+    expect((await getWorkspace(db.owner, other.id)).schemaVersion).toBe(other.schemaVersion);
   });
 
   it('applies a template and records it', async () => {
@@ -274,6 +298,72 @@ describe('templates', () => {
     });
     expect((await getWorkspace(db.owner, id)).templates.map((t) => t.name)).toEqual(['sales']);
     await expect(apply(id, 'sales')).rejects.toMatchObject({ code: 'workspace_not_empty' });
+  });
+
+  it('copies Starter after an earlier object with the same name was deleted', async () => {
+    const { id } = await newWorkspace();
+    await change(
+      id,
+      [
+        {
+          op: 'create_object',
+          object: {
+            nameSingular: 'company',
+            namePlural: 'companies',
+            labelSingular: 'Old company',
+            labelPlural: 'Old companies',
+            labelField: 'name',
+            fields: [{ name: 'name', label: 'Name', type: 'text' }],
+          },
+        },
+      ],
+      admin,
+      ALL,
+    );
+    expect(
+      (await change(id, [{ op: 'delete_object', object: 'company' }], admin, ALL)).status,
+    ).toBe('applied');
+    const proposal = await apply(id, 'starter');
+    if (!proposal.change) throw new Error('missing template proposal');
+    expect((await decide(id, proposal.change.id, 'approve')).status).toBe('applied');
+    const schema = await inWorkspace(app, id, (tx) => getSchema(tx, id));
+    expect(schema.objectsByName.get('company')?.state.labelSingular).toBe('Company');
+    expect(
+      await db.owner`select status from object_types where workspace_id=${id} and name_singular='company' order by status`,
+    ).toEqual([{ status: 'active' }, { status: 'deprecated' }]);
+  });
+
+  it('names the template object when pre-template history retains its identity', async () => {
+    const { id } = await newWorkspace();
+    const proposal = await apply(id, 'starter');
+    if (!proposal.change) throw new Error('missing template proposal');
+    await change(
+      id,
+      [
+        {
+          op: 'create_object',
+          object: {
+            universalId: STARTER_OBJECT_IDS.company,
+            nameSingular: 'company',
+            namePlural: 'companies',
+            labelSingular: 'Old company',
+            labelPlural: 'Old companies',
+            labelField: 'name',
+            fields: [{ name: 'name', label: 'Name', type: 'text' }],
+          },
+        },
+      ],
+      admin,
+      ALL,
+    );
+    await change(id, [{ op: 'delete_object', object: 'company' }], admin, ALL);
+    const error = {
+      status: 409,
+      code: 'template_retained_identity',
+      message: expect.stringContaining('Company'),
+    };
+    await expect(apply(id, 'starter')).rejects.toMatchObject(error);
+    await expect(decide(id, proposal.change.id, 'approve')).rejects.toMatchObject(error);
   });
 
   it('rechecks emptiness at approval while a schema create holds the exclusive lock', async () => {
