@@ -1,4 +1,6 @@
+import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { promisify } from 'node:util';
 import { tamlootManifest } from '@retainer/runner/tamloot-contract';
 import { expect, it } from 'vitest';
 import { inWorkspace } from '../../src/db/tx.js';
@@ -54,7 +56,28 @@ it('reports without writing and applies the same bindings or uninstall decisions
   const read = () =>
     db.owner`select id,state,version,release_digest,bindings from extension_installations order by id`;
   const before = await read();
-  const report = await migrateExtensionBindings(db.owner, catalog, true);
+  // The hosted preflight runs against the schema before the bindings columns exist.
+  await db.owner`alter table extension_installations rename column bindings to test_bindings`;
+  await db.owner`alter table extension_installations rename column bindings_revision to test_bindings_revision`;
+  let report: unknown;
+  try {
+    const { stdout } = await promisify(execFile)('pnpm', ['--silent', 'migrate:bindings-report'], {
+      env: {
+        ...process.env,
+        DATABASE_URL: db.url,
+        RETAINER_EXTENSION_CATALOG: JSON.stringify(
+          catalog.list().map(({ digest, ...entry }) => entry),
+        ),
+        RETAINER_EXTENSION_CATALOG_FILE: '',
+        RETAINER_EXTENSION_CATALOG_SHA256: '',
+        PGOPTIONS: '-c default_transaction_read_only=on',
+      },
+    });
+    report = JSON.parse(stdout);
+  } finally {
+    await db.owner`alter table extension_installations rename column test_bindings to bindings`;
+    await db.owner`alter table extension_installations rename column test_bindings_revision to bindings_revision`;
+  }
   expect(await read()).toEqual(before);
   expect(report).toEqual(
     expect.arrayContaining([
