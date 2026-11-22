@@ -1,16 +1,18 @@
-import { STARTER_EVENT_TYPE_IDS } from '../src/templates/base.js';
 import { extensionFixture } from '../test/helpers/extensions.js';
+import { sourceTestBindings } from '../test/helpers/source-bindings.js';
 
 export const sourceManifest = extensionFixture({
   universalId: '95df1c22-8960-4e6f-b4ac-76dd795a8729',
   name: 'source-browser-fixture',
   scopes: ['read', 'write'],
+  bindings: sourceTestBindings,
   source: {
     provider: 'fixture',
     identity: 'account',
     verifyFunctionId: 'cb77e041-009f-4677-bb52-d34a6599aa3d',
     syncFunctionIds: ['8ce44dc0-f84b-4730-8cf3-2e4c8df70d77'],
-    eventTypeIds: [STARTER_EVENT_TYPE_IDS.conversation],
+    event: 'conversation',
+    people: 'person',
     revisionOrder: 'integer',
   },
   functions: [

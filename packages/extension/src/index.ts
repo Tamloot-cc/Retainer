@@ -341,13 +341,8 @@ export const manifestSchema = z.strictObject({
   lastContact: z
     .strictObject({
       functionIds: z.array(uuid).min(1).max(20),
-      events: name.optional(),
-      destinations: z.array(name).min(1).max(20).optional(),
-      fields: z
-        .array(z.strictObject({ objectId: uuid, fieldId: uuid }))
-        .min(1)
-        .max(20)
-        .optional(),
+      events: bindingKeySchema,
+      destinations: z.array(bindingKeySchema).min(1).max(20),
     })
     .optional(),
   /** Reviewed, release-pinned ingestion authority; provider code attests only through setup. */
@@ -358,23 +353,11 @@ export const manifestSchema = z.strictObject({
       verifyFunctionId: uuid,
       syncFunctionIds: z.array(uuid).min(1).max(20),
       scanFunctionIds: z.array(uuid).min(1).max(20).optional(),
-      eventTypeIds: z.array(uuid).min(1).max(20).optional(),
-      event: bindingKeySchema.optional(),
+      event: bindingKeySchema,
       people: bindingKeySchema.optional(),
       revisionOrder: z.enum(['integer', 'timestamp', 'opaque']),
       /** Server-managed derived task identities; only the pinned ingestion functions may reconcile them. */
-      tasks: z
-        .union([
-          bindingKeySchema,
-          z.strictObject({
-            objectId: uuid,
-            titleFieldId: uuid,
-            statusFieldId: uuid,
-            personFieldId: uuid.optional(),
-            statuses: z.strictObject({ open: name, done: name }),
-          }),
-        ])
-        .optional(),
+      tasks: bindingKeySchema.optional(),
     })
     .optional(),
   /** Release-owned ingress contracts; workspace settings cannot choose verifiers or job functions. */
@@ -420,7 +403,6 @@ export const manifestSchema = z.strictObject({
   schema: z.array(contributionSchema).max(500),
   views: z.array(viewSchema).max(100),
   functions: z.array(functionSchema).max(100),
-  /** Outputs an admin binds to fields at install; written only through the mapped write. */
   /**
    * A member connection may connect by OAuth (Tamloot connect spec 4.2). The
    * server stages the verifier and the code; the bundle stores the tokens.
@@ -839,60 +821,43 @@ export function defineExtension(value: unknown): ExtensionManifest {
   checkConnections(manifest);
   if (manifest.lastContact) {
     const policy = manifest.lastContact;
-    if (policy.events || policy.destinations) {
-      const bindings = manifest.bindings ?? [];
-      if (
-        policy.fields ||
-        !bindings.some(
-          (b) => b.key === policy.events && b.class === 'event' && b.access === 'read',
-        ) ||
-        !policy.destinations?.every((key) =>
-          bindings.some(
-            (b) =>
-              b.key === key &&
-              b.class === 'entity' &&
-              b.access === 'write' &&
-              b.fields.some(
-                (field) =>
-                  field.key === 'lastContact' &&
-                  field.owned &&
-                  field.types.join() === 'date_time' &&
-                  field.create?.isNullable !== false &&
-                  field.create?.isUnique !== true,
-              ),
-          ),
-        )
+    const bindings = manifest.bindings ?? [];
+    if (
+      !bindings.some(
+        (b) => b.key === policy.events && b.class === 'event' && b.access === 'read',
+      ) ||
+      new Set(policy.destinations).size !== policy.destinations.length ||
+      !policy.destinations.every((key) =>
+        bindings.some(
+          (b) =>
+            b.key === key &&
+            b.class === 'entity' &&
+            b.access === 'write' &&
+            b.fields.some(
+              (field) =>
+                field.key === 'lastContact' &&
+                field.owned &&
+                field.types.join() === 'date_time' &&
+                field.create?.isNullable !== false &&
+                field.create?.isUnique !== true,
+            ),
+        ),
       )
-        throw new Error(
-          'unsupported_manifest: Last contact requires an event read binding and owned date-time fields.',
-        );
-    } else if (!policy.fields)
-      throw new Error('unsupported_manifest: Last contact requires bindings.');
+    )
+      throw new Error(
+        'unsupported_manifest: Last contact requires an event read binding and owned date-time fields.',
+      );
 
     if (
       manifest.execution !== 'hosted' ||
       !manifest.scopes.includes('read') ||
       !manifest.scopes.includes('write') ||
       new Set(policy.functionIds).size !== policy.functionIds.length ||
-      new Set((policy.fields ?? []).map((entry) => entry.objectId)).size !==
-        (policy.fields ?? []).length ||
       policy.functionIds.some(
         (id) =>
           !manifest.functions.some(
             (fn) =>
               fn.universalId === id && ['job', 'change', 'schedule'].includes(fn.trigger.kind),
-          ),
-      ) ||
-      (policy.fields ?? []).some(
-        (entry) =>
-          !manifest.schema.some(
-            (item) =>
-              item.kind === 'field' &&
-              item.objectId === entry.objectId &&
-              item.definition.universalId === entry.fieldId &&
-              item.definition.type === 'date_time' &&
-              item.definition.isNullable !== false &&
-              item.definition.isUnique !== true,
           ),
       )
     )
@@ -956,17 +921,6 @@ export function defineExtension(value: unknown): ExtensionManifest {
   }
   if (manifest.source) {
     const source = manifest.source;
-    if (source.tasks && typeof source.tasks !== 'string') {
-      const tasks = source.tasks,
-        fields = [
-          tasks.titleFieldId,
-          tasks.statusFieldId,
-          ...(tasks.personFieldId ? [tasks.personFieldId] : []),
-        ];
-      if (new Set(fields).size !== fields.length || tasks.statuses.open === tasks.statuses.done)
-        throw new Error('unsupported_manifest: managed task fields and statuses must be distinct');
-    }
-
     if (
       manifest.execution !== 'hosted' ||
       !manifest.scopes.includes('write') ||
@@ -982,12 +936,9 @@ export function defineExtension(value: unknown): ExtensionManifest {
       );
     const binding = (key: string | undefined) => manifest.bindings?.find((b) => b.key === key);
     if (
-      source.event
-        ? source.eventTypeIds ||
-          binding(source.event)?.class !== 'event' ||
-          binding(source.event)?.access !== 'write' ||
-          !binding(source.event)?.required
-        : !source.eventTypeIds
+      binding(source.event)?.class !== 'event' ||
+      binding(source.event)?.access !== 'write' ||
+      !binding(source.event)?.required
     )
       throw new Error('unsupported_manifest: sources need a required write event binding');
     if (
@@ -996,16 +947,13 @@ export function defineExtension(value: unknown): ExtensionManifest {
     )
       throw new Error('unsupported_manifest: source people need an email match field');
     if (
-      typeof source.tasks === 'string' &&
+      source.tasks &&
       (binding(source.tasks)?.class !== 'entity' ||
         !binding(source.tasks)?.creates ||
         binding(source.tasks)?.access !== 'write')
     )
       throw new Error('unsupported_manifest: source tasks need an entity that creates records');
-    if (
-      new Set(source.syncFunctionIds).size !== source.syncFunctionIds.length ||
-      new Set(source.eventTypeIds).size !== (source.eventTypeIds?.length ?? 0)
-    )
+    if (new Set(source.syncFunctionIds).size !== source.syncFunctionIds.length)
       throw new Error('unsupported_manifest: duplicate source binding');
     const scans = source.scanFunctionIds ?? [];
     if (

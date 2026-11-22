@@ -5,8 +5,15 @@ import type { StoredBindingPlan } from '../extension-runtime/bindings.js';
 
 type ManifestSource = NonNullable<ExtensionManifest['source']>;
 export type SourcePolicy = Omit<ManifestSource, 'tasks'> & {
-  tasks?: Exclude<NonNullable<ManifestSource['tasks']>, string> & { matchFieldId?: string };
-  plan?: StoredBindingPlan;
+  tasks?: {
+    objectId: string;
+    titleFieldId: string;
+    statusFieldId: string;
+    personFieldId?: string;
+    matchFieldId?: string;
+    statuses: { open: string; done: string };
+  };
+  plan: StoredBindingPlan;
 };
 
 export function resolveSourcePolicy(
@@ -14,14 +21,13 @@ export function resolveSourcePolicy(
   plan?: StoredBindingPlan,
 ): SourcePolicy {
   const { tasks, ...policy } = source;
-  if (!source.event) return { ...policy, tasks: typeof tasks === 'string' ? undefined : tasks };
   if (!plan)
     throw new AppError(
       409,
       'binding_unavailable',
       'The installation has no approved binding plan.',
     );
-  const destination = typeof tasks === 'string' ? plan.destinations[tasks] : null;
+  const destination = tasks ? plan.destinations[tasks] : null;
   const keys = destination?.fields;
   const objectId = destination?.objects[0];
   const title = keys?.title;

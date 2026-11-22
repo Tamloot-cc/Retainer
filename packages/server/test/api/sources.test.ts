@@ -11,10 +11,10 @@ import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { createFileServer, LocalFileStorage } from '../../src/file-storage/local.js';
 import { requestHash } from '../../src/idempotency.js';
-import { STARTER_EVENT_TYPE_IDS } from '../../src/templates/base.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
+import { sourceTestBindings } from '../helpers/source-bindings.js';
 
 const db = useTestDatabase();
 let storage: LocalFileStorage,
@@ -68,13 +68,15 @@ async function setup(
     scopes: ['read', 'write'],
     createPeople: policy,
     onSourceDelete,
+    bindings: sourceTestBindings,
     source: {
       provider: 'fixture',
       identity: 'account',
       verifyFunctionId: verifyId,
       syncFunctionIds: [syncId],
       scanFunctionIds: [backfillId],
-      eventTypeIds: [STARTER_EVENT_TYPE_IDS.conversation],
+      event: 'conversation',
+      people: 'person',
       revisionOrder: 'integer',
     },
     functions: [
@@ -178,7 +180,7 @@ async function setup(
     return { itemId, ...(await start(itemId)) };
   }
   const event = (title = 'First', participants: { email: string; contacted?: boolean }[] = []) => ({
-    type: STARTER_EVENT_TYPE_IDS.conversation,
+    binding: 'conversation',
     occurredAt: '2026-11-10T10:00:00Z',
     title,
     participants,
@@ -425,7 +427,11 @@ describe('managed source evidence with real RLS Postgres', () => {
         })
       ).status,
     ).toBe(200);
-    expect((await h.sync(source.key, source.itemId, '1', null)).body).toEqual(first.body);
+    expect((await h.sync(source.key, source.itemId, '1', null)).body).toMatchObject({
+      ...first.body,
+      created: false,
+      unchanged: true,
+    });
     const [item] = await db.owner`select state from source_items where id=${source.itemId}`;
     expect(item?.state).toBe('live');
     const second = await h.sync(
@@ -440,13 +446,17 @@ describe('managed source evidence with real RLS Postgres', () => {
       key: source.key,
       body: { status: 'unavailable' },
     });
-    expect((await h.sync(source.key, source.itemId, '1', null)).body).toEqual(first.body);
+    expect((await h.sync(source.key, source.itemId, '1', null)).body).toMatchObject({
+      ...first.body,
+      created: false,
+      unchanged: true,
+    });
     const [stillUnavailable] =
       await db.owner`select state from source_items where id=${source.itemId}`;
     expect(stillUnavailable?.state).toBe('unavailable');
     expect(
       (await h.sync(source.key, source.itemId, '2', first.body.revisionId, h.event('Edited'))).body,
-    ).toEqual(second.body);
+    ).toMatchObject({ ...second.body, created: false, unchanged: true });
     const [recovered] = await db.owner`select state from source_items where id=${source.itemId}`;
     expect(recovered?.state).toBe('live');
   });
@@ -490,7 +500,7 @@ describe('managed source evidence with real RLS Postgres', () => {
       null,
       h.event('Original', [{ email: 'dana@source.test' }]),
     );
-    expect(duplicate.body).toEqual(first);
+    expect(duplicate.body).toMatchObject({ ...first, created: false, unchanged: true });
     expect(
       (
         await h.app.request(`/v1/records/${personId}`, {
@@ -620,7 +630,8 @@ describe('managed source evidence with real RLS Postgres', () => {
       h.sync(s.key, s.itemId, '1', null),
     ]);
     expect(responses.every((r) => r.status === 200)).toBe(true);
-    expect(responses[0]?.body).toEqual(responses[1]?.body);
+    expect(responses.map((response) => response.body.created).sort()).toEqual([false, true]);
+    expect(responses[0]?.body.revisionId).toBe(responses[1]?.body.revisionId);
     expect(
       (await h.sync(s.key, s.itemId, '1', null, h.event('Conflicting replay'))).body.error.code,
     ).toBe('source_revision_conflict');
@@ -960,7 +971,7 @@ describe('managed source evidence with real RLS Postgres', () => {
     ]);
     // A client digest over the event as it sent it, erased handle included, is checked in memory only.
     const submitted = requestHash({
-      type: listed.type,
+      type: listed.binding,
       occurredAt: '2026-11-10T10:00:00.000Z',
       title: 'Later',
       summary: '',
@@ -1085,7 +1096,11 @@ describe('managed source evidence with real RLS Postgres', () => {
     expect(synced.status, JSON.stringify(synced.body)).toBe(200);
     const eventId = synced.body.eventId as string;
     // The content is part of the canonical event: a replay is the same import, a change is not.
-    expect((await h.sync(source.key, source.itemId, '1', null, meeting)).body).toEqual(synced.body);
+    expect((await h.sync(source.key, source.itemId, '1', null, meeting)).body).toMatchObject({
+      ...synced.body,
+      created: false,
+      unchanged: true,
+    });
     const changed = await h.sync(source.key, source.itemId, '1', null, {
       ...meeting,
       content: 'Something else.',
@@ -1168,14 +1183,14 @@ describe('managed source evidence with real RLS Postgres', () => {
       await db.owner`select key,universal_id from fields where workspace_id=${h.workspace.id} and type='files'`;
     const imported = await h.sync(s.key, s.itemId, '1', null, {
       ...h.event('Transcript'),
-      fields: { [field?.universal_id]: [intent.body.id] },
+      fields: { transcript: [intent.body.id] },
     } as ReturnType<typeof h.event>);
     expect(imported.status).toBe(200);
     expect(
       (
         await h.sync(s.key, s.itemId, '2', imported.body.revisionId, {
           ...h.event('Transcript'),
-          fields: { [field?.key]: [intent.body.id], [field?.universal_id]: [intent.body.id] },
+          fields: { transcript: [intent.body.id], [field?.universal_id]: [intent.body.id] },
         })
       ).body.error.code,
     ).toBe('invalid_source_field');
@@ -1202,7 +1217,7 @@ describe('managed source evidence with real RLS Postgres', () => {
     });
     const unchanged = await h.sync(s.key, s.itemId, '2', imported.body.revisionId, {
       ...h.event('Transcript'),
-      fields: { [field?.key]: [retryIntent.body.id] },
+      fields: { transcript: [retryIntent.body.id] },
     } as ReturnType<typeof h.event>);
     expect(unchanged.status).toBe(200);
     expect(unchanged.body.unchanged).toBe(true);

@@ -16,7 +16,7 @@ import { RunTokens } from '../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../src/extensions/catalog.js';
 import { parseOAuthClients } from '../src/extensions/oauth-clients.js';
 import { createFileServer, LocalFileStorage } from '../src/file-storage/local.js';
-import { STARTER_EVENT_TYPE_IDS, STARTER_OBJECT_IDS } from '../src/templates/base.js';
+import { STARTER_OBJECT_IDS } from '../src/templates/base.js';
 import { consolidateWorkspace } from '../src/worker/consolidate.js';
 import { createWorkspace } from '../src/workspaces/workspaces.js';
 import { extensionFixture as manifestFixture } from '../test/helpers/extensions.js';
@@ -707,7 +707,7 @@ export const test = base.extend<
           )
         ).record;
       const event = {
-        type: STARTER_EVENT_TYPE_IDS.conversation,
+        binding: 'conversation',
         occurredAt: '2026-11-10T10:00:00Z',
         title: 'Original provider note',
         participants: [{ email: 'source-browser@fixture.test' }],

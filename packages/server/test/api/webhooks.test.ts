@@ -8,7 +8,6 @@ import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
-import { STARTER_EVENT_TYPE_IDS } from '../../src/templates/base.js';
 import { IngressLimiter } from '../../src/webhooks/limiter.js';
 import { Webhooks } from '../../src/webhooks/service.js';
 import { ChangeMaintenance } from '../../src/worker/changes.js';
@@ -17,6 +16,7 @@ import type { VerificationDriver } from '../../src/worker/verifier-driver.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
+import { sourceTestBindings } from '../helpers/source-bindings.js';
 
 const db = useTestDatabase(),
   setupId = randomUUID(),
@@ -31,12 +31,14 @@ const input: InputSchema = {
 };
 const manifest = extensionFixture({
   scopes: ['read', 'write'],
+  bindings: sourceTestBindings,
   source: {
     provider: 'fixture',
     identity: 'account',
     verifyFunctionId: setupId,
     syncFunctionIds: [syncId],
-    eventTypeIds: [STARTER_EVENT_TYPE_IDS.conversation],
+    event: 'conversation',
+    people: 'person',
     revisionOrder: 'opaque',
   },
   settings: {

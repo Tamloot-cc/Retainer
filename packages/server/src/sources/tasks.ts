@@ -194,7 +194,7 @@ export async function reconcileTasks(
       const matchField = personObject.activeFields.find(
         (field) => field.universalId === definition.matchFieldId,
       );
-      if (policy.plan && !matchField?.id)
+      if (!matchField?.id)
         throw new AppError(
           409,
           'binding_unavailable',
@@ -202,7 +202,7 @@ export async function reconcileTasks(
         );
       const matches = await tx<
         { record_id: string }[]
-      >`select distinct i.record_id from record_identifiers i join records r on r.id=i.record_id where i.workspace_id=${context.workspaceId} and i.kind='email' ${matchField?.id ? tx`and i.field_id=${matchField.id}` : tx`and i.is_claim`} and i.value=any(${task.contactEmails}::text[]) and r.object_type_id=${personObject.id} and r.deleted_at is null and r.merged_into_id is null limit 2`;
+      >`select distinct i.record_id from record_identifiers i join records r on r.id=i.record_id where i.workspace_id=${context.workspaceId} and i.kind='email' and i.field_id=${matchField.id} and i.value=any(${task.contactEmails}::text[]) and r.object_type_id=${personObject.id} and r.deleted_at is null and r.merged_into_id is null limit 2`;
       if (matches.length === 1) personId = matches[0]!.record_id;
     }
     const digest = requestHash({ eventId, title: task.title, status: task.status, personId });

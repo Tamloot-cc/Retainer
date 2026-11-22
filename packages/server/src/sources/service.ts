@@ -49,7 +49,6 @@ type Binding = {
   registration_id: string;
   version: string;
   release_digest: string;
-  settings: Record<string, unknown>;
 };
 type Item = {
   task_write_revision?: number;
@@ -99,17 +98,15 @@ export class Sources {
       {
         version: string;
         release_digest: string;
-        settings: Record<string, unknown>;
         bindings: StoredBindingPlan | null;
       }[]
-    >`select version,release_digest,settings,bindings from extension_installations where id=${run.installationId}`;
+    >`select version,release_digest,bindings from extension_installations where id=${run.installationId}`;
     if (!i) throw notFound('installation source');
     const manifest = this.resolve(run.registrationId, i.version, i.release_digest);
     if (!manifest.source) throw forbidden('release has no managed source capability');
     return {
       manifest,
       policy: resolveSourcePolicy(manifest.source, i.bindings ?? undefined),
-      settings: i.settings,
     };
   }
   private async binding(tx: Tx, caller: Caller): Promise<Binding> {
@@ -117,9 +114,8 @@ export class Sources {
     if (!run) throw forbidden('source operation requires an installation credential');
     const [binding] = await tx<
       Binding[]
-    >`select b.account_id,a.namespace,a.provider,a.registration_id,i.version,i.release_digest,(i.settings || coalesce(c.settings,'{}'::jsonb)) as settings
+    >`select b.account_id,a.namespace,a.provider,a.registration_id,i.version,i.release_digest
       from source_bindings b join source_accounts a on a.id=b.account_id join extension_installations i on i.id=b.installation_id
-      left join extension_connections c on c.id=b.connection_id and c.installation_id=i.id
       where b.installation_id=${run.installationId} and b.connection_id is not distinct from ${run.connectionId ?? null}::uuid and b.generation=${run.generation} and a.registration_id=${run.registrationId}`;
     if (!binding)
       throw conflict(
@@ -570,86 +566,54 @@ export class Sources {
     input: SourceEventInput,
     accepted?: SourceProjection,
   ) {
-    const destination = policy.event ? policy.plan?.destinations[policy.event] : undefined;
+    const destination = policy.plan.destinations[policy.event];
     const binding = accepted?.binding ?? policy.event;
-    if (
-      binding
-        ? input.event.binding !== binding
-        : !input.event.type || !policy.eventTypeIds?.includes(input.event.type)
-    )
-      throw forbidden('event type is outside the registered source binding');
-    const object = context.schema.objectsByUniversalId.get(
-      destination?.objects[0] ?? input.event.type ?? '',
-    );
+    if (input.event.binding !== binding)
+      throw forbidden('Use the registered source event binding.');
+    const object = context.schema.objectsByUniversalId.get(destination?.objects[0] ?? '');
     if (
       !accepted &&
       (!object || object.hidden || !object.isEvent || object.state.status !== 'active')
     )
       throw conflict('binding_unavailable', 'The approved event destination is unavailable.');
-
-    const projection: SourceProjection | undefined =
-      accepted ??
-      (destination && binding
-        ? {
-            binding,
-            fields: Object.fromEntries(
-              Object.entries(destination.fields).map(([key, target]) => {
-                const field = object?.activeFields.find((field) => field.universalId === target.id);
-                if (!field || field.coreRole || field.settings.isInverse)
-                  throw conflict(
-                    'binding_unavailable',
-                    `The approved event field ${key} is unavailable.`,
-                  );
-                return [
-                  key,
-                  {
-                    field: {
-                      type: field.type,
-                      settings: field.settings,
-                      isNullable: field.isNullable,
-                    },
-                    values: target.values,
-                  },
-                ];
-              }),
-            ),
-          }
-        : undefined);
+    const projection: SourceProjection = accepted ?? {
+      binding,
+      fields: Object.fromEntries(
+        Object.entries(destination?.fields ?? {}).map(([key, target]) => {
+          const field = object?.activeFields.find((entry) => entry.universalId === target.id);
+          if (!field || field.coreRole || field.settings.isInverse)
+            throw conflict(
+              'binding_unavailable',
+              `The approved event field ${key} is unavailable.`,
+            );
+          return [
+            key,
+            {
+              field: { type: field.type, settings: field.settings, isNullable: field.isNullable },
+              values: target.values,
+            },
+          ];
+        }),
+      ),
+    };
     const fields: Record<string, unknown> = {},
       canonicalFields: Record<string, unknown> = {};
-    const declared = policy.plan?.declarations.find((entry) => entry.key === policy.event);
+    const declared = policy.plan.declarations.find((entry) => entry.key === policy.event);
     for (const [key, value] of Object.entries(input.event.fields)) {
-      const target = destination?.fields[key];
-      const stored = projection?.fields[key];
+      const stored = projection.fields[key];
       const live = accepted
         ? undefined
-        : object?.activeFields.find((field) =>
-            destination
-              ? target?.id === field.universalId
-              : field.key === key || field.universalId === key,
-          );
-      if (
-        projection &&
-        !stored &&
-        (accepted || declared?.fields.some((field) => field.key === key))
-      )
-        continue;
-      const field = stored?.field ?? live;
-      if (!field || live?.coreRole || live?.settings.isInverse)
+        : object?.activeFields.find((field) => destination?.fields[key]?.id === field.universalId);
+      if (!stored && declared?.fields.some((field) => field.key === key)) continue;
+      if (!stored)
         throw new AppError(
           422,
           'invalid_source_field',
-          'Use a writable field from the approved source binding.',
+          'Use a field key from the approved event binding.',
           { key },
         );
-      if (live && Object.hasOwn(fields, live.name))
-        throw new AppError(
-          422,
-          'invalid_source_field',
-          'A source field was supplied more than once.',
-          { key },
-        );
-      const mapped = stored?.values ?? {};
+      const field = stored.field;
+      const mapped = stored.values;
       const isMapped = Object.keys(mapped).length > 0;
       if (isMapped && (typeof value !== 'string' || !Object.hasOwn(mapped, value)))
         throw new AppError(422, 'invalid_source_field', `Unknown source value for ${key}.`, {
@@ -657,7 +621,7 @@ export class Sources {
         });
       const normalized = normalizeFieldValue(field, isMapped ? mapped[value as string] : value);
       if (live) fields[live.name] = normalized;
-      const canonicalKey = stored?.canonicalKey ?? (projection ? key : (live?.key ?? key));
+      const canonicalKey = stored.canonicalKey ?? key;
       if (field.type === 'files') {
         const ids = (normalized ?? []) as string[];
         const rows = ids.length
@@ -676,12 +640,10 @@ export class Sources {
             ? null
             : ids.map((id) => {
                 const metadata = rows.find((row) => row.id === id)?.metadata;
-                return projection && !projection.canonicalType
-                  ? (metadata?.sha256 ?? metadata)
-                  : metadata;
+                return !projection.canonicalType ? (metadata?.sha256 ?? metadata) : metadata;
               });
       } else
-        canonicalFields[canonicalKey] = isMapped && !projection?.canonicalType ? value : normalized;
+        canonicalFields[canonicalKey] = isMapped && !projection.canonicalType ? value : normalized;
     }
     const listed = [...new Map(input.event.participants.map((p) => [p.email, p])).values()].sort(
       (a, b) => a.email.localeCompare(b.email),
@@ -696,7 +658,7 @@ export class Sources {
       (p) => !isSuppressed(suppressed, { kind: 'email', value: p.email }),
     );
     const canonicalOf = (people: typeof listed) => ({
-      type: projection?.canonicalType ?? binding ?? input.event.type,
+      type: projection.canonicalType ?? binding,
       occurredAt: new Date(input.event.occurredAt).toISOString(),
       title: input.event.title,
       summary: input.event.summary ?? '',
@@ -713,49 +675,14 @@ export class Sources {
       participants.length === listed.length ? digest : requestHash(canonicalOf(listed));
     return { object, fields, participants, projection, digest, submittedDigest };
   }
-  private async createParticipants(
-    tx: Tx,
-    context: WriteContext,
-    manifest: ExtensionManifest,
-    participants: SourceEventInput['event']['participants'],
-    settings: Record<string, unknown>,
-  ) {
-    const requested = settings.createPeople ?? manifest.createPeople;
-    const ranks = { never: 0, contacted_first: 1, everyone: 2 };
-    if (
-      typeof requested !== 'string' ||
-      !(requested in ranks) ||
-      ranks[requested as keyof typeof ranks] > ranks[manifest.createPeople]
-    )
-      throw forbidden('create-people setting exceeds the approved source policy');
-    if (requested === 'never') return;
-    const person = context.schema.objectsByName.get('person');
-    const email = person?.activeFields.find((f) => f.type === 'emails' && f.isUnique);
-    if (!person || !email)
-      throw conflict('source_schema_changed', 'the base person email binding is unavailable');
-    const name = person.activeFields.find((f) => f.type === 'full_name');
-    for (const participant of participants) {
-      if (requested === 'contacted_first' && !participant.contacted) continue;
-      const [hit] =
-        await tx`select 1 from record_identifiers where kind='email' and value=${participant.email} limit 1`;
-      if (hit) continue; // Ambiguous and soft-deleted matches never cause another person to be created.
-      const record = await insertRecord(tx, context, person);
-      const writes = new Map([
-        [email, normalizeFieldValue(email, { primary: participant.email, additional: [] })],
-      ]);
-      if (name && participant.name)
-        writes.set(name, normalizeFieldValue(name, { first: participant.name, last: '' }));
-      await writeFields(tx, context, person, record, writes);
-    }
-  }
   private async bindParticipants(
     tx: Tx,
     context: WriteContext,
     policy: SourcePolicy,
     participants: SourceEventInput['event']['participants'],
   ) {
-    const declaration = policy.plan?.declarations.find((entry) => entry.key === policy.people);
-    const binding = declaration && policy.plan?.destinations[declaration.key];
+    const declaration = policy.plan.declarations.find((entry) => entry.key === policy.people);
+    const binding = declaration && policy.plan.destinations[declaration.key];
     if (!declaration || !binding || !declaration.match)
       return participants.map(({ email }) => ({ handle: email }));
     const object = context.schema.objectsByUniversalId.get(binding.objects[0] ?? '');
@@ -765,25 +692,22 @@ export class Sources {
     if (!object || !field?.id)
       throw conflict('binding_unavailable', 'The approved contact matching field is unavailable.');
     const name = object.activeFields.find((f) => f.universalId === binding.fields.name?.id);
-    const mode = policy.plan?.createPeople ?? 'never';
+    const mode = policy.plan.createPeople ?? 'never';
     const output: { handle: string; recordId?: string }[] = [];
     for (const participant of participants) {
       const { email } = participant;
-      const rows = await tx<
-        { record_id: string; deleted_at: Date | null; merged_into_id: string | null }[]
-      >`
-        select distinct r.id as record_id, r.deleted_at, r.merged_into_id
-        from record_identifiers i join records r on r.id = i.record_id
+      const rows = await tx<{ record_id: string | null }[]>`
+        select distinct canonical.id as record_id
+        from record_identifiers i
+        join records r on r.id = i.record_id and r.workspace_id = i.workspace_id
+        left join records canonical on canonical.id = coalesce(r.merged_into_id, r.id)
+          and canonical.workspace_id = i.workspace_id and canonical.object_type_id = ${object.id}
+          and canonical.deleted_at is null and canonical.merged_into_id is null
+          and canonical.private_to_user is null
         where i.workspace_id = ${context.workspaceId} and i.field_id = ${field.id}
           and i.kind = 'email' and i.value = ${email} and r.object_type_id = ${object.id}
-        order by r.deleted_at nulls first limit 3`;
-      const live = [
-        ...new Set(
-          rows.flatMap((row) =>
-            row.merged_into_id ? [row.merged_into_id] : row.deleted_at ? [] : [row.record_id],
-          ),
-        ),
-      ];
+        order by record_id nulls last limit 2`;
+      const live = rows.flatMap(({ record_id }) => (record_id ? [record_id] : []));
       if (live.length === 1) {
         output.push({ handle: email, recordId: live[0] });
       } else if (
@@ -900,7 +824,7 @@ export class Sources {
       caller,
       async (tx, context) => {
         const binding = await this.binding(tx, caller),
-          { manifest, policy, settings } = await this.release(tx, caller);
+          { manifest, policy } = await this.release(tx, caller);
         const [job] =
           await tx`select function_id,source_item_id from extension_jobs where id=${run.jobId}`;
         if (
@@ -1000,7 +924,7 @@ export class Sources {
             'the same provider revision cannot contain different content',
           );
         let unchanged = current?.content_digest === normalized.digest;
-        if (!unchanged && current && item.provider_revision && policy.plan) {
+        if (!unchanged && current && item.provider_revision) {
           const previous = await receiptFor(
             requestHash({ providerRevision: item.provider_revision }),
           );
@@ -1038,11 +962,12 @@ export class Sources {
             await tx`select pg_advisory_xact_lock(21066::int4,hashtext(${JSON.stringify([caller.workspaceId, participant.email])}))`;
           // Writers cite source records before taking target locks. Block new citations before retracting old claims.
           if (current) await tx`select id from records where id=${current.event_id} for update`;
-          const participants = policy.plan
-            ? await this.bindParticipants(tx, context, policy, normalized.participants)
-            : normalized.participants.map((p) => ({ handle: p.email }));
-          if (!policy.plan)
-            await this.createParticipants(tx, context, manifest, normalized.participants, settings);
+          const participants = await this.bindParticipants(
+            tx,
+            context,
+            policy,
+            normalized.participants,
+          );
           const event = await logEvent(
             tx,
             { ...context, sourceItemId: item.id },
@@ -1056,7 +981,7 @@ export class Sources {
               participants,
               about: input.event.about,
             },
-            { resolveHandles: !policy.plan },
+            { resolveHandles: false },
           );
           if (input.event.content !== undefined)
             await storeEventBody(tx, caller.workspaceId, {

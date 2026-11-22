@@ -98,6 +98,22 @@ function scope(caller: Caller, required: 'read' | 'schema:write') {
   if (!caller.scopes.includes('admin') && !caller.scopes.includes(required))
     throw forbidden(`extension operation requires ${required}`);
 }
+function creationPolicy(
+  manifest: ExtensionManifest,
+  requested: unknown,
+): ExtensionManifest['createPeople'] {
+  if (requested === undefined) return manifest.createPeople;
+  const levels = ['never', 'contacted_first', 'everyone'] as const;
+  const choice = levels.find((level) => level === requested);
+  if (!choice || levels.indexOf(choice) > levels.indexOf(manifest.createPeople))
+    throw new AppError(
+      422,
+      'invalid_settings',
+      'Choose a contact creation policy allowed by this release.',
+    );
+  return choice;
+}
+
 const conflict = (code: string, message: string) => new AppError(409, code, message);
 /** Configure runs only for an installation being set up or turned on. */
 const configurable = (state: string) => state === 'configuring' || state === 'active';
@@ -668,10 +684,7 @@ export class Extensions {
     const fresh = !existing || ['configuring', 'uninstalled'].includes(existing.state);
     if (input.bindings && !manifest.bindings)
       throw new AppError(422, 'bindings_invalid', 'This release has no bindings to review.');
-    const people =
-      input.settings.createPeople === 'never' || input.settings.createPeople === 'contacted_first'
-        ? input.settings.createPeople
-        : manifest.createPeople;
+    const people = creationPolicy(manifest, input.settings.createPeople);
     const installedRelease = existing
       ? this.catalog.find(existing.registration_id, existing.version)?.manifest
       : undefined;
@@ -810,18 +823,6 @@ export class Extensions {
         );
     }
     const generation = existing?.generation ?? 0;
-    if (
-      manifest.source?.eventTypeIds?.some(
-        (id) =>
-          !planned.desired.objects.some(
-            (o) => o.universalId === id && o.class === 'event' && o.status === 'active',
-          ),
-      )
-    )
-      throw conflict(
-        'schema_binding_conflict',
-        'managed source event types must resolve to active event schema identities',
-      );
     const preview: ExtensionPreview = {
       planDigest: hash({
         workspace: caller.workspaceId,
@@ -950,11 +951,7 @@ export class Extensions {
       const plan = await this.plan(tx, caller, input);
       if (propose && caller.actor.type === 'agent' && input.bindings) {
         const current = await loadSchemaState(tx, caller.workspaceId);
-        const people =
-          input.settings.createPeople === 'never' ||
-          input.settings.createPeople === 'contacted_first'
-            ? input.settings.createPeople
-            : plan.release.manifest.createPeople;
+        const people = creationPolicy(plan.release.manifest, input.settings.createPeople);
         const review =
           plan.bound ??
           resolveBindingPlan(

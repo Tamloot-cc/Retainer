@@ -153,7 +153,23 @@ export function parseExtensionCatalog(raw?: string): ExtensionCatalog {
     entries.flatMap((entry) => {
       // Published snapshots can retain releases retired by the binding migration.
       const manifest = entry.manifest;
-      if (manifest && typeof manifest === 'object' && 'mapping' in manifest) return [];
+      if (manifest && typeof manifest === 'object') {
+        if ('mapping' in manifest) return [];
+        if (
+          'source' in manifest &&
+          manifest.source &&
+          typeof manifest.source === 'object' &&
+          'eventTypeIds' in manifest.source
+        )
+          return [];
+        if (
+          'lastContact' in manifest &&
+          manifest.lastContact &&
+          typeof manifest.lastContact === 'object' &&
+          'fields' in manifest.lastContact
+        )
+          return [];
+      }
       return [{ ...entry, manifest: defineExtension(manifest) }];
     }),
   );

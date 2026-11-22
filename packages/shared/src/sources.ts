@@ -21,13 +21,14 @@ export type SourceSyncStatus = {
   failedItems: number;
 };
 
-/** Managed imports use stable event type/field UUIDs; permanent field keys remain accepted aliases. */
+/** Managed imports use the release’s binding and field keys. */
 export type SourceEventImport = {
   sourceItemId: string;
   providerRevision?: string;
   expectedRevisionId: string | null;
   contentDigest?: string;
-  event: ({ binding: string; type?: never } | { type: string; binding?: never }) & {
+  event: {
+    binding: string;
     occurredAt: string;
     title: string;
     summary?: string;

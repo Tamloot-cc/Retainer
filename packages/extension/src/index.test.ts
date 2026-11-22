@@ -32,6 +32,18 @@ export const fixture = () => ({
   views: [],
   functions: [],
 });
+const sourceBindings = [
+  {
+    key: 'event',
+    label: 'Imported events',
+    description: 'Test event destination',
+    class: 'event',
+    access: 'write',
+    required: true,
+    fields: [],
+  },
+];
+
 describe('strict extension contracts', () => {
   it('refuses secret defaults, invalid choice defaults and preselected sharing consent', () => {
     const setting = {
@@ -128,7 +140,7 @@ describe('strict extension contracts', () => {
       identity: 'account',
       verifyFunctionId: verifyId,
       syncFunctionIds: [syncId],
-      eventTypeIds: ['d7eec2a6-7217-4923-9cf8-00673f706ab4'],
+      event: 'event',
       revisionOrder: 'opaque',
     };
     const fn = { description: 'Source handler', handlerDigest: 'b'.repeat(64) };
@@ -153,14 +165,23 @@ describe('strict extension contracts', () => {
         },
       },
     ];
-    expect(defineExtension({ ...fixture(), source, functions }).source?.provider).toBe('fixture');
-    expect(() => defineExtension({ ...fixture(), source, functions: functions.slice(1) })).toThrow(
-      'source verification',
-    );
+    expect(
+      defineExtension({ ...fixture(), source, bindings: sourceBindings, functions }).source
+        ?.provider,
+    ).toBe('fixture');
     expect(() =>
       defineExtension({
         ...fixture(),
         source,
+        bindings: sourceBindings,
+        functions: functions.slice(1),
+      }),
+    ).toThrow('source verification');
+    expect(() =>
+      defineExtension({
+        ...fixture(),
+        source,
+        bindings: sourceBindings,
         functions: [
           functions[0],
           {
@@ -313,6 +334,7 @@ describe('strict extension contracts', () => {
     });
     const valid = {
       ...fixture(),
+      bindings: sourceBindings,
       settings: {
         signing: { type: 'string', label: 'Signing key', secret: true, generated: true },
       },
@@ -321,7 +343,7 @@ describe('strict extension contracts', () => {
         identity: 'account',
         verifyFunctionId: installId,
         syncFunctionIds: [syncId],
-        eventTypeIds: [randomUUID()],
+        event: 'event',
         revisionOrder: 'opaque',
       },
       functions: [
@@ -598,7 +620,7 @@ describe('member connection manifests', () => {
       identity: 'account',
       verifyFunctionId: input.functions[0]?.universalId,
       syncFunctionIds: [syncId],
-      eventTypeIds: [randomUUID()],
+      event: 'event',
       revisionOrder: 'integer',
     };
     const sync = {
@@ -613,7 +635,12 @@ describe('member connection manifests', () => {
         additionalProperties: false,
       },
     };
-    const manifest = { ...input, source, functions: [...input.functions, sync] };
+    const manifest = {
+      ...input,
+      source,
+      bindings: sourceBindings,
+      functions: [...input.functions, sync],
+    };
     expect(defineExtension(manifest).source?.verifyFunctionId).toBe(
       input.functions[0]?.universalId,
     );
