@@ -589,6 +589,81 @@ describe('Tamloot backfill ownership before polling', () => {
 });
 
 describe('Tamloot supported contact creation policies', () => {
+  it('keeps an unbound email unresolved and validates a change to contact creation', async () => {
+    const h = await fixture('never', true);
+    const vendor = await h.app.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_object',
+            object: {
+              nameSingular: 'vendor',
+              namePlural: 'vendors',
+              labelSingular: 'Vendor',
+              labelPlural: 'Vendors',
+              labelField: 'name',
+              fields: [
+                { name: 'name', label: 'Name', type: 'text' },
+                { name: 'emails', label: 'Emails', type: 'emails' },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(vendor.status).toBe(200);
+    expect(
+      (
+        await h.app.request('/v1/objects/vendor/records', {
+          key: h.keys.admin,
+          body: { values: { name: 'Vendor', emails: 'participant@tamloot.test' } },
+        })
+      ).status,
+    ).toBe(201);
+    await h.connect();
+    expect((await h.drain()).every((result) => result.status === 'succeeded')).toBe(true);
+    const [link] = await db.owner`
+      select record_id,unmatched_reason from event_links
+      where workspace_id=${h.workspace} and handle='participant@tamloot.test' and link='participant'`;
+    expect(link).toMatchObject({ record_id: null, unmatched_reason: 'no_match' });
+    const shape = async () => {
+      const schema = await h.app.request('/v1/schema', { key: h.keys.admin });
+      return schema.body.objects.find(
+        (object: { nameSingular: string }) => object.nameSingular === 'contact',
+      ).fields;
+    };
+    expect(await shape()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'emailAddresses', isUnique: false }),
+        expect.objectContaining({ name: 'client', isNullable: false }),
+      ]),
+    );
+    const input = {
+      installationId: h.id,
+      registrationId: TAMLOOT.registration,
+      version: '1.0.0',
+      settings: { shareMeetings: true, createPeople: 'everyone' },
+    };
+    const preview = await h.app.request('/v1/extensions/preview', {
+      key: h.keys.admin,
+      body: input,
+    });
+    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+    const adopted = await h.app.request(`${h.base}/upgrade`, {
+      key: h.keys.admin,
+      headers: { 'Idempotency-Key': randomUUID() },
+      body: { ...input, planDigest: preview.body.planDigest },
+    });
+    expect(adopted.status, JSON.stringify(adopted.body)).toBe(200);
+    expect(await shape()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'emailAddresses', isUnique: true }),
+        expect.objectContaining({ name: 'client', isNullable: true }),
+      ]),
+    );
+  }, 60000);
+
   it('offers everyone or never and rejects contacted_first without outbound evidence', async () => {
     const h = await fixture('never');
     const unsupported = await h.app.request('/v1/extensions/preview', {
