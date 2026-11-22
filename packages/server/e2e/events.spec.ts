@@ -275,7 +275,7 @@ test('an event page has comments, claims and history, and no memory of its own',
     /^Facts/,
     'Activity',
     'History',
-    'Tasks',
+    'Linked',
   ]);
 });
 
