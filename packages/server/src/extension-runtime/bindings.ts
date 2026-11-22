@@ -218,12 +218,13 @@ export function checkStandaloneBindingWrite(
   object: ObjectState,
   fields: readonly string[],
   stamp?: BindingWriteStamp,
-  lookups: readonly string[] = [],
+  { lookups = [], create = false }: { lookups?: readonly string[]; create?: boolean } = {},
 ): boolean {
   if (!stamp || stamp.bindings_revision !== revision || stamp.objectId !== object.id) return false;
   const selected = plan.declarations.filter(
     (declaration) =>
       declaration.access === 'write' &&
+      (!create || createsRecords(declaration, plan.createPeople)) &&
       plan.destinations[declaration.key]?.objects.includes(object.universalId),
   );
   if (!selected.length) return false;

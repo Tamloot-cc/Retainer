@@ -222,7 +222,7 @@ export async function requireStandaloneBinding(
   object: CompiledObject,
   fields: string[],
   stamp?: BindingWriteStamp,
-  lookups: string[] = [],
+  constraints?: { lookups?: readonly string[]; create?: boolean },
 ) {
   if (!context.installation) return;
   const [row] = await tx<{ bindings: StoredBindingPlan | null; bindings_revision: number }[]>`
@@ -235,14 +235,16 @@ export async function requireStandaloneBinding(
       object.state,
       fields,
       stamp,
-      lookups,
+      constraints,
     )
   )
     throw new AppError(
       409,
       'binding_unavailable',
       row?.bindings
-        ? 'The approved binding or field name changed. Read the current bindings and retry.'
+        ? constraints?.create
+          ? 'The approved bindings do not allow this record to be created. Check the current bindings.'
+          : 'The approved binding or field name changed. Read the current bindings and retry.'
         : 'This app has no approved write destination. Change its setup first.',
     );
 }
@@ -285,7 +287,9 @@ export async function createRecord(
     const object = ordinaryObject ?? requireObject(context.schema, objectName);
     if (context.installation) {
       refuseEventCreation(object);
-      await requireStandaloneBinding(tx, context, object, Object.keys(values), options.bindings);
+      await requireStandaloneBinding(tx, context, object, Object.keys(values), options.bindings, {
+        create: true,
+      });
     }
     const cited = await citeSource(tx, context, source);
     const writes = prepareValues(object, values, 'create');
@@ -401,7 +405,7 @@ export async function upsertRecord(
           object,
           Object.keys(input.values),
           input.bindings,
-          Object.keys(input.match ?? {}),
+          { lookups: Object.keys(input.match ?? {}) },
         );
         const cited = await citeSource(tx, context, input.source);
         let targetId: string | null = null;
@@ -449,11 +453,12 @@ export async function upsertRecord(
         }
 
         refuseEventCreation(object);
-        if (match)
-          await requireStandaloneBinding(tx, context, object, [match.field.name], input.bindings);
         const values = match
           ? valuesWithMatch(match.field, match.value, match.lookup, input.values)
           : input.values;
+        await requireStandaloneBinding(tx, context, object, Object.keys(values), input.bindings, {
+          create: true,
+        });
         const writes = prepareValues(object, values, 'create');
         creatingWith = match?.field;
         const record = await insertRecord(tx, context, object);

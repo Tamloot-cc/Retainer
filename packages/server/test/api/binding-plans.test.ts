@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { bindingStamp, extensionFixture } from '../helpers/extensions.js';
+import { bindingStamp, extensionFixture, testCompanyBinding } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
 const manifest = extensionFixture({
@@ -105,9 +105,24 @@ const contacts = extensionFixture({
     },
   ],
 });
+const updateOnly = extensionFixture({
+  name: 'company-editor',
+  execution: 'standalone',
+  scopes: ['read', 'write'],
+  bindings: [
+    {
+      ...testCompanyBinding,
+      creates: undefined,
+      fields: testCompanyBinding.fields
+        .filter((field) => field.key !== 'attachments')
+        .map((field) => ({ ...field, lookup: undefined })),
+    },
+  ],
+});
 const catalog = new ExtensionCatalog([
   { manifest, actorCeiling: 'integration' },
   { manifest: contacts, actorCeiling: 'integration' },
+  { manifest: updateOnly, actorCeiling: 'integration' },
 ]);
 const installation = {
   registrationId: manifest.universalId,
@@ -528,4 +543,62 @@ it('accepts sending the reviewed creation default when the stored setting was om
   expect((await save('never', saved.body.settingsRevision)).body.error.code).toBe(
     'binding_plan_required',
   );
+});
+
+it('allows standalone updates and matched upserts through an update-only binding', async () => {
+  const h = await setup();
+  const input = {
+    registrationId: updateOnly.universalId,
+    version: updateOnly.version,
+    settings: {},
+  };
+  const reviewed = await h.preview(input);
+  expect(reviewed.status, JSON.stringify(reviewed.body)).toBe(200);
+  const installed = await h.commit(reviewed.body.planDigest, input);
+  expect(installed.status, JSON.stringify(installed.body)).toBe(201);
+  const base = `/v1/extensions/${installed.body.id}`;
+  const issued = await h.app.request(`${base}/keys`, {
+    key: h.key,
+    body: { expectedGeneration: installed.body.generation, scopes: ['read', 'write'] },
+  });
+  expect(issued.status).toBe(201);
+  const key = issued.body.key;
+  const plan = await h.app.request(`${base}/bindings`, { key });
+  const bindings = bindingStamp(plan.body, 'company');
+
+  const denied = await h.app.request('/v1/objects/company/records', {
+    key,
+    body: { bindings, values: { name: 'New company', externalKey: 'new' } },
+  });
+  expect(denied.status).toBe(409);
+  expect(denied.body.error.code).toBe('binding_unavailable');
+
+  const original = await h.app.request('/v1/objects/company/records', {
+    key: h.key,
+    body: { values: { externalKey: 'existing' } },
+  });
+  expect(original.status).toBe(201);
+  const updated = await h.app.request(`/v1/records/${original.body.id}`, {
+    method: 'PATCH',
+    key,
+    body: { bindings, values: { name: 'Edited' } },
+  });
+  expect(updated.status).toBe(200);
+  expect(updated.body.record.fields.name).toBe('Edited');
+
+  const upsert = (externalKey: string) =>
+    h.app.request('/v1/objects/company/upsert', {
+      key,
+      body: { bindings, match: { externalKey }, values: { name: 'Upserted' }, ifMissing: 'create' },
+    });
+  const missing = await upsert('missing');
+  expect(missing.status).toBe(409);
+  expect(missing.body.error.code).toBe('binding_unavailable');
+  const matched = await upsert('existing');
+  expect(matched.status).toBe(200);
+  expect(matched.body).toMatchObject({
+    id: original.body.id,
+    created: false,
+    record: { fields: { name: 'Upserted' } },
+  });
 });
