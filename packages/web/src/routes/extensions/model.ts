@@ -8,6 +8,11 @@ export type Release = Awaited<ReturnType<typeof api.extensionCatalog>>['releases
 export type Installation = Awaited<ReturnType<typeof api.extensions>>['installations'][number];
 
 export const queryKey = ['extensions'];
+/**
+ * The workspace's sidebar app links, under the extensions key so the refresh
+ * after installing, disabling or uninstalling an app updates the sidebar.
+ */
+export const appLinksKey = (workspaceId: string) => [...queryKey, 'links', workspaceId];
 export const stateLabel = (state: string) =>
   state.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
 

@@ -41,6 +41,7 @@ import { UpdatingBanner } from './api/maintenance.js';
 import { SignIn } from './auth/sign-in.js';
 import { CommandPalette } from './routes/command.js';
 import { DeveloperContext, readDeveloperView, writeDeveloperView } from './routes/developer.js';
+import { appLinksKey } from './routes/extensions/model.js';
 import type { ViewSearch } from './routes/state.js';
 import { QueryError, ReportContext, sortObjects } from './routes/state.js';
 import { Button, Notice, Page, Shell, Splash } from './ui/index.js';
@@ -95,7 +96,7 @@ function Layout() {
   });
   // Standalone apps members open signed in (extensions spec 8); accounts mode only.
   const apps = useQuery({
-    queryKey: [session.workspace.id, 'extensions', 'links'],
+    queryKey: appLinksKey(session.workspace.id),
     enabled: !settingUp && !!accountState,
     queryFn: ({ signal }) => api.extensionLinks(signal),
     retry: false,
