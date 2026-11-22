@@ -1,7 +1,7 @@
 import { BASE_EVENT_TYPE_IDS, INTERNAL_NOTE_TYPE_ID } from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
 import type { SchemaState } from '../schema/types.js';
-import { SEED_OPERATIONS } from '../templates/base.js';
+import { INTERNAL_OPERATIONS, SEED_OPERATIONS } from '../templates/base.js';
 import { BASE_OBJECT_IDS, BASE_OPERATIONS, TEMPLATES } from '../templates/index.js';
 import { definitionsFor } from '../workspaces/upgrade.js';
 import { applyOperations } from './apply.js';
@@ -253,7 +253,7 @@ describe('built-in definitions', () => {
 });
 
 describe('protection on upgrade', () => {
-  it('diffs protection for unprotected base elements as additive', () => {
+  it('diffs protection for unprotected hidden types as additive', () => {
     const unprotected = structuredClone(seeded);
     for (const object of unprotected.objects) {
       object.isProtected = false;
@@ -271,35 +271,19 @@ describe('protection on upgrade', () => {
             : [op.kind],
       ),
     ).toEqual([
-      ['protect_object', 'company'],
-      ['protect_object', 'person'],
-      ['protect_object', 'task'],
-      ['protect_field', 'task.status'],
-      ['protect_field', 'task.dueDate'],
       ['protect_object', 'internalNote'],
       ['protect_object', 'workspaceProfile'],
       ['protect_object', 'memberProfile'],
     ]);
     expect(ops.every((op) => classifyOp(op) === 'additive')).toBe(true);
     // Core fields are protected when created; the lists do not name them.
-    expect(desired.objects.flatMap((o) => o.fields).filter((f) => f.isProtected)).toHaveLength(2);
+    expect(desired.objects.flatMap((o) => o.fields).filter((f) => f.isProtected)).toHaveLength(0);
     expect(diffSchemas(seeded, seeded)).toEqual([]);
   });
 });
 
 describe('definitionsFor', () => {
-  it('includes the seed and the applied templates, and digests them', () => {
-    const none = definitionsFor([]);
-    expect(none.operations).toEqual(SEED_OPERATIONS);
-    const applied = (name: string) => ({ name, version: 1, appliedAt: '2026-01-01T00:00:00Z' });
-    const withClinic = definitionsFor([applied('clinic')]);
-    expect(withClinic.operations).toEqual([...SEED_OPERATIONS, ...clinic]);
-    expect(withClinic.digest).not.toBe(none.digest);
-    // Same templates in any order, repeated or with other versions: same digest.
-    expect(definitionsFor([applied('sales'), applied('clinic'), applied('sales')]).digest).toBe(
-      definitionsFor([{ ...applied('clinic'), version: 7 }, applied('sales')]).digest,
-    );
-    // An unknown template name is ignored.
-    expect(definitionsFor([applied('dentist')]).digest).toBe(none.digest);
+  it('contains only the hidden definitions', () => {
+    expect(definitionsFor().operations).toEqual(INTERNAL_OPERATIONS);
   });
 });

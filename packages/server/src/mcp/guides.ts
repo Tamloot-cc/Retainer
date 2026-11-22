@@ -135,8 +135,7 @@ Ask where something stands now, or what happened:
   Protected objects cannot be deleted; protected fields cannot be deleted
   or reshaped, and protected option values cannot be removed. Renames,
   labels and descriptions are allowed under the usual approval rules.
-  Use baseObject and baseField to identify built-ins after a rename, then
-  use their current API names from describe_schema in tool calls. An event
+  Use current API names from describe_schema in tool calls. An event
   type's coreRole title and summary fields are protected too.
 - Names are camelCase API names (nameSingular "deal", namePlural "deals";
   field "closeDate"); labels are what people read. Prefer a template's
@@ -158,16 +157,9 @@ with your own tools; Retainer stores the schema you settle on.
 ## 1. Read what exists
 
 Call describe_schema and list_templates.
-- If workspace.schemaFromScratch is true, Retainer did not seed any visible
-  types. Design the objects and events the user actually needs. Use templates
-  as reference only; they assume base types.
-- Otherwise, the workspace already has person, company and task objects.
-  Read their fields in describe_schema before you add your own.
-- Read the templates even when the workspace is already initialized: a
-  template may already define the object you are about to invent, and a
-  workspace can apply a template later. Read them as reference here; choose
-  one in step 4, after you have seen the data, so the data shapes the
-  choice and not the other way round.
+- New workspaces start with no visible objects or event types. Read the
+  templates for examples of fields and relations the business might need.
+  Only an empty workspace can copy a template as a whole.
 - initialized: false means first schema setup is still pending. If it is true, you
   are extending a schema someone already uses: propose additions only, and
   never rename or delete what is there unless the user asks. When they ask
@@ -232,11 +224,10 @@ shape of the data, not its contents.
 
 ## 4. Design
 
-For a workspace designed from scratch, use the templates as examples. Explicitly
-include each new type and field you recommend, including any contact, task or
-event types. Create only what the evidence supports.
-For a workspace with base types, start from the closest template or "blank".
-Add to existing objects when they fit instead of creating a twin.
+Use templates as examples. Include each type and field you recommend, and
+add to existing objects when they fit. If a whole template fits an empty
+workspace, use apply_template to propose copying it. Otherwise propose the
+individual changes that the evidence supports.
 
 ${DESIGN_RULES}
 
@@ -283,8 +274,8 @@ the same rules.
 ## Before you change anything
 
 1. Call describe_schema, and list_templates: a template may already define
-   what you need. Apply it only on a workspace that uses base types; use
-   it as a reference if workspace.schemaFromScratch is true.
+   what you need. In a workspace with visible types, borrow the relevant
+   definitions through propose_schema_change.
 2. Check that the change is needed: could an option, an existing field, a
    fact or an event hold it?
 3. Make the smallest change that works, with a reason that names the

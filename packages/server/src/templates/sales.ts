@@ -5,6 +5,7 @@ const DEAL = 'b33dc227-3182-494c-b671-536abda83205';
 
 export const sales: Template = {
   name: 'sales',
+  extends: 'starter',
   version: 1,
   label: 'Sales',
   description:

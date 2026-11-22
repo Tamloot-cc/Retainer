@@ -60,10 +60,13 @@ export function startTestApp(db: TestDatabase, options: Omit<AppDeps, 'sql'> = {
    * `{ agent: { actor: 'agent:bot', scopes: ['read', 'write'] } }`.
    */
   async function setupWorkspace<K extends string>(
-    options: { name: string; template?: string },
+    options: { name: string; template?: string | null },
     keys: Record<K, { actor: Actor; scopes: ApiKeyScope[] }>,
   ): Promise<{ workspace: Workspace; keys: Record<K, string> }> {
-    const workspace = await createWorkspace(db.owner, options);
+    const workspace = await createWorkspace(db.owner, {
+      ...options,
+      template: options.template === null ? undefined : (options.template ?? 'starter'),
+    });
     const issued = {} as Record<K, string>;
     for (const [name, spec] of Object.entries(keys) as [
       K,

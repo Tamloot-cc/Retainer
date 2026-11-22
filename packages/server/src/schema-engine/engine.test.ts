@@ -76,17 +76,19 @@ describe('base objects', () => {
 });
 
 describe('templates', () => {
-  for (const template of Object.values(TEMPLATES)) {
+  for (const template of Object.values(TEMPLATES).filter((template) => template.extends)) {
     it(`${template.name} applies to the base objects with additive operations only`, () => {
       const desired = applyValid(base, template.operations, 'system');
       const ops = diffSchemas(base, desired);
       expect(ops.filter((op) => classifyOp(op) !== 'additive')).toEqual([]);
-      expect(ops.length > 0).toBe(template.name !== 'blank');
+      expect(ops.length).toBeGreaterThan(0);
     });
   }
 
   it('can all be applied to one workspace', () => {
-    const all = Object.values(TEMPLATES).flatMap((t) => t.operations);
+    const all = Object.values(TEMPLATES)
+      .filter((t) => t.extends)
+      .flatMap((t) => t.operations);
     const desired = applyValid(base, all, 'system');
     expect(desired.objects.map((o) => o.nameSingular)).toEqual([
       'company',
@@ -104,7 +106,9 @@ describe('templates', () => {
   });
 
   it('uses universal IDs no other template or base object uses', () => {
-    const all = Object.values(TEMPLATES).flatMap((t) => t.operations);
+    const all = Object.values(TEMPLATES)
+      .filter((t) => t.extends)
+      .flatMap((t) => t.operations);
     const desired = applyValid(base, all, 'system');
     const ids = desired.objects.flatMap((o) => [
       o.universalId,
@@ -191,10 +195,8 @@ describe('apply', () => {
     expect(issue?.message).toContain('objects: company, person, task');
   });
 
-  it('protects base objects and label fields', () => {
-    expect(issuesOf(base, [{ op: 'delete_object', object: 'person' }])[0]?.message).toContain(
-      'is protected',
-    );
+  it('keeps the label field and allows deleting starter objects', () => {
+    expect(issuesOf(base, [{ op: 'delete_object', object: 'person' }])).toEqual([]);
     expect(
       issuesOf(base, [{ op: 'delete_field', object: 'person', field: 'name' }])[0]?.message,
     ).toContain('label field');
@@ -265,96 +267,28 @@ describe('schema-level change keys', () => {
 });
 
 describe('protection', () => {
-  const object = (state: SchemaState, name: string) =>
-    state.objects.find((o) => o.nameSingular === name);
-
-  it('protects the base objects and the task fields server code reads', () => {
-    expect(base.objects.filter((o) => o.isProtected).map((o) => o.nameSingular)).toEqual([
-      'company',
-      'person',
-      'task',
+  it('protects hidden types and event core fields', () => {
+    const state = applyValid(base, [...BASE_EVENT_OPERATIONS, ...INTERNAL_OPERATIONS], 'system');
+    expect(state.objects.filter((o) => o.isProtected).map((o) => o.nameSingular)).toEqual([
+      'internalNote', 'workspaceProfile', 'memberProfile',
     ]);
-    const protectedFields = base.objects.flatMap((o) =>
-      o.fields.filter((f) => f.isProtected).map((f) => `${o.nameSingular}.${f.name}`),
-    );
-    expect(protectedFields).toEqual(['task.status', 'task.dueDate']);
+    expect(field(state, 'conversation', 'summary')?.isProtected).toBe(true);
+    expect(issuesOf(state, [{ op: 'delete_field', object: 'conversation', field: 'summary' }])[0]?.message)
+      .toContain('is protected');
+    expect(issuesOf(state, [{ op: 'update_field', object: 'conversation', field: 'summary', isUnique: true }])[0]?.message)
+      .toContain('is protected');
   });
 
-  it('never protects what a template or a client creates', () => {
-    const all = Object.values(TEMPLATES).flatMap((t) => t.operations);
-    const desired = applyValid(base, all, 'system');
-    const added = desired.objects.filter(
-      (o) => !base.objects.some((b) => b.universalId === o.universalId),
-    );
-    expect(added.every((o) => !o.isProtected && o.fields.every((f) => !f.isProtected))).toBe(true);
-    expect(desired.objects.filter((o) => o.isProtected)).toHaveLength(3);
-    expect(added.length).toBeGreaterThan(0);
-  });
-
-  it('refuses to delete protected objects and fields', () => {
-    for (const name of ['person', 'company', 'task']) {
-      expect(issuesOf(base, [{ op: 'delete_object', object: name }])[0]?.message).toContain(
-        'is protected',
-      );
-    }
-    for (const name of ['status', 'dueDate']) {
-      expect(
-        issuesOf(base, [{ op: 'delete_field', object: 'task', field: name }])[0]?.message,
-      ).toContain('is protected');
-    }
-  });
-
-  it('allows renames, labels and descriptions of protected objects and fields', () => {
+  it('allows editing and removing former protected task fields and options', () => {
     const desired = applyValid(base, [
       { op: 'rename_object', object: 'task', nameSingular: 'todo', namePlural: 'todos' },
-      { op: 'update_object', object: 'todo', labelSingular: 'To-do', labelPlural: 'To-dos' },
       { op: 'rename_field', object: 'todo', field: 'status', name: 'state' },
-      { op: 'update_field', object: 'todo', field: 'state', label: 'State', description: 'x' },
-      { op: 'rename_field', object: 'todo', field: 'dueDate', name: 'deadline' },
+      { op: 'remove_option', object: 'todo', field: 'state', value: 'done' },
+      { op: 'delete_field', object: 'todo', field: 'dueDate' },
     ]);
-    const todo = object(desired, 'todo');
-    expect(todo?.isProtected).toBe(true);
-    expect(field(desired, 'todo', 'state')).toMatchObject({ isProtected: true, label: 'State' });
-    expect(field(desired, 'todo', 'deadline')?.isProtected).toBe(true);
-  });
-
-  it('refuses to reshape a protected field', () => {
-    for (const change of [
-      { isNullable: false },
-      { isUnique: true },
-      { isFilterable: false },
-      { isSearchable: true },
-    ]) {
-      const [issue] = issuesOf(base, [
-        { op: 'update_field', object: 'task', field: 'status', ...change },
-      ]);
-      expect(issue?.message).toContain('is protected');
-    }
-    // Setting a flag to the value it already has changes nothing.
-    applyValid(base, [{ op: 'update_field', object: 'task', field: 'status', isFilterable: true }]);
-  });
-
-  it('keeps the done option but lets other task statuses change', () => {
-    const [issue] = issuesOf(base, [
-      { op: 'remove_option', object: 'task', field: 'status', value: 'done' },
-    ]);
-    expect(issue?.message).toContain('option "done" is protected');
-
-    const desired = applyValid(base, [
-      {
-        op: 'add_option',
-        object: 'task',
-        field: 'status',
-        option: { value: 'blocked', label: 'Blocked' },
-      },
-      { op: 'update_option', object: 'task', field: 'status', value: 'done', label: 'Finished' },
-      { op: 'remove_option', object: 'task', field: 'status', value: 'in_progress' },
-    ]);
-    expect(field(desired, 'task', 'status')?.settings.options).toEqual([
-      { value: 'todo', label: 'To do' },
-      { value: 'done', label: 'Finished' },
-      { value: 'blocked', label: 'Blocked' },
-    ]);
+    expect(field(desired, 'todo', 'state')?.settings.options?.map((option) => option.value))
+      .toEqual(['todo', 'in_progress']);
+    expect(field(desired, 'todo', 'dueDate')).toBeUndefined();
   });
 });
 
@@ -552,7 +486,7 @@ describe('event rollups', () => {
   });
 
   it('is on in templates only for relations a record belongs to', () => {
-    const on = Object.values(TEMPLATES).flatMap((template) => {
+    const on = Object.values(TEMPLATES).filter((template) => template.extends).flatMap((template) => {
       const state = applyValid(base, template.operations, 'system');
       return state.objects.flatMap((o) =>
         o.fields.filter((f) => f.settings.rollUpEvents).map((f) => `${o.nameSingular}.${f.name}`),

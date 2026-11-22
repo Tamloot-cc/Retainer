@@ -33,7 +33,7 @@ design as of the first release (0.1.0).
 
 | Table            | Holds                                                                                                                                                                                      |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `object_types`   | The kinds of things tracked: `person`, `company`, `task` and the base event types in seeded workspaces, more from templates (3.1), plus custom objects. Hosted onboarding starts with only hidden internal types. `class` is `entity` or `event` (1.3) |
+| `object_types`   | Workspace-defined entities and event types. New workspaces start with hidden internal types. `class` is `entity` or `event` (1.3) |
 | `fields`         | The fields of each object: type, settings, flags (`is_nullable`, `is_unique`, `is_filterable`, `is_searchable`), and `core_role` (`title` or `summary`) on an event type's core fields     |
 | `schema_changes` | Every applied, proposed, rejected or failed change, with its operations and actor                                                                                                          |
 
@@ -56,37 +56,16 @@ Every schema row carries:
 
 #### Protection
 
-Server code finds the schema elements it depends on by universal ID, never
-by API name, and the engine protects each of them. Protection currently
-covers the base objects `person`, `company` and `task`, the fields
-`task.status` and `task.dueDate`, and the hidden types:
-the internal-note event type and the workspace and member profiles (1.3). The
-list lives in `schema-engine/protection.ts`; any new server dependency on a
-schema element protects it in the same change. The core `title` and `summary`
-fields of every event type are protected the same way. The base event type
-itself is not: an unused one can be deleted like any object.
+Server code depends on the hidden types (the internal-note event type and
+the workspace and member profiles) and on the core `title` and `summary`
+fields of every event type. The schema engine protects those elements.
+Protected objects cannot be deleted, and protected fields cannot be deleted
+or reshaped. Names, labels and descriptions can change under the usual
+approval rules. Protection does not freeze record values. `describe_schema`
+shows `isProtected` and identifies event core fields by `coreRole`.
 
-- A protected object cannot be deleted. Its API names and labels can change.
-- A protected field cannot be deleted or reshaped: renames, labels and
-  descriptions are allowed; changes to type, `is_nullable`, `is_unique`,
-  `is_filterable` and `is_searchable` are rejected.
-- Only the select option values server code reads are protected:
-  `task.status` keeps its `done` option, whose label can change. Other
-  options can be added, relabeled and removed, so a workspace can add
-  statuses such as `blocked`.
-- Protection does not freeze record values.
-
-`describe_schema` shows `isProtected` on objects and fields and
-`protectedOptions` on fields, and marks base elements with `baseObject`
-(`person`, `company`, `task`) or `baseField` (`taskStatus`,
-`taskDueDate`, and the unprotected `companyDomain`), so a client finds them
-after a rename without reading universal IDs.
-
-New hosted workspaces start with `schema_from_scratch` and seed only the
-hidden note and memory types. Their first applied change with a visible
-type stamps `initialized_at` in the same transaction that applies the
-schema. Definition upgrades follow the workspace's seed mode, so they
-never introduce the standard types in a workspace designed from scratch.
+New workspaces seed only the hidden types. The first applied schema change
+that creates a visible type stamps `initialized_at` in its transaction.
 
 Workspaces carry a `schema_version` that increments on every applied change.
 API and MCP schemas are cached per `(workspace, schema_version)`.
@@ -177,7 +156,7 @@ Sets filter with `containsAny` and `containsAll` (lists of record IDs) and
 Every write carries an actor: `{ type, id, name? }` where `type` is `user`,
 `agent`, `integration`, or `system`. The credential decides the actor (an API
 key, a person's session or an app's OAuth token); callers cannot claim to be
-someone else. The server's own `system` actor (`retainer`) seeds base objects
+someone else. The server's own `system` actor (`retainer`) seeds hidden types
 and applies a template chosen at workspace creation, and `system:operator`
 records the operator CLI's membership changes; merges are attributed to the
 merging user, and the consolidator writes no actor-stamped rows.
@@ -297,29 +276,12 @@ change to an object is its history (assertions and the timeline), never an
 event, and a person's remark about a record is a comment (below), never an
 event. The `schema_design` guide gives agents this test with examples.
 
-A workspace seeded with the standard types has the base event type
-`conversation`, with a universal ID (3.1); one designed from scratch (1.1)
-starts without it. `note` is no longer in the base template, but keeps its
-universal ID, so a template or agent that adds a `note` event type gets the
-same identity; a workspace from before this keeps its notes and may delete
-the type. A conversation's kind is its `medium` field, a
-nullable, filterable select with the options `meeting`, `call`, `email`
-and `message` (workspaces may add more), not its type: a field can be
-corrected after logging with `upsert_record`, while an event's type changes
-only by moving it, which a person does (below). `channel` and `medium` answer different
-questions. `channel` is where the event came from, the source system or
-account (`gmail`, `zoom`, `tamloot`); it is part of the identity, fixed at
-logging, and must tell apart sources whose IDs could overlap. `medium` is
-what happened; it is optional, and an agent that can't tell leaves it
-empty. A workspace adds an event type only for events whose fields a
-conversation would never use: a payment (an amount, an invoice), a form
-submission, a site visit. `conversation` also has a `transcript` field of
-type `files` ([docs/files.md](docs/files.md)). Details such as duration,
-direction or a recording link are optional fields a workspace may add to it.
-The base type is not protected. `describe_schema` marks it with `baseObject`
-(`conversation`, or `note` where one exists), the medium with
-`baseField: "conversationMedium"` and the transcript with
-`conversationTranscript`, so clients find them after a rename. Creating an
+A workspace can define event types for the data it tracks. Starter includes
+`conversation` with a selectable `medium` and a `transcript` files field
+([docs/files.md](docs/files.md)). Both fields belong to that template.
+Every event has a `channel` that identifies the source system or account,
+such as Gmail, Zoom or Tamloot. The channel is part of the event's identity
+and must distinguish sources whose IDs could overlap. Creating an
 object with `class: "event"` gives it two core fields, with roles `title` and
 `summary`: searchable text, protected (1.1), and `title` is the label
 field. The rest of an event type's fields are ordinary fields. The names
@@ -986,78 +948,36 @@ needs approval and fails while live records use it. A relation's target,
 cardinality and `onDelete` are fixed once
 created; there is no operation to change them.
 
-Standard objects ship as code (definitions with fixed `universal_id`s) and
-are applied through the same engine, on its trusted path, when a workspace
-is created.
+The hidden types ship as code and are applied through the engine's trusted
+path when a workspace is created.
 
-**Upgrading existing workspaces.** After migrations, wherever they run (the
-container's start, the AWS ops function's `migrate`), the server brings every
-workspace up to the definitions of its release: the seed (base objects, base
-event types, the internal-note type) and each template the workspace
-applied. Elements are matched by `universal_id` whatever their status, so a
-renamed element is found and one the workspace deleted is not re-created.
-Only what the workspace never had is added: objects with their fields, and
-fields of objects it still has. Options, labels, flags and settings of
-existing elements are left as they are. The trusted path also protects every
-element the protection lists (1.1) name, which workspaces created before
-protection lack. An element the workspace's schema cannot take, such as a
-base type whose name its own object already uses, is skipped and logged as a
-conflict; everything else still applies. Each upgrade is one schema change by
-`system:retainer`, run under the workspace's exclusive schema lock.
-`workspaces.definitions_digest` records the definitions a workspace was last
-fully upgraded to, so a run skips current workspaces without loading their
-schema and retries conflicted or failed ones. A workspace that fails is
-reported and keeps its schema; the others still run
-(`docs/specs/workspace-upgrade.md`).
+**Upgrading existing workspaces.** After migrations, Retainer brings every
+workspace up to the release's hidden definitions under the exclusive schema
+lock. It matches their universal IDs, adds missing internal elements and
+sets their protection. Existing values and definitions stay in place.
+`workspaces.definitions_digest` tracks the last successful upgrade. Failed
+or conflicted workspaces are reported and retried on the next run.
+See [workspace upgrades](docs/specs/workspace-upgrade.md).
 
-### 3.1 Base objects and templates
+### 3.1 Templates
 
-A workspace created by the operator CLI (7.1), or in the web app with a
-template, is seeded with three base objects: `person` (name, emails,
-phones, address, job title, company), `company` (name, domain, address,
-people) and `task` (title, status, due date, assignee, person, company),
-the base event type `conversation` (with `medium` and `transcript`), and the
-hidden types (1.3): the internal note and the workspace and member profiles,
-plus the workspace's profile record. A workspace created in the web app on
-the hosted service without a template is designed from scratch
-(`schema_from_scratch`, 1.1): it gets only the hidden types, and its first
-agent builds the rest with the `discover_schema` guide (6.2).
+Visible schema comes from the workspace's own design, an approved extension
+plan, or a template. The `starter` template defines Person, Company, Task and
+Conversation, with its Medium and Transcript fields. `sales`, `services`,
+`clinic`, `real_estate` and `recruiting` each extend Starter with
+industry-specific objects and fields.
 
-Templates add the objects and fields a kind of business needs. They ship
-as code in `packages/server/src/templates/`, with fixed `universal_id`s
-like the base objects, and are applied through the schema engine as owner
-`system`. Every template operation is additive, so applying one never needs
-approval.
+A template is a one-time copy into an empty workspace. A person or operator
+can choose one when creating a workspace, when it applies in the creation
+transaction through the trusted path. An agent's `apply_template` creates a
+proposal. The engine rechecks emptiness under the exclusive schema lock at
+approval and refuses with `409 workspace_not_empty` if the workspace has
+visible schema.
 
-| Template      | For                                     | Adds                                                                                                                                |
-| ------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `sales`       | B2B sales teams, founders selling       | `deal` (stage, amount, close date, company, point of contact); `company` gets industry and employee count                           |
-| `services`    | Agencies, consultants, freelancers      | `project` (status, budget, start and end dates, company, primary contact); `proposal` (status, amount, sent date, company, project) |
-| `clinic`      | Clinics, therapists, wellness practices | `appointment` (date and time, type, status, person); `person` gets date of birth and preferred channel                              |
-| `real_estate` | Agents and brokers                      | `property` (address, type, price, status, owner); `viewing` (date, status, property, person, feedback)                              |
-| `recruiting`  | Recruiters, hiring teams                | `job` (title, status, company); `application` (person, job, stage, source)                                                          |
-| `blank`       | Anything else                           | Nothing; the agent extends the base objects itself                                                                                  |
-
-**Choosing a template on init.** A new workspace has no template applied
-unless the operator passed `--template` (7.1), and `describe_schema` says so (`initialized: false`). An agent that sees this
-follows the `discover_schema` guide (6.2): it looks at its user's data,
-proposes the closest template plus any additions, and applies them once the
-user agrees. Without that, it calls `list_templates`, picks the closest one
-from what it knows about the business, or asks its user when it is unsure,
-and calls `apply_template`. Choosing `blank` marks the workspace initialized without
-adding anything. An agent that cannot decide should not guess: base objects
-work without a template, and a template can be applied later.
-
-**Later.** Templates are additive, so a workspace can apply a second one
-later (a consultancy that starts recruiting). If a template's object or field
-name collides with an existing custom one, applying it fails validation and
-the error lists the collisions; nothing is half-applied. Applying a template
-the workspace already has is a no-op, whatever its version; a release that
-changes a template adds its new objects and fields to workspaces that applied
-it when they are upgraded (3), and records the new version.
-
-The workspace records which templates it has applied, with their versions
-(`workspaces.templates`).
+Template objects and fields belong to the workspace. Future releases never
+extend an existing workspace's visible schema. `workspaces.templates` keeps
+the history of what was applied. In an existing workspace, agents can use
+template definitions as examples for `propose_schema_change`.
 
 ---
 

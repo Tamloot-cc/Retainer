@@ -5,6 +5,7 @@ const APPOINTMENT = '9f1ffdb1-bdf6-46eb-af1e-1409586d26ee';
 
 export const clinic: Template = {
   name: 'clinic',
+  extends: 'starter',
   version: 1,
   label: 'Clinic',
   description:

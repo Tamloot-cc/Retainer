@@ -310,8 +310,8 @@ export const test = base.extend<
     dbUrl.pathname = `/${name}`;
     const owner = createSql(dbUrl.toString()),
       sql = createSql(dbUrl.toString(), { role: RUNTIME_ROLE });
-    const workspace = await createWorkspace(owner, { name: 'Acme' }),
-      other = await createWorkspace(owner, { name: 'Other workspace' });
+    const workspace = await createWorkspace(owner, { name: 'Acme', template: 'starter' }),
+      other = await createWorkspace(owner, { name: 'Other workspace', template: 'starter' });
     const user = (
       await createApiKey(owner, {
         workspace: workspace.id,

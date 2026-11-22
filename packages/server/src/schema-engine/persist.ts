@@ -316,7 +316,7 @@ export async function persistSchema(
   );
   const [workspace] = await tx<{ schema_version: number }[]>`
     update workspaces set schema_version = schema_version + 1, updated_at = now(),
-      initialized_at = case when schema_from_scratch and ${hasVisibleSchema}
+      initialized_at = case when ${hasVisibleSchema}
         then coalesce(initialized_at, now()) else initialized_at end
     where id = ${workspaceId} returning schema_version`;
   const version = workspace?.schema_version as number;

@@ -221,7 +221,7 @@ test('agent first: sign in and provision, cancel, then reuse the same workspace 
 async function invite(owner: BrowserContext, url: string) {
   const response = await owner.request.post(`${url}/account/workspaces`, {
     headers: headers(url),
-    data: { name: 'Team workspace', template: 'blank' },
+    data: { name: 'Team workspace', template: 'starter' },
   });
   expect(response.status()).toBe(201);
   const workspace = await response.json();

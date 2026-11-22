@@ -1,5 +1,5 @@
 import { BASE_OBJECT_IDS } from './base.js';
-import { TEMPLATES, type Template } from './index.js';
+import { TEMPLATES, type Template, templateOperations } from './index.js';
 
 const BASE_NAMES = new Map<string, string>(
   Object.entries(BASE_OBJECT_IDS).map(([name, id]) => [id, name]),
@@ -21,7 +21,7 @@ export type TemplateView = {
 function describeTemplate(template: Template, applied: boolean): TemplateView {
   const objects: TemplateView['adds']['objects'] = [];
   const fields: TemplateView['adds']['fields'] = [];
-  for (const operation of template.operations) {
+  for (const operation of templateOperations(template)) {
     if (operation.op === 'create_object') {
       objects.push({
         name: operation.object.nameSingular,

@@ -52,7 +52,7 @@ describe('read-only migration status', () => {
     expect(await db.owner`select * from drizzle.__drizzle_migrations`).toEqual(before);
   });
   it('does not need a stop after operator or account workspace creation', async () => {
-    await createWorkspace(db.owner, { name: 'Current base' });
+    await createWorkspace(db.owner, { name: 'Current empty' });
     await createWorkspace(db.owner, { name: 'Current template', template: 'clinic' });
     const account = startAccountsApp(db);
     const { cookie } = await account.signIn();
@@ -65,10 +65,10 @@ describe('read-only migration status', () => {
     expect(await ops()({ command: 'migration-status' })).toMatchObject({ needsStop: false });
   });
 
-  it('stamps concurrent template applications without losing a digest', async () => {
+  it('serializes concurrent template applications without changing the digest', async () => {
     const workspace = await createWorkspace(db.owner, { name: 'Template concurrency' });
     const runtime = db.connect({ role: RUNTIME_ROLE });
-    await Promise.all(
+    const results = await Promise.allSettled(
       ['clinic', 'clinic'].map((name) =>
         inWorkspace(runtime, workspace.id, (tx) =>
           applyTemplate(tx, {
@@ -76,18 +76,23 @@ describe('read-only migration status', () => {
             actor: { type: 'user', id: 'status' },
             scopes: ['admin'],
             name,
+            trusted: true,
           }),
         ),
       ),
     );
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((result) => result.status === 'rejected')).toMatchObject({
+      reason: { code: 'workspace_not_empty' },
+    });
     const [row] =
       await db.owner`select templates, definitions_digest from workspaces where id = ${workspace.id}`;
     expect(row?.templates).toHaveLength(1);
-    expect(row?.definitions_digest).toBe(definitionsFor(row?.templates).digest);
+    expect(row?.definitions_digest).toBe(definitionsFor().digest);
     expect(await ops()({ command: 'migration-status' })).toMatchObject({ needsStop: false });
   });
 
-  it('does not hide a stale base digest when applying a new template', async () => {
+  it('does not hide a stale internal digest when applying a new template', async () => {
     for (const stale of [null, 'older-release']) {
       const workspace = await createWorkspace(db.owner, { name: `Stale ${stale}` });
       await db.owner`update workspaces set definitions_digest = ${stale} where id = ${workspace.id}`;
@@ -97,6 +102,7 @@ describe('read-only migration status', () => {
           actor: { type: 'user', id: 'status' },
           scopes: ['admin'],
           name: 'clinic',
+          trusted: true,
         }),
       );
       const [row] =
@@ -124,7 +130,10 @@ describe('read-only migration status', () => {
     expect(await ops()({ command: 'migration-status' })).toMatchObject({ needsStop: false });
   });
   it('reports stale search text without rebuilding it', async () => {
-    const workspace = await createWorkspace(db.owner, { name: 'Search status' });
+    const workspace = await createWorkspace(db.owner, {
+      name: 'Search status',
+      template: 'starter',
+    });
     const result = await createRecord(
       db.owner,
       { workspaceId: workspace.id, actor: { type: 'user', id: 'status' }, scopes: ['admin'] },

@@ -1,5 +1,4 @@
 import type { Sql } from '../db/client.js';
-import type { AppliedTemplate } from '../db/schema.js';
 import { inWorkspace, lockPrivacyShared, lockSchemaExclusive } from '../db/tx.js';
 import { log } from '../log.js';
 import { seedWorkspaceProfile } from '../memory/profiles.js';
@@ -9,8 +8,6 @@ import { planUpgrade, type UpgradeConflict } from '../schema-engine/upgrade.js';
 import { definitionsFor } from '../templates/definitions.js';
 
 export { definitionsFor } from '../templates/definitions.js';
-
-import { getTemplate } from '../templates/index.js';
 
 export type UpgradeReport = {
   /** Slugs of the workspaces whose schema the run changed. */
@@ -25,9 +22,7 @@ export type UpgradeReport = {
 };
 
 type WorkspaceRow = {
-  templates: AppliedTemplate[];
   definitions_digest: string | null;
-  schema_from_scratch: boolean;
 };
 
 type WorkspaceUpgrade = { changed: boolean; conflicts: UpgradeConflict[] };
@@ -56,9 +51,9 @@ async function upgradeWorkspace(sql: Sql, workspaceId: string): Promise<Workspac
     await lockPrivacyShared(tx, workspaceId);
     await lockSchemaExclusive(tx, workspaceId);
     const [row] = await tx<WorkspaceRow[]>`
-      select templates, definitions_digest, schema_from_scratch from workspaces where id = ${workspaceId}`;
+      select definitions_digest from workspaces where id = ${workspaceId}`;
     if (!row) return { changed: false, conflicts: [] };
-    const definitions = definitionsFor(row.templates, row.schema_from_scratch);
+    const definitions = definitionsFor();
     if (row.definitions_digest === definitions.digest) {
       return { changed: false, conflicts: [] };
     }
@@ -73,7 +68,7 @@ async function upgradeWorkspace(sql: Sql, workspaceId: string): Promise<Workspac
       actor: SYSTEM_ACTOR,
       scopes: [],
       operations,
-      reason: 'Upgrade built-in definitions',
+      reason: 'Upgrade internal definitions',
       owner: 'system',
       trusted: true,
     });
@@ -83,13 +78,9 @@ async function upgradeWorkspace(sql: Sql, workspaceId: string): Promise<Workspac
     // Workspaces from before workspace memory get its profile (personal memory 4.1).
     await seedWorkspaceProfile(tx, workspaceId, SYSTEM_ACTOR);
     if (conflicts.length === 0) {
-      const templates = row.templates.map((t) => ({
-        ...t,
-        version: getTemplate(t.name)?.version ?? t.version,
-      }));
       await tx`
         update workspaces
-        set templates = ${tx.json(templates)}, definitions_digest = ${definitions.digest},
+        set definitions_digest = ${definitions.digest},
           updated_at = now()
         where id = ${workspaceId}`;
     }
@@ -105,17 +96,16 @@ async function upgradeWorkspace(sql: Sql, workspaceId: string): Promise<Workspac
 export async function upgradeWorkspaces(sql: Sql): Promise<UpgradeReport> {
   const report: UpgradeReport = { upgraded: [], conflicts: [], failed: [], aboutEventLinks: [] };
   const rows = await sql<(WorkspaceRow & { id: string; slug: string })[]>`
-    select id, slug, templates, definitions_digest, schema_from_scratch from workspaces order by created_at, id`;
+    select id, slug, definitions_digest from workspaces order by created_at, id`;
   for (const row of rows) {
-    if (row.definitions_digest === definitionsFor(row.templates, row.schema_from_scratch).digest)
-      continue;
+    if (row.definitions_digest === definitionsFor().digest) continue;
     try {
       const { changed, conflicts } = await upgradeWorkspace(sql, row.id);
       // Outside the upgrade: every write in the workspace waits on its lock.
       const aboutEventLinks = await countAboutEventLinks(sql, row.id);
       if (changed) {
         report.upgraded.push(row.slug);
-        log.info(`Upgraded workspace ${row.slug} to the built-in definitions.`);
+        log.info(`Upgraded workspace ${row.slug} to the internal definitions.`);
       }
       if (aboutEventLinks > 0) {
         report.aboutEventLinks.push({ workspace: row.slug, count: aboutEventLinks });
@@ -127,7 +117,7 @@ export async function upgradeWorkspaces(sql: Sql): Promise<UpgradeReport> {
       for (const conflict of conflicts) {
         report.conflicts.push({ workspace: row.slug, ...conflict });
         log.warn(
-          `Workspace ${row.slug}: could not add built-in ${conflict.element}: ${conflict.message}`,
+          `Workspace ${row.slug}: could not add internal type ${conflict.element}: ${conflict.message}`,
         );
       }
     } catch (error) {
@@ -141,11 +131,6 @@ export async function upgradeWorkspaces(sql: Sql): Promise<UpgradeReport> {
 
 /** Read-only and deliberately conservative, including unresolved conflicts. */
 export async function workspaceUpgradesPending(sql: Sql): Promise<boolean> {
-  const rows = await sql<
-    WorkspaceRow[]
-  >`select templates, definitions_digest, schema_from_scratch from workspaces`;
-  return rows.some(
-    (row) =>
-      row.definitions_digest !== definitionsFor(row.templates, row.schema_from_scratch).digest,
-  );
+  const rows = await sql<WorkspaceRow[]>`select definitions_digest from workspaces`;
+  return rows.some((row) => row.definitions_digest !== definitionsFor().digest);
 }

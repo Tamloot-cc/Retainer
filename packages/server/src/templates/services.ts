@@ -6,6 +6,7 @@ const PROPOSAL = '33883890-1e98-4591-8859-c6d6ed7e8ecd';
 
 export const services: Template = {
   name: 'services',
+  extends: 'starter',
   version: 1,
   label: 'Services',
   description:

@@ -24,7 +24,6 @@ import { MemoryTabs, useMemoryNav } from '../records/record-memory.js';
 import { useRecord } from '../records/record-view.js';
 import { classLabel, eventTitle, objectByName, QueryError } from '../state.js';
 import { EventDetailsView } from './event-details.js';
-import { eventMedium, mediumField } from './event-list.js';
 
 /**
  * One event (`GET /v1/events/:id`): its type, time, channel, participants and
@@ -83,12 +82,7 @@ export function EventPage() {
   const e = r.event;
   const type = objectByName(schema, r.object);
   // Title and summary show above; the type's other fields are listed here.
-  // The medium shows beside the type and source, so it isn't listed again below.
-  const medium = eventMedium(type, r);
-  const mediumName = medium ? mediumField(type)?.name : undefined;
-  const others = (type?.fields ?? []).filter(
-    (f) => !f.coreRole && !isInverseRelation(f) && f.name !== mediumName,
-  );
+  const others = (type?.fields ?? []).filter((f) => !f.coreRole && !isInverseRelation(f));
   return (
     <Page
       eyebrow={classLabel(type) ?? r.object}
@@ -100,7 +94,6 @@ export function EventPage() {
       }
       description={[
         type?.labelSingular ?? r.object,
-        medium,
         e.channel ? `Source: ${e.channel}` : 'Source erased',
         new Date(e.occurredAt).toLocaleString(),
       ]
@@ -126,13 +119,7 @@ export function EventPage() {
         </Stack>
       </Panel>
       <Panel title="Details">
-        <EventDetailsView
-          id={r.id}
-          event={e}
-          editable={canWrite}
-          medium={medium}
-          {...(mediumName ? { mediumName } : {})}
-        />
+        <EventDetailsView id={r.id} event={e} editable={canWrite} />
       </Panel>
       {others.length ? (
         <Panel title="Fields">

@@ -1,4 +1,4 @@
-import { blank } from './blank.js';
+import { BASE_EVENT_OPERATIONS, BASE_OPERATIONS } from './base.js';
 import { clinic } from './clinic.js';
 import { realEstate } from './real-estate.js';
 import { recruiting } from './recruiting.js';
@@ -20,9 +20,22 @@ export const TEMPLATES: Record<TemplateName, Template> = {
   clinic,
   real_estate: realEstate,
   recruiting,
-  blank,
+  starter: {
+    name: 'starter',
+    version: 1,
+    label: 'Starter',
+    description: 'People, companies, tasks and conversations',
+    operations: [...BASE_OPERATIONS, ...BASE_EVENT_OPERATIONS],
+  },
 };
 
 export function getTemplate(name: string): Template | undefined {
   return Object.hasOwn(TEMPLATES, name) ? TEMPLATES[name as TemplateName] : undefined;
+}
+
+export function templateOperations(template: Template): Template['operations'] {
+  return [
+    ...(template.extends ? templateOperations(TEMPLATES[template.extends]) : []),
+    ...template.operations,
+  ];
 }

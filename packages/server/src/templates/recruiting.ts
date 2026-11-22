@@ -6,6 +6,7 @@ const APPLICATION = '46ac1b30-b6c5-403e-b7cb-a75166beb2a3';
 
 export const recruiting: Template = {
   name: 'recruiting',
+  extends: 'starter',
   version: 1,
   label: 'Recruiting',
   description:

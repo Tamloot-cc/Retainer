@@ -75,7 +75,6 @@ export type SchemaDescription = {
   workspace: Session['workspace'] & {
     schemaVersion: number;
     initialized: boolean;
-    schemaFromScratch?: boolean;
     templates: { name: string; version: number; appliedAt: string }[];
   };
   objects: ObjectView[];
@@ -706,6 +705,7 @@ export type SchemaChange = {
   operations: SchemaDiffOperation[];
   request: SchemaOperation[];
   isDestructive: boolean;
+  template?: string;
   reason: string | null;
   requestedBy: Actor;
   decidedBy: Actor | null;
@@ -750,7 +750,6 @@ export type SchemaChangeResult = {
   change: SchemaChange | null;
   schemaVersion: number;
   recordIds?: string[];
-  alreadyApplied?: boolean;
 };
 export type TemplateView = {
   name: string;

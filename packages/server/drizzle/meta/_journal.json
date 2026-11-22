@@ -939,6 +939,20 @@
       "when": 1795383503243,
       "tag": "0133_standalone_app_platform",
       "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1795384761050,
+      "tag": "0134_empty_workspaces_and_template_proposals",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1795384762774,
+      "tag": "0135_release_former_base_schema",
+      "breakpoints": true
     }
   ]
 }

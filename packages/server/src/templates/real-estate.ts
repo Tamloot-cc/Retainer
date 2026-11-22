@@ -6,6 +6,7 @@ const VIEWING = 'dc61b186-fb5d-40fd-9d50-941668198e60';
 
 export const realEstate: Template = {
   name: 'real_estate',
+  extends: 'starter',
   version: 2,
   label: 'Real estate',
   description:

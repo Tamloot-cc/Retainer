@@ -101,7 +101,7 @@ OAuth opens in a different browser. The ordinary hosted MCP URL gives the
 user a choice of accessible workspace. The public connection instructions
 are served at `/mcp/setup` and linked from the MCP resource metadata.
 
-New hosted workspaces seed the hidden note type and workspace and personal
+New workspaces seed the hidden note type and workspace and personal
 memory types. They unlock the full web app only when an applied schema change
 creates a visible type. Existing workspaces keep their seeded types and
 template support. An account API request that explicitly selects a built-in

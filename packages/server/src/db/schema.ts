@@ -545,12 +545,10 @@ export const workspaces = pgTable(
     settings: jsonb('settings').$type<WorkspaceSettings>().notNull().default({}),
     /** Templates applied to this workspace, with their versions (3.1). */
     templates: jsonb('templates').$type<AppliedTemplate[]>().notNull().default([]),
-    /** Only internal definitions are seeded/upgraded in a workspace designed from scratch. */
-    schemaFromScratch: boolean('schema_from_scratch').notNull().default(false),
-    /** First template on a legacy workspace, or first visible schema on a scratch workspace. */
+    /** First applied change that adds a visible type. */
     initializedAt: timestamp('initialized_at', { withTimezone: true }),
     /**
-     * Digest of the built-in definitions (base, protection, applied templates)
+     * Digest of the internal definitions and protection rules
      * the workspace was last fully upgraded to (3). Null until the first
      * upgrade run; a mismatch makes the next run plan an upgrade.
      */
@@ -709,6 +707,7 @@ export const schemaChanges = pgTable(
     /** True when any operation is destructive (rename, delete, required…). */
     isDestructive: boolean('is_destructive').notNull(),
     reason: text('reason'),
+    template: jsonb('template').$type<Pick<AppliedTemplate, 'name' | 'version'>>(),
     requestedBy: jsonb('requested_by').$type<Actor>().notNull(),
     decidedBy: jsonb('decided_by').$type<Actor>(),
     /** `schema_version` after this change was applied. */

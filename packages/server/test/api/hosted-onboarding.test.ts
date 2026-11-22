@@ -83,7 +83,7 @@ it('provisions once across concurrent web and OAuth attempts, and never opens th
   };
   try {
     expect(await readSchema()).toMatchObject({
-      workspace: { id: workspace.id, initialized: false, schemaFromScratch: true },
+      workspace: { id: workspace.id, initialized: false },
       objects: [],
     });
     const invalid = await client.callTool({
@@ -157,6 +157,6 @@ it('gives a pending invitation priority over creating an unrelated workspace', a
   const schema = await app.v1('/v1/schema', { cookie: invitee.cookie, workspace: team.id });
   expect(await schema.json()).toMatchObject({
     workspace: { initialized: false },
-    objects: expect.arrayContaining([expect.objectContaining({ nameSingular: 'person' })]),
+    objects: [],
   });
 });

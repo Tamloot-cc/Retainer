@@ -6,14 +6,13 @@ export const TEMPLATE_NAMES = [
   'clinic',
   'real_estate',
   'recruiting',
-  'blank',
+  'starter',
 ] as const;
 export type TemplateName = (typeof TEMPLATE_NAMES)[number];
 
 /**
  * A template adds the objects and fields a kind of business needs (3.1). It
- * is applied through the schema engine as owner `system`, and every
- * operation is additive, so applying one never needs approval.
+ * is copied once into an empty workspace through the schema engine.
  */
 export type Template = {
   name: TemplateName;
@@ -22,5 +21,6 @@ export type Template = {
   label: string;
   /** Who the template is for. */
   description: string;
+  extends?: TemplateName;
   operations: SchemaOperation[];
 };
