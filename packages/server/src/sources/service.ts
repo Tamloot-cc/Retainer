@@ -63,6 +63,7 @@ type SourceProjection = {
   binding: string;
   /** Existing receipts keep the canonical format accepted before binding plans. */
   canonicalType?: string;
+  includeContent?: boolean;
   fields: Record<
     string,
     { field: ValueField; values: Record<string, string>; canonicalKey?: string }
@@ -663,7 +664,7 @@ export class Sources {
       title: input.event.title,
       summary: input.event.summary ?? '',
       // stableJson drops an undefined content, so events without one keep their digests.
-      content: input.event.content,
+      content: projection.includeContent === false ? undefined : input.event.content,
       fields: canonicalFields,
       participants: people,
       about: [...new Set(input.event.about)].sort(),
@@ -930,6 +931,7 @@ export class Sources {
           );
           if (
             previous?.projection &&
+            (input.event.content === undefined || previous.projection.includeContent !== false) &&
             Object.keys(input.event.fields).every(
               (key) => !normalized.projection?.fields[key] || !!previous.projection?.fields[key],
             )

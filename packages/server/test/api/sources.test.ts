@@ -622,6 +622,88 @@ describe('managed source evidence with real RLS Postgres', () => {
       await db.owner`select count(*)::int as n from source_revisions where item_id=${s.itemId}`;
     expect(count?.n).toBe(2);
   });
+  it('replays under the accepted projection and sends changed revisions to the new location', async () => {
+    const h = await setup();
+    const source = await h.item();
+    const first = await h.sync(source.key, source.itemId, '1', null);
+    expect(first.status).toBe(200);
+    const change = await h.app.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_object',
+            object: {
+              class: 'event',
+              nameSingular: 'call',
+              namePlural: 'calls',
+              labelSingular: 'Call',
+              labelPlural: 'Calls',
+              fields: [{ name: 'tag', label: 'Tag', type: 'text' }],
+            },
+          },
+        ],
+      },
+    });
+    expect(change.status).toBe(200);
+    const input = {
+      installationId: h.id,
+      registrationId: h.manifest.universalId,
+      version: h.manifest.version,
+      settings: {},
+      bindings: { conversation: { action: 'existing', objects: ['call'] } },
+    };
+    const reviewed = await h.app.request('/v1/extensions/preview', {
+      key: h.keys.admin,
+      body: input,
+    });
+    expect(reviewed.status, JSON.stringify(reviewed.body)).toBe(200);
+    const adopted = await h.app.request(`${h.base}/upgrade`, {
+      key: h.keys.admin,
+      headers: { 'Idempotency-Key': randomUUID() },
+      body: { ...input, planDigest: reviewed.body.planDigest },
+    });
+    expect(adopted.status).toBe(200);
+    expect((await h.sync(source.key, source.itemId, '1', null)).status).toBe(409);
+    const [pending] = await db.owner`select id from extension_jobs where installation_id=${h.id}
+      and trigger_kind='install' and status='queued'`;
+    const verification = await h.queue.claim(h.workspace.id, pending?.id, 're-plan verification');
+    if (!verification) throw new Error('re-plan verification did not run');
+    const verified = await h.app.request(`${h.base}/source/verify`, {
+      key: await h.token(verification),
+      body: { accountId: 'provider-workspace-1', sharing: 'workspace' },
+    });
+    expect(verified.body.sourceAccountId).toBe(h.accountId);
+    await h.queue.complete(verification, { status: 'succeeded' });
+    const run = await h.start(source.itemId);
+    const replay = await h.sync(run.key, source.itemId, '1', null, {
+      ...h.event(),
+      fields: { tag: 'Enabled later' },
+    });
+    expect(replay.body).toMatchObject({
+      eventId: first.body.eventId,
+      unchanged: true,
+      created: false,
+    });
+    expect(
+      (await h.sync(run.key, source.itemId, '1', null, h.event('Changed title'))).body.error.code,
+    ).toBe('source_revision_conflict');
+    const unchanged = await h.sync(run.key, source.itemId, '2', first.body.revisionId);
+    expect(unchanged.body).toMatchObject({ eventId: first.body.eventId, unchanged: true });
+    const revised = await h.sync(run.key, source.itemId, '3', first.body.revisionId, {
+      ...h.event('Changed title'),
+      fields: { tag: 'New' },
+    });
+    expect(revised.body).toMatchObject({ previousEventId: first.body.eventId, created: true });
+    const revisions = await db.owner`select o.name_singular, s.is_current from source_revisions s
+      join records r on r.id=s.event_id join object_types o on o.id=r.object_type_id
+      where s.item_id=${source.itemId} order by s.is_current`;
+    expect(revisions).toEqual([
+      { name_singular: 'conversation', is_current: false },
+      { name_singular: 'call', is_current: true },
+    ]);
+  });
+
   it('deduplicates simultaneous deliveries durably and checks canonical content rather than trusting a digest', async () => {
     const h = await setup(),
       s = await h.item();

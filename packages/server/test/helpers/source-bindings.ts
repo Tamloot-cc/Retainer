@@ -8,7 +8,10 @@ export const sourceTestBindings: ExtensionBinding[] = [
     class: 'event',
     access: 'write',
     required: true,
-    fields: [{ key: 'transcript', label: 'Transcript', types: ['files'], required: false }],
+    fields: [
+      { key: 'transcript', label: 'Transcript', types: ['files'], required: false },
+      { key: 'tag', label: 'Tag', types: ['text'], required: false },
+    ],
   },
   {
     key: 'person',

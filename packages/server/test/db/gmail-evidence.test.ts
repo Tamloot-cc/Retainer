@@ -26,18 +26,23 @@ async function setup() {
     handlerDigest: 'b'.repeat(64),
     serverRange: '>=0.1.0 <0.2.0',
   });
-  const schema = await inWorkspace(db.owner, ws, (tx) => loadSchemaState(tx, ws));
-  const { plan } = resolveBindingPlan(
-    schema,
-    manifest,
-    { email: { action: 'existing', objects: ['conversation'] } },
-    null,
-    'never',
-  );
+  async function planFor(type: string) {
+    const schema = await inWorkspace(db.owner, ws, (tx) => loadSchemaState(tx, ws));
+    return resolveBindingPlan(
+      schema,
+      manifest,
+      {
+        email: { action: 'existing', objects: [type] },
+      },
+      null,
+      'never',
+    ).plan;
+  }
+  const plan = await planFor('conversation');
   const [installation] = await db.owner`
     insert into extension_installations
-      (workspace_id,registration_id,version,release_digest,granted_actor,granted_scopes,created_by,state)
-    values (${ws},${randomUUID()},'1.0.0',${'a'.repeat(64)},'integration','["read","write"]',${db.owner.json(admin)},'active')
+      (workspace_id,registration_id,version,release_digest,granted_actor,granted_scopes,created_by,state,bindings,bindings_revision)
+    values (${ws},${randomUUID()},'1.0.0',${'a'.repeat(64)},'integration','["read","write"]',${db.owner.json(admin)},'active',${db.owner.json(plan)},1)
     returning id`;
   if (!installation) throw new Error('missing installation');
   const installationId = installation.id as string;
@@ -87,7 +92,7 @@ async function setup() {
       { asPerson: false },
     );
   }
-  return { app, ws, keys, mailbox, person, save };
+  return { app, ws, keys, mailbox, person, save, planFor };
 }
 
 it('atomically imports, deduplicates across mailboxes and preserves both citation paths on a late thread join', async () => {
@@ -161,4 +166,68 @@ it('checks targeted matches during the write and isolates Gmail evidence across 
   expect(
     (await h.app.request(`/v1/events/${result.eventId}/content`, { key: other.keys.admin })).status,
   ).toBe(404);
+});
+
+it('uses a custom email type without moving an older duplicate or joining its thread', async () => {
+  const h = await setup();
+  await h.person('dana@example.com');
+  const original = await h.save(await h.mailbox('original'));
+  if (original.kind !== 'imported') throw new Error('missing original message');
+  const changed = await h.app.request('/v1/schema/changes', {
+    key: h.keys.admin,
+    body: {
+      operations: [
+        {
+          op: 'create_object',
+          object: {
+            class: 'event',
+            nameSingular: 'mail',
+            namePlural: 'mailMessages',
+            labelSingular: 'Mail',
+            labelPlural: 'Mail messages',
+            fields: [
+              {
+                name: 'medium',
+                label: 'Medium',
+                type: 'select',
+                settings: { options: [{ value: 'email', label: 'Email' }] },
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  expect(changed.status).toBe(200);
+  const mailbox = { ...(await h.mailbox('new-destination')), plan: await h.planFor('mail') };
+  const duplicate = await h.save(mailbox, { messageId: 'duplicate-a' });
+  expect(duplicate).toEqual({ ...original, created: false });
+  const reply = await h.save(mailbox, {
+    messageId: 'reply-a',
+    rfcMessageId: '<reply-a@example.com>',
+    occurredAt: '2026-01-05T12:00:00Z',
+    subject: 'Reply',
+  });
+  if (reply.kind !== 'imported') throw new Error('missing reply');
+  const deliveries = await db.owner`
+    select o.name_singular, b.thread_id from event_bodies b
+    join records r on r.id=b.event_id join object_types o on o.id=r.object_type_id
+    where b.workspace_id=${h.ws} order by b.occurred_at`;
+  expect(deliveries.map((item) => item.name_singular)).toEqual(['conversation', 'mail']);
+  expect(deliveries[0]?.thread_id).not.toBe(deliveries[1]?.thread_id);
+});
+
+it('accepts a non-unique match field and skips an ambiguous email', async () => {
+  const h = await setup();
+  const mailbox = await h.mailbox('one');
+  const changed = await h.app.request('/v1/schema/changes', {
+    key: h.keys.admin,
+    body: {
+      operations: [{ op: 'update_field', object: 'person', field: 'emails', isUnique: false }],
+    },
+  });
+  expect(changed.status).toBe(200);
+  await h.person('dana@example.com');
+  await h.person('dana@example.com');
+  expect(await h.save(mailbox)).toEqual({ kind: 'no_match' });
 });

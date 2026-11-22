@@ -187,8 +187,15 @@ async function applyPlan(
         }),
       ),
     };
-    await tx`update source_receipts set projection = ${tx.json(jsonValue(projection))}
-      where projection is null and item_id in (
+    await tx`update source_receipts receipt
+      set projection = ${tx.json(jsonValue(projection))}::jsonb || jsonb_build_object(
+        'includeContent', exists (
+          select 1 from event_bodies body
+          where body.workspace_id = receipt.workspace_id
+            and body.event_id = (receipt.response->>'eventId')::uuid
+        )
+      )
+      where receipt.projection is null and receipt.item_id in (
         select s.id from source_items s join source_accounts a on a.id = s.account_id
         where a.workspace_id = ${row.workspace_id} and a.registration_id = ${row.registration_id}
       )`;
