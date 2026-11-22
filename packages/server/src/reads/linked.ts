@@ -1,17 +1,18 @@
-import type { LinkedRecordPage } from '@retainer/shared';
+import type { LinkedRecord, LinkedRecordPage } from '@retainer/shared';
 import type { Fragment } from 'postgres';
 import { after, page } from '../db/pagination.js';
 import type { Tx } from '../db/tx.js';
+import { invalid, notFound } from '../errors.js';
 import { references } from '../records/references.js';
-import type { CompiledSchema } from '../schema/compiled.js';
+import { type CompiledSchema, objectNamed } from '../schema/compiled.js';
 
 type Target = { workspaceId: string; schema: CompiledSchema; recordId: string };
 
-function linkedRows(tx: Tx, { workspaceId, schema, recordId }: Target, object?: string) {
-  const objectIds =
-    object === undefined
-      ? schema.entityTypeIds
-      : schema.entityTypeIds.filter((id) => schema.objectsById.get(id)?.name === object);
+function linkedRows(
+  tx: Tx,
+  { workspaceId, schema, recordId }: Target,
+  objectIds = schema.entityTypeIds,
+) {
   const fieldIds = [...schema.fieldOwners].flatMap(([id, owner]) => {
     const field = owner.fieldsById.get(id);
     return field?.status === 'active' && field.type === 'relation' ? [id] : [];
@@ -21,11 +22,11 @@ function linkedRows(tx: Tx, { workspaceId, schema, recordId }: Target, object?: 
   // Joining records under RLS also gates which edges can contribute to counts.
   return tx`
     from (
-      select target_record_id as id, field_id from record_links
+      select target_record_id as id, field_id, true as on_anchor from record_links
       where workspace_id = ${workspaceId} and source_record_id = ${recordId}
         and field_id = any(${fieldIds}::uuid[])
       union all
-      select source_record_id as id, field_id from record_links
+      select source_record_id as id, field_id, false as on_anchor from record_links
       where workspace_id = ${workspaceId} and target_record_id = ${recordId}
         and field_id = any(${fieldIds}::uuid[])
     ) links
@@ -36,7 +37,13 @@ function linkedRows(tx: Tx, { workspaceId, schema, recordId }: Target, object?: 
 }
 
 type LinkedCount = { object_type_id: string; total: number };
-type LinkedRow = { id: string; stamp: string; field_id: string; data: Record<string, unknown> };
+type LinkedRow = {
+  id: string;
+  stamp: string;
+  field_id: string;
+  on_anchor: boolean;
+  selects: LinkedRecord['selects'];
+};
 
 function countQuery(tx: Tx, links: Fragment) {
   return tx`
@@ -67,22 +74,38 @@ export async function linkedRecordPage(
   { limit, object, cursor }: { limit: number; object?: string; cursor?: string },
 ): Promise<LinkedRecordPage> {
   const { schema } = target;
-  const links = linkedRows(tx, target, object);
+  const filter = object === undefined ? undefined : objectNamed(schema, object);
+  if (object !== undefined && !filter) throw notFound('object', { object });
+  if (filter?.isEvent)
+    throw invalid('linked records can only be filtered by an entity object', { object });
+  const links = linkedRows(tx, target, filter ? [filter.id] : undefined);
   // Separate aggregations at the same snapshot. Counts need no record values
   // or cursor, and only the requested page contributes row payloads.
   const [result] = await tx<[{ rows: LinkedRow[]; counts: LinkedCount[] }]>`
     select
       coalesce((select json_agg(counts) from (${countQuery(tx, links)}) counts), '[]') as counts,
       coalesce((
-        select json_agg(candidate order by candidate.stamp::timestamptz desc, candidate.id desc)
+        select json_agg(json_build_object(
+          'id', candidate.id, 'stamp', candidate.updated_at::text,
+          'field_id', candidate.field_id, 'on_anchor', candidate.on_anchor,
+          'selects', coalesce((
+            select jsonb_object_agg(f.name, r.data -> f.key)
+            from fields f
+            where f.workspace_id = r.workspace_id and f.object_type_id = r.object_type_id
+              and f.status = 'active' and f.type in ('select', 'multi_select') and r.data ? f.key
+          ), '{}'::jsonb)
+        ) order by candidate.updated_at desc, candidate.id desc)
         from (
-          select r.id, r.updated_at::text as stamp, min(links.field_id::text) as field_id, r.data
-          ${links}
-          and ${after(tx, tx`r.updated_at`, tx`r.id`, cursor, true)}
-          group by r.id
-          order by r.updated_at desc, r.id desc
+          select * from (
+            select distinct on (r.id) r.id, r.updated_at, links.field_id, links.on_anchor
+            ${links}
+            and ${after(tx, tx`r.updated_at`, tx`r.id`, cursor, true)}
+            order by r.id, links.field_id, links.on_anchor desc
+          ) deduplicated
+          order by updated_at desc, id desc
           limit ${limit + 1}
         ) candidate
+        join records r on r.id = candidate.id
       ), '[]') as rows`;
   const paged = page(result.rows, limit);
   const refs = await references(
@@ -95,16 +118,15 @@ export async function linkedRecordPage(
       const ref = refs[row.id];
       const via = schema.fieldOwners.get(row.field_id)?.fieldsById.get(row.field_id);
       if (!ref || !via) return [];
-      const fields = schema.objectsByName.get(ref.object)?.activeFields ?? [];
-      const selects = Object.fromEntries(
-        fields
-          .filter(
-            (f) =>
-              (f.type === 'select' || f.type === 'multi_select') && Object.hasOwn(row.data, f.key),
-          )
-          .map((f) => [f.name, row.data[f.key]]),
-      );
-      return [{ id: row.id, title: ref.label, object: ref.object, via: via.name, selects }];
+      return [
+        {
+          id: row.id,
+          title: ref.label,
+          object: ref.object,
+          via: { field: via.name, on: row.on_anchor ? 'anchor' : 'linked' },
+          selects: row.selects,
+        },
+      ];
     }),
     nextCursor: paged.nextCursor,
     totals: totalsByObject(schema, result.counts),

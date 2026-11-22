@@ -83,6 +83,7 @@ const pack = await retainer.context(dana.id, { tokenBudget: 1500 });
 
 const linked = await retainer.linkedRecords(dana.id, { object: 'task', limit: 20 });
 // linked.items, linked.totals by object, linked.nextCursor
+// item.via: { field, on: "anchor" | "linked" }
 
 // How it got there: events, values asserted for its fields and facts, newest first.
 const stageHistory = await retainer.timeline(deal.id, { fields: ['stage'], limit: 20 });

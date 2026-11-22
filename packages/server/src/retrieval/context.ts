@@ -21,9 +21,10 @@ import { getRecord } from '../records/read.js';
 import { type CompiledSchema, eventText } from '../schema/compiled.js';
 import {
   CHARS_PER_TOKEN,
-  fitLinkedRecords,
   fitSections,
+  groupLinkedRecords,
   jsonLength,
+  linkedRecordCosts,
   measurePack,
 } from './budget.js';
 
@@ -82,19 +83,18 @@ export async function contextPack(
     omitted: { linkedRecords: linkedTotal, facts: facts.total, recentEvents: events.total },
     tokenEstimate: input.tokenBudget,
   };
-  const available = Math.max(0, budgetChars - jsonLength(frame));
-  const linkedFit = fitLinkedRecords(linked, available);
   const { included } = fitSections(
-    { facts: facts.items, recentEvents: events.items },
-    available - linkedFit.used,
+    { linkedRecords: linked.items, facts: facts.items, recentEvents: events.items },
+    Math.max(0, budgetChars - jsonLength(frame)),
+    { linkedRecords: linkedRecordCosts(linked) },
   );
 
   const pack: ContextPack = {
     record: head,
-    linkedRecords: linkedFit.groups,
     ...included,
+    linkedRecords: groupLinkedRecords(included.linkedRecords, linked.totals),
     omitted: {
-      linkedRecords: linkedTotal - linkedFit.count,
+      linkedRecords: linkedTotal - included.linkedRecords.length,
       facts: facts.total - included.facts.length,
       recentEvents: events.total - included.recentEvents.length,
     },

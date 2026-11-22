@@ -566,8 +566,10 @@ Three areas:
     opens History.
   - _Linked_ (`?tab=linked`): `GET /v1/records/:id/linked`, grouped by
     object, with the total shown for each group. Each row links to the
-    record and shows its select values and the relation field that
-    connects it. Load more appends the next page to the same groups.
+    record and shows its select values and the label of the relation field that
+    connects it, with the record that owns the field. Developer view also
+    shows the field API name. Load more
+    appends the next page to the same groups.
   - _Claims_ (events): `GET /v1/events/:id/claims?own=false`. Values on
     records and facts that cite the event, not the values it logged itself.
 

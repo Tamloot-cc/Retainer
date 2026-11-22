@@ -1752,11 +1752,12 @@ with `limit` (default 100, at most 500) and `cursor`.
 
 `GET /v1/records/:id/linked` returns `{ items, totals, nextCursor }`.
 Each item has `id`, `title`, `object`, `via` (the relation field's API
-name), and `selects` (stored select values by field API name). The read
-follows active relations in either direction and includes each readable
+name and owning side in `{ field, on }`), and `selects` (stored select
+values by field API name). The read follows active relations in either direction and includes each readable
 entity once, excluding the anchor itself and deleted, merged and private
 records. It sorts by `updated_at` and ID, newest first. Use `object` with a
-singular API name to narrow the page and its per-object `totals`. The
+singular or plural entity API name to narrow the page and its per-object
+`totals`. Unknown names return 404 and event types return 400. The
 default `limit` is 50 and the maximum is 200. Pass `nextCursor` back with
 the same filter to continue. Context fits a prefix of one budget-sized page
 and groups it by object, with each group's full count and the number of
@@ -1771,7 +1772,7 @@ omitted records across all objects in `omitted.linkedRecords`.
         … } },
     "linkedRecords": [
       { "object": "task", "total": 1, "items": [
-        { "id": "rec_c40…", "title": "Send SSO docs to Noa", "via": "person", "selects": { "status": "todo" } }
+        { "id": "rec_c40…", "title": "Send SSO docs to Noa", "via": { "field": "person", "on": "linked" }, "selects": { "status": "todo" } }
       ] }
     ],
     "facts": [ { "id": "fct_1e2…", "content": "Needs SSO before agreeing to a pilot",
@@ -1789,10 +1790,10 @@ A context pack is assembled by fixed rules (5):
 - The record's current field values are always included, each with who
   wrote it and when it was observed, so a value is never mistaken for a
   stated fact. The budget applies to the sections after it.
-- The other sections fill in this order until the budget is spent: linked
-  records, current facts (not superseded or retracted,
+- The other sections take one item per round until the budget is spent:
+  linked records, current facts (not superseded or retracted,
   newest `validFrom` first; a fact resting only on an internal note is
-  marked `internal: true`), then recent events in the record's history
+  marked `internal: true`), and recent events in the record's history
   (attached directly or rolled up, newest first, each once with `via`, 1.3,
   without internal notes, whose text is already a fact). Items
   are never cut mid-text; a section stops at the last whole item that fits.

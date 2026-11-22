@@ -1,7 +1,12 @@
 import type { ContextPack, LinkedRecordPage } from '@retainer/shared';
+import postgres from 'postgres';
 import { beforeAll, expect, it } from 'vitest';
 import { createWorkspaceFor } from '../../src/accounts/people.js';
 import { createApiKey } from '../../src/auth/keys.js';
+import { RUNTIME_ROLE } from '../../src/db/client.js';
+import { inWorkspace } from '../../src/db/tx.js';
+import { linkedRecordPage } from '../../src/reads/linked.js';
+import { getSchema } from '../../src/schema/compiled.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { addPerson } from '../helpers/people.js';
@@ -160,24 +165,33 @@ it('reads both directions once per entity and agrees with context, MCP and the r
         id: task,
         title: 'Send renewal',
         object: 'task',
-        via: expect.stringMatching(/^(account|secondaryAccount)$/),
+        via: { field: expect.stringMatching(/^(account|secondaryAccount)$/), on: 'linked' },
         selects: { state: 'completed', tags: ['sales'] },
       },
-      { id: contact, title: 'Dana', object: 'contact', via: 'primaryContact', selects: {} },
+      {
+        id: contact,
+        title: 'Dana',
+        object: 'contact',
+        via: { field: 'primaryContact', on: 'anchor' },
+        selects: {},
+      },
     ],
     nextCursor: null,
     totals: { task: 1, contact: 1 },
   });
-  const taskOnly = await linked(account, '?object=task&limit=1');
+  const taskOnly = await linked(account, '?object=tasks&limit=1');
+  expect(taskOnly.status).toBe(200);
   expect(taskOnly.body).toEqual({
     items: [result.body.items[0]],
     nextCursor: null,
     totals: { task: 1 },
   });
-  expect((await linked(account, '?object=meeting')).body).toEqual({
-    items: [],
-    nextCursor: null,
-    totals: {},
+  expect((await linked(account, '?object=task')).body).toEqual(taskOnly.body);
+  expect((await linked(account, '?object=typo')).status).toBe(404);
+  const eventFilter = await linked(account, '?object=meeting');
+  expect(eventFilter.status).toBe(400);
+  expect(eventFilter.body).toMatchObject({
+    error: { message: expect.stringContaining('entity object') },
   });
   expect((await linked(account, '?limit=201')).status).toBe(400);
   expect((await linked(account, '?cursor=broken')).status).toBe(400);
@@ -186,6 +200,10 @@ it('reads both directions once per entity and agrees with context, MCP and the r
   expect((await linked(merged)).body).toEqual((await linked(task)).body);
   const record = await app.request(`/v1/records/${account}?include=counts`, { key });
   expect(record.body.counts.linked).toBe(2);
+  // This event has an outgoing entity link, but has no Linked tab to count.
+  expect((await linked(event.body.id)).body.totals).toEqual({ account: 1 });
+  const eventRecord = await app.request(`/v1/records/${event.body.id}?include=counts`, { key });
+  expect(eventRecord.body.counts.linked).toBe(0);
   const context = await app.request<ContextPack>(`/v1/records/${account}/context`, { key });
   expect(context.body.linkedRecords).toEqual(
     result.body.items.map(({ object, ...item }) => ({
@@ -203,6 +221,84 @@ it('reads both directions once per entity and agrees with context, MCP and the r
     expect(mcp.body.linkedRecords).toEqual(context.body.linkedRecords);
   } finally {
     await client.close();
+  }
+});
+
+it('identifies the owning side of a self-relation in both directions', async () => {
+  const parent = await create('account', { name: 'Parent' });
+  const child = await create('account', { name: 'Child', parent });
+  expect((await linked(parent)).body.items).toEqual([
+    {
+      id: child,
+      title: 'Child',
+      object: 'account',
+      via: { field: 'parent', on: 'linked' },
+      selects: {},
+    },
+  ]);
+  expect((await linked(child)).body.items).toEqual([
+    {
+      id: parent,
+      title: 'Parent',
+      object: 'account',
+      via: { field: 'parent', on: 'anchor' },
+      selects: {},
+    },
+  ]);
+});
+
+it('projects only select values in the linked rows returned by Postgres', async () => {
+  await change([
+    definition('noteset', [
+      relation('account', 'account'),
+      { name: 'body', label: 'Body', type: 'text' },
+      {
+        name: 'stage',
+        label: 'Stage',
+        type: 'select',
+        settings: { options: [{ value: 'ready', label: 'Ready' }] },
+      },
+    ]),
+  ]);
+  const account = await create('account', { name: 'Projection' });
+  const body = 'Large non-select field '.repeat(450);
+  const note = await create('noteset', { name: 'Notes', account, body, stage: 'ready' });
+  expect((await app.request(`/v1/records/${note}`, { key })).body.fields.body).toBe(body);
+
+  const payloads: unknown[] = [];
+  const sql = postgres(db.url, {
+    max: 1,
+    connection: { role: RUNTIME_ROLE },
+    transform: {
+      value: {
+        from(value, column) {
+          if (column.name === 'rows') payloads.push(value);
+          return value;
+        },
+      },
+    },
+  });
+  try {
+    await inWorkspace(sql, workspaceId, async (tx) => {
+      const schema = await getSchema(tx, workspaceId);
+      const page = await linkedRecordPage(
+        tx,
+        { workspaceId, schema, recordId: account },
+        { limit: 10 },
+      );
+      expect(page.items[0]?.selects).toEqual({ stage: 'ready' });
+    });
+    expect(payloads).toEqual([
+      [
+        expect.objectContaining({
+          id: note,
+          selects: { stage: 'ready' },
+        }),
+      ],
+    ]);
+    expect(JSON.stringify(payloads).length).toBeLessThan(300);
+  } finally {
+    await sql.end();
   }
 });
 

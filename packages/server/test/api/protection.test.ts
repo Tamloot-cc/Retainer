@@ -105,8 +105,18 @@ describe('schema protection', () => {
         object: 'todo',
         total: 2,
         items: [
-          { id: expect.any(String), title: 'Closed', via: 'company', selects: { state: 'done' } },
-          { id: expect.any(String), title: 'Open', via: 'company', selects: { state: 'blocked' } },
+          {
+            id: expect.any(String),
+            title: 'Closed',
+            via: { field: 'company', on: 'linked' },
+            selects: { state: 'done' },
+          },
+          {
+            id: expect.any(String),
+            title: 'Open',
+            via: { field: 'company', on: 'linked' },
+            selects: { state: 'blocked' },
+          },
         ],
       },
     ]);

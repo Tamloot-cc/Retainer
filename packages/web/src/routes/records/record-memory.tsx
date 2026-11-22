@@ -2,6 +2,7 @@ import type {
   AssertionView,
   FieldView,
   LinkedRecord,
+  ObjectView,
   PresentedFact,
   PresentedRecord,
   RecordCounts,
@@ -38,7 +39,7 @@ import {
   Tabs,
   useTabAnchor,
 } from '../../ui/index.js';
-import { useDeveloper } from '../developer.js';
+import { ApiLabel, useDeveloper } from '../developer.js';
 import { REASONS, ViaLabel } from '../events/event-details.js';
 import {
   byCursor,
@@ -176,7 +177,7 @@ export function MemoryTabs({ record, nav }: { record: PresentedRecord; nav: Memo
             onFieldsChange={(fields) => nav.set({ fields })}
           />
         ) : null}
-        {tab === 'linked' ? <LinkedPanel recordId={rid} /> : null}
+        {tab === 'linked' ? <LinkedPanel recordId={rid} anchorObject={object} /> : null}
         {tab === 'claims' ? <ClaimsPanel eventId={rid} /> : null}
         {tab === 'json' ? (
           <JsonBlock value={record} label={isEvent ? 'Event JSON' : 'Record JSON'} />
@@ -439,7 +440,7 @@ function ActivityPanel({ record }: { record: PresentedRecord }) {
 }
 
 /** The same linked-record pages agents read, grouped for display. */
-function LinkedPanel({ recordId }: { recordId: string }) {
+function LinkedPanel({ recordId, anchorObject }: { recordId: string; anchorObject?: ObjectView }) {
   const { schema, session } = useWorkspace();
   const linked = useInfiniteQuery({
     queryKey: [session.workspace.id, 'linkedRecords', recordId],
@@ -469,24 +470,36 @@ function LinkedPanel({ recordId }: { recordId: string }) {
         return (
           <Section key={name} title={`${label} (${totals?.[name] ?? items.size})`}>
             <EntryList label={label}>
-              {[...items.values()].map((item) => (
-                <Entry
-                  key={item.id}
-                  icon={Link2}
-                  title={
-                    <>
-                      <RecordLink id={item.id}>{recordTitle({ label: item.title })}</RecordLink>
-                      {Object.entries(item.selects).map(([name, value]) => {
-                        const field = object?.fields.find((f) => f.name === name);
-                        if (!field) return null;
-                        const Display = fields[field.type].Display;
-                        return <Display key={name} field={field} value={value} />;
-                      })}
-                    </>
-                  }
-                  footer={<Muted small>Via {item.via}</Muted>}
-                />
-              ))}
+              {[...items.values()].map((item) => {
+                const owner = item.via.on === 'anchor' ? anchorObject : object;
+                const relation = owner?.fields.find((field) => field.name === item.via.field);
+                return (
+                  <Entry
+                    key={item.id}
+                    icon={Link2}
+                    title={
+                      <>
+                        <RecordLink id={item.id}>{recordTitle({ label: item.title })}</RecordLink>
+                        {Object.entries(item.selects).map(([name, value]) => {
+                          const field = object?.fields.find((f) => f.name === name);
+                          if (!field) return null;
+                          const Display = fields[field.type].Display;
+                          return <Display key={name} field={field} value={value} />;
+                        })}
+                      </>
+                    }
+                    footer={
+                      <>
+                        <Muted small>
+                          Via {relation?.label ?? 'relation field'} on{' '}
+                          {item.via.on === 'anchor' ? 'this record' : 'the linked record'}
+                        </Muted>
+                        <ApiLabel name={item.via.field} />
+                      </>
+                    }
+                  />
+                );
+              })}
             </EntryList>
           </Section>
         );

@@ -806,8 +806,8 @@ export type LinkedRecord = {
   id: string;
   title: string | null;
   object: string;
-  /** API name of the relation field that connects the records. */
-  via: string;
+  /** The relation field's API name and which record owns it. */
+  via: { field: string; on: 'anchor' | 'linked' };
   selects: Record<string, unknown>;
 };
 export type LinkedRecordPage = {

@@ -546,6 +546,8 @@ test('Linked groups pages by object and agrees with context and the tab count', 
   await expect(tasks.getByRole('listitem')).toHaveCount(2);
   await expect(tasks.getByRole('link', { name: 'Book room' })).toBeVisible();
   await expect(tasks.getByText('Done', { exact: true })).toBeVisible();
+  await expect(tasks.getByText('Via Company on the linked record', { exact: true })).toHaveCount(2);
+  await expect(tasks.getByText('company', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Linked/ })).toContainText('3');
   await expect(page.getByRole('list', { name: 'People' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Load more' }).click();

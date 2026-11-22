@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, WorkspaceContext } from '../../api/client.js';
+import { DeveloperContext } from '../developer.js';
 import { defaultMemoryTab, MemoryTabs, memoryTabs } from './record-memory.js';
 
 vi.mock('@tanstack/react-router', async (original) => ({
@@ -32,8 +33,11 @@ const object = (name: string, extra: Partial<ObjectView> = {}) =>
     ...extra,
   }) as unknown as ObjectView;
 
+const relation = (name: string, label: string) => ({ name, label, type: 'relation' }) as FieldView;
+
 const deal = object('deal', {
   fields: [
+    relation('company', 'Customer'),
     {
       name: 'state',
       type: 'select',
@@ -49,7 +53,12 @@ const deal = object('deal', {
   ],
 });
 const schema = {
-  objects: [object('company'), object('person'), deal, object('conversation', { class: 'event' })],
+  objects: [
+    object('company', { fields: [relation('company', 'Parent company')] }),
+    object('person'),
+    deal,
+    object('conversation', { class: 'event' }),
+  ],
 } as unknown as SchemaDescription;
 
 const labels = (tabs: { label: string }[]) => tabs.map((t) => t.label);
@@ -141,7 +150,11 @@ describe('MemoryTabs', () => {
       ...over,
     }) as unknown as PresentedRecord;
 
-  function show(r: PresentedRecord, tab?: string, { fact }: { fact?: string } = {}) {
+  function show(
+    r: PresentedRecord,
+    tab?: string,
+    { fact, developer = false }: { fact?: string; developer?: boolean } = {},
+  ) {
     const set = vi.fn();
     render(
       <QueryClientProvider client={new QueryClient()}>
@@ -155,7 +168,9 @@ describe('MemoryTabs', () => {
             schema,
           }}
         >
-          <MemoryTabs record={r} nav={{ tab, fact, set }} />
+          <DeveloperContext.Provider value={{ on: developer, set: vi.fn() }}>
+            <MemoryTabs record={r} nav={{ tab, fact, set }} />
+          </DeveloperContext.Provider>
         </WorkspaceContext.Provider>
       </QueryClientProvider>,
     );
@@ -267,7 +282,7 @@ describe('MemoryTabs', () => {
             id: 'd1',
             title: 'Expansion',
             object: 'deal',
-            via: 'company',
+            via: { field: 'company', on: 'linked' },
             selects: { state: 'done' },
           },
         ],
@@ -276,8 +291,20 @@ describe('MemoryTabs', () => {
       })
       .mockResolvedValueOnce({
         items: [
-          { id: 'p1', title: 'Dana', object: 'person', via: 'employer', selects: {} },
-          { id: 'd2', title: 'Renewal', object: 'deal', via: 'company', selects: {} },
+          {
+            id: 'p1',
+            title: 'Dana',
+            object: 'person',
+            via: { field: 'employer', on: 'linked' },
+            selects: {},
+          },
+          {
+            id: 'd2',
+            title: 'Renewal',
+            object: 'deal',
+            via: { field: 'company', on: 'linked' },
+            selects: {},
+          },
         ],
         totals: { deal: 2, person: 1 },
         nextCursor: null,
@@ -285,11 +312,41 @@ describe('MemoryTabs', () => {
     show(record({ counts: { comments: 0, facts: 0, linked: 3, claims: 0 } }), 'linked');
     expect(await screen.findByText('Expansion')).toBeTruthy();
     expect(screen.getByRole('list', { name: 'deals' }).textContent).toContain('Done');
-    expect(screen.getByText('Via company')).toBeTruthy();
+    expect(screen.getByText('Via Customer on the linked record')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Load more' }));
     expect(await screen.findByText('Dana')).toBeTruthy();
     expect(screen.getByRole('list', { name: 'deals' }).textContent).toContain('Renewal');
     expect(screen.getByRole('list', { name: 'deals' }).textContent).toContain('Expansion');
     expect(linked.mock.calls[1]?.[1]).toMatchObject({ cursor: 'c2' });
+  });
+  it('uses the owning object’s relation label and shows API names in Developer view', async () => {
+    vi.spyOn(api, 'linkedRecords').mockResolvedValue({
+      items: [
+        {
+          id: 'd1',
+          title: 'Expansion',
+          object: 'deal',
+          via: { field: 'company', on: 'anchor' },
+          selects: {},
+        },
+        {
+          id: 'd2',
+          title: 'Renewal',
+          object: 'deal',
+          via: { field: 'company', on: 'linked' },
+          selects: {},
+        },
+      ],
+      totals: { deal: 2 },
+      nextCursor: null,
+    });
+    show(record({}), 'linked');
+    expect(await screen.findByText('Via Parent company on this record')).toBeTruthy();
+    expect(screen.getByText('Via Customer on the linked record')).toBeTruthy();
+    expect(screen.queryByText('company', { exact: true })).toBeNull();
+
+    cleanup();
+    show(record({}), 'linked', { developer: true });
+    expect(await screen.findAllByText('company', { exact: true })).toHaveLength(2);
   });
 });

@@ -337,7 +337,7 @@ describe('rolled-up history', () => {
     for (const id of [acme.id, d.id]) {
       const pack = await contextFor(app, as(AGENT), id, { tokenBudget: 4000 });
       expect(pack.linkedRecords.find((group) => group.object === 'task')?.items).toEqual([
-        { id: task.id, title: 'Follow up', via: 'regarding', selects: {} },
+        { id: task.id, title: 'Follow up', via: { field: 'regarding', on: 'linked' }, selects: {} },
       ]);
     }
   });

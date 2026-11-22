@@ -145,10 +145,11 @@ async function recordCounts(
   tx: Tx,
   workspaceId: string,
   schema: CompiledSchema,
-  recordId: string,
+  record: PresentedRecord,
 ): Promise<RecordCounts> {
+  const recordId = record.id;
   const [linked, [row]] = await Promise.all([
-    countLinkedRecords(tx, { workspaceId, schema, recordId }),
+    record.event ? 0 : countLinkedRecords(tx, { workspaceId, schema, recordId }),
     tx<[Omit<RecordCounts, 'linked'>]>`
     select
       (select count(*)::int from comments c
@@ -177,7 +178,7 @@ export async function enrichedRecord(
     relationReferences?: Record<string, RecordReference>;
   } = { ...record };
   if (includes.includes('counts'))
-    result.counts = await recordCounts(tx, workspaceId, schema, record.id);
+    result.counts = await recordCounts(tx, workspaceId, schema, record);
   if (includes.includes('relationReferences'))
     result.relationReferences = await relationReferences(tx, schema, [record]);
   if (includes.includes('provenance')) {

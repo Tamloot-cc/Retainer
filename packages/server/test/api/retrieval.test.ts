@@ -412,10 +412,30 @@ describe('GET /v1/records/:id/context', () => {
         object: 'task',
         total: 4,
         items: [
-          { id: finished, title: 'Finished', via: 'person', selects: { status: 'done' } },
-          { id: soon, title: 'Soon', via: 'person', selects: { status: 'todo' } },
-          { id: undated, title: 'Undated', via: 'person', selects: { status: 'in_progress' } },
-          { id: later, title: 'Later', via: 'person', selects: { status: 'todo' } },
+          {
+            id: finished,
+            title: 'Finished',
+            via: { field: 'person', on: 'linked' },
+            selects: { status: 'done' },
+          },
+          {
+            id: soon,
+            title: 'Soon',
+            via: { field: 'person', on: 'linked' },
+            selects: { status: 'todo' },
+          },
+          {
+            id: undated,
+            title: 'Undated',
+            via: { field: 'person', on: 'linked' },
+            selects: { status: 'in_progress' },
+          },
+          {
+            id: later,
+            title: 'Later',
+            via: { field: 'person', on: 'linked' },
+            selects: { status: 'todo' },
+          },
         ],
       },
     ]);
@@ -580,6 +600,23 @@ describe('GET /v1/records/:id/context', () => {
     const pack = (await context(noa)).body;
     expect(pack.recentEvents.map((e: { id: string }) => e.id)).toEqual([kept]);
     expect(pack.facts).toEqual([]);
+  });
+
+  it('fits facts and recent events at the default budget when links fill a page', async () => {
+    const company = await create('company', { name: `Busy ${word()}` });
+    for (let i = 0; i < 85; i++) {
+      await create('task', { title: `Linked record ${i}`, status: 'done', company });
+    }
+    for (let i = 0; i < 3; i++) {
+      const event = await logEvent({ title: `Call ${i}`, about: [company] });
+      await rememberFact(company, `Fact from call ${i}`, event);
+    }
+    const pack = (await context(company)).body;
+    expect(pack.linkedRecords[0].items.length).toBeGreaterThan(0);
+    expect(pack.omitted.linkedRecords).toBeGreaterThan(0);
+    expect(pack.facts).toHaveLength(3);
+    expect(pack.recentEvents).toHaveLength(3);
+    expect(JSON.stringify(pack).length).toBeLessThanOrEqual(8_000);
   });
 
   it('fits the sections to the budget, always keeping the values, and counts what it left out', async () => {

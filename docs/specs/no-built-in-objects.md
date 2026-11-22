@@ -186,15 +186,19 @@ One read serves every surface:
 `GET /v1/records/:id/linked?object=<api name>&limit=&cursor=` returns one
 bounded page of linked records across all objects, or of one object with
 `object`, ordered by `updated_at` and then ID. Each item has its ID, its
-title, its object, the relation field it is linked through, and the values of
-its select fields by API name, so an agent sees `status: done` without
-another call. The response also carries a total per object, from a count
-query that fetches no rows. Grouping by object is presentation only.
+title, its object, the values of its select fields by API name, and
+`via: { field, on }`. The field is the relation's API name and `on` is
+`anchor` when the requested record owns the relation or `linked` when the
+listed record owns it. The filter accepts singular and plural API names.
+Unknown names return 404 and event types return 400. The response also
+carries a total per object, from a count query that fetches no rows.
+Grouping by object is presentation only.
 
 ### 4.2 `get_context`
 
 `openTasks` becomes `linkedRecords`. It is one bounded page from the same
-read, sized by the budget fitter, and presented grouped by object:
+read. The budget fitter takes turns across links, facts and recent events
+and groups the retained links by object:
 
 ```json
 "linkedRecords": [
@@ -202,15 +206,15 @@ read, sized by the budget fitter, and presented grouped by object:
     "object": "task",
     "total": 3,
     "items": [
-      { "id": "rec_c40…", "title": "Send SSO docs to Noa", "via": "company", "selects": { "status": "todo" } },
-      { "id": "rec_c3b…", "title": "Draft proposal", "via": "company", "selects": { "status": "done" } }
+      { "id": "rec_c40…", "title": "Send SSO docs to Noa", "via": { "field": "company", "on": "linked" }, "selects": { "status": "todo" } },
+      { "id": "rec_c3b…", "title": "Draft proposal", "via": { "field": "company", "on": "linked" }, "selects": { "status": "done" } }
     ]
   },
   {
     "object": "deal",
     "total": 1,
     "items": [
-      { "id": "rec_9a1…", "title": "Acme renewal", "via": "company", "selects": { "stage": "negotiation" } }
+      { "id": "rec_9a1…", "title": "Acme renewal", "via": { "field": "company", "on": "linked" }, "selects": { "stage": "negotiation" } }
     ]
   }
 ]

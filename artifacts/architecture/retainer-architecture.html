@@ -721,13 +721,13 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
 
     <h3>How a context pack fills its budget</h3>
     <div class="figure">
-      <div class="budget" aria-label="Context pack: current field values always, then linked records, then facts, then recent events until the budget is spent">
+      <div class="budget" aria-label="Context pack: current field values always, then linked records, facts and recent events take turns">
         <div class="f">Field values (always)</div>
         <div class="t">Linked records</div>
         <div class="fa">Current facts</div>
         <div class="ev">Recent events…</div>
       </div>
-      <p class="caption">About four characters per token; default 2,000, at most 16,000. Items are never cut mid-text, and <code>omitted</code> counts what didn't fit.</p>
+      <p class="caption">About four characters per token. The default is 2,000 and the maximum is 16,000. The other sections take one item per round, and <code>omitted</code> counts what didn't fit.</p>
     </div>
   </section>
 
