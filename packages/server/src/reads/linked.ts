@@ -3,7 +3,6 @@ import type { Fragment } from 'postgres';
 import { after, page } from '../db/pagination.js';
 import type { Tx } from '../db/tx.js';
 import { invalid, notFound } from '../errors.js';
-import { references } from '../records/references.js';
 import { type CompiledSchema, objectNamed } from '../schema/compiled.js';
 
 type Target = { workspaceId: string; schema: CompiledSchema; recordId: string };
@@ -42,6 +41,8 @@ type LinkedRow = {
   stamp: string;
   field_id: string;
   on_anchor: boolean;
+  label: string | null;
+  object_type_id: string;
   selects: LinkedRecord['selects'];
 };
 
@@ -88,6 +89,7 @@ export async function linkedRecordPage(
         select json_agg(json_build_object(
           'id', candidate.id, 'stamp', candidate.updated_at::text,
           'field_id', candidate.field_id, 'on_anchor', candidate.on_anchor,
+          'label', r.label, 'object_type_id', r.object_type_id,
           'selects', coalesce((
             select jsonb_object_agg(f.name, r.data -> f.key)
             from fields f
@@ -108,21 +110,19 @@ export async function linkedRecordPage(
         join records r on r.id = candidate.id
       ), '[]') as rows`;
   const paged = page(result.rows, limit);
-  const refs = await references(
-    tx,
-    schema,
-    paged.items.map((row) => row.id),
-  );
+  // Titles come from the same statement as the page and the totals, so one
+  // snapshot covers them all (a separate references() read could see a
+  // later edit or deletion).
   return {
     items: paged.items.flatMap((row) => {
-      const ref = refs[row.id];
+      const object = schema.objectsById.get(row.object_type_id);
       const via = schema.fieldOwners.get(row.field_id)?.fieldsById.get(row.field_id);
-      if (!ref || !via) return [];
+      if (!object || !via) return [];
       return [
         {
           id: row.id,
-          title: ref.label,
-          object: ref.object,
+          title: row.label,
+          object: object.name,
           via: { field: via.name, on: row.on_anchor ? 'anchor' : 'linked' },
           selects: row.selects,
         },

@@ -336,3 +336,45 @@ it('keeps the page bounded across many objects and pages past equal timestamps',
   expect(context.body.linkedRecords.length + context.body.omitted.linkedRecords).toBe(ids.length);
   expect(context.body.tokenEstimate).toBeLessThanOrEqual(250);
 });
+
+it('reads titles, select values and totals at one snapshot while records change concurrently', async () => {
+  const steps = Array.from({ length: 8 }, (_, n) => `v${n}`);
+  await change([
+    definition('ticket', [
+      relation('account', 'account'),
+      {
+        name: 'step',
+        label: 'Step',
+        type: 'select',
+        settings: { options: steps.map((value) => ({ value, label: value })) },
+      },
+    ]),
+  ]);
+  const account = await create('account', { name: 'Snapshot' });
+  const ticket = await create('ticket', { name: 'v0', step: 'v0', account });
+  const doomed = await Promise.all(
+    steps.map((_, n) => create('ticket', { name: `doomed ${n}`, account })),
+  );
+
+  const writes = [
+    ...steps.slice(1).map((step) =>
+      app.request(`/v1/records/${ticket}`, {
+        key,
+        method: 'PATCH',
+        body: { values: { name: step, step } },
+      }),
+    ),
+    ...doomed.map((id) => app.request(`/v1/records/${id}`, { key, method: 'DELETE' })),
+  ];
+  const reads = Array.from({ length: 24 }, () => linked(account, '?object=ticket&limit=200'));
+  const results = await Promise.all([...writes, ...reads]);
+
+  for (const write of results.slice(0, writes.length)) expect(write.status).toBeLessThan(300);
+  for (const read of results.slice(writes.length) as Awaited<ReturnType<typeof linked>>[]) {
+    expect(read.status).toBe(200);
+    const page = read.body;
+    expect(page.items).toHaveLength(page.totals.ticket ?? 0);
+    const item = page.items.find((candidate) => candidate.id === ticket);
+    expect(item?.title).toBe(item?.selects.step);
+  }
+});
