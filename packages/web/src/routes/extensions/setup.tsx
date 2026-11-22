@@ -465,7 +465,10 @@ function BasicExtensionSetup({
             Object.keys(release.bindingProposal.choices).some(
               (key) => !suggestions?.bindings?.[key],
             ) ? (
-              <Muted>Some bindings were proposed by your agent.</Muted>
+              <Muted>
+                Agent proposal from{' '}
+                {release.bindingProposal.proposedBy.name ?? release.bindingProposal.proposedBy.id}.
+              </Muted>
             ) : null}
             {showBindings && declarations ? (
               <BindingFields

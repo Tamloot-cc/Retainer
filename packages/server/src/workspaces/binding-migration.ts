@@ -202,9 +202,6 @@ async function applyPlan(
     where installation_id=${row.id} and status in ('queued','running')`;
   await tx`update webhook_bindings set release_digest=${release.digest}
     where installation_id=${row.id} and release_digest=${row.release_digest} and state<>'retired'`;
-  if (release.manifest.name === 'tamloot')
-    await tx`delete from extension_contributions where installation_id=${row.id}
-      and kind='field' and universal_id=${old.taskId}`;
 }
 
 async function uninstall(tx: Tx, row: Row) {
@@ -265,6 +262,9 @@ export async function migrateExtensionBindings(
                 : 'The previous destinations cannot be bound.';
         }
       }
+      if (!reportOnly)
+        await tx`delete from extension_contributions where installation_id=${row.id}
+          and kind='field' and universal_id=${old.taskId}`;
       if (plan && release) {
         if (!reportOnly) await applyPlan(tx, row, release, plan, schema);
         report.push({

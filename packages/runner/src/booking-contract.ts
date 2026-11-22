@@ -4,6 +4,7 @@ import {
   type ExtensionManifest,
 } from '@retainer/extension';
 
+export const BOOKING_OAUTH_CLIENT_ID = 'retainer-booking';
 export const BOOKING_REGISTRATION_ID = '5af34474-16c9-4f79-9601-2a459b236bdb';
 
 const writes = [
@@ -42,6 +43,7 @@ export function bookingManifest(build: {
     runtimeVersion: 'node24',
     protocolVersion: 1,
     execution: 'standalone',
+    oauthClientId: BOOKING_OAUTH_CLIENT_ID,
     requestedActor: 'integration',
     scopes: ['read', 'write'],
     connection: 'workspace',

@@ -87,7 +87,7 @@ test('preserves a draft after a stale edit and retries only with explicit action
     'PATCH',
   );
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.getByText('This record changed.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry with latest version' })).toBeEnabled();
   await page.getByRole('heading', { name: 'Dana Levi' }).click();
   await expect(page.getByRole('textbox', { name: 'Job title', exact: true })).not.toBeVisible();
   expect((await r.request(`/records/${record.id}`)).fields.jobTitle).toBe('Changed again');

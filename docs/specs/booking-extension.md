@@ -256,13 +256,11 @@ effects while Booking continues to treat the reservation as confirmed.
   and CRM fields. Rate-limit public searches, booking submissions and link
   redemption. Guests can view their own booking and submit changes through
   that capability.
-- **CRM summary.** Booking's release contributes one Booking object through
-  the schema engine, with permanent universal IDs for the object and its
-  fields. It does not map onto a workspace's own objects. Writes use the
-  installation's `integration` actor and ordinary field assertions. The
-  `person` relation needs the workspace's Person object, so installing
-  Booking requires it. A workspace started from scratch has none, and the
-  install preview names it as missing.
+- **CRM summary.** Booking's release creates an owned Booking object through
+  the schema engine. Writes use the installation's `integration` actor and
+  ordinary field assertions. The optional `person` relation targets the
+  object approved for the read binding. Booking can be installed without
+  this relation.
 
   | Field | Type | Written by | Note |
   | --- | --- | --- | --- |
