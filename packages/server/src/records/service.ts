@@ -222,13 +222,21 @@ export async function requireStandaloneBinding(
   object: CompiledObject,
   fields: string[],
   stamp?: BindingWriteStamp,
+  lookups: string[] = [],
 ) {
   if (!context.installation) return;
   const [row] = await tx<{ bindings: StoredBindingPlan | null; bindings_revision: number }[]>`
     select bindings,bindings_revision from extension_installations where id = ${context.installation.installationId}`;
   if (
     !row?.bindings ||
-    !checkStandaloneBindingWrite(row.bindings, row.bindings_revision, object.state, fields, stamp)
+    !checkStandaloneBindingWrite(
+      row.bindings,
+      row.bindings_revision,
+      object.state,
+      fields,
+      stamp,
+      lookups,
+    )
   )
     throw new AppError(
       409,
@@ -385,8 +393,9 @@ export async function upsertRecord(
           tx,
           context,
           object,
-          [...Object.keys(input.values), ...Object.keys(input.match ?? {})],
+          Object.keys(input.values),
           input.bindings,
+          Object.keys(input.match ?? {}),
         );
         const cited = await citeSource(tx, context, input.source);
         let targetId: string | null = null;
@@ -434,6 +443,8 @@ export async function upsertRecord(
         }
 
         refuseEventCreation(object);
+        if (match)
+          await requireStandaloneBinding(tx, context, object, [match.field.name], input.bindings);
         const values = match
           ? valuesWithMatch(match.field, match.value, match.lookup, input.values)
           : input.values;

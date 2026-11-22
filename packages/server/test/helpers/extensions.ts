@@ -73,6 +73,20 @@ export const testCompanyBinding: ExtensionBinding = {
   fields: [
     { key: 'name', label: 'Name', types: ['text'], required: true },
     {
+      key: 'externalKey',
+      label: 'External key',
+      types: ['text'],
+      required: false,
+      lookup: true,
+      create: {
+        universalId: randomUUID(),
+        name: 'externalKey',
+        label: 'External key',
+        type: 'text',
+        isUnique: true,
+      },
+    },
+    {
       key: 'attachments',
       label: 'Attachments',
       types: ['files'],

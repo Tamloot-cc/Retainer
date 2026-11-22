@@ -218,6 +218,7 @@ export function checkStandaloneBindingWrite(
   object: ObjectState,
   fields: readonly string[],
   stamp?: BindingWriteStamp,
+  lookups: readonly string[] = [],
 ): boolean {
   if (!stamp || stamp.bindings_revision !== revision || stamp.objectId !== object.id) return false;
   const selected = plan.declarations.filter(
@@ -226,7 +227,7 @@ export function checkStandaloneBindingWrite(
       plan.destinations[declaration.key]?.objects.includes(object.universalId),
   );
   if (!selected.length) return false;
-  return fields.every((name) => {
+  const allowed = (name: string, write: boolean) => {
     const field = object.fields.find((field) => field.status === 'active' && field.name === name);
     return (
       !!field?.id &&
@@ -234,11 +235,16 @@ export function checkStandaloneBindingWrite(
       selected.some((declaration) =>
         declaration.fields.some(
           (rule) =>
-            !rule.lookup &&
-            (rule.key !== declaration.match || createsRecords(declaration, plan.createPeople)) &&
+            (!write ||
+              (!rule.lookup &&
+                (rule.key !== declaration.match ||
+                  createsRecords(declaration, plan.createPeople)))) &&
             plan.destinations[declaration.key]?.fields[rule.key]?.id === field.universalId,
         ),
       )
     );
-  });
+  };
+  return (
+    fields.every((name) => allowed(name, true)) && lookups.every((name) => allowed(name, false))
+  );
 }

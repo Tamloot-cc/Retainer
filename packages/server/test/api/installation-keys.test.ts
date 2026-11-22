@@ -177,6 +177,38 @@ describe('standalone installation keys with real RLS Postgres', () => {
       ).status,
     ).toBe(400);
   });
+  it('stamps a lookup field without allowing the installation to write it', async () => {
+    const h = await setup();
+    const credential = await h.issue();
+    const seed = await app.request('/v1/objects/company/records', {
+      key: h.keys.admin,
+      body: { values: { name: 'Dash', externalKey: 'existing' } },
+    });
+    expect(seed.status, JSON.stringify(seed.body)).toBe(201);
+    const stamp = await h.stamp(credential.key);
+    const update = (externalKey: string, bindings = stamp) =>
+      app.request('/v1/objects/company/upsert', {
+        key: credential.key,
+        body: {
+          match: { externalKey },
+          values: { name: 'Dash updated' },
+          ifMissing: 'create',
+          bindings,
+        },
+      });
+    const matched = await update('existing');
+    expect(matched.status, JSON.stringify(matched.body)).toBe(200);
+    expect(matched.body.id).toBe(seed.body.id);
+    expect((await update('missing')).body.error.code).toBe('binding_unavailable');
+    expect(
+      (
+        await update('existing', {
+          ...stamp,
+          fieldIds: { ...stamp.fieldIds, externalKey: randomUUID() },
+        })
+      ).body.error.code,
+    ).toBe('binding_unavailable');
+  });
   it('refuses standalone record writes if no destination was approved', async () => {
     const h = await setup();
     const installed = await h.install(7);
