@@ -378,6 +378,10 @@ function BasicExtensionSetup({
   }, [steps.length, review]);
   const busy = review.isPending || save.isPending;
   const error = save.error ?? review.error;
+  const schemaIssues =
+    error instanceof RetainerApiError && error.code === 'schema_invalid'
+      ? (error.details as { issues?: { path: string; message: string }[] } | undefined)?.issues
+      : undefined;
   const last = step === steps.length - 2;
   const reviewLabel = reconnect
     ? 'Review reconnect'
@@ -553,7 +557,22 @@ function BasicExtensionSetup({
       current={step}
       onBack={back}
     >
-      {error ? <Notice error>{error.message}</Notice> : null}
+      {error ? (
+        <Notice error>
+          {schemaIssues?.length ? (
+            <ul className="list-disc space-y-1 pl-4">
+              {schemaIssues.map(({ path, message }) => (
+                <li key={`${path}:${message}`}>
+                  {path ? `${path}: ` : ''}
+                  {message}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            error.message
+          )}
+        </Notice>
+      ) : null}
       {body}
     </StepFlow>
   );
