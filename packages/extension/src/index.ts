@@ -14,6 +14,19 @@ export {
 import { type Actor, FIELD_TYPES } from '@retainer/shared';
 import { z } from 'zod';
 
+/** The icons a sidebar link may name; the web app draws each. */
+export const SIDEBAR_ICONS = [
+  'app',
+  'calendar',
+  'clock',
+  'mail',
+  'chart',
+  'file',
+  'users',
+] as const;
+export type SidebarIcon = (typeof SIDEBAR_ICONS)[number];
+/** The query parameter a sidebar link carries, naming the installation, for the app's sign-in. */
+export const SIDEBAR_INSTALLATION_PARAM = 'retainer_installation';
 /** Capabilities a function may declare in `uses`; open for later ones (model calls spec 11). */
 export const EXTENSION_USES = ['model'] as const;
 export type ExtensionUse = (typeof EXTENSION_USES)[number];
@@ -36,6 +49,12 @@ const field = z.strictObject({
   isUnique: z.boolean().optional(),
   isFilterable: z.boolean().optional(),
   isSearchable: z.boolean().optional(),
+  /**
+   * Only the installation that contributed the field writes it: Retainer
+   * refuses other writers and presents it read-only, and only that
+   * installation may merge or delete a record whose unique field it is.
+   */
+  installationOwned: z.literal(true).optional(),
   settings: z
     .strictObject({
       options: z
@@ -272,6 +291,23 @@ export const manifestSchema = z.strictObject({
   execution: z.enum(['hosted', 'standalone']),
   /** Reviewed first-party OAuth client identity, pinned into the release digest. */
   oauthClientId: z.string().min(1).max(2048).regex(/^\S+$/).optional(),
+  /**
+   * A link in Retainer's sidebar for members of workspaces where the
+   * installation is active (spec 8). The path is on the app's origin, the
+   * origin of its client's registered redirect; opening it signs the person
+   * in to the app through Retainer.
+   */
+  sidebarLink: z
+    .strictObject({
+      label: z.string().min(1).max(40),
+      icon: z.enum(SIDEBAR_ICONS),
+      // An absolute path with no query or fragment: Retainer adds the query.
+      path: z
+        .string()
+        .max(500)
+        .regex(/^\/(?![/\\])[A-Za-z0-9\-._~/%!$&'()*+,;=:@]*$/),
+    })
+    .optional(),
   protocolVersion: z.literal(1),
   requestedActor: z.enum(['integration', 'agent']),
   scopes: z
@@ -484,6 +520,8 @@ function checkMapping(manifest: ExtensionManifest): void {
       throw new Error('unsupported_manifest: suggested field type must be an output type');
     if (output.field && output.field.universalId === mapping.lookup?.fieldId)
       throw new Error('unsupported_manifest: the lookup field cannot be an output');
+    if (output.field?.installationOwned)
+      throw new Error('unsupported_manifest: a mapped output cannot be installation-owned');
   }
   // A mapping edit advances the generation without re-running setup, which
   // source and webhook bindings (bound per generation) would not survive.
@@ -519,6 +557,18 @@ export function disconnectHook(manifest: Pick<ExtensionManifest, 'settings' | 'f
 } {
   const fn = manifest.functions.find((f) => f.trigger.kind === 'disconnect');
   return { functionId: fn?.universalId ?? null, secrets: fn ? functionSecrets(manifest, fn) : [] };
+}
+/** The function kinds a standalone release may declare (spec 8). */
+const STANDALONE_TRIGGERS: string[] = ['tool', 'job'];
+/**
+ * Whether a release runs code in the hosted runtime: every hosted release,
+ * and a standalone one with functions. Such a release follows the hosted
+ * rules for `runtimeEnabled`, executable admission and readiness (spec 8);
+ * `execution` decides only how the app's own service gets its credential and
+ * how the installation activates.
+ */
+export function runsHostedCode(manifest: Pick<ExtensionManifest, 'execution' | 'functions'>) {
+  return manifest.execution === 'hosted' || manifest.functions.length > 0;
 }
 /** The scopes a function needs; its run token gets their intersection with the grant (spec 8). */
 export function functionScopes(
@@ -680,8 +730,18 @@ export function defineExtension(value: unknown): ExtensionManifest {
     throw new Error('unsupported_manifest: duplicate scope');
   if (manifest.oauthClientId && manifest.execution !== 'standalone')
     throw new Error('unsupported_manifest: OAuth clients require standalone execution');
-  if (manifest.execution === 'standalone' && manifest.functions.length)
-    throw new Error('unsupported_manifest: standalone apps cannot contain hosted functions');
+  // Signing in through Retainer needs accounts mode, which an OAuth client marks.
+  if (manifest.sidebarLink && !manifest.oauthClientId)
+    throw new Error('unsupported_manifest: a sidebar link requires a standalone OAuth client');
+  // A standalone app activates when it is approved, with no setup job, so it
+  // may declare only functions that need no activation: tools and their jobs.
+  if (
+    manifest.execution === 'standalone' &&
+    manifest.functions.some((fn) => !STANDALONE_TRIGGERS.includes(fn.trigger.kind))
+  )
+    throw new Error(
+      'unsupported_manifest: standalone apps may declare only tool and job functions',
+    );
   for (const setting of Object.values(manifest.settings))
     if (setting.generated && (!setting.secret || setting.required))
       throw new Error('unsupported_manifest: generated secrets must be optional secret settings');
@@ -785,7 +845,7 @@ export function defineExtension(value: unknown): ExtensionManifest {
       throw new Error('unsupported_manifest: function scopes must be distinct release scopes');
     if (fn.uses && new Set(fn.uses).size !== fn.uses.length)
       throw new Error('unsupported_manifest: duplicate function use');
-    // Webhook verifiers have no network, and standalone apps run no hosted code.
+    // Webhook verifiers have no network.
     if (fn.uses?.length && ['route', 'serverRoute'].includes(fn.trigger.kind))
       throw new Error('unsupported_manifest: webhook verifiers cannot use platform capabilities');
   }
@@ -993,6 +1053,15 @@ export type ExtensionInstallation = {
   releaseNotice?: { connectionId: string; at: string } | null;
 };
 export type ExtensionConnectionMethod = 'oauth' | 'key';
+/** A standalone app's sidebar link, for a member of a workspace where it is active (spec 8). */
+export type ExtensionAppLink = {
+  installationId: string;
+  name: string;
+  label: string;
+  icon: SidebarIcon;
+  /** The app's page; it names the installation in `retainer_installation`. */
+  url: string;
+};
 
 export * from './model.js';
 export * from './protocol.js';

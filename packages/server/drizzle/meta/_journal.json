@@ -897,6 +897,13 @@
       "when": 1795292585035,
       "tag": "0127_model_call_security",
       "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1795312214834,
+      "tag": "0128_standalone_app_platform",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { type ExtensionManifest, functionUses } from '@retainer/extension';
+import { type ExtensionManifest, functionSecrets, functionUses } from '@retainer/extension';
 import type { JsonSchemaSubset, RoutineToolDescription, ToolContract } from '@retainer/shared';
 import type { Tx } from '../db/tx.js';
 import { type RuntimeCatalog, resolveRelease } from '../extension-runtime/availability.js';
@@ -25,13 +25,20 @@ type InstallationRow = {
   state: string;
   connection_health: string;
   granted_uses: string[];
+  /** A live, unrevoked credential of the current grant: a standalone app's service can answer. */
+  credential: boolean;
+  secret_names: string[];
 };
 
 /** Every tool of the workspace's active installations, by name. Two with one name conflict. */
 export async function installedTools(tx: Tx, catalog: RuntimeCatalog): Promise<InstalledTool[]> {
   const rows = await tx<InstallationRow[]>`
-    select id,registration_id,version,release_digest,state,connection_health,granted_uses
-    from extension_installations where state='active' order by created_at,id`;
+    select i.id,i.registration_id,i.version,i.release_digest,i.state,i.connection_health,i.granted_uses,
+      exists(select 1 from extension_credentials c where c.installation_id=i.id
+        and c.generation=i.grant_generation and c.revoked_at is null and not c.pending
+        and (c.kind='key' or retainer_extension_oauth_client_active(c.client_id))) as credential,
+      retainer_extension_secret_names(i.id) as secret_names
+    from extension_installations i where i.state='active' order by i.created_at,i.id`;
   const tools: InstalledTool[] = [];
   for (const row of rows) {
     const resolution = resolveRelease(catalog, row);
@@ -40,6 +47,16 @@ export async function installedTools(tx: Tx, catalog: RuntimeCatalog): Promise<I
     for (const fn of manifest.functions) {
       if (fn.trigger.kind !== 'tool') continue;
       const uses = functionUses(fn);
+      // A standalone app's tool calls the app's own service, so it is ready
+      // only while the app holds a live credential and has written the
+      // generated secrets the tool reads. Revocation does not change
+      // connection_health, so this is checked here (spec 8).
+      const connected =
+        manifest.execution !== 'standalone' ||
+        (row.credential &&
+          functionSecrets(manifest, fn)
+            .filter((name) => manifest.settings[name]?.generated)
+            .every((name) => row.secret_names.includes(name)));
       tools.push({
         name: fn.name,
         title: fn.trigger.title,
@@ -51,10 +68,10 @@ export async function installedTools(tx: Tx, catalog: RuntimeCatalog): Promise<I
         status:
           fn.trigger.connection === 'member'
             ? 'member_only'
-            : row.connection_health === 'ok'
-              ? 'ready'
-              : row.connection_health === 'needs_reconnect'
-                ? 'not_connected'
+            : !connected || row.connection_health === 'needs_reconnect'
+              ? 'not_connected'
+              : row.connection_health === 'ok'
+                ? 'ready'
                 : 'unhealthy',
         inputSchema: fn.inputSchema as JsonSchemaSubset,
         outputSchema: fn.trigger.outputSchema as JsonSchemaSubset,

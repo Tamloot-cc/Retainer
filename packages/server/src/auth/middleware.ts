@@ -4,6 +4,7 @@ import { createMiddleware } from 'hono/factory';
 import type { Caller } from '../caller.js';
 import { changePosition } from '../db/change-cursor.js';
 import type { Sql } from '../db/client.js';
+import { isUuid } from '../db/ids.js';
 import type { ApiKeyScope } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { isInstallationKey, lookupInstallationKey } from '../extension-runtime/credentials.js';
@@ -23,8 +24,12 @@ const BEARER = /^Bearer\s+(\S+)$/i;
 /** The token of an `Authorization: Bearer` header, or undefined. */
 export const bearerToken = (header: string | null | undefined) =>
   header ? BEARER.exec(header)?.[1] : undefined;
-/** A standalone app names the change cursor it is reacting to (extensions spec §9.4). */
+/**
+ * A standalone app names the change cursors and tool calls it is reacting to
+ * (extensions spec §9.4). The header may repeat, up to this many values.
+ */
 export const CAUSED_BY_HEADER = 'Retainer-Caused-By';
+const MAX_CAUSES = 8;
 
 export type AuthOptions = {
   runTokens?: RunTokens | undefined;
@@ -134,11 +139,24 @@ export function authenticate(sql: Sql, options: AuthOptions = {}): MiddlewareHan
         // The cursor names a feed change, which only a reader may see.
         if (!caller.scopes.includes('read'))
           throw new AppError(403, 'forbidden', `${CAUSED_BY_HEADER} requires read scope`);
+        // A repeated header arrives joined with commas; neither a cursor nor
+        // a tool call ID contains one.
+        const values = causedBy.split(',').map((value) => value.trim());
+        if (values.length > MAX_CAUSES || values.some((value) => !value))
+          throw new AppError(
+            400,
+            'invalid_request',
+            `${CAUSED_BY_HEADER} names 1 to ${MAX_CAUSES} change cursors or tool call IDs`,
+          );
+        const toolCalls = values.filter((value) => isUuid(value)).map((v) => v.toLowerCase());
+        const changes = values
+          .filter((value) => !isUuid(value))
+          .map((value) => changePosition(caller.workspaceId, value));
         caller = {
           ...caller,
           installation: {
             ...caller.installation,
-            causedBy: changePosition(caller.workspaceId, causedBy),
+            causedBy: { changes: [...new Set(changes)], toolCalls: [...new Set(toolCalls)] },
           },
         };
       }

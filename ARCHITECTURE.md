@@ -729,6 +729,9 @@ object deletes its views with it.
    other's values. Multi-record writes lock records in sorted
    ID order. An optional expected `updated_at` precondition rejects stale
    direct edits; serialization alone does not detect a stale agent's intent.
+   Records expose `updatedAt` at the database's microsecond precision and the
+   precondition compares it exactly, so two writes in one millisecond cannot
+   both pass it.
 6. **Facts are never deleted by the system, only superseded.** Two times are
    kept apart: `valid_from` / `valid_to` say when a fact was true in the
    world; `created_at` says when it was recorded. `valid_from` is the cited
@@ -743,6 +746,17 @@ object deletes its views with it.
    fact (soft delete) or hard-delete data for privacy (2.1). Exact historical
    belief snapshots are deferred: the schema has no supersession-event
    timestamp or append-only history of validity edits.
+7. **An installation-owned field is written only by its installation.** A
+   standalone app may mark the fields it contributes `installationOwned`
+   (extensions spec 8): values the app is the system of record for, such as
+   an order's ID or status. Any other writer, a person included, gets `403
+   installation_owned`, so precedence never lets a person's value outrank
+   the app's. A record whose object has an owned unique field is the app's
+   copy of its own data: only the app deletes it, and nobody merges it. An
+   admin's `forget` still erases it (2.1). Ownership is read from the
+   installation's contributions on every write and ends when the app is
+   uninstalled; the fields then belong to the workspace like any other.
+   Schema reads mark owned fields `readOnly` for everyone but the owner.
 
 ### 2.1 Deletion and privacy
 

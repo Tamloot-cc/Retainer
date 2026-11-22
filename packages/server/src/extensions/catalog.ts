@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
-import { defineExtension, type ExtensionManifest, supportsServer } from '@retainer/extension';
+import {
+  defineExtension,
+  type ExtensionManifest,
+  runsHostedCode,
+  supportsServer,
+} from '@retainer/extension';
 import { z } from 'zod';
 import { AppError } from '../errors.js';
 import type { RuntimeCatalog } from '../extension-runtime/availability.js';
@@ -68,7 +73,7 @@ export class ExtensionCatalog {
       ),
       resolve: (id: string, version: string) => {
         const release = this.get(id, version);
-        if (release.manifest.execution === 'hosted' && release.runtimeEnabled !== true)
+        if (runsHostedCode(release.manifest) && release.runtimeEnabled !== true)
           throw new AppError(
             409,
             'incompatible_runtime',

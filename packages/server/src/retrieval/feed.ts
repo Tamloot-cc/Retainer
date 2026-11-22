@@ -9,7 +9,7 @@ import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
 import { AppError } from '../errors.js';
 import { currentActivityEvidence } from '../memory/events.js';
-import { presentRecords, RECORD_COLUMNS, type RecordRow } from '../records/read.js';
+import { presentRecords, type RecordRow, recordColumns } from '../records/read.js';
 import { relationReferences } from '../records/references.js';
 import { withRead } from '../records/service.js';
 import { resolveRecordId } from '../records/write.js';
@@ -152,9 +152,7 @@ export async function workspaceFeed(
     const page = rows.slice(0, input.limit);
     const ids = [...new Set(page.map((row) => row.record_id))];
     const recordRows = ids.length
-      ? await tx<
-          RecordRow[]
-        >`select ${tx(RECORD_COLUMNS)} from records where id=any(${ids}::uuid[])`
+      ? await tx<RecordRow[]>`select ${recordColumns(tx)} from records where id=any(${ids}::uuid[])`
       : [];
     const [records, changes] = await Promise.all([
       presentRecords(tx, schema, recordRows),

@@ -16,7 +16,7 @@ import { after, page } from '../db/pagination.js';
 import type { Tx } from '../db/tx.js';
 import { AppError, notFound, requireUser } from '../errors.js';
 import { isEventIdentitySuppressed } from '../privacy/suppression.js';
-import { getRecord, presentRecords, RECORD_COLUMNS, type RecordRow } from '../records/read.js';
+import { getRecord, presentRecords, type RecordRow, recordColumns } from '../records/read.js';
 import { references } from '../records/references.js';
 import { normalizeFieldValue, prepareValues } from '../records/values.js';
 import { sameValue } from '../records/winner.js';
@@ -777,7 +777,7 @@ export async function attachedEventPage(
   const rows = await tx<
     (RecordRow & Omit<HistoryRow, 'event_id' | 'occurred_at'> & { stamp: string })[]
   >`
-    select ${tx(RECORD_COLUMNS.map((c) => `r.${c}`))}, h.occurred_at::text as stamp,
+    select ${recordColumns(tx, 'r')}, h.occurred_at::text as stamp,
       h.rank, h.field_id, h.via_record_id
     from ${history} h
     join records r on r.id = h.event_id

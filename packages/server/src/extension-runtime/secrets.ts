@@ -1,6 +1,11 @@
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { type Caller, canApproveDestructive, type RunBinding } from '../caller.js';
+import {
+  type Caller,
+  canApproveDestructive,
+  type InstallationBinding,
+  type RunBinding,
+} from '../caller.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, type Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
@@ -198,9 +203,56 @@ export class SecretBroker {
     expectedRevision: number | null,
     value: string,
   ) {
+    return this.write(identity, expectedRevision, value, (tx) =>
+      this.admit(tx, identity, run, true),
+    );
+  }
+  /**
+   * A standalone app's own credential writing its installation's generated
+   * secret (spec 8). The API checked that `releaseDigest` declares the name
+   * as a generated installation secret; admission here holds that release.
+   */
+  async writeInstallation(
+    identity: SecretIdentity,
+    binding: InstallationBinding,
+    releaseDigest: string,
+    expectedRevision: number | null,
+    value: string,
+  ) {
+    return this.write(identity, expectedRevision, value, async (tx) => {
+      if (
+        binding.installationId !== identity.installationId ||
+        binding.registrationId !== identity.registrationId ||
+        identity.connectionId
+      )
+        throw new AppError(403, 'forbidden', 'secret belongs to another installation');
+      const [admission] = await tx<
+        { admitted: boolean }[]
+      >`select retainer_admit_secret_installation(
+        ${binding.registrationId}::uuid,${binding.installationId}::uuid,${binding.grantGeneration},
+        ${binding.credentialId}::uuid,${binding.kind},${releaseDigest}) as admitted`;
+      if (!admission?.admitted)
+        throw new AppError(
+          401,
+          'unauthorized',
+          'installation credential was revoked or no longer has access',
+        );
+    });
+  }
+  /**
+   * Compare-and-set on the secret's revision. A conflict carries the current
+   * revision (null when there is none), never the value, so the writer can
+   * write again.
+   */
+  private async write(
+    identity: SecretIdentity,
+    expectedRevision: number | null,
+    value: string,
+    admit: (tx: Tx) => Promise<void>,
+  ) {
     const envelope = this.cipher.encrypt(value, identity);
     return inWorkspace(this.sql, identity.workspaceId, async (tx) => {
-      await this.admit(tx, identity, run, true);
+      await admit(tx);
       const [row] =
         expectedRevision === null
           ? await tx<
@@ -213,7 +265,14 @@ export class SecretBroker {
               { revision: number }[]
             >`update extension_secrets set envelope=${tx.json(envelope)},revision=revision+1,delete_after=null
             where installation_id=${identity.installationId} and connection_id is not distinct from ${identity.connectionId ?? null}::uuid and name=${identity.name} and revision=${expectedRevision} returning revision`;
-      if (!row) throw new AppError(409, 'revision_conflict', 'secret revision changed');
+      if (!row) {
+        const [current] = await tx<{ revision: number }[]>`select revision from extension_secrets
+          where installation_id=${identity.installationId} and connection_id is not distinct from ${identity.connectionId ?? null}::uuid
+          and name=${identity.name} and delete_after is null`;
+        throw new AppError(409, 'revision_conflict', 'secret revision changed', {
+          revision: current?.revision ?? null,
+        });
+      }
       return { revision: row.revision };
     });
   }

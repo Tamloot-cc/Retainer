@@ -202,8 +202,15 @@ export function presentValueFormats(objects: ObjectView[]): SchemaDescription['v
   );
 }
 
-/** The active schema as describe_schema and GET /v1/schema show it (5). */
-export function presentSchema(schema: CompiledSchema): ObjectView[] {
+/**
+ * The active schema as describe_schema and GET /v1/schema show it (5).
+ * `readOnlyFields` are the IDs of installation-owned fields the caller may
+ * not write (extensions spec 8).
+ */
+export function presentSchema(
+  schema: CompiledSchema,
+  readOnlyFields: ReadonlySet<string> = new Set(),
+): ObjectView[] {
   return [...schema.objectsByName.values()].map((object) => ({
     nameSingular: object.state.nameSingular,
     namePlural: object.state.namePlural,
@@ -228,7 +235,7 @@ export function presentSchema(schema: CompiledSchema): ObjectView[] {
       isUnique: field.isUnique,
       isFilterable: field.isFilterable,
       isSearchable: field.isSearchable,
-      readOnly: field.settings.isInverse === true,
+      readOnly: field.settings.isInverse === true || readOnlyFields.has(field.id as string),
       owner: field.owner,
       isProtected: field.isProtected,
       ...(PROTECTED_OPTIONS.has(field.universalId)

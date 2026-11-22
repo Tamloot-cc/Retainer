@@ -80,11 +80,12 @@ export type InstallationBinding = {
   kind: 'key' | 'oauth';
   scopes: ('read' | 'write')[];
   /**
-   * The feed position this request reacts to, from `Retainer-Caused-By`.
-   * Its writes inherit that change's server-recorded cause chain, so a
-   * hosted function that triggered the app is not triggered again (§9.4).
+   * What this request reacts to, from `Retainer-Caused-By`: feed positions
+   * and tool calls (job IDs) of this installation. Its writes inherit their
+   * server-recorded cause chains, so a hosted function or routine that
+   * caused the app's write is not triggered by it again (§9.4).
    */
-  causedBy?: string;
+  causedBy?: { changes: string[]; toolCalls: string[] };
 };
 
 /** A routine run, from its signed token (routines spec §3.3). */

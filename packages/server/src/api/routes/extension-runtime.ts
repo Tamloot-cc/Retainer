@@ -5,7 +5,7 @@ import type { Caller } from '../../caller.js';
 import type { Sql } from '../../db/client.js';
 import { inWorkspace, lockSchemaShared } from '../../db/tx.js';
 import { AppError, notFound } from '../../errors.js';
-import { admitRun } from '../../extension-runtime/admission.js';
+import { admitInstallation, admitRun } from '../../extension-runtime/admission.js';
 import { ExtensionQueue, type Lease } from '../../extension-runtime/queue.js';
 import type { SecretBroker } from '../../extension-runtime/secrets.js';
 import type { ExtensionCatalog } from '../../extensions/catalog.js';
@@ -15,7 +15,10 @@ import { saveSuggestions, suggestionsSchema } from '../../extensions/suggestions
 import { idParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 
-/** A run-only surface. Admin credentials cannot impersonate an installed function. */
+/**
+ * A run-only surface, plus a standalone app's generated-secret write. Admin
+ * credentials cannot impersonate an installed function.
+ */
 export function runtimeRoutes(
   app: Hono<AppEnv>,
   sql: Sql,
@@ -136,6 +139,60 @@ export function runtimeRoutes(
     const identity = await secretIdentity(caller, c.req.param('name'), true);
     return c.json(
       await broker.writeRuntime(identity, caller.run, input.expectedRevision, input.value),
+    );
+  });
+  /**
+   * A standalone app's own credential writes its installation's generated
+   * secret, with the same revision CAS as a run (spec 8). This is how the app
+   * hands its tool functions a shared key during its own connection flow, so
+   * no admin fills in a form. It cannot read secrets or write any other kind.
+   */
+  app.put('/extensions/:id/generated-secrets/:name', async (c) => {
+    if (!broker) throw new AppError(503, 'connection_required', 'secret broker is not configured');
+    const caller = c.get('caller'),
+      binding = caller.installation;
+    if (!binding)
+      throw new AppError(
+        403,
+        'forbidden',
+        "only a standalone app's own credential writes its generated secrets",
+      );
+    if (binding.installationId !== idParam(c)) throw notFound('extension installation');
+    const name = c.req.param('name');
+    const input = await readBody(
+      c,
+      z.strictObject({
+        expectedRevision: z.number().int().positive().max(2147483647).nullable(),
+        value: z.string().min(1).max(65536),
+      }),
+    );
+    // Release these API locks before the broker acquires its own admission locks.
+    const digest = await inWorkspace(sql, caller.workspaceId, async (tx) => {
+      await lockSchemaShared(tx, caller.workspaceId);
+      await admitInstallation(tx, caller.workspaceId, binding);
+      const [row] = await tx<{ release_digest: string }[]>`
+        select release_digest from extension_installations where id=${binding.installationId}`;
+      const release = row && catalog.byDigest(binding.registrationId, row.release_digest);
+      if (!release)
+        throw new AppError(409, 'release_unavailable', 'the installed release is not loaded here');
+      const definition = release.manifest.settings[name];
+      if (!definition?.secret || !definition.generated || definition.level === 'connection')
+        throw notFound('generated secret');
+      return release.digest;
+    });
+    return c.json(
+      await broker.writeInstallation(
+        {
+          workspaceId: caller.workspaceId,
+          installationId: binding.installationId,
+          registrationId: binding.registrationId,
+          name,
+        },
+        binding,
+        digest,
+        input.expectedRevision,
+        input.value,
+      ),
     );
   });
   app.post('/extensions/:id/runtime/mapped-writes', async (c) =>

@@ -1,6 +1,7 @@
 import {
   compareVersions,
   disconnectHook,
+  type ExtensionAppLink,
   type ExtensionInstallation,
   type ExtensionInstallInput,
   type ExtensionManifest,
@@ -11,6 +12,8 @@ import {
   mappingChoicesSchema,
   newestReleases,
   releaseUses,
+  runsHostedCode,
+  SIDEBAR_INSTALLATION_PARAM,
 } from '@retainer/extension';
 import { HIDDEN_TYPE_IDS } from '@retainer/shared';
 import { z } from 'zod';
@@ -30,6 +33,7 @@ import {
   type RuntimeCatalog,
   releaseAvailability,
   resolveRelease,
+  sidebarSignIn,
 } from '../extension-runtime/availability.js';
 import { disconnectConnection } from '../extension-runtime/connections.js';
 import { hashInstallationKey, mintInstallationKey } from '../extension-runtime/credentials.js';
@@ -251,6 +255,10 @@ export class Extensions {
     };
   }
   private readonly activation: ReadonlySet<string>;
+  /** Whether a release can run here: it runs no hosted code, or its executable is deployed. */
+  private ready(manifest: ExtensionManifest, digest: string) {
+    return !runsHostedCode(manifest) || this.activation.has(digest);
+  }
   readonly connections: MemberConnections;
   private queue() {
     return new ExtensionQueue(this.sql, this.catalog.runtime);
@@ -842,7 +850,7 @@ export class Extensions {
         // The resolved targets by universal ID, so a rename or retype after
         // preview changes the digest.
         mapping: mapped.stored,
-        runtimeReady: manifest.execution === 'standalone' || this.activation.has(release.digest),
+        runtimeReady: this.ready(manifest, release.digest),
         reconnect: input.reconnect === true,
         replaceSourceAccount: input.replaceSourceAccount === true,
         grantChange: input.grantChange === true,
@@ -915,7 +923,11 @@ export class Extensions {
               `Create people: ${input.settings.createPeople ?? manifest.createPeople}; source deletion: ${manifest.onSourceDelete}.`,
             ]
           : []),
-        ...(manifest.execution === 'standalone' || this.activation.has(release.digest)
+        // Approving the installation covers sign-in for the workspace's members.
+        ...(manifest.sidebarLink
+          ? ['Members can open this app signed in with their Retainer account.']
+          : []),
+        ...(this.ready(manifest, release.digest)
           ? []
           : [
               'Runtime activation is unavailable. This installation remains disabled and cannot ingest data.',
@@ -1029,16 +1041,18 @@ export class Extensions {
     }
     const manifest = plan.release.manifest;
     const standalone = manifest.execution === 'standalone';
-    const ready = standalone || this.activation.has(plan.release.digest);
+    // A standalone app with functions follows the hosted readiness rule: it
+    // stays disabled where its functions cannot run (spec 8).
+    const ready = this.ready(manifest, plan.release.digest);
     const setupKind =
       input.installationId && !input.reconnect && !input.turnOn ? 'upgrade' : 'install';
-    const state = standalone
-      ? 'active'
-      : ready
-        ? setupKind === 'upgrade'
+    const state = !ready
+      ? 'disabled'
+      : standalone
+        ? 'active'
+        : setupKind === 'upgrade'
           ? 'upgrading'
-          : 'installing'
-        : 'disabled';
+          : 'installing';
     // Standalone credentials survive a release change unless what they were
     // granted changes: the actor, the scopes, the execution model, the pinned
     // OAuth client (a release may drop it; the catalog only forbids switching)
@@ -1055,7 +1069,9 @@ export class Extensions {
         !sameScopes(plan.existing.granted_scopes, manifest.scopes) ||
         !previous?.available ||
         previous.manifest.execution !== manifest.execution ||
-        previous.manifest.oauthClientId !== manifest.oauthClientId);
+        previous.manifest.oauthClientId !== manifest.oauthClientId ||
+        // Landing disabled ends the app's credentials, as a disable does.
+        (standalone && !ready));
     const [row] = await tx<Row[]>`insert into extension_installations
       (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, granted_uses, settings, created_by, state, setup_kind, mapping)
       values (${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId}, ${manifest.universalId}, ${manifest.version}, ${plan.release.digest},
@@ -1171,7 +1187,7 @@ export class Extensions {
       { names: string[] }[]
     >`select retainer_extension_secret_names(${row.id}::uuid) as names`;
     row.secret_names = presence?.names ?? [];
-    if (standalone) {
+    if (standalone && ready) {
       await tx`update extension_installations set connection_health='ok',activated_at=clock_timestamp() where id=${row.id}`;
       row.connection_health = 'ok';
     }
@@ -1244,10 +1260,8 @@ export class Extensions {
   /** The release each registration upgrades to on its own, when this process can run it. */
   upgradeTargets(): UpgradeTarget[] {
     // The catalog and the deployed releases are fixed for this process.
-    this.targets ??= upgradeTargets(
-      this.catalog.list(),
-      (release) =>
-        release.manifest.execution === 'standalone' || this.activation.has(release.digest),
+    this.targets ??= upgradeTargets(this.catalog.list(), (release) =>
+      this.ready(release.manifest, release.digest),
     );
     return this.targets;
   }
@@ -1567,6 +1581,48 @@ export class Extensions {
       };
     });
   }
+  /**
+   * The sidebar links of the workspace's active standalone apps (spec 8):
+   * the path on the origin of the app's pinned OAuth client, naming the
+   * installation so sign-in needs no workspace picker. An app whose client
+   * has no single registered origin shows no link.
+   */
+  async appLinks(caller: Caller): Promise<{ links: ExtensionAppLink[] }> {
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      const rows = await tx<Row[]>`select * from extension_installations
+        where state='active' order by created_at,id`;
+      const apps = rows.flatMap((row) => {
+        const resolution = resolveRelease(this.catalog.runtime, row);
+        const signIn = resolution.available ? sidebarSignIn(resolution.manifest) : null;
+        return signIn && resolution.available
+          ? [{ row, name: resolution.manifest.name, ...signIn }]
+          : [];
+      });
+      if (!apps.length) return { links: [] };
+      const origins = new Map(
+        (
+          await tx<{ client: string; origin: string | null }[]>`
+            select c as client, retainer_extension_oauth_client_origin(c) as origin
+            from unnest(${apps.map((app) => app.clientId)}::text[]) as c`
+        ).map(({ client, origin }) => [client, origin]),
+      );
+      const links: ExtensionAppLink[] = [];
+      for (const { row, name, link, clientId } of apps) {
+        const origin = origins.get(clientId);
+        if (!origin) continue;
+        const url = new URL(link.path, origin);
+        url.searchParams.set(SIDEBAR_INSTALLATION_PARAM, row.id);
+        links.push({
+          installationId: row.id,
+          name,
+          label: link.label,
+          icon: link.icon,
+          url: url.href,
+        });
+      }
+      return { links };
+    });
+  }
   async credentials(caller: Caller, id: string) {
     human(caller);
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
@@ -1721,10 +1777,9 @@ export class Extensions {
       if (['active', 'installing', 'upgrading'].includes(current.state)) return present(current);
       if (['configuring', 'uninstalled', 'uninstalling'].includes(current.state))
         throw conflict('installation_disabled', 'finish setup or reinstall before enabling');
-      const standalone =
-        this.catalog.get(current.registration_id, current.version).manifest.execution ===
-        'standalone';
-      if (!standalone && !this.activation.has(current.release_digest))
+      const manifest = this.catalog.get(current.registration_id, current.version).manifest;
+      const standalone = manifest.execution === 'standalone';
+      if (!this.ready(manifest, current.release_digest))
         throw conflict(
           'incompatible_runtime',
           'no reviewed executable is deployed for this release',

@@ -7,7 +7,7 @@ import {
   verifyOAuthQueryParams,
 } from '@better-auth/oauth-provider';
 import { passkey } from '@better-auth/passkey';
-import { LAST_SIGN_IN_COOKIE, OAUTH_SCOPES, type SignInProvider } from '@retainer/shared';
+import { LAST_SIGN_IN_COOKIE, type SignInProvider } from '@retainer/shared';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
@@ -44,6 +44,7 @@ import {
   sessions,
   users,
 } from '../db/schema.js';
+import { AGENT_OAUTH_SCOPES, APP_SIGN_IN_SCOPES, isAppSignInScopes } from './extensions.js';
 import { microsoftAccountKey, microsoftProvider } from './microsoft.js';
 
 /**
@@ -129,6 +130,15 @@ export type AuthOptions = {
    * tests, which have no internet, serve documents themselves.
    */
   fetchClientMetadata?: typeof fetchClientMetadataResource;
+  /**
+   * The claims an app sign-in's ID token adds (extensions spec 8), checked
+   * again when it is issued: null refuses the token.
+   */
+  appSignInClaims?: (input: {
+    userId: string;
+    clientId: string;
+    workspaceId: string;
+  }) => Promise<Record<string, unknown> | null>;
 };
 
 /** A signed-in person, as Better Auth reads their session. */
@@ -150,11 +160,13 @@ export type Auth = {
   /** The session a request's cookie carries, or null. Writes nothing. */
   getSession: (headers: Headers) => Promise<AccountSession | null>;
   /**
-   * Records the person's consent to an app for one workspace, and returns
-   * Better Auth's answer: where to send the browser next. The caller has
+   * Runs a request with one workspace as its consent reference, and returns
+   * Better Auth's answer: where to send the browser next. Consenting records
+   * the person's consent for that workspace; an app sign-in finds the consent
+   * `recordAppSignIn` stored, so no consent page is shown. The caller has
    * checked that the person can reach the workspace.
    */
-  consent: (request: Request, workspaceId: string) => Promise<Response>;
+  forWorkspace: (request: Request, workspaceId: string) => Promise<Response>;
   validOAuthQuery: (query: string) => Promise<boolean>;
   /** RFC 8414 metadata for the authorization server. */
   authServerMetadata: (request: Request) => Promise<Response>;
@@ -170,7 +182,7 @@ export function createAuth(options: AuthOptions): Auth {
       const found = await auth.api.getSession({ headers });
       return found ? { user: found.user, session: found.session } : null;
     },
-    consent: (request, workspaceId) =>
+    forWorkspace: (request, workspaceId) =>
       pickedWorkspace.run(workspaceId, () => auth.handler(request)),
     validOAuthQuery: (query) => verifyOAuthQueryParams(query, options.config.secret),
     authServerMetadata: oauthProviderAuthServerMetadata(auth),
@@ -393,8 +405,14 @@ function betterAuthFor(options: AuthOptions) {
         loginPage: OAUTH_SIGN_IN_PAGE,
         consentPage: OAUTH_CONSENT_PAGE,
         // What an agent's key can have, never admin; offline_access gets a
-        // refresh token. The person's role caps them on every request.
-        scopes: [...OAUTH_SCOPES, 'offline_access'],
+        // refresh token. The person's role caps them on every request. The
+        // identity scopes serve app sign-in alone (extensions spec 8). Every
+        // registered client may ask for them, so the authorization route
+        // refuses any request for them that is not an app sign-in, and leaves
+        // them out when a request names no scope.
+        scopes: [...AGENT_OAUTH_SCOPES, ...APP_SIGN_IN_SCOPES],
+        clientRegistrationDefaultScopes: AGENT_OAUTH_SCOPES,
+        clientRegistrationAllowedScopes: [...APP_SIGN_IN_SCOPES],
         grantTypes: ['authorization_code', 'refresh_token'],
         accessTokenExpiresIn: 60 * 60,
         // Clients without a metadata document register themselves, rate
@@ -408,6 +426,37 @@ function betterAuthFor(options: AuthOptions) {
           shouldRedirect: () => false,
           consentReferenceId: () => pickedWorkspace.getStore() ?? NO_WORKSPACE,
         },
+        // Who the person is, in an app sign-in's ID token; the claims below
+        // add where (extensions spec 8). Better Auth reserves these standard
+        // names for this hook.
+        customIdTokenClaims: ({ user, scopes }) =>
+          isAppSignInScopes(scopes)
+            ? { name: user.name, email: user.email, email_verified: user.emailVerified }
+            : {},
+        extensions: [
+          {
+            claims: {
+              // An app sign-in's ID token: who the person is in the workspace
+              // and which installation they opened. Nothing else gets one.
+              idToken: async ({ referenceId, client, user, scopes }) => {
+                const claims =
+                  user && referenceId && isUuid(referenceId) && isAppSignInScopes(scopes)
+                    ? await options.appSignInClaims?.({
+                        userId: user.id,
+                        clientId: client.clientId,
+                        workspaceId: referenceId,
+                      })
+                    : null;
+                if (!claims)
+                  throw new APIError('BAD_REQUEST', {
+                    code: 'invalid_grant',
+                    message: 'This app sign-in is no longer allowed; open the app from Retainer.',
+                  });
+                return claims;
+              },
+            },
+          },
+        ],
         customAccessTokenClaims: async ({ referenceId, resources }) => {
           if (!referenceId || !isUuid(referenceId) || referenceId === NO_WORKSPACE)
             throw new Error('refusing to issue an access token without an approved reference');

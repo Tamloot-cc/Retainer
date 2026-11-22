@@ -93,6 +93,14 @@ function Layout() {
     staleTime: 60_000,
     refetchOnWindowFocus: true,
   });
+  // Standalone apps members open signed in (extensions spec 8); accounts mode only.
+  const apps = useQuery({
+    queryKey: [session.workspace.id, 'extensions', 'links'],
+    enabled: !settingUp && !!accountState,
+    queryFn: ({ signal }) => api.extensionLinks(signal),
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
   const proposals = useQuery({
     queryKey: [session.workspace.id, 'schemaChanges', 'proposed', undefined],
     enabled: !settingUp,
@@ -178,6 +186,7 @@ function Layout() {
                 }
               : {})}
             inboxCount={reviewCount}
+            apps={apps.data?.links ?? []}
             objects={objects.map((o) => ({
               name: o.nameSingular,
               label: o.labelPlural,

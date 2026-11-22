@@ -331,6 +331,8 @@ describe('SECURITY DEFINER functions', () => {
     retainer_adopt_member_secret: RUNTIME_ROLE,
     retainer_retire_member_secrets: RUNTIME_ROLE,
     retainer_admit_secret_run: 'retainer_secret_broker',
+    // A standalone app's own credential writes its generated secrets (extensions spec 8).
+    retainer_admit_secret_installation: 'retainer_secret_broker',
     retainer_configure_secret_reference: 'retainer_secret_broker',
     retainer_admit_webhook: 'retainer_secret_broker',
     retainer_webhook_candidate: RUNTIME_ROLE,
@@ -354,6 +356,10 @@ describe('SECURITY DEFINER functions', () => {
     retainer_bootstrap_oauth_reference: null,
     retainer_oauth_reference: 'retainer_control',
     retainer_extension_oauth_client_active: RUNTIME_ROLE,
+    // A sidebar link's origin, and nothing else about the client.
+    retainer_extension_oauth_client_origin: RUNTIME_ROLE,
+    // App sign-in finds the workspace, then checks membership as usual.
+    retainer_extension_installation_workspace: 'retainer_control',
     retainer_retire_extension_secrets: RUNTIME_ROLE,
     retainer_routine_admin: RUNTIME_ROLE,
     retainer_routine_changes_due: 'retainer_executor',

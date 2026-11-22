@@ -212,7 +212,7 @@ async function lockEvents(
 ): Promise<MovedEvent[]> {
   const { workspaceId, schema } = context;
   const select = (where: Fragment) => tx<MovedEvent[]>`
-    select r.id, r.object_type_id, r.data, r.updated_at, r.deleted_at, r.merged_into_id,
+    select r.id, r.object_type_id, r.data, r.deleted_at, r.merged_into_id,
       e.occurred_at
     from records r join event_records e on e.record_id = r.id
     where r.workspace_id = ${workspaceId} and ${where}

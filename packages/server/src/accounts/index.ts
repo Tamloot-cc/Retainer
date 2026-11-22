@@ -1,8 +1,10 @@
 import type { Context } from 'hono';
+import { INSTALLATION_CLAIM, WORKSPACE_CLAIM, WORKSPACE_ROLE_CLAIM } from '../auth/oauth-token.js';
 import { accountsConfig, accountsOrigin, type Config } from '../config.js';
 import type { Sql } from '../db/client.js';
 import { parseExtensionCatalog } from '../extensions/catalog.js';
 import { type AuthOptions, createAuth, type GoogleOverrides } from './auth.js';
+import { appSignInTarget } from './extensions.js';
 import { createAccountsApp } from './routes.js';
 
 export { CLIENT_IP_HEADER } from './auth.js';
@@ -32,7 +34,20 @@ export function createAccountsServer(input: {
 }) {
   const { config } = input;
   const publicOrigin = accountsOrigin(config);
+  const extensionCatalog = parseExtensionCatalog(config.RETAINER_EXTENSION_CATALOG);
   const auth = createAuth({
+    // An app sign-in's ID token names the workspace, role and installation,
+    // rechecked when it is issued (extensions spec 8).
+    appSignInClaims: async (claims) => {
+      const target = await appSignInTarget(input.sql, extensionCatalog, claims);
+      return target
+        ? {
+            [WORKSPACE_CLAIM]: target.workspaceId,
+            [WORKSPACE_ROLE_CLAIM]: target.role,
+            [INSTALLATION_CLAIM]: target.installationId,
+          }
+        : null;
+    },
     sql: input.authSql,
     config: accountsConfig(config),
     publicOrigin,
@@ -47,6 +62,6 @@ export function createAccountsServer(input: {
     sql: input.sql,
     publicOrigin,
     clientIp: input.clientIp,
-    extensionCatalog: parseExtensionCatalog(config.RETAINER_EXTENSION_CATALOG),
+    extensionCatalog,
   });
 }

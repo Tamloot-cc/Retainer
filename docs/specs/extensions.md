@@ -515,8 +515,11 @@ hosted functions run only from the reviewed runner build.
 One review covers both parts, and disable or uninstall stops both.
 `execution` decides only how the app's service gets its credential and how the
 installation activates. The functions follow the hosted rules for
-`runtimeEnabled`, executable admission and readiness, and lifecycle jobs run
-only for lifecycle functions the release declares. A tool is ready only when
+`runtimeEnabled`, executable admission and readiness. A standalone release
+declares only `tool` and `job` functions: with no lifecycle function there is
+no setup or cleanup job, so approval activates the installation at once (or
+leaves it disabled until its executables are admitted), and uninstall needs no
+job either. A tool is ready only when
 the installation has a live, unrevoked credential and the generated secret the
 tool needs exists. Listing tools and the broker both check this, because
 revocation does not change `connection_health`. Rules that require
@@ -533,20 +536,26 @@ no consent page:
 - The app runs an authorization-code flow with PKCE and the `openid`, `email`
   and `profile` scopes, and no API resource. A person already signed in to
   Retainer passes straight through.
-- The link names the installation, so a person in several workspaces sees no
-  workspace picker.
+- The link names the installation in the `retainer_installation` query
+  parameter, which the app passes on to the authorization request, so a
+  person in several workspaces sees no workspace picker. `GET
+  /v1/extensions/links` lists a workspace's links for the sidebar.
 - Retainer skips the consent page only when the requesting client is the one
   the installation's release pins (`oauthClientId`), the redirect URI is one
   registered for it, the scopes are exactly `openid email profile` with no
   resource, the installation is active and the person is a member of its
-  workspace. Any other request gets the normal consent page or is refused.
+  workspace. Any other request for identity scopes is refused: they are
+  granted only this way, never through the consent page, and an app sign-in
+  is not listed among connected apps.
   Client registration is open, so this check is what keeps another client
   from learning who a member is. It is decided per request, never with a
   client-wide skip-consent flag, which would also skip the installation's
   API consent.
 - Retainer returns an ID token with the person's ID, name, email, workspace
-  ID, workspace role and the installation ID. It grants no API access; the app
-  keeps using its installation credential for that.
+  ID, workspace role and the installation ID (`workspace_id`,
+  `workspace_role`, `installation_id`), rechecked when the code is exchanged.
+  It grants no API access and no refresh token; the app keeps using its
+  installation credential for that.
 - Approving the installation covers sign-in for that workspace's members, so
   the install review lists it: "Members can open this app signed in with
   their Retainer account."
@@ -627,7 +636,8 @@ when it is optional and secret. Such provider-generated signing/refresh material
 is omitted from human settings forms and cannot be staged by an admin. Live
 runs can write it with revision CAS through `PUT /v1/extensions/:id/runtime/secrets/:name`; runs cannot overwrite human-provided
 credentials. A standalone app's installation credential may also write its own
-installation's generated secrets, with the same CAS, and nothing else: it cannot
+installation's generated secrets through `PUT
+/v1/extensions/:id/generated-secrets/:name`, with the same CAS, and nothing else: it cannot
 read secrets or write human-provided ones. The app uses this during its own
 connection flow to hand its functions a shared key, so the admin fills in no
 form. A `409 revision_conflict` to that credential carries the current
@@ -994,10 +1004,11 @@ inherit the change's recorded chain plus itself, and a hosted function already i
 it is not triggered again. Only standalone installation credentials with read
 scope may send the header (others get `400` or `403`), and a cursor no longer in
 the feed returns `410 cursor_expired`. The header may also name a tool call of
-the same installation, and may repeat up to 8 times. Retainer then copies each
+the same installation by its call ID, and may carry up to 8 causes,
+comma-separated or repeated. Retainer then copies each
 named tool job's recorded chain, so a write that a routine's tool call caused
 cannot trigger that routine. A tool job already pruned (after 30 days) returns
-`410`, and the app writes without that cause. That costs at most one extra
+`410 cause_expired`, and the app writes without that cause. That costs at most one extra
 routine run, because the next tool call carries its own cause. The inherited chain only excludes
 installations: it adds no depth (the write counts as the app's first hop), so a
 long referenced chain cannot make the depth cap block the app's write. Trade-off:

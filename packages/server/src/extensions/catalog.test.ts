@@ -143,3 +143,39 @@ it('keeps a registration connection mode immutable across releases', () => {
       ),
   ).toThrow('connection mode cannot change');
 });
+
+describe('standalone releases with functions (extensions spec 8)', () => {
+  const withTool = () =>
+    defineExtension({
+      ...manifest(),
+      functions: [
+        {
+          universalId: '2f0f4a3e-7f5e-4c1b-9a51-2c8f2f7f9d10',
+          name: 'find_slots',
+          description: 'Finds open times.',
+          handlerDigest: 'b'.repeat(64),
+          trigger: {
+            kind: 'tool',
+            title: 'Find open times',
+            effect: 'read',
+            connection: 'workspace',
+            outputSchema: { type: 'object', additionalProperties: false },
+          },
+          inputSchema: { type: 'object', additionalProperties: false },
+        },
+      ],
+    });
+  it('runs only where the catalog enables hosted execution, like a hosted release', () => {
+    const disabled = new ExtensionCatalog([{ manifest: withTool(), actorCeiling: 'integration' }]);
+    expect(() => disabled.runtime.resolve(withTool().universalId, '1.0.0')).toThrow(
+      'hosted execution',
+    );
+    const enabled = new ExtensionCatalog([
+      { manifest: withTool(), actorCeiling: 'integration', runtimeEnabled: true },
+    ]);
+    expect(enabled.runtime.resolve(withTool().universalId, '1.0.0').functions).toHaveLength(1);
+    // Without functions, a standalone app runs nothing here and needs no flag.
+    const plain = new ExtensionCatalog([{ manifest: manifest(), actorCeiling: 'integration' }]);
+    expect(plain.runtime.resolve(manifest().universalId, '1.0.0').execution).toBe('standalone');
+  });
+});
