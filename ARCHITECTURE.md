@@ -2139,9 +2139,10 @@ per-record conflicts.
 ## 10. Scope
 
 Not planned: embeddings and semantic search, and any language model in
-Retainer's core (server-side extraction, generated summaries). Extensions may
-call a model through the model proxy, and a workspace agent that extensions
-hand tasks to is planned (docs/specs/extensions-model-calls.md §11).
+Retainer's core (server-side extraction, generated summaries). Extensions and
+routines (including the built-in routine builder) may call a model through the
+model proxy (docs/specs/routines.md §4.5), and a workspace agent that
+extensions hand tasks to is planned (docs/specs/extensions-model-calls.md §11).
 Search is Postgres full-text only. A BM25 backend may come later as an
 option (5.1).
 

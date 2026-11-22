@@ -9,7 +9,11 @@ rules.
 
 - `pnpm install`, `pnpm build`, `pnpm typecheck`, `pnpm test`, `pnpm lint`
 - Postgres for dev: `docker compose -f docker/compose.yml up -d postgres`
-  (set `RETAINER_PG_PORT` if 5432 is taken, and match `DATABASE_URL`)
+  (set `RETAINER_PG_PORT` if 5432 is taken, and match `DATABASE_URL`). Once
+  per volume, raise its connection limit like CI does, or the parallel
+  integration tests run out of connections and time out:
+  `docker compose -f docker/compose.yml exec postgres psql -U retainer -c "alter system set max_connections = 300"`,
+  then `docker compose -f docker/compose.yml restart postgres`.
 - `pnpm db:generate --name <name>` after editing `packages/server/src/db/schema.ts`;
   `pnpm db:migrate` to apply. Never hand-edit generated migrations.
 - Web: `pnpm dev:web` alongside `pnpm dev`; `pnpm build` builds static assets.
@@ -50,13 +54,15 @@ See `ARCHITECTURE.md` section 11 for the six test layers.
   `object_types` or `fields` directly.
 - Retainer's core (writes, conflict resolution, search, consolidation) never
   calls a language model or embedding provider. Agents decide what to write;
-  the server validates, stores and retrieves. Extensions may call a model
-  through the model proxy (`docs/specs/extensions-model-calls.md`).
+  the server validates, stores and retrieves. Extensions and routines
+  (including the built-in routine builder) may call a model through the model
+  proxy (`docs/specs/extensions-model-calls.md`, `docs/specs/routines.md`).
 - No embeddings or semantic search: search is Postgres full-text only.
 - Server modules import only from their own layer and those below it
   (`ARCHITECTURE.md` section 8); `pnpm lint` checks this.
-- Server code is AGPL-3.0; `shared`, `sdk`, `mcp` and `web` are MIT. Don't
-  import server code into the MIT packages.
+- `packages/server`, `docker/` and `docs/` are AGPL-3.0; every other package
+  (`shared`, `sdk`, `mcp`, `web`, `extension`, `runner`) and
+  `plugins/retainer` are MIT. Don't import server code into the MIT packages.
 - TypeScript 7: `types: ["node"]` is set in `tsconfig.base.json` because TS no
   longer includes `@types/*` by default.
 
