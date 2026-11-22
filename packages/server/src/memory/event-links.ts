@@ -1,3 +1,4 @@
+import { bindingWriteStampSchema } from '@retainer/extension';
 import type { AddedLinks, EventDetails, Participants } from '@retainer/shared';
 import { z } from 'zod';
 import type { EventLink, UnmatchedReason } from '../db/schema.js';
@@ -34,10 +35,11 @@ export const linksInputSchema = z.strictObject({
 });
 
 /** `POST /v1/events/:id/links`: links to add to a logged event. */
-export const addLinksInputSchema = linksInputSchema.refine(
-  (input) => input.participants.length > 0 || input.about.length > 0,
-  { message: 'give participants, about, or both' },
-);
+export const addLinksInputSchema = linksInputSchema
+  .extend({ bindings: bindingWriteStampSchema.optional() })
+  .refine((input) => input.participants.length > 0 || input.about.length > 0, {
+    message: 'give participants, about, or both',
+  });
 export type AddLinksInput = z.infer<typeof addLinksInputSchema>;
 
 type NormalizedParticipant = {

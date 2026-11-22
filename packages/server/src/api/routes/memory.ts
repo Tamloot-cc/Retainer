@@ -1,3 +1,4 @@
+import { bindingWriteStampSchema } from '@retainer/extension';
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import { missingScope, requireScope } from '../../auth/middleware.js';
@@ -79,9 +80,12 @@ export function memoryRoutes(app: Hono<AppEnv>, sql: Sql) {
     ),
   );
 
-  app.delete('/events/:id', requireScope('write'), async (c) =>
-    c.json(await retractEventFor(sql, c.get('caller'), idParam(c))),
-  );
+  app.delete('/events/:id', requireScope('write'), async (c) => {
+    const { bindings } = c.req.header('content-type')
+      ? await readBody(c, z.strictObject({ bindings: bindingWriteStampSchema.optional() }))
+      : {};
+    return c.json(await retractEventFor(sql, c.get('caller'), idParam(c), bindings));
+  });
 
   // `workspace` and `me` name workspace and personal memory (personal memory 4.4).
   app.post('/records/:id/facts', requireScope('write'), async (c) => {

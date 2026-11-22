@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import {
+  type BindingWriteStamp,
   defineExtension,
   type ExtensionBinding,
+  type ExtensionBindingPlan,
   type ExtensionManifest,
 } from '@retainer/extension';
 
@@ -57,5 +59,43 @@ export function ownedTestObject(object: NewObject): ExtensionBinding {
     ...ownedTestFields(object.nameSingular, object.labelPlural, object.fields),
     owned: true,
     create: { ...object, fields: [] },
+  };
+}
+
+export const testCompanyBinding: ExtensionBinding = {
+  key: 'company',
+  label: 'Companies',
+  description: 'Company records submitted by the app.',
+  class: 'entity',
+  access: 'write',
+  required: true,
+  creates: true,
+  fields: [
+    { key: 'name', label: 'Name', types: ['text'], required: true },
+    {
+      key: 'attachments',
+      label: 'Attachments',
+      types: ['files'],
+      required: false,
+      create: {
+        universalId: randomUUID(),
+        name: 'attachments',
+        label: 'Attachments',
+        type: 'files',
+      },
+    },
+  ],
+};
+
+export function bindingStamp(plan: ExtensionBindingPlan, key: string): BindingWriteStamp {
+  const binding = plan.bindings[key];
+  const object = binding?.objects[0];
+  if (!object || !binding) throw new Error(`Missing fixture binding ${key}`);
+  return {
+    bindings_revision: plan.bindings_revision,
+    objectId: object.id,
+    fieldIds: Object.fromEntries(
+      Object.values(binding.fields).map((field) => [field.name, field.id]),
+    ),
   };
 }

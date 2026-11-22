@@ -11,26 +11,41 @@ import { prepareValues } from '../../src/records/values.js';
 import { insertRecord, writeFields } from '../../src/records/write.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { extensionFixture } from '../helpers/extensions.js';
+import { bindingStamp, extensionFixture, testCompanyBinding } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
 const configured = extensionFixture({
   execution: 'standalone',
   scopes: ['read', 'write'],
+  bindings: [testCompanyBinding],
   settings: {
     label: { type: 'string', label: 'Label', required: false, secret: false, reconnect: false },
     account: { type: 'string', label: 'Account', required: false, secret: false, reconnect: true },
   },
 });
 const manifests = [
-  extensionFixture({ execution: 'standalone', scopes: ['read', 'write'] }),
-  extensionFixture({ execution: 'standalone', scopes: ['read', 'write'] }),
+  extensionFixture({
+    execution: 'standalone',
+    scopes: ['read', 'write'],
+    bindings: [testCompanyBinding],
+  }),
+  extensionFixture({
+    execution: 'standalone',
+    scopes: ['read', 'write'],
+    bindings: [testCompanyBinding],
+  }),
   extensionFixture({ scopes: ['read', 'write'] }),
-  extensionFixture({ execution: 'standalone', requestedActor: 'agent', scopes: ['read', 'write'] }),
+  extensionFixture({
+    execution: 'standalone',
+    requestedActor: 'agent',
+    scopes: ['read', 'write'],
+    bindings: [testCompanyBinding],
+  }),
   configured,
   // A plain release upgrade, then one that narrows the grant.
   extensionFixture({ ...configured, version: '1.1.0' }),
   extensionFixture({ ...configured, version: '1.2.0', scopes: ['read'] }),
+  extensionFixture({ execution: 'standalone', scopes: ['read', 'write'] }),
 ];
 const catalog = new ExtensionCatalog(
   manifests.map((manifest) => ({ manifest, actorCeiling: 'integration' as const })),
@@ -88,7 +103,12 @@ async function setup() {
     expect(response.status).toBe(201);
     return response.body as { id: string; key: string; generation: number };
   }
-  return { workspace, keys, installation, base, issue, install };
+  const stamp = async (key: string, installationId = installation.id) => {
+    const response = await app.request(`/v1/extensions/${installationId}/bindings`, { key });
+    expect(response.status).toBe(200);
+    return bindingStamp(response.body, 'company');
+  };
+  return { workspace, keys, installation, base, issue, install, stamp };
 }
 describe('standalone installation keys with real RLS Postgres', () => {
   it('issues human-approved generation-bound credentials once, stores only their hashes and derives the app actor', async () => {
@@ -121,9 +141,14 @@ describe('standalone installation keys with real RLS Postgres', () => {
       scopes: ['read', 'write'],
     });
     expect((await app.request('/v1/records/me/context', { key: credential.key })).status).toBe(422);
+    const unstamped = await app.request('/v1/objects/company/records', {
+      key: credential.key,
+      body: { values: { name: 'Unstamped write' } },
+    });
+    expect(unstamped.body.error.code).toBe('binding_unavailable');
     const created = await app.request('/v1/objects/company/records', {
       key: credential.key,
-      body: { values: { name: 'Connected app' } },
+      body: { values: { name: 'Connected app' }, bindings: await h.stamp(credential.key) },
     });
     expect(created.status).toBe(201);
     const [assertion] =
@@ -152,6 +177,21 @@ describe('standalone installation keys with real RLS Postgres', () => {
       ).status,
     ).toBe(400);
   });
+  it('refuses standalone record writes if no destination was approved', async () => {
+    const h = await setup();
+    const installed = await h.install(7);
+    const credential = await app.request(`/v1/extensions/${installed.id}/keys`, {
+      key: h.keys.admin,
+      body: { expectedGeneration: installed.generation, scopes: ['read', 'write'] },
+    });
+    expect(credential.status).toBe(201);
+    const written = await app.request('/v1/objects/company/records', {
+      key: credential.body.key,
+      body: { values: { name: 'Unbound write' } },
+    });
+    expect(written.status).toBe(409);
+    expect(written.body.error.code).toBe('binding_unavailable');
+  });
   it('inherits an approved agent rank rather than escalating a standalone app to integration', async () => {
     const h = await setup(),
       installed = await h.install(3);
@@ -166,7 +206,10 @@ describe('standalone installation keys with real RLS Postgres', () => {
     });
     const record = await app.request('/v1/objects/company/records', {
       key: credential.body.key,
-      body: { values: { name: 'Agent app write' } },
+      body: {
+        values: { name: 'Agent app write' },
+        bindings: await h.stamp(credential.body.key, installed.id),
+      },
     });
     expect(record.status).toBe(201);
     expect(
@@ -287,22 +330,6 @@ describe('standalone installation keys with real RLS Postgres', () => {
       body: { expectedGeneration: other.generation, scopes: ['read', 'write'] },
     });
     expect(otherKey.status).toBe(201);
-    expect(
-      (
-        await app.request('/v1/schema/changes', {
-          key: h.keys.admin,
-          body: {
-            operations: [
-              {
-                op: 'create_field',
-                object: 'company',
-                field: { name: 'attachments', label: 'Attachments', type: 'files' },
-              },
-            ],
-          },
-        })
-      ).status,
-    ).toBe(200);
     const bytes = Buffer.from('Standalone attachment');
     const intent = await app.request('/v1/files/intents', {
       key: credential.key,
@@ -340,7 +367,10 @@ describe('standalone installation keys with real RLS Postgres', () => {
       (
         await app.request('/v1/objects/company/records', {
           key: otherKey.body.key,
-          body: { values: { name: 'Other app', attachments: [intent.body.id] } },
+          body: {
+            values: { name: 'Other app', attachments: [intent.body.id] },
+            bindings: await h.stamp(otherKey.body.key, other.id),
+          },
         })
       ).status,
     ).toBe(403);
@@ -348,7 +378,10 @@ describe('standalone installation keys with real RLS Postgres', () => {
       (
         await app.request('/v1/objects/company/records', {
           key: credential.key,
-          body: { values: { name: 'Owning app', attachments: [intent.body.id] } },
+          body: {
+            values: { name: 'Owning app', attachments: [intent.body.id] },
+            bindings: await h.stamp(credential.key),
+          },
         })
       ).status,
     ).toBe(201);
@@ -381,12 +414,13 @@ describe('standalone installation keys with real RLS Postgres', () => {
       const h = await setup(),
         credential = await h.issue(),
         caller = await lookupInstallationKey(app.sql, credential.key);
+      const bindings = await h.stamp(credential.key);
       const original = await createRecord(
         app.sql,
         caller,
         'company',
         { name: 'Idempotent app write' },
-        { idempotencyKey: 'installation-write' },
+        { idempotencyKey: 'installation-write', bindings },
       );
       let entered: () => void = () => {},
         release: () => void = () => {};
@@ -446,7 +480,7 @@ describe('standalone installation keys with real RLS Postgres', () => {
           caller,
           'company',
           { name: 'Idempotent app write' },
-          { idempotencyKey: 'installation-write' },
+          { idempotencyKey: 'installation-write', bindings },
         ),
       ).rejects.toMatchObject({
         code: action === 'revoke' ? 'unauthorized' : 'installation_disabled',
@@ -536,10 +570,13 @@ describe('standalone credentials bind to the grant, not the release (grant_gener
         version,
         settings: {},
       });
-    const write = (key: string) =>
+    const write = async (key: string) =>
       app.request('/v1/objects/company/records', {
         key,
-        body: { values: { name: `App write ${randomUUID()}` } },
+        body: {
+          values: { name: `App write ${randomUUID()}` },
+          bindings: await h.stamp(key, installed.id),
+        },
       });
     return { ...h, installed, base, issue, commit, upgrade, write };
   }

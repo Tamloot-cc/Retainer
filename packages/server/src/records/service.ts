@@ -216,7 +216,7 @@ async function citeSource(tx: Tx, context: WriteContext, source?: string): Promi
   return { sourceRecordId: cited.id, observedAt: cited.occurredAt };
 }
 
-async function requireStandaloneBinding(
+export async function requireStandaloneBinding(
   tx: Tx,
   context: WriteContext,
   object: CompiledObject,
@@ -227,13 +227,15 @@ async function requireStandaloneBinding(
   const [row] = await tx<{ bindings: StoredBindingPlan | null; bindings_revision: number }[]>`
     select bindings,bindings_revision from extension_installations where id = ${context.installation.installationId}`;
   if (
-    row?.bindings &&
+    !row?.bindings ||
     !checkStandaloneBindingWrite(row.bindings, row.bindings_revision, object.state, fields, stamp)
   )
     throw new AppError(
       409,
       'binding_unavailable',
-      'The approved binding or field name changed. Read the current bindings and retry.',
+      row?.bindings
+        ? 'The approved binding or field name changed. Read the current bindings and retry.'
+        : 'This app has no approved write destination. Change its setup first.',
     );
 }
 

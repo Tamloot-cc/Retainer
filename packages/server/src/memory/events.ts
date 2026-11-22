@@ -1,3 +1,4 @@
+import { bindingWriteStampSchema } from '@retainer/extension';
 import type {
   AddedLinks,
   AttachedEvent,
@@ -79,6 +80,7 @@ export const logEventInputSchema = z
     title: z.string().max(500).optional(),
     summary: z.string().max(20_000).optional(),
     fields: z.record(z.string(), z.unknown()).default({}),
+    bindings: bindingWriteStampSchema.optional(),
   })
   .extend(linksInputSchema.shape);
 export type LogEventInput = z.infer<typeof logEventInputSchema>;

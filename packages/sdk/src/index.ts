@@ -33,12 +33,12 @@ import type {
   DeleteImpact,
   DeleteRecordResult,
   EventAttachment,
+  LogEventInput as EventInput,
   EventPage,
   EventQueryInput,
   FactPlace,
   ForgetResult,
   LinkedRecordPage,
-  LogEventInput,
   LogEventResult,
   MergeInput,
   MergeResult,
@@ -122,7 +122,8 @@ export type UpsertInput = PatchInput & {
   match?: Record<string, unknown>;
   ifMissing?: 'fail' | 'create';
 };
-export type { LogEventInput, MoveEventsInput, MoveEventsResult };
+export type { MoveEventsInput, MoveEventsResult };
+export type LogEventInput = EventInput & { bindings?: BindingWriteStamp };
 
 type Participant = { handle?: string; recordId?: string; role?: string };
 const isFailedChange = (body: unknown) =>
@@ -525,7 +526,10 @@ export class RetainerClient {
    * Adds links and retries eligible unmatched participants in place; idempotent.
    * Successful resolutions are included in `added.participants.matched`.
    */
-  addEventLinks(id: string, input: { participants?: Participant[]; about?: string[] }) {
+  addEventLinks(
+    id: string,
+    input: { participants?: Participant[]; about?: string[]; bindings?: BindingWriteStamp },
+  ) {
     return this.post<PresentedRecord & { added: AddedLinks }>(
       `/v1/events/${encodeURIComponent(id)}/links`,
       input,
@@ -546,9 +550,10 @@ export class RetainerClient {
     );
   }
   /** Deletes an event and retracts the claims that cite it. */
-  deleteEvent(id: string) {
+  deleteEvent(id: string, bindings?: BindingWriteStamp) {
     return this.request<RetractEventResult>(`/v1/events/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+      ...(bindings ? { body: JSON.stringify({ bindings }) } : {}),
     });
   }
   claims(

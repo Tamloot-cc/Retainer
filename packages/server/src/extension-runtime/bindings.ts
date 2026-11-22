@@ -235,6 +235,7 @@ export function checkStandaloneBindingWrite(
         declaration.fields.some(
           (rule) =>
             !rule.lookup &&
+            (rule.key !== declaration.match || createsRecords(declaration, plan.createPeople)) &&
             plan.destinations[declaration.key]?.fields[rule.key]?.id === field.universalId,
         ),
       )
