@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { extensionFixture } from '../helpers/extensions.js';
+import { bindingStamp, extensionFixture } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
 const manifest = extensionFixture({
@@ -64,6 +64,17 @@ const manifest = extensionFixture({
 const contacts = extensionFixture({
   name: 'contacts',
   createPeople: 'everyone',
+  settings: {
+    createPeople: {
+      type: 'string',
+      label: 'Contact creation',
+      secret: false,
+      reconnect: false,
+      required: false,
+      default: 'everyone',
+      options: ['never', 'everyone'],
+    },
+  },
   bindings: [
     {
       key: 'contacts',
@@ -410,4 +421,111 @@ it('refuses to make an existing workspace field installation-owned', async () =>
     field: 'importState',
     message: 'Create Import state. This field must belong to the installation.',
   });
+});
+
+it('checks both standalone merge objects and leaves ordinary merge errors to the merge engine', async () => {
+  const h = await setup();
+  const reviewed = await h.preview();
+  const installed = await h.commit(reviewed.body.planDigest);
+  const base = `/v1/extensions/${installed.body.id}`;
+  const credentials = await h.app.request(`${base}/keys`, {
+    key: h.key,
+    body: { expectedGeneration: installed.body.generation, scopes: ['read', 'write'] },
+  });
+  const key = credentials.body.key;
+  const plan = await h.app.request(`${base}/bindings`, { key });
+  const bindings = bindingStamp(plan.body, 'ticket');
+  const ticket = await h.app.request('/v1/objects/ticket/records', {
+    key,
+    body: { values: { status: 'Open' }, bindings },
+  });
+  expect(ticket.status).toBe(201);
+  const person = await h.app.request('/v1/objects/person/records', {
+    key: h.key,
+    body: { values: { name: 'Other object' } },
+  });
+  const merge = (target: string, source: string, credential: string) =>
+    h.app.request(`/v1/records/${target}/merge`, {
+      key: credential,
+      body: { recordId: source, ...(credential === key ? { bindings } : {}) },
+    });
+  const foreign = await merge(ticket.body.id, person.body.id, key);
+  expect(foreign.body.error.code).toBe('binding_unavailable');
+  const missing = randomUUID();
+  expect((await merge(missing, missing, h.key)).body.error.code).toBe('invalid_merge');
+});
+
+it('replays a committed standalone create after its binding revision changes', async () => {
+  const h = await setup();
+  const reviewed = await h.preview();
+  const installed = await h.commit(reviewed.body.planDigest);
+  const base = `/v1/extensions/${installed.body.id}`;
+  const credentials = await h.app.request(`${base}/keys`, {
+    key: h.key,
+    body: { expectedGeneration: installed.body.generation, scopes: ['read', 'write'] },
+  });
+  const key = credentials.body.key;
+  const plan = await h.app.request(`${base}/bindings`, { key });
+  const bindings = bindingStamp(plan.body, 'ticket');
+  const create = (idempotencyKey: string) =>
+    h.app.request('/v1/objects/ticket/records', {
+      key,
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: { values: { status: 'Open' }, bindings },
+    });
+  const original = await create('first-create');
+  expect(original.status).toBe(201);
+  const input = {
+    ...installation,
+    installationId: installed.body.id,
+    bindings: { person: { action: 'existing', objects: ['person'] } },
+  };
+  const planned = await h.app.request('/v1/extensions/preview', { key: h.key, body: input });
+  expect(planned.status, JSON.stringify(planned.body)).toBe(200);
+  const rebinding = await h.app.request(`${base}/upgrade`, {
+    key: h.key,
+    headers: { 'Idempotency-Key': 'replan' },
+    body: { ...input, planDigest: planned.body.planDigest },
+  });
+  expect(rebinding.status, JSON.stringify(rebinding.body)).toBe(200);
+  const next = await h.app.request(`${base}/bindings`, { key });
+  expect(next.body.bindings_revision).toBeGreaterThan(bindings.bindings_revision);
+  expect((await create('first-create')).body).toEqual(original.body);
+  expect((await create('new-create')).body.error.code).toBe('binding_unavailable');
+});
+
+it('accepts sending the reviewed creation default when the stored setting was omitted', async () => {
+  const h = await setup();
+  const input = {
+    registrationId: contacts.universalId,
+    version: contacts.version,
+    settings: {},
+    bindings: {
+      contacts: {
+        action: 'existing',
+        objects: ['person'],
+        fields: { addresses: { action: 'existing', field: 'emails' } },
+      },
+    },
+  };
+  const preview = await h.app.request('/v1/extensions/preview', { key: h.key, body: input });
+  expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+  const installed = await h.app.request('/v1/extensions', {
+    key: h.key,
+    headers: { 'Idempotency-Key': randomUUID() },
+    body: { ...input, planDigest: preview.body.planDigest },
+  });
+  expect(installed.status, JSON.stringify(installed.body)).toBe(201);
+  expect(installed.body.settings).toEqual({});
+  const save = (createPeople: string, expectedRevision: number) =>
+    h.app.request(`/v1/extensions/${installed.body.id}/settings`, {
+      key: h.key,
+      method: 'PATCH',
+      body: { settings: { createPeople }, expectedRevision },
+    });
+  const saved = await save('everyone', installed.body.settingsRevision);
+  expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+  expect((await save('never', saved.body.settingsRevision)).body.error.code).toBe(
+    'binding_plan_required',
+  );
 });

@@ -266,9 +266,10 @@ export async function createRecord(
 ): Promise<WriteResponse> {
   const { idempotencyKey, source } = options;
   return withWrite(sql, caller, async (tx, context) => {
-    const object = requireObject(context.schema, objectName);
-    refuseEventCreation(object);
-    await requireStandaloneBinding(tx, context, object, Object.keys(values), options.bindings);
+    const ordinaryObject = context.installation
+      ? undefined
+      : requireObject(context.schema, objectName);
+    if (ordinaryObject) refuseEventCreation(ordinaryObject);
     let claimId: string | undefined;
     if (idempotencyKey !== undefined) {
       const claim = await claimIdempotencyKey(
@@ -276,10 +277,15 @@ export async function createRecord(
         context,
         'create_record',
         idempotencyKey,
-        requestHash({ object: object.name, values, source: source ?? null }),
+        requestHash({ object: ordinaryObject?.name ?? objectName, values, source: source ?? null }),
       );
       if (claim.kind === 'replay') return claim.result as WriteResponse;
       claimId = claim.id;
+    }
+    const object = ordinaryObject ?? requireObject(context.schema, objectName);
+    if (context.installation) {
+      refuseEventCreation(object);
+      await requireStandaloneBinding(tx, context, object, Object.keys(values), options.bindings);
     }
     const cited = await citeSource(tx, context, source);
     const writes = prepareValues(object, values, 'create');
@@ -715,15 +721,24 @@ export async function mergeRecord(
           if (claim.kind === 'replay') return claim.result as MergeResult;
           claimId = claim.id;
         }
-        const target = await getRecord(tx, caller.workspaceId, context.schema, id);
-        const object = requireObject(context.schema, target.object);
-        await requireStandaloneBinding(
-          tx,
-          context,
-          object,
-          Object.keys(input.values ?? {}),
-          input.bindings,
-        );
+        if (context.installation) {
+          const target = await getRecord(tx, caller.workspaceId, context.schema, id);
+          await requireStandaloneBinding(
+            tx,
+            context,
+            requireObject(context.schema, target.object),
+            Object.keys(input.values ?? {}),
+            input.bindings,
+          );
+          const source = await getRecord(tx, caller.workspaceId, context.schema, input.recordId);
+          await requireStandaloneBinding(
+            tx,
+            context,
+            requireObject(context.schema, source.object),
+            [],
+            input.bindings,
+          );
+        }
         const result = await mergeRecords(tx, context, id, input);
         if (claimId) await storeIdempotentResult(tx, claimId, result);
         return result;

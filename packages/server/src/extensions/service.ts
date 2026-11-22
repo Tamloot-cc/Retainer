@@ -66,6 +66,7 @@ import { holdReason, releaseContract, type UpgradeTarget, upgradeTargets } from 
 import { bindingChoicesFromPlan, resolveBindingPlan } from './bindings.js';
 import { ExtensionCatalog, hash } from './catalog.js';
 import { MemberConnections, ownerId } from './connections.js';
+import { creationPolicy } from './creation-policy.js';
 import { connectionMethods, type ExtensionOAuthClients } from './oauth-clients.js';
 import { getSuggestions } from './suggestions.js';
 import { installationMonthUsage } from './usage.js';
@@ -95,22 +96,6 @@ function scope(caller: Caller, required: 'read' | 'schema:write') {
   if (!caller.scopes.includes('admin') && !caller.scopes.includes(required))
     throw forbidden(`extension operation requires ${required}`);
 }
-function creationPolicy(
-  manifest: ExtensionManifest,
-  requested: unknown,
-): ExtensionManifest['createPeople'] {
-  if (requested === undefined) return manifest.createPeople;
-  const levels = ['never', 'contacted_first', 'everyone'] as const;
-  const choice = levels.find((level) => level === requested);
-  if (!choice || levels.indexOf(choice) > levels.indexOf(manifest.createPeople))
-    throw new AppError(
-      422,
-      'invalid_settings',
-      'Choose a contact creation policy allowed by this release.',
-    );
-  return choice;
-}
-
 const conflict = (code: string, message: string) => new AppError(409, code, message);
 /** Configure runs only for an installation being set up or turned on. */
 const configurable = (state: string) => state === 'configuring' || state === 'active';
@@ -1786,7 +1771,11 @@ export class Extensions {
         throw conflict('stale_plan', 'settings revision changed');
       const release = this.catalog.get(current.registration_id, current.version);
       if (hash(input.settings) === hash(current.settings)) return present(current);
-      if (current.bindings && input.settings.createPeople !== current.settings.createPeople)
+      if (
+        current.bindings &&
+        creationPolicy(release.manifest, input.settings.createPeople) !==
+          current.bindings.createPeople
+      )
         throw conflict(
           'binding_plan_required',
           'Review a new binding plan to change who can be created.',

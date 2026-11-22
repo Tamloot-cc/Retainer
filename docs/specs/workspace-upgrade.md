@@ -22,7 +22,11 @@ matching digest. A conflict or failure leaves the digest unchanged for retry.
 The container and the Lambda migration command upgrade workspaces after
 database migrations. The binding migration is separate from the workspace
 upgrade. Before applying a release that introduces binding plans, an operator
-can inspect each installation's proposed destination or reason for removal
-with `pnpm --filter @retainer/server migrate:bindings-report`. The report
-requires the rebuilt extension catalog and connects with a read-only
-transaction.
+can inspect each installation's proposed destinations, contact creation policy
+changes and reason for removal with
+`pnpm --filter @retainer/server migrate:bindings-report`. Use the rebuilt
+extension catalog, including releases for installed apps that have no
+bindings. Those installations receive an empty plan and keep their grants.
+When the catalog omits a release and there is no record of a previous binding,
+the report defers the installation without changing it. The report uses a
+read-only transaction.

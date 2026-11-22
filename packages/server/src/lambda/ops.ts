@@ -171,7 +171,13 @@ export function createOpsHandler(config: Config) {
           const [stale] =
             await sql`select exists(select 1 from records where search is null and merged_into_id is null) as pending`;
           if (stale?.pending) reasons.push('search');
-          if (await bindingsMigrationPending(sql)) reasons.push('bindings');
+          if (
+            await bindingsMigrationPending(
+              sql,
+              parseExtensionCatalog(config.RETAINER_EXTENSION_CATALOG),
+            )
+          )
+            reasons.push('bindings');
           if (await workspaceUpgradesPending(sql)) reasons.push('definitions');
         }
         return {

@@ -1,15 +1,21 @@
-import type { ExtensionBindingChoices, ExtensionManifest } from '@retainer/extension';
+import {
+  compareVersions,
+  type ExtensionBindingChoices,
+  type ExtensionManifest,
+} from '@retainer/extension';
+import { gmailRegistrationId } from '@retainer/extension/nango-gmail';
 import type { Sql } from '../db/client.js';
 import { jsonValue, lockPrivacyShared, lockSchemaExclusive, type Tx } from '../db/tx.js';
-import { AppError } from '../errors.js';
 import { presentBindingPlan, type StoredBindingPlan } from '../extension-runtime/bindings.js';
 import { resolveBindingPlan } from '../extensions/bindings.js';
 import type { ExtensionCatalog } from '../extensions/catalog.js';
+import { creationPolicy } from '../extensions/creation-policy.js';
 import { loadSchemaState } from '../schema/load.js';
 import type { SchemaState } from '../schema/types.js';
 
-// Release identities before binding plans. These IDs are only used to migrate
-// existing installations. New installations go through the binding review.
+// This private map is the one sanctioned use of former base schema IDs in
+// application code, solely to migrate pre-bindings installations. No runtime
+// path may import it. New installations use the binding review.
 const old = {
   person: '7e87d873-8c93-4786-9a0b-95447310c8d3',
   company: '1f24f94d-6bc5-4955-b6ab-ac946e2b140a',
@@ -28,6 +34,15 @@ const old = {
   companyContact: '92166eb2-4d95-477e-8db6-04ed3c0094f5',
 };
 
+// Before bindings, these registrations wrote to the former base schema.
+const formerBaseUsers = new Set([
+  '54326882-cc28-4983-a5fe-cf0298520b68', // Tamloot
+  '9e427713-3c8a-4981-872c-c8db69703113', // Granola
+  gmailRegistrationId,
+  '9796c2c7-46f3-4006-8f35-059d5ef3553e', // Enrichment
+  'c1e8ba8a-69bb-4b2e-8db3-6ddc6c7b1606', // Last contact
+]);
+
 type LegacyMapping = { outputs?: Record<string, { fieldUniversalId: string }> };
 
 type Row = {
@@ -39,7 +54,7 @@ type Row = {
   /** Absent before the generated DDL runs, including in the pre-merge report. */
   bindings?: { legacyMapping?: LegacyMapping };
   mapping?: LegacyMapping;
-  settings: { createPeople?: ExtensionManifest['createPeople'] };
+  settings: Record<string, unknown> & { createPeople?: ExtensionManifest['createPeople'] };
 };
 
 type Release = ReturnType<ExtensionCatalog['list']>[number];
@@ -48,13 +63,14 @@ function existingPlan(
   state: SchemaState,
   row: Row,
   manifest: ExtensionManifest,
+  createPeople: ExtensionManifest['createPeople'],
 ): StoredBindingPlan {
   const choices: ExtensionBindingChoices = {};
   const prior: StoredBindingPlan = {
     extension: manifest.name,
     declarations: manifest.bindings ?? [],
     destinations: {},
-    createPeople: row.settings.createPeople ?? manifest.createPeople,
+    createPeople,
   };
   const bind = (
     key: string,
@@ -157,6 +173,7 @@ async function applyPlan(
   release: Release,
   plan: StoredBindingPlan,
   schema: SchemaState,
+  settings: Row['settings'],
 ) {
   const binding = release.manifest.source?.event;
   const destination = binding ? plan.destinations[binding] : null;
@@ -201,7 +218,8 @@ async function applyPlan(
       )`;
   }
   await tx`update extension_installations set bindings=${tx.json(jsonValue(plan))}, bindings_revision=1,
-    release_digest=${release.digest}, version=${release.manifest.version}, updated_at=now() where id=${row.id}`;
+    release_digest=${release.digest}, version=${release.manifest.version},
+    settings=${tx.json(jsonValue(settings))}, updated_at=now() where id=${row.id}`;
   await tx`update extension_attempts set status='cancelled',code='installation_changed',finished_at=now()
     where finished_at is null and job_id in (select id from extension_jobs where installation_id=${row.id})`;
   await tx`update extension_jobs set release_digest=${release.digest},status='queued',
@@ -229,9 +247,21 @@ const needsBindings = (sql: Sql | Tx) => sql`
   and coalesce((to_jsonb(i)->>'bindings_revision')::int, 0) = 0
   and ((to_jsonb(i)->>'bindings') is null or (to_jsonb(i)->'bindings') ? 'legacyMapping')`;
 
-export async function bindingsMigrationPending(sql: Sql): Promise<boolean> {
+export async function bindingsMigrationPending(
+  sql: Sql,
+  catalog: ExtensionCatalog,
+): Promise<boolean> {
+  const registrations = [
+    ...formerBaseUsers,
+    ...catalog.list().map(({ manifest }) => manifest.universalId),
+  ];
   const [row] = await sql<{ pending: boolean }[]>`
-    select exists (select 1 from extension_installations i where ${needsBindings(sql)}) as pending`;
+    select exists (
+      select 1 from extension_installations i where ${needsBindings(sql)}
+        and (i.registration_id = any(${registrations}::uuid[]) or
+          (to_jsonb(i)->'bindings') ? 'legacyMapping' or
+          coalesce(to_jsonb(i)->'mapping'->'outputs', '{}'::jsonb) <> '{}'::jsonb)
+    ) as pending`;
   return row?.pending ?? false;
 }
 
@@ -241,53 +271,93 @@ export async function migrateExtensionBindings(
   catalog: ExtensionCatalog,
   reportOnly: boolean,
 ) {
-  const releases = catalog.list().filter((release) => release.manifest.bindings?.length);
+  const releases = new Map<string, Release>();
+  for (const release of catalog.list()) {
+    const previous = releases.get(release.manifest.universalId);
+    if (!previous || compareVersions(release.manifest.version, previous.manifest.version) > 0)
+      releases.set(release.manifest.universalId, release);
+  }
   return sql.begin(async (tx) => {
     if (reportOnly) await tx`set transaction isolation level repeatable read, read only`;
     const installations = await tx<Row[]>`
       select i.* from extension_installations i
       where ${needsBindings(tx)}
       order by i.workspace_id,i.id`;
-    if (installations.length && !releases.length)
-      throw new Error('Load the rebuilt extension catalog before planning the binding migration.');
     const report = [];
     for (const row of installations) {
-      if (!reportOnly) {
-        await lockPrivacyShared(tx, row.workspace_id);
-        await lockSchemaExclusive(tx, row.workspace_id);
-      }
-      const schema = await loadSchemaState(tx, row.workspace_id);
-      const release = releases
-        .filter((release) => release.manifest.universalId === row.registration_id)
-        .sort((a, b) =>
-          b.manifest.version.localeCompare(a.manifest.version, undefined, { numeric: true }),
-        )[0];
+      const release = releases.get(row.registration_id);
       const base = {
         workspaceId: row.workspace_id,
         installationId: row.id,
         registrationId: row.registration_id,
       };
-      let plan: StoredBindingPlan | undefined;
-      let reason = 'The rebuilt catalog has no binding contract for this installation.';
-      if (release) {
-        try {
-          plan = existingPlan(schema, row, release.manifest);
-        } catch (error) {
-          reason =
-            error instanceof AppError
-              ? error.message
-              : error instanceof Error
-                ? error.message
-                : 'The previous destinations cannot be bound.';
+      if (!release) {
+        if (
+          formerBaseUsers.has(row.registration_id) ||
+          row.bindings?.legacyMapping ||
+          Object.keys(row.mapping?.outputs ?? {}).length
+        )
+          throw new Error(
+            `Load the rebuilt extension release for installation ${row.id} before migrating its bindings.`,
+          );
+        report.push({
+          ...base,
+          action: 'deferred' as const,
+          reason: 'The release is not loaded. The installation is unchanged.',
+        });
+        continue;
+      }
+      if (!reportOnly) {
+        await lockPrivacyShared(tx, row.workspace_id);
+        await lockSchemaExclusive(tx, row.workspace_id);
+      }
+      const { manifest } = release;
+      const requested = row.settings.createPeople;
+      const createPeople = creationPolicy(manifest, requested, 'migration');
+      const changedPolicy = requested !== undefined && requested !== createPeople;
+      const policyChange = changedPolicy
+        ? { createPeopleChange: { from: requested, to: createPeople } }
+        : {};
+      const settings = { ...row.settings };
+      if (changedPolicy) {
+        if (Object.hasOwn(manifest.settings, 'createPeople')) settings.createPeople = createPeople;
+        else delete settings.createPeople;
+      }
+      if (!manifest.bindings?.length) {
+        if (!reportOnly) {
+          const plan: StoredBindingPlan = {
+            extension: manifest.name,
+            declarations: [],
+            destinations: {},
+            createPeople,
+          };
+          await tx`update extension_installations set bindings=${tx.json(jsonValue(plan))}, bindings_revision=1,
+            settings=${tx.json(jsonValue(settings))}, updated_at=now() where id=${row.id}`;
         }
+        report.push({
+          ...base,
+          ...policyChange,
+          action: 'no_bindings_needed' as const,
+          reason: 'No bindings needed.',
+        });
+        continue;
+      }
+      const schema = await loadSchemaState(tx, row.workspace_id);
+      let plan: StoredBindingPlan | undefined;
+      let reason = 'The previous destinations cannot be bound.';
+      try {
+        plan = existingPlan(schema, row, manifest, createPeople);
+      } catch (error) {
+        if (error instanceof Error) reason = error.message;
       }
       if (!reportOnly)
         await tx`delete from extension_contributions where installation_id=${row.id}
           and kind='field' and universal_id=${old.taskId}`;
-      if (plan && release) {
-        if (!reportOnly) await applyPlan(tx, row, release, plan, schema);
+      if (plan) {
+        if (!reportOnly) await applyPlan(tx, row, release, plan, schema, settings);
         report.push({
           ...base,
+          ...policyChange,
           action: 'bind' as const,
           plan: presentBindingPlan(schema, plan, 1),
         });

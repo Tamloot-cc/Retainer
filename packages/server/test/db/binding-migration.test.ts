@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
+import type { ExtensionManifest } from '@retainer/extension';
 import { enrichmentManifest } from '@retainer/runner/enrichment-contract';
 import { tamlootManifest } from '@retainer/runner/tamloot-contract';
 import { expect, it } from 'vitest';
@@ -8,6 +9,7 @@ import { inWorkspace } from '../../src/db/tx.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { runSchemaChange } from '../../src/schema-engine/engine.js';
 import type { SchemaOperation } from '../../src/schema-engine/operations.js';
+import * as migrationModule from '../../src/workspaces/binding-migration.js';
 import {
   bindingsMigrationPending,
   migrateExtensionBindings,
@@ -19,6 +21,13 @@ import { extensionFixture } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
 const actor = { type: 'user', id: 'admin' } as const;
+
+it('keeps the former base IDs private to the migration module', () => {
+  expect(Object.keys(migrationModule).sort()).toEqual([
+    'bindingsMigrationPending',
+    'migrateExtensionBindings',
+  ]);
+});
 const manifest = tamlootManifest({
   version: '2.0.0',
   packageDigest: 'a'.repeat(64),
@@ -29,7 +38,11 @@ const catalog = new ExtensionCatalog([
   { manifest, actorCeiling: 'integration', runtimeEnabled: true },
 ]);
 
-async function legacy(name: string, operations: SchemaOperation[] = []) {
+async function legacy(
+  name: string,
+  operations: SchemaOperation[] = [],
+  original: ExtensionManifest = manifest,
+) {
   const workspace = await createWorkspace(db.owner, { name, template: 'starter' });
   if (operations.length)
     await inWorkspace(db.owner, workspace.id, (tx) =>
@@ -43,7 +56,7 @@ async function legacy(name: string, operations: SchemaOperation[] = []) {
   const id = randomUUID();
   await db.owner`insert into extension_installations
     (id,workspace_id,registration_id,version,release_digest,state,granted_actor,granted_scopes,created_by,settings)
-    values(${id},${workspace.id},${manifest.universalId},'1.0.0',${'c'.repeat(64)},'active',
+    values(${id},${workspace.id},${original.universalId},'1.0.0',${'c'.repeat(64)},'active',
       'integration','["read","write"]',${db.owner.json(actor)},'{"createPeople":"everyone"}')`;
   return id;
 }
@@ -62,7 +75,7 @@ it('reports without writing and applies the same bindings or uninstall decisions
   const read = () =>
     db.owner`select id,state,version,release_digest,bindings from extension_installations order by id`;
   const before = await read();
-  expect(await bindingsMigrationPending(db.owner)).toBe(true);
+  expect(await bindingsMigrationPending(db.owner, catalog)).toBe(true);
   // The hosted preflight runs against the schema before the bindings columns exist.
   await db.owner`alter table extension_installations rename column bindings to test_bindings`;
   await db.owner`alter table extension_installations rename column bindings_revision to test_bindings_revision`;
@@ -126,7 +139,7 @@ it('reports without writing and applies the same bindings or uninstall decisions
   expect(after.find((row) => row.id === renamed)?.bindings).toBeTruthy();
   expect(after.find((row) => row.id === deleted)?.state).toBe('uninstalled');
   expect(await migrateExtensionBindings(db.owner, catalog, true)).toEqual([]);
-  expect(await bindingsMigrationPending(db.owner)).toBe(false);
+  expect(await bindingsMigrationPending(db.owner, catalog)).toBe(false);
 });
 
 it('uses a captured output choice after the old mapping column is dropped', async () => {
@@ -205,8 +218,120 @@ it('leaves a new installation without bindings alone when migrations run again',
   });
   expect(installed.status, JSON.stringify(installed.body)).toBe(201);
   expect(await migrateExtensionBindings(db.owner, current, false)).toEqual([]);
-  expect(await bindingsMigrationPending(db.owner)).toBe(false);
+  expect(await bindingsMigrationPending(db.owner, catalog)).toBe(false);
   const [row] = await db.owner`
     select bindings, bindings_revision, state from extension_installations where id=${installed.body.id}`;
   expect(row).toMatchObject({ bindings: null, bindings_revision: 1, state: 'active' });
+});
+
+it('preserves tool-only and standalone installations with no destinations to migrate', async () => {
+  const hosted = extensionFixture({
+    functions: [
+      {
+        universalId: randomUUID(),
+        name: 'lookup',
+        description: 'Looks up information.',
+        handlerDigest: 'b'.repeat(64),
+        timeoutSeconds: 60,
+        trigger: {
+          kind: 'tool',
+          title: 'Look up',
+          effect: 'read',
+          connection: 'workspace',
+          outputSchema: { type: 'object', additionalProperties: false },
+        },
+        inputSchema: { type: 'object', additionalProperties: false },
+      },
+    ],
+  });
+  const standalone = extensionFixture({ execution: 'standalone' });
+  const first = await legacy('Hosted tool', [], hosted);
+  const second = await legacy('Standalone', [], standalone);
+  const empty = new ExtensionCatalog();
+  expect(await bindingsMigrationPending(db.owner, empty)).toBe(false);
+  expect(await migrateExtensionBindings(db.owner, empty, false)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ installationId: first, action: 'deferred' }),
+      expect.objectContaining({ installationId: second, action: 'deferred' }),
+    ]),
+  );
+  const previousStandalone = extensionFixture({
+    ...standalone,
+    bindings: [
+      {
+        key: 'person',
+        label: 'People',
+        description: 'An old destination.',
+        class: 'entity',
+        access: 'read',
+        required: false,
+        fields: [],
+      },
+    ],
+  });
+  const newestStandalone = extensionFixture({ ...standalone, version: '2.0.0' });
+  const releases = new ExtensionCatalog(
+    [hosted, previousStandalone, newestStandalone].map((manifest) => ({
+      manifest,
+      actorCeiling: 'integration',
+    })),
+  );
+  const read = () => db.owner`
+    select id,state,generation,grant_generation,release_digest,bindings,bindings_revision
+    from extension_installations where id in (${first},${second}) order by id`;
+  const before = await read();
+  const report = await migrateExtensionBindings(db.owner, releases, true);
+  expect(report).toEqual(
+    expect.arrayContaining(
+      [first, second].map((installationId) =>
+        expect.objectContaining({
+          installationId,
+          action: 'no_bindings_needed',
+          reason: 'No bindings needed.',
+        }),
+      ),
+    ),
+  );
+  expect(await read()).toEqual(before);
+  expect(await migrateExtensionBindings(db.owner, releases, false)).toEqual(report);
+  expect(await read()).toEqual(
+    before.map((row) => ({
+      ...row,
+      bindings_revision: 1,
+      bindings: { extension: 'fixture', declarations: [], destinations: {}, createPeople: 'never' },
+    })),
+  );
+  expect(await bindingsMigrationPending(db.owner, empty)).toBe(false);
+  expect(await migrateExtensionBindings(db.owner, empty, false)).toEqual([]);
+});
+
+it('requires the rebuilt release for a known pre-bindings integration and reports a clamped policy', async () => {
+  const id = await legacy('Legacy contact creation');
+  const empty = new ExtensionCatalog();
+  expect(await bindingsMigrationPending(db.owner, empty)).toBe(true);
+  await expect(migrateExtensionBindings(db.owner, empty, false)).rejects.toThrow(
+    /Load the rebuilt extension release/,
+  );
+  const rebuilt = new ExtensionCatalog([
+    {
+      manifest: { ...manifest, createPeople: 'never' },
+      actorCeiling: 'integration',
+      runtimeEnabled: true,
+    },
+  ]);
+  const report = await migrateExtensionBindings(db.owner, rebuilt, true);
+  expect(report).toEqual([
+    expect.objectContaining({
+      installationId: id,
+      action: 'bind',
+      createPeopleChange: { from: 'everyone', to: 'never' },
+    }),
+  ]);
+  expect(await migrateExtensionBindings(db.owner, rebuilt, false)).toEqual(report);
+  const [row] =
+    await db.owner`select bindings,settings from extension_installations where id=${id}`;
+  expect(row).toMatchObject({
+    bindings: { createPeople: 'never' },
+    settings: { createPeople: 'never' },
+  });
 });
