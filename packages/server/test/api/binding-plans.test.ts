@@ -1,15 +1,64 @@
 import { randomUUID } from 'node:crypto';
-import { bookingManifest } from '@retainer/runner/booking-contract';
 import { expect, it } from 'vitest';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
+import { extensionFixture } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
-const manifest = bookingManifest({
-  version: '1.0.0',
-  packageDigest: 'a'.repeat(64),
-  serverRange: '>=0.1.0 <0.2.0',
+const manifest = extensionFixture({
+  name: 'dispatch',
+  execution: 'standalone',
+  scopes: ['read', 'write'],
+  bindings: [
+    {
+      key: 'ticket',
+      label: 'Tickets',
+      description: 'Dispatch status for each ticket.',
+      class: 'entity',
+      access: 'write',
+      required: true,
+      owned: true,
+      creates: true,
+      create: {
+        universalId: randomUUID(),
+        nameSingular: 'ticket',
+        namePlural: 'tickets',
+        labelSingular: 'Ticket',
+        labelPlural: 'Tickets',
+        labelField: 'status',
+        fields: [],
+      },
+      fields: [
+        {
+          key: 'status',
+          label: 'Status',
+          types: ['text'],
+          required: true,
+          installationOnly: true,
+          create: { universalId: randomUUID(), name: 'status', label: 'Status', type: 'text' },
+        },
+        {
+          key: 'person',
+          label: 'Person',
+          types: ['relation'],
+          required: false,
+          lookup: true,
+          target: 'person',
+          create: { universalId: randomUUID(), name: 'person', label: 'Person', type: 'relation' },
+        },
+      ],
+    },
+    {
+      key: 'person',
+      label: 'People',
+      description: 'Optional contact target.',
+      class: 'entity',
+      access: 'read',
+      required: false,
+      fields: [],
+    },
+  ],
 });
 const catalog = new ExtensionCatalog([{ manifest, actorCeiling: 'integration' }]);
 const installation = {
@@ -21,7 +70,7 @@ const installation = {
 async function setup() {
   const app = startTestApp(db, { extensionCatalog: catalog });
   const { workspace, keys } = await app.setupWorkspace(
-    { name: `Booking ${randomUUID()}` },
+    { name: `Dispatch ${randomUUID()}` },
     {
       admin: {
         actor: { type: 'user', id: 'admin' },
@@ -49,10 +98,10 @@ it('creates a prefixed owned object, guards the plan, and fences standalone writ
     {
       op: 'create_object',
       object: {
-        nameSingular: 'booking',
-        namePlural: 'bookings',
-        labelSingular: 'Booking',
-        labelPlural: 'Bookings',
+        nameSingular: 'ticket',
+        namePlural: 'tickets',
+        labelSingular: 'Ticket',
+        labelPlural: 'Tickets',
         labelField: 'name',
         fields: [{ name: 'name', type: 'text', label: 'Name' }],
       },
@@ -61,9 +110,9 @@ it('creates a prefixed owned object, guards the plan, and fences standalone writ
   expect(clash.status).toBe(200);
   const reviewed = await h.preview();
   expect(reviewed.status, JSON.stringify(reviewed.body)).toBe(200);
-  expect(reviewed.body.bindings.booking).toMatchObject({
+  expect(reviewed.body.bindings.ticket).toMatchObject({
     action: 'create',
-    nameSingular: 'bookingBooking',
+    nameSingular: 'dispatchTicket',
   });
   const results = await Promise.all([
     h.commit(reviewed.body.planDigest),
@@ -81,13 +130,13 @@ it('creates a prefixed owned object, guards the plan, and fences standalone writ
   const key = grant.body.key as string;
   const bindings = await h.app.request(`${base}/bindings`, { key });
   expect(bindings.status).toBe(200);
-  const booking = bindings.body.bindings.booking;
-  const [object] = booking.objects;
+  const ticket = bindings.body.bindings.ticket;
+  const [object] = ticket.objects;
   const stamp = {
     bindings_revision: bindings.body.bindings_revision,
     objectId: object.id,
     fieldIds: Object.fromEntries(
-      Object.values<{ name: string; id: string }>(booking.fields).map((field) => [
+      Object.values<{ name: string; id: string }>(ticket.fields).map((field) => [
         field.name,
         field.id,
       ]),
@@ -96,7 +145,7 @@ it('creates a prefixed owned object, guards the plan, and fences standalone writ
   const created = await h.app.request(`/v1/objects/${object.name}/records`, {
     key,
     body: {
-      values: { bookingId: 'test-booking', title: 'Consultation', status: 'confirmed' },
+      values: { status: 'confirmed' },
       bindings: stamp,
     },
   });
@@ -113,7 +162,7 @@ it('creates a prefixed owned object, guards the plan, and fences standalone writ
   ).toBe('installation_owned');
   const person = await h.app.request('/v1/objects/person/records', {
     key: h.key,
-    body: { values: { emails: 'booking@example.test' } },
+    body: { values: { emails: 'ticket@example.test' } },
   });
   expect(person.status).toBe(201);
   expect(
@@ -135,7 +184,7 @@ it('creates a prefixed owned object, guards the plan, and fences standalone writ
         },
       ])
     ).body.error.details.issues[0].message,
-  ).toContain('Booking');
+  ).toContain('Dispatch');
   const renamed = await h.change([
     { op: 'rename_field', object: object.name, field: 'status', name: 'state' },
   ]);
@@ -172,7 +221,7 @@ it('serializes approval against deleting a prepared destination', async () => {
   ]);
   if (approved.status === 201) {
     expect(removed.status).toBe(422);
-    expect(removed.body.error.details.issues[0].message).toContain('Booking');
+    expect(removed.body.error.details.issues[0].message).toContain('Dispatch');
   } else {
     expect(approved.status).toBe(409);
     expect(removed.status).toBe(200);
@@ -199,7 +248,7 @@ it('prefills a validated agent proposal for a human admin without changing the s
   expect(publicCatalog.body.releases[0]?.bindingProposal).toBeUndefined();
   expect((await h.app.request('/v1/extensions', { key: h.key })).body.installations).toEqual([]);
   expect((await h.app.request('/v1/schema', { key: h.key })).body.objects).not.toEqual(
-    expect.arrayContaining([expect.objectContaining({ nameSingular: 'booking' })]),
+    expect.arrayContaining([expect.objectContaining({ nameSingular: 'ticket' })]),
   );
   const review = await h.preview();
   expect(review.body.bindings.person).toEqual({ action: 'skip' });
@@ -221,7 +270,7 @@ it('releases an uninstalled object and replaces its deleted contribution with fr
     method: 'POST',
   });
   expect(uninstall.body.state).toBe('uninstalled');
-  expect((await h.change([{ op: 'delete_object', object: 'booking' }])).status).toBe(200);
+  expect((await h.change([{ op: 'delete_object', object: 'ticket' }])).status).toBe(200);
   const next = await h.preview();
   expect(next.status, JSON.stringify(next.body)).toBe(200);
   expect((await h.commit(next.body.planDigest)).status).toBe(201);

@@ -6,7 +6,6 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineExtension } from '../packages/extension/dist/index.js';
-import { bookingManifest } from '../packages/runner/dist/booking-contract.js';
 import { enrichmentManifest } from '../packages/runner/dist/enrichment-contract.js';
 import { gmailManifest } from '../packages/runner/dist/gmail-contract.js';
 import { granolaManifest } from '../packages/runner/dist/granola-contract.js';
@@ -579,22 +578,3 @@ writeRoutine('executables.json', [
     })),
   );
 }
-
-const booking = bookingManifest({
-  version,
-  packageDigest,
-  serverRange: extensionServerRange(
-    JSON.parse(readFileSync(resolve(root, 'packages/server/package.json'))).version,
-  ),
-});
-const bookingDirectory = resolve(root, 'artifacts/extensions/booking');
-mkdirSync(bookingDirectory, { recursive: true });
-writeFileSync(resolve(bookingDirectory, 'manifest.json'), JSON.stringify(booking, null, 2) + '\n');
-writeFileSync(
-  resolve(bookingDirectory, 'catalog.json'),
-  JSON.stringify(
-    [{ manifest: booking, actorCeiling: 'integration', runtimeEnabled: false }],
-    null,
-    2,
-  ) + '\n',
-);

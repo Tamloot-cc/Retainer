@@ -22,7 +22,6 @@
     "zod": "^4.6.7"
   },
   "exports": {
-    "./booking-contract": "./dist/booking-contract.js",
     "./last-contact": "./dist/last-contact.js",
     "./granola": "./dist/granola.js",
     "./granola-contract": "./dist/granola-contract.js",
