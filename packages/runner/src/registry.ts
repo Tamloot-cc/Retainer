@@ -70,9 +70,13 @@ async function executeFixture(
   }
   const input = fixtureInput.safeParse(invocation.input);
   if (!input.success) return { status: 'failed', code: 'invalid_input' };
+  const company = invocation.bindings?.bindings.company;
+  const object = company?.objects[0];
+  const name = company?.fields.name;
+  if (!object || !name) return { status: 'failed', code: 'binding_unavailable' };
   await sdk.createRecord(
-    'company',
-    { values: { name: input.data.name } },
+    object.name,
+    { values: { [name.name]: input.data.name } },
     `fixture:${input.data.sourceId}`,
   );
   return { status: 'succeeded' };

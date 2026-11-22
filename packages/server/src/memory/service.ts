@@ -14,7 +14,13 @@ import { AppError, forbidden, notFound } from '../errors.js';
 import { claimIdempotencyKey, storeIdempotentResult } from '../idempotency.js';
 import { deletePersonalMemory, type PersonalMemoryCounts } from '../privacy/personal.js';
 import { getRecord } from '../records/read.js';
-import { eventsAmong, requireStandaloneBinding, withRead, withWrite } from '../records/service.js';
+import {
+  eventsAmong,
+  requireRecordCreationBinding,
+  requireStandaloneBinding,
+  withRead,
+  withWrite,
+} from '../records/service.js';
 import { softDeleteRecord } from '../records/write.js';
 import { eventContentPage } from './event-bodies.js';
 import type { AddLinksInput } from './event-links.js';
@@ -58,7 +64,16 @@ export async function logEventFor(
         Object.keys(input.fields),
         input.bindings,
       );
-    return logEvent(tx, context, input);
+    return logEvent(tx, context, input, {
+      beforeInsert: (object) =>
+        requireRecordCreationBinding(
+          tx,
+          context,
+          object,
+          Object.keys(input.fields),
+          input.bindings,
+        ),
+    });
   });
 }
 

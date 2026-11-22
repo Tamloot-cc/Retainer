@@ -36,6 +36,7 @@ export const fixture = () => ({
 const sourceBindings = [
   {
     key: 'event',
+    creates: true,
     label: 'Imported events',
     description: 'Test event destination',
     class: 'event',
@@ -171,6 +172,14 @@ describe('strict extension contracts', () => {
       defineExtension({ ...fixture(), source, bindings: sourceBindings, functions }).source
         ?.provider,
     ).toBe('fixture');
+    expect(() =>
+      defineExtension({
+        ...fixture(),
+        source,
+        functions,
+        bindings: sourceBindings.map((binding) => ({ ...binding, creates: undefined })),
+      }),
+    ).toThrow('event binding that creates records');
     expect(() =>
       defineExtension({
         ...fixture(),

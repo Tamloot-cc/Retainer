@@ -71,7 +71,9 @@ const manifest = extensionFixture({
     },
   },
   bindings: [
-    ...sourceTestBindings,
+    ...sourceTestBindings.map((binding) =>
+      binding.key === 'person' ? { ...binding, creates: true as const } : binding,
+    ),
     {
       key: 'task',
       label: 'Tasks',

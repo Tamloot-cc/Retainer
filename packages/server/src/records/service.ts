@@ -27,6 +27,7 @@ import {
 import { AppError, notFound } from '../errors.js';
 import { admitCaller } from '../extension-runtime/admission.js';
 import {
+  checkBindingWrite,
   checkStandaloneBindingWrite,
   type StoredBindingPlan,
 } from '../extension-runtime/bindings.js';
@@ -249,6 +250,30 @@ export async function requireStandaloneBinding(
     );
 }
 
+/** Public CRM inserts by an installation need an approved creation destination. */
+export async function requireRecordCreationBinding(
+  tx: Tx,
+  context: WriteContext,
+  object: CompiledObject,
+  fields: string[],
+  stamp?: BindingWriteStamp,
+) {
+  if (context.installation) {
+    await requireStandaloneBinding(tx, context, object, fields, stamp, { create: true });
+  } else if (context.run) {
+    const [row] = await tx<{ bindings: StoredBindingPlan | null }[]>`
+      select bindings from extension_installations where id = ${context.run.installationId}`;
+    const plan = row?.bindings;
+    if (!plan || !checkBindingWrite(plan, object.state, fields, { create: true })) {
+      throw new AppError(
+        409,
+        'binding_unavailable',
+        'The approved bindings do not allow this record to be created.',
+      );
+    }
+  }
+}
+
 export { bindingWriteStampSchema };
 
 export type CreateOptions = {
@@ -285,12 +310,8 @@ export async function createRecord(
       claimId = claim.id;
     }
     const object = ordinaryObject ?? requireObject(context.schema, objectName);
-    if (context.installation) {
-      refuseEventCreation(object);
-      await requireStandaloneBinding(tx, context, object, Object.keys(values), options.bindings, {
-        create: true,
-      });
-    }
+    if (context.installation) refuseEventCreation(object);
+    await requireRecordCreationBinding(tx, context, object, Object.keys(values), options.bindings);
     const cited = await citeSource(tx, context, source);
     const writes = prepareValues(object, values, 'create');
     const record = await insertRecord(tx, context, object);
@@ -456,9 +477,13 @@ export async function upsertRecord(
         const values = match
           ? valuesWithMatch(match.field, match.value, match.lookup, input.values)
           : input.values;
-        await requireStandaloneBinding(tx, context, object, Object.keys(values), input.bindings, {
-          create: true,
-        });
+        await requireRecordCreationBinding(
+          tx,
+          context,
+          object,
+          Object.keys(values),
+          input.bindings,
+        );
         const writes = prepareValues(object, values, 'create');
         creatingWith = match?.field;
         const record = await insertRecord(tx, context, object);

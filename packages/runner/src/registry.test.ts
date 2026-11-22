@@ -10,6 +10,26 @@ const invocation: Invocation = {
   releaseDigest: 'a'.repeat(64),
   functionId: FIXTURE_FUNCTION_ID,
   input: { sourceId: 'source-1', name: 'Fixture company' },
+  bindings: {
+    bindings_revision: 1,
+    createPeople: 'never',
+    bindings: {
+      company: {
+        status: 'ok',
+        objects: [
+          { id: '34f228a3-a157-4b2d-b386-7d27ffd4322c', name: 'company', label: 'Company' },
+        ],
+        fields: {
+          name: {
+            id: 'b82b983e-5b6e-4546-8cf2-35ee12c27075',
+            name: 'name',
+            label: 'Name',
+            values: {},
+          },
+        },
+      },
+    },
+  },
   apiOrigin: 'https://retainer.test',
   runToken: 'rt_run_fixture_only',
   deadline: '2026-11-11T20:00:00.000Z',

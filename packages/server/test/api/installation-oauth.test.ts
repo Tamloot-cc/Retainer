@@ -40,6 +40,7 @@ const manifest = extensionFixture({
     testCompanyBinding,
     {
       key: 'conversation',
+      creates: true,
       label: 'Conversations',
       description: 'Meeting transcripts.',
       class: 'event',

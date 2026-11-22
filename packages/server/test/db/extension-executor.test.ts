@@ -13,7 +13,7 @@ import {
 } from '../../src/worker/extensions.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { extensionFixture } from '../helpers/extensions.js';
+import { extensionFixture, testCompanyBinding } from '../helpers/extensions.js';
 
 function deferred<T>() {
   let resolve: (value: T) => void = () => {};
@@ -28,6 +28,7 @@ const db = useTestDatabase(),
   slowId = randomUUID();
 const manifest = extensionFixture({
   scopes: ['read', 'write'],
+  bindings: [testCompanyBinding],
   functions: [
     {
       universalId: functionId,

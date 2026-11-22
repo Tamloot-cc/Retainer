@@ -5,6 +5,7 @@ import type {
   ExtensionManifest,
 } from '@retainer/extension';
 import { HIDDEN_TYPE_IDS } from '@retainer/shared';
+import { AppError } from '../errors.js';
 import type { FieldState, ObjectState, SchemaState } from '../schema/types.js';
 
 export type StoredBinding = {
@@ -48,6 +49,23 @@ export function createsRecords(
   createPeople: StoredBindingPlan['createPeople'],
 ): boolean {
   return declaration.creates === true || (!!declaration.match && createPeople !== 'never');
+}
+
+/** A managed path may insert only through its own reviewed destination. */
+export function requireBindingCreation(plan: StoredBindingPlan | null, key: string) {
+  const declaration = plan?.declarations.find((entry) => entry.key === key);
+  if (
+    !plan?.destinations[key] ||
+    !declaration ||
+    declaration.access !== 'write' ||
+    !createsRecords(declaration, plan.createPeople)
+  ) {
+    throw new AppError(
+      409,
+      'binding_unavailable',
+      'The approved binding does not allow records to be created.',
+    );
+  }
 }
 
 export function validateBindingPlan(state: SchemaState, plan: StoredBindingPlan): BindingIssue[] {
@@ -218,9 +236,26 @@ export function checkStandaloneBindingWrite(
   object: ObjectState,
   fields: readonly string[],
   stamp?: BindingWriteStamp,
-  { lookups = [], create = false }: { lookups?: readonly string[]; create?: boolean } = {},
+  requirements: { lookups?: readonly string[]; create?: boolean } = {},
 ): boolean {
   if (!stamp || stamp.bindings_revision !== revision || stamp.objectId !== object.id) return false;
+  return checkBindingWrite(plan, object, fields, { ...requirements, fieldIds: stamp.fieldIds });
+}
+
+export function checkBindingWrite(
+  plan: StoredBindingPlan,
+  object: ObjectState,
+  fields: readonly string[],
+  {
+    lookups = [],
+    create = false,
+    fieldIds,
+  }: {
+    lookups?: readonly string[];
+    create?: boolean;
+    fieldIds?: BindingWriteStamp['fieldIds'];
+  } = {},
+): boolean {
   const selected = plan.declarations.filter(
     (declaration) =>
       declaration.access === 'write' &&
@@ -232,7 +267,7 @@ export function checkStandaloneBindingWrite(
     const field = object.fields.find((field) => field.status === 'active' && field.name === name);
     return (
       !!field?.id &&
-      stamp.fieldIds[name] === field.id &&
+      (!fieldIds || fieldIds[name] === field.id) &&
       selected.some((declaration) =>
         declaration.fields.some(
           (rule) =>

@@ -13,7 +13,8 @@ import { createFileServer, LocalFileStorage } from '../../src/file-storage/local
 import { requestHash } from '../../src/idempotency.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { bindingStamp, extensionFixture } from '../helpers/extensions.js';
+import { bindingStamp, extensionFixture, testCompanyBinding } from '../helpers/extensions.js';
+import { setupGmailEvidence } from '../helpers/gmail-evidence.js';
 import { sourceTestBindings } from '../helpers/source-bindings.js';
 
 const db = useTestDatabase();
@@ -46,6 +47,7 @@ async function setup(
   verify = true,
   onSourceDelete: 'keep' | 'retract' = 'keep',
   extra?: ExtensionManifest,
+  withTasks = false,
 ) {
   const verifyId = randomUUID(),
     syncId = randomUUID(),
@@ -68,7 +70,32 @@ async function setup(
     scopes: ['read', 'write'],
     createPeople: policy,
     onSourceDelete,
-    bindings: sourceTestBindings,
+    bindings: [
+      ...sourceTestBindings,
+      ...(withTasks
+        ? [
+            {
+              key: 'task',
+              label: 'Tasks',
+              description: 'Source tasks in the creation audit.',
+              class: 'entity' as const,
+              access: 'write' as const,
+              required: true,
+              creates: true as const,
+              fields: [
+                { key: 'title', label: 'Title', types: ['text' as const], required: true },
+                {
+                  key: 'status',
+                  label: 'Status',
+                  types: ['select' as const],
+                  values: ['open', 'done'],
+                  required: true,
+                },
+              ],
+            },
+          ]
+        : []),
+    ],
     source: {
       provider: 'fixture',
       identity: 'account',
@@ -76,6 +103,7 @@ async function setup(
       syncFunctionIds: [syncId],
       scanFunctionIds: [backfillId],
       event: 'conversation',
+      ...(withTasks ? { tasks: 'task' } : {}),
       people: 'person',
       revisionOrder: 'integer',
     },
@@ -128,7 +156,28 @@ async function setup(
       agent: { actor: { type: 'agent', id: 'research' }, scopes: ['read', 'write'] },
     },
   );
-  const input = { registrationId: manifest.universalId, version: manifest.version, settings: {} };
+  const input = {
+    registrationId: manifest.universalId,
+    version: manifest.version,
+    settings: {},
+    ...(withTasks
+      ? {
+          bindings: {
+            task: {
+              action: 'existing',
+              objects: ['task'],
+              fields: {
+                status: {
+                  action: 'existing',
+                  field: 'status',
+                  values: { open: 'todo', done: 'done' },
+                },
+              },
+            },
+          },
+        }
+      : {}),
+  };
   const preview = await app.request('/v1/extensions/preview', { key: keys.admin, body: input });
   const installed = await app.request('/v1/extensions', {
     key: keys.admin,
@@ -872,6 +921,7 @@ describe('managed source evidence with real RLS Postgres', () => {
     const workId = randomUUID(),
       other = extensionFixture({
         scopes: ['read', 'write'],
+        bindings: [testCompanyBinding],
         functions: [
           {
             universalId: workId,
@@ -984,7 +1034,7 @@ describe('managed source evidence with real RLS Postgres', () => {
     ).toEqual([{ status: 'cancelled', code: 'privacy_erased' }]);
     expect(
       (
-        await h.app.request('/v1/objects/person/records', {
+        await h.app.request('/v1/objects/company/records', {
           key: unrelatedKey,
           body: { values: { name: 'Stale run' } },
         })
@@ -994,7 +1044,7 @@ describe('managed source evidence with real RLS Postgres', () => {
     if (!resumed) throw new Error('unrelated durable work lost');
     expect(
       (
-        await h.app.request('/v1/objects/person/records', {
+        await h.app.request('/v1/objects/company/records', {
           key: await tokens.issue(h.app.sql, resumed, other.universalId, resumed.scopes),
           body: { values: { name: 'Fresh run' } },
         })
@@ -1482,6 +1532,7 @@ describe('managed source evidence with real RLS Postgres', () => {
       bindings: [
         {
           key: 'conversation',
+          creates: true,
           label: 'Conversations',
           description: 'A unique app reference.',
           class: 'event',
@@ -1625,3 +1676,272 @@ describe('managed source evidence with real RLS Postgres', () => {
     ).toHaveLength(1);
   });
 });
+
+const updateOnlyCreationFixture = extensionFixture({
+  name: 'creation-audit',
+  execution: 'standalone',
+  scopes: ['read', 'write'],
+  bindings: [
+    {
+      ...testCompanyBinding,
+      creates: undefined,
+      fields: testCompanyBinding.fields
+        .filter((field) => field.key !== 'attachments')
+        .map((field) => ({ ...field, lookup: undefined })),
+    },
+    {
+      key: 'conversation',
+      label: 'Conversations',
+      description: 'Replay existing events.',
+      class: 'event',
+      access: 'write',
+      required: true,
+      fields: [],
+    },
+  ],
+});
+
+async function standaloneCreationAudit() {
+  const manifest = updateOnlyCreationFixture;
+  const h = await setup('never', true, 'keep', manifest);
+  const input = { registrationId: manifest.universalId, version: manifest.version, settings: {} };
+  const preview = await h.app.request('/v1/extensions/preview', { key: h.keys.admin, body: input });
+  expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+  const installed = await h.app.request('/v1/extensions', {
+    key: h.keys.admin,
+    headers: { 'Idempotency-Key': randomUUID() },
+    body: { ...input, planDigest: preview.body.planDigest },
+  });
+  expect(installed.status, JSON.stringify(installed.body)).toBe(201);
+  const base = `/v1/extensions/${installed.body.id}`;
+  const issued = await h.app.request(`${base}/keys`, {
+    key: h.keys.admin,
+    body: { expectedGeneration: installed.body.generation, scopes: ['read', 'write'] },
+  });
+  expect(issued.status).toBe(201);
+  const key = issued.body.key;
+  const plan = await h.app.request(`${base}/bindings`, { key });
+  expect(plan.status).toBe(200);
+  return { ...h, key, stamp: (binding: string) => bindingStamp(plan.body, binding) };
+}
+
+// Model a stored plan that no longer authorizes a managed insert. A valid manifest
+// cannot normally produce it, but the runtime still checks the approved plan.
+async function removeCreation(id: string, key: string) {
+  await db.owner`update extension_installations i set bindings = jsonb_set(bindings, '{declarations}', (
+    select jsonb_agg(case when declaration->>'key' = ${key} then declaration - 'creates' else declaration end)
+    from jsonb_array_elements(i.bindings->'declarations') declaration
+  )) where i.id = ${id}`;
+}
+
+async function expectCreationRefused(response: {
+  status: number;
+  body: { error?: { code: string } };
+}) {
+  expect(response.status, JSON.stringify(response.body)).toBe(409);
+  expect(response.body.error?.code).toBe('binding_unavailable');
+}
+
+it.each([
+  [
+    'standalone record creation',
+    async () => {
+      const h = await standaloneCreationAudit();
+      await expectCreationRefused(
+        await h.app.request('/v1/objects/company/records', {
+          key: h.key,
+          body: { bindings: h.stamp('company'), values: { name: 'New company' } },
+        }),
+      );
+    },
+  ],
+  [
+    'standalone upsert',
+    async () => {
+      const h = await standaloneCreationAudit();
+      const record = await h.app.request('/v1/objects/company/records', {
+        key: h.keys.admin,
+        body: { values: { externalKey: 'existing-company' } },
+      });
+      expect(record.status).toBe(201);
+      const upsert = (externalKey: string) =>
+        h.app.request('/v1/objects/company/upsert', {
+          key: h.key,
+          body: {
+            bindings: h.stamp('company'),
+            match: { externalKey },
+            values: { name: 'Upserted' },
+            ifMissing: 'create',
+          },
+        });
+      await expectCreationRefused(await upsert('missing-company'));
+      expect((await upsert('existing-company')).body).toMatchObject({
+        id: record.body.id,
+        created: false,
+      });
+    },
+  ],
+  [
+    'standalone event logging',
+    async () => {
+      const h = await standaloneCreationAudit();
+      const event = {
+        type: 'conversation',
+        channel: 'creation-audit',
+        externalId: randomUUID(),
+        occurredAt: '2026-01-01T12:00:00Z',
+        title: 'Creation audit',
+      };
+      const log = (eventInput: typeof event | Omit<typeof event, 'externalId'>) =>
+        h.app.request('/v1/events', {
+          key: h.key,
+          body: { ...eventInput, bindings: h.stamp('conversation') },
+        });
+      await expectCreationRefused(await log(event));
+      const { externalId: _externalId, ...unidentified } = event;
+      await expectCreationRefused(await log(unidentified));
+      const saved = await h.app.request('/v1/events', { key: h.keys.admin, body: event });
+      expect(saved.status).toBe(201);
+      const about = await h.app.request('/v1/objects/company/records', {
+        key: h.keys.admin,
+        body: { values: { name: 'Linked company' } },
+      });
+      const replay = await h.app.request('/v1/events', {
+        key: h.key,
+        body: { ...event, bindings: h.stamp('conversation'), about: [about.body.id] },
+      });
+      expect(replay.status).toBe(200);
+      expect(replay.body).toMatchObject({
+        id: saved.body.id,
+        created: false,
+        added: { about: [about.body.id] },
+      });
+    },
+  ],
+  [
+    'ordinary hosted writes with bindings',
+    async () => {
+      const h = await setup();
+      const { key } = await h.start();
+      await expectCreationRefused(
+        await h.app.request('/v1/objects/person/records', {
+          key,
+          body: { values: { name: 'No contact creation' } },
+        }),
+      );
+      const logged = await h.app.request('/v1/events', {
+        key,
+        body: { type: 'conversation', channel: 'audit-run', occurredAt: '2026-01-01T12:00:00Z' },
+      });
+      expect(logged.status, JSON.stringify(logged.body)).toBe(201);
+    },
+  ],
+  [
+    'managed source revisions',
+    async () => {
+      const h = await setup();
+      const item = await h.item();
+      const first = await h.sync(item.key, item.itemId, '1', null);
+      expect(first.status).toBe(200);
+      await removeCreation(h.id, 'conversation');
+      const replay = await h.sync(item.key, item.itemId, '1', null);
+      expect(replay.body).toMatchObject({ eventId: first.body.eventId, unchanged: true });
+      await expectCreationRefused(
+        await h.sync(item.key, item.itemId, '2', first.body.revisionId, h.event('Updated')),
+      );
+    },
+  ],
+  [
+    'managed source tasks',
+    async () => {
+      const h = await setup('never', true, 'keep', undefined, true);
+      const item = await h.item();
+      const first = await h.sync(item.key, item.itemId, '1', null);
+      expect(first.status).toBe(200);
+      const tasks = async (externalId: string) => {
+        const current = await h.app.request(`${h.base}/source-items/${item.itemId}`, {
+          key: item.key,
+        });
+        return h.app.request(`${h.base}/source-items/${item.itemId}/tasks`, {
+          key: item.key,
+          body: {
+            expectedRevisionId: first.body.revisionId,
+            expectedTaskRevision: current.body.taskWriteRevision,
+            complete: false,
+            tasks: [{ externalId, status: 'open', title: 'Task', contactEmails: [] }],
+          },
+        });
+      };
+      const authorized = await tasks('allowed');
+      expect(authorized.status, JSON.stringify(authorized.body)).toBe(200);
+      expect(authorized.body.applied).toBe(1);
+      await removeCreation(h.id, 'task');
+      await expectCreationRefused(await tasks('refused'));
+    },
+  ],
+  [
+    'managed participant creation',
+    async () => {
+      for (const policy of ['never', 'everyone'] as const) {
+        const h = await setup(policy);
+        const item = await h.item();
+        const email = `${randomUUID()}@example.test`;
+        const synced = await h.sync(
+          item.key,
+          item.itemId,
+          '1',
+          null,
+          h.event('Meeting', [{ email }]),
+        );
+        expect(synced.status).toBe(200);
+        const matches =
+          await db.owner`select record_id from record_identifiers where workspace_id=${h.workspace.id} and value=${email}`;
+        expect(matches).toHaveLength(policy === 'everyone' ? 1 : 0);
+      }
+    },
+  ],
+  [
+    'Gmail message insertion and replay',
+    async () => {
+      const h = await setupGmailEvidence(db);
+      await h.person('dana@example.com');
+      const mailbox = await h.mailbox('creation-audit');
+      const original = await h.save(mailbox);
+      expect(original).toMatchObject({ kind: 'imported', created: true });
+      const updateOnly = {
+        ...mailbox,
+        plan: {
+          ...mailbox.plan,
+          declarations: mailbox.plan.declarations.map((declaration) =>
+            declaration.key === 'email' ? { ...declaration, creates: undefined } : declaration,
+          ),
+        },
+      };
+      expect(await h.save(updateOnly)).toMatchObject({ kind: 'imported', created: false });
+      await expect(
+        h.save(updateOnly, {
+          messageId: 'new-message',
+          rfcMessageId: '<new-message@example.test>',
+        }),
+      ).rejects.toMatchObject({ code: 'binding_unavailable' });
+    },
+  ],
+  [
+    'hidden notes through a fact write',
+    async () => {
+      const h = await standaloneCreationAudit();
+      const seed = await h.app.request('/v1/objects/company/records', {
+        key: h.keys.admin,
+        body: { values: { name: 'Fact subject' } },
+      });
+      const remembered = await h.app.request(`/v1/records/${seed.body.id}/facts`, {
+        key: h.key,
+        body: { text: 'An update under the ordinary facts scope.' },
+      });
+      expect(remembered.status, JSON.stringify(remembered.body)).toBe(201);
+      const [note] = await db.owner`select e.channel from fact_sources f
+      join event_records e on e.record_id=f.source_record_id where f.fact_id=${remembered.body.fact.id}`;
+      expect(note?.channel).toBe('retainer');
+    },
+  ],
+] as const)('audits creation authorization on %s', async (_path, test) => test());

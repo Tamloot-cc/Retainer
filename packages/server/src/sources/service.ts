@@ -11,7 +11,11 @@ import type { Sql } from '../db/client.js';
 import { inWorkspace, jsonValue, lockForWrite, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { admitCaller, admitRun } from '../extension-runtime/admission.js';
-import type { StoredBindingPlan } from '../extension-runtime/bindings.js';
+import {
+  createsRecords,
+  requireBindingCreation,
+  type StoredBindingPlan,
+} from '../extension-runtime/bindings.js';
 import { cancelRuns, lockExtension } from '../extension-runtime/locks.js';
 import { requestHash } from '../idempotency.js';
 import { storeEventBody } from '../memory/event-bodies.js';
@@ -722,6 +726,8 @@ export class Sources {
         output.push({ handle: email, recordId: live[0] });
       } else if (
         rows.length === 0 &&
+        declaration.access === 'write' &&
+        createsRecords(declaration, mode) &&
         (mode === 'everyone' || (mode === 'contacted_first' && participant.contacted))
       ) {
         const values = prepareValues(
@@ -769,8 +775,9 @@ export class Sources {
       caller,
       async (tx, context) => {
         const binding = await this.binding(tx, caller),
-          { policy } = await this.release(tx, caller);
-        if (!policy.tasks) throw notFound('managed tasks');
+          { manifest, policy } = await this.release(tx, caller);
+        if (!policy.tasks || !manifest.source?.tasks) throw notFound('managed tasks');
+        requireBindingCreation(policy.plan, manifest.source.tasks);
         await this.ingestionJob(tx, caller, policy, itemId);
         // Serialize first sightings across accounts before taking source-item or record locks.
         const identities = input.tasks.map((t) => t.externalId).sort();
@@ -969,6 +976,7 @@ export class Sources {
         } else {
           if (!normalized.object)
             throw conflict('binding_unavailable', 'The approved event destination is unavailable.');
+          requireBindingCreation(policy.plan, policy.event);
           for (const participant of normalized.participants)
             await tx`select pg_advisory_xact_lock(21066::int4,hashtext(${JSON.stringify([caller.workspaceId, participant.email])}))`;
           // Writers cite source records before taking target locks. Block new citations before retracting old claims.

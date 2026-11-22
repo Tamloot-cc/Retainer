@@ -64,7 +64,18 @@ const manifest = defineExtension({
   createPeople: 'never',
   onSourceDelete: 'keep',
   settings: {},
-
+  bindings: [
+    {
+      key: 'company',
+      label: 'Companies',
+      description: 'Fixture companies.',
+      class: 'entity',
+      access: 'write',
+      required: true,
+      creates: true,
+      fields: [{ key: 'name', label: 'Name', types: ['text'], required: true }],
+    },
+  ],
   views: [],
   functions: [
     {
@@ -143,6 +154,7 @@ if (development) {
     universalId: '90ce88f0-cb67-48c7-9dc3-97775cfae1f1',
     name: 'verifier-fixture',
     description: 'Inert raw-byte signature and hard-timeout verification fixture.',
+    bindings: [],
     functions: verifierIds.map((id, i) => ({
       universalId: id,
       name: i ? 'timeout' : 'verify',

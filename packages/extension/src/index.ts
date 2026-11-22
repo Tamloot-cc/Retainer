@@ -951,9 +951,12 @@ export function defineExtension(value: unknown): ExtensionManifest {
     if (
       binding(source.event)?.class !== 'event' ||
       binding(source.event)?.access !== 'write' ||
-      !binding(source.event)?.required
+      !binding(source.event)?.required ||
+      !binding(source.event)?.creates
     )
-      throw new Error('unsupported_manifest: sources need a required write event binding');
+      throw new Error(
+        'unsupported_manifest: sources need a required write event binding that creates records',
+      );
     if (
       source.people &&
       (binding(source.people)?.class !== 'entity' || !binding(source.people)?.match)

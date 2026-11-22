@@ -167,7 +167,10 @@ export async function logEvent(
   tx: Tx,
   context: WriteContext,
   input: LogEventInput,
-  options: { resolveHandles?: boolean } = {},
+  options: {
+    resolveHandles?: boolean;
+    beforeInsert?: (object: CompiledObject) => Promise<void>;
+  } = {},
 ): Promise<LogEventResult> {
   const { workspaceId, schema } = context;
   const object = requireEventType(schema, input.type);
@@ -225,6 +228,7 @@ export async function logEvent(
     }
   }
 
+  await options.beforeInsert?.(object);
   const record = await insertRecord(tx, context, object);
   await tx`
     insert into event_records (workspace_id, record_id, occurred_at, channel, external_id)

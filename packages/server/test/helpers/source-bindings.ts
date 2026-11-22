@@ -3,6 +3,7 @@ import type { ExtensionBinding } from '@retainer/extension';
 export const sourceTestBindings: ExtensionBinding[] = [
   {
     key: 'conversation',
+    creates: true,
     label: 'Conversations',
     description: 'Events from the test source.',
     class: 'event',

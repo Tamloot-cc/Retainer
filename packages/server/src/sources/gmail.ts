@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { EVENT_CONTENT_MAX, isoDateTimeSchema } from '@retainer/shared';
 import { z } from 'zod';
 import type { Tx } from '../db/tx.js';
-import { AppError, notFound } from '../errors.js';
-import type { StoredBindingPlan } from '../extension-runtime/bindings.js';
+import { AppError } from '../errors.js';
+import { requireBindingCreation, type StoredBindingPlan } from '../extension-runtime/bindings.js';
 import { requestHash } from '../idempotency.js';
 import { joinEventThreads, storeEventBody } from '../memory/event-bodies.js';
 import { addEventLinks, logEvent } from '../memory/events.js';
@@ -208,6 +208,7 @@ export async function appendGmailMessage(
       { resolveHandles: false },
     );
   } else {
+    requireBindingCreation(binding.plan, 'email');
     const event = await logEvent(
       tx,
       context,
