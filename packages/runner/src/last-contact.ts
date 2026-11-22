@@ -75,7 +75,7 @@ export function lastContactManifest(build: {
     onSourceDelete: 'keep',
     settings: {},
     views: [],
-    schema: [],
+
     bindings: [
       {
         key: 'contact',

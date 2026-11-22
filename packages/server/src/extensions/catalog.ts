@@ -154,7 +154,7 @@ export function parseExtensionCatalog(raw?: string): ExtensionCatalog {
       // Published snapshots can retain releases retired by the binding migration.
       const manifest = entry.manifest;
       if (manifest && typeof manifest === 'object') {
-        if ('mapping' in manifest) return [];
+        if ('schema' in manifest || 'mapping' in manifest) return [];
         if (
           'functions' in manifest &&
           Array.isArray(manifest.functions) &&

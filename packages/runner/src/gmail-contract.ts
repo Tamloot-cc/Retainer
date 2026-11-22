@@ -130,7 +130,7 @@ export function gmailManifest(build: {
         fields: [{ key: 'emails', label: 'Emails', types: ['emails'], required: true }],
       },
     ],
-    schema: [],
+
     views: [],
     functions: [
       fn(GMAIL.connect, 'connect', { kind: 'connect' }, {}),

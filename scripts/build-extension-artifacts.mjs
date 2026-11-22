@@ -64,7 +64,7 @@ const manifest = defineExtension({
   createPeople: 'never',
   onSourceDelete: 'keep',
   settings: {},
-  schema: [],
+
   views: [],
   functions: [
     {

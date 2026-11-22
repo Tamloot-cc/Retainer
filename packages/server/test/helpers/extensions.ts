@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { defineExtension, type ExtensionManifest } from '@retainer/extension';
+import {
+  defineExtension,
+  type ExtensionBinding,
+  type ExtensionManifest,
+} from '@retainer/extension';
 
 export function extensionFixture(overrides: Partial<ExtensionManifest> = {}) {
   return defineExtension({
@@ -19,9 +23,39 @@ export function extensionFixture(overrides: Partial<ExtensionManifest> = {}) {
     createPeople: 'never',
     onSourceDelete: 'keep',
     settings: {},
-    schema: [],
+
     views: [],
     functions: [],
     ...overrides,
   });
+}
+
+type NewObject = NonNullable<ExtensionBinding['create']>;
+type NewField = NonNullable<ExtensionBinding['fields'][number]['create']>;
+
+export function ownedTestFields(key: string, label: string, fields: NewField[]): ExtensionBinding {
+  return {
+    key,
+    label,
+    description: 'Schema for the test extension.',
+    class: 'entity',
+    access: 'write',
+    required: true,
+    fields: fields.map((field) => ({
+      key: field.name,
+      label: field.label,
+      types: [field.type],
+      required: true,
+      owned: true,
+      create: field,
+    })),
+  };
+}
+
+export function ownedTestObject(object: NewObject): ExtensionBinding {
+  return {
+    ...ownedTestFields(object.nameSingular, object.labelPlural, object.fields),
+    owned: true,
+    create: { ...object, fields: [] },
+  };
 }

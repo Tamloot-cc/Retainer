@@ -7,11 +7,11 @@ import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { deriveUuid } from '../../src/schema-engine/apply.js';
 import { runSchemaChange } from '../../src/schema-engine/engine.js';
-import { STARTER_OBJECT_IDS } from '../../src/templates/base.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { extensionFixture } from '../helpers/extensions.js';
+import { extensionFixture, ownedTestFields, ownedTestObject } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
 
@@ -52,28 +52,33 @@ const managed = extensionFixture({
   settings: {
     enabled: { type: 'boolean', label: 'Enabled', required: true, secret: false, reconnect: false },
   },
-  schema: [{ kind: 'object', definition: object }],
-  views: [{ universalId: viewId, objectId, name: 'Tickets', kind: 'table', fieldIds: [titleId] }],
+  bindings: [ownedTestObject(object)],
+  views: [
+    { universalId: viewId, binding: 'ticket', name: 'Tickets', kind: 'table', fields: ['name'] },
+  ],
   functions: hooks,
 });
 const managedNext = extensionFixture({
   ...managed,
   version: '1.1.0',
-  schema: [
-    {
-      kind: 'object',
-      definition: {
-        ...object,
-        fields: [
-          ...object.fields,
-          { universalId: extraId, name: 'extra', label: 'Extra', type: 'text' },
-        ],
-      },
-    },
+  bindings: [
+    ownedTestObject({
+      ...object,
+      fields: [
+        ...object.fields,
+        { universalId: extraId, name: 'extra', label: 'Extra', type: 'text' },
+      ],
+    }),
   ],
   views: [
     ...managed.views,
-    { universalId: extraViewId, objectId, name: 'Extra', kind: 'table', fieldIds: [extraId] },
+    {
+      universalId: extraViewId,
+      binding: 'ticket',
+      name: 'Extra',
+      kind: 'table',
+      fields: ['extra'],
+    },
   ],
 });
 
@@ -97,25 +102,16 @@ const secretV2 = extensionFixture({
 
 // An extension whose installed release disappears after a server upgrade.
 const reFieldId = randomUUID();
-const reV1 = extensionFixture({
-  schema: [
-    {
-      kind: 'field',
-      objectId: STARTER_OBJECT_IDS.company,
-      definition: { universalId: randomUUID(), name: 'reTier', label: 'Tier', type: 'text' },
-    },
-  ],
-});
+const reTier = { universalId: randomUUID(), name: 'reTier', label: 'Tier', type: 'text' as const };
+const reV1 = extensionFixture({ bindings: [ownedTestFields('company', 'Companies', [reTier])] });
 const reV2 = extensionFixture({
   ...reV1,
   version: '2.0.0',
-  schema: [
-    ...reV1.schema,
-    {
-      kind: 'field',
-      objectId: STARTER_OBJECT_IDS.company,
-      definition: { universalId: reFieldId, name: 'reScore', label: 'Score', type: 'number' },
-    },
+  bindings: [
+    ownedTestFields('company', 'Companies', [
+      reTier,
+      { universalId: reFieldId, name: 'reScore', label: 'Score', type: 'number' },
+    ]),
   ],
 });
 
@@ -128,12 +124,10 @@ const tokenV3 = extensionFixture({ ...tokenV1, version: '3.0.0' });
 const projectId = randomUUID(),
   budgetId = randomUUID();
 const addsToProject = extensionFixture({
-  schema: [
-    {
-      kind: 'field',
-      objectId: projectId,
-      definition: { universalId: budgetId, name: 'budget', label: 'Budget', type: 'number' },
-    },
+  bindings: [
+    ownedTestFields('project', 'Projects', [
+      { universalId: budgetId, name: 'budget', label: 'Budget', type: 'number' },
+    ]),
   ],
 });
 
@@ -316,7 +310,7 @@ describe('contributed schema (R6a)', () => {
     ]) {
       const refused = await deleteSchema(h.keys.admin, [operation]);
       expect(refused.status).toBe(422);
-      expect(refused.body.error.details.issues[0].message).toContain(`installation ${h.id}`);
+      expect(refused.body.error.details.issues[0].message).toContain(`Installation ${h.id}`);
     }
     // Renaming stays workspace-local.
     expect(
@@ -374,9 +368,10 @@ describe('contributed schema (R6a)', () => {
         registrationId: addsToProject.universalId,
         version: addsToProject.version,
         settings: {},
+        bindings: { project: { action: 'existing', objects: ['initiative'] } },
       };
       const preview = await t.request('/v1/extensions/preview', { key: w.keys.admin, body: input });
-      expect(preview.status).toBe(200);
+      expect(preview.status, JSON.stringify(preview.body)).toBe(200);
       const [install, remove] = await Promise.all([
         t.request('/v1/extensions', {
           key: w.keys.admin,
@@ -392,10 +387,10 @@ describe('contributed schema (R6a)', () => {
       const [object] =
         await db.owner`select status from object_types where universal_id=${projectId} and workspace_id=${w.workspace}`;
       const fields =
-        await db.owner`select status from fields where universal_id=${budgetId} and workspace_id=${w.workspace}`;
+        await db.owner`select status from fields where universal_id=${deriveUuid(`${projectId}:${budgetId}`)} and workspace_id=${w.workspace}`;
       if (install.status === 201) {
         expect(remove.body.error.details.issues[0].message).toContain(
-          `installation ${install.body.id}`,
+          `Installation ${install.body.id}`,
         );
         expect(object?.status).toBe('active');
         expect(fields.map((f) => f.status)).toEqual(['active']);
@@ -424,35 +419,19 @@ describe('contributed schema (R6a)', () => {
       (await db.owner`select status from object_types where id=${object?.id}`)[0]?.status,
     ).toBe('active');
   });
-  it('treats a contribution deleted before the rule as absent: upgrade and enable still work', async () => {
+  it('reviews a fresh destination if the prior owned object is unavailable', async () => {
     const h = await installManaged();
-    // Simulate a deletion that happened before the schema engine refused it.
     await db.owner`update object_types set status='deprecated' where universal_id=${objectId} and workspace_id=${h.workspace}`;
-    await db.owner`update fields set status='deprecated' where workspace_id=${h.workspace}
-      and object_type_id=(select id from object_types where universal_id=${objectId} and workspace_id=${h.workspace})`;
     const upgrade = { ...h.input, installationId: h.id, version: managedNext.version };
     const preview = await t.request('/v1/extensions/preview', { key: h.keys.admin, body: upgrade });
-    expect(preview.status).toBe(200);
-    expect(preview.body.operations).toEqual([]);
-    expect(preview.body.views.map((v: { universalId: string }) => v.universalId)).toEqual([viewId]);
-    expect(preview.body.warnings.join(' ')).toContain('View Extra is skipped');
-    const upgraded = await t.request(`/v1/extensions/${h.id}/upgrade`, {
-      key: h.keys.admin,
-      body: { ...upgrade, planDigest: preview.body.planDigest },
-      headers: { 'Idempotency-Key': 'legacy-upgrade' },
-    });
-    expect(upgraded.status).toBe(200);
-    expect(upgraded.body.version).toBe('1.1.0');
+    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+    expect(preview.body.bindings.ticket.action).toBe('create');
     expect(
-      await db.owner`select 1 from fields where universal_id=${extraId} and workspace_id=${h.workspace}`,
-    ).toHaveLength(0);
-    await t.request(`/v1/extensions/${h.id}/disable`, { key: h.keys.admin, method: 'POST' });
-    const enabled = await t.request(`/v1/extensions/${h.id}/enable`, {
-      key: h.keys.admin,
-      method: 'POST',
-    });
-    expect(enabled.status).toBe(200);
-    expect(enabled.body.state).toBe('installing');
+      preview.body.views.map((v: { name: string; action: string }) => [v.name, v.action]),
+    ).toEqual([
+      ['Tickets', 'create'],
+      ['Extra', 'create'],
+    ]);
   });
 });
 
@@ -615,7 +594,9 @@ describe('reinstall after the installed release is gone (R6c)', () => {
     expect(reinstalled.body).toMatchObject({ id, version: '2.0.0' });
     const after = await bindings();
     for (const binding of before) expect(after).toContainEqual(binding);
-    expect(after.map((b) => b.universal_id)).toContain(reFieldId);
+    const [score] = await db.owner`select universal_id from fields where name='reScore'
+      and workspace_id=(select workspace_id from extension_installations where id=${id})`;
+    expect(after.map((b) => b.universal_id)).toContain(score?.universal_id);
     // Upgrading an uninstalled installation is still refused.
     await bumped.request(`/v1/extensions/${id}/uninstall`, { key: w.keys.admin, method: 'POST' });
     const upgrade = await bumped.request('/v1/extensions/preview', {

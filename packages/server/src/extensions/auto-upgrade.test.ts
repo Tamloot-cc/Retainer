@@ -31,7 +31,7 @@ const manifest = (overrides: Partial<ExtensionManifest> = {}) =>
     createPeople: 'never',
     onSourceDelete: 'keep',
     settings: {},
-    schema: [],
+
     views: [],
     functions: [fn],
     ...overrides,

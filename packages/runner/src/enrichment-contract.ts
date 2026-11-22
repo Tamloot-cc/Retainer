@@ -163,7 +163,7 @@ export function enrichmentManifest(build: {
           "Only the company's name and website domain are sent, never other record data. Exa keeps queries unless Retainer’s Exa account has Zero Data Retention, which Exa offers on its Enterprise plan.",
       },
     },
-    schema: [],
+
     views: [],
     bindings: [
       {

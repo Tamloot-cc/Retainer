@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { RetainerClient } from '@retainer/sdk';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { deriveUuid } from '../../src/schema-engine/apply.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { extensionFixture } from '../helpers/extensions.js';
+import { extensionFixture, ownedTestObject } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
 const registrationId = randomUUID(),
@@ -13,65 +14,52 @@ const registrationId = randomUUID(),
   fieldId = randomUUID(),
   newFieldId = randomUUID(),
   viewId = randomUUID();
+const managedViewId = deriveUuid(`${viewId}:${objectId}`);
 const title = { universalId: titleId, name: 'name', label: 'Name', type: 'text' as const };
 const status = { universalId: fieldId, name: 'status', label: 'Status', type: 'text' as const };
+const item = {
+  universalId: objectId,
+  nameSingular: 'fixtureItem',
+  namePlural: 'fixtureItems',
+  labelSingular: 'Fixture item',
+  labelPlural: 'Fixture items',
+  labelField: 'name',
+  fields: [title, status],
+};
 const base = extensionFixture({
   requestedActor: 'agent',
   universalId: registrationId,
   settings: {
     enabled: { type: 'boolean', label: 'Enabled', required: true, secret: false, reconnect: false },
   },
-  schema: [
-    {
-      kind: 'object',
-      definition: {
-        universalId: objectId,
-        nameSingular: 'fixtureItem',
-        namePlural: 'fixtureItems',
-        labelSingular: 'Fixture item',
-        labelPlural: 'Fixture items',
-        labelField: 'name',
-        fields: [title, status],
-      },
-    },
-  ],
+  bindings: [ownedTestObject(item)],
   views: [
     {
       universalId: viewId,
-      objectId,
+      binding: 'fixtureItem',
       name: 'Fixture items',
       kind: 'table',
-      fieldIds: [titleId, fieldId],
+      fields: ['name', 'status'],
     },
   ],
 });
 const next = extensionFixture({
   ...base,
   version: '1.1.0',
-  schema: [
-    {
-      kind: 'object',
-      definition: {
-        ...base.schema[0]?.definition,
-        universalId: objectId,
-        nameSingular: 'fixtureItem',
-        namePlural: 'fixtureItems',
-        labelSingular: 'Fixture item',
-        labelPlural: 'Fixture items',
-        labelField: 'name',
-        fields: [
-          title,
-          status,
-          { universalId: newFieldId, name: 'extra', label: 'Extra', type: 'text' },
-        ],
-      },
-    },
+  bindings: [
+    ownedTestObject({
+      ...item,
+      fields: [
+        ...item.fields,
+        { universalId: newFieldId, name: 'extra', label: 'Extra', type: 'text' },
+      ],
+    }),
   ],
 });
 const bad = extensionFixture({
   ...base,
   version: '2.0.0',
-  schema: [{ kind: 'field', objectId, definition: { ...status, type: 'number' } }],
+  bindings: [ownedTestObject({ ...item, fields: [title, { ...status, type: 'number' }] })],
 });
 const grant = extensionFixture({
   ...next,
@@ -82,7 +70,9 @@ const grant = extensionFixture({
 const renamed = extensionFixture({
   ...base,
   version: '4.0.0',
-  schema: [{ kind: 'field', objectId, definition: { ...status, label: 'Publisher status' } }],
+  bindings: [
+    ownedTestObject({ ...item, fields: [title, { ...status, label: 'Publisher status' }] }),
+  ],
 });
 const reviewed = extensionFixture({
   ...base,
@@ -90,19 +80,29 @@ const reviewed = extensionFixture({
   views: [
     {
       universalId: viewId,
-      objectId,
+      binding: 'fixtureItem',
       name: 'Publisher items',
       kind: 'table',
-      fieldIds: [fieldId, titleId],
+      fields: ['status', 'name'],
     },
   ],
 });
 const moved = extensionFixture({
   ...base,
   version: '6.0.0',
-  views: [
-    { universalId: viewId, objectId: randomUUID(), name: 'Moved', kind: 'table', fieldIds: [] },
+  bindings: [
+    ...(base.bindings ?? []),
+    {
+      key: 'company',
+      label: 'Companies',
+      description: 'Target for the view.',
+      class: 'entity',
+      access: 'read',
+      required: true,
+      fields: [],
+    },
   ],
+  views: [{ universalId: viewId, binding: 'company', name: 'Moved', kind: 'table', fields: [] }],
 });
 let t: TestApp;
 beforeAll(() => {
@@ -161,14 +161,21 @@ describe('additive extension upgrades', () => {
     const { sdk, installed, input } = await setup();
     await expect(
       sdk.previewExtension({ ...input, installationId: installed.id, version: '2.0.0' }),
-    ).rejects.toMatchObject({ code: 'upgrade_conflict', details: { properties: ['type'] } });
+    ).rejects.toMatchObject({ code: 'bindings_invalid' });
     await expect(
       sdk.previewExtension({ ...input, installationId: installed.id, version: '3.0.0' }),
     ).rejects.toMatchObject({ code: 'grant_required' });
-    // A view cannot move to another object: that needs a new view identity.
-    await expect(
-      sdk.previewExtension({ ...input, installationId: installed.id, version: '6.0.0' }),
-    ).rejects.toMatchObject({ code: 'upgrade_conflict' });
+    const moving = await sdk.previewExtension({
+      ...input,
+      installationId: installed.id,
+      version: '6.0.0',
+    });
+    expect(moving.views).toEqual([
+      expect.objectContaining({
+        universalId: expect.not.stringMatching(managedViewId),
+        action: 'create',
+      }),
+    ]);
     expect((await sdk.extension(installed.id)).version).toBe('1.0.0');
   });
   it('keeps a workspace label over a publisher label change and updates only the base', async () => {
@@ -187,7 +194,7 @@ describe('additive extension upgrades', () => {
     expect(object?.fields.find((f) => f.name === 'status')?.label).toBe('Our status');
     const [base] = await db.owner<{ definition: { label: string } }[]>`
       select definition from extension_contributions
-      where installation_id = ${installed.id} and universal_id = ${fieldId}`;
+      where installation_id = ${installed.id} and universal_id = ${deriveUuid(`${objectId}:${fieldId}`)}`;
     expect(base?.definition.label).toBe('Publisher status');
     expect((await sdk.extension(installed.id)).version).toBe('4.0.0');
   });
@@ -198,7 +205,7 @@ describe('additive extension upgrades', () => {
     const upgrade = { ...input, installationId: installed.id, version: '5.0.0' };
     const plan = await sdk.previewExtension(upgrade);
     expect(plan.views).toEqual([
-      { universalId: viewId, name: 'Publisher items', action: 'update' },
+      { universalId: managedViewId, name: 'Publisher items', action: 'update' },
     ]);
     await sdk.upgradeExtension(installed.id, { ...upgrade, planDigest: plan.planDigest }, 'view');
     const saved = await sdk.view(view.elementId);
@@ -213,7 +220,7 @@ describe('additive extension upgrades', () => {
     const upgrade = { ...input, installationId: installed.id, version: '5.0.0' };
     const plan = await sdk.previewExtension(upgrade);
     expect(plan.views).toEqual([
-      { universalId: viewId, name: 'Publisher items', action: 'keep_workspace' },
+      { universalId: managedViewId, name: 'Publisher items', action: 'keep_workspace' },
     ]);
     expect(plan.warnings).toEqual(
       expect.arrayContaining([
@@ -234,7 +241,7 @@ describe('additive extension upgrades', () => {
     const upgrade = { ...input, installationId: installed.id, version: '5.0.0' };
     const plan = await sdk.previewExtension(upgrade);
     expect(plan.views).toEqual([
-      { universalId: viewId, name: 'Publisher items', action: 'deleted_workspace' },
+      { universalId: managedViewId, name: 'Publisher items', action: 'deleted_workspace' },
     ]);
     expect(plan.warnings).toEqual(
       expect.arrayContaining([
@@ -244,7 +251,7 @@ describe('additive extension upgrades', () => {
     await sdk.upgradeExtension(installed.id, { ...upgrade, planDigest: plan.planDigest }, 'gone');
     const [row] = await db.owner<{ definition: { name: string } }[]>`
       select definition from extension_contributions
-      where installation_id = ${installed.id} and universal_id = ${viewId}`;
+      where installation_id = ${installed.id} and universal_id = ${managedViewId}`;
     expect(row?.definition.name).toBe('Fixture items');
     const [count] = await db.owner<{ n: number }[]>`
       select count(*)::int as n from views
@@ -341,7 +348,7 @@ describe('additive extension upgrades', () => {
       ),
     ).rejects.toMatchObject({ code: 'stale_plan' });
   });
-  it('updates publisher labels when unmodified, retains omitted schema and deprecated fields', async () => {
+  it('updates publisher labels when unmodified and protects the bound field', async () => {
     const { sdk, installed, input } = await setup();
     const upgrade = { ...input, installationId: installed.id, version: '4.0.0' };
     const plan = await sdk.previewExtension(upgrade);
@@ -353,19 +360,6 @@ describe('additive extension upgrades', () => {
     await expect(
       sdk.proposeSchemaChange([{ op: 'delete_field', object: 'fixtureItem', field: 'status' }]),
     ).rejects.toMatchObject({ code: 'schema_invalid' });
-    // A field deleted before that rule (simulated here) stays deprecated; a
-    // same-release preview never reactivates it.
-    await db.owner`update fields set status='deprecated' where universal_id=${fieldId}
-      and workspace_id=(select workspace_id from extension_installations where id=${installed.id})`;
-    const again = await sdk.previewExtension(upgrade);
-    await sdk.upgradeExtension(
-      installed.id,
-      { ...upgrade, planDigest: again.planDigest },
-      'deprecated',
-    );
-    const [field] =
-      await db.owner`select status from fields where universal_id=${fieldId} and workspace_id=(select workspace_id from extension_installations where id=${installed.id})`;
-    expect(field?.status).toBe('deprecated');
   });
   it('serializes settings CAS, invalidates a preview, and forbids agent mutations', async () => {
     const { sdk, installed, input, keys } = await setup();

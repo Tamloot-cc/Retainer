@@ -224,7 +224,7 @@ export function granolaManifest(build: {
         optional: true,
       },
     ],
-    schema: [],
+
     bindings: [
       {
         key: 'meeting',

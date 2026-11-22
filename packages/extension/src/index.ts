@@ -81,11 +81,6 @@ const object = z.strictObject({
   labelField: name.optional(),
   fields: z.array(field).max(200),
 });
-export const contributionSchema = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('object'), definition: object }),
-  z.strictObject({ kind: z.literal('field'), objectId: uuid, definition: field }),
-]);
-
 // A deliberately small JSON Schema subset. No refs, arbitrary keywords or executable defaults.
 export type InputSchema = {
   type: 'object' | 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'null';
@@ -278,11 +273,12 @@ export type BindingWriteStamp = z.infer<typeof bindingWriteStampSchema>;
 export type { ExtensionBindingPlan } from './protocol.js';
 
 const viewDefinition = z.strictObject({ universalId: uuid, name: label, kind: z.literal('table') });
-export const viewSchema = z.union([
-  viewDefinition.extend({ binding: bindingKeySchema, fields: z.array(bindingKeySchema).max(200) }),
-  viewDefinition.extend({ objectId: uuid, fieldIds: z.array(uuid).max(200) }),
-]);
-export const manifestSchema = z.strictObject({
+export const viewSchema = viewDefinition.extend({
+  binding: bindingKeySchema,
+  fields: z.array(bindingKeySchema).max(200),
+});
+
+const manifestSchema = z.strictObject({
   manifestVersion: z.literal(1),
   universalId: uuid,
   name,
@@ -393,7 +389,6 @@ export const manifestSchema = z.strictObject({
     }),
   ),
   bindings: z.array(bindingSchema).max(100).optional(),
-  schema: z.array(contributionSchema).max(500),
   views: z.array(viewSchema).max(100),
   functions: z.array(functionSchema).max(100),
   /**
@@ -421,7 +416,6 @@ export const manifestSchema = z.strictObject({
     .optional(),
 });
 export type ExtensionManifest = z.infer<typeof manifestSchema>;
-export type SchemaContribution = z.infer<typeof contributionSchema>;
 
 /** Bound traversal before recursive parsing (including objects received directly by build tools). */
 function bounded(value: unknown, depth = 0, seen = new Set<object>()): void {
@@ -515,7 +509,6 @@ function checkBindings(manifest: ExtensionManifest): void {
   }
   if (keys.size !== bindings.length) throw new Error('unsupported_manifest: duplicate binding key');
   for (const view of manifest.views) {
-    if (!('binding' in view)) continue;
     const binding = byKey.get(view.binding);
     if (
       !binding ||
@@ -759,11 +752,11 @@ export function defineExtension(value: unknown): ExtensionManifest {
     manifest.universalId,
     ...manifest.functions.map((f) => f.universalId),
     ...manifest.views.map((v) => v.universalId),
-    ...manifest.schema.flatMap((s) =>
-      s.kind === 'object'
-        ? [s.definition.universalId, ...s.definition.fields.map((f) => f.universalId)]
-        : [s.definition.universalId],
-    ),
+    ...(manifest.bindings ?? []).flatMap((binding) => [
+      ...(binding.create ? [binding.create.universalId] : []),
+      ...binding.fields.flatMap((field) => (field.create ? [field.create.universalId] : [])),
+      ...(binding.create?.fields.map((field) => field.universalId) ?? []),
+    ]),
   ];
   if (manifest.functions.some((fn) => fn.universalId === SYSTEM_LIFECYCLE_FUNCTION_ID))
     throw new Error('unsupported_manifest: reserved lifecycle function ID');
@@ -970,8 +963,6 @@ export function defineExtension(value: unknown): ExtensionManifest {
     }
   }
   for (const view of manifest.views) {
-    if ('fieldIds' in view && new Set(view.fieldIds).size !== view.fieldIds.length)
-      throw new Error('unsupported_manifest: duplicate view field');
   }
   checkBoundWrites(manifest);
   return manifest;

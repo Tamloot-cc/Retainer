@@ -15,7 +15,7 @@ import {
   runsHostedCode,
   SIDEBAR_INSTALLATION_PARAM,
 } from '@retainer/extension';
-import { type Actor, HIDDEN_TYPE_IDS } from '@retainer/shared';
+import type { Actor } from '@retainer/shared';
 import { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
 import type { Sql } from '../db/client.js';
@@ -64,11 +64,6 @@ import { holdReason, releaseContract, type UpgradeTarget, upgradeTargets } from 
 import { bindingChoicesFromPlan, resolveBindingPlan } from './bindings.js';
 import { ExtensionCatalog, hash } from './catalog.js';
 import { MemberConnections, ownerId } from './connections.js';
-import {
-  type ContributionRow,
-  contributionOperations,
-  retiredContributions,
-} from './contributions.js';
 import { connectionMethods, type ExtensionOAuthClients } from './oauth-clients.js';
 import { getSuggestions } from './suggestions.js';
 import { installationMonthUsage } from './usage.js';
@@ -649,7 +644,6 @@ export class Extensions {
         operations: [],
         existing,
         draftId,
-        retired: new Set<string>(),
         bound: undefined,
         replan: false,
         views: [],
@@ -659,25 +653,14 @@ export class Extensions {
     }
     const owned = existing
       ? await tx<
-          ContributionRow[]
+          {
+            kind: string;
+            universal_id: string;
+            element_id: string;
+            definition: Record<string, unknown>;
+          }[]
         >`select kind, universal_id, element_id, definition from extension_contributions where installation_id = ${existing.id}`
       : [];
-    const owns = (kind: string, id: string) =>
-      owned.some((o) => o.kind === kind && o.universal_id === id);
-    const targets = [
-      ...manifest.schema.map((c) => (c.kind === 'object' ? c.definition.universalId : c.objectId)),
-      ...manifest.views.flatMap((v) => ('objectId' in v ? [v.objectId] : [])),
-    ];
-    const relationTargets = manifest.schema.flatMap((c) =>
-      (c.kind === 'object' ? c.definition.fields : [c.definition]).flatMap((f) =>
-        [f.settings?.targetObject, ...(f.settings?.targetObjects ?? [])].filter(
-          (id): id is string => !!id,
-        ),
-      ),
-    );
-    if ([...targets, ...relationTargets].some((id) => HIDDEN_TYPE_IDS.has(id)))
-      throw conflict('schema_binding_conflict', 'extensions cannot target internal memory types');
-    const contributed = contributionOperations(current, manifest, owned);
     const fresh = !existing || ['configuring', 'uninstalled'].includes(existing.state);
     if (input.bindings && !manifest.bindings)
       throw new AppError(422, 'bindings_invalid', 'This release has no bindings to review.');
@@ -711,12 +694,10 @@ export class Extensions {
     const bound = manifest.bindings
       ? resolveBindingPlan(current, manifest, choices, existing?.bindings, people)
       : undefined;
-    const operations = [...contributed.operations, ...(bound?.operations ?? [])];
-    const notices = contributed.notices;
+    const operations = bound?.operations ?? [];
+    const notices = bound?.notices ?? [];
     const planned = planSchemaChange(current, operations, 'workspace');
-    const retired = retiredContributions(current, manifest, owned);
     const views = manifest.views.flatMap((view) => {
-      if ('objectId' in view) return [view];
       const destination = bound?.plan.destinations[view.binding];
       const objectId = destination?.objects[0];
       if (!objectId) return [];
@@ -730,14 +711,9 @@ export class Extensions {
         },
       ];
     });
-    const skippedViews = views.filter(
-      (v) =>
-        !owns('view', v.universalId) && [v.objectId, ...v.fieldIds].some((id) => retired.has(id)),
-    );
     const viewActions = new Map<string, ExtensionPreview['views'][number]['action']>();
     const viewNotices: string[] = [];
     for (const view of views) {
-      if (skippedViews.includes(view)) continue;
       const [manager] = await tx<
         { installation_id: string }[]
       >`select installation_id from extension_contributions
@@ -779,13 +755,6 @@ export class Extensions {
           viewActions.set(view.universalId, 'keep_workspace');
           viewNotices.push(
             `View ${view.name} keeps the version edited in this workspace; this release's changes to it are not applied.`,
-          );
-          continue;
-        }
-        if (view.fieldIds.some((id) => retired.has(id))) {
-          viewActions.set(view.universalId, 'retain');
-          viewNotices.push(
-            `View ${view.name} keeps its current columns: this release adds fields that were deleted.`,
           );
           continue;
         }
@@ -841,13 +810,11 @@ export class Extensions {
       generation,
       releaseDigest: release.digest,
       operations: planned.ops,
-      views: views
-        .filter((view) => !skippedViews.includes(view))
-        .map((view) => ({
-          universalId: view.universalId,
-          name: view.name,
-          action: viewActions.get(view.universalId) ?? 'retain',
-        })),
+      views: views.map((view) => ({
+        universalId: view.universalId,
+        name: view.name,
+        action: viewActions.get(view.universalId) ?? 'retain',
+      })),
       grants: {
         actor: manifest.requestedActor,
         scopes: manifest.scopes,
@@ -864,9 +831,6 @@ export class Extensions {
         : {}),
       ...(bound ? { bindings: bound.review } : {}),
       warnings: [
-        ...skippedViews.map(
-          (view) => `View ${view.name} is skipped: its object or fields were deleted.`,
-        ),
         // Shown wherever model use is newly granted: a release without
         // configure grants it here, in its single approval.
         ...(uses.includes('model') &&
@@ -919,7 +883,6 @@ export class Extensions {
       operations,
       existing,
       draftId,
-      retired,
       bound,
       replan,
       views,
@@ -1104,6 +1067,16 @@ export class Extensions {
           await tx`delete from extension_contributions where installation_id = ${plan.existing.id}
             and kind in ('object', 'field') and universal_id = any(${released}::uuid[])`;
       }
+      const retainedViews = new Set(plan.views.map((view) => view.universalId));
+      const releasedViews = (previous?.views ?? []).flatMap((view) => {
+        const id = old.destinations[view.binding]?.objects[0];
+        if (!id) return [];
+        const universalId = deriveUuid(`${view.universalId}:${id}`);
+        return retainedViews.has(universalId) ? [] : [universalId];
+      });
+      if (releasedViews.length)
+        await tx`delete from extension_contributions where installation_id = ${plan.existing.id}
+          and kind = 'view' and universal_id = any(${releasedViews}::uuid[])`;
     }
     const result = await runSchemaChange(tx, {
       workspaceId: caller.workspaceId,
@@ -1124,7 +1097,7 @@ export class Extensions {
     const preservedJobs = [];
     const starts: Record<string, string> = {};
     let dispatchAfter: string | undefined;
-    if (plan.replan && plan.bound) {
+    if (plan.bound) {
       const old = plan.existing?.bindings;
       const installed =
         plan.existing &&
@@ -1277,27 +1250,6 @@ export class Extensions {
       if (!element?.id)
         throw conflict('binding_unavailable', 'A new binding destination is missing.');
       await save(contribution.kind, contribution.id, element.id, contribution.definition);
-    }
-    for (const c of manifest.schema) {
-      const element =
-        c.kind === 'object'
-          ? schema.objects.find((o) => o.universalId === c.definition.universalId)
-          : schema.objects
-              .flatMap((o) => o.fields)
-              .find((f) => f.universalId === c.definition.universalId);
-      if (!element?.id && plan.retired.has(c.definition.universalId)) continue;
-      if (!element?.id)
-        throw conflict('schema_binding_conflict', 'contribution missing after apply');
-      await save(c.kind, c.definition.universalId, element.id, c.definition);
-      if (c.kind === 'object') {
-        const object = schema.objects.find((o) => o.id === element.id);
-        for (const f of c.definition.fields) {
-          const field = object?.fields.find((v) => v.universalId === f.universalId);
-          if (!field?.id && plan.retired.has(f.universalId)) continue;
-          if (!field?.id) throw conflict('schema_binding_conflict', 'contributed field missing');
-          await save('field', f.universalId, field.id, f);
-        }
-      }
     }
     for (const view of plan.views) {
       const action = plan.preview.views.find((v) => v.universalId === view.universalId)?.action;

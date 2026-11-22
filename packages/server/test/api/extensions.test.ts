@@ -3,9 +3,9 @@ import { defineExtension } from '@retainer/extension';
 import { RetainerClient } from '@retainer/sdk';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
-import { STARTER_OBJECT_IDS } from '../../src/templates/base.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
+import { ownedTestFields } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
 const registrationId = randomUUID(),
@@ -28,25 +28,18 @@ const manifest = defineExtension({
   createPeople: 'never',
   onSourceDelete: 'keep',
   settings: { enabled: { type: 'boolean', label: 'Enabled', required: true } },
-  schema: [
-    {
-      kind: 'field',
-      objectId: STARTER_OBJECT_IDS.company,
-      definition: {
-        universalId: fieldId,
-        name: 'fixtureStatus',
-        label: 'Fixture status',
-        type: 'text',
-      },
-    },
+  bindings: [
+    ownedTestFields('company', 'Companies', [
+      { universalId: fieldId, name: 'fixtureStatus', label: 'Fixture status', type: 'text' },
+    ]),
   ],
   views: [
     {
       universalId: viewId,
-      objectId: STARTER_OBJECT_IDS.company,
+      binding: 'company',
       name: 'Fixture companies',
       kind: 'table',
-      fieldIds: [fieldId],
+      fields: ['fixtureStatus'],
     },
   ],
   functions: [],
@@ -227,7 +220,7 @@ describe('inert extension control with real RLS Postgres', () => {
     // The same plan and receipt can succeed after the fault is fixed.
     expect((await install(p.body.planDigest, isolated.keys.admin, 'fault')).status).toBe(201);
   });
-  it('keeps a deprecated field deprecated on reinstall, and disable cannot undo uninstall', async () => {
+  it('replaces a deleted owned field on reinstall, and disable cannot undo uninstall', async () => {
     expect(
       (await t.request(`/v1/extensions/${id}/uninstall`, { key: keys.admin, method: 'POST' }))
         .status,
@@ -247,10 +240,11 @@ describe('inert extension control with real RLS Postgres', () => {
     const p = await preview();
     expect(p.status).toBe(200);
     expect((await install(p.body.planDigest, keys.admin, 'deprecated-reinstall')).status).toBe(201);
-    const [field] = await db.owner`select status from fields where universal_id = ${fieldId}
-      and object_type_id in (select id from object_types where workspace_id =
-        (select workspace_id from extension_installations where id = ${id}))`;
-    expect(field?.status).toBe('deprecated');
+    const fields =
+      await db.owner`select f.status from fields f join object_types o on o.id=f.object_type_id
+      where f.name='fixtureStatus' and o.workspace_id=(select workspace_id from extension_installations where id=${id})
+      order by f.status`;
+    expect(fields.map((field) => field.status)).toEqual(['active', 'deprecated']);
   });
   it('supports the SDK preview, approval receipt, read and retention flow', async () => {
     const workspace = await t.setupWorkspace(
@@ -291,7 +285,8 @@ describe('explicit source sharing and settings choices', () => {
     const safe = defineExtension({
       ...manifest,
       universalId: randomUUID(),
-      schema: [],
+
+      bindings: [],
       views: [],
       settings: {
         share: {

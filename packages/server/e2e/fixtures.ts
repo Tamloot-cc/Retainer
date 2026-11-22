@@ -16,10 +16,12 @@ import { RunTokens } from '../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../src/extensions/catalog.js';
 import { parseOAuthClients } from '../src/extensions/oauth-clients.js';
 import { createFileServer, LocalFileStorage } from '../src/file-storage/local.js';
-import { STARTER_OBJECT_IDS } from '../src/templates/base.js';
 import { consolidateWorkspace } from '../src/worker/consolidate.js';
 import { createWorkspace } from '../src/workspaces/workspaces.js';
-import { extensionFixture as manifestFixture } from '../test/helpers/extensions.js';
+import {
+  extensionFixture as manifestFixture,
+  ownedTestFields,
+} from '../test/helpers/extensions.js';
 import { sourceManifest } from './source-fixture.js';
 export const browserExtensionManifest = manifestFixture({
   universalId: 'e0548bb1-47fd-4de8-8edc-759e26a61e36',
@@ -42,17 +44,15 @@ export const browserExtensionManifest = manifestFixture({
       reconnect: true,
     },
   },
-  schema: [
-    {
-      kind: 'field',
-      objectId: STARTER_OBJECT_IDS.company,
-      definition: {
+  bindings: [
+    ownedTestFields('company', 'Companies', [
+      {
         universalId: '2384b956-709d-4edc-8aab-807c51027565',
         name: 'fixtureStatus',
         label: 'Fixture status',
         type: 'text',
       },
-    },
+    ]),
   ],
 });
 export const browserStandaloneManifest = manifestFixture({
@@ -61,7 +61,7 @@ export const browserStandaloneManifest = manifestFixture({
   execution: 'standalone',
   scopes: ['read', 'write'],
 });
-/** A hosted release with an output mapping onto the base company object. */
+/** A hosted release that binds to company fields. */
 export const browserMappingManifest = manifestFixture({
   universalId: 'c3b4d6e2-6a53-4b8c-9f1e-2d7a8b9c0e14',
   name: 'browser-enrichment',

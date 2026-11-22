@@ -332,7 +332,7 @@ export function tamlootManifest(build: {
         },
       },
     ],
-    schema: [],
+
     views: [],
     functions: [
       fn(TAMLOOT.connect, 'connect', { kind: 'connect' }, empty, [key, verifier, code, tokens]),

@@ -33,7 +33,6 @@ const release: Release = {
     connection: 'workspace',
     createPeople: 'never',
     onSourceDelete: 'keep',
-    schema: [],
     views: [],
     functions: [],
     settings: {

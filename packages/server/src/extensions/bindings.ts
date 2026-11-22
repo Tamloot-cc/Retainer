@@ -117,6 +117,26 @@ const bindingError = (issues: BindingIssue[]) =>
     bindings: issues,
   });
 
+function publisherPresentation<T extends string>(
+  keys: readonly T[],
+  before: Partial<Record<T, string>>,
+  next: Partial<Record<T, string>>,
+  live: Partial<Record<T, string | null>>,
+  element: string,
+  notices: string[],
+): Partial<Record<T, string>> {
+  const changes: Partial<Record<T, string>> = {};
+  for (const key of keys) {
+    if (before[key] === next[key] || live[key] === next[key] || next[key] === undefined) continue;
+    if ((live[key] ?? '') === (before[key] ?? '')) changes[key] = next[key];
+    else {
+      const attribute = key === 'description' ? 'description' : 'label';
+      notices.push(`${element} keeps the ${attribute} set in this workspace.`);
+    }
+  }
+  return changes;
+}
+
 export function resolveBindingPlan(
   state: SchemaState,
   manifest: ExtensionManifest,
@@ -126,7 +146,7 @@ export function resolveBindingPlan(
 ) {
   const declarations = manifest.bindings ?? [];
   const plan: StoredBindingPlan = {
-    extension: titleCase(manifest.name),
+    extension: titleCase(manifest.name.replaceAll('-', ' ')),
     declarations,
     createPeople,
     destinations: {},
@@ -137,6 +157,7 @@ export function resolveBindingPlan(
   const relations: SchemaOperation[] = [];
   const contributions: { kind: 'object' | 'field'; id: string; definition: unknown }[] = [];
   const issues: BindingIssue[] = [];
+  const notices: string[] = [];
   const usedIds = new Set(
     state.objects.flatMap((object) => [
       object.universalId,
@@ -256,6 +277,27 @@ export function resolveBindingPlan(
     const [objectId] = destination.objects;
     if (!objectId) continue;
     const object = state.objects.find((entry) => entry.universalId === objectId);
+    const priorDeclaration = prior?.declarations.find((entry) => entry.key === key);
+    if (
+      object &&
+      declaration.owned &&
+      priorDeclaration?.create &&
+      declaration.create &&
+      prior?.destinations[key]?.objects.includes(objectId)
+    ) {
+      const next = declaration.create;
+      const changes = publisherPresentation(
+        ['labelSingular', 'labelPlural', 'description'],
+        priorDeclaration.create,
+        next,
+        object,
+        `Object ${object.nameSingular}`,
+        notices,
+      );
+      if (Object.keys(changes).length)
+        edits.push({ op: 'update_object', object: objectId, ...changes });
+      contributions.push({ kind: 'object', id: objectId, definition: next });
+    }
     const creation = created.get(key);
     const creating = createsRecords(declaration, createPeople);
     const supplied = new Set<string>();
@@ -331,6 +373,25 @@ export function resolveBindingPlan(
       destination.fields[rule.key] = { id: fieldId, values };
       if (rule.required && !rule.lookup) supplied.add(fieldId);
       if (target) {
+        const previous = priorDeclaration?.fields.find((field) => field.key === rule.key)?.create;
+        if (
+          previous &&
+          suggestion &&
+          (rule.owned || declaration.owned) &&
+          prior?.destinations[key]?.fields[rule.key]?.id === target.universalId
+        ) {
+          const changes = publisherPresentation(
+            ['label', 'description'],
+            previous,
+            suggestion,
+            target,
+            `Field ${target.name}`,
+            notices,
+          );
+          if (Object.keys(changes).length)
+            edits.push({ op: 'update_field', object: objectId, field: fieldId, ...changes });
+          contributions.push({ kind: 'field', id: fieldId, definition: suggestion });
+        }
         if (unique && !target.isUnique)
           edits.push({ op: 'update_field', object: objectId, field: fieldId, isUnique: true });
       } else if (suggestion) {
@@ -405,5 +466,5 @@ export function resolveBindingPlan(
   }
   const unmet = validateBindingPlan(desired, plan);
   if (unmet.length) throw bindingError(unmet);
-  return { plan, operations, review, contributions };
+  return { plan, operations, review, contributions, notices };
 }

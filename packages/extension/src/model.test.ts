@@ -19,7 +19,7 @@ const fixture = () => ({
   createPeople: 'never',
   onSourceDelete: 'keep',
   settings: { enabled: { type: 'boolean', label: 'Enabled', required: true } },
-  schema: [],
+
   views: [],
   functions: [],
 });
