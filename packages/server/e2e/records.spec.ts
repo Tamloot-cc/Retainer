@@ -370,11 +370,11 @@ test('warns before a delete that cascades to linked records', async ({ page, ret
   await expect(page.getByRole('heading', { name: 'Companies', exact: true })).toBeVisible();
 });
 
-test('shows Tasks only on types a task relation can point at', async ({ page, retainer: r }) => {
+test('shows Linked even on an entity with no relations', async ({ page, retainer: r }) => {
   await r.request(
     '/schema/changes',
     {
-      reason: 'Something tasks cannot point at',
+      reason: 'An object without relations',
       operations: [
         {
           op: 'create_object',
@@ -393,15 +393,16 @@ test('shows Tasks only on types a task relation can point at', async ({ page, re
   );
   const site = (await r.request('/objects/site/records', { values: { name: 'Haifa' } })).record;
   await signIn(page, r.url, r.keys.user);
-  await page.goto(`${r.url}/app/r/${site.id}?tab=tasks`);
+  await page.goto(`${r.url}/app/r/${site.id}?tab=linked`);
   const sections = page.getByRole('navigation', { name: 'Sections' });
   await expect(sections.getByRole('button')).toHaveText([
     'Comments',
     'Facts',
     'Activity',
     'History',
+    'Linked',
   ]);
-  await expect(page.getByText('No facts yet')).toBeVisible();
+  await expect(page.getByText('No linked records')).toBeVisible();
 });
 
 test('the record sheet keeps long text inside it, and its tabs still as they change', async ({
@@ -446,7 +447,7 @@ test('the record sheet keeps long text inside it, and its tabs still as they cha
       el.scrollTop = el.scrollHeight;
     });
     const stuck = (await place()).top;
-    for (const tab of [/^Comments/, /^Facts/, 'History', /^Tasks/, 'Activity']) {
+    for (const tab of [/^Comments/, /^Facts/, 'History', /^Linked/, 'Activity']) {
       await nav.getByRole('button', { name: tab }).click();
       await page.waitForLoadState('networkidle');
       const now = await place();
@@ -512,49 +513,47 @@ test('shows API names, IDs, write paths and JSON in developer view, remembered p
   await expect(page.getByText('upsert_record')).toHaveCount(0);
 });
 
-test('tasks on a record: not done by default, filtered by status, done ones set apart', async ({
+test('Linked groups pages by object and agrees with context and the tab count', async ({
   page,
   retainer: r,
 }) => {
   const acme = (await r.request('/objects/company/records', { values: { name: 'Acme' } })).record;
+  await r.request('/objects/person/records', { values: { name: 'Dana', company: acme.id } });
   const add = (title: string, status: string) =>
     r.request('/objects/task/records', { values: { title, status, company: acme.id } });
-  await add('Send deck', 'todo');
-  await add('Draft contract', 'in_progress');
   await add('Book room', 'done');
+  await add('Send deck', 'todo');
+  const pack = await r.request(`/records/${acme.id}/context`);
+  expect(
+    pack.linkedRecords.map((group: { object: string; total: number }) => [
+      group.object,
+      group.total,
+    ]),
+  ).toEqual([
+    ['task', 2],
+    ['person', 1],
+  ]);
 
+  // Use smaller real pages to exercise the second request with a compact fixture.
+  await page.route('**/v1/records/*/linked*', async (route) => {
+    const url = new URL(route.request().url());
+    url.searchParams.set('limit', '2');
+    await route.continue({ url: url.toString() });
+  });
   await signIn(page, r.url, r.keys.user);
-  await page.goto(`${r.url}/app/r/${acme.id}?tab=tasks`);
+  await page.goto(`${r.url}/app/r/${acme.id}?tab=linked`);
   const tasks = page.getByRole('list', { name: 'Tasks' });
   await expect(tasks.getByRole('listitem')).toHaveCount(2);
-  await expect(tasks).toContainText('Send deck');
-  await expect(tasks).toContainText('Draft contract');
-  await expect(tasks).not.toContainText('Book room');
-  // The tab counts what is not done, whichever statuses are shown.
-  await expect(page.getByRole('button', { name: /^Tasks/ })).toContainText('2');
-
-  // Down to one status, then done ones as well.
-  await page.getByRole('button', { name: /^Status/ }).click();
-  await page.getByRole('option', { name: 'To do' }).click();
-  await expect(tasks.getByRole('listitem')).toHaveCount(1);
-  await expect(tasks).toContainText('Draft contract');
-  await expect(page).toHaveURL(/tasks=in_progress/);
-  await page.getByRole('option', { name: 'Done' }).click();
-  await expect(tasks.getByRole('listitem')).toHaveCount(2);
-  await page.keyboard.press('Escape');
-  await expect(tasks.getByRole('link', { name: 'Book room' })).toHaveCSS(
-    'text-decoration-line',
-    'line-through',
-  );
-  await expect(tasks.getByRole('link', { name: 'Draft contract' })).not.toHaveCSS(
-    'text-decoration-line',
-    'line-through',
-  );
-
-  // None chosen means all of them.
-  await page.goto(`${r.url}/app/r/${acme.id}?tab=tasks&tasks=all`);
-  await expect(tasks.getByRole('listitem')).toHaveCount(3);
-  await page.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(tasks.getByRole('link', { name: 'Book room' })).toBeVisible();
+  await expect(tasks.getByText('Done', { exact: true })).toBeVisible();
+  await expect(tasks.getByText('Via Company on the linked record', { exact: true })).toHaveCount(2);
+  await expect(tasks.getByText('company', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Linked/ })).toContainText('3');
+  await expect(page.getByRole('list', { name: 'People' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Load more' }).click();
+  await expect(
+    page.getByRole('list', { name: 'People' }).getByRole('link', { name: 'Dana' }),
+  ).toBeVisible();
   await expect(tasks.getByRole('listitem')).toHaveCount(2);
 
   // An address saved when History was called Timeline still opens it.

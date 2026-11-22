@@ -531,18 +531,15 @@ Three areas:
   inverse (one-to-many) field renders as a short list of linked records with
   a link to the filtered object list.
 - **Tabs** (`MemoryTabs`), the same on the record page, the event page and
-  the side sheet. An entity has Comments, Facts, Activity, History and, only
-  when a relation field on the `task` object can point at its type, Tasks.
-  An event has Comments, Claims and History: an event has no activity
-  of its own, and no tasks. `remember` can still store a fact on an event, so
-  one that has some also shows Facts. A record opens on Comments when it has
+  the side sheet. An entity has Comments, Facts, Activity, History and Linked.
+  An event has Comments, Claims and History. It also shows Facts when
+  `remember` has stored a fact on it. A record opens on Comments when it has
   any and an entity otherwise opens on Facts; an event opens on Comments.
   That is chosen once per visit, so deleting the last comment moves nobody.
-  Comments, Facts, Claims and Tasks show a count from
-  `GET /v1/records/:id?include=counts` when above zero; for Tasks it counts those
-  not done. Activity and History don't, since they fan out. An info button at the end of the row explains
-  the current tab in plain words, in a tooltip; it stays in view when the row
-  scrolls.
+  Comments, Facts, Claims and Linked show a count from
+  `GET /v1/records/:id?include=counts` when above zero. An info button at the
+  end of the row explains the current tab in a tooltip and stays in view
+  while the row scrolls.
   - _Comments_: `GET /v1/records/:id/comments`. Oldest first, as a
     conversation reads, with "Load earlier comments" above and the box below.
     Author, time, "edited", text with its line breaks. Enter adds a line and
@@ -567,14 +564,12 @@ Three areas:
     not repeated here. Filtered by field, kept in the URL (`fields`); a stale
     cursor offers to start again. An address with the old `?tab=timeline`
     opens History.
-  - _Tasks_: tasks linked to the record. A status menu, built from the status
-    field's options since a workspace can add, rename and remove all but
-    `done`, shows every task that is not done by default, and any statuses
-    chosen, kept in the URL (`tasks`: a comma list, or `all` when none is
-    chosen). Done tasks have a checked circle and a struck-through, muted
-    title; the rest have an empty circle. Soonest due first, or latest due
-    first when showing only done tasks. Each row has its status and due date
-    read through their role fields, so a rename keeps working.
+  - _Linked_ (`?tab=linked`): `GET /v1/records/:id/linked`, grouped by
+    object, with the total shown for each group. Each row links to the
+    record and shows its select values and the label of the relation field that
+    connects it, with the record that owns the field. Developer view also
+    shows the field API name. Load more
+    appends the next page to the same groups.
   - _Claims_ (events): `GET /v1/events/:id/claims?own=false`. Values on
     records and facts that cite the event, not the values it logged itself.
 

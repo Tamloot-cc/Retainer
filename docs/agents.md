@@ -303,7 +303,7 @@ Things worth knowing:
   and shows its user. A later sync logs the moved sources as `conversation`
   with the same medium, and they match the moved events.
 - **Reading back.** `get_context` gives the current values (with who wrote
-  each), open tasks, current facts and recent events, rolled-up ones
+  each), linked records grouped by object, current facts and recent events, rolled-up ones
   included (each saying how it is attached, `via`), within
   `tokenBudget` tokens (default 2000, at most 16000). `omitted` counts what
   did not fit.

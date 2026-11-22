@@ -200,8 +200,9 @@ export function registerReadTools(server: McpServer, sql: Sql, caller: Caller): 
       title: 'Get context for a record',
       description:
         'Returns what Retainer knows about one record, fitted to a token budget: its current ' +
-        'field values (each with who wrote it and when it was observed), then open tasks ' +
-        '(earliest due first), current facts and recent events (newest first, including ' +
+        'field values (each with who wrote it and when it was observed), linkedRecords ' +
+        '(grouped by object, with relation fields and their owning side, select values and totals), ' +
+        'current facts and recent events (newest first, including ' +
         'those rolled up one hop from records pointing at it), each event saying how it is ' +
         'attached (via). Field ' +
         'values are what the CRM holds; facts are plain-language claims with their sources. ' +

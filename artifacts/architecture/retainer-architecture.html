@@ -700,7 +700,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
       <div class="card"><span class="q">query_records</span><p>Filter, sort, page one object; <code>event</code> for every event type at once.</p></div>
       <div class="card"><span class="q">get_record</span><p>One record with links; an event with participants and <code>about</code>; newest comments.</p></div>
       <div class="card"><span class="q">search</span><p>Keywords across records, events and facts. Postgres full-text only.</p></div>
-      <div class="card"><span class="q">get_context</span><p>A pack fitted to a token budget: fields, open tasks, facts, recent events.</p></div>
+      <div class="card"><span class="q">get_context</span><p>A pack fitted to a token budget: fields, linked records, facts, recent events.</p></div>
       <div class="card"><span class="q">get_timeline</span><p>How a record got here: events, field changes and facts, newest first.</p></div>
     </div>
 
@@ -723,11 +723,11 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
     <div class="figure">
       <div class="budget">
         <div class="f">Field values (always)</div>
-        <div class="t">Open tasks</div>
+        <div class="t">Linked records</div>
         <div class="fa">Current facts</div>
         <div class="ev">Recent events…</div>
       </div>
-      <p class="caption">About four characters per token; default 2,000, at most 16,000. Items are never cut mid-text, and <code>omitted</code> counts what didn't fit.</p>
+      <p class="caption">About four characters per token. The default is 2,000 and the maximum is 16,000. The other sections take one item per round, and <code>omitted</code> counts what didn't fit.</p>
     </div>
   </section>
 

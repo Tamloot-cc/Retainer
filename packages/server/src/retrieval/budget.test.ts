@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { estimateTokens, fitSections } from './budget.js';
+import {
+  estimateTokens,
+  fitSections,
+  groupLinkedRecords,
+  jsonLength,
+  linkedRecordCosts,
+  measurePack,
+} from './budget.js';
 
 /** A value whose JSON is `chars` characters, so it costs `chars + 1` in an array. */
 const item = (chars: number) => 'x'.repeat(chars - 2);
@@ -13,12 +20,12 @@ describe('estimateTokens', () => {
 });
 
 describe('fitSections', () => {
-  it('fills sections in key order until the budget is spent, counting each comma', () => {
+  it('gives every section a turn in key order before taking a second item', () => {
     const { included, used } = fitSections(
       { a: [item(9), item(9)], b: [item(9)], c: [item(9)] },
       30,
     );
-    expect(included).toEqual({ a: [item(9), item(9)], b: [item(9)], c: [] });
+    expect(included).toEqual({ a: [item(9)], b: [item(9)], c: [item(9)] });
     expect(used).toBe(30);
     // Without room for the comma, the third item does not fit.
     expect(fitSections({ a: [item(10), item(10), item(10)] }, 32).included.a).toHaveLength(2);
@@ -46,4 +53,48 @@ describe('fitSections', () => {
       expect(added, `budget ${budget}`).toBeLessThanOrEqual(budget);
     }
   });
+});
+
+describe('linked record grouping', () => {
+  it('charges object wrappers once and fits a prefix of the page in recency order', () => {
+    const item = {
+      id: '1',
+      title: 'Dana',
+      via: { field: 'owner', on: 'linked' as const },
+      selects: {},
+    };
+    const second = { ...item, id: '2', title: 'Acme' };
+    const third = { ...item, id: '3', title: 'Maya' };
+    const page = {
+      items: [
+        { ...item, object: 'contact' },
+        { ...second, object: 'company' },
+        { ...third, object: 'contact' },
+      ],
+      nextCursor: null,
+      totals: { contact: 5, company: 1 },
+    };
+    const groups = [
+      { object: 'contact', total: 5, items: [item, third] },
+      { object: 'company', total: 1, items: [second] },
+    ];
+    const used = jsonLength(groups) - 2;
+    const sections = { linkedRecords: page.items };
+    const costs = { linkedRecords: linkedRecordCosts(page) };
+    const full = fitSections(sections, used, costs);
+    expect(full.used).toBe(used);
+    expect(groupLinkedRecords(full.included.linkedRecords, page.totals)).toEqual(groups);
+    const partial = fitSections(sections, used - 1, costs);
+    expect(groupLinkedRecords(partial.included.linkedRecords, page.totals)).toEqual([
+      { ...groups[0], items: [item] },
+      groups[1],
+    ]);
+    expect(fitSections(sections, 0, costs).included.linkedRecords).toEqual([]);
+  });
+});
+
+it('measures the serialized pack when the new estimate has fewer digits', () => {
+  const pack = measurePack({ tokenEstimate: 2000, text: 'x'.repeat(365) });
+  expect(pack.tokenEstimate).toBe(99);
+  expect(pack.tokenEstimate).toBe(estimateTokens(pack));
 });

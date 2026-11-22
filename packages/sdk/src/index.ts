@@ -33,6 +33,7 @@ import type {
   EventQueryInput,
   FactPlace,
   ForgetResult,
+  LinkedRecordPage,
   LogEventInput,
   LogEventResult,
   MergeInput,
@@ -228,6 +229,14 @@ export class RetainerClient {
     return this.get<PresentedRecord>(
       `/v1/records/${encodeURIComponent(id)}`,
       { include: include.join(',') },
+      signal,
+    );
+  }
+  linkedRecords(id: string, options: PageOptions & { object?: string } = {}) {
+    const { signal, ...query } = options;
+    return this.get<LinkedRecordPage>(
+      `/v1/records/${encodeURIComponent(id)}/linked`,
+      query,
       signal,
     );
   }

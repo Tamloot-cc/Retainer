@@ -13,7 +13,7 @@ event types the workspace adds) are records too: list or filter them with
 query_records on their type, or with object "event" for every type at once,
 and pass linked to get the events directly attached to one record. For history including one-hop event
 rollups, use get_context or get_timeline. Before working on a person or company,
-read get_context: their current values, open tasks, facts and recent events in one
+read get_context: their current values, linked records, facts and recent events in one
 call; get_timeline shows how they got there. Write records with upsert_record.
 Write the values you learned; Retainer keeps every claim's history and decides
 which value wins. A value a person set outranks yours, so your write may come

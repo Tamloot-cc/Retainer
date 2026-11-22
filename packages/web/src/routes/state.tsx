@@ -31,8 +31,6 @@ export type ViewSearch = {
   status?: string;
   /** Record history: field API names to show changes of, comma-separated. */
   fields?: string;
-  /** Record tasks: status values, comma-separated, or `all`; absent for those not done. */
-  tasks?: string;
   /** Activity feed: event type API names to show, comma-separated. */
   eventTypes?: string;
   /** Activity feed: the one source (`channel`) shown. */

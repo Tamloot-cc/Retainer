@@ -2,12 +2,14 @@ import type { Hono } from 'hono';
 import { z } from 'zod';
 import { requireScope } from '../../auth/middleware.js';
 import type { Sql } from '../../db/client.js';
-import { idParam, readBody } from '../../http/request.js';
+import { idParam, limitParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 import { clearMyMemory } from '../../memory/service.js';
+import { linkedRecordPage } from '../../reads/linked.js';
 import { aggregateInputSchema } from '../../records/aggregate.js';
 import { mergeInputSchema } from '../../records/merge.js';
 import { queryInputSchema } from '../../records/query.js';
+import { findLiveRecord } from '../../records/read.js';
 import {
   aggregate,
   bulkDeleteImpact,
@@ -27,6 +29,7 @@ import {
   upsertInputSchema,
   upsertRecord,
   valuesSchema,
+  withRead,
 } from '../../records/service.js';
 
 const createSchema = z.strictObject({ values: valuesSchema, source: sourceSchema.optional() });
@@ -64,6 +67,24 @@ export function recordRoutes(app: Hono<AppEnv>, sql: Sql) {
 
   app.get('/records/:id', requireScope('read'), async (c) =>
     c.json(await readRecord(sql, c.get('caller'), idParam(c))),
+  );
+
+  app.get('/records/:id/linked', requireScope('read'), (c) =>
+    withRead(sql, c.get('caller'), async (tx, schema) => {
+      const { workspaceId } = c.get('caller');
+      const record = await findLiveRecord(tx, workspaceId, schema, idParam(c));
+      return c.json(
+        await linkedRecordPage(
+          tx,
+          { workspaceId, schema, recordId: record.id },
+          {
+            limit: limitParam(c, 50, 200),
+            cursor: c.req.query('cursor'),
+            object: c.req.query('object'),
+          },
+        ),
+      );
+    }),
   );
 
   app.patch('/records/:id', requireScope('write'), async (c) => {
