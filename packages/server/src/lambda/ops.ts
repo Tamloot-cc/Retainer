@@ -9,7 +9,10 @@ import { runCli } from '../operator/commands.js';
 import { extensionReleaseStatus } from '../operator/extension-releases.js';
 import { lambdaRuntimeCompatible } from '../operator/extension-runtime.js';
 import { rebuildSearchText } from '../records/rebuild-search.js';
-import { migrateExtensionBindings } from '../workspaces/binding-migration.js';
+import {
+  bindingsMigrationPending,
+  migrateExtensionBindings,
+} from '../workspaces/binding-migration.js';
 import {
   type UpgradeReport,
   upgradeWorkspaces,
@@ -168,6 +171,7 @@ export function createOpsHandler(config: Config) {
           const [stale] =
             await sql`select exists(select 1 from records where search is null and merged_into_id is null) as pending`;
           if (stale?.pending) reasons.push('search');
+          if (await bindingsMigrationPending(sql)) reasons.push('bindings');
           if (await workspaceUpgradesPending(sql)) reasons.push('definitions');
         }
         return {

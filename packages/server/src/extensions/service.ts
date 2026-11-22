@@ -1209,7 +1209,7 @@ export class Extensions {
       (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, granted_uses, settings, created_by, state, setup_kind, bindings, bindings_revision)
       values (${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId}, ${manifest.universalId}, ${manifest.version}, ${plan.release.digest},
         ${manifest.requestedActor}, ${tx.json(manifest.scopes)}, ${tx.json(releaseUses(manifest))}, ${tx.json(input.settings)}, ${tx.json(caller.actor)}, ${state}, ${setupKind},
-        ${plan.bound ? tx.json(jsonValue(plan.bound.plan)) : null}, ${plan.bound ? 1 : 0})
+        ${plan.bound ? tx.json(jsonValue(plan.bound.plan)) : null}, 1)
       on conflict (workspace_id, registration_id) do update set state = excluded.state,setup_kind=excluded.setup_kind,
         last_error=null,connection_health='needs_reconnect',activated_at=null,cleanup_deadline=null,
         version = excluded.version, release_digest = excluded.release_digest,granted_scopes=excluded.granted_scopes,granted_uses=excluded.granted_uses,granted_actor=excluded.granted_actor,
@@ -1217,7 +1217,7 @@ export class Extensions {
         grant_generation = extension_installations.grant_generation + ${regrant ? 1 : 0},
         settings_revision = extension_installations.settings_revision + 1,
         bindings = excluded.bindings,
-        bindings_revision = extension_installations.bindings_revision + ${plan.replan ? 1 : 0},
+        bindings_revision = greatest(1, extension_installations.bindings_revision + ${plan.replan ? 1 : 0}),
         updated_at = now()
       returning *`;
     if (!row) throw new Error('installation insert returned no row');
@@ -1508,12 +1508,13 @@ export class Extensions {
       if (row) await cancelRuns(tx, row.id);
       const [created] = await tx<
         Row[]
-      >`insert into extension_installations(id,workspace_id,registration_id,version,release_digest,granted_actor,granted_scopes,granted_uses,settings,created_by,state)
+      >`insert into extension_installations(id,workspace_id,registration_id,version,release_digest,granted_actor,granted_scopes,granted_uses,settings,created_by,state,bindings_revision)
         values(${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId},${manifest.universalId},${manifest.version},${plan.release.digest},
-          ${manifest.requestedActor},${tx.json(['read'])},${tx.json(releaseUses(manifest))},${tx.json(input.settings)},${tx.json(caller.actor)},'configuring')
+          ${manifest.requestedActor},${tx.json(['read'])},${tx.json(releaseUses(manifest))},${tx.json(input.settings)},${tx.json(caller.actor)},'configuring',1)
         on conflict(workspace_id,registration_id) do update set version=excluded.version,release_digest=excluded.release_digest,
           granted_actor=excluded.granted_actor,granted_scopes=excluded.granted_scopes,granted_uses=excluded.granted_uses,settings=excluded.settings,state='configuring',
           created_by=excluded.created_by,generation=extension_installations.generation+1,settings_revision=extension_installations.settings_revision+1,
+          bindings_revision=greatest(1,extension_installations.bindings_revision),
           last_error=null,activated_at=null,cleanup_deadline=null,created_at=now(),updated_at=now() returning *`;
       if (!created) throw new Error('installation insert returned no row');
       row = created;

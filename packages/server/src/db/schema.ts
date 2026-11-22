@@ -1487,6 +1487,7 @@ export const extensionInstallations = pgTable(
     settings: jsonb('settings').notNull().default({}),
     settingsRevision: integer('settings_revision').notNull().default(1),
     bindings: jsonb('bindings'),
+    // Zero identifies pre-binding installations. New installs start at one.
     bindingsRevision: integer('bindings_revision').notNull().default(0),
     /**
      * The newest release digest the automatic upgrade checked and left for an

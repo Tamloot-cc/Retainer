@@ -224,6 +224,17 @@ async function uninstall(tx: Tx, row: Row) {
   await tx`update webhook_bindings set state='retired',updated_at=now() where installation_id=${row.id}`;
 }
 
+const needsBindings = (sql: Sql | Tx) => sql`
+  i.state <> 'uninstalled'
+  and coalesce((to_jsonb(i)->>'bindings_revision')::int, 0) = 0
+  and ((to_jsonb(i)->>'bindings') is null or (to_jsonb(i)->'bindings') ? 'legacyMapping')`;
+
+export async function bindingsMigrationPending(sql: Sql): Promise<boolean> {
+  const [row] = await sql<{ pending: boolean }[]>`
+    select exists (select 1 from extension_installations i where ${needsBindings(sql)}) as pending`;
+  return row?.pending ?? false;
+}
+
 /** The same decisions drive the preflight report and the apply transaction. */
 export async function migrateExtensionBindings(
   sql: Sql,
@@ -235,8 +246,7 @@ export async function migrateExtensionBindings(
     if (reportOnly) await tx`set transaction isolation level repeatable read, read only`;
     const installations = await tx<Row[]>`
       select i.* from extension_installations i
-      where i.state<>'uninstalled'
-        and ((to_jsonb(i)->>'bindings') is null or (to_jsonb(i)->'bindings') ? 'legacyMapping')
+      where ${needsBindings(tx)}
       order by i.workspace_id,i.id`;
     if (installations.length && !releases.length)
       throw new Error('Load the rebuilt extension catalog before planning the binding migration.');

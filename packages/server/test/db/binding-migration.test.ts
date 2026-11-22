@@ -8,9 +8,14 @@ import { inWorkspace } from '../../src/db/tx.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { runSchemaChange } from '../../src/schema-engine/engine.js';
 import type { SchemaOperation } from '../../src/schema-engine/operations.js';
-import { migrateExtensionBindings } from '../../src/workspaces/binding-migration.js';
+import {
+  bindingsMigrationPending,
+  migrateExtensionBindings,
+} from '../../src/workspaces/binding-migration.js';
 import { createWorkspace } from '../../src/workspaces/workspaces.js';
+import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
+import { extensionFixture } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
 const actor = { type: 'user', id: 'admin' } as const;
@@ -57,6 +62,7 @@ it('reports without writing and applies the same bindings or uninstall decisions
   const read = () =>
     db.owner`select id,state,version,release_digest,bindings from extension_installations order by id`;
   const before = await read();
+  expect(await bindingsMigrationPending(db.owner)).toBe(true);
   // The hosted preflight runs against the schema before the bindings columns exist.
   await db.owner`alter table extension_installations rename column bindings to test_bindings`;
   await db.owner`alter table extension_installations rename column bindings_revision to test_bindings_revision`;
@@ -120,6 +126,7 @@ it('reports without writing and applies the same bindings or uninstall decisions
   expect(after.find((row) => row.id === renamed)?.bindings).toBeTruthy();
   expect(after.find((row) => row.id === deleted)?.state).toBe('uninstalled');
   expect(await migrateExtensionBindings(db.owner, catalog, true)).toEqual([]);
+  expect(await bindingsMigrationPending(db.owner)).toBe(false);
 });
 
 it('uses a captured output choice after the old mapping column is dropped', async () => {
@@ -174,4 +181,32 @@ it('uses a captured output choice after the old mapping column is dropped', asyn
     },
   });
   expect(installed?.bindings.legacyMapping).toBeUndefined();
+});
+
+it('leaves a new installation without bindings alone when migrations run again', async () => {
+  const standalone = extensionFixture({ execution: 'standalone', scopes: ['read'] });
+  const current = new ExtensionCatalog([{ manifest: standalone, actorCeiling: 'integration' }]);
+  const app = startTestApp(db, { extensionCatalog: current });
+  const { keys } = await app.setupWorkspace(
+    { name: 'A new standalone installation' },
+    { admin: { actor, scopes: ['admin'] } },
+  );
+  const input = {
+    registrationId: standalone.universalId,
+    version: standalone.version,
+    settings: {},
+  };
+  const preview = await app.request('/v1/extensions/preview', { key: keys.admin, body: input });
+  expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+  const installed = await app.request('/v1/extensions', {
+    key: keys.admin,
+    body: { ...input, planDigest: preview.body.planDigest },
+    headers: { 'Idempotency-Key': randomUUID() },
+  });
+  expect(installed.status, JSON.stringify(installed.body)).toBe(201);
+  expect(await migrateExtensionBindings(db.owner, current, false)).toEqual([]);
+  expect(await bindingsMigrationPending(db.owner)).toBe(false);
+  const [row] = await db.owner`
+    select bindings, bindings_revision, state from extension_installations where id=${installed.body.id}`;
+  expect(row).toMatchObject({ bindings: null, bindings_revision: 1, state: 'active' });
 });
