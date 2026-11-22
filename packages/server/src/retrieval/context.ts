@@ -4,10 +4,8 @@ import type {
   ContextField,
   ContextPack,
   EventItem,
-  OpenTask,
   ProfileContextPack,
 } from '@retainer/shared';
-import { BASE_FIELD_IDS, BASE_OBJECT_IDS, TASK_DONE_OPTION } from '@retainer/shared';
 import { z } from 'zod';
 import type { Tx } from '../db/tx.js';
 import {
@@ -18,10 +16,16 @@ import {
   viaOf,
 } from '../memory/events.js';
 import { type Profile, type ProfileContext, profileLabel } from '../memory/profiles.js';
+import { linkedRecordPage } from '../reads/linked.js';
 import { getRecord } from '../records/read.js';
-import { references } from '../records/references.js';
 import { type CompiledSchema, eventText } from '../schema/compiled.js';
-import { CHARS_PER_TOKEN, estimateTokens, fitSections, jsonLength } from './budget.js';
+import {
+  CHARS_PER_TOKEN,
+  fitLinkedRecords,
+  fitSections,
+  jsonLength,
+  measurePack,
+} from './budget.js';
 
 /**
  * Context packs (5, 6.2): what an agent needs about one record, assembled by
@@ -56,9 +60,9 @@ export async function contextPack(
   const rows = Math.floor(budgetChars / MIN_ITEM_CHARS) + 1;
   // Resolves merged IDs and refuses deleted records, like get_record.
   const record = await getRecord(tx, workspaceId, schema, recordId);
-  const [fields, tasks, facts, events] = await Promise.all([
+  const [fields, linked, facts, events] = await Promise.all([
     currentFields(tx, workspaceId, schema, record.id, record.fields),
-    openTasks(tx, workspaceId, schema, record.id, rows),
+    linkedRecordPage(tx, { workspaceId, schema, recordId: record.id }, { limit: rows }),
     currentFacts(tx, workspaceId, schema, record.id, rows),
     recentEvents(tx, workspaceId, schema, record.id, rows),
   ]);
@@ -69,39 +73,40 @@ export async function contextPack(
   // estimate as long as the budget). So a pack whose values fit never
   // serializes to more than the budget.
   const head = { id: record.id, object: record.object, label: record.label, fields };
+  const linkedTotal = Object.values(linked.totals).reduce((sum, total) => sum + total, 0);
   const frame: ContextPack = {
     record: head,
-    openTasks: [],
+    linkedRecords: [],
     facts: [],
     recentEvents: [],
-    omitted: { openTasks: tasks.total, facts: facts.total, recentEvents: events.total },
+    omitted: { linkedRecords: linkedTotal, facts: facts.total, recentEvents: events.total },
     tokenEstimate: input.tokenBudget,
   };
+  const available = Math.max(0, budgetChars - jsonLength(frame));
+  const linkedFit = fitLinkedRecords(linked, available);
   const { included } = fitSections(
-    { openTasks: tasks.items, facts: facts.items, recentEvents: events.items },
-    Math.max(0, budgetChars - jsonLength(frame)),
+    { facts: facts.items, recentEvents: events.items },
+    available - linkedFit.used,
   );
 
   const pack: ContextPack = {
     record: head,
+    linkedRecords: linkedFit.groups,
     ...included,
     omitted: {
-      openTasks: tasks.total - included.openTasks.length,
+      linkedRecords: linkedTotal - linkedFit.count,
       facts: facts.total - included.facts.length,
       recentEvents: events.total - included.recentEvents.length,
     },
     tokenEstimate: input.tokenBudget,
   };
-  // The estimate covers the whole response, itself included (sized with the
-  // budget in its place).
-  pack.tokenEstimate = estimateTokens(pack);
-  return pack;
+  return measurePack(pack);
 }
 
 /**
  * A profile's context pack (personal memory spec 4.4): its current facts,
  * newest first, fitted to the budget, each with who wrote it and its
- * sources. No fields, tasks or events. `me` before any write is empty.
+ * sources. `me` before any write is empty.
  */
 export async function profileContextPack(
   tx: Tx,
@@ -135,8 +140,7 @@ export async function profileContextPack(
     omitted: { facts: facts.total - included.facts.length },
     tokenEstimate: input.tokenBudget,
   };
-  pack.tokenEstimate = estimateTokens(pack);
-  return pack;
+  return measurePack(pack);
 }
 
 type Section<T> = { items: T[]; total: number };
@@ -144,8 +148,7 @@ type Section<T> = { items: T[]; total: number };
 /**
  * The record's values with the assertion that won each (rule 2.4), so a
  * value is never mistaken for a stated fact. Read-only inverse relations
- * have no assertion of their own and are left out; open tasks cover the
- * links that matter most.
+ * have no assertion of their own. Related records appear in linkedRecords.
  */
 async function currentFields(
   tx: Tx,
@@ -173,78 +176,6 @@ async function currentFields(
     };
   }
   return fields;
-}
-
-/**
- * IDs of active fields. A deleted relation field keeps its `record_links`
- * rows, and `get_record` hides them; links count only through active fields.
- */
-function activeFieldIds(schema: CompiledSchema): string[] {
-  return [...schema.fieldOwners]
-    .filter(([id, object]) => object.fieldsById.get(id)?.status === 'active')
-    .map(([id]) => id);
-}
-
-/**
- * Live tasks linked to the record in either direction, through an active
- * relation field, whose status is not `done`: earliest due date first,
- * undated last.
- */
-async function openTasks(
-  tx: Tx,
-  workspaceId: string,
-  schema: CompiledSchema,
-  recordId: string,
-  limit: number,
-): Promise<Section<OpenTask>> {
-  const task = schema.objectsByUniversalId.get(BASE_OBJECT_IDS.task);
-  if (task?.state.status !== 'active') return { items: [], total: 0 };
-  const field = (universalId: string) =>
-    task.activeFields.find((f) => f.universalId === universalId);
-  const status = field(BASE_FIELD_IDS.taskStatus);
-  const dueDate = field(BASE_FIELD_IDS.taskDueDate);
-  const statusValue = status ? tx`t.data -> ${status.key}` : tx`null::jsonb`;
-  const dueValue = dueDate ? tx`t.data -> ${dueDate.key}` : tx`null::jsonb`;
-  const notDone = status
-    ? tx`and (t.data ->> ${status.key}) is distinct from ${TASK_DONE_OPTION}`
-    : tx``;
-  const dueOrder = dueDate ? tx`(t.data ->> ${dueDate.key}) asc nulls last,` : tx``;
-
-  const rows = await tx<{ id: string; status: unknown; due_date: unknown; total: string }[]>`
-    select t.id, ${statusValue} as status, ${dueValue} as due_date,
-      count(*) over () as total
-    from records t
-    where t.workspace_id = ${workspaceId} and t.object_type_id = ${task.id}
-      and t.deleted_at is null and t.id <> ${recordId}
-      and exists (
-        select 1 from record_links l
-        where l.field_id = any(${activeFieldIds(schema)}::uuid[])
-          and ((l.source_record_id = t.id and l.target_record_id = ${recordId})
-            or (l.source_record_id = ${recordId} and l.target_record_id = t.id)))
-      ${notDone}
-    order by ${dueOrder} t.created_at, t.id
-    limit ${limit}`;
-  // Tasks are other records, so their titles come through references() (7.2).
-  const refs = await references(
-    tx,
-    schema,
-    rows.map((row) => row.id),
-  );
-  return {
-    items: rows.flatMap((row) => {
-      const ref = refs[row.id];
-      if (!ref) return [];
-      return [
-        {
-          id: row.id,
-          title: ref.label,
-          status: row.status ?? null,
-          dueDate: row.due_date ?? null,
-        },
-      ];
-    }),
-    total: Number(rows[0]?.total ?? 0),
-  };
 }
 
 /** Current facts, newest `validFrom` first, as `GET /v1/records/:id/facts` lists them. */

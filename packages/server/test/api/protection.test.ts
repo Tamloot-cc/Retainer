@@ -100,8 +100,15 @@ describe('schema protection', () => {
 
     const pack = await t.request(`/v1/records/${companyId}/context`, { key: keys.agent });
     expect(pack.status).toBe(200);
-    expect(pack.body.openTasks).toEqual([
-      { id: expect.any(String), title: 'Open', status: 'blocked', dueDate: '2026-11-10' },
+    expect(pack.body.linkedRecords).toEqual([
+      {
+        object: 'todo',
+        total: 2,
+        items: [
+          { id: expect.any(String), title: 'Closed', via: 'company', selects: { state: 'done' } },
+          { id: expect.any(String), title: 'Open', via: 'company', selects: { state: 'blocked' } },
+        ],
+      },
     ]);
 
     const schema = await t.request('/v1/schema', { key: keys.agent });

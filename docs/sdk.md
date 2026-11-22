@@ -79,7 +79,10 @@ const hits = await retainer.search({ query: '"renewal" Acme', limit: 10 });
 // { records: [...], events: [...], facts: [...] }, each ranked on its own
 
 const pack = await retainer.context(dana.id, { tokenBudget: 1500 });
-// pack.record.fields, pack.openTasks, pack.facts, pack.recentEvents, pack.omitted
+// pack.record.fields, pack.linkedRecords, pack.facts, pack.recentEvents, pack.omitted
+
+const linked = await retainer.linkedRecords(dana.id, { object: 'task', limit: 20 });
+// linked.items, linked.totals by object, linked.nextCursor
 
 // How it got there: events, values asserted for its fields and facts, newest first.
 const stageHistory = await retainer.timeline(deal.id, { fields: ['stage'], limit: 20 });

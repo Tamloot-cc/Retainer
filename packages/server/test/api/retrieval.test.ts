@@ -334,7 +334,7 @@ describe('GET /v1/records/:id/context', () => {
   const context = (id: string, query = '', key = keys.agent) =>
     t.request(`/v1/records/${id}/context${query}`, { key });
 
-  it('packs values with provenance, open tasks, facts and recent events', async () => {
+  it('packs values with provenance, linked records, facts and recent events', async () => {
     const tag = word();
     const email = `${tag}@acme.test`;
     const noa = await create('person', { name: 'Noa Shapira', emails: email });
@@ -358,7 +358,12 @@ describe('GET /v1/records/:id/context', () => {
       dueDate: '2026-11-04',
       person: noa,
     });
-    await create('task', { title: 'Finished', status: 'done', dueDate: '2026-10-01', person: noa });
+    const finished = await create('task', {
+      title: 'Finished',
+      status: 'done',
+      dueDate: '2026-10-01',
+      person: noa,
+    });
     await create('task', { title: 'Unrelated', status: 'todo' });
 
     const demo = await logEvent({
@@ -402,10 +407,17 @@ describe('GET /v1/records/:id/context', () => {
         },
       },
     });
-    expect(pack.openTasks).toEqual([
-      { id: soon, title: 'Soon', status: 'todo', dueDate: '2026-11-04' },
-      { id: later, title: 'Later', status: 'todo', dueDate: '2026-12-01' },
-      { id: undated, title: 'Undated', status: 'in_progress', dueDate: null },
+    expect(pack.linkedRecords).toEqual([
+      {
+        object: 'task',
+        total: 4,
+        items: [
+          { id: finished, title: 'Finished', via: 'person', selects: { status: 'done' } },
+          { id: soon, title: 'Soon', via: 'person', selects: { status: 'todo' } },
+          { id: undated, title: 'Undated', via: 'person', selects: { status: 'in_progress' } },
+          { id: later, title: 'Later', via: 'person', selects: { status: 'todo' } },
+        ],
+      },
     ]);
     expect(pack.facts).toEqual([
       {
@@ -442,7 +454,7 @@ describe('GET /v1/records/:id/context', () => {
         via: { kind: 'participant' },
       },
     ]);
-    expect(pack.omitted).toEqual({ openTasks: 0, facts: 0, recentEvents: 0 });
+    expect(pack.omitted).toEqual({ linkedRecords: 0, facts: 0, recentEvents: 0 });
     expect(pack.tokenEstimate).toBe(Math.ceil(JSON.stringify(pack).length / 4));
     expect(pack.tokenEstimate).toBeLessThanOrEqual(2000);
   });
@@ -581,10 +593,10 @@ describe('GET /v1/records/:id/context', () => {
     expect(tiny.status).toBe(200);
     expect(tiny.body.record.fields.name).toBeDefined();
     expect(tiny.body).toMatchObject({
-      openTasks: [],
+      linkedRecords: [],
       facts: [],
       recentEvents: [],
-      omitted: { openTasks: 3, facts: 1, recentEvents: 0 },
+      omitted: { linkedRecords: 3, facts: 1, recentEvents: 0 },
     });
 
     // Room for two tasks and the fact: the third task does not fit, and the
@@ -592,19 +604,20 @@ describe('GET /v1/records/:id/context', () => {
     const full = await context(company);
     const frame = JSON.stringify({
       ...full.body,
-      openTasks: [],
+      linkedRecords: [],
       facts: [],
       recentEvents: [],
-      omitted: { openTasks: 3, facts: 1, recentEvents: 0 },
+      omitted: { linkedRecords: 3, facts: 1, recentEvents: 0 },
     }).length;
     // Each item costs its JSON and a comma; 5 tokens of slack is far less than a task.
-    const task = JSON.stringify(full.body.openTasks[0]).length + 1;
+    const group = full.body.linkedRecords[0];
+    const twoTasks = JSON.stringify({ ...group, items: group.items.slice(0, 2) }).length;
     const fact = JSON.stringify(full.body.facts[0]).length + 1;
-    const budget = Math.ceil((frame + 2 * task + fact) / 4) + 5;
+    const budget = Math.ceil((frame + twoTasks + fact) / 4) + 5;
     const some = await context(company, `?tokenBudget=${budget}`);
-    expect(some.body.openTasks).toHaveLength(2);
+    expect(some.body.linkedRecords[0].items).toHaveLength(2);
     expect(some.body.facts).toHaveLength(1);
-    expect(some.body.omitted).toEqual({ openTasks: 1, facts: 0, recentEvents: 0 });
+    expect(some.body.omitted).toEqual({ linkedRecords: 1, facts: 0, recentEvents: 0 });
   });
 
   it('never sends more than the budget once the values fit, framing included', async () => {
@@ -620,7 +633,9 @@ describe('GET /v1/records/:id/context', () => {
       const sent = JSON.stringify(res.body).length;
       expect(sent, `budget ${budget}`).toBeLessThanOrEqual(budget * 4);
       expect(res.body.tokenEstimate).toBe(Math.ceil(sent / 4));
-      expect(res.body.openTasks.length + res.body.omitted.openTasks).toBe(40);
+      expect((res.body.linkedRecords[0]?.items.length ?? 0) + res.body.omitted.linkedRecords).toBe(
+        40,
+      );
     }
   });
 
@@ -628,11 +643,11 @@ describe('GET /v1/records/:id/context', () => {
     const company = await create('company', { name: `Many ${word()}` });
     for (let i = 0; i < 230; i++) await create('task', { title: `T${i}`, status: 'todo', company });
     const res = await context(company, '?tokenBudget=16000');
-    expect(res.body.openTasks).toHaveLength(230);
-    expect(res.body.omitted.openTasks).toBe(0);
+    expect(res.body.linkedRecords[0].items).toHaveLength(230);
+    expect(res.body.omitted.linkedRecords).toBe(0);
   });
 
-  it('drops open tasks linked only through a deleted relation field, as get_record does', async () => {
+  it('drops linked records linked only through a deleted relation field, as get_record does', async () => {
     // Its own workspace: deleting task.person here would change the others' schema.
     const own = await t.setupWorkspace(
       { name: `Links ${word()}`, template: 'sales' },
@@ -648,7 +663,7 @@ describe('GET /v1/records/:id/context', () => {
       own.keys.agent,
     );
     const before = await context(noa, '', own.keys.agent);
-    expect(before.body.openTasks.map((x: { id: string }) => x.id)).toEqual([task]);
+    expect(before.body.linkedRecords[0].items.map((x: { id: string }) => x.id)).toEqual([task]);
 
     const change = await t.request('/v1/schema/changes', {
       key: own.keys.admin,
@@ -657,8 +672,8 @@ describe('GET /v1/records/:id/context', () => {
     expect(change.body.status).toBe('applied');
 
     const after = await context(noa, '', own.keys.agent);
-    expect(after.body.openTasks).toEqual([]);
-    expect(after.body.omitted.openTasks).toBe(0);
+    expect(after.body.linkedRecords).toEqual([]);
+    expect(after.body.omitted.linkedRecords).toBe(0);
   });
 
   it('refuses deleted, unknown and foreign records', async () => {

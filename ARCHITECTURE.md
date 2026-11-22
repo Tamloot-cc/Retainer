@@ -57,9 +57,9 @@ Every schema row carries:
 #### Protection
 
 Server code finds the schema elements it depends on by universal ID, never
-by API name, and the engine protects each of them. Today these are the base
-objects `person`, `company` and `task`, the fields `task.status` and
-`task.dueDate` (open tasks in context packs, 6.2), and the hidden types:
+by API name, and the engine protects each of them. Protection currently
+covers the base objects `person`, `company` and `task`, the fields
+`task.status` and `task.dueDate`, and the hidden types:
 the internal-note event type and the workspace and member profiles (1.3). The
 list lives in `schema-engine/protection.ts`; any new server dependency on a
 schema element protects it in the same change. The core `title` and `summary`
@@ -1364,7 +1364,7 @@ itself.
 | `query_records`                    | Structured filter, sort and pagination over one object; for an event type, its built-in columns and `linked`; `event` for every type at once (1.3) |
 | `get_record`                       | One record with its fields and links; an event also with its built-in columns, participants and `about`                                            |
 | `search`                           | Keyword search (Postgres full-text) across records, events and facts                                                                               |
-| `get_context(record, tokenBudget)` | A ready-to-use pack: key fields, current facts, open tasks, recent events, fitted to the budget                                                    |
+| `get_context(record, tokenBudget)` | A ready-to-use pack: current fields, linked records, facts and recent events, fitted to the budget                                                 |
 | `get_timeline(record, filters)`    | The record's history, newest first: events, asserted field values and facts (6.2)                                                                  |
 
 `builtIns` lists facts, apart from `objects`, so a person reading the
@@ -1515,6 +1515,7 @@ composes `search`, `query_records` and `get_context` with its own model.
 | `GET /v1/records/:id/events`                      | Paginated events attached to a record, newest first, each with `via`; `link` narrows to participant, about or field (1.3)               |
 | `GET /v1/assertions/:id`                          | One assertion, including status and review details                                                                                      |
 | `GET /v1/events/:id/claims`                       | Paginated assertions and facts citing an event                                                                                          |
+| `GET /v1/records/:id/linked`                      | Paginated linked records across entity objects, with per-object totals and an optional `object` filter                                  |
 | `GET /v1/records/:id/context`                     | Context pack                                                                                                                            |
 | `GET /v1/records/:id/timeline`                    | The record's timeline (6.2): `types`, `fields`, `eventTypes` (comma-separated), `from`, `to`, `limit`, `cursor`                         |
 | `POST /v1/records/:id/merge`                      | Merge another record into this one                                                                                                      |
@@ -1749,6 +1750,18 @@ same idempotency key returns the same response.
 in this shape, newest `validFrom` first, listing only live sources. It pages
 with `limit` (default 100, at most 500) and `cursor`.
 
+`GET /v1/records/:id/linked` returns `{ items, totals, nextCursor }`.
+Each item has `id`, `title`, `object`, `via` (the relation field's API
+name), and `selects` (stored select values by field API name). The read
+follows active relations in either direction and includes each readable
+entity once, excluding the anchor itself and deleted, merged and private
+records. It sorts by `updated_at` and ID, newest first. Use `object` with a
+singular API name to narrow the page and its per-object `totals`. The
+default `limit` is 50 and the maximum is 200. Pass `nextCursor` back with
+the same filter to continue. Context fits a prefix of one budget-sized page
+and groups it by object, with each group's full count and the number of
+omitted records across all objects in `omitted.linkedRecords`.
+
 ```
 → get_context { "record": "rec_5a1…", "tokenBudget": 1500 }
 ← { "record": {
@@ -1756,14 +1769,18 @@ with `limit` (default 100, at most 500) and `cursor`.
       "fields": {
         "jobTitle": { "value": "Head of Data", "writtenBy": { "type": "user", … }, "observedAt": "…" },
         … } },
-    "openTasks": [ { "id": "rec_c40…", "title": "Send SSO docs to Noa", "status": "todo", "dueDate": "2026-11-04" } ],
+    "linkedRecords": [
+      { "object": "task", "total": 1, "items": [
+        { "id": "rec_c40…", "title": "Send SSO docs to Noa", "via": "person", "selects": { "status": "todo" } }
+      ] }
+    ],
     "facts": [ { "id": "fct_1e2…", "content": "Needs SSO before agreeing to a pilot",
                  "validFrom": "2026-10-21T09:00:00Z", "writtenBy": { "type": "agent", … },
                  "sources": [ "evt_9d0…" ] } ],
     "recentEvents": [ { "id": "evt_9d0…", "type": "conversation", "occurredAt": "2026-10-21T09:00:00Z",
                         "title": "Globex data-platform demo", "summary": "…",
                         "via": { "kind": "participant" } } ],
-    "omitted": { "openTasks": 0, "facts": 4, "recentEvents": 11 },
+    "omitted": { "linkedRecords": 0, "facts": 4, "recentEvents": 11 },
     "tokenEstimate": 1380 }
 ```
 
@@ -1772,9 +1789,8 @@ A context pack is assembled by fixed rules (5):
 - The record's current field values are always included, each with who
   wrote it and when it was observed, so a value is never mistaken for a
   stated fact. The budget applies to the sections after it.
-- The other sections fill in this order until the budget is spent: open
-  tasks (tasks linked to the record through an active relation field whose
-  status is not `done`, earliest due date first, undated last), current facts (not superseded or retracted,
+- The other sections fill in this order until the budget is spent: linked
+  records, current facts (not superseded or retracted,
   newest `validFrom` first; a fact resting only on an internal note is
   marked `internal: true`), then recent events in the record's history
   (attached directly or rolled up, newest first, each once with `via`, 1.3,

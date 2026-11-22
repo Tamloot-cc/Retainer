@@ -318,7 +318,7 @@ describe('rolled-up history', () => {
     expect(small.recentEvents.length + small.omitted.recentEvents).toBe(7);
   });
 
-  it('finds open tasks through set and polymorphic relations, once each', async () => {
+  it('finds linked records through set and polymorphic relations', async () => {
     await schemaChange([
       {
         op: 'create_field',
@@ -336,7 +336,9 @@ describe('rolled-up history', () => {
     const task = await create('task', { title: 'Follow up', regarding: [acme.id, d.id] });
     for (const id of [acme.id, d.id]) {
       const pack = await contextFor(app, as(AGENT), id, { tokenBudget: 4000 });
-      expect(pack.openTasks.map((t) => t.id)).toEqual([task.id]);
+      expect(pack.linkedRecords.find((group) => group.object === 'task')?.items).toEqual([
+        { id: task.id, title: 'Follow up', via: 'regarding', selects: {} },
+      ]);
     }
   });
 });

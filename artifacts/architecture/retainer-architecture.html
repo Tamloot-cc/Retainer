@@ -700,7 +700,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
       <div class="card"><span class="q">query_records</span><p>Filter, sort, page one object; <code>event</code> for every event type at once.</p></div>
       <div class="card"><span class="q">get_record</span><p>One record with links; an event with participants and <code>about</code>; newest comments.</p></div>
       <div class="card"><span class="q">search</span><p>Keywords across records, events and facts. Postgres full-text only.</p></div>
-      <div class="card"><span class="q">get_context</span><p>A pack fitted to a token budget: fields, open tasks, facts, recent events.</p></div>
+      <div class="card"><span class="q">get_context</span><p>A pack fitted to a token budget: fields, linked records, facts, recent events.</p></div>
       <div class="card"><span class="q">get_timeline</span><p>How a record got here: events, field changes and facts, newest first.</p></div>
     </div>
 
@@ -721,9 +721,9 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
 
     <h3>How a context pack fills its budget</h3>
     <div class="figure">
-      <div class="budget" aria-label="Context pack: current field values always, then open tasks, then facts, then recent events until the budget is spent">
+      <div class="budget" aria-label="Context pack: current field values always, then linked records, then facts, then recent events until the budget is spent">
         <div class="f">Field values (always)</div>
-        <div class="t">Open tasks</div>
+        <div class="t">Linked records</div>
         <div class="fa">Current facts</div>
         <div class="ev">Recent events…</div>
       </div>

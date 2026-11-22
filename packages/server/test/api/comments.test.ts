@@ -223,10 +223,10 @@ describe('reading comments', () => {
     const { id } = await comment(acme);
     await t.request(`/v1/comments/${id}`, { key: keys.dana, method: 'DELETE' });
     const res = await t.request(`/v1/records/${acme}?include=counts`, { key: keys.reader });
-    expect(res.body.counts).toEqual({ comments: 1, facts: 0, openTasks: 0, claims: 0 });
+    expect(res.body.counts).toEqual({ comments: 1, facts: 0, linked: 0, claims: 0 });
   });
 
-  it('counts what each other tab lists: facts, open tasks and claims', async () => {
+  it('counts what each other tab lists: facts, linked records and claims', async () => {
     const acme = await company();
     const meeting = await event({ about: [acme] });
     await t.request(`/v1/records/${acme}/facts`, {
@@ -246,7 +246,7 @@ describe('reading comments', () => {
     }
     const counts = async (id: string) =>
       (await t.request(`/v1/records/${id}?include=counts`, { key: keys.reader })).body.counts;
-    expect(await counts(acme)).toMatchObject({ facts: 1, openTasks: 1 });
+    expect(await counts(acme)).toMatchObject({ facts: 1, linked: 2 });
     // The event's own logged title is not a claim on it; the value and the fact are.
     expect((await counts(meeting)).claims).toBe(2);
     const claims = await t.request(`/v1/events/${meeting}/claims?own=false`, { key: keys.reader });

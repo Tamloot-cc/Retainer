@@ -1,3 +1,5 @@
+import type { LinkedRecordGroup, LinkedRecordPage } from '@retainer/shared';
+
 /**
  * Token budgeting for context packs (6.2). Retainer runs no tokenizer, so
  * tokens are estimated from characters: about four per token.
@@ -13,6 +15,16 @@ export function jsonLength(value: unknown): number {
 /** Estimated tokens of a value as it is sent. */
 export function estimateTokens(value: unknown): number {
   return Math.ceil(jsonLength(value) / CHARS_PER_TOKEN);
+}
+
+/** Measure the final response, including the estimate's own digits. */
+export function measurePack<T extends { tokenEstimate: number }>(pack: T): T {
+  let estimate = estimateTokens(pack);
+  while (pack.tokenEstimate !== estimate) {
+    pack.tokenEstimate = estimate;
+    estimate = estimateTokens(pack);
+  }
+  return pack;
 }
 
 /**
@@ -40,4 +52,26 @@ export function fitSections<T extends Record<string, readonly unknown[]>>(
     included[name] = taken;
   }
   return { included: included as unknown as T, used };
+}
+
+/** Fit a recency-ordered prefix, charging each object's wrapper only once. */
+export function fitLinkedRecords(page: LinkedRecordPage, budget: number) {
+  const groups = new Map<string, LinkedRecordGroup>();
+  let used = 0;
+  let count = 0;
+  for (const { object, ...item } of page.items) {
+    const existing = groups.get(object);
+    const total = page.totals[object];
+    if (total === undefined) throw new Error('Linked record page is missing its object total');
+    const group = existing ?? { object, total, items: [] };
+    const cost = existing
+      ? jsonLength(item) + 1
+      : jsonLength({ ...group, items: [item] }) + Number(groups.size > 0);
+    if (used + cost > budget) break;
+    if (!existing) groups.set(object, group);
+    group.items.push(item);
+    used += cost;
+    count++;
+  }
+  return { groups: [...groups.values()], used, count };
 }
