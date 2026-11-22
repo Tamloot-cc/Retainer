@@ -44,7 +44,6 @@ import { QueryError, useView } from '../state.js';
 import { BindingSummary } from './bindings.js';
 import { ExtensionIcon, extensionName } from './branding.js';
 import { MemberConnectionPanel } from './connections.js';
-import { MappingGroup } from './mapping.js';
 import {
   accessText,
   canReconnect,
@@ -165,11 +164,11 @@ function InstalledExtension({
           },
         ]
       : []),
-    ...((manifest?.mapping || manifest?.bindings?.length) && !gone
+    ...(manifest?.bindings?.length && !gone
       ? [
           {
             value: 'mapping' as const,
-            label: manifest?.bindings?.length ? 'Bindings' : 'Field mapping',
+            label: 'Bindings',
             hint: 'Which field each value this extension finds is written to.',
           },
         ]
@@ -536,69 +535,35 @@ function MappingSummary({
     queryKey: detailKey(installation.id),
     queryFn: ({ signal }) => api.extension(installation.id, signal),
   });
-  const mapping = release.manifest.mapping;
   if (detail.error) return <QueryError error={detail.error} retry={() => void detail.refetch()} />;
-  if (release.manifest.bindings) {
-    if (!detail.data?.bindingChoices) return <Muted>Loading bindings…</Muted>;
-    return (
-      <ReviewCard>
-        <ReviewCardHeader leading={<ReviewIcon icon={LayoutList} />} title="Approved bindings" />
-        <ReviewCardBody>
-          <BindingSummary
-            declarations={release.manifest.bindings}
-            choices={detail.data.bindingChoices}
-            objects={schema.objects}
-          />
-        </ReviewCardBody>
-        {admin ? (
-          <ReviewCardFooter>
-            <Button asChild>
-              <Link to="/extensions/$id/mapping" params={{ id: installation.id }}>
-                Change setup
-              </Link>
-            </Button>
-          </ReviewCardFooter>
-        ) : null}
-      </ReviewCard>
-    );
-  }
-  if (!mapping) return null;
-  const view = detail.data?.mapping;
-  if (!view) return <Muted>Loading field mapping…</Muted>;
-  const broken = view.outputs.some((o) => o.status !== 'ok');
+  if (!release.manifest.bindings || !detail.data?.bindingChoices)
+    return <Muted>Loading bindings…</Muted>;
   return (
-    <div className="max-w-2xl">
-      <ReviewCard>
-        <ReviewCardHeader
-          leading={<ReviewIcon icon={LayoutList} />}
-          title="Approved field mapping"
+    <ReviewCard>
+      <ReviewCardHeader leading={<ReviewIcon icon={LayoutList} />} title="Approved bindings" />
+      <ReviewCardBody>
+        <BindingSummary
+          declarations={release.manifest.bindings}
+          choices={detail.data.bindingChoices}
+          objects={schema.objects}
         />
-        <ReviewCardBody>
-          <MappingGroup mapping={mapping} bindings={view.outputs} />
-          {broken ? (
-            <Notice warning>
-              A mapped field was deleted or changed. Its value is not written until you remap or
-              skip it.
-            </Notice>
-          ) : null}
-          {suggest.error ? <Notice error>{suggest.error.message}</Notice> : null}
-        </ReviewCardBody>
-        {admin ? (
-          <ReviewCardFooter>
-            {canSuggest(release, installation) ? (
-              <Button disabled={suggest.isPending} onClick={() => suggest.mutate()}>
-                {suggest.isPending ? 'Requesting suggestions…' : 'Suggest mapping'}
-              </Button>
-            ) : null}
-            <Button asChild className="min-h-11 flex-1 sm:min-h-8 sm:flex-none">
-              <Link to="/extensions/$id/mapping" params={{ id: installation.id }}>
-                Edit mapping
-              </Link>
+        {suggest.error ? <Notice error>{suggest.error.message}</Notice> : null}
+      </ReviewCardBody>
+      {admin ? (
+        <ReviewCardFooter>
+          {canSuggest(release, installation) ? (
+            <Button disabled={suggest.isPending} onClick={() => suggest.mutate()}>
+              {suggest.isPending ? 'Requesting suggestions…' : 'Suggest bindings'}
             </Button>
-          </ReviewCardFooter>
-        ) : null}
-      </ReviewCard>
-    </div>
+          ) : null}
+          <Button asChild>
+            <Link to="/extensions/$id/mapping" params={{ id: installation.id }}>
+              Change setup
+            </Link>
+          </Button>
+        </ReviewCardFooter>
+      ) : null}
+    </ReviewCard>
   );
 }
 

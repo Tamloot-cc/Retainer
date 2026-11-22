@@ -150,7 +150,48 @@ function existingPlan(
   return resolved.plan;
 }
 
-async function applyPlan(tx: Tx, row: Row, release: Release, plan: StoredBindingPlan) {
+async function applyPlan(
+  tx: Tx,
+  row: Row,
+  release: Release,
+  plan: StoredBindingPlan,
+  schema: SchemaState,
+) {
+  const binding = release.manifest.source?.event;
+  const destination = binding ? plan.destinations[binding] : null;
+  const object = schema.objects.find((object) => object.universalId === destination?.objects[0]);
+  if (binding && destination && object) {
+    const projection = {
+      binding,
+      canonicalType: object.universalId,
+      fields: Object.fromEntries(
+        Object.entries(destination.fields).flatMap(([key, target]) => {
+          const field = object.fields.find((entry) => entry.universalId === target.id);
+          return field
+            ? [
+                [
+                  key,
+                  {
+                    field: {
+                      type: field.type,
+                      settings: field.settings,
+                      isNullable: field.isNullable,
+                    },
+                    values: target.values,
+                    canonicalKey: field.key,
+                  },
+                ],
+              ]
+            : [];
+        }),
+      ),
+    };
+    await tx`update source_receipts set projection = ${tx.json(jsonValue(projection))}
+      where projection is null and item_id in (
+        select s.id from source_items s join source_accounts a on a.id = s.account_id
+        where a.workspace_id = ${row.workspace_id} and a.registration_id = ${row.registration_id}
+      )`;
+  }
   await tx`update extension_installations set bindings=${tx.json(jsonValue(plan))}, bindings_revision=1,
     release_digest=${release.digest}, version=${release.manifest.version}, updated_at=now() where id=${row.id}`;
   await tx`update extension_attempts set status='cancelled',code='installation_changed',finished_at=now()
@@ -225,7 +266,7 @@ export async function migrateExtensionBindings(
         }
       }
       if (plan && release) {
-        if (!reportOnly) await applyPlan(tx, row, release, plan);
+        if (!reportOnly) await applyPlan(tx, row, release, plan, schema);
         report.push({
           ...base,
           action: 'bind' as const,

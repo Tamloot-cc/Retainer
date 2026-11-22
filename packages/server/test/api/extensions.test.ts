@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { defineExtension } from '@retainer/extension';
 import { RetainerClient } from '@retainer/sdk';
-import { BASE_OBJECT_IDS } from '@retainer/shared';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { BASE_OBJECT_IDS } from '../../src/templates/base.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 

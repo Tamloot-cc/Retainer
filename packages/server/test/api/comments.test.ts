@@ -644,6 +644,5 @@ describe('the base template (C5)', () => {
     });
     expect(added.body.status).toBe('applied');
     const note = (await events()).find((o: { nameSingular: string }) => o.nameSingular === 'note');
-    expect(note.baseObject).toBe('note');
   });
 });

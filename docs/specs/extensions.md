@@ -223,6 +223,17 @@ source identities and retained data never follow a mutable display name.
 
 ## 6. Persistence and ownership
 
+A release declares the bindings its capabilities use. Each installation
+stores an approved plan that selects an object, fields and select options
+for each binding, or skips optional bindings. A read binding can select
+multiple event types. An owned object or field is created as a contribution.
+Value permissions follow the normal assertion rules, with the separate
+installation-only permission for standalone fields that declare it.
+
+See [the binding contract](no-built-in-objects.md#52-manifest) for declaration
+and destination shapes.
+
+
 All new workspace tables have workspace RLS, composite workspace foreign keys
 where applicable, and access through `retainer_app`; secrets use a separate broker
 role with no ordinary read grants. Generate migrations from Drizzle.
@@ -259,6 +270,15 @@ universal ID. An extension-specific prefix improves readability but grants no
 ownership and cannot prevent identity collisions by itself.
 
 ## 7. Installation and schema lifecycle
+
+An admin reviews the whole binding plan, including any schema changes it
+needs. Approval validates the same plan under the exclusive schema lock.
+While the installation remains installed, the schema engine uses that
+validator to protect its destinations. Names and labels can change. Only a
+reviewed re-plan changes the destinations and increments the binding revision.
+A re-plan fences old runs, re-verifies setup and preserves imported evidence
+and unfinished jobs for unchanged triggers. Uninstall releases the plan.
+
 
 An admin with a human actor reviews schema additions, views, workspace-wide data
 access, requested actor class, source sharing, provider permissions and settings.
@@ -1074,6 +1094,15 @@ Excessive incremental fanout falls back to the paged scan, never a silently
 truncated update. Direct self-writes remain quiet under cause-chain dispatch.
 
 ## 10. Source ingestion, edits and deletion
+
+Managed ingestion writes by binding key. The server resolves the approved
+event and field destinations and matches participants through the approved
+email field. Task identity stays in `source_tasks` by source account. One
+installation lock serializes cross-account task reconciliation. Accepted
+source revisions retain their normalization projection for replay. A re-plan
+that moves a task destination detaches existing tasks with their values and
+provider identities intact.
+
 
 Do not change `logEvent` into an upsert. Add a managed import endpoint,
 `POST /v1/extensions/:installation/source-events`; it is REST only, since runs

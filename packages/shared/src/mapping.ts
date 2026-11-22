@@ -1,14 +1,13 @@
-import { BASE_FIELD_IDS_BY_NAME, isInverseRelation } from './schema.js';
+import { isInverseRelation } from './schema.js';
 
 /**
  * A field as the mapping rule sees it. The server's schema state names it by
  * `universalId`; the schema API (`FieldView`) keeps universal IDs internal
- * and says only which base field it is, and whether it is `readOnly`.
+ * and exposes whether it is `readOnly`.
  */
 export type MappingField = {
   type: string;
   universalId?: string;
-  baseField?: string;
   readOnly?: boolean;
   settings?: { isInverse?: boolean };
 };
@@ -27,10 +26,7 @@ export function mappingFieldIssue(
   output: { types: readonly string[] },
   lookupFieldId?: string,
 ): MappingFieldIssue | undefined {
-  const universalId =
-    field.universalId ??
-    (field.baseField && (BASE_FIELD_IDS_BY_NAME as Record<string, string>)[field.baseField]);
-  if (lookupFieldId && universalId === lookupFieldId) return 'lookup_field';
+  if (lookupFieldId && field.universalId === lookupFieldId) return 'lookup_field';
   if (field.readOnly || (field.settings && isInverseRelation({ settings: field.settings })))
     return 'read_only';
   if (!output.types.includes(field.type)) return 'incompatible_type';

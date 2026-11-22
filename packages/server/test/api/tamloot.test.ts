@@ -26,7 +26,7 @@ beforeAll(async () => {
     new SecretCipher('test', new Map([['test', randomBytes(32)]])),
   );
 });
-async function fixture(createPeople: 'never' | 'everyone' = 'everyone') {
+async function fixture(createPeople: 'never' | 'everyone' = 'everyone', custom = false) {
   const manifest = tamlootManifest({
       packageDigest: 'a'.repeat(64),
       handlerDigest: 'b'.repeat(64),
@@ -42,31 +42,134 @@ async function fixture(createPeople: 'never' | 'everyone' = 'everyone') {
     extensionSecrets: broker,
   });
   const { workspace, keys } = await app.setupWorkspace(
-    { name: `Tamloot ${randomUUID()}` },
+    { name: `Tamloot ${randomUUID()}`, template: custom ? null : 'starter' },
     {
       admin: {
         actor: { type: 'user', id: 'admin', name: 'Admin' },
         scopes: ['admin', 'read', 'write'],
       },
       member: { actor: { type: 'user', id: 'member', name: 'Dana' }, scopes: ['read', 'write'] },
+      agent: { actor: { type: 'agent', id: 'schema-designer' }, scopes: ['read', 'schema:write'] },
     },
   );
+  if (custom) {
+    const schema = await app.request('/v1/schema/changes', {
+      key: keys.agent,
+      body: {
+        operations: [
+          {
+            op: 'create_object',
+            object: {
+              nameSingular: 'client',
+              namePlural: 'clients',
+              labelSingular: 'Client',
+              labelPlural: 'Clients',
+              labelField: 'name',
+              fields: [{ name: 'name', label: 'Name', type: 'text' }],
+            },
+          },
+          {
+            op: 'create_object',
+            object: {
+              nameSingular: 'contact',
+              namePlural: 'contacts',
+              labelSingular: 'Contact',
+              labelPlural: 'Contacts',
+              labelField: 'name',
+              fields: [
+                { name: 'name', label: 'Name', type: 'text' },
+                { name: 'emailAddresses', label: 'Email addresses', type: 'emails' },
+                {
+                  name: 'client',
+                  label: 'Client',
+                  type: 'relation',
+                  isNullable: false,
+                  settings: { targetObject: 'client' },
+                },
+              ],
+            },
+          },
+          {
+            op: 'create_object',
+            object: {
+              nameSingular: 'action',
+              namePlural: 'actions',
+              labelSingular: 'Action',
+              labelPlural: 'Actions',
+              labelField: 'subject',
+              fields: [
+                { name: 'subject', label: 'Subject', type: 'text' },
+                {
+                  name: 'state',
+                  label: 'State',
+                  type: 'select',
+                  settings: { options: [{ value: 'idea', label: 'Idea' }] },
+                },
+                {
+                  name: 'contact',
+                  label: 'Contact',
+                  type: 'relation',
+                  settings: { targetObject: 'contact' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(schema.body.status).toBe('proposed');
+    const approval = await app.request(`/v1/schema/changes/${schema.body.change.id}/approve`, {
+      key: keys.admin,
+      method: 'POST',
+    });
+    expect(approval.body.status).toBe('applied');
+  }
   const input = {
     registrationId: manifest.universalId,
     version: manifest.version,
     settings: { shareMeetings: true, createPeople },
-    bindings: {
-      task: {
-        action: 'existing',
-        objects: ['task'],
-        fields: {
-          status: { action: 'existing', field: 'status', values: { open: 'todo', done: 'done' } },
+    bindings: custom
+      ? {
+          person: {
+            action: 'existing',
+            objects: ['contact'],
+            fields: {
+              emails: { action: 'existing', field: 'emailAddresses' },
+            },
+          },
+          task: {
+            action: 'existing',
+            objects: ['action'],
+            fields: {
+              title: { action: 'existing', field: 'subject' },
+              status: {
+                action: 'existing',
+                field: 'state',
+                values: {
+                  open: 'idea',
+                  done: { value: 'completed', label: 'Completed' },
+                },
+              },
+              person: { action: 'existing', field: 'contact' },
+            },
+          },
+        }
+      : {
+          task: {
+            action: 'existing',
+            objects: ['task'],
+            fields: {
+              status: {
+                action: 'existing',
+                field: 'status',
+                values: { open: 'todo', done: 'done' },
+              },
+            },
+          },
         },
-      },
-    },
   };
   const preview = await app.request('/v1/extensions/preview', { key: keys.admin, body: input });
-  expect(preview.status).toBe(200);
+  expect(preview.status, JSON.stringify(preview.body.error ?? null)).toBe(200);
   const installed = await app.request('/v1/extensions', {
     key: keys.admin,
     headers: { 'Idempotency-Key': randomUUID() },
@@ -275,6 +378,55 @@ async function fixture(createPeople: 'never' | 'everyone' = 'everyone') {
   };
 }
 describe('Tamloot bundle through real API and Postgres with provider HTTP fixtures', () => {
+  it('syncs meetings and linked actions in a workspace an agent designed from scratch', async () => {
+    const h = await fixture('everyone', true);
+    h.setTasks([
+      {
+        id: h.task1,
+        content: 'Follow up',
+        status: 'open',
+        contact_emails: ['participant@tamloot.test'],
+      },
+      {
+        id: h.task2,
+        content: 'Send notes',
+        status: 'done',
+        contact_emails: ['participant@tamloot.test'],
+      },
+    ]);
+    const schema = await h.app.request('/v1/schema', { key: h.keys.admin });
+    const contact = schema.body.objects.find(
+      (object: { nameSingular: string }) => object.nameSingular === 'contact',
+    );
+    expect(contact.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'emailAddresses', isUnique: true }),
+        expect.objectContaining({ name: 'client', isNullable: true }),
+      ]),
+    );
+    await h.connect();
+    const results = await h.drain();
+    expect(results.every((result) => result.status === 'succeeded')).toBe(true);
+    const found = await h.app.request('/v1/objects/contact/query', { key: h.keys.admin, body: {} });
+    expect(found.body.records).toHaveLength(1);
+    const context = await h.app.request(`/v1/records/${found.body.records[0].id}/context`, {
+      key: h.keys.admin,
+    });
+    expect(context.body.linkedRecords).toMatchObject([
+      {
+        object: 'action',
+        items: expect.arrayContaining([
+          expect.objectContaining({ selects: { state: 'idea' } }),
+          expect.objectContaining({ selects: { state: 'completed' } }),
+        ]),
+      },
+    ]);
+    const meetings = await h.app.request('/v1/events/query', {
+      key: h.keys.admin,
+      body: { filter: { type: { eq: 'meeting' } } },
+    });
+    expect(meetings.body.records).toHaveLength(1);
+  }, 60000);
   it('backfills, matches people, retains full notes and reconciles task-only changes and provider deletion', async () => {
     const h = await fixture(),
       cid = await h.connect();

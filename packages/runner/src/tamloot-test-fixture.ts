@@ -594,6 +594,17 @@ export class Harness {
       releaseDigest: 'a'.repeat(64),
       functionId,
       input: input as Invocation['input'],
+      bindings: {
+        bindings_revision: 1,
+        createPeople: 'everyone',
+        bindings: {
+          task: {
+            status: 'ok',
+            objects: [{ id: randomUUID(), name: 'taskTest', label: 'Tasks' }],
+            fields: {},
+          },
+        },
+      },
       apiOrigin: 'https://retainer.test',
       runToken: 'rt_run_tamloot',
       deadline: new Date(Date.now() + 120000).toISOString(),

@@ -1,10 +1,6 @@
 import type { Actor } from './actor.js';
 import type { FieldType, MoneyValue } from './field-types.js';
 import type {
-  BaseEventFieldName,
-  BaseEventTypeName,
-  BaseFieldName,
-  BaseObjectName,
   CoreRole,
   EventColumn,
   FieldDefinition,
@@ -44,8 +40,6 @@ export type FieldView = Omit<FieldDefinition, 'description' | 'settings'> & {
   isProtected: boolean;
   /** Select option values server code reads; they cannot be removed. */
   protectedOptions?: string[];
-  /** Which base field this is, so clients find it after a rename. */
-  baseField?: BaseFieldName | BaseEventFieldName;
   /** An event type's core field: `title` (its label) or `summary`. */
   coreRole?: CoreRole;
   isNullable: boolean;
@@ -67,8 +61,6 @@ export type ObjectView = {
   class: ObjectClass;
   /** Event types only: built-in columns beside the fields, filterable and sortable. */
   eventColumns?: EventColumn[];
-  /** Which base object or base event type this is, so clients find it after a rename. */
-  baseObject?: BaseObjectName | BaseEventTypeName;
   fields: FieldView[];
 };
 export type SchemaDescription = {

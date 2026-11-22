@@ -279,6 +279,12 @@ effects while Booking continues to treat the reservation as confirmed.
   `status` is text with documented values, not a select, because select
   options on a contributed field are structural and hard to extend later.
   Attendance and resource labels wait for the features that need them.
+- **Binding plan.** Booking contributes an owned `booking` binding for
+  summaries. An optional read binding picks the contact object its
+  `person` relation targets. Booking reads current names and stable IDs
+  through `GET /v1/extensions/:id/bindings` with its standalone grant.
+  A standalone record write carries the returned binding revision, object ID
+  and stable IDs for the field names it writes or matches.
 - **Installation-owned fields (platform change).** A contributed field can
   declare that only its installation writes it. The API refuses other
   writers, and the field is presented read-only, which already turns off

@@ -1,6 +1,5 @@
 import type { ExtensionManifest } from '@retainer/extension';
 import {
-  BASE_OBJECT_IDS,
   type SourceScan,
   type SourceSyncStatus,
   sourceScanSchema,
@@ -63,7 +62,12 @@ type Item = {
 type Revision = { id: string; event_id: string; content_digest: string };
 type SourceProjection = {
   binding: string;
-  fields: Record<string, { field: ValueField; values: Record<string, string> }>;
+  /** Existing receipts keep the canonical format accepted before binding plans. */
+  canonicalType?: string;
+  fields: Record<
+    string,
+    { field: ValueField; values: Record<string, string>; canonicalKey?: string }
+  >;
 };
 type SourceReceipt = {
   content_digest: string;
@@ -653,7 +657,7 @@ export class Sources {
         });
       const normalized = normalizeFieldValue(field, isMapped ? mapped[value as string] : value);
       if (live) fields[live.name] = normalized;
-      const canonicalKey = projection ? key : (live?.key ?? key);
+      const canonicalKey = stored?.canonicalKey ?? (projection ? key : (live?.key ?? key));
       if (field.type === 'files') {
         const ids = (normalized ?? []) as string[];
         const rows = ids.length
@@ -672,7 +676,9 @@ export class Sources {
             ? null
             : ids.map((id) => {
                 const metadata = rows.find((row) => row.id === id)?.metadata;
-                return projection ? (metadata?.sha256 ?? metadata) : metadata;
+                return projection && !projection.canonicalType
+                  ? (metadata?.sha256 ?? metadata)
+                  : metadata;
               });
       } else canonicalFields[canonicalKey] = isMapped ? value : normalized;
     }
@@ -689,7 +695,7 @@ export class Sources {
       (p) => !isSuppressed(suppressed, { kind: 'email', value: p.email }),
     );
     const canonicalOf = (people: typeof listed) => ({
-      type: binding ?? input.event.type,
+      type: projection?.canonicalType ?? binding ?? input.event.type,
       occurredAt: new Date(input.event.occurredAt).toISOString(),
       title: input.event.title,
       summary: input.event.summary ?? '',
@@ -722,7 +728,7 @@ export class Sources {
     )
       throw forbidden('create-people setting exceeds the approved source policy');
     if (requested === 'never') return;
-    const person = context.schema.objectsByUniversalId.get(BASE_OBJECT_IDS.person);
+    const person = context.schema.objectsByName.get('person');
     const email = person?.activeFields.find((f) => f.type === 'emails' && f.isUnique);
     if (!person || !email)
       throw conflict('source_schema_changed', 'the base person email binding is unavailable');
@@ -992,8 +998,29 @@ export class Sources {
             'source_revision_conflict',
             'the same provider revision cannot contain different content',
           );
+        let unchanged = current?.content_digest === normalized.digest;
+        if (!unchanged && current && item.provider_revision && policy.plan) {
+          const previous = await receiptFor(
+            requestHash({ providerRevision: item.provider_revision }),
+          );
+          if (
+            previous?.projection?.canonicalType &&
+            Object.keys(input.event.fields).every(
+              (key) => !normalized.projection?.fields[key] || !!previous.projection?.fields[key],
+            )
+          ) {
+            const comparable = await this.normalize(
+              tx,
+              context,
+              policy,
+              input,
+              previous.projection,
+            );
+            unchanged = current.content_digest === comparable.digest;
+          }
+        }
         let result: SourceResult;
-        if (current?.content_digest === normalized.digest) {
+        if (current && unchanged) {
           result = {
             sourceItemId: item.id,
             revisionId: current.id,

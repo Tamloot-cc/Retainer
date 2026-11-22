@@ -1,5 +1,4 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { BASE_OBJECT_IDS } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Caller } from '../../src/caller.js';
@@ -8,6 +7,7 @@ import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { Extensions } from '../../src/extensions/service.js';
+import { BASE_OBJECT_IDS } from '../../src/templates/base.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';

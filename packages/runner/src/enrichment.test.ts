@@ -1,6 +1,5 @@
 import type { Invocation } from '@retainer/extension';
 import { RetainerClient } from '@retainer/sdk';
-import { BASE_OBJECT_IDS } from '@retainer/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeEnrichment, lookUp, MEDIUM_CONFIDENCE } from './enrichment.js';
 import {
@@ -386,7 +385,6 @@ describe('configure (spec 6.1)', () => {
     objects: [
       {
         nameSingular: 'company',
-        baseObject: 'company',
         labelField: 'name',
         fields: [
           { name: 'name', label: 'Name', type: 'text', readOnly: false, description: null },
@@ -395,7 +393,6 @@ describe('configure (spec 6.1)', () => {
             label: 'Domain',
             type: 'links',
             readOnly: false,
-            baseField: 'companyDomain',
             description: null,
           },
           { name: 'size', label: 'Size', type: 'number', readOnly: false, description: null },
@@ -444,11 +441,19 @@ describe('configure (spec 6.1)', () => {
           ],
           nextCursor: null,
         });
-      if (target.pathname === '/v1/extensions/installation')
+      if (target.pathname === '/v1/extensions/installation/bindings')
         return json({
-          mapping: {
-            revision: 1,
-            outputs: [{ output: 'employee_count', action: 'existing', field: { name: 'size' } }],
+          bindings_revision: 1,
+          createPeople: 'never',
+          bindings: {
+            company: {
+              status: 'ok',
+              objects: [{ name: 'company' }],
+              fields: {
+                domain: { name: 'domain' },
+                employee_count: { name: 'size', label: 'Size' },
+              },
+            },
           },
         });
       if (target.pathname.endsWith('/runtime/suggestions')) {
@@ -503,10 +508,21 @@ describe('configure (spec 6.1)', () => {
     expect(await c.run()).toEqual({ status: 'succeeded', code: 'suggestions_ready' });
     expect(c.saved).toEqual([
       {
-        mapping: {
-          employee_count: { action: 'existing', field: 'size', reason: 'Because.' },
-          linkedin_url: { action: 'create', reason: 'Because.' },
-          headquarters: { action: 'skip', reason: 'Because.' },
+        bindings: {
+          company: {
+            action: 'existing',
+            objects: ['company'],
+            fields: {
+              employee_count: { action: 'existing', field: 'size' },
+              linkedin_url: { action: 'create' },
+              headquarters: { action: 'skip' },
+            },
+          },
+        },
+        bindingReasons: {
+          'company.employee_count': 'Because.',
+          'company.linkedin_url': 'Because.',
+          'company.headquarters': 'Because.',
         },
       },
     ]);
@@ -537,10 +553,14 @@ describe('configure (spec 6.1)', () => {
     );
     expect(await c.run()).toEqual({ status: 'succeeded', code: 'suggestions_ready' });
     expect(c.saved[0]).toMatchObject({
-      mapping: {
-        employee_count: { action: 'create' },
-        linkedin_url: { action: 'existing', field: 'linkedinUrl' },
-        headquarters: { action: 'create' },
+      bindings: {
+        company: {
+          fields: {
+            employee_count: { action: 'create' },
+            linkedin_url: { action: 'existing', field: 'linkedinUrl' },
+            headquarters: { action: 'create' },
+          },
+        },
       },
     });
     expect(c.prompts[0]).toContain('currentMapping');
@@ -560,15 +580,22 @@ describe('configure (spec 6.1)', () => {
   ])('falls back to name-and-type suggestions when %s', async (_case, answer) => {
     const c = configure(answer);
     expect(await c.run()).toEqual({ status: 'succeeded', code: 'suggestions_ready_without_model' });
-    expect(c.saved).toEqual([
-      {
-        mapping: {
-          employee_count: { action: 'create', reason: expect.any(String) },
-          linkedin_url: { action: 'existing', field: 'linkedinUrl', reason: expect.any(String) },
-          headquarters: { action: 'create', reason: expect.any(String) },
+    expect(c.saved[0]).toMatchObject({
+      bindings: {
+        company: {
+          fields: {
+            employee_count: { action: 'create' },
+            linkedin_url: { action: 'existing', field: 'linkedinUrl' },
+            headquarters: { action: 'create' },
+          },
         },
       },
-    ]);
+      bindingReasons: {
+        'company.employee_count': expect.any(String),
+        'company.linkedin_url': expect.any(String),
+        'company.headquarters': expect.any(String),
+      },
+    });
   });
 });
 
@@ -580,15 +607,19 @@ describe('enrichment manifest', () => {
   });
   it('declares the reviewed outputs, the domain lookup and a narrow mapped-write trigger', () => {
     expect(manifest.requestedActor).toBe('agent');
-    expect(manifest.mapping?.objectId).toBe(BASE_OBJECT_IDS.company);
-    expect(manifest.mapping?.outputs.map((o) => [o.key, o.types, o.field?.universalId])).toEqual([
+    const company = manifest.bindings?.find((binding) => binding.key === 'company');
+    expect(
+      company?.fields
+        .filter((field) => !field.lookup)
+        .map((field) => [field.key, field.types, field.create?.universalId]),
+    ).toEqual([
       ['employee_count', ['number'], ENRICHMENT.employeeCountField],
       ['linkedin_url', ['links'], ENRICHMENT.linkedinField],
       ['headquarters', ['address'], ENRICHMENT.headquartersField],
     ]);
     const enrich = manifest.functions.find((f) => f.universalId === ENRICHMENT.enrich);
     expect(enrich).toMatchObject({
-      mappedWrite: true,
+      mappedWrite: 'company',
       trigger: {
         binding: 'company',
         fields: ['domain', 'name'],

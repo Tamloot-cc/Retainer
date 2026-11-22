@@ -81,12 +81,14 @@ export function BindingFields({
   choices,
   objects,
   issues,
+  reasons,
   onChange,
 }: {
   declarations: ExtensionBinding[];
   choices: ExtensionBindingChoices;
   objects: readonly ObjectView[];
   issues: BindingReviewIssue[];
+  reasons?: Record<string, string>;
   onChange: (key: string, choice: Choice) => void;
 }) {
   return declarations.map((binding) => {
@@ -102,6 +104,7 @@ export function BindingFields({
       <fieldset key={binding.key} className="space-y-3 rounded-md border p-4">
         <legend className="px-1 font-medium">{binding.label}</legend>
         <Muted>{binding.description}</Muted>
+        {reasons?.[binding.key] ? <Muted>{reasons[binding.key]}</Muted> : null}
         {many ? (
           <Label>
             Event types
@@ -212,6 +215,10 @@ export function BindingFields({
                 });
               return (
                 <Stack key={field.key}>
+                  {field.description ? <Muted>{field.description}</Muted> : null}
+                  {reasons?.[`${binding.key}.${field.key}`] ? (
+                    <Muted>{reasons[`${binding.key}.${field.key}`]}</Muted>
+                  ) : null}
                   <Label>
                     {field.label}
                     <select

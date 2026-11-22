@@ -69,9 +69,7 @@ describe('GET /v1/schema', () => {
     );
     // Medium is an ordinary select a person or agent can correct, documented against channel.
     // Clients find the base event types and medium after a rename, as for base objects.
-    expect(meeting.baseObject).toBe('conversation');
     expect(meeting.fields.find((f: { name: string }) => f.name === 'medium')).toMatchObject({
-      baseField: 'conversationMedium',
       type: 'select',
       isFilterable: true,
       isProtected: false,

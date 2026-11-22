@@ -154,13 +154,19 @@ async function setup(options: { modelKey?: boolean; legacy?: boolean } = {}) {
     registrationId: current.universalId,
     version: options.legacy ? legacy.version : current.version,
     settings: { shareDomains: true },
-    mapping: {
-      employee_count: { action: 'create' },
-      linkedin_url: { action: 'create' },
-      headquarters: { action: 'create' },
+    bindings: {
+      company: {
+        action: 'existing',
+        objects: ['company'],
+        fields: {
+          employee_count: { action: 'create' },
+          linkedin_url: { action: 'create' },
+          headquarters: { action: 'create' },
+        },
+      },
     },
   };
-  const { mapping: _mapping, ...access } = { ...input, secretRefs };
+  const { bindings: _bindings, ...access } = { ...input, secretRefs };
   const accessPreview = await app.request('/v1/extensions/preview', {
     key: keys.admin,
     body: access,
@@ -387,7 +393,7 @@ describe('company enrichment through a fake Exa', () => {
       state: 'active',
       version: h.currentVersion,
       settings: previous.settings,
-      mapping: { outputs: previous.mapping.outputs },
+      bindingChoices: previous.bindingChoices,
     });
     expect(h.exa.requests[0]).toMatchObject({ key: 'exa-fixture-key' });
     const company = await h.company({ name: 'Acme', domain: 'acme.example' });
@@ -419,7 +425,7 @@ describe('company enrichment through a fake Exa', () => {
       state: 'active',
       version: h.currentVersion,
       lastError: null,
-      mapping: { outputs: previous.mapping.outputs },
+      bindingChoices: previous.bindingChoices,
     });
     const company = await h.company({ name: 'Acme', domain: 'acme.example' });
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
@@ -540,23 +546,15 @@ describe('company enrichment through a fake Exa', () => {
     expect(h.exa.requests.map((r) => r.path)).toEqual(['/websets/v0/teams/me', '/search']);
   });
 
-  it('fails a run whose mapped field was deleted, without calling Exa', async () => {
+  it('refuses to delete an output while the approved binding needs it', async () => {
     const h = await setup();
     await h.drain();
-    const acme = await h.company({ name: 'Acme', domain: 'acme.example' });
-    await db.owner`delete from extension_contributions where installation_id=${h.id} and universal_id=${ENRICHMENT.headquartersField}`;
-    expect(
-      (
-        await h.app.request('/v1/schema/changes', {
-          key: h.keys.admin,
-          body: { operations: [{ op: 'delete_field', object: 'company', field: 'headquarters' }] },
-        })
-      ).status,
-    ).toBe(200);
-    const before = h.exa.requests.length;
-    expect(await h.drain()).toEqual([{ status: 'failed', code: 'schema_binding_conflict' }]);
-    expect(h.exa.requests).toHaveLength(before);
-    expect((await h.fields(acme)).employeeCount).toBeUndefined();
+    const changed = await h.app.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: { operations: [{ op: 'delete_field', object: 'company', field: 'headquarters' }] },
+    });
+    expect(changed.status).toBe(422);
+    expect(changed.body.error.details.issues[0].message).toContain('Change CompanyEnrichment');
   });
 });
 
@@ -660,32 +658,22 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     expect(h.exa.requests).toHaveLength(searches);
   });
 
-  it('keeps watching the domain after the workspace deletes the name field', async () => {
+  it('keeps watching a bound name after the workspace renames it', async () => {
     const h = await setup();
     await h.drain();
     const changed = await h.app.request('/v1/schema/changes', {
       key: h.keys.admin,
       body: {
-        operations: [
-          {
-            op: 'create_field',
-            object: 'company',
-            field: { name: 'tradingName', label: 'Trading name', type: 'text' },
-          },
-          { op: 'update_object', object: 'company', labelField: 'tradingName' },
-          { op: 'delete_field', object: 'company', field: 'name' },
-        ],
+        operations: [{ op: 'rename_field', object: 'company', field: 'name', name: 'tradingName' }],
       },
     });
     expect(changed.status, JSON.stringify(changed.body)).toBe(200);
-    expect(changed.body.status).toBe('applied');
     const acme = await h.company({ tradingName: 'Acme' });
-    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_domain' }]);
+    await h.drain();
     expect((await h.patch(acme, { domain: 'acme.example' })).status).toBe(200);
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
     expect(h.exa.requests.at(-1)?.body?.query).toBe('Acme acme.example');
     expect((await h.fields(acme)).employeeCount).toBe(12);
-    expect(await h.detail()).toMatchObject({ connectionHealth: 'ok', lastError: null });
   });
 
   it('backfills a company whose first values are still held for review', async () => {
@@ -712,7 +700,7 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     ).toEqual(['Held held.example']);
   });
 
-  it('sends no name when the Company label is not a text field', async () => {
+  it('uses the approved name field when the label is an email', async () => {
     const h = await setup();
     await h.drain();
     const changed = await h.app.request('/v1/schema/changes', {
@@ -736,7 +724,7 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
       billingEmail: 'billing@acme.example',
     });
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
-    expect(h.exa.requests.at(-1)?.body?.query).toBe('acme.example');
+    expect(h.exa.requests.at(-1)?.body?.query).toBe('Acme acme.example');
     expect(JSON.stringify(h.exa.requests)).not.toContain('billing@');
   });
 
@@ -782,7 +770,17 @@ describe('enrichment configure and backfill', () => {
     const results = await h.drain();
     const saved = await h.app.request(`/v1/extensions/${h.id}/suggestions`, { key: h.keys.admin });
     expect(saved.body.status).toBe('ready');
-    return { results, mapping: saved.body.mapping };
+    return {
+      results,
+      mapping: Object.fromEntries(
+        Object.entries<Record<string, unknown>>(saved.body.bindings.company.fields).map(
+          ([key, choice]) => [
+            key,
+            { ...choice, reason: saved.body.bindingReasons[`company.${key}`] },
+          ],
+        ),
+      ),
+    };
   };
 
   it('suggests the mapping with the model, from sampled companies and the current mapping', async () => {

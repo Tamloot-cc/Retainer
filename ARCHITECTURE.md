@@ -1244,6 +1244,12 @@ the deploy pass lock shared. Shutdown `stop()` still aborts and releases runs.
 
 ### 4.6 Standalone installation credentials
 
+Standalone extensions read their binding plan with their installation
+credential. Their writes carry the binding revision and the stable object and
+field IDs corresponding to the names in the request. The admitted transaction
+checks both against the current plan and schema.
+
+
 `extension_credentials` binds hash-stored key-mode keys (and installation OAuth
 grant records) to a workspace, installation, approved scope subset and generation.
 The external app actor is the installation, with no personal-memory principal.

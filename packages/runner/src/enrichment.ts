@@ -125,10 +125,13 @@ const SAMPLE_MAX_CHARACTERS = 500;
 const REASON_MAX = 500;
 
 /** Company fields an output can be written to; never the domain it looks companies up by. */
-const fieldsFor = (company: ObjectView | undefined, output: MappingOutput) =>
+const fieldsFor = (company: ObjectView | undefined, output: MappingOutput, lookupName = 'domain') =>
   (company?.fields ?? []).filter(
     (field) =>
-      !field.readOnly && !field.coreRole && output.types.some((type) => type === field.type),
+      !field.readOnly &&
+      !field.coreRole &&
+      field.name !== lookupName &&
+      output.types.some((type) => type === field.type),
   );
 
 async function readCompanyBinding(sdk: RetainerClient, invocation: Invocation) {
@@ -194,7 +197,9 @@ async function suggestWithModel(
 ): Promise<Choices | null> {
   if (!model) return null;
   const candidates = new Map(
-    outputs.flatMap((output) => fieldsFor(company, output)).map((f) => [f.name, f]),
+    outputs
+      .flatMap((output) => fieldsFor(company, output, current?.lookup?.name))
+      .map((f) => [f.name, f]),
   );
   const samples = new Map<string, unknown[]>();
   if (company && candidates.size) {
@@ -256,7 +261,7 @@ async function suggestWithModel(
       if (
         choice?.action === 'existing' &&
         field &&
-        fieldsFor(company, output).some((f) => f.name === field)
+        fieldsFor(company, output, current?.lookup?.name).some((f) => f.name === field)
       )
         return [output.key, { action: 'existing' as const, field, reason }];
       if (choice?.action === 'skip' || (choice?.action === 'create' && output.field))

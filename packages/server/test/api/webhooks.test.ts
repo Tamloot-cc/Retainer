@@ -1,6 +1,5 @@
 import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import type { InputSchema, VerificationInvocation, VerificationResult } from '@retainer/extension';
-import { BASE_EVENT_TYPE_IDS } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.js';
@@ -9,6 +8,7 @@ import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { BASE_EVENT_TYPE_IDS } from '../../src/templates/base.js';
 import { IngressLimiter } from '../../src/webhooks/limiter.js';
 import { Webhooks } from '../../src/webhooks/service.js';
 import { ChangeMaintenance } from '../../src/worker/changes.js';

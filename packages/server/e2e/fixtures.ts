@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { test as base, expect } from '@playwright/test';
-import { BASE_EVENT_TYPE_IDS, BASE_OBJECT_IDS } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import postgres from 'postgres';
 import { createApp } from '../src/api/app.js';
@@ -17,6 +16,7 @@ import { RunTokens } from '../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../src/extensions/catalog.js';
 import { parseOAuthClients } from '../src/extensions/oauth-clients.js';
 import { createFileServer, LocalFileStorage } from '../src/file-storage/local.js';
+import { BASE_EVENT_TYPE_IDS, BASE_OBJECT_IDS } from '../src/templates/base.js';
 import { consolidateWorkspace } from '../src/worker/consolidate.js';
 import { createWorkspace } from '../src/workspaces/workspaces.js';
 import { extensionFixture as manifestFixture } from '../test/helpers/extensions.js';
@@ -67,30 +67,39 @@ export const browserMappingManifest = manifestFixture({
   name: 'browser-enrichment',
   requestedActor: 'agent',
   scopes: ['read', 'write'],
-  mapping: {
-    objectId: BASE_OBJECT_IDS.company,
-    lookup: { fieldId: 'bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641', type: 'links' },
-    outputs: [
-      {
-        key: 'employee_count',
-        label: 'Employee count',
-        description: 'Employees the provider finds, mostly from public profiles.',
-        types: ['number'],
-        field: {
-          universalId: '7d1a4c55-2b8e-4f0a-9c63-5e8f1a2b3c4d',
-          name: 'employeeCount',
-          label: 'Employee Count',
-          type: 'number',
+  bindings: [
+    {
+      key: 'company',
+      label: 'Companies',
+      description: 'Fill in details on existing companies.',
+      class: 'entity',
+      access: 'write',
+      required: true,
+      fields: [
+        { key: 'domain', label: 'Domain', types: ['links'], required: true, lookup: true },
+        {
+          key: 'employee_count',
+          label: 'Employee count',
+          required: false,
+          types: ['number'],
+          description: 'Employees the provider finds, mostly from public profiles.',
+          create: {
+            universalId: '7d1a4c55-2b8e-4f0a-9c63-5e8f1a2b3c4d',
+            name: 'employeeCount',
+            label: 'Employee Count',
+            type: 'number',
+          },
         },
-      },
-      {
-        key: 'headquarters',
-        label: 'Headquarters',
-        description: 'Headquarters city and country.',
-        types: ['address'],
-      },
-    ],
-  },
+        {
+          key: 'headquarters',
+          label: 'Headquarters',
+          required: false,
+          types: ['address'],
+          description: 'Headquarters city and country.',
+        },
+      ],
+    },
+  ],
 });
 export const browserConfigureManifest = manifestFixture({
   ...browserMappingManifest,
@@ -123,15 +132,13 @@ const browserSecretConfigureManifest = manifestFixture({
   },
   functions: browserConfigureManifest.functions.map((fn) => ({ ...fn, secrets: ['providerKey'] })),
 });
-const browserMapping = browserMappingManifest.mapping;
-if (!browserMapping) throw new Error('mapping fixture needs a mapping');
 const browserConfigurePrevious = manifestFixture({
   ...browserMappingManifest,
   name: 'browser-configure',
-  mapping: {
-    ...browserMapping,
-    outputs: browserMapping.outputs.slice(0, 1),
-  },
+  bindings: browserMappingManifest.bindings?.map((binding) => ({
+    ...binding,
+    fields: binding.fields.filter((field) => field.key !== 'headquarters'),
+  })),
 });
 export const browserMemberManifest = manifestFixture({
   universalId: 'd76ad98b-ac74-4fe5-82ac-0947165f8780',
@@ -531,13 +538,19 @@ export const test = base.extend<
       await request(
         `/extensions/${job.installationId}/runtime/suggestions`,
         {
-          mapping: {
-            employee_count: { action: 'create', reason: 'A dedicated count field.' },
-            headquarters: {
+          bindings: {
+            company: {
               action: 'existing',
-              field: 'address',
-              reason: 'The existing company address.',
+              objects: ['company'],
+              fields: {
+                employee_count: { action: 'create' },
+                headquarters: { action: 'existing', field: 'address' },
+              },
             },
+          },
+          bindingReasons: {
+            'company.employee_count': 'A dedicated count field.',
+            'company.headquarters': 'The existing company address.',
           },
         },
         token,
@@ -551,7 +564,7 @@ export const test = base.extend<
         registrationId: manifest.universalId,
         version: manifest.version,
         settings: {},
-        mapping: { employee_count: { action: 'create' } },
+        bindings: { company: { action: 'existing', objects: ['company'] } },
       });
     }
     function installOAuthMember() {
@@ -567,7 +580,7 @@ export const test = base.extend<
       registrationId: string;
       version: string;
       settings: Record<string, unknown>;
-      mapping?: Record<string, unknown>;
+      bindings?: Record<string, unknown>;
     }) {
       if (!catalog) throw new Error('no extension catalog in this fixture');
       const preview = await request('/extensions/preview', input, user);

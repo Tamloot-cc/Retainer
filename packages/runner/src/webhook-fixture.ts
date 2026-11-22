@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { type ExecutionResult, type Invocation, lifecycleInputSchema } from '@retainer/extension';
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
-import { BASE_EVENT_FIELD_IDS, BASE_EVENT_TYPE_IDS } from '@retainer/shared';
 import { z } from 'zod';
 import { apiFetch, retryTransient } from './outcome.js';
 
@@ -69,11 +68,10 @@ async function webhookFixture(
   const metadata = await sdk.extension(invocation.installationId),
     fields: Record<string, unknown> = {};
   if (metadata.settings?.includeTranscript === true) {
-    const schema = await sdk.schema(),
-      field = schema.objects
-        .flatMap((object) => object.fields)
-        .find((entry) => entry.baseField === 'conversationTranscript');
-    if (field?.type !== 'files') return { status: 'failed', code: 'source_schema_changed' };
+    const bindings =
+      invocation.bindings ?? (await sdk.extensionBindings(invocation.installationId));
+    if (!bindings.bindings.meeting?.fields.transcript)
+      return { status: 'failed', code: 'binding_unavailable' };
     const bytes = Buffer.from(
       'A deterministic fixture transcript uploaded by an isolated source runner.',
     );
@@ -95,14 +93,14 @@ async function webhookFixture(
     });
     if (!uploaded.ok) return { status: 'retry', code: 'file_upload_failed' };
     await sdk.finalizeFile(intent.id);
-    fields[BASE_EVENT_FIELD_IDS.conversationTranscript] = [intent.id];
+    fields.transcript = [intent.id];
   }
   await sdk.syncSourceEvent(invocation.installationId, {
     sourceItemId: item.sourceItemId,
     providerRevision: '1',
     expectedRevisionId: item.revisionId,
     event: {
-      type: BASE_EVENT_TYPE_IDS.conversation,
+      binding: 'meeting',
       occurredAt: '2026-11-10T12:00:00.000Z',
       title: 'Compose webhook note',
       fields,

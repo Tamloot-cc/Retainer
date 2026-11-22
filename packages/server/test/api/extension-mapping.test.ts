@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { BASE_OBJECT_IDS, INTERNAL_NOTE_TYPE_ID } from '@retainer/shared';
+import { INTERNAL_NOTE_TYPE_ID } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { BASE_OBJECT_IDS } from '../../src/templates/base.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';

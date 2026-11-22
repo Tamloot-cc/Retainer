@@ -1,5 +1,13 @@
 # Extension installation in two steps
 
+For binding-based releases, configure can suggest binding, field and option
+choices and attach a reason to each. The agent's `preview_extension` can
+propose choices too. The review prefers configure suggestions, then agent
+proposals, then fixed defaults. A person approves the resulting plan in the
+Bindings tab. Changing that plan runs setup again and keeps previously
+imported evidence in its original objects.
+
+
 Status: implemented, 2026-11-14 (PRs #90 and #91; `main` at `59425b0`).
 Amends [extensions.md](extensions.md) §7
 (installation lifecycle), §8 (what lifecycle functions may read) and §9.1

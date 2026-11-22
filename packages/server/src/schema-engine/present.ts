@@ -1,7 +1,4 @@
 import {
-  BASE_EVENT_TYPE_IDS,
-  BASE_FIELD_IDS_BY_NAME,
-  BASE_OBJECT_IDS,
   EVENT_COLUMNS,
   FIELD_TYPES,
   FIELD_VALUE_FORMATS,
@@ -23,20 +20,6 @@ import {
 import { PROTECTED_OPTIONS } from './protection.js';
 
 export type { FieldView, ObjectView } from '@retainer/shared';
-
-type BaseObject = NonNullable<ObjectView['baseObject']>;
-type BaseField = NonNullable<ObjectView['fields'][number]['baseField']>;
-
-/** Base objects and base event types by universal ID, so clients find them after a rename. */
-const BASE_OBJECT_NAMES = new Map<string, BaseObject>(
-  Object.entries({ ...BASE_OBJECT_IDS, ...BASE_EVENT_TYPE_IDS }).map(([name, id]) => [
-    id,
-    name as BaseObject,
-  ]),
-);
-const BASE_FIELD_NAMES = new Map<string, BaseField>(
-  Object.entries(BASE_FIELD_IDS_BY_NAME).map(([name, id]) => [id, name as BaseField]),
-);
 
 /**
  * Stored field settings with universal IDs turned back into API names.
@@ -222,9 +205,6 @@ export function presentSchema(
     isProtected: object.state.isProtected,
     class: object.state.class,
     ...(object.state.class === 'event' ? { eventColumns: [...EVENT_COLUMNS] } : {}),
-    ...(BASE_OBJECT_NAMES.has(object.state.universalId)
-      ? { baseObject: BASE_OBJECT_NAMES.get(object.state.universalId) }
-      : {}),
     fields: object.activeFields.map((field) => ({
       name: field.name,
       label: field.label,
@@ -240,9 +220,6 @@ export function presentSchema(
       isProtected: field.isProtected,
       ...(PROTECTED_OPTIONS.has(field.universalId)
         ? { protectedOptions: [...(PROTECTED_OPTIONS.get(field.universalId) ?? [])] }
-        : {}),
-      ...(BASE_FIELD_NAMES.has(field.universalId)
-        ? { baseField: BASE_FIELD_NAMES.get(field.universalId) }
         : {}),
       ...(field.coreRole ? { coreRole: field.coreRole } : {}),
     })),

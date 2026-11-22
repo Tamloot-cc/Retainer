@@ -41,7 +41,6 @@ const conversation = {
   labelSingular: 'Conversation',
   labelPlural: 'Conversations',
   class: 'event',
-  baseObject: 'conversation',
   labelField: 'title',
   eventColumns: ['occurredAt', 'channel', 'externalId'],
   fields: [
@@ -61,7 +60,6 @@ const person = { ...company, nameSingular: 'person' } as ObjectView;
 const note = {
   ...conversation,
   nameSingular: 'note',
-  baseObject: 'note',
   fields: [],
 } as unknown as ObjectView;
 const schema = { objects: [company, person, conversation, note] };

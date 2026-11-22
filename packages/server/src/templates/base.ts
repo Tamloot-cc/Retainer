@@ -1,23 +1,37 @@
 import {
-  BASE_EVENT_FIELD_IDS,
-  BASE_EVENT_TYPE_IDS,
-  BASE_FIELD_IDS,
-  BASE_OBJECT_IDS,
   INTERNAL_NOTE_TYPE_ID,
   MEMBER_PROFILE_TYPE_ID,
   WORKSPACE_PROFILE_TYPE_ID,
 } from '@retainer/shared';
 import type { SchemaOperation } from '../schema-engine/operations.js';
 
-/**
- * The three objects every workspace starts with (ARCHITECTURE.md 3.1).
- * Universal IDs are fixed forever: upgrades and templates find these
- * objects and fields by them in every workspace.
- */
-export { BASE_EVENT_TYPE_IDS, BASE_FIELD_IDS, BASE_OBJECT_IDS, INTERNAL_NOTE_TYPE_ID };
+export const BASE_OBJECT_IDS = {
+  company: '1f24f94d-6bc5-4955-b6ab-ac946e2b140a',
+  person: '7e87d873-8c93-4786-9a0b-95447310c8d3',
+  task: 'd0690d5f-d7f4-47ce-8007-0a81a276a70b',
+} as const;
+
+/** Base fields that server code reads directly, such as open tasks in context packs. */
+export const BASE_FIELD_IDS = {
+  taskStatus: '107158ae-ba0f-482e-afe1-5e45bd6ccfd6',
+  taskDueDate: '368276ea-604d-4dcd-b6ad-796431a84a06',
+  /** The company website; extensions look companies up by it (not protected). */
+  companyDomain: 'bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641',
+} as const;
+
+export const BASE_EVENT_TYPE_IDS = {
+  conversation: '564ad764-a57c-4741-ad63-61604fa4cf5a',
+} as const;
+
+export const BASE_EVENT_FIELD_IDS = {
+  conversationMedium: '6475aaeb-54ab-4e7c-8e43-d1a4469a12a0',
+  conversationTranscript: 'fe832d36-cccb-48e4-8423-942e793741f9',
+} as const;
+
+export { INTERNAL_NOTE_TYPE_ID };
 
 /**
- * The event type every workspace starts with (C5). Meetings, calls, emails
+ * The event type in the Starter template. Meetings, calls, emails
  * and chats are all conversations: `medium` says which, and stays editable
  * after logging. Every other event type comes from a template or an agent: one
  * for events whose fields a conversation would never use, such as a payment

@@ -53,6 +53,7 @@ import { log } from '../log.js';
 import { lockRecordsForUpdate, objectOf, recomputeFields } from '../records/write.js';
 import { getSchema } from '../schema/compiled.js';
 import { loadSchemaState } from '../schema/load.js';
+import { deriveUuid } from '../schema-engine/apply.js';
 import { planSchemaChange, runSchemaChange, SYSTEM_ACTOR } from '../schema-engine/engine.js';
 import { detachEditedTasks } from '../sources/task-detach.js';
 import {
@@ -708,6 +709,7 @@ export class Extensions {
         retired: new Set<string>(),
         bound: undefined,
         replan: false,
+        views: [],
         mapped: {
           stored: EMPTY_MAPPING,
           operations: [],
@@ -728,7 +730,7 @@ export class Extensions {
       owned.some((o) => o.kind === kind && o.universal_id === id);
     const targets = [
       ...manifest.schema.map((c) => (c.kind === 'object' ? c.definition.universalId : c.objectId)),
-      ...manifest.views.map((v) => v.objectId),
+      ...manifest.views.flatMap((v) => ('objectId' in v ? [v.objectId] : [])),
       ...manifest.functions.flatMap((f) =>
         f.trigger.kind === 'change' && f.trigger.objectId ? [f.trigger.objectId] : [],
       ),
@@ -801,13 +803,28 @@ export class Extensions {
     const notices = [...contributed.notices, ...mapped.warnings];
     const planned = planSchemaChange(current, operations, 'workspace');
     const retired = retiredContributions(current, manifest, owned);
-    const skippedViews = manifest.views.filter(
+    const views = manifest.views.flatMap((view) => {
+      if ('objectId' in view) return [view];
+      const destination = bound?.plan.destinations[view.binding];
+      const objectId = destination?.objects[0];
+      if (!objectId) return [];
+      return [
+        {
+          universalId: deriveUuid(`${view.universalId}:${objectId}`),
+          objectId,
+          name: view.name,
+          kind: view.kind,
+          fieldIds: view.fields.flatMap((key) => destination.fields[key]?.id ?? []),
+        },
+      ];
+    });
+    const skippedViews = views.filter(
       (v) =>
         !owns('view', v.universalId) && [v.objectId, ...v.fieldIds].some((id) => retired.has(id)),
     );
     const viewActions = new Map<string, ExtensionPreview['views'][number]['action']>();
     const viewNotices: string[] = [];
-    for (const view of manifest.views) {
+    for (const view of views) {
       if (skippedViews.includes(view)) continue;
       const [manager] = await tx<
         { installation_id: string }[]
@@ -943,7 +960,7 @@ export class Extensions {
       generation,
       releaseDigest: release.digest,
       operations: planned.ops,
-      views: manifest.views
+      views: views
         .filter((view) => !skippedViews.includes(view))
         .map((view) => ({
           universalId: view.universalId,
@@ -1031,6 +1048,7 @@ export class Extensions {
       mapped,
       bound,
       replan,
+      views,
       accessOnly,
       refs,
     };
@@ -1416,7 +1434,7 @@ export class Extensions {
         }
       }
     }
-    for (const view of manifest.views) {
+    for (const view of plan.views) {
       const action = plan.preview.views.find((v) => v.universalId === view.universalId)?.action;
       if (!action) continue;
       const [retained] = await tx<

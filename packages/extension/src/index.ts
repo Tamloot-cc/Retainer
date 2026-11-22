@@ -340,13 +340,11 @@ export type ExtensionMappingView = {
   /** The field runs read to look values up, by its current API name. */
   lookup?: { name: string; status: 'ok' | 'missing' };
 };
-export const viewSchema = z.strictObject({
-  universalId: uuid,
-  objectId: uuid,
-  name: label,
-  kind: z.literal('table'),
-  fieldIds: z.array(uuid).max(200),
-});
+const viewDefinition = z.strictObject({ universalId: uuid, name: label, kind: z.literal('table') });
+export const viewSchema = z.union([
+  viewDefinition.extend({ binding: bindingKeySchema, fields: z.array(bindingKeySchema).max(200) }),
+  viewDefinition.extend({ objectId: uuid, fieldIds: z.array(uuid).max(200) }),
+]);
 export const manifestSchema = z.strictObject({
   manifestVersion: z.literal(1),
   universalId: uuid,
@@ -604,6 +602,17 @@ function checkBindings(manifest: ExtensionManifest): void {
       throw new Error('unsupported_manifest: change trigger names an unknown binding or field');
   }
   if (keys.size !== bindings.length) throw new Error('unsupported_manifest: duplicate binding key');
+  for (const view of manifest.views) {
+    if (!('binding' in view)) continue;
+    const binding = byKey.get(view.binding);
+    if (
+      !binding ||
+      (binding.class === 'event' && binding.access === 'read') ||
+      new Set(view.fields).size !== view.fields.length ||
+      view.fields.some((key) => !binding.fields.some((field) => field.key === key))
+    )
+      throw new Error('unsupported_manifest: view names an unknown binding or field');
+  }
   for (const binding of bindings) {
     const fields = new Map(binding.fields.map((field) => [field.key, field]));
     if (fields.size !== binding.fields.length)
@@ -1110,7 +1119,7 @@ export function defineExtension(value: unknown): ExtensionManifest {
     }
   }
   for (const view of manifest.views) {
-    if (new Set(view.fieldIds).size !== view.fieldIds.length)
+    if ('fieldIds' in view && new Set(view.fieldIds).size !== view.fieldIds.length)
       throw new Error('unsupported_manifest: duplicate view field');
   }
   checkMapping(manifest);

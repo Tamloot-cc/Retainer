@@ -1,8 +1,6 @@
 import {
   type ExtensionBindingChoices,
   type ExtensionInstallInput,
-  type ExtensionMappingChoices,
-  type ExtensionMappingView,
   type ExtensionSuggestions,
   MODEL_USE_NOTICE,
   releaseUses,
@@ -41,15 +39,6 @@ import { QueryError } from '../state.js';
 import { BindingFields, type BindingReviewIssue, BindingSummary } from './bindings.js';
 import { extensionName } from './branding.js';
 import {
-  choicesFromView,
-  defaultChoices,
-  MappingFields,
-  MappingGroup,
-  type MappingIssues,
-  mappingObject,
-  serverIssues,
-} from './mapping.js';
-import {
   canSuggest,
   detailKey,
   hasInstallationSettings,
@@ -83,11 +72,11 @@ const TITLES: Record<SetupMode, (name: string) => string> = {
   install: (name) => `Set up ${name}`,
   upgrade: (name) => `Upgrade ${name}`,
   reconnect: (name) => `Reconnect ${name}`,
-  mapping: (name) => `Edit ${name} mapping`,
+  mapping: (name) => `Change ${name} setup`,
 };
 const STEP_LABELS: Record<Step, string> = {
   settings: 'Connect',
-  mapping: 'Map fields',
+  mapping: 'Choose bindings',
   review: 'Review and approve',
 };
 
@@ -226,7 +215,7 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
       {cancel.error ? <Notice error>{cancel.error.message}</Notice> : null}
       {installation ? (
         <Button disabled={again.isPending} onClick={() => again.mutate()}>
-          {props.mode === 'mapping' ? 'Suggest mapping' : 'Suggest again'}
+          {props.mode === 'mapping' ? 'Suggest bindings' : 'Suggest again'}
         </Button>
       ) : null}
       {props.mode === 'upgrade' ? (
@@ -248,7 +237,6 @@ function BasicExtensionSetup({
   release,
   installation,
   mode,
-  mappingView,
   bindingChoices,
   onCancel,
   onDone,
@@ -263,8 +251,6 @@ function BasicExtensionSetup({
   accessOnly?: boolean;
   providedSecrets?: string[];
   suggestions?: ExtensionSuggestions;
-  /** The approved mapping, for `mapping`. */
-  mappingView?: ExtensionMappingView;
   bindingChoices?: ExtensionBindingChoices;
   onCancel: () => void;
   onDone: (installationId: string, input?: ExtensionInstallInput) => void;
@@ -274,45 +260,24 @@ function BasicExtensionSetup({
   const reconnect = mode === 'reconnect',
     editMapping = mode === 'mapping' && !!retained,
     upgrade = mode === 'upgrade' && !!retained;
-  const mapping = release.manifest.mapping;
   const declarations = release.manifest.bindings;
   const showBindings = !accessOnly && !!declarations?.length && !reconnect;
-  const mapped = mapping ? mappingObject(schema.objects, mapping) : undefined;
-  // A first install reviews the mapping; an upgrade carries the approved one over.
   const turnOn = retained?.state === 'configuring' && !accessOnly;
-  const showMapping =
-    !accessOnly &&
-    !!mapping &&
-    (editMapping || upgrade || (mode === 'install' && (!retained || turnOn)));
   const hasSettings =
     (!editMapping || !!declarations) &&
     (hasInstallationSettings(release) || (reconnect && !!release.manifest.source));
   const steps: Step[] = [
     ...(hasSettings ? (['settings'] as const) : []),
-    ...(showMapping || showBindings ? (['mapping'] as const) : []),
+    ...(showBindings ? (['mapping'] as const) : []),
     'review',
   ];
   const [step, setStep] = useState(0);
   const current = steps[step] ?? 'review';
-  const [choices, setChoices] = useState<ExtensionMappingChoices>(() => ({
-    ...(mapping
-      ? mappingView
-        ? choicesFromView(mapping, mappingView)
-        : defaultChoices(mapping)
-      : {}),
-    ...Object.fromEntries(
-      Object.entries(suggestions?.mapping ?? {}).map(([key, { reason: _reason, ...choice }]) => [
-        key,
-        choice,
-      ]),
-    ),
-  }));
   const [bound, setBound] = useState<ExtensionBindingChoices>(() => ({
     ...bindingChoices,
     ...suggestions?.bindings,
   }));
   const [bindingIssues, setBindingIssues] = useState<BindingReviewIssue[]>([]);
-  const [issues, setIssues] = useState<MappingIssues>(suggestions?.issues ?? {});
   const [values, setValues] = useState<Settings>(() => ({
     ...initialSettings(release, installation),
     ...suggestions?.settings,
@@ -356,13 +321,12 @@ function BasicExtensionSetup({
         ...(grantIncrease ? { grantChange: true } : {}),
         settings: values,
         ...(Object.keys(refs).length ? { secretRefs: refs } : {}),
-        ...(showMapping ? { mapping: choices } : {}),
-        ...(editMapping && !showBindings ? { mappingChange: true } : {}),
         ...(showBindings && Object.keys(bound).length ? { bindings: bound } : {}),
       };
       try {
         const preview = await api.previewExtension(input);
         setPlan({ input, preview, key: crypto.randomUUID() });
+        if (preview.bindings) setBound(preview.bindings);
         setStep(steps.length - 1);
       } catch (error) {
         if (
@@ -374,11 +338,6 @@ function BasicExtensionSetup({
             | { bindings?: BindingReviewIssue[]; issues?: { path: string; message: string }[] }
             | undefined;
           setBindingIssues(details?.bindings ?? []);
-          const at = steps.indexOf('mapping');
-          if (at >= 0) setStep(at);
-        }
-        if (error instanceof RetainerApiError && error.code === 'mapping_invalid') {
-          setIssues(serverIssues(error.details));
           const at = steps.indexOf('mapping');
           if (at >= 0) setStep(at);
         }
@@ -397,10 +356,7 @@ function BasicExtensionSetup({
       };
       if (accessOnly && retained) return api.approveExtensionAccess(retained.id, input, plan.key);
       if (turnOn && retained) return api.turnOnExtension(retained.id, input, plan.key);
-      if (editMapping && retained)
-        return showBindings
-          ? api.upgradeExtension(retained.id, input, plan.key)
-          : api.changeExtensionMapping(retained.id, input, plan.key);
+      if (editMapping && retained) return api.upgradeExtension(retained.id, input, plan.key);
       if (reconnect && retained) return api.reconnectExtension(retained.id, input, plan.key);
       if (upgrade && retained) return api.upgradeExtension(retained.id, input, plan.key);
       return api.installExtension(input, plan.key);
@@ -421,9 +377,7 @@ function BasicExtensionSetup({
   const reviewLabel = reconnect
     ? 'Review reconnect'
     : editMapping
-      ? showBindings
-        ? 'Review new plan'
-        : 'Review mapping'
+      ? 'Review new plan'
       : upgrade
         ? 'Review upgrade'
         : 'Review installation';
@@ -504,11 +458,7 @@ function BasicExtensionSetup({
   else if (current === 'mapping')
     body = (
       <Form onSubmit={next}>
-        <ExtensionCard
-          title={mapped ? `Map fields for ${mapped.labelPlural}` : 'Map fields'}
-          icon={LayoutList}
-          actions={actions}
-        >
+        <ExtensionCard title="Bindings" icon={LayoutList} actions={actions}>
           <fieldset disabled={busy} className="flex flex-col gap-3">
             {showBindings && declarations ? (
               <BindingFields
@@ -516,37 +466,12 @@ function BasicExtensionSetup({
                 choices={bound}
                 objects={schema.objects}
                 issues={bindingIssues}
+                reasons={suggestions?.bindingReasons}
                 onChange={(key, choice) => {
                   setBound((prior) => ({ ...prior, [key]: choice }));
                   setBindingIssues((prior) => prior.filter((issue) => issue.binding !== key));
                 }}
               />
-            ) : mapping && mapped ? (
-              <MappingFields
-                mapping={mapping}
-                object={mapped}
-                choices={choices}
-                issues={issues}
-                suggestions={suggestions?.mapping}
-                onChange={(key, choice) => {
-                  setChoices((c) => ({ ...c, [key]: choice }));
-                  setIssues(({ [key]: _, ...rest }) => rest);
-                }}
-                onImport={(next, found) => {
-                  setChoices(next);
-                  setIssues(found);
-                }}
-              />
-            ) : (
-              <Notice>
-                This extension maps values to an object the web app cannot map yet. Use the API to
-                review its mapping.
-              </Notice>
-            )}
-            {editMapping && mapped ? (
-              <Muted>
-                Changing the mapping does not fill in existing {mapped.labelPlural.toLowerCase()}.
-              </Muted>
             ) : null}
           </fieldset>
         </ExtensionCard>
@@ -579,9 +504,7 @@ function BasicExtensionSetup({
                 : reconnect
                   ? 'Approve reconnect'
                   : editMapping
-                    ? showBindings
-                      ? 'Approve new plan'
-                      : 'Approve mapping'
+                    ? 'Approve new plan'
                     : accessOnly
                       ? 'Approve access'
                       : turnOn
@@ -658,23 +581,10 @@ function Review({
   children: ReactNode;
 }) {
   const { schema } = useWorkspace();
-  const mapping = release.manifest.mapping;
   const { preview } = plan;
   const { grants } = preview;
   const canWrite = grants.scopes.includes('write');
-  const bindings = mapping ? preview.mapping : undefined;
-  const mappedNames = new Set(
-    bindings?.flatMap((binding) => (binding.field ? [binding.field.name] : [])),
-  );
-  // Use the engine's actual creates: choosing "create" can reuse an existing field.
-  const newFields = new Set<string>();
-  const schemaOps = (preview.operations as DiffOp[]).filter((op) => {
-    if (op.kind !== 'create_field' || op.objectId !== mapping?.objectId) return true;
-    const field = (op.field as { name?: string } | undefined)?.name;
-    if (!field || !mappedNames.has(field)) return true;
-    newFields.add(field);
-    return false;
-  });
+  const schemaOps = preview.operations as DiffOp[];
   const createPeople = String(plan.input.settings.createPeople ?? release.manifest.createPeople);
 
   return (
@@ -727,9 +637,6 @@ function Review({
               objects={schema.objects}
             />
           ) : null}
-          {mapping && bindings?.length ? (
-            <MappingGroup mapping={mapping} bindings={bindings} newFields={newFields} />
-          ) : null}
           {schemaOps.length ? (
             <ChangeList label="Structure changes">
               <ChangeGroup
@@ -763,7 +670,7 @@ function Review({
               </ChangeGroup>
             </ChangeList>
           ) : null}
-          {!schemaOps.length && !bindings?.length && !preview.bindings && !preview.views.length ? (
+          {!schemaOps.length && !preview.bindings && !preview.views.length ? (
             <Muted>No fields, record types or saved views change.</Muted>
           ) : null}
           {preview.warnings.map((warning) => (
@@ -915,7 +822,7 @@ function ChangePage({ mode }: { mode: Exclude<SetupMode, 'install'> }) {
         ? mode === 'upgrade'
           ? 'This extension is already on the newest version.'
           : 'This server no longer offers the installed version.'
-        : mode === 'mapping' && !detail.data?.mapping && !release.manifest.bindings
+        : mode === 'mapping' && !release.manifest.bindings
           ? 'This extension has no bindings to edit.'
           : null;
   if (problem || !installation || !release)
@@ -930,7 +837,6 @@ function ChangePage({ mode }: { mode: Exclude<SetupMode, 'install'> }) {
         release={release}
         installation={installation}
         mode={mode}
-        {...(detail.data?.mapping ? { mappingView: detail.data.mapping } : {})}
         bindingChoices={detail.data?.bindingChoices}
         onCancel={toDetail}
         onDone={() => {

@@ -1,4 +1,4 @@
-import { BASE_EVENT_TYPE_IDS } from '@retainer/shared';
+import { BASE_EVENT_TYPE_IDS } from '../src/templates/base.js';
 import { extensionFixture } from '../test/helpers/extensions.js';
 
 export const sourceManifest = extensionFixture({

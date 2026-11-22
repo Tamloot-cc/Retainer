@@ -1,6 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { ExtensionManifest, InputSchema } from '@retainer/extension';
-import { BASE_EVENT_TYPE_IDS, BASE_FIELD_IDS, BASE_OBJECT_IDS } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { removeFromOrganization } from '../../src/accounts/people.js';
@@ -13,6 +12,7 @@ import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { uninstallForWorkspaceDeletion } from '../../src/extension-runtime/workspace-deletion.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { Extensions } from '../../src/extensions/service.js';
+import { BASE_EVENT_TYPE_IDS, BASE_FIELD_IDS, BASE_OBJECT_IDS } from '../../src/templates/base.js';
 import { ChangeMaintenance } from '../../src/worker/changes.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';

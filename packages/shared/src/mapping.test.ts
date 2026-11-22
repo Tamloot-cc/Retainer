@@ -1,15 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { compatibleFields, mappingFieldIssue } from './mapping.js';
-import { BASE_FIELD_IDS } from './schema.js';
 
 const links = { types: ['links'] as const };
-const domain = BASE_FIELD_IDS.companyDomain;
+const domain = 'fixture-lookup';
 
 describe('compatibleFields', () => {
-  // The schema API's view: base fields say which they are, others don't.
   const viewed = [
     { name: 'name', type: 'text' },
-    { name: 'domain', type: 'links', baseField: 'companyDomain' },
+    { name: 'domain', type: 'links', universalId: domain },
     { name: 'profile', type: 'links' },
     { name: 'headcount', type: 'number' },
     { name: 'score', type: 'number', readOnly: true },
