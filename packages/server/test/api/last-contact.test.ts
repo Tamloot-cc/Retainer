@@ -365,6 +365,67 @@ describe('release-pinned last contact', () => {
     expect(await h.value(person)).toBe(recent);
   });
 
+  it('retracts its old claims and releases the field when a destination moves', async () => {
+    const h = await setup();
+    const person = await h.create('person', { name: 'Dana' });
+    await h.event(recent, [person]);
+    expect((await h.call({ kind: 'records', recordIds: [person] })).body.changed).toBe(1);
+    expect(
+      (
+        await h.app.request(`/v1/records/${person}`, {
+          key: h.keys.admin,
+          method: 'PATCH',
+          body: { values: { lastContactAt: old } },
+        })
+      ).status,
+    ).toBe(200);
+    const change = (operations: unknown[]) =>
+      h.app.request('/v1/schema/changes', {
+        key: h.keys.admin,
+        body: { operations },
+      });
+    expect(
+      (
+        await change([
+          {
+            op: 'create_object',
+            object: {
+              nameSingular: 'client',
+              namePlural: 'clients',
+              labelSingular: 'Client',
+              labelPlural: 'Clients',
+              labelField: 'name',
+              fields: [{ name: 'name', type: 'text', label: 'Name' }],
+            },
+          },
+        ])
+      ).status,
+    ).toBe(200);
+    const input = {
+      ...h.input,
+      installationId: h.id,
+      bindings: { person: { action: 'existing', objects: ['client'] } },
+    };
+    const reviewed = await h.app.request('/v1/extensions/preview', {
+      key: h.keys.admin,
+      body: input,
+    });
+    expect(reviewed.status, JSON.stringify(reviewed.body)).toBe(200);
+    const adopted = await h.app.request(`/v1/extensions/${h.id}/upgrade`, {
+      key: h.keys.admin,
+      headers: { 'Idempotency-Key': randomUUID() },
+      body: { ...input, planDigest: reviewed.body.planDigest },
+    });
+    expect(adopted.status, JSON.stringify(adopted.body)).toBe(200);
+    const [extensionClaim] = await db.owner`
+      select status from field_assertions where record_id=${person} and actor->>'id'=${h.id}`;
+    expect(extensionClaim?.status).toBe('retracted');
+    expect(await h.value(person)).toBe(old);
+    expect(
+      (await change([{ op: 'delete_field', object: 'person', field: 'lastContactAt' }])).status,
+    ).toBe(200);
+  });
+
   it('does not commit a derived write after disable wins its competing transaction', async () => {
     const h = await setup(),
       person = await h.create('person', { name: 'Dana' });

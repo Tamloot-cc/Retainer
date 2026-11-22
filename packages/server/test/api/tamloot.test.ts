@@ -280,6 +280,11 @@ async function fixture(createPeople: 'never' | 'everyone' = 'everyone', custom =
     return Response.json({ data: taskRows });
   };
   async function execute(job: ClaimedJob) {
+    if (job.system) {
+      const result = { status: 'succeeded' } as const;
+      await queue.complete(job, result);
+      return result;
+    }
     const token = await tokens.issue(app.sql, job, manifest.universalId, job.scopes);
     const result = await executeTamloot(
       {
@@ -483,6 +488,76 @@ describe('Tamloot bundle through real API and Postgres with provider HTTP fixtur
     expect(h.bodies.join(' ')).not.toContain('NEVER IMPORT');
     expect(h.bodies.join(' ')).toContain('a'.repeat(22000));
   }, 60000);
+  it('detaches tasks before a new meeting revision uses a different status field', async () => {
+    const h = await fixture();
+    await h.connect();
+    expect((await h.drain()).every((run) => run.status === 'succeeded')).toBe(true);
+    const tasks = () => db.owner`
+      select record_id, state from source_tasks where installation_id=${h.id} order by record_id`;
+    const original = await tasks();
+    expect(original).toHaveLength(2);
+    const changed = await h.app.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_field',
+            object: 'task',
+            field: {
+              name: 'stage',
+              label: 'Stage',
+              type: 'select',
+              settings: {
+                options: [
+                  { value: 'todo', label: 'To do' },
+                  { value: 'done', label: 'Done' },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    });
+    expect(changed.status, JSON.stringify(changed.body)).toBe(200);
+    const input = {
+      installationId: h.id,
+      registrationId: TAMLOOT.registration,
+      version: '1.0.0',
+      settings: { shareMeetings: true, createPeople: 'everyone' },
+      bindings: {
+        task: {
+          action: 'existing',
+          objects: ['task'],
+          fields: {
+            status: { action: 'existing', field: 'stage', values: { open: 'todo', done: 'done' } },
+          },
+        },
+      },
+    };
+    const reviewed = await h.app.request('/v1/extensions/preview', {
+      key: h.keys.admin,
+      body: input,
+    });
+    expect(reviewed.status, JSON.stringify(reviewed.body)).toBe(200);
+    const adopted = await h.app.request(`${h.base}/upgrade`, {
+      key: h.keys.admin,
+      headers: { 'Idempotency-Key': randomUUID() },
+      body: { ...input, planDigest: reviewed.body.planDigest },
+    });
+    expect(adopted.status, JSON.stringify(adopted.body)).toBe(200);
+    expect(await tasks()).toEqual(original.map((task) => ({ ...task, state: 'detached' })));
+    h.setVersion(2);
+    expect((await h.drain()).every((run) => run.status === 'succeeded')).toBe(true);
+    expect((await h.poll()).every((run) => run.status === 'succeeded')).toBe(true);
+    expect(await tasks()).toEqual(original.map((task) => ({ ...task, state: 'detached' })));
+    for (const task of original) {
+      const read = await h.app.request(`/v1/records/${task.record_id}`, { key: h.keys.admin });
+      expect(read.status).toBe(200);
+      expect(read.body.fields.status).toBeDefined();
+      expect(read.body.fields.stage).toBeUndefined();
+    }
+  }, 60000);
+
   it('preserves edited tasks across a new meeting revision, recovers an expired cursor and suppresses erased sources', async () => {
     const h = await fixture();
     await h.connect();

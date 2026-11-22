@@ -9,6 +9,7 @@ import {
   functionSecrets,
   lifecycleInputSchema,
   runsHostedCode,
+  mergeBindingChoices,
 } from './index.js';
 
 export const fixture = () => ({
@@ -519,11 +520,11 @@ describe('member connection manifests', () => {
     functions: [hook('connect')],
   });
 
-  it('preserves the old workspace manifest bytes and digest without adding setting levels', () => {
+  it('keeps workspace settings at the default level in the binding manifest', () => {
     const manifest = defineExtension(fixture());
     expect(manifest.settings.enabled).not.toHaveProperty('level');
     expect(createHash('sha256').update(JSON.stringify(manifest)).digest('hex')).toBe(
-      'e718f3640ab006e4d9407367ea2e3987289698a1fe89c42ff1f7e1180592d416',
+      '349b8a04f3cb432d0002dcf98c91fdf86ad3f7fbead0d61be67f58b5614db8d2',
     );
   });
 
@@ -887,37 +888,61 @@ describe('standalone apps (spec 8)', () => {
       defineExtension(standalone({ sidebarLink: { ...link, icon: 'rocket' } })),
     ).toThrow();
   });
-  it('owns contributed fields, but never a mapped output', () => {
-    const owned = {
-      universalId: randomUUID(),
-      name: 'orderId',
-      label: 'Order ID',
-      type: 'text',
-      installationOwned: true,
+  it('requires the installation to contribute every installation-owned field', () => {
+    const field = {
+      key: 'orderId', label: 'Order ID', types: ['text'], required: true,
+      installationOwned: true, owned: true,
+      create: { universalId: randomUUID(), name: 'orderId', label: 'Order ID', type: 'text' },
     };
-    const object = {
-      universalId: randomUUID(),
-      nameSingular: 'order',
-      namePlural: 'orders',
-      labelSingular: 'Order',
-      labelPlural: 'Orders',
-      fields: [owned],
+    const binding = {
+      key: 'order', label: 'Orders', description: 'Tracks order IDs.',
+      class: 'entity', access: 'write', required: true, fields: [field],
     };
-    expect(
-      defineExtension(standalone({ schema: [{ kind: 'object', definition: object }] })).schema,
-    ).toHaveLength(1);
-    const writer = { ...tool('job'), name: 'fill', mappedWrite: true };
-    expect(() =>
-      defineExtension({
-        ...fixture(),
-        functions: [writer],
-        mapping: {
-          objectId: object.universalId,
-          outputs: [
-            { key: 'id', label: 'ID', description: 'An ID', types: ['text'], field: owned },
-          ],
-        },
-      }),
-    ).toThrow('installation-owned');
+    expect(defineExtension(standalone({ bindings: [binding] })).bindings?.[0]?.fields[0])
+      .toMatchObject({ installationOwned: true, owned: true });
+    expect(() => defineExtension(standalone({
+      bindings: [{ ...binding, fields: [{ ...field, owned: undefined }] }],
+    }))).toThrow('invalid field order.orderId');
   });
+});
+
+it('merges proposed fields and values only when their target agrees', () => {
+  const proposed = mergeBindingChoices(
+    {
+      task: {
+        action: 'existing',
+        objects: ['task'],
+        fields: {
+          title: { action: 'existing', field: 'title' },
+          status: {
+            action: 'existing',
+            field: 'status',
+            values: { open: 'todo', done: 'finished' },
+          },
+        },
+      },
+    },
+    {
+      task: {
+        action: 'existing',
+        objects: ['task'],
+        fields: {
+          status: { action: 'existing', field: 'status', values: { done: 'complete' } },
+        },
+      },
+    },
+  );
+  expect(proposed.task).toEqual({
+    action: 'existing',
+    objects: ['task'],
+    fields: {
+      title: { action: 'existing', field: 'title' },
+      status: { action: 'existing', field: 'status', values: { open: 'todo', done: 'complete' } },
+    },
+  });
+  expect(
+    mergeBindingChoices(proposed, {
+      task: { action: 'existing', objects: ['action'] },
+    }).task,
+  ).toEqual({ action: 'existing', objects: ['action'] });
 });
