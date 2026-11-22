@@ -59,8 +59,6 @@ REVOKE ALL ON FUNCTION public.retainer_extension_installation_workspace(uuid) FR
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.retainer_extension_installation_workspace(uuid) TO retainer_control;
 --> statement-breakpoint
-ALTER TABLE "extension_jobs" ADD COLUMN "run_requires_credential" boolean DEFAULT false NOT NULL;
---> statement-breakpoint
 -- Readiness, claim and broker admission use the same current-grant predicate.
 -- The claim and broker hold the registration lock that serializes revocation.
 -- Checking an OAuth client also holds a shared lock on the client row.
