@@ -40,28 +40,25 @@ export function lastContactRoutes(app: Hono<AppEnv>, sql: Sql, catalog: Extensio
           const [installation] = await tx<{ bindings: StoredBindingPlan | null }[]>`
             select bindings from extension_installations where id = ${id}`;
           const plan = installation?.bindings;
-          const eventIds = policy.events
-            ? (plan?.destinations[policy.events]?.objects ?? []).flatMap((id) => {
-                const object = context.schema.objectsByUniversalId.get(id);
-                if (!object?.isEvent)
-                  throw new AppError(
-                    409,
-                    'binding_unavailable',
-                    'A Last contact event type is unavailable.',
-                  );
-                return [object.id];
-              })
-            : context.schema.eventTypeIds;
-          const destinations =
-            policy.destinations?.flatMap((key) => {
-              const selected = plan?.destinations[key];
-              if (!selected) return [];
-              const objectId = selected.objects[0];
-              const fieldId = selected.fields.lastContact?.id;
-              return objectId && fieldId ? [{ objectId, fieldId }] : [];
-            }) ??
-            policy.fields ??
-            [];
+          if (!plan || !policy.events || !policy.destinations)
+            throw new AppError(409, 'binding_unavailable', 'Review the Last contact binding plan.');
+          const eventIds = (plan.destinations[policy.events]?.objects ?? []).map((id) => {
+            const object = context.schema.objectsByUniversalId.get(id);
+            if (!object?.isEvent)
+              throw new AppError(
+                409,
+                'binding_unavailable',
+                'A Last contact event type is unavailable.',
+              );
+            return object.id;
+          });
+          const destinations = policy.destinations.flatMap((key) => {
+            const selected = plan.destinations[key];
+            if (!selected) return [];
+            const objectId = selected.objects[0];
+            const fieldId = selected.fields.lastContact?.id;
+            return objectId && fieldId ? [{ objectId, fieldId }] : [];
+          });
           const fields = new Map<string, FieldState>();
           for (const binding of destinations) {
             const object = context.schema.objectsByUniversalId.get(binding.objectId),
@@ -81,8 +78,8 @@ export function lastContactRoutes(app: Hono<AppEnv>, sql: Sql, catalog: Extensio
             )
               throw new AppError(
                 409,
-                'incompatible_derivation',
-                'the installed last-contact field changed',
+                'binding_unavailable',
+                'An approved Last contact field is unavailable.',
               );
             fields.set(object.id, field);
           }

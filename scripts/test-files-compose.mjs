@@ -82,6 +82,12 @@ try {
     ),
   );
   const sdk = new RetainerClient({ baseUrl: origin, apiKey: credential.key });
+  const starter = await sdk.applyTemplate('starter');
+  const applied =
+    starter.status === 'proposed'
+      ? await sdk.decideSchemaChange(starter.change.id, 'approve')
+      : starter;
+  assert.equal(applied.status, 'applied');
   // API startup has no healthcheck in the base file; retry reads while migrations/bootstrap finish.
   for (let n = 0; n < 100; n++) {
     try {

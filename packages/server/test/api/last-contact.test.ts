@@ -4,7 +4,6 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
-import { STARTER_OBJECT_IDS } from '../../src/templates/base.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
@@ -29,24 +28,48 @@ async function setup() {
   const setupId = randomUUID(),
     computeId = randomUUID(),
     otherId = randomUUID();
-  const fields = [STARTER_OBJECT_IDS.person, STARTER_OBJECT_IDS.company].map((objectId) => ({
-    objectId,
-    fieldId: randomUUID(),
-  }));
+  const fields = ['person', 'company'].map((key) => ({ key, fieldId: randomUUID() }));
   const manifest = extensionFixture({
     scopes: ['read', 'write'],
-    schema: fields.map(({ objectId, fieldId }) => ({
-      kind: 'field',
-      objectId,
-      definition: {
-        universalId: fieldId,
-        name: 'lastContactAt',
-        label: 'Last contact',
-        type: 'date_time',
-        isNullable: true,
+    bindings: [
+      {
+        key: 'contact',
+        label: 'Conversations',
+        description: 'Activities to count as contact.',
+        class: 'event',
+        access: 'read',
+        required: true,
+        fields: [],
       },
-    })),
-    lastContact: { functionIds: [computeId], fields },
+      ...fields.map(({ key, fieldId }) => ({
+        key,
+        label: key === 'person' ? 'People' : 'Companies',
+        description: 'Records receiving the last contact date.',
+        class: 'entity' as const,
+        access: 'write' as const,
+        required: false,
+        fields: [
+          {
+            key: 'lastContact',
+            label: 'Last contact',
+            types: ['date_time' as const],
+            required: true,
+            owned: true as const,
+            create: {
+              universalId: fieldId,
+              name: 'lastContactAt',
+              label: 'Last contact',
+              type: 'date_time' as const,
+            },
+          },
+        ],
+      })),
+    ],
+    lastContact: {
+      functionIds: [computeId],
+      events: 'contact',
+      destinations: ['person', 'company'],
+    },
     functions: [setupId, computeId, otherId].map((id, index) => ({
       universalId: id,
       name: `function-${index}`,
@@ -109,11 +132,11 @@ async function setup() {
     expect(created.status).toBe(201);
     return created.body.id as string;
   };
-  const event = async (at: string, about: string[]) => {
+  const event = async (at: string, about: string[], type = 'conversation') => {
     const logged = await app.request('/v1/events', {
       key: keys.admin,
       body: {
-        type: 'conversation',
+        type,
         occurredAt: at,
         title: 'A conversation',
         channel: 'last-contact-test',
@@ -141,7 +164,6 @@ async function setup() {
     keys,
     id,
     manifest,
-    fields,
     queue,
     run,
     token,
@@ -151,6 +173,8 @@ async function setup() {
     value,
     rollup,
     otherId,
+    input,
+    computeId,
   };
 }
 const old = '2026-01-01T12:00:00.000Z',
@@ -223,7 +247,7 @@ describe('release-pinned last contact', () => {
     expect((await h.call({ kind: 'records', recordIds: [person] })).status).toBe(200);
     expect(await h.value(person)).toBe('2025-01-01T00:00:00.000Z');
     const [claim] =
-      await db.owner`select status from field_assertions where record_id=${person} and actor->>'type'='user' and field_id in(select id from fields where universal_id=any(${h.fields.map((entry) => entry.fieldId)}::uuid[]))`;
+      await db.owner`select status from field_assertions where record_id=${person} and actor->>'type'='user' and field_id in(select id from fields where workspace_id=${h.workspace} and name='lastContactAt')`;
     expect(claim?.status).toBe('active');
   });
   it('includes one-hop rollups and hard-erases dependent claims when their supporting person is forgotten even if the event survives', async () => {
@@ -281,6 +305,66 @@ describe('release-pinned last contact', () => {
     const token = await tokens.issue(h.app.sql, run, h.manifest.universalId, ['read', 'write']);
     expect((await h.call({ kind: 'scan' }, token)).status).toBe(403);
   });
+  it('adds a contact type through a re-plan and fences the old run', async () => {
+    const h = await setup();
+    const person = await h.create('person', { name: 'Dana' });
+    const added = await h.app.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_object',
+            object: {
+              class: 'event',
+              nameSingular: 'call',
+              namePlural: 'calls',
+              labelSingular: 'Call',
+              labelPlural: 'Calls',
+            },
+          },
+        ],
+      },
+    });
+    expect(added.status).toBe(200);
+    await h.event(old, [person]);
+    await h.event(recent, [person], 'call');
+    expect((await h.call({ kind: 'records', recordIds: [person] })).body.changed).toBe(1);
+    expect(await h.value(person)).toBe(old);
+    const input = {
+      ...h.input,
+      installationId: h.id,
+      bindings: { contact: { action: 'existing', objects: ['conversation', 'call'] } },
+    };
+    const reviewed = await h.app.request('/v1/extensions/preview', {
+      key: h.keys.admin,
+      body: input,
+    });
+    expect(reviewed.status, JSON.stringify(reviewed.body)).toBe(200);
+    const adopted = await h.app.request(`/v1/extensions/${h.id}/upgrade`, {
+      key: h.keys.admin,
+      headers: { 'Idempotency-Key': randomUUID() },
+      body: { ...input, planDigest: reviewed.body.planDigest },
+    });
+    expect(adopted.status, JSON.stringify(adopted.body)).toBe(200);
+    expect((await h.call({ kind: 'records', recordIds: [person] })).status).toBe(409);
+    const [pendingSetup] = await db.owner`
+      select id from extension_jobs where installation_id=${h.id} and status='queued'
+        and trigger_kind in ('install', 'upgrade')`;
+    const setupRun = await h.queue.claim(h.workspace, pendingSetup?.id, 're-plan setup');
+    if (!setupRun) throw new Error('re-plan setup did not run');
+    await h.queue.complete(setupRun, { status: 'succeeded' });
+    const job = await h.queue.enqueue(h.workspace, h.id, {
+      functionId: h.computeId,
+      input: {},
+      dedupeKey: randomUUID(),
+    });
+    const run = await h.queue.claim(h.workspace, job.id, 'after re-plan');
+    if (!run) throw new Error('re-plan compute job did not run');
+    const token = await tokens.issue(h.app.sql, run, h.manifest.universalId, ['read', 'write']);
+    expect((await h.call({ kind: 'records', recordIds: [person] }, token)).body.changed).toBe(1);
+    expect(await h.value(person)).toBe(recent);
+  });
+
   it('does not commit a derived write after disable wins its competing transaction', async () => {
     const h = await setup(),
       person = await h.create('person', { name: 'Dana' });
