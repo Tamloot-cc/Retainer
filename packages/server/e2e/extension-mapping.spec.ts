@@ -14,7 +14,7 @@ test('reviews and approves binding choices, then replans one output', async ({
   await expect(
     screen.getByText('Employees the provider finds, mostly from public profiles.'),
   ).toBeVisible();
-  await screen.getByLabel('Headquarters', { exact: true }).selectOption('address');
+  await screen.getByRole('combobox', { name: 'Headquarters', exact: true }).selectOption('address');
   await screen.getByRole('button', { name: 'Review installation' }).click();
   await expect(screen.getByText('Headquarters → address')).toBeVisible();
   await expect(screen.getByText('Employee count → Create Employee Count')).toBeVisible();
@@ -26,7 +26,7 @@ test('reviews and approves binding choices, then replans one output', async ({
   const summary = page.getByRole('region', { name: 'Approved bindings' });
   await expect(summary.getByText('Headquarters → address')).toBeVisible();
   await summary.getByRole('link', { name: 'Change setup' }).click();
-  await screen.getByLabel('Headquarters', { exact: true }).selectOption('skip');
+  await screen.getByRole('combobox', { name: 'Headquarters', exact: true }).selectOption('skip');
   await screen.getByRole('button', { name: 'Review new plan' }).click();
   await expect(screen.getByText('Headquarters → Skip')).toBeVisible();
   await screen.getByRole('button', { name: 'Approve new plan' }).click();

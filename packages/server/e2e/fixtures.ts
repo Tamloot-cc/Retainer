@@ -538,6 +538,10 @@ export const test = base.extend<
         );
         if (!secret.value) throw new Error('target secret is missing');
       }
+      const [existingCount] = await owner`
+        select 1 from fields f join object_types o on o.id = f.object_type_id
+        where o.workspace_id = ${workspace.id} and o.name_singular = 'company'
+          and f.name = 'employeeCount' and f.status = 'active'`;
       await request(
         `/extensions/${job.installationId}/runtime/suggestions`,
         {
@@ -546,7 +550,9 @@ export const test = base.extend<
               action: 'existing',
               objects: ['company'],
               fields: {
-                employee_count: { action: 'create' },
+                employee_count: existingCount
+                  ? { action: 'existing', field: 'employeeCount' }
+                  : { action: 'create' },
                 headquarters: { action: 'existing', field: 'address' },
               },
             },

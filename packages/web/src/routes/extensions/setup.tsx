@@ -275,6 +275,7 @@ function BasicExtensionSetup({
   const current = steps[step] ?? 'review';
   const [bound, setBound] = useState<ExtensionBindingChoices>(() => ({
     ...bindingChoices,
+    ...release.bindingProposal?.choices,
     ...suggestions?.bindings,
   }));
   const [bindingIssues, setBindingIssues] = useState<BindingReviewIssue[]>([]);
@@ -460,6 +461,12 @@ function BasicExtensionSetup({
       <Form onSubmit={next}>
         <ExtensionCard title="Bindings" icon={LayoutList} actions={actions}>
           <fieldset disabled={busy} className="flex flex-col gap-3">
+            {release.bindingProposal &&
+            Object.keys(release.bindingProposal.choices).some(
+              (key) => !suggestions?.bindings?.[key],
+            ) ? (
+              <Muted>Some bindings were proposed by your agent.</Muted>
+            ) : null}
             {showBindings && declarations ? (
               <BindingFields
                 declarations={declarations}

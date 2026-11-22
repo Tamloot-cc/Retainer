@@ -3,6 +3,7 @@ import type {
   ExtensionAuthorization,
   ExtensionAuthorizationCompletion,
   ExtensionAuthorizeInput,
+  ExtensionBindingChoices,
   ExtensionBindingPlan,
   ExtensionConnection,
   ExtensionConnectionInput,
@@ -17,6 +18,7 @@ import { isMaintenance, maintenanceFetch } from './maintenance.js';
 export { isMaintenance, retryAfterMs, waitForRetry } from './maintenance.js';
 
 import type {
+  Actor,
   AddedLinks,
   AggregateInput,
   AggregateResult,
@@ -599,7 +601,12 @@ export class RetainerClient {
   }
   extensionCatalog(signal?: AbortSignal) {
     return this.get<{
-      releases: { manifest: ExtensionManifest; digest: string; actorCeiling: string }[];
+      releases: {
+        manifest: ExtensionManifest;
+        digest: string;
+        actorCeiling: string;
+        bindingProposal?: { choices: ExtensionBindingChoices; proposedBy: Actor };
+      }[];
     }>('/v1/extensions/catalog', {}, signal);
   }
   verifySource(installationId: string, input: { sharing: 'workspace'; accountId?: string }) {

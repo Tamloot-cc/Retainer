@@ -207,8 +207,8 @@ export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMo
   app.get('/extensions/links', requireScope('read'), async (c) =>
     c.json(await extensions.appLinks(c.get('caller'))),
   );
-  app.get('/extensions/catalog', requireScope('read'), (c) =>
-    c.json({ releases: extensions.catalog.list() }),
+  app.get('/extensions/catalog', requireScope('read'), async (c) =>
+    c.json(await extensions.offered(c.get('caller'))),
   );
   app.get('/extensions', requireScope('read'), async (c) =>
     c.json(await extensions.list(c.get('caller'))),

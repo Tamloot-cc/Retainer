@@ -178,3 +178,57 @@ it('serializes approval against deleting a prepared destination', async () => {
     expect(removed.status).toBe(200);
   }
 });
+
+it('prefills a validated agent proposal for a human admin without changing the schema', async () => {
+  const h = await setup();
+  const input = { ...installation, bindings: { person: { action: 'skip' } } };
+  const agent = await h.app.mcpClient(h.keys.agent);
+  try {
+    const proposal = await agent.call('preview_extension', input);
+    expect(proposal.isError, JSON.stringify(proposal.body)).toBe(false);
+    expect(proposal.body.bindings.person).toEqual({ action: 'skip' });
+  } finally {
+    await agent.close();
+  }
+  const { body: catalog } = await h.app.request('/v1/extensions/catalog', { key: h.key });
+  expect(catalog.releases[0]?.bindingProposal).toMatchObject({
+    choices: input.bindings,
+    proposedBy: { type: 'agent', id: 'setup' },
+  });
+  const publicCatalog = await h.app.request('/v1/extensions/catalog', { key: h.keys.agent });
+  expect(publicCatalog.body.releases[0]?.bindingProposal).toBeUndefined();
+  expect((await h.app.request('/v1/extensions', { key: h.key })).body.installations).toEqual([]);
+  expect((await h.app.request('/v1/schema', { key: h.key })).body.objects).not.toEqual(
+    expect.arrayContaining([expect.objectContaining({ nameSingular: 'booking' })]),
+  );
+  const review = await h.preview();
+  expect(review.body.bindings.person).toEqual({ action: 'skip' });
+  expect((await h.commit(review.body.planDigest)).status).toBe(201);
+});
+
+it('releases an uninstalled object and replaces its deleted contribution with fresh IDs', async () => {
+  const h = await setup();
+  const first = await h.preview();
+  const installed = await h.commit(first.body.planDigest);
+  expect(installed.status).toBe(201);
+  const id = installed.body.id;
+  const details = async () => (await h.app.request(`/v1/extensions/${id}`, { key: h.key })).body;
+  const original = (await details()).contributions.find(
+    (entry: { kind: string }) => entry.kind === 'object',
+  );
+  const uninstall = await h.app.request(`/v1/extensions/${id}/uninstall`, {
+    key: h.key,
+    method: 'POST',
+  });
+  expect(uninstall.body.state).toBe('uninstalled');
+  expect((await h.change([{ op: 'delete_object', object: 'booking' }])).status).toBe(200);
+  const next = await h.preview();
+  expect(next.status, JSON.stringify(next.body)).toBe(200);
+  expect((await h.commit(next.body.planDigest)).status).toBe(201);
+  const objects = (await details()).contributions.filter(
+    (entry: { kind: string }) => entry.kind === 'object',
+  );
+  expect(objects).toHaveLength(1);
+  expect(objects[0].elementId).not.toBe(original.elementId);
+  expect(objects[0].universalId).not.toBe(original.universalId);
+});

@@ -3,7 +3,7 @@ import { signIn } from './helpers.js';
 
 test.use({ configureFixture: true });
 
-test('approves access, prepares suggestions, resumes and turns on the reviewed mapping', async ({
+test('approves access, prepares suggestions, resumes and turns on the reviewed bindings', async ({
   page,
   retainer: r,
 }) => {
@@ -51,7 +51,7 @@ test('skips suggestions and cancels an unfinished installation', async ({ page, 
   );
 });
 
-test('keeps the old release active while suggesting an upgrade mapping', async ({
+test('keeps the old release active while suggesting upgrade bindings', async ({
   page,
   retainer: r,
 }) => {

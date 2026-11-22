@@ -17,7 +17,7 @@ draft in its §6.1. Source line references below describe the pre-implementation
 baseline at `b3666e3`; source paths remain the navigation points.
 
 An extension can run its own code before the admin approves its schema, to
-suggest how it should be set up: the field mapping, settings, or anything else
+suggest how it should be set up: the bindings, settings, or anything else
 the install form asks for. Installation becomes two approvals:
 
 1. **Approve access.** The admin approves what the extension may read and use:
@@ -37,7 +37,7 @@ A release without a `configure` function installs exactly as today, with one
 approval.
 
 The same function suggests changes on reviewed upgrades, for example where a
-new enrichment output should go (§5), and on request from the Field mapping
+new enrichment output should go (§5), and on request from the Bindings
 tab.
 
 ## 1. Why this design
@@ -105,7 +105,7 @@ Server-defined, like `install`'s `{previousVersion}`:
 
 On a first install every output is new. On an upgrade, `newOutputs` lists the
 outputs the installed mapping doesn't have. On `requested` (the admin asked from
-the Field mapping tab) it lists outputs currently skipped.
+the Bindings tab) it lists outputs currently skipped.
 
 ### 2.2 Saving suggestions
 
@@ -116,15 +116,17 @@ token:
 ```
 PUT /v1/extensions/:id/runtime/suggestions
 {
-  mapping?: Record<OutputKey, ExtensionMappingChoice & { reason?: string }>,
+  bindings?: ExtensionBindingChoices,
+  bindingReasons?: Record<string, string>,
   settings?: Record<string, unknown>
 }
 ```
 
-- At most 64 KiB. `reason` is at most 500 characters, shown to the admin
-  under the output's row.
-- `mapping` keys must be declared outputs, and each choice must parse as
-  `mappingChoicesSchema`. Anything else is `400 invalid_suggestions`.
+- At most 64 KiB. Each reason is at most 500 characters. Key reasons by binding
+  or binding and field, such as `company.employee_count`.
+- Binding and field keys must come from the target release. Each choice must
+  parse as an install-review binding choice. Invalid input returns
+  `400 invalid_suggestions`.
 - `settings` may name only non-secret installation-level settings and must
   match their scalar type and any declared options. Consent settings can only
   be suggested as `true`; the admin still reviews them. Secret and
@@ -360,10 +362,10 @@ a release the installation hasn't adopted.
 
 ### 5.5 On request
 
-The Field mapping tab of an active installation gets "Suggest mapping" when its
-release has `configure`. It queues `configure` with `reason: 'requested'` on the
-installed release, and the suggestions prefill the existing mapping change flow
-(`POST /v1/extensions/:id/mapping`).
+The Bindings tab offers "Suggest bindings" when the release has `configure`.
+It queues `configure` with `reason: 'requested'` on the installed release.
+The admin reviews the suggestions as a re-plan. Approval advances the plan
+revision, fences existing runs and verifies setup again.
 
 ## 6. Data and API
 
@@ -463,7 +465,7 @@ The shipped company enrichment release adds these handlers:
   it queues backfill when any currently mapped output key was absent from
   that saved list. This includes newly mapped, previously skipped outputs;
   backfill is not restricted to outputs newly introduced by the release.
-  Changing mapping through the Field mapping tab does not itself run setup
+  Approving a re-plan from the Bindings tab runs setup
   or queue backfill.
 
 Model-backed field selection shipped with the enrichment release of
@@ -534,7 +536,7 @@ database:
    endpoint and table, turn-on, cancel and expiry. A test fixture bundle with a
    `configure` function.
 2. Reviewed upgrades: access approvals, cross-release admission.
-3. Web app: the setup and upgrade steps, the Field mapping button.
+3. Web app: the setup and upgrade steps, the Bindings button.
 4. Enrichment release (§8).
 5. Docs: §9's updates, FRONTEND.md, and `extensions-model-calls.md` §4/§6.1
    marked replaced.

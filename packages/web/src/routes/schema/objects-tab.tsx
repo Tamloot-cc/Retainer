@@ -78,8 +78,7 @@ export function ObjectsTab() {
   // With no objects yet, the built-ins are still there to look at.
   const builtIn = named ?? (object ? undefined : builtIns[0]);
   const field = object?.fields.find((f) => f.name === search.field);
-  const offerTemplates = !schema.workspace.templates.length;
-  const templatesInIntro = offerTemplates && objects.length > 0;
+  const offerTemplates = objects.length === 0;
   const select = (object: string, field?: string) => void setSearch({ object, field });
   const entities = objects.filter((o) => o.class !== 'event'),
     eventTypes = objects.filter((o) => o.class === 'event');
@@ -96,13 +95,12 @@ export function ObjectsTab() {
   );
   return (
     <>
-      {offerTemplates && !templatesInIntro ? <TemplatePicker /> : null}
+      {offerTemplates ? <TemplatePicker /> : null}
       <details open={introOpen} onToggle={(event) => setIntroOpen(event.currentTarget.open)}>
         <summary className="cursor-pointer rounded-sm py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11">
-          {templatesInIntro ? 'Templates and schema basics' : 'How records and activity work'}
+          How records and activity work
         </summary>
         <div className="mt-2 flex flex-col gap-6">
-          {templatesInIntro ? <TemplatePicker /> : null}
           <ClassIntro />
         </div>
       </details>
@@ -403,20 +401,22 @@ function ObjectDetail({
 }
 
 function TemplatePicker() {
-  const { session, schema } = useWorkspace(),
+  const { session } = useWorkspace(),
     client = useQueryClient();
   const templates = useQuery({
     queryKey: [session.workspace.id, 'templates'],
     queryFn: ({ signal }) => api.templates(signal),
   });
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
+    [error, setError] = useState(''),
+    [proposed, setProposed] = useState(false);
   const allowed = canMutate(session, 'schema:write');
   async function apply(name: string) {
     setBusy(true);
     setError('');
     try {
-      await api.applyTemplate(name);
+      const result = await api.applyTemplate(name);
+      setProposed(result.status === 'proposed');
       await client.invalidateQueries({ queryKey: [session.workspace.id] });
     } catch (e) {
       setError((e as Error).message);
@@ -426,11 +426,8 @@ function TemplatePicker() {
   }
   return (
     <Section title="Start from a template">
-      <Muted>
-        {schema.objects.length
-          ? 'A template adds the objects and fields for a kind of work. Agents can extend it later.'
-          : 'This workspace has no objects yet. A template adds the objects and fields for a kind of work.'}
-      </Muted>
+      <Muted>Copy the objects and fields for a kind of work into this empty workspace.</Muted>
+      {proposed ? <Notice>Review the proposed template in the review inbox.</Notice> : null}
       {error ? <Notice error>{error}</Notice> : null}
       {templates.error ? <QueryError error={templates.error} /> : null}
       <CardGrid>

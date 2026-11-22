@@ -17,7 +17,7 @@ import {
   runsHostedCode,
   SIDEBAR_INSTALLATION_PARAM,
 } from '@retainer/extension';
-import { HIDDEN_TYPE_IDS } from '@retainer/shared';
+import { type Actor, HIDDEN_TYPE_IDS } from '@retainer/shared';
 import { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
 import type { Sql } from '../db/client.js';
@@ -296,6 +296,28 @@ export class Extensions {
     if (!this.secrets)
       throw new AppError(503, 'connection_required', 'secret broker is not configured');
     return this.secrets.stage(caller, input);
+  }
+
+  async offered(caller: Caller) {
+    const releases = this.catalog.list();
+    if (!canApproveDestructive(caller.actor, caller.scopes)) return { releases };
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      const proposals = await tx<
+        { release_digest: string; choices: ExtensionBindingChoices; proposed_by: Actor }[]
+      >`select release_digest, choices, proposed_by from extension_binding_proposals`;
+      const byRelease = new Map(proposals.map((proposal) => [proposal.release_digest, proposal]));
+      return {
+        releases: releases.map((release) => {
+          const proposal = byRelease.get(release.digest);
+          return proposal
+            ? {
+                ...release,
+                bindingProposal: { choices: proposal.choices, proposedBy: proposal.proposed_by },
+              }
+            : release;
+        }),
+      };
+    });
   }
 
   async list(caller: Caller) {

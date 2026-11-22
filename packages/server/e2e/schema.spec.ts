@@ -166,13 +166,13 @@ test.describe('Schema on touch screens', () => {
       await page.setViewportSize(viewport);
       await page.goto(`${r.url}/app/schema`);
       await expect(people).toBeInViewport();
-      const intro = page.getByText('Templates and schema basics', { exact: true });
+      const intro = page.getByText('How records and activity work', { exact: true });
       const templates = page.getByRole('heading', { name: 'Start from a template' });
-      await expect(templates).toBeHidden();
+      await expect(templates).toHaveCount(0);
       await intro.tap();
-      await expect(templates).toBeVisible();
+      await expect(intro.locator('..')).toHaveAttribute('open', '');
       await intro.tap();
-      await expect(templates).toBeHidden();
+      await expect(intro.locator('..')).not.toHaveAttribute('open', '');
       expect(await tabs.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       await people.tap();
       const heading = page.getByRole('heading', { name: 'People', exact: true });

@@ -26,6 +26,7 @@ import {
 } from '../ui/index.js';
 import { allWorkspaces, managed } from './context.js';
 import { providerNames, roleWords, signInError } from './format.js';
+import { WorkspaceTemplateField } from './workspace-template.js';
 
 /** Screens outside any workspace in accounts mode (accounts spec 5). */
 
@@ -209,13 +210,16 @@ export function FirstRun({ account }: { account: Account }) {
   const canCreate = account.organizations.length === 0 || managedHere !== undefined;
   async function create(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const name = (e.currentTarget.elements.namedItem('name') as HTMLInputElement).value.trim();
+    const values = new FormData(e.currentTarget);
+    const name = String(values.get('name') ?? '').trim();
+    const template = String(values.get('template') ?? '') || undefined;
     if (!name) return;
     setBusy(true);
     setError('');
     try {
       const workspace = await accountApi.createWorkspace({
         name,
+        template,
         ...(managedHere ? { organizationId: managedHere.id } : {}),
       });
       window.location.assign(workspaceHref(workspace.slug));
@@ -259,6 +263,7 @@ export function FirstRun({ account }: { account: Account }) {
                 disabled={busy}
               />
             </Label>
+            <WorkspaceTemplateField />
             {error ? <Notice error>{error}</Notice> : null}
             <Button type="submit" variant="primary" disabled={busy}>
               {busy ? 'Creating…' : 'Create workspace'}
