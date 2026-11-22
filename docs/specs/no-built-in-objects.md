@@ -1,6 +1,6 @@
 # Workspaces without built-in objects
 
-Status: accepted, 2026-11-22; revised after three review rounds. Amends
+Status: accepted, 2026-11-22; revised after five review rounds. Amends
 [ARCHITECTURE.md](../../ARCHITECTURE.md) 1.1 (protection), 3 (seeding and
 upgrades), 3.1 (base objects and templates) and 6.2 (`get_context`);
 [extensions.md](extensions.md) §6 and §7 (contributions and installation),
@@ -68,8 +68,8 @@ Considered:
 - An extension declares **bindings**: what it reads and writes, in its own
   words. An installation binds each one to an existing object, or creates
   one. The admin approves; an agent or the extension's `configure` run may
-  propose. Where a source writes is pinned; every other binding can be
-  changed through a review.
+  propose. The approved plan holds while the installation is active and
+  changes only through a reviewed re-plan, which never moves imported data.
 - `BASE_OBJECT_IDS`, `BASE_FIELD_IDS`, `BASE_EVENT_TYPE_IDS.conversation`,
   `BASE_EVENT_FIELD_IDS`, `TASK_DONE_OPTION`, `baseObject` and `baseField`
   leave the shared contract.
@@ -377,10 +377,11 @@ Four checks keep writes valid. The first two can be fixed inside the review:
 the approval includes the schema change, explained in plain words, and
 approved with the rest.
 
-- **Match field unique.** When the release may create people (its reviewed
-  `createPeople` ceiling isn't `never`), the `match` field must have unique
-  claims. The ceiling, not the installation setting, decides, so raising the
-  setting later never meets a non-unique field. If the chosen emails field doesn't, the approval includes
+- **Match field unique.** When the plan lets the installation create people
+  (its `createPeople` choice isn't `never`), the `match` field must have unique
+  claims. `createPeople` is part of the plan, not an ordinary setting, so
+  changing it is a re-plan and re-runs these checks. The release's ceiling
+  only bounds the choice. If the chosen emails field doesn't, the approval includes
   `update_field isUnique: true`. If existing duplicates prevent that, the
   review names the records. A match-only use, like Gmail, doesn't need
   uniqueness and keeps today's rule: only an unambiguous live match counts.
@@ -421,69 +422,88 @@ When a `create` object's name is already used, the proposal prefixes it with
 the extension's name (`booking` becomes `tamlootBooking`, labeled "Bookings
 (Tamloot)"), and the admin may rename it before approving.
 
-### 5.5 Pinned and editable bindings
+### 5.5 The binding plan
 
-Some bindings shape stored data or other schema, and some only choose where
-the next write goes.
+An installation's bindings are one **plan**: every destination and every skip,
+approved together by a person. There is one rule for its whole life.
 
-**Pinned bindings:**
+**1. The plan holds while the installation is active.** Until the
+installation is `uninstalled`, the schema engine refuses any change after
+which one of the installation's §5.3 checks would fail. It runs the review's
+own validator, under the exclusive schema lock, and names the installation and
+the binding: "Tamloot writes meetings here. Change Tamloot's setup first."
+That covers deleting or reshaping a bound element, removing a bound option,
+un-marking a bound closed option, dropping uniqueness from a match field,
+adding a required field to an object the extension creates records in, and
+any operation added later. Renames and relabels stay free. So a plan never
+drifts.
 
-- the write destinations of a managed source: the bindings named by
-  `source.event` and `source.tasks`, with all their fields and values. Source
-  receipts and `source_tasks` rows refer to them.
-- owned parts, and any binding that carries an owned field (Last contact's
-  `person` and `company`);
-- any binding that a bound relation targets or an installed view uses
-  (Tamloot's `person`, which `task.person` targets; Booking's `person`).
-  The engine can't retarget an existing relation or view.
+**2. The plan changes only by a re-plan.** A re-plan is a new plan reviewed
+and approved like an install. Changing setup from the extension's page, a
+reviewed upgrade that adds binding keys, and a reinstall are all re-plans.
+Each one:
 
-Pinned bindings follow the rule contributions already follow (extensions.md
-§7):
+- fences every run and standalone writer of the old plan, and advances the
+  generation and `bindings_revision`;
+- applies the schema operations the new plan needs, then runs setup, which
+  re-verifies every source connection and webhook before any import;
+- keeps change work. Triggers the new plan doesn't change resume from the old
+  dispatch position, with every unfinished job carried over, including
+  interrupted attempts. New or changed triggers start at the approval
+  boundary;
+- shows its effects in the review, such as tasks that will be detached and
+  history that stays where it is.
 
-- A pinned binding never changes while the installation isn't `uninstalled`.
-- Until then, the schema engine refuses any change that would make a pinned
-  destination unusable, and names the installation: deleting or reshaping a
-  bound element, removing a bound option, or adding or requiring a field the
-  extension can't supply on an object it creates records in. The check runs
-  under the exclusive schema lock. So pinned parts never drift.
-- After uninstall, the workspace may change anything. A reinstall reuses each
-  pinned binding whose destination survived and is still compatible. If one
-  didn't, that part can't be bound again for the source accounts whose
-  retained data refers to it, and the review says so in plain words. A newly
-  connected account binds afresh. Moving a source's history to another object
-  is its own future design. This spec defines no erasure or move step.
+**3. History stays where it was written.** A re-plan never moves imported
+data.
 
-**Editable bindings** are everything else. That covers read bindings (Last
-contact can start counting a new `call` type), mapped outputs (Enrichment's
-Field mapping tab), trigger fields, `source.people`, and binding a part that
-was skipped at install, which may make it pinned from then on.
+- A revision the source already accepted replays against the projection it
+  was accepted under (§5.6), wherever its event now lives.
+- A new item, or a newer revision with changed content, uses the current
+  plan. A changed event in another destination is superseded through the
+  normal revision path (`sources/service.ts:824`).
+- A re-plan that changes any task destination (the object, or any field or
+  value written to it) detaches every synced `source_tasks` row as part of
+  the re-plan, before imports resume. It uses today's detachment semantics
+  (`sources/task-detach.ts`), and keeps each task's current values, source
+  identity and erasure lineage even though nobody edited it. A later meeting
+  revision can't erase them. Detached tasks are never moved or recreated;
+  task IDs the source hasn't sent yet use the new plan.
+- When an owned derived field gets a new destination, the extension's claims
+  on the old field are retracted through the assertion engine. People's
+  claims stay. Setup recomputes the new field.
+- When a re-plan or reinstall gives a manifest key a new element, the old
+  element is released to the workspace in the same transaction. Its
+  contribution row is deleted and its owner becomes `workspace`, so the
+  workspace may delete it, and each manifest key has exactly one
+  contribution.
+- Relations and views keep their original targets. A plan that needs them
+  elsewhere creates new ones.
 
-An editable change is a settings change (extensions.md §7). It is reviewed,
-cancels runs, advances the generation and re-runs setup, which re-verifies
-the source and webhook bindings that belong to each generation. There is one
-path for every extension, and the separate mapping-change path goes. The
-manifest rule that mappings can't be combined with managed sources
-(`packages/extension/src/index.ts:488`) goes with it.
-
-A reviewed upgrade may add binding keys, fields or values, which the admin
-binds in the upgrade review. It can't change or remove existing ones. A
-release that needs that uses a new key.
+**4. Uninstall releases the plan.** After uninstall, the workspace may change
+anything. A reinstall is a re-plan: its review proposes every earlier
+destination that still passes §5.3 and binds the rest afresh. When an owned
+object or field was deleted, the reinstall creates a replacement with fresh
+schema IDs; the manifest key, not the universal ID, identifies the
+contribution. Source identities, receipts and suppression are kept, so the
+same provider accounts resume under the new plan, under rule 3.
 
 ### 5.6 At run time
 
-**Reads.** `GET /v1/extensions/:id/bindings` returns the installation's
-resolved bindings. It maps each binding key to its object's stable ID and
-current API name (or several, for a multi-type read binding), and each field
-key to its field's stable ID and API name, with a status. It is admitted only
-for the installation's own credential: a run token, or a standalone app's
-grant. Hosted invocations also receive it inline, as of their generation.
-Extension code reads, and a standalone app writes, through the ordinary APIs
-by those names. Change jobs report changed fields by binding field key.
+**Reads.** `GET /v1/extensions/:id/bindings` returns the installation's plan:
+each binding key to its object's stable ID and current API name (or several,
+for a multi-type read binding), each field key to its field's stable ID and
+API name, and the `bindings_revision`. It is admitted only for the
+installation's own credential: a run token, or a standalone app's grant.
+Hosted invocations also receive it inline, as of their generation. Extension
+code reads through the ordinary APIs by those names. Change jobs report
+changed fields by binding field key.
 
-Accepted risk: a standalone app addresses its object by its current API name,
-so two objects swapping names in the middle of a request could redirect that
-one request. Names are unique at any moment, so this needs two renames to
-race a write.
+**Standalone writes** carry the `bindings_revision` they were made under,
+plus the stable IDs of the object and of every field they name, match fields
+included. The admitted write transaction checks all of them. A write made
+against an old plan, or naming a field renamed since, fails instead of
+landing somewhere else.
 
 **Writes.** Managed paths take binding keys and the extension's own values,
 and the server translates:
@@ -495,12 +515,14 @@ await sdk.syncSourceEvent(id, {
 });
 ```
 
-- **Source events** go to the object bound to `source.event`. A receipt's
-  digest covers the extension's own payload (binding field keys and values),
-  together with the set of keys it recorded. A replay of the same provider
-  revision is compared on those keys only. So a changed payload still
-  conflicts as today, while a field added by an upgrade applies from the next
-  revision.
+- **Source events** go to the object bound to `source.event`. When a
+  revision is accepted, its receipt stores the projection it was accepted
+  under: every key enabled in the plan, present or absent, with the
+  normalization rules (checksums for files, suppression before hashing). A
+  replay of the same revision compares normalized values and presence within
+  that projection only. Changed content still conflicts. A key first enabled
+  after acceptance is ignored until the next revision. A newer revision with
+  identical content is unchanged and stays where it is.
 - **Source tasks** go to the object bound to `source.tasks`. Task identity
   stays per source account (`source_tasks_identity_uq`), with no field on the
   user's object. Reconciliation takes one lock per installation before the
@@ -516,36 +538,34 @@ await sdk.syncSourceEvent(id, {
   an unbound `vendor` never links. Suppression checks are unchanged, and so is
   the public `log_event` resolver.
 - **Gmail** uses the same approved email field for its prefetch, its contact
-  additions (`records/write.ts:682`) and the final import.
+  additions (`records/write.ts:682`) and the final import. Message dedup and
+  suppression stay workspace-wide. When a duplicate message already lives in
+  an event type other than the current destination, the delivery is
+  acknowledged without changing the old event. Thread groups and their
+  representative events stay within one destination.
 - **Last contact** reads the event types bound to `contact` and writes its
   owned `lastContact` fields.
-- **Change triggers** resolve their declared fields through the binding. A
+- **Change triggers** resolve their declared fields through the plan. A
   filtered trigger whose fields all resolve to nothing is off, never a
   wildcard.
 
-### 5.7 When the workspace schema changes later
+### 5.7 Statuses
 
-Each binding, field and value has a status of `ok`, `missing` or
-`incompatible`, worked out against the current schema whenever it is read.
-This is the status Enrichment's mapping already has (`ExtensionMappingBinding`,
-`packages/extension/src/index.ts:229`). The required-field check (§5.3) is
-part of it.
-
-Pinned parts never drift (§5.5), so this applies only to editable ones:
-
-- A missing or incompatible **optional** part is skipped. Its triggers are
-  off.
-- A missing or incompatible **required** part fails only the runs that need
-  it, with `409 binding_unavailable`. Other triggers and the change cursor
-  carry on. The installation shows **Needs setup**, naming the part, and it
-  recovers when the admin rebinds it or the schema is compatible again.
+Rule 1 keeps every plan valid while it is active, so drift isn't a state an
+installation can be in. The per-binding status Enrichment's mapping has today
+(`ExtensionMappingBinding`, `packages/extension/src/index.ts:229`) stays as a
+runtime backstop. A write that finds its destination unusable fails with
+`409 binding_unavailable` and is reported as a bug, not handled as a workflow.
+There is no Needs setup state.
 
 ### 5.8 Upgrades
 
 Automatic upgrades keep comparing the full contract
-(`extensions/auto-upgrade.ts:31`). Binding declarations, and the binding each
-capability uses, are part of the contract, so any change to them needs a
-reviewed upgrade, as do changes to scopes, actor, secrets and model use.
+(`extensions/auto-upgrade.ts:31`), and they keep the plan as it is. Binding
+declarations, and the binding each capability uses, are part of the contract.
+A release that changes them is a reviewed upgrade, and therefore a re-plan
+(§5.5), as are changes to scopes, actor, secrets and model use. Existing keys
+can't change meaning; a release that needs that uses a new key.
 
 ### 5.9 Errors in plain words
 
@@ -558,8 +578,9 @@ satisfied, in plain words, next to the binding it concerns.
 - `workspaces.schema_from_scratch`: dropped.
 - `fields.settings.options[]`: gains optional `closed`.
 - `extension_installations.mapping`: replaced by `bindings`;
-  `mapping_revision` becomes `bindings_revision`, advanced by editable
-  binding changes.
+  `mapping_revision` becomes `bindings_revision`, advanced by every re-plan.
+- Source receipts store the projection each revision was accepted under
+  (§5.6).
 - `GET /v1/records/:id/open-items`: new (§4.2).
 - `GET /v1/extensions/:id/bindings`: new (§5.6).
 - Shared types: `ObjectView.baseObject` and `FieldView.baseField` removed;
@@ -587,8 +608,9 @@ migrations:
 - **PR 2, installations.** Installations are bound to the objects and fields their current release
   named by fixed ID, so connected sources keep running. Fields that become
   `owned` stay contributions. Existing `tamlootTaskId` fields stop being
-  contributions and become ordinary fields the workspace may delete. Anything
-  that can't be bound this way shows Needs setup.
+  contributions and become ordinary fields the workspace may delete. An
+  installation that can't be bound this way is uninstalled, and the admin
+  reinstalls it.
 - **Hosted:** the rebuilt bundles need the usual release steps in
   `retainer-cloud` (the tfvars apply, `RETAINER_EXTENSION_BUNDLES` and the
   cloud allowlist).
@@ -603,10 +625,10 @@ migrations:
   templates as one-time copies on empty workspaces; no `blank`.
 - ARCHITECTURE.md 6.2: `openItems` replaces `openTasks`, with the example
   pack updated.
-- extensions.md §6, §7, §9.4, §9.5 and §10: bindings, `owned`, pinned and
-  editable bindings, and the run-time rules in §5.6.
+- extensions.md §6, §7, §9.4, §9.5 and §10: bindings, `owned`, the plan
+  and re-plans (§5.5), and the run-time rules in §5.6.
 - extensions-configure.md §2.2 and §5: suggestions cover bindings; the Field
-  mapping tab edits editable bindings.
+  mapping tab becomes a re-plan.
 - booking-extension.md: Booking's object is an owned binding, `person` is a
   read binding, and Booking reads its names from the bindings endpoint.
 - hosted-onboarding.md: the paragraph about workspaces designed from scratch
@@ -649,30 +671,54 @@ Integration tests run against real Postgres, one fresh database per file.
 - **No shared destinations.** Two outputs on one field, or an output on the
   lookup field, are refused.
 - **Gmail** binds to an agent-made `email` event type.
-- **Last contact** counts two bound event types, gains a third through an
-  editable-binding review, and a person can still correct `lastContactAt`.
+- **Last contact** counts two bound event types, gains a third through a
+  re-plan, and a person can still correct `lastContactAt`.
 - **Booking** creates its owned object, reads its names from the bindings
   endpoint with its standalone grant, and leaves `person` writable by people.
   A name clash gets the prefixed proposal.
 - **Proposals.** A `configure` suggestion and an agent proposal both prefill
   the review, and nothing is written until the admin approves.
-- **Pinned bindings.** While installed, deleting or reshaping a pinned
-  destination, removing a bound option, or adding a required field to a
-  pinned task object is refused and names the installation. After uninstall
-  the same changes are allowed. A reinstall reuses surviving pinned bindings
-  and refuses an incompatible one for accounts with retained data, while a
-  new account binds afresh.
-- **Replay.** A same-revision replay with a changed payload conflicts. A
-  same-revision replay after an upgrade adds a field doesn't.
-- **Editable changes.** Binding a skipped Tamloot `task`, or adding a `call`
-  type to Last contact, re-runs setup at the new generation, and sync and
-  webhooks keep working. A release that changes an existing binding is
-  refused; adding a key goes through the upgrade review.
-- **Match ceiling.** A release whose `createPeople` ceiling isn't `never`
-  requires a unique match field even when installed with `never`.
-- **Drift.** Deleting an editable required field shows Needs setup and fails
-  only the runs that need it with `binding_unavailable`, while other triggers
-  proceed. A filtered trigger with no resolved fields doesn't fire.
+- **The plan holds.** While installed, each change the §5.3 checks would
+  fail is refused and names the installation: deleting a bound field,
+  removing or un-marking a bound option, dropping uniqueness from a match
+  field, adding a required field to a bound task object. Renames are allowed.
+  After uninstall, all of them are allowed.
+- **Re-plan.** Binding a skipped Tamloot `task`, adding a `call` type to Last
+  contact, and remapping an Enrichment output each fence old runs, re-run
+  setup and keep sync and webhooks working. A change queued before the
+  re-plan for an unchanged trigger still runs, and a change committed during
+  it is replayed. A standalone write carrying an old `bindings_revision`
+  fails.
+- **History stays.** After re-planning Tamloot's `meeting` from `meeting` to
+  `call`, old events stay in `meeting`, a changed revision of an old item
+  supersedes it into `call`, and an accepted revision replays as unchanged.
+  Tasks whose record is in the old task object are detached and not
+  recreated. A moved `lastContact` destination retracts the extension's old
+  claims and keeps people's.
+- **Reinstall.** After uninstall and deleting Booking's object, a reinstall
+  creates a replacement with fresh IDs. After deleting Tamloot's `meeting`,
+  a reinstall binds afresh, and accounts A and B resume under the new plan.
+- **Replay.** A same-revision replay with changed content conflicts. One that
+  only gains a key enabled later doesn't. Re-uploaded identical transcript
+  bytes don't.
+- **Gmail across destinations.** A message already imported into the old
+  event type is acknowledged and not changed when it reaches a new mailbox
+  after a re-plan.
+- **`createPeople` in the plan.** An installation with `never` doesn't block
+  the workspace from adding a required field or dropping uniqueness on its
+  contact object. Changing it to `everyone` is a re-plan that runs both
+  checks.
+- **Released elements.** After Last contact moves to Client, the old
+  `lastContact` field on Contact can be deleted. After a reinstall replaces a
+  deleted owned object, its manifest key has one contribution.
+- **Task fields.** Re-planning Tamloot's task status to another field
+  detaches synced tasks before the next import, and the first newer meeting
+  revision leaves their values intact.
+- **Change work.** A change committed but not yet dispatched before an
+  Enrichment re-plan is still processed.
+- **Standalone field rename.** A Booking write naming `status` fails after
+  the bound field is renamed and another field takes its old name.
+- **Triggers.** A filtered trigger with no resolved fields doesn't fire.
 - **Task identity.** The same provider task ID from two accounts of one
   installation, including two first sightings run concurrently, gives one
   record and one `source_task_conflict`, and the first row is untouched.
@@ -695,7 +741,7 @@ Two PRs.
    done tasks are never shown as open.
 2. **No built-in objects and bindings** (§3, §5 to §7): no seed, one-time
    templates, protection, the shared removals, the bindings contract and
-   endpoint, SDK, install review, proposals, pinned and editable bindings,
+   endpoint, SDK, install review, proposals, the plan and re-plans,
    drift, all six extensions moved over, the PR 2 migrations, and the rebuilt
    bundles with their hosted release steps. The removals land with their last
    consumers, so every commit builds.
@@ -715,11 +761,10 @@ Decided (2026-11-22):
   may name several event types (§5.3).
 - **Name clashes get the extension's name** as a prefix, which the admin may
   rename (§5.4).
-- **Pinned and editable bindings** (§5.5). Pinned covers source
-  destinations, owned parts and relation or view targets, under the
-  contribution rule (locked until uninstall, reused on reinstall). Every
-  other binding changes as a settings change. Moving a source's history is
-  out of scope.
+- **One binding plan** (§5.5). It holds while the installation is active,
+  guarded by the review's own validator, and changes only through a reviewed
+  re-plan, which never moves imported data. There is no pinned or editable
+  split, and no drift state.
 - **Templates are one-time copies on empty workspaces**, and releases never
   change a workspace's visible schema (§3.2, §3.4).
 - **`owned` means only "always created, a contribution".** Who may write
