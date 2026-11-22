@@ -1,4 +1,4 @@
-import { isoDateTimeSchema } from '@retainer/shared';
+import { EVENT_CONTENT_MAX, isoDateTimeSchema } from '@retainer/shared';
 import { z } from 'zod';
 
 export const sourceBindingSchema = z.strictObject({
@@ -48,6 +48,8 @@ export const sourceEventSchema = z.strictObject({
     occurredAt: isoDateTimeSchema,
     title: z.string().max(500),
     summary: z.string().optional(),
+    /** The full text behind the event (a transcript, a message body), read with get_event_content. */
+    content: z.string().min(1).max(EVENT_CONTENT_MAX).optional(),
     fields: z.record(z.string(), z.unknown()).default({}),
     participants: z
       .array(

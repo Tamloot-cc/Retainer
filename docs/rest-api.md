@@ -174,6 +174,7 @@ identity of a deleted or erased event is a 409 `event_retracted`.
 | `DELETE /v1/events/:id/participants/:pid`         | `write`, user    | Remove one participant                                               |
 | `DELETE /v1/events/:id/about/:recordId`           | `write`, user    | Remove a record from the event's `about` list                        |
 | `GET /v1/events/:id/claims`                       | `read`           | Assertions and facts citing an event; `?own=false` omits its own     |
+| `GET /v1/events/:id/content`                      | `read`           | An event's full text, or its thread's, five parts a page (`?after=`) |
 | `POST /v1/search`                                 | `read`           | Keyword search across records, events and facts                      |
 | `GET /v1/review`                                  | `read`           | Pending values, merge suggestions, unresolved participants           |
 | `GET /v1/assertions/:id`                          | `read`           | One assertion with its review state                                  |

@@ -1,7 +1,8 @@
 import type { Hono } from 'hono';
+import { z } from 'zod';
 import { missingScope, requireScope } from '../../auth/middleware.js';
 import type { Sql } from '../../db/client.js';
-import { idParam, readBody, recordParam } from '../../http/request.js';
+import { idParam, readBody, recordParam, zodError } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 import { addLinksInputSchema } from '../../memory/event-links.js';
 import { logEventInputSchema } from '../../memory/events.js';
@@ -12,6 +13,7 @@ import {
   logEventFor,
   moveEventsFor,
   readEvent,
+  readEventContent,
   remember,
   removeEventLinkFor,
   retractEventFor,
@@ -45,6 +47,14 @@ export function memoryRoutes(app: Hono<AppEnv>, sql: Sql) {
   app.get('/events/:id', requireScope('read'), async (c) =>
     c.json(await readEvent(sql, c.get('caller'), idParam(c))),
   );
+
+  // The full text behind an event (an email's body, a transcript), or its thread's.
+  app.get('/events/:id/content', requireScope('read'), async (c) => {
+    const after = z.uuid().optional().safeParse(c.req.query('after'));
+    if (!after.success) throw zodError(after.error);
+    c.header('Cache-Control', 'no-store');
+    return c.json(await readEventContent(sql, c.get('caller'), idParam(c), after.data ?? null));
+  });
 
   // `added.participants.matched` includes stored participants resolved in place.
   app.post('/events/:id/links', requireScope('write'), async (c) => {

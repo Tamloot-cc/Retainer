@@ -452,8 +452,8 @@ svg .goodtxt { fill: var(--good); font-weight: 600; }
       </div>
       <div class="fam">
         <header><h3>Read</h3><span class="count">7</span></header>
-        <p>Find records, then pull one record's context or history.</p>
-        <div class="tools"><span class="t r">search</span><span class="t r">query_records</span><span class="t r">get_record</span><span class="t r">get_context</span><span class="t r">get_timeline</span><span class="t r">list_comments</span><span class="t r">get_gmail_messages</span></div>
+        <p>Find records, then pull one record's context or history, or an event's full text.</p>
+        <div class="tools"><span class="t r">search</span><span class="t r">query_records</span><span class="t r">get_record</span><span class="t r">get_context</span><span class="t r">get_timeline</span><span class="t r">list_comments</span><span class="t r">get_event_content</span></div>
       </div>
       <div class="fam">
         <header><h3>Write</h3><span class="count">5</span></header>
@@ -868,6 +868,7 @@ svg .goodtxt { fill: var(--good); font-weight: 600; }
         <table style="min-width:0">
           <thead><tr><th style="width:8rem">Date</th><th>Change</th></tr></thead>
           <tbody>
+            <tr><td class="mono">2026-11-22</td><td><code>get_gmail_messages</code> became <code>get_event_content</code>: the full text of any event (an email thread, a Granola transcript), now also matched by <code>search</code>.</td></tr>
             <tr><td class="mono">2026-11-22</td><td><code>docs/agents.md</code> now lists tool groups instead of every tool, so it no longer drifts from the server.</td></tr>
             <tr><td class="mono">2026-11-22</td><td>First version, from main at <code>e831514</code>.</td></tr>
           </tbody>

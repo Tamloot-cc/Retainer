@@ -701,7 +701,14 @@ export const test = base.extend<
           sourceItemId,
           providerRevision: '2',
           expectedRevisionId: first.revisionId,
-          event: { ...event, title: 'Edited provider note' },
+          event: {
+            ...event,
+            title: 'Edited provider note',
+            content:
+              'Dana: Thanks for joining. Shall we go over the renewal?\n' +
+              'Source attendee: Yes. We need the quote before the end of the month.\n' +
+              'Dana: I will send it by Friday.',
+          },
         },
         key,
       );

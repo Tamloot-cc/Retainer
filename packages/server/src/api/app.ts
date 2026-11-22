@@ -32,7 +32,6 @@ import { extensionDataRoutes } from './routes/extension-data.js';
 import { runtimeRoutes } from './routes/extension-runtime.js';
 import { extensionRoutes } from './routes/extensions.js';
 import { fileRoutes } from './routes/files.js';
-import { gmailReadRoutes } from './routes/gmail.js';
 import { memoryRoutes } from './routes/memory.js';
 import { recordRoutes } from './routes/records.js';
 import { retrievalRoutes } from './routes/retrieval.js';
@@ -144,7 +143,6 @@ export function createApp(deps: AppDeps) {
   extensionRoutes(v1, extensions, !deps.accountsSecret);
   runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets, extensions.oauthClients);
   extensionDataRoutes(v1, deps.sql, extensions.catalog);
-  gmailReadRoutes(v1, deps.sql);
   webhookRuntime(v1, deps.webhooks);
   fileRoutes(v1, deps.sql, deps.fileStorage, deps.fileQuota);
   const routineConfig = {

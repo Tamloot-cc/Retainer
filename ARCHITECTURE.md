@@ -424,6 +424,25 @@ cursors work as for one object. With `include: ["relationReferences"]`,
 the references cover relation values, participants, candidates and
 `about` records.
 
+#### An event's full text
+
+Some events carry more text than a summary holds: an email's body, a
+meeting's transcript. It is stored in `event_bodies`, one immutable row per
+event, apart from `records.data`, so a long text never truncates the
+summary or enters field history. A Gmail message stores its body, and a
+source import may send `content` with its event (Granola sends the
+transcript as text, beside the transcript file). Events that share a
+`thread_id` read as one conversation, oldest first: every message of a
+Gmail thread is its own citable event, and activity, search and queries
+show the thread through its newest one.
+
+`get_event_content` and `GET /v1/events/:id/content` return the text, five
+parts per page; any event of a thread returns the whole thread. An event
+with a body has `content: true` in its `event` details. Search matches the
+body too (5.1). A body is deleted with its event, and erasing one event of
+a thread erases the thread. Forgetting a person lists, for review, the
+events whose body names them or carries one of their handles (2.1).
+
 #### Rollups
 
 An owning relation field of an entity can set `rollUpEvents`. Then the
@@ -1396,18 +1415,23 @@ folding). No embeddings, no BM25 extension.
 
 #### What is indexed
 
-| Source    | Search text                                                                                                                                     | Column and index                                     |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `records` | Values of `is_searchable` fields, plus the domain of each email and link; the label field (usually the name, an event's title) weighted highest | `search tsvector`, GIN on `(workspace_id, search)`   |
-| `records` | The label field as plain text, e.g. "Dana Levi"                                                                                                 | `label text`, trigram GIN on `(workspace_id, label)` |
-| `facts`   | `content`                                                                                                                                       | `search tsvector`, GIN on `(workspace_id, search)`   |
+| Source         | Search text                                                                                                                                     | Column and index                                     |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `records`      | Values of `is_searchable` fields, plus the domain of each email and link; the label field (usually the name, an event's title) weighted highest | `search tsvector`, GIN on `(workspace_id, search)`   |
+| `records`      | The label field as plain text, e.g. "Dana Levi"                                                                                                 | `label text`, trigram GIN on `(workspace_id, label)` |
+| `facts`        | `content`                                                                                                                                       | `search tsvector`, GIN on `(workspace_id, search)`   |
+| `event_bodies` | An event's full text (1.3)                                                                                                                      | `search tsvector`, GIN on `(workspace_id, search)`   |
 
 The server computes every `search` and `label` value in the same
 transaction that writes the row (for records, the one that recomputes
 `records.data`). They are not Postgres generated columns, because which
 record fields are searchable lives in schema metadata. Events are records,
 so they share the records index; an event's title and summary are always
-searchable (1.3). Each fact carries its `record_id` and each event hit its
+searchable (1.3). An event's full text has its own vector in `event_bodies`,
+written with the body; search matches it too, and a hit found only there
+says `match: "content"`. A thread is found by any of its messages and
+shown as its newest event. Title and summary matches rank above
+full-text-only matches. Each fact carries its `record_id` and each event hit its
 linked record IDs (possibly none or several), so a hit on a fact or event
 also points to records.
 
@@ -1538,7 +1562,7 @@ composes `search`, `query_records` and `get_context` with its own model.
 | `GET /v1/changes` · `/:position`                  | The change feed: committed changes in order, for extensions, routines and outside agents (extensions spec §9.4)                         |
 | `POST /v1/records/me/forget`                      | Clear the caller's own personal memory ("Clear all", 1.3)                                                                               |
 | `PUT /v1/workspace/time-zone`                     | Set the workspace's IANA time zone, used by routine time triggers (`admin`)                                                             |
-| `GET /v1/events/:id/gmail-messages`               | The Gmail messages behind an event the Gmail extension logged                                                                           |
+| `GET /v1/events/:id/content`                      | The full text behind an event (an email's body, a transcript), or its whole thread (1.3)                                                |
 | `/v1/files/*`                                     | Upload intents, finalize, metadata, short-lived downloads and erasure status (docs/files.md)                                            |
 | `/v1/extensions/*`                                | Install, approve, configure, connect, keys, runs and source imports; `runtime/*` serves runs and the model proxy                        |
 | `/v1/routines/*`                                  | Build, validate, preview, approve, test, pause and run routines; `runtime/*` serves routine runs (routines spec)                        |
@@ -1578,8 +1602,8 @@ Beside these core tools: `list_changes` and `get_change` read the change
 feed; `create_file_upload`, `finalize_file`, `get_file` and `download_file`
 handle files (docs/files.md); `list_extensions`, `get_extension`,
 `list_extension_connections`, `list_extension_runs` and `preview_extension`
-inspect extensions; `get_gmail_messages` reads the messages behind a Gmail
-event; and, when routines are available, `list_routines`, `get_routine`,
+inspect extensions; `get_event_content` reads the full text behind an event
+(1.3); and, when routines are available, `list_routines`, `get_routine`,
 `get_routine_capabilities`, `validate_routine`, `preview_routine`,
 `get_routine_preview`, `propose_routine` and `get_routine_job` build and
 inspect routines (4.7).
