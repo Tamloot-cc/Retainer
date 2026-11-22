@@ -649,36 +649,37 @@ export class Extensions {
         >`select kind, universal_id, element_id, definition from extension_contributions where installation_id = ${existing.id}`
       : [];
     const fresh = !existing || ['configuring', 'uninstalled'].includes(existing.state);
-    if (input.bindings && !manifest.bindings)
+    const hasBindings = !!manifest.bindings?.length;
+    if (input.bindings && !hasBindings)
       throw new AppError(422, 'bindings_invalid', 'This release has no bindings to review.');
     const people = creationPolicy(manifest, input.settings.createPeople);
     const installedRelease = existing
       ? this.catalog.find(existing.registration_id, existing.version)?.manifest
       : undefined;
-    const replan =
-      !!manifest.bindings &&
-      (!existing?.bindings ||
+    const replan = hasBindings
+      ? !existing?.bindings ||
         fresh ||
         !!input.bindings ||
         existing.bindings.createPeople !== people ||
         hash(existing.bindings.declarations) !== hash(manifest.bindings) ||
         (caller.actor.type !== 'system' &&
           !!installedRelease &&
-          hash(releaseContract(installedRelease)) !== hash(releaseContract(manifest))));
+          hash(releaseContract(installedRelease)) !== hash(releaseContract(manifest)))
+      : !!existing?.bindings?.declarations.length;
     const [proposal] =
-      manifest.bindings && replan
+      hasBindings && replan
         ? await tx<{ choices: ExtensionBindingChoices }[]>`
       select choices from extension_binding_proposals where release_digest = ${release.digest}`
         : [];
     const [configured] =
-      existing && manifest.bindings && replan
+      existing && hasBindings && replan
         ? await tx<{ bindings: ExtensionBindingChoices | null }[]>`
       select s.bindings from extension_suggestions s join extension_jobs j on j.id = s.job_id
       where s.installation_id = ${existing.id} and s.release_digest = ${release.digest}
         and j.generation = ${existing.generation} and j.status = 'succeeded'`
         : [];
     const choices = mergeBindingChoices(proposal?.choices, configured?.bindings, input.bindings);
-    const bound = manifest.bindings
+    const bound = hasBindings
       ? resolveBindingPlan(current, manifest, choices, existing?.bindings, people)
       : undefined;
     const operations = bound?.operations ?? [];
@@ -997,9 +998,9 @@ export class Extensions {
           },
         );
     }
-    if (plan.replan && plan.existing?.bindings && plan.bound) {
+    if (plan.replan && plan.existing?.bindings) {
       const old = plan.existing.bindings;
-      const adopted = plan.bound.plan;
+      const adopted = plan.bound?.plan;
       const next = plan.release.manifest;
       const previous = this.catalog.find(
         plan.existing.registration_id,
@@ -1019,7 +1020,7 @@ export class Extensions {
       };
       if (
         taskKey &&
-        hash(old.destinations[taskKey] ?? null) !== hash(adopted.destinations[taskKey] ?? null)
+        hash(old.destinations[taskKey] ?? null) !== hash(adopted?.destinations[taskKey] ?? null)
       ) {
         const tasks = await tx<{ record_id: string }[]>`
           select record_id from source_tasks where installation_id = ${plan.existing.id} and state = 'synced'`;
@@ -1032,7 +1033,7 @@ export class Extensions {
       }
       for (const declaration of old.declarations) {
         const destination = old.destinations[declaration.key];
-        const replacement = adopted.destinations[declaration.key];
+        const replacement = adopted?.destinations[declaration.key];
         if (!destination) continue;
         const released =
           declaration.owned && destination.objects.some((id) => !replacement?.objects.includes(id))
@@ -1076,7 +1077,9 @@ export class Extensions {
         const universalId = deriveUuid(`${view.universalId}:${id}`);
         return retainedViews.has(universalId) ? [] : [universalId];
       });
-      if (releasedViews.length)
+      if (!adopted)
+        await tx`delete from extension_contributions where installation_id = ${plan.existing.id}`;
+      else if (releasedViews.length)
         await tx`delete from extension_contributions where installation_id = ${plan.existing.id}
           and kind = 'view' and universal_id = any(${releasedViews}::uuid[])`;
     }

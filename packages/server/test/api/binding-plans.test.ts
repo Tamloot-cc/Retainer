@@ -119,10 +119,17 @@ const updateOnly = extensionFixture({
     },
   ],
 });
+const noBindings = extensionFixture({
+  ...manifest,
+  version: '2.0.0',
+  bindings: undefined,
+  views: [],
+});
 const catalog = new ExtensionCatalog([
   { manifest, actorCeiling: 'integration' },
   { manifest: contacts, actorCeiling: 'integration' },
   { manifest: updateOnly, actorCeiling: 'integration' },
+  { manifest: noBindings, actorCeiling: 'integration' },
 ]);
 const installation = {
   registrationId: manifest.universalId,
@@ -601,4 +608,43 @@ it('allows standalone updates and matched upserts through an update-only binding
     created: false,
     record: { fields: { name: 'Upserted' } },
   });
+});
+
+it('releases owned objects and fields when the reviewed upgrade drops the bindings', async () => {
+  const h = await setup();
+  const reviewed = await h.preview();
+  const installed = await h.commit(reviewed.body.planDigest);
+  expect(installed.status).toBe(201);
+  const base = `/v1/extensions/${installed.body.id}`;
+  const [before] =
+    await db.owner`select bindings_revision from extension_installations where id=${installed.body.id}`;
+  const details = await h.app.request(base, { key: h.key });
+  expect(details.body.contributions.map((entry: { kind: string }) => entry.kind)).toEqual(
+    expect.arrayContaining(['object', 'field']),
+  );
+  const removeStatus = () => h.change([{ op: 'delete_field', object: 'ticket', field: 'status' }]);
+  expect((await removeStatus()).status).toBe(422);
+
+  const input = { ...installation, installationId: installed.body.id, version: noBindings.version };
+  const plan = await h.preview(input);
+  expect(plan.status, JSON.stringify(plan.body)).toBe(200);
+  const adopted = await h.app.request(`${base}/upgrade`, {
+    key: h.key,
+    headers: { 'Idempotency-Key': 'drop-bindings' },
+    body: { ...input, planDigest: plan.body.planDigest },
+  });
+  expect(adopted.status, JSON.stringify(adopted.body)).toBe(200);
+  expect((await h.app.request(base, { key: h.key })).body.contributions).toEqual([]);
+  const [after] =
+    await db.owner`select bindings,bindings_revision from extension_installations where id=${installed.body.id}`;
+  expect(after).toEqual({ bindings: null, bindings_revision: before?.bindings_revision + 1 });
+
+  const schema = await h.app.request('/v1/schema', { key: h.key });
+  const ticket = schema.body.objects.find(
+    (entry: { nameSingular: string }) => entry.nameSingular === 'ticket',
+  );
+  expect(ticket.fields).toEqual(
+    expect.arrayContaining([expect.objectContaining({ name: 'status', readOnly: false })]),
+  );
+  expect((await h.change([{ op: 'delete_object', object: 'ticket' }])).status).toBe(200);
 });
