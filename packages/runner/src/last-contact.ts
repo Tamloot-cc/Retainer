@@ -6,7 +6,6 @@ import {
   lifecycleInputSchema,
 } from '@retainer/extension';
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
-import { BASE_EVENT_TYPE_IDS, BASE_OBJECT_IDS } from '@retainer/shared';
 import { z } from 'zod';
 import { apiFetch, retryTransient } from './outcome.js';
 
@@ -35,10 +34,6 @@ export function lastContactManifest(build: {
   handlerDigest: string;
   serverRange: string;
 }) {
-  const fields = [
-    { objectId: BASE_OBJECT_IDS.person, fieldId: LAST_CONTACT.personField },
-    { objectId: BASE_OBJECT_IDS.company, fieldId: LAST_CONTACT.companyField },
-  ];
   const fn = (
     universalId: string,
     name: string,
@@ -80,21 +75,52 @@ export function lastContactManifest(build: {
     onSourceDelete: 'keep',
     settings: {},
     views: [],
-    schema: fields.map(({ objectId, fieldId }) => ({
-      kind: 'field',
-      objectId,
-      definition: {
-        universalId: fieldId,
-        name: 'lastContactAt',
-        label: 'Last contact',
-        type: 'date_time',
-        isNullable: true,
-        isFilterable: true,
-        description:
-          'Most recent current conversation at or before now. Maintained by the Last contact extension; human assertions retain normal precedence.',
+    schema: [],
+    bindings: [
+      {
+        key: 'contact',
+        label: 'Conversations',
+        description: 'Event types that count toward a contact’s most recent interaction.',
+        class: 'event',
+        access: 'read',
+        required: false,
+        fields: [],
       },
-    })),
-    lastContact: { functionIds: [LAST_CONTACT.scan, LAST_CONTACT.schedule, ...changeIds], fields },
+      ...[
+        { key: 'person', label: 'People', id: LAST_CONTACT.personField },
+        { key: 'company', label: 'Companies', id: LAST_CONTACT.companyField },
+      ].map(({ key, label, id }) => ({
+        key,
+        label,
+        description: 'Records on which to maintain the last contact date.',
+        class: 'entity',
+        access: 'write',
+        required: false,
+        fields: [
+          {
+            key: 'lastContact',
+            label: 'Last contact',
+            types: ['date_time'],
+            required: true,
+            owned: true,
+            create: {
+              universalId: id,
+              name: 'lastContactAt',
+              label: 'Last contact',
+              type: 'date_time',
+              isNullable: true,
+              isFilterable: true,
+              description: 'Most recent qualifying event. Maintained by Last contact.',
+            },
+          },
+        ],
+      })),
+    ],
+    lastContact: {
+      functionIds: [LAST_CONTACT.scan, LAST_CONTACT.schedule, ...changeIds],
+      events: 'contact',
+      destinations: ['person', 'company'],
+    },
     functions: [
       fn(LAST_CONTACT.setup, 'setup', { kind: 'install' }),
       fn(LAST_CONTACT.scan, 'scan', { kind: 'job' }),
@@ -114,18 +140,18 @@ export function lastContactManifest(build: {
         },
       ),
       ...[
-        { id: LAST_CONTACT.person, objectId: BASE_OBJECT_IDS.person, name: 'person-changed' },
-        { id: LAST_CONTACT.company, objectId: BASE_OBJECT_IDS.company, name: 'company-changed' },
+        { id: LAST_CONTACT.person, binding: 'person', name: 'person-changed' },
+        { id: LAST_CONTACT.company, binding: 'company', name: 'company-changed' },
         {
           id: LAST_CONTACT.conversation,
-          objectId: BASE_EVENT_TYPE_IDS.conversation,
+          binding: 'contact',
           name: 'conversation-changed',
         },
-      ].map(({ id, objectId, name }) =>
+      ].map(({ id, binding, name }) =>
         fn(
           id,
           name,
-          { kind: 'change', objectId, fieldIds: [] },
+          { kind: 'change', binding, fields: [] },
           {
             type: 'object',
             additionalProperties: false,

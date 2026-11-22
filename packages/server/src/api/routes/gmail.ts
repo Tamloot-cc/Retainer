@@ -17,6 +17,7 @@ import type { Tx } from '../../db/tx.js';
 import { inWorkspace, lockSchemaShared } from '../../db/tx.js';
 import { AppError, forbidden } from '../../errors.js';
 import { admitRun } from '../../extension-runtime/admission.js';
+import type { StoredBindingPlan } from '../../extension-runtime/bindings.js';
 import type { ExtensionCatalog } from '../../extensions/catalog.js';
 import { idParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
@@ -41,8 +42,10 @@ async function gmailRun(
   const run = caller.run;
   if (run?.installationId !== installationId || !run.connectionId)
     throw forbidden('a live Gmail mailbox run is required');
-  const [installation] = await tx<{ connection_settings: Record<string, unknown> }[]>`
-    select c.settings as connection_settings
+  const [installation] = await tx<
+    { connection_settings: Record<string, unknown>; bindings: StoredBindingPlan | null }[]
+  >`
+    select c.settings as connection_settings, i.bindings
     from extension_installations i join extension_connections c on c.installation_id=i.id
     where i.id=${installationId} and c.id=${run.connectionId}`;
   if (!installation) throw forbidden('a live Gmail mailbox run is required');
@@ -65,6 +68,7 @@ async function gmailRun(
     throw forbidden('this function has no Gmail ingestion grant');
   return {
     installationId,
+    plan: installation.bindings,
     connectionId: run.connectionId,
     isSetup: run.functionId === policy.verifyFunctionId,
     // The integration the member authorized through, even if the server's has changed since.
@@ -186,7 +190,8 @@ export function gmailRuntimeRoutes(app: Hono<AppEnv>, sql: Sql, catalog: Extensi
         id,
         messageId ? 'ingest' : path === 'profile' ? 'profile' : 'scan',
       );
-      if (binding.isSetup) gmailConversationSchema(await getSchema(tx, caller.workspaceId));
+      if (binding.isSetup)
+        gmailConversationSchema(await getSchema(tx, caller.workspaceId), binding.plan);
       if (messageId) {
         const full = query.get('format') === 'FULL';
         const reservation = await messageReservation(tx, caller, binding, messageId);
@@ -283,7 +288,7 @@ export function gmailRuntimeRoutes(app: Hono<AppEnv>, sql: Sql, catalog: Extensi
     return c.json(
       await withRead(sql, caller, async (tx, schema) => {
         const binding = await gmailRun(tx, catalog, caller, id, 'scan');
-        gmailConversationSchema(schema);
+        gmailConversationSchema(schema, binding.plan);
         if (input.complete && input.additionId) {
           await tx`insert into gmail_contact_scans(workspace_id,installation_id,connection_id,addition_id)
           select a.workspace_id,${id},${binding.connectionId},a.id
@@ -342,7 +347,7 @@ export function gmailRuntimeRoutes(app: Hono<AppEnv>, sql: Sql, catalog: Extensi
         caller,
         async (tx, context) => {
           const binding = await gmailRun(tx, catalog, caller, id);
-          gmailConversationSchema(context.schema);
+          gmailConversationSchema(context.schema, binding.plan);
           const item = await messageReservation(
             tx,
             caller,
@@ -356,7 +361,7 @@ export function gmailRuntimeRoutes(app: Hono<AppEnv>, sql: Sql, catalog: Extensi
             return { prepared: false };
           const target = await targetForRun(tx, caller, targetId);
           if (target.kind === 'missing') return { prepared: false };
-          const people = await matchGmailPeople(tx, context, input, {
+          const people = await matchGmailPeople(tx, context, input, binding.plan, {
             connectionId: binding.connectionId,
             occurredAt: input.occurredAt,
           });

@@ -37,4 +37,4 @@ RUN mkdir -p /data/files && chown node:node /data/files
 USER node
 EXPOSE 8787
 # Applies pending migrations, then starts the role set by RETAINER_ROLE.
-CMD ["sh", "-c", "node dist/db/migrate.js && node dist/index.js"]
+CMD ["sh", "-c", "node dist/migrate.js && node dist/index.js"]

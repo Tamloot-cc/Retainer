@@ -270,13 +270,20 @@ describe('protection', () => {
   it('protects hidden types and event core fields', () => {
     const state = applyValid(base, [...BASE_EVENT_OPERATIONS, ...INTERNAL_OPERATIONS], 'system');
     expect(state.objects.filter((o) => o.isProtected).map((o) => o.nameSingular)).toEqual([
-      'internalNote', 'workspaceProfile', 'memberProfile',
+      'internalNote',
+      'workspaceProfile',
+      'memberProfile',
     ]);
     expect(field(state, 'conversation', 'summary')?.isProtected).toBe(true);
-    expect(issuesOf(state, [{ op: 'delete_field', object: 'conversation', field: 'summary' }])[0]?.message)
-      .toContain('is protected');
-    expect(issuesOf(state, [{ op: 'update_field', object: 'conversation', field: 'summary', isUnique: true }])[0]?.message)
-      .toContain('is protected');
+    expect(
+      issuesOf(state, [{ op: 'delete_field', object: 'conversation', field: 'summary' }])[0]
+        ?.message,
+    ).toContain('is protected');
+    expect(
+      issuesOf(state, [
+        { op: 'update_field', object: 'conversation', field: 'summary', isUnique: true },
+      ])[0]?.message,
+    ).toContain('is protected');
   });
 
   it('allows editing and removing former protected task fields and options', () => {
@@ -286,8 +293,9 @@ describe('protection', () => {
       { op: 'remove_option', object: 'todo', field: 'state', value: 'done' },
       { op: 'delete_field', object: 'todo', field: 'dueDate' },
     ]);
-    expect(field(desired, 'todo', 'state')?.settings.options?.map((option) => option.value))
-      .toEqual(['todo', 'in_progress']);
+    expect(
+      field(desired, 'todo', 'state')?.settings.options?.map((option) => option.value),
+    ).toEqual(['todo', 'in_progress']);
     expect(field(desired, 'todo', 'dueDate')).toBeUndefined();
   });
 });
@@ -486,12 +494,14 @@ describe('event rollups', () => {
   });
 
   it('is on in templates only for relations a record belongs to', () => {
-    const on = Object.values(TEMPLATES).filter((template) => template.extends).flatMap((template) => {
-      const state = applyValid(base, template.operations, 'system');
-      return state.objects.flatMap((o) =>
-        o.fields.filter((f) => f.settings.rollUpEvents).map((f) => `${o.nameSingular}.${f.name}`),
-      );
-    });
+    const on = Object.values(TEMPLATES)
+      .filter((template) => template.extends)
+      .flatMap((template) => {
+        const state = applyValid(base, template.operations, 'system');
+        return state.objects.flatMap((o) =>
+          o.fields.filter((f) => f.settings.rollUpEvents).map((f) => `${o.nameSingular}.${f.name}`),
+        );
+      });
     // Affiliations, ownership and contact assignments stay off (7.2).
     expect(on.sort()).toEqual([
       'application.job',

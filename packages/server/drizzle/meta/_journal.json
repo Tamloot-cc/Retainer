@@ -953,6 +953,20 @@
       "when": 1795384762774,
       "tag": "0135_release_former_base_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1795384792890,
+      "tag": "0136_extension_binding_plans",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1795384794379,
+      "tag": "0137_extension_binding_proposal_grants",
+      "breakpoints": true
     }
   ]
 }

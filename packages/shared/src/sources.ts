@@ -27,8 +27,7 @@ export type SourceEventImport = {
   providerRevision?: string;
   expectedRevisionId: string | null;
   contentDigest?: string;
-  event: {
-    type: string;
+  event: ({ binding: string; type?: never } | { type: string; binding?: never }) & {
     occurredAt: string;
     title: string;
     summary?: string;

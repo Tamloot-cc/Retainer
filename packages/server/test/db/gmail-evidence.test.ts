@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { gmailManifest } from '@retainer/runner/gmail-contract';
 import type { Actor } from '@retainer/shared';
 import { expect, it } from 'vitest';
 import type { Caller } from '../../src/caller.js';
+import { inWorkspace } from '../../src/db/tx.js';
+import { resolveBindingPlan } from '../../src/extensions/bindings.js';
 import { withWrite } from '../../src/records/service.js';
+import { loadSchemaState } from '../../src/schema/load.js';
 import { appendGmailMessage, gmailMessageSchema } from '../../src/sources/gmail.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
@@ -17,6 +21,19 @@ async function setup() {
     { admin: { actor: admin, scopes: ['admin'] } },
   );
   const ws = workspace.id;
+  const manifest = gmailManifest({
+    packageDigest: 'a'.repeat(64),
+    handlerDigest: 'b'.repeat(64),
+    serverRange: '>=0.1.0 <0.2.0',
+  });
+  const schema = await inWorkspace(db.owner, ws, (tx) => loadSchemaState(tx, ws));
+  const { plan } = resolveBindingPlan(
+    schema,
+    manifest,
+    { email: { action: 'existing', objects: ['conversation'] } },
+    null,
+    'never',
+  );
   const [installation] = await db.owner`
     insert into extension_installations
       (workspace_id,registration_id,version,release_digest,granted_actor,granted_scopes,created_by,state)
@@ -30,7 +47,7 @@ async function setup() {
       values(${ws},${installationId},${owner},${db.owner.json({ type: 'user', id: owner })},'active')
       returning id`;
     if (!connection) throw new Error('missing connection');
-    return { installationId, connectionId: connection.id as string };
+    return { installationId, connectionId: connection.id as string, plan };
   }
   async function person(email: string) {
     const created = await app.request('/v1/objects/person/records', {

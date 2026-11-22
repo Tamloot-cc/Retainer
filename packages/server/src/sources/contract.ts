@@ -43,30 +43,34 @@ export const sourceEventSchema = z.strictObject({
     .string()
     .regex(/^[a-f0-9]{64}$/)
     .optional(),
-  event: z.strictObject({
-    type: z.uuid(),
-    occurredAt: isoDateTimeSchema,
-    title: z.string().max(500),
-    summary: z.string().optional(),
-    /** The full text behind the event (a transcript, a message body), read with get_event_content. */
-    content: z.string().min(1).max(EVENT_CONTENT_MAX).optional(),
-    fields: z.record(z.string(), z.unknown()).default({}),
-    participants: z
-      .array(
-        z.strictObject({
-          email: z
-            .email()
-            .max(320)
-            .transform((s) => s.toLowerCase()),
-          name: z.string().max(200).optional(),
-          /** Trusted provider evidence, accepted only from a release-pinned ingestion function. */
-          contacted: z.boolean().default(false),
-        }),
-      )
-      .max(200)
-      .default([]),
-    about: z.array(z.uuid()).max(200).default([]),
-  }),
+  event: z
+    .strictObject({
+      type: z.uuid().optional(),
+      binding: z.string().min(1).max(40).optional(),
+      occurredAt: isoDateTimeSchema,
+      title: z.string().max(500),
+      summary: z.string().optional(),
+      content: z.string().min(1).max(EVENT_CONTENT_MAX).optional(),
+      fields: z.record(z.string(), z.unknown()).default({}),
+      participants: z
+        .array(
+          z.strictObject({
+            email: z
+              .email()
+              .max(320)
+              .transform((s) => s.toLowerCase()),
+            name: z.string().max(200).optional(),
+            /** Trusted provider evidence, accepted only from a release-pinned ingestion function. */
+            contacted: z.boolean().default(false),
+          }),
+        )
+        .max(200)
+        .default([]),
+      about: z.array(z.uuid()).max(200).default([]),
+    })
+    .refine(({ type, binding }) => Boolean(type) !== Boolean(binding), {
+      message: 'Specify one event binding.',
+    }),
 });
 export type SourceEventInput = z.infer<typeof sourceEventSchema>;
 export type SourceResult = {

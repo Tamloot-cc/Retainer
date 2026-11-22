@@ -1,7 +1,9 @@
 import {
+  bindingChoicesSchema,
   compareVersions,
   disconnectHook,
   type ExtensionAppLink,
+  type ExtensionBindingChoices,
   type ExtensionInstallation,
   type ExtensionInstallInput,
   type ExtensionManifest,
@@ -35,6 +37,7 @@ import {
   resolveRelease,
   sidebarSignIn,
 } from '../extension-runtime/availability.js';
+import { presentBindingPlan, type StoredBindingPlan } from '../extension-runtime/bindings.js';
 import { disconnectConnection } from '../extension-runtime/connections.js';
 import { hashInstallationKey, mintInstallationKey } from '../extension-runtime/credentials.js';
 import { sweepPartialReleases } from '../extension-runtime/lifecycle.js';
@@ -47,15 +50,19 @@ import {
 import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { pendingSecrets, type SecretBroker } from '../extension-runtime/secrets.js';
 import { log } from '../log.js';
+import { lockRecordsForUpdate, objectOf, recomputeFields } from '../records/write.js';
+import { getSchema } from '../schema/compiled.js';
 import { loadSchemaState } from '../schema/load.js';
 import { planSchemaChange, runSchemaChange, SYSTEM_ACTOR } from '../schema-engine/engine.js';
+import { detachEditedTasks } from '../sources/task-detach.js';
 import {
   createViewInTransaction,
   type ManagedView,
   managedViewEdited,
   replaceManagedView,
 } from '../views/service.js';
-import { holdReason, type UpgradeTarget, upgradeTargets } from './auto-upgrade.js';
+import { holdReason, releaseContract, type UpgradeTarget, upgradeTargets } from './auto-upgrade.js';
+import { bindingChoicesFromPlan, resolveBindingPlan } from './bindings.js';
 import { ExtensionCatalog, hash } from './catalog.js';
 import { MemberConnections, ownerId } from './connections.js';
 import {
@@ -80,6 +87,7 @@ export const installInputSchema = z.strictObject({
   version: z.string().regex(/^\d+\.\d+\.\d+$/),
   settings: z.record(z.string(), z.union([z.string(), z.boolean(), z.number().finite()])),
   mapping: mappingChoicesSchema.optional(),
+  bindings: bindingChoicesSchema.optional(),
   mappingChange: z.boolean().optional(),
 });
 export const commitInputSchema = installInputSchema.extend({
@@ -120,6 +128,8 @@ type Row = {
   created_by: ExtensionInstallation['createdBy'];
   mapping: StoredMapping;
   mapping_revision: number;
+  bindings: StoredBindingPlan | null;
+  bindings_revision: number;
   upgrade_held_digest: string | null;
 };
 
@@ -360,7 +370,29 @@ export class Extensions {
         secrets: Object.fromEntries((presence?.names ?? []).map((name) => [name, true])),
         contributions,
         ...(mapping ? { mapping } : {}),
+        ...(row.bindings
+          ? {
+              bindingChoices: bindingChoicesFromPlan(
+                await loadSchemaState(tx, caller.workspaceId),
+                row.bindings,
+              ),
+            }
+          : {}),
       };
+    });
+  }
+
+  async bindings(caller: Caller, id: string) {
+    if ((caller.run?.installationId ?? caller.installation?.installationId) !== id)
+      throw notFound('extension installation');
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await lockSchemaShared(tx, caller.workspaceId);
+      await admitCaller(tx, caller, false, 'runtime');
+      const [row] = await tx<Pick<Row, 'bindings' | 'bindings_revision'>[]>`
+        select bindings, bindings_revision from extension_installations where id = ${id}`;
+      if (!row?.bindings) throw notFound('installation bindings');
+      const state = await loadSchemaState(tx, caller.workspaceId);
+      return presentBindingPlan(state, row.bindings, row.bindings_revision);
     });
   }
 
@@ -674,6 +706,8 @@ export class Extensions {
         existing,
         draftId,
         retired: new Set<string>(),
+        bound: undefined,
+        replan: false,
         mapped: {
           stored: EMPTY_MAPPING,
           operations: [],
@@ -696,7 +730,7 @@ export class Extensions {
       ...manifest.schema.map((c) => (c.kind === 'object' ? c.definition.universalId : c.objectId)),
       ...manifest.views.map((v) => v.objectId),
       ...manifest.functions.flatMap((f) =>
-        f.trigger.kind === 'change' ? [f.trigger.objectId] : [],
+        f.trigger.kind === 'change' && f.trigger.objectId ? [f.trigger.objectId] : [],
       ),
       ...(manifest.mapping ? [manifest.mapping.objectId] : []),
     ];
@@ -724,7 +758,46 @@ export class Extensions {
       fresh ? undefined : storedMapping(existing),
       owned,
     );
-    const operations = [...contributed.operations, ...mapped.operations];
+    if (input.bindings && !manifest.bindings)
+      throw new AppError(422, 'bindings_invalid', 'This release has no bindings to review.');
+    const people =
+      input.settings.createPeople === 'never' || input.settings.createPeople === 'contacted_first'
+        ? input.settings.createPeople
+        : manifest.createPeople;
+    const installedRelease = existing
+      ? this.catalog.find(existing.registration_id, existing.version)?.manifest
+      : undefined;
+    const replan =
+      !!manifest.bindings &&
+      (!existing?.bindings ||
+        fresh ||
+        !!input.bindings ||
+        existing.bindings.createPeople !== people ||
+        hash(existing.bindings.declarations) !== hash(manifest.bindings) ||
+        (caller.actor.type !== 'system' &&
+          !!installedRelease &&
+          hash(releaseContract(installedRelease)) !== hash(releaseContract(manifest))));
+    const [proposal] =
+      manifest.bindings && replan
+        ? await tx<{ choices: ExtensionBindingChoices }[]>`
+      select choices from extension_binding_proposals where release_digest = ${release.digest}`
+        : [];
+    const [configured] =
+      existing && manifest.bindings && replan
+        ? await tx<{ bindings: ExtensionBindingChoices | null }[]>`
+      select s.bindings from extension_suggestions s join extension_jobs j on j.id = s.job_id
+      where s.installation_id = ${existing.id} and s.release_digest = ${release.digest}
+        and j.generation = ${existing.generation} and j.status = 'succeeded'`
+        : [];
+    const choices = { ...proposal?.choices, ...configured?.bindings, ...input.bindings };
+    const bound = manifest.bindings
+      ? resolveBindingPlan(current, manifest, choices, existing?.bindings, people)
+      : undefined;
+    const operations = [
+      ...contributed.operations,
+      ...mapped.operations,
+      ...(bound?.operations ?? []),
+    ];
     const notices = [...contributed.notices, ...mapped.warnings];
     const planned = planSchemaChange(current, operations, 'workspace');
     const retired = retiredContributions(current, manifest, owned);
@@ -806,10 +879,10 @@ export class Extensions {
     // A change trigger needs its object. A watched field this workspace
     // doesn't have, or deleted, is skipped when changes are dispatched.
     for (const fn of manifest.functions) {
-      if (fn.trigger.kind !== 'change') continue;
+      if (fn.trigger.kind !== 'change' || !fn.trigger.objectId) continue;
       const trigger = fn.trigger;
       if (
-        !retired.has(trigger.objectId) &&
+        !retired.has(trigger.objectId ?? '') &&
         !planned.desired.objects.some((o) => o.universalId === trigger.objectId)
       )
         throw conflict(
@@ -819,7 +892,7 @@ export class Extensions {
     }
     const generation = existing?.generation ?? 0;
     if (
-      manifest.source?.eventTypeIds.some(
+      manifest.source?.eventTypeIds?.some(
         (id) =>
           !planned.desired.objects.some(
             (o) => o.universalId === id && o.class === 'event' && o.status === 'active',
@@ -850,6 +923,7 @@ export class Extensions {
         // The resolved targets by universal ID, so a rename or retype after
         // preview changes the digest.
         mapping: mapped.stored,
+        bindings: bound?.plan,
         runtimeReady: this.ready(manifest, release.digest),
         reconnect: input.reconnect === true,
         replaceSourceAccount: input.replaceSourceAccount === true,
@@ -891,6 +965,7 @@ export class Extensions {
           }
         : {}),
       ...(manifest.mapping ? { mapping: mapped.bindings } : {}),
+      ...(bound ? { bindings: bound.review } : {}),
       warnings: [
         ...skippedViews.map(
           (view) => `View ${view.name} is skipped: its object or fields were deleted.`,
@@ -905,6 +980,18 @@ export class Extensions {
           : []),
         ...notices,
         ...viewNotices,
+        ...(replan && existing?.bindings
+          ? [
+              'Imported history stays in its original objects.',
+              ...(typeof manifest.source?.tasks === 'string' &&
+              hash(existing.bindings.destinations[manifest.source.tasks] ?? null) !==
+                hash(bound?.plan.destinations[manifest.source.tasks] ?? null)
+                ? [
+                    'Previously synced tasks will keep their current values and stop receiving source updates.',
+                  ]
+                : []),
+            ]
+          : []),
         ...(manifest.mapping && (fresh || input.mappingChange)
           ? [
               'The mapping applies to records created or changed from now on. Existing records are not filled in.',
@@ -934,15 +1021,50 @@ export class Extensions {
             ]),
       ],
     };
-    return { preview, release, operations, existing, draftId, retired, mapped, accessOnly, refs };
+    return {
+      preview,
+      release,
+      operations,
+      existing,
+      draftId,
+      retired,
+      mapped,
+      bound,
+      replan,
+      accessOnly,
+      refs,
+    };
   }
 
-  async preview(caller: Caller, input: ExtensionInstallInput) {
+  async preview(caller: Caller, input: ExtensionInstallInput, propose = false) {
     scope(caller, 'schema:write');
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       await lockSchemaShared(tx, caller.workspaceId);
       await lockInstallation(tx, caller.workspaceId, input.registrationId);
-      return (await this.plan(tx, caller, input)).preview;
+      const plan = await this.plan(tx, caller, input);
+      if (propose && caller.actor.type === 'agent' && input.bindings) {
+        const current = await loadSchemaState(tx, caller.workspaceId);
+        const people =
+          input.settings.createPeople === 'never' ||
+          input.settings.createPeople === 'contacted_first'
+            ? input.settings.createPeople
+            : plan.release.manifest.createPeople;
+        const review =
+          plan.bound ??
+          resolveBindingPlan(
+            current,
+            plan.release.manifest,
+            input.bindings,
+            plan.existing?.bindings,
+            people,
+          );
+        await tx`insert into extension_binding_proposals(workspace_id,release_digest,choices,proposed_by)
+          values(${caller.workspaceId},${plan.release.digest},${tx.json(jsonValue(input.bindings))},${tx.json(caller.actor)})
+          on conflict(workspace_id,release_digest) do update
+          set choices=excluded.choices,proposed_by=excluded.proposed_by,created_at=now()`;
+        return { ...plan.preview, bindings: review.review, proposedBy: caller.actor };
+      }
+      return plan.preview;
     });
   }
 
@@ -982,7 +1104,10 @@ export class Extensions {
           throw conflict('stale_plan', 'installation generation changed since this request');
         return receipt.response;
       }
-      const plan = await this.plan(tx, caller, input);
+      const plan = await this.plan(tx, caller, input).catch((error: unknown) => {
+        if (!(error instanceof AppError) || error.code !== 'bindings_invalid') throw error;
+        throw new AppError(409, 'stale_plan', error.message, error.details);
+      });
       if (plan.preview.planDigest !== input.planDigest)
         throw conflict('stale_plan', 'schema, settings or installation changed; preview again');
       return this.commitPlan(tx, caller, input, plan, key, requestHash);
@@ -1019,6 +1144,79 @@ export class Extensions {
           },
         );
     }
+    if (plan.replan && plan.existing?.bindings && plan.bound) {
+      const old = plan.existing.bindings;
+      const adopted = plan.bound.plan;
+      const next = plan.release.manifest;
+      const previous = this.catalog.find(
+        plan.existing.registration_id,
+        plan.existing.version,
+      )?.manifest;
+      const taskKey =
+        typeof next.source?.tasks === 'string'
+          ? next.source.tasks
+          : typeof previous?.source?.tasks === 'string'
+            ? previous.source.tasks
+            : undefined;
+      const context = {
+        workspaceId: caller.workspaceId,
+        actor: { type: plan.existing.granted_actor, id: plan.existing.id, name: old.extension },
+        schema: await getSchema(tx, caller.workspaceId),
+        confidenceThreshold: 0.5,
+      };
+      if (
+        taskKey &&
+        hash(old.destinations[taskKey] ?? null) !== hash(adopted.destinations[taskKey] ?? null)
+      ) {
+        const tasks = await tx<{ record_id: string }[]>`
+          select record_id from source_tasks where installation_id = ${plan.existing.id} and state = 'synced'`;
+        const locked = await lockRecordsForUpdate(
+          tx,
+          caller.workspaceId,
+          tasks.map((task) => task.record_id),
+        );
+        await detachEditedTasks(tx, context, locked, undefined, plan.existing.id);
+      }
+      for (const declaration of old.declarations) {
+        const destination = old.destinations[declaration.key];
+        const replacement = adopted.destinations[declaration.key];
+        if (!destination) continue;
+        const released =
+          declaration.owned && destination.objects.some((id) => !replacement?.objects.includes(id))
+            ? [...destination.objects]
+            : [];
+        for (const field of declaration.fields) {
+          const id = destination.fields[field.key]?.id;
+          if (
+            !id ||
+            !(declaration.owned || field.owned) ||
+            replacement?.fields[field.key]?.id === id
+          )
+            continue;
+          released.push(id);
+          const object = context.schema.objectsByUniversalId.get(destination.objects[0] ?? '');
+          const fieldId = object?.activeFields.find((entry) => entry.universalId === id)?.id;
+          if (!fieldId || !previous?.lastContact) continue;
+          const rows = await tx<{ record_id: string }[]>`
+            update field_assertions set status = 'retracted' where field_id = ${fieldId}
+              and actor->>'id' = ${plan.existing.id} and actor->>'type' = ${plan.existing.granted_actor}
+              and status in ('active', 'pending_review', 'superseded') returning record_id`;
+          for (const record of await lockRecordsForUpdate(
+            tx,
+            caller.workspaceId,
+            rows.map((r) => r.record_id),
+          )) {
+            if (!record.deleted_at && !record.merged_into_id)
+              await recomputeFields(tx, context, objectOf(context.schema, record), record, [
+                fieldId,
+              ]);
+          }
+        }
+        if (released.length)
+          await tx`delete from extension_contributions where installation_id = ${plan.existing.id}
+            and kind in ('object', 'field') and universal_id = any(${released}::uuid[])`;
+      }
+    }
     const result = await runSchemaChange(tx, {
       workspaceId: caller.workspaceId,
       actor: caller.actor,
@@ -1026,11 +1224,70 @@ export class Extensions {
       operations: plan.operations,
       owner: 'workspace',
       reason: `Install extension ${plan.release.manifest.name}`,
+      replacingBindingPlan: plan.replan ? plan.existing?.id : undefined,
     });
     if (result.status !== 'applied' && result.status !== 'unchanged')
-      throw conflict('schema_binding_conflict', 'extension schema could not be applied');
+      throw new AppError(
+        409,
+        'schema_binding_conflict',
+        result.change?.error ?? 'The extension schema could not be applied.',
+        result.recordIds ? { recordIds: result.recordIds } : undefined,
+      );
     if (input.mappingChange && plan.existing)
       return this.commitMapping(tx, caller, plan, key, requestHash);
+    const preservedJobs = [];
+    const starts: Record<string, string> = {};
+    let dispatchAfter: string | undefined;
+    if (plan.replan && plan.bound) {
+      const old = plan.existing?.bindings;
+      const installed =
+        plan.existing &&
+        this.catalog.find(plan.existing.registration_id, plan.existing.version)?.manifest;
+      const [counter] = await tx<{ position: string }[]>`
+        select position::text from change_counters where workspace_id = ${caller.workspaceId}`;
+      const boundary = counter?.position ?? '0';
+      const [dispatch] = plan.existing
+        ? await tx<{ position: string; trigger_starts: Record<string, string> }[]>`
+        select position::text, trigger_starts from change_dispatch where installation_id = ${plan.existing.id}`
+        : [];
+      const fingerprint = (
+        trigger: ExtensionManifest['functions'][number]['trigger'],
+        bindings: StoredBindingPlan | null | undefined,
+      ) => {
+        if (trigger.kind !== 'change') return null;
+        const selected = trigger.binding ? bindings?.destinations[trigger.binding] : null;
+        return hash({
+          trigger,
+          objects: selected?.objects,
+          fields: trigger.fields?.map((key) => selected?.fields[key]?.id),
+        });
+      };
+      const unchanged = [];
+      for (const fn of plan.release.manifest.functions) {
+        if (fn.trigger.kind !== 'change') continue;
+        const prior = installed?.functions.find((entry) => entry.universalId === fn.universalId);
+        const keep = !!(
+          old &&
+          dispatch &&
+          prior &&
+          fingerprint(prior.trigger, old) === fingerprint(fn.trigger, plan.bound.plan)
+        );
+        if (keep) unchanged.push(fn.universalId);
+        starts[fn.universalId] = keep
+          ? (dispatch?.trigger_starts[fn.universalId] ?? '0')
+          : boundary;
+      }
+      if (unchanged.length && plan.existing) {
+        preservedJobs.push(
+          ...(await tx<{ id: string; status: string }[]>`
+          select id, status from extension_jobs where installation_id = ${plan.existing.id}
+            and generation = ${plan.existing.generation} and trigger_kind = 'change'
+            and status in ('queued', 'running') and function_id = any(${unchanged}::uuid[])`),
+        );
+      }
+      if (Object.keys(starts).length)
+        dispatchAfter = unchanged.length ? (dispatch?.position ?? boundary) : boundary;
+    }
     if (plan.existing) {
       // A partial job past its deadline is failed with its incident, never just cancelled.
       await lockQueue(tx, caller.workspaceId, plan.existing.id);
@@ -1073,10 +1330,10 @@ export class Extensions {
         // Landing disabled ends the app's credentials, as a disable does.
         (standalone && !ready));
     const [row] = await tx<Row[]>`insert into extension_installations
-      (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, granted_uses, settings, created_by, state, setup_kind, mapping)
+      (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, granted_uses, settings, created_by, state, setup_kind, mapping, bindings, bindings_revision)
       values (${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId}, ${manifest.universalId}, ${manifest.version}, ${plan.release.digest},
         ${manifest.requestedActor}, ${tx.json(manifest.scopes)}, ${tx.json(releaseUses(manifest))}, ${tx.json(input.settings)}, ${tx.json(caller.actor)}, ${state}, ${setupKind},
-        ${tx.json(jsonValue(plan.mapped.stored))})
+        ${tx.json(jsonValue(plan.mapped.stored))}, ${plan.bound ? tx.json(jsonValue(plan.bound.plan)) : null}, ${plan.bound ? 1 : 0})
       on conflict (workspace_id, registration_id) do update set state = excluded.state,setup_kind=excluded.setup_kind,
         last_error=null,connection_health='needs_reconnect',activated_at=null,cleanup_deadline=null,
         version = excluded.version, release_digest = excluded.release_digest,granted_scopes=excluded.granted_scopes,granted_uses=excluded.granted_uses,granted_actor=excluded.granted_actor,
@@ -1085,9 +1342,23 @@ export class Extensions {
         settings_revision = extension_installations.settings_revision + 1, mapping = excluded.mapping,
         mapping_revision = extension_installations.mapping_revision
           + case when extension_installations.mapping is distinct from excluded.mapping then 1 else 0 end,
+        bindings = excluded.bindings,
+        bindings_revision = extension_installations.bindings_revision + ${plan.replan ? 1 : 0},
         updated_at = now()
       returning *`;
     if (!row) throw new Error('installation insert returned no row');
+    if (dispatchAfter !== undefined) {
+      await tx`insert into change_dispatch(workspace_id,installation_id,generation,position,trigger_starts)
+        values(${caller.workspaceId},${row.id},${row.generation},${dispatchAfter}::bigint,${tx.json(starts)})
+        on conflict(workspace_id,installation_id) do update set generation=excluded.generation,
+          position=excluded.position,trigger_starts=excluded.trigger_starts`;
+      for (const job of preservedJobs)
+        await tx`update extension_jobs set generation=${row.generation}, release_digest=${plan.release.digest},
+          status='queued',code=null,lease_owner=null,lease_until=null,run_until=null,fence=fence+1,
+          available_at=case when ${job.status}='running' then now() else available_at end,
+          expires_at=greatest(expires_at,clock_timestamp()+interval '24 hours'),updated_at=now()
+          where id=${job.id}`;
+    }
     if (manifest.connection === 'member') {
       // Membership removal can run before setup finishes. Cache the hook
       // with the release adoption, under the same installation lock.
@@ -1113,6 +1384,17 @@ export class Extensions {
     const save = (kind: string, universalId: string, elementId: string, definition: unknown) =>
       saveContribution(tx, caller.workspaceId, row.id, kind, universalId, elementId, definition);
     await saveMappingContributions(tx, caller.workspaceId, row.id, schema, plan.mapped);
+    for (const contribution of plan.bound?.contributions ?? []) {
+      const element =
+        contribution.kind === 'object'
+          ? schema.objects.find((object) => object.universalId === contribution.id)
+          : schema.objects
+              .flatMap((object) => object.fields)
+              .find((field) => field.universalId === contribution.id);
+      if (!element?.id)
+        throw conflict('binding_unavailable', 'A new binding destination is missing.');
+      await save(contribution.kind, contribution.id, element.id, contribution.definition);
+    }
     for (const c of manifest.schema) {
       const element =
         c.kind === 'object'
@@ -1205,6 +1487,7 @@ export class Extensions {
         'install',
         previousVersion,
       );
+    await tx`delete from extension_binding_proposals where release_digest = ${plan.release.digest}`;
     await tx`delete from extension_suggestions where installation_id=${row.id}`;
     await tx`delete from extension_access_approvals where installation_id=${row.id}`;
     const response = present(row);
@@ -1692,6 +1975,11 @@ export class Extensions {
         throw conflict('stale_plan', 'settings revision changed');
       const release = this.catalog.get(current.registration_id, current.version);
       if (hash(input.settings) === hash(current.settings)) return present(current);
+      if (current.bindings && input.settings.createPeople !== current.settings.createPeople)
+        throw conflict(
+          'binding_plan_required',
+          'Review a new binding plan to change who can be created.',
+        );
       // Account/credential changes need a reconnect flow; never treat them as ordinary settings.
       for (const [key, definition] of Object.entries(release.manifest.settings)) {
         if (

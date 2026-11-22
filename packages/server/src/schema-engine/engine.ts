@@ -8,6 +8,7 @@ import { canApproveDestructive } from '../caller.js';
 import type { ApiKeyScope, AppliedTemplate, SchemaChangeStatus } from '../db/schema.js';
 import { jsonValue, lockPrivacyShared, lockSchemaExclusive, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
+import { type StoredBindingPlan, validateBindingPlan } from '../extension-runtime/bindings.js';
 import { getSchema } from '../schema/compiled.js';
 import { loadSchemaState } from '../schema/load.js';
 import {
@@ -33,6 +34,7 @@ export type SchemaChangeRequest = {
   scopes: readonly ApiKeyScope[];
   operations: SchemaOperation[];
   reason?: string;
+  replacingBindingPlan?: string;
   template?: Pick<AppliedTemplate, 'name' | 'version'>;
   /** Owner of what the change creates; defaults from the actor's type. */
   owner?: SchemaOwner;
@@ -126,6 +128,27 @@ async function refuseContributedDeletes(tx: Tx, current: SchemaState, desired: S
   );
 }
 
+/** Runs under the same exclusive lock as installation approvals. */
+async function validateInstalledBindings(
+  tx: Tx,
+  workspaceId: string,
+  state: SchemaState,
+  replacing?: string,
+) {
+  const installations = await tx<{ id: string; bindings: StoredBindingPlan }[]>`
+    select id, bindings from extension_installations
+    where workspace_id = ${workspaceId} and state <> 'uninstalled' and bindings is not null
+      ${replacing ? tx`and id <> ${replacing}` : tx``}
+    order by id`;
+  const issues = installations.flatMap(({ id, bindings }) =>
+    validateBindingPlan(state, bindings).map((issue) => ({
+      path: [issue.binding, issue.field].filter(Boolean).join('.'),
+      message: `${bindings.extension} needs this binding. Change ${bindings.extension}'s setup first. ${issue.message} (Installation ${id}.)`,
+    })),
+  );
+  if (issues.length) throw new SchemaValidationError(issues);
+}
+
 function dedupe(issues: SchemaIssue[]): SchemaIssue[] {
   const seen = new Set<string>();
   return issues.filter((i) => {
@@ -181,6 +204,7 @@ export async function runSchemaChange(
     request.trusted,
   );
 
+  await validateInstalledBindings(tx, workspaceId, desired, request.replacingBindingPlan);
   await refuseContributedDeletes(tx, current, desired);
 
   if (ops.length === 0) {
@@ -286,6 +310,7 @@ export async function decideSchemaChange(
       operations,
       row.template ? 'workspace' : ownerFor(row.requested_by),
     );
+    await validateInstalledBindings(tx, workspaceId, planned.desired);
     await refuseContributedDeletes(tx, current, planned.desired);
     await checkExistingRecords(tx, workspaceId, current, planned.desired, planned.ops);
   } catch (error) {

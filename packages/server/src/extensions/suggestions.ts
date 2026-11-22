@@ -1,4 +1,5 @@
 import {
+  bindingChoicesSchema,
   type ExtensionSuggestions,
   mappingChoiceSchema,
   outputKeySchema,
@@ -16,6 +17,8 @@ import type { ExtensionCatalog } from './catalog.js';
 import { resolveMapping, type StoredMapping } from './mapping.js';
 
 export const suggestionsSchema = z.strictObject({
+  bindings: bindingChoicesSchema.optional(),
+  bindingReasons: z.record(z.string().max(180), z.string().max(500)).optional(),
   mapping: z
     .record(
       outputKeySchema,
@@ -48,6 +51,9 @@ export async function saveSuggestions(
     if (job?.trigger_kind !== 'configure')
       throw new AppError(403, 'forbidden', 'only configure runs save suggestions');
     const release = catalog.forRun(run);
+    for (const key of Object.keys(input.bindings ?? {}))
+      if (!release.manifest.bindings?.some((binding) => binding.key === key))
+        throw new AppError(400, 'invalid_suggestions', 'Unknown binding.', { key });
     for (const key of Object.keys(input.mapping ?? {}))
       if (!release.manifest.mapping?.outputs.some((o) => o.key === key))
         throw new AppError(400, 'invalid_suggestions', 'unknown output', { key });
@@ -70,6 +76,8 @@ export async function saveSuggestions(
     }
     const [saved] =
       await tx`update extension_suggestions set mapping=${tx.json(jsonValue(input.mapping ?? null))},
+      bindings=${tx.json(jsonValue(input.bindings ?? null))},
+      binding_reasons=${tx.json(jsonValue(input.bindingReasons ?? null))},
       settings=${tx.json(jsonValue(input.settings ?? null))}
       where installation_id=${run.installationId} and release_digest=${run.releaseDigest} and job_id=${run.jobId} returning job_id`;
     if (!saved)
@@ -123,11 +131,13 @@ export async function getSuggestions(
       {
         mapping: ExtensionSuggestions['mapping'];
         settings: ExtensionSuggestions['settings'];
+        bindings: ExtensionSuggestions['bindings'];
+        binding_reasons: ExtensionSuggestions['bindingReasons'];
         status: string;
         code: string | null;
       }[]
     >`
-      select s.mapping,s.settings,j.status,j.code from extension_suggestions s join extension_jobs j on j.id=s.job_id
+      select s.mapping,s.settings,s.bindings,s.binding_reasons,j.status,j.code from extension_suggestions s join extension_jobs j on j.id=s.job_id
       join extension_installations i on i.id=s.installation_id and i.generation=j.generation
       where s.installation_id=${id} and s.release_digest=${release.digest}`;
     if (!row)
@@ -181,6 +191,9 @@ export async function getSuggestions(
       ...(access ? { access } : {}),
       ...(row.code ? { code: row.code } : {}),
       issues,
+      ...(status === 'ready' && row.bindings
+        ? { bindings: row.bindings, bindingReasons: row.binding_reasons ?? undefined }
+        : {}),
       ...(status === 'ready' && row.mapping ? { mapping: row.mapping } : {}),
       ...(status === 'ready' && row.settings ? { settings: row.settings } : {}),
     };

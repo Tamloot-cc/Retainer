@@ -51,7 +51,6 @@ describe('managed task contract', () => {
       revisionOrder: 'integer',
       tasks: {
         objectId: randomUUID(),
-        identityFieldId: randomUUID(),
         titleFieldId: randomUUID(),
         statusFieldId: randomUUID(),
         statuses: { open: 'todo', done: 'done' },

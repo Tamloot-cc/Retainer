@@ -165,6 +165,7 @@ export async function logEvent(
   tx: Tx,
   context: WriteContext,
   input: LogEventInput,
+  options: { resolveHandles?: boolean } = {},
 ): Promise<LogEventResult> {
   const { workspaceId, schema } = context;
   const object = requireEventType(schema, input.type);
@@ -208,7 +209,7 @@ export async function logEvent(
         schema,
         existing.record_id,
         stored,
-        { participants, about: input.about },
+        { participants, about: input.about, resolveHandles: options.resolveHandles },
       );
       const links = await presentLinks(tx, workspaceId, schema, rows, changed);
       return {
@@ -236,6 +237,7 @@ export async function logEvent(
   const { rows } = await addLinks(tx, workspaceId, schema, record.id, [], {
     participants,
     about: input.about,
+    resolveHandles: options.resolveHandles,
   });
   const links = await presentLinks(tx, workspaceId, schema, rows);
   return {
@@ -362,6 +364,7 @@ export async function addEventLinks(
   context: WriteContext,
   id: string,
   input: AddLinksInput,
+  options: { resolveHandles?: boolean } = {},
 ): Promise<PresentedRecord & { added: AddedLinks }> {
   const participants = normalizeParticipants(input.participants);
   await lockEvent(tx, context, id);
@@ -370,6 +373,7 @@ export async function addEventLinks(
   const { changed, rows } = await addLinks(tx, context.workspaceId, context.schema, id, stored, {
     participants,
     about: input.about,
+    resolveHandles: options.resolveHandles,
   });
   const links = await presentLinks(tx, context.workspaceId, context.schema, rows, changed);
   return {

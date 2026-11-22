@@ -1,5 +1,5 @@
 import { gmailRegistrationId } from '@retainer/extension/nango-gmail';
-import { type Actor, type ActorType, BASE_OBJECT_IDS, isProfileAlias } from '@retainer/shared';
+import { type Actor, type ActorType, isProfileAlias } from '@retainer/shared';
 import type { CallerPerson, InstallationBinding, RunBinding } from '../caller.js';
 import type { ChangeCollector } from '../changes/collect.js';
 import { isUuid } from '../db/ids.js';
@@ -7,6 +7,7 @@ import type { AssertionStatus, ReviewReason } from '../db/schema.js';
 import { preciseTimestamp } from '../db/timestamps.js';
 import { jsonValue, type Tx } from '../db/tx.js';
 import { AppError, notFound, profileNotSupported } from '../errors.js';
+import { installationOnlyFields } from '../extension-runtime/bindings.js';
 import { readOnlyFieldsFor, refuseOwnedWrite } from '../extension-runtime/owned-fields.js';
 import { attachFileReferences, validateFileReferences } from '../files/references.js';
 import { isSuppressed, suppressedOf, suppressibleHandles } from '../privacy/suppression.js';
@@ -318,6 +319,27 @@ async function checkSuppressed(
  * update `data`, `record_links`, `record_identifiers`, label and search in
  * the same transaction.
  */
+export async function requireInstallationFields(
+  tx: Tx,
+  context: WriteContext,
+  object: CompiledObject,
+  fields: Iterable<FieldState>,
+) {
+  const ids = [...fields];
+  if (!ids.length) return;
+  const owners = await installationOnlyFields(tx, context.workspaceId, object.state.universalId);
+  const blocked = ids.find((field) => {
+    const owner = owners.get(field.universalId);
+    return owner && owner !== context.installation?.installationId;
+  });
+  if (blocked)
+    throw new AppError(
+      403,
+      'installation_owned',
+      `Only the extension that manages ${object.state.labelSingular} may change ${blocked.label}.`,
+    );
+}
+
 export async function writeFields(
   tx: Tx,
   context: WriteContext,
@@ -326,6 +348,7 @@ export async function writeFields(
   writes: Map<FieldState, unknown>,
   options: WriteOptions = {},
 ): Promise<Record<string, FieldWriteStatus>> {
+  await requireInstallationFields(tx, context, object, writes.keys());
   const [managed] = await tx`select 1 from source_revisions where event_id=${record.id}`;
   if (managed)
     throw new AppError(
@@ -648,7 +671,7 @@ async function claimIdentifiers(
   ];
   const prior = emails.length
     ? await tx<{ value: string }[]>`select distinct value from record_identifiers
-        where record_id=${recordId} and kind='email' and value=any(${emails}::text[])`
+        where record_id=${recordId} and field_id=${fieldId} and kind='email' and value=any(${emails}::text[])`
     : [];
   await tx`delete from record_identifiers where record_id = ${recordId} and field_id = ${fieldId}`;
   for (const identifier of identifiers) {
@@ -683,7 +706,9 @@ async function claimIdentifiers(
       cross join unnest(${added}::text[]) as e(email)
       where r.id=${recordId} and r.workspace_id=${workspaceId} and r.private_to_user is null
         and r.deleted_at is null and r.merged_into_id is null
-        and o.universal_id=${BASE_OBJECT_IDS.person} and i.state='active'
+        and i.state='active'
+        and i.bindings #>> '{destinations,person,objects,0}' = o.universal_id::text
+        and i.bindings #>> '{destinations,person,fields,emails,id}' = ${field.universalId}
         and (i.settings->>'historyDays') ~ '^[0-9]{1,4}$'
         and (i.settings->>'historyDays')::numeric between 0 and 3650`;
   }

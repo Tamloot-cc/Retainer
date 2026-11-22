@@ -1492,6 +1492,8 @@ export const extensionInstallations = pgTable(
      */
     mapping: jsonb('mapping').notNull().default({ outputs: {} }),
     mappingRevision: integer('mapping_revision').notNull().default(0),
+    bindings: jsonb('bindings'),
+    bindingsRevision: integer('bindings_revision').notNull().default(0),
     /**
      * The newest release digest the automatic upgrade checked and left for an
      * admin to approve (extensions/auto-upgrade.ts), so it is not planned again
@@ -2659,6 +2661,7 @@ export const sourceReceipts = pgTable(
     key: text('key').notNull(),
     contentDigest: text('content_digest').notNull(),
     response: jsonb('response').notNull(),
+    projection: jsonb('projection'),
   },
   (t) => [
     primaryKey({ columns: [t.workspaceId, t.itemId, t.key] }),
@@ -2762,6 +2765,7 @@ export const changeDispatch = pgTable(
     installationId: uuid('installation_id').notNull(),
     generation: integer('generation').notNull(),
     position: bigint('position', { mode: 'number' }).notNull().default(0),
+    triggerStarts: jsonb('trigger_starts').$type<Record<string, string>>().notNull().default({}),
     blockedCycles: integer('blocked_cycles').notNull().default(0),
   },
   (t) => [
@@ -2909,6 +2913,8 @@ export const extensionSuggestions = pgTable(
     jobId: uuid('job_id').notNull(),
     reason: text('reason').notNull(),
     mapping: jsonb('mapping'),
+    bindings: jsonb('bindings'),
+    bindingReasons: jsonb('binding_reasons'),
     settings: jsonb('settings'),
     createdAt: createdAt(),
   },
@@ -2919,6 +2925,26 @@ export const extensionSuggestions = pgTable(
       foreignColumns: [extensionInstallations.workspaceId, extensionInstallations.id],
     }).onDelete('cascade'),
     pgPolicy('extension_suggestions_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionBindingProposals = pgTable(
+  'extension_binding_proposals',
+  {
+    workspaceId: workspaceId(),
+    releaseDigest: text('release_digest').notNull(),
+    choices: jsonb('choices').notNull(),
+    proposedBy: jsonb('proposed_by').$type<Actor>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.releaseDigest] }),
+    pgPolicy('extension_binding_proposals_workspace', {
       for: 'all',
       to: 'retainer_app',
       using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,

@@ -4,6 +4,7 @@ import {
   type SourceScan,
   type SourceSyncStatus,
   sourceScanSchema,
+  type ValueField,
 } from '@retainer/shared';
 import { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
@@ -11,13 +12,14 @@ import type { Sql } from '../db/client.js';
 import { inWorkspace, jsonValue, lockForWrite, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { admitCaller, admitRun } from '../extension-runtime/admission.js';
+import type { StoredBindingPlan } from '../extension-runtime/bindings.js';
 import { cancelRuns, lockExtension } from '../extension-runtime/locks.js';
 import { requestHash } from '../idempotency.js';
 import { storeEventBody } from '../memory/event-bodies.js';
 import { logEvent, retractEventClaims } from '../memory/events.js';
 import { isEventIdentitySuppressed, isSuppressed, suppressedOf } from '../privacy/suppression.js';
 import { withRead, withWrite } from '../records/service.js';
-import { normalizeFieldValue } from '../records/values.js';
+import { normalizeFieldValue, prepareValues } from '../records/values.js';
 import { insertRecord, markDeleted, type WriteContext, writeFields } from '../records/write.js';
 import { getSchema } from '../schema/compiled.js';
 import {
@@ -31,7 +33,12 @@ import {
   sourceTaskBatchSchema,
   sourceUnavailableSchema,
 } from './contract.js';
-import { compareRevision, type SourcePolicy, sourceIdentityChannel } from './policy.js';
+import {
+  compareRevision,
+  resolveSourcePolicy,
+  type SourcePolicy,
+  sourceIdentityChannel,
+} from './policy.js';
 import { reserveSourceItem } from './reserve.js';
 import { reconcileTasks, taskSchema } from './tasks.js';
 
@@ -54,6 +61,15 @@ type Item = {
   provider_revision: string | null;
 };
 type Revision = { id: string; event_id: string; content_digest: string };
+type SourceProjection = {
+  binding: string;
+  fields: Record<string, { field: ValueField; values: Record<string, string> }>;
+};
+type SourceReceipt = {
+  content_digest: string;
+  response: SourceResult;
+  projection: SourceProjection | null;
+};
 const conflict = (code: string, message: string) => new AppError(409, code, message);
 const emptyInvalidation = () => ({
   retractedAssertions: 0,
@@ -76,12 +92,21 @@ export class Sources {
     const run = caller.run;
     if (!run) throw forbidden('source operation requires an installation credential');
     const [i] = await tx<
-      { version: string; release_digest: string; settings: Record<string, unknown> }[]
-    >`select version,release_digest,settings from extension_installations where id=${run.installationId}`;
+      {
+        version: string;
+        release_digest: string;
+        settings: Record<string, unknown>;
+        bindings: StoredBindingPlan | null;
+      }[]
+    >`select version,release_digest,settings,bindings from extension_installations where id=${run.installationId}`;
     if (!i) throw notFound('installation source');
     const manifest = this.resolve(run.registrationId, i.version, i.release_digest);
     if (!manifest.source) throw forbidden('release has no managed source capability');
-    return { manifest, policy: manifest.source, settings: i.settings };
+    return {
+      manifest,
+      policy: resolveSourcePolicy(manifest.source, i.bindings ?? undefined),
+      settings: i.settings,
+    };
   }
   private async binding(tx: Tx, caller: Caller): Promise<Binding> {
     const run = caller.run;
@@ -539,37 +564,101 @@ export class Sources {
     context: WriteContext,
     policy: SourcePolicy,
     input: SourceEventInput,
+    accepted?: SourceProjection,
   ) {
-    if (!policy.eventTypeIds.includes(input.event.type))
+    const destination = policy.event ? policy.plan?.destinations[policy.event] : undefined;
+    const binding = accepted?.binding ?? policy.event;
+    if (
+      binding
+        ? input.event.binding !== binding
+        : !input.event.type || !policy.eventTypeIds?.includes(input.event.type)
+    )
       throw forbidden('event type is outside the registered source binding');
-    const object = context.schema.objectsByUniversalId.get(input.event.type);
-    if (!object || object.hidden || !object.isEvent || object.state.status !== 'active')
-      throw notFound('source event type');
+    const object = context.schema.objectsByUniversalId.get(
+      destination?.objects[0] ?? input.event.type ?? '',
+    );
+    if (
+      !accepted &&
+      (!object || object.hidden || !object.isEvent || object.state.status !== 'active')
+    )
+      throw conflict('binding_unavailable', 'The approved event destination is unavailable.');
+
+    const projection: SourceProjection | undefined =
+      accepted ??
+      (destination && binding
+        ? {
+            binding,
+            fields: Object.fromEntries(
+              Object.entries(destination.fields).map(([key, target]) => {
+                const field = object?.activeFields.find((field) => field.universalId === target.id);
+                if (!field || field.coreRole || field.settings.isInverse)
+                  throw conflict(
+                    'binding_unavailable',
+                    `The approved event field ${key} is unavailable.`,
+                  );
+                return [
+                  key,
+                  {
+                    field: {
+                      type: field.type,
+                      settings: field.settings,
+                      isNullable: field.isNullable,
+                    },
+                    values: target.values,
+                  },
+                ];
+              }),
+            ),
+          }
+        : undefined);
     const fields: Record<string, unknown> = {},
       canonicalFields: Record<string, unknown> = {};
+    const declared = policy.plan?.declarations.find((entry) => entry.key === policy.event);
     for (const [key, value] of Object.entries(input.event.fields)) {
-      const field = object.activeFields.find((f) => f.key === key || f.universalId === key);
-      if (!field || field.coreRole || field.settings.isInverse)
+      const target = destination?.fields[key];
+      const stored = projection?.fields[key];
+      const live = accepted
+        ? undefined
+        : object?.activeFields.find((field) =>
+            destination
+              ? target?.id === field.universalId
+              : field.key === key || field.universalId === key,
+          );
+      if (
+        projection &&
+        !stored &&
+        (accepted || declared?.fields.some((field) => field.key === key))
+      )
+        continue;
+      const field = stored?.field ?? live;
+      if (!field || live?.coreRole || live?.settings.isInverse)
         throw new AppError(
           422,
           'invalid_source_field',
-          'source fields must use writable field universal IDs or permanent keys',
+          'Use a writable field from the approved source binding.',
           { key },
         );
-      if (Object.hasOwn(fields, field.name))
+      if (live && Object.hasOwn(fields, live.name))
         throw new AppError(
           422,
           'invalid_source_field',
-          'a source field was supplied through more than one identity',
+          'A source field was supplied more than once.',
           { key },
         );
-      const normalized = normalizeFieldValue(field, value);
-      fields[field.name] = normalized;
+      const mapped = stored?.values ?? {};
+      const isMapped = Object.keys(mapped).length > 0;
+      if (isMapped && (typeof value !== 'string' || !Object.hasOwn(mapped, value)))
+        throw new AppError(422, 'invalid_source_field', `Unknown source value for ${key}.`, {
+          key,
+        });
+      const normalized = normalizeFieldValue(field, isMapped ? mapped[value as string] : value);
+      if (live) fields[live.name] = normalized;
+      const canonicalKey = projection ? key : (live?.key ?? key);
       if (field.type === 'files') {
         const ids = (normalized ?? []) as string[];
         const rows = ids.length
           ? await tx<
-              { id: string; metadata: unknown }[]
+              { id: string; metadata: { sha256?: string } }[]
             >`select id,metadata from files where id=any(${ids}::uuid[]) and state='ready' and installation_id=${context.run?.installationId ?? null} and source_item_id=${input.sourceItemId}`
           : [];
         if (rows.length !== ids.length)
@@ -578,9 +667,14 @@ export class Sources {
             'invalid_files',
             'source files must be ready uploads bound to this source item',
           );
-        canonicalFields[field.key] =
-          normalized === null ? null : ids.map((id) => rows.find((r) => r.id === id)?.metadata);
-      } else canonicalFields[field.key] = normalized;
+        canonicalFields[canonicalKey] =
+          normalized === null
+            ? null
+            : ids.map((id) => {
+                const metadata = rows.find((row) => row.id === id)?.metadata;
+                return projection ? (metadata?.sha256 ?? metadata) : metadata;
+              });
+      } else canonicalFields[canonicalKey] = isMapped ? value : normalized;
     }
     const listed = [...new Map(input.event.participants.map((p) => [p.email, p])).values()].sort(
       (a, b) => a.email.localeCompare(b.email),
@@ -595,7 +689,7 @@ export class Sources {
       (p) => !isSuppressed(suppressed, { kind: 'email', value: p.email }),
     );
     const canonicalOf = (people: typeof listed) => ({
-      type: input.event.type,
+      type: binding ?? input.event.type,
       occurredAt: new Date(input.event.occurredAt).toISOString(),
       title: input.event.title,
       summary: input.event.summary ?? '',
@@ -610,7 +704,7 @@ export class Sources {
     // A client digest over the event as it sent it (erased handle included) is checked in memory only.
     const submittedDigest =
       participants.length === listed.length ? digest : requestHash(canonicalOf(listed));
-    return { object, fields, participants, canonical, digest, submittedDigest };
+    return { object, fields, participants, projection, digest, submittedDigest };
   }
   private async createParticipants(
     tx: Tx,
@@ -647,6 +741,70 @@ export class Sources {
       await writeFields(tx, context, person, record, writes);
     }
   }
+  private async bindParticipants(
+    tx: Tx,
+    context: WriteContext,
+    policy: SourcePolicy,
+    participants: SourceEventInput['event']['participants'],
+  ) {
+    const declaration = policy.plan?.declarations.find((entry) => entry.key === policy.people);
+    const binding = declaration && policy.plan?.destinations[declaration.key];
+    if (!declaration || !binding || !declaration.match)
+      return participants.map(({ email }) => ({ handle: email }));
+    const object = context.schema.objectsByUniversalId.get(binding.objects[0] ?? '');
+    const field = object?.activeFields.find(
+      (f) => f.universalId === binding.fields[declaration.match ?? '']?.id,
+    );
+    if (!object || !field?.id)
+      throw conflict('binding_unavailable', 'The approved contact matching field is unavailable.');
+    const name = object.activeFields.find((f) => f.universalId === binding.fields.name?.id);
+    const mode = policy.plan?.createPeople ?? 'never';
+    const output: { handle: string; recordId?: string }[] = [];
+    for (const participant of participants) {
+      const { email } = participant;
+      const rows = await tx<
+        { record_id: string; deleted_at: Date | null; merged_into_id: string | null }[]
+      >`
+        select distinct r.id as record_id, r.deleted_at, r.merged_into_id
+        from record_identifiers i join records r on r.id = i.record_id
+        where i.workspace_id = ${context.workspaceId} and i.field_id = ${field.id}
+          and i.kind = 'email' and i.value = ${email} and r.object_type_id = ${object.id}
+        order by r.deleted_at nulls first limit 3`;
+      const live = [
+        ...new Set(
+          rows.flatMap((row) =>
+            row.merged_into_id ? [row.merged_into_id] : row.deleted_at ? [] : [row.record_id],
+          ),
+        ),
+      ];
+      if (live.length === 1) {
+        output.push({ handle: email, recordId: live[0] });
+      } else if (
+        rows.length === 0 &&
+        (mode === 'everyone' || (mode === 'contacted_first' && participant.contacted))
+      ) {
+        const values = prepareValues(
+          object,
+          {
+            [field.name]: { primary: email, additional: [] },
+            ...(name && participant.name
+              ? {
+                  [name.name]:
+                    name.type === 'full_name'
+                      ? { first: participant.name, last: '' }
+                      : participant.name,
+                }
+              : {}),
+          },
+          'create',
+        );
+        const record = await insertRecord(tx, context, object);
+        await writeFields(tx, context, object, record, values);
+        output.push({ handle: email, recordId: record.id });
+      } else output.push({ handle: email });
+    }
+    return output;
+  }
   async taskSchema(caller: Caller, id: string) {
     const run = this.runtime(caller, id);
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
@@ -673,9 +831,9 @@ export class Sources {
           { policy } = await this.release(tx, caller);
         if (!policy.tasks) throw notFound('managed tasks');
         await this.ingestionJob(tx, caller, policy, itemId);
-        // One account lock stabilizes cross-session ownership without one advisory lock per task.
+        // Serialize first sightings across accounts before taking source-item or record locks.
         const identities = input.tasks.map((t) => t.externalId).sort();
-        await tx`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify(['source-tasks', binding.account_id])},0))`;
+        await tx`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify(['source-tasks', id])}, 0))`;
         const previous = await tx<
           { item_id: string }[]
         >`select distinct item_id from source_tasks where account_id=${binding.account_id} and external_id=any(${identities}::text[])`;
@@ -684,6 +842,17 @@ export class Sources {
         const [item] = await tx<Item[]>`select * from source_items where id=${itemId}`;
         if (!item) throw notFound('source item');
         await this.usable(tx, caller, binding, item);
+        const [collision] = await tx<{ external_id: string }[]>`
+          select external_id from source_tasks where installation_id = ${id}
+            and account_id <> ${binding.account_id} and external_id = any(${identities}::text[])
+          order by external_id limit 1`;
+        if (collision)
+          throw new AppError(
+            409,
+            'source_task_conflict',
+            'Another account connected to this installation already imported this task.',
+            { externalId: collision.external_id },
+          );
         if ((item.task_write_revision ?? 0) !== input.expectedTaskRevision)
           throw conflict(
             'source_revision_conflict',
@@ -743,7 +912,24 @@ export class Sources {
             'source_retracted',
             'retracted source identities cannot be silently recreated',
           );
-        const normalized = await this.normalize(tx, context, policy, input);
+        const revisionKey =
+          input.providerRevision !== undefined
+            ? requestHash({ providerRevision: input.providerRevision })
+            : undefined;
+        const receiptFor = async (key: string) =>
+          (
+            await tx<SourceReceipt[]>`
+          select content_digest, response, projection from source_receipts
+          where item_id = ${item.id} and key = ${key}`
+          )[0];
+        const accepted = revisionKey ? await receiptFor(revisionKey) : undefined;
+        const normalized = await this.normalize(
+          tx,
+          context,
+          policy,
+          input,
+          accepted?.projection ?? undefined,
+        );
         if (
           input.contentDigest &&
           input.contentDigest !== normalized.digest &&
@@ -754,14 +940,10 @@ export class Sources {
             'invalid_content_digest',
             'source content digest does not match canonical content',
           );
-        const key = requestHash(
-          input.providerRevision !== undefined
-            ? { providerRevision: input.providerRevision }
-            : { digest: normalized.digest, expected: input.expectedRevisionId },
-        );
-        const [receipt] = await tx<
-          { content_digest: string; response: SourceResult }[]
-        >`select content_digest,response from source_receipts where item_id=${item.id} and key=${key}`;
+        const key =
+          revisionKey ??
+          requestHash({ digest: normalized.digest, expected: input.expectedRevisionId });
+        const receipt = revisionKey ? accepted : await receiptFor(key);
         if (receipt) {
           if (receipt.content_digest !== normalized.digest)
             throw conflict(
@@ -772,7 +954,14 @@ export class Sources {
           // Replaying a historical receipt must not mark a different current revision available.
           await tx`update source_items set state='live',updated_at=clock_timestamp() where id=${item.id} and state='unavailable'
             and exists(select 1 from source_revisions where item_id=${item.id} and id=${receipt.response.revisionId} and is_current)`;
-          return receipt.response;
+          return receipt.projection
+            ? {
+                ...receipt.response,
+                created: false,
+                unchanged: true,
+                invalidated: emptyInvalidation(),
+              }
+            : receipt.response;
         }
         const [current] = await tx<
           Revision[]
@@ -815,11 +1004,17 @@ export class Sources {
             invalidated: emptyInvalidation(),
           };
         } else {
+          if (!normalized.object)
+            throw conflict('binding_unavailable', 'The approved event destination is unavailable.');
           for (const participant of normalized.participants)
             await tx`select pg_advisory_xact_lock(21066::int4,hashtext(${JSON.stringify([caller.workspaceId, participant.email])}))`;
           // Writers cite source records before taking target locks. Block new citations before retracting old claims.
           if (current) await tx`select id from records where id=${current.event_id} for update`;
-          await this.createParticipants(tx, context, manifest, normalized.participants, settings);
+          const participants = policy.plan
+            ? await this.bindParticipants(tx, context, policy, normalized.participants)
+            : normalized.participants.map((p) => ({ handle: p.email }));
+          if (!policy.plan)
+            await this.createParticipants(tx, context, manifest, normalized.participants, settings);
           const event = await logEvent(
             tx,
             { ...context, sourceItemId: item.id },
@@ -830,9 +1025,10 @@ export class Sources {
               title: input.event.title,
               ...(input.event.summary !== undefined ? { summary: input.event.summary } : {}),
               fields: normalized.fields,
-              participants: normalized.participants.map((p) => ({ handle: p.email })),
+              participants,
               about: input.event.about,
             },
+            { resolveHandles: !policy.plan },
           );
           if (input.event.content !== undefined)
             await storeEventBody(tx, caller.workspaceId, {
@@ -865,7 +1061,7 @@ export class Sources {
           };
         }
         await tx`update source_items set state='live',provider_revision=${input.providerRevision ?? item.provider_revision},updated_at=clock_timestamp() where id=${item.id}`;
-        await tx`insert into source_receipts(workspace_id,item_id,key,content_digest,response) values(${caller.workspaceId},${item.id},${key},${normalized.digest},${tx.json(jsonValue(result))})`;
+        await tx`insert into source_receipts(workspace_id,item_id,key,content_digest,response,projection) values(${caller.workspaceId},${item.id},${key},${normalized.digest},${tx.json(jsonValue(result))},${normalized.projection ? tx.json(jsonValue(normalized.projection)) : null})`;
         return result;
       },
       {},

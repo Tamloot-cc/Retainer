@@ -590,7 +590,8 @@ describe('enrichment manifest', () => {
     expect(enrich).toMatchObject({
       mappedWrite: true,
       trigger: {
-        fieldIds: [ENRICHMENT.domainField, ENRICHMENT.nameField],
+        binding: 'company',
+        fields: ['domain', 'name'],
         related: false,
         operations: ['create', 'update'],
       },

@@ -1,8 +1,54 @@
 import type { ExtensionManifest } from '@retainer/extension';
 import { isoDateTimeSchema } from '@retainer/shared';
 import { AppError } from '../errors.js';
+import type { StoredBindingPlan } from '../extension-runtime/bindings.js';
 
-export type SourcePolicy = NonNullable<ExtensionManifest['source']>;
+type ManifestSource = NonNullable<ExtensionManifest['source']>;
+export type SourcePolicy = Omit<ManifestSource, 'tasks'> & {
+  tasks?: Exclude<NonNullable<ManifestSource['tasks']>, string> & { matchFieldId?: string };
+  plan?: StoredBindingPlan;
+};
+
+export function resolveSourcePolicy(
+  source: ManifestSource,
+  plan?: StoredBindingPlan,
+): SourcePolicy {
+  const { tasks, ...policy } = source;
+  if (!source.event) return { ...policy, tasks: typeof tasks === 'string' ? undefined : tasks };
+  if (!plan)
+    throw new AppError(
+      409,
+      'binding_unavailable',
+      'The installation has no approved binding plan.',
+    );
+  const destination = typeof tasks === 'string' ? plan.destinations[tasks] : null;
+  const keys = destination?.fields;
+  const objectId = destination?.objects[0];
+  const title = keys?.title;
+  const status = keys?.status;
+  const { open, done } = status?.values ?? {};
+  if (destination && (!objectId || !title || !status || !open || !done))
+    throw new AppError(409, 'binding_unavailable', 'The approved task binding is unavailable.');
+  const personDeclaration = plan.declarations.find((entry) => entry.key === source.people);
+  const matchFieldId =
+    personDeclaration?.match &&
+    plan.destinations[personDeclaration.key]?.fields[personDeclaration.match]?.id;
+  return {
+    ...policy,
+    plan,
+    tasks:
+      objectId && title && status && open && done
+        ? {
+            objectId,
+            titleFieldId: title.id,
+            statusFieldId: status.id,
+            personFieldId: keys?.person?.id,
+            matchFieldId: matchFieldId || undefined,
+            statuses: { open, done },
+          }
+        : undefined,
+  };
+}
 /** A release-pinned ordering contract, never lexical ordering of unknown provider strings. */
 export function compareRevision(
   policy: SourcePolicy['revisionOrder'],

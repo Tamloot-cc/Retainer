@@ -1,3 +1,4 @@
+import { type BindingWriteStamp, bindingWriteStampSchema } from '@retainer/extension';
 import type {
   AggregateResult,
   BulkDeleteImpact,
@@ -25,6 +26,10 @@ import {
 } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
 import { admitCaller } from '../extension-runtime/admission.js';
+import {
+  checkStandaloneBindingWrite,
+  type StoredBindingPlan,
+} from '../extension-runtime/bindings.js';
 import { claimIdempotencyKey, requestHash, storeIdempotentResult } from '../idempotency.js';
 import { lockSource, retractEventClaims } from '../memory/events.js';
 import { lockPerson } from '../memory/profiles.js';
@@ -51,6 +56,7 @@ import {
   MAX_MERGE_HOPS,
   markDeleted,
   objectOf,
+  requireInstallationFields,
   resolveRecordId,
   softDeleteRecord,
   UniqueConflictError,
@@ -211,9 +217,33 @@ async function citeSource(tx: Tx, context: WriteContext, source?: string): Promi
   return { sourceRecordId: cited.id, observedAt: cited.occurredAt };
 }
 
+async function requireStandaloneBinding(
+  tx: Tx,
+  context: WriteContext,
+  object: CompiledObject,
+  fields: string[],
+  stamp?: BindingWriteStamp,
+) {
+  if (!context.installation) return;
+  const [row] = await tx<{ bindings: StoredBindingPlan | null; bindings_revision: number }[]>`
+    select bindings,bindings_revision from extension_installations where id = ${context.installation.installationId}`;
+  if (
+    row?.bindings &&
+    !checkStandaloneBindingWrite(row.bindings, row.bindings_revision, object.state, fields, stamp)
+  )
+    throw new AppError(
+      409,
+      'binding_unavailable',
+      'The approved binding or field name changed. Read the current bindings and retry.',
+    );
+}
+
+export { bindingWriteStampSchema };
+
 export type CreateOptions = {
   /** Retrying with the same key returns the first result (6.2). */
   idempotencyKey?: string;
+  bindings?: BindingWriteStamp;
   /** The event the values come from. */
   source?: string;
 };
@@ -229,6 +259,7 @@ export async function createRecord(
   return withWrite(sql, caller, async (tx, context) => {
     const object = requireObject(context.schema, objectName);
     refuseEventCreation(object);
+    await requireStandaloneBinding(tx, context, object, Object.keys(values), options.bindings);
     let claimId: string | undefined;
     if (idempotencyKey !== undefined) {
       const claim = await claimIdempotencyKey(
@@ -258,6 +289,7 @@ export async function createRecord(
 
 export const upsertInputSchema = z.strictObject({
   id: z.uuid().optional(),
+  bindings: bindingWriteStampSchema.optional(),
   match: z.record(z.string(), z.unknown()).optional(),
   values: valuesSchema.default({}),
   ifMissing: z.enum(['fail', 'create']).default('fail'),
@@ -348,6 +380,13 @@ export async function upsertRecord(
     try {
       return await withWrite(sql, caller, async (tx, context) => {
         const object = requireObject(context.schema, objectName);
+        await requireStandaloneBinding(
+          tx,
+          context,
+          object,
+          [...Object.keys(input.values), ...Object.keys(input.match ?? {})],
+          input.bindings,
+        );
         const cited = await citeSource(tx, context, input.source);
         let targetId: string | null = null;
         let match: ReturnType<typeof matchField> | undefined;
@@ -419,6 +458,7 @@ export async function upsertRecord(
 
 export const patchInputSchema = z.strictObject({
   values: valuesSchema,
+  bindings: bindingWriteStampSchema.optional(),
   expectedUpdatedAt: isoDateTimeSchema.optional(),
   source: sourceSchema.optional(),
 });
@@ -433,6 +473,7 @@ export async function patchRecord(
     const cited = await citeSource(tx, context, input.source);
     const record = await lockRecord(tx, caller.workspaceId, id);
     const object = objectOf(context.schema, record);
+    await requireStandaloneBinding(tx, context, object, Object.keys(input.values), input.bindings);
     const writes = prepareValues(object, input.values, 'update');
     const fields = await writeFields(tx, context, object, record, writes, {
       ...cited,
@@ -535,8 +576,13 @@ export async function deleteRecord(
   sql: Sql,
   caller: Caller,
   id: string,
+  bindings?: BindingWriteStamp,
 ): Promise<DeleteRecordResult> {
   return withWrite(sql, caller, async (tx, context) => {
+    if (context.installation) {
+      const record = await lockRecord(tx, caller.workspaceId, id);
+      await requireStandaloneBinding(tx, context, objectOf(context.schema, record), [], bindings);
+    }
     const deletedRecordIds = await softDeleteRecord(tx, context, id);
     const events = await eventsAmong(tx, context.schema, deletedRecordIds);
     // Deleting an event retracts what cites it, and says how much (6.4).
@@ -657,6 +703,21 @@ export async function mergeRecord(
           if (claim.kind === 'replay') return claim.result as MergeResult;
           claimId = claim.id;
         }
+        const target = await getRecord(tx, caller.workspaceId, context.schema, id);
+        const object = requireObject(context.schema, target.object);
+        await requireInstallationFields(
+          tx,
+          context,
+          object,
+          object.activeFields.filter((field) => field.isUnique),
+        );
+        await requireStandaloneBinding(
+          tx,
+          context,
+          object,
+          Object.keys(input.values ?? {}),
+          input.bindings,
+        );
         const result = await mergeRecords(tx, context, id, input);
         if (claimId) await storeIdempotentResult(tx, claimId, result);
         return result;

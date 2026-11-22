@@ -5,6 +5,30 @@ import { z } from 'zod';
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 /** One release incident ID: a short kind and an ID, at most 89 characters. */
 export const RELEASE_INCIDENT_PATTERN = /^[a-z]{1,8}:[a-z0-9-]{1,80}$/;
+const bindingPlanSchema = z.strictObject({
+  bindings_revision: z.number().int().positive(),
+  createPeople: z.enum(['never', 'contacted_first', 'everyone']),
+  bindings: z.record(
+    z.string(),
+    z
+      .strictObject({
+        status: z.enum(['ok', 'missing', 'incompatible']),
+        objects: z.array(z.strictObject({ id: z.uuid(), name: z.string(), label: z.string() })),
+        fields: z.record(
+          z.string(),
+          z.strictObject({
+            id: z.uuid(),
+            name: z.string(),
+            label: z.string(),
+            values: z.record(z.string(), z.string()),
+          }),
+        ),
+      })
+      .nullable(),
+  ),
+});
+export type ExtensionBindingPlan = z.infer<typeof bindingPlanSchema>;
+
 export const invocationSchema = z.strictObject({
   protocolVersion: z.literal(1),
   runId: z.uuid(),
@@ -13,6 +37,7 @@ export const invocationSchema = z.strictObject({
   releaseDigest: digest,
   functionId: z.uuid(),
   input: z.json(),
+  bindings: bindingPlanSchema.optional(),
   apiOrigin: z.url(),
   runToken: z.string().min(1).max(8192),
   deadline: z.iso.datetime(),

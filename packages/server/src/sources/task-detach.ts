@@ -9,6 +9,7 @@ export async function detachEditedTasks(
   context: WriteContext,
   locked: LockedRecord[],
   eventIds?: string[],
+  installationId?: string,
 ) {
   const records = new Map(locked.map((record) => [record.id, record]));
   const rows = await tx<
@@ -24,7 +25,7 @@ export async function detachEditedTasks(
     join extension_installations i on i.id=t.installation_id
     where t.state='synced' and t.record_id=any(${[...records.keys()]}::uuid[])
     ${eventIds ? tx`and t.source_event_id=any(${eventIds}::uuid[])` : tx``}
-    and exists(select 1 from field_assertions a where a.record_id=t.record_id and a.actor->>'type'='user') order by t.record_id`;
+    ${installationId ? tx`and t.installation_id = ${installationId}` : tx`and exists(select 1 from field_assertions a where a.record_id=t.record_id and a.actor->>'type'='user')`} order by t.record_id`;
   for (const row of rows) {
     const record = records.get(row.record_id);
     const object = record && context.schema.objectsById.get(record.object_type_id);
@@ -32,7 +33,9 @@ export async function detachEditedTasks(
       // Retain the provider's current winning values before its evidence is retracted.
       const claims = await tx<
         { field_id: string; value: unknown }[]
-      >`select field_id,value from field_assertions where record_id=${record.id} and status='active' and source_record_id is not null`;
+      >`select field_id,value from field_assertions
+        where record_id=${record.id} and status='active' and source_record_id is not null
+          and actor->>'id'=${row.installation_id} and actor->>'type'=${row.granted_actor}`;
       const values = new Map<FieldState, unknown>();
       for (const claim of claims) {
         const field = object.fieldsById.get(claim.field_id);

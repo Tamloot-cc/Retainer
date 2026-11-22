@@ -52,7 +52,10 @@ const LAYERS = [
       'webhooks',
     ],
   ],
-  ['entry', ['index', 'cli', 'lambda', 'egress-proxy', 'extension-launcher', 'file-server']],
+  [
+    'entry',
+    ['index', 'cli', 'migrate', 'lambda', 'egress-proxy', 'extension-launcher', 'file-server'],
+  ],
 ];
 // Events are records, so these modules depend on each other by design.
 const MAY_SHARE_A_CYCLE = 'core';

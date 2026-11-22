@@ -39,22 +39,7 @@ const fn = (
   inputSchema,
   timeoutSeconds: 120,
 });
-const taskFieldId = randomUUID();
 const manifest = extensionFixture({
-  schema: [
-    {
-      kind: 'field',
-      objectId: BASE_OBJECT_IDS.task,
-      definition: {
-        universalId: taskFieldId,
-        name: 'memberTaskId',
-        label: 'Member task ID',
-        type: 'text',
-        isUnique: true,
-        isNullable: true,
-      },
-    },
-  ],
   name: 'member-fixture',
   onSourceDelete: 'retract',
   connection: 'member',
@@ -88,7 +73,6 @@ const manifest = extensionFixture({
   source: {
     tasks: {
       objectId: BASE_OBJECT_IDS.task,
-      identityFieldId: taskFieldId,
       titleFieldId: '5f37aa96-fac8-4572-9647-6b0da5d6d0c8',
       statusFieldId: BASE_FIELD_IDS.taskStatus,
       personFieldId: '3d66fcfe-2e9c-4aeb-a88a-7d6b3c2194ba',
@@ -771,15 +755,23 @@ describe('managed source tasks with real Postgres', () => {
   it('lets one of two accounts importing the same task ID concurrently win and refuses the other as source_task_conflict', async () => {
     const h = await taskFixture(),
       eli = await memberTasks(h, h.keys.eli, 'eli-account');
-    const results = await Promise.all([
-      h.tasks([managedTask('shared')]),
-      eli.tasks([managedTask('shared')]),
-    ]);
+    const writers = [h, eli];
+    const results = await Promise.all(
+      writers.map((writer, i) => writer.tasks([managedTask('shared', `From account ${i}`)])),
+    );
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
-    expect(results.find((r) => r.status === 409)!.body.error.code).toBe('source_task_conflict');
-    expect(
-      await db.owner`select 1 from source_tasks where installation_id=${h.id} and external_id='shared'`,
-    ).toHaveLength(1);
+    expect(results.find((r) => r.status === 409)?.body.error.code).toBe('source_task_conflict');
+    const readTask = () => db.owner`
+      select t.*, r.data from source_tasks t join records r on r.id = t.record_id
+      where t.installation_id = ${h.id} and t.external_id = 'shared'`;
+    const before = await readTask();
+    expect(before).toHaveLength(1);
+    const winner = results.findIndex((r) => r.status === 200);
+    expect(before[0]?.source_event_id).toBe(writers[winner]?.event);
+    expect(Object.values(before[0]?.data)).toContain(`From account ${winner}`);
+    const retry = await writers[1 - winner]?.tasks([managedTask('shared', 'Refused edit')]);
+    expect(retry?.body.error.code).toBe('source_task_conflict');
+    expect(await readTask()).toEqual(before);
   });
   it('serializes competing snapshots, is idempotent and keeps edited tasks permanently', async () => {
     const h = await taskFixture();

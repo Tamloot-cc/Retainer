@@ -1,5 +1,4 @@
 import { defineExtension, type ExtensionManifest } from '@retainer/extension';
-import { BASE_EVENT_TYPE_IDS } from '@retainer/shared';
 import { z } from 'zod';
 
 export const GRANOLA = {
@@ -211,7 +210,8 @@ export function granolaManifest(build: {
       verifyFunctionId: GRANOLA.setup,
       syncFunctionIds: [GRANOLA.sync],
       scanFunctionIds: [GRANOLA.scan, GRANOLA.schedule],
-      eventTypeIds: [BASE_EVENT_TYPE_IDS.conversation],
+      event: 'meeting',
+      people: 'person',
       revisionOrder: 'timestamp',
     },
     webhooks: [
@@ -224,16 +224,107 @@ export function granolaManifest(build: {
         optional: true,
       },
     ],
-    schema: [
+    schema: [],
+    bindings: [
       {
-        kind: 'field',
-        objectId: BASE_EVENT_TYPE_IDS.conversation,
-        definition: {
-          universalId: GRANOLA.urlField,
-          name: 'granolaUrl',
-          label: 'Granola note',
-          type: 'links',
-          isNullable: true,
+        key: 'meeting',
+        label: 'Meetings',
+        description: 'Granola meetings with shared summaries, links and transcripts.',
+        class: 'event',
+        access: 'write',
+        creates: true,
+        required: true,
+        fields: [
+          {
+            key: 'url',
+            label: 'Granola note',
+            types: ['links'],
+            required: false,
+            create: {
+              universalId: GRANOLA.urlField,
+              name: 'granolaUrl',
+              label: 'Granola note',
+              type: 'links',
+            },
+          },
+          {
+            key: 'medium',
+            label: 'Medium',
+            types: ['select'],
+            required: false,
+            values: ['meeting'],
+            create: {
+              universalId: 'ba7d267f-9002-4f3e-b356-34583ef1f926',
+              name: 'medium',
+              label: 'Medium',
+              type: 'select',
+              settings: { options: [{ value: 'meeting', label: 'Meeting' }] },
+            },
+          },
+          {
+            key: 'transcript',
+            label: 'Transcript',
+            types: ['files'],
+            required: false,
+            create: {
+              universalId: 'dfb41235-a285-46a6-af49-48ce1f277464',
+              name: 'transcript',
+              label: 'Transcript',
+              type: 'files',
+            },
+          },
+        ],
+        create: {
+          universalId: '6b8880bb-05a5-4deb-9fad-d51056747091',
+          nameSingular: 'conversation',
+          namePlural: 'conversations',
+          labelSingular: 'Conversation',
+          labelPlural: 'Conversations',
+          fields: [],
+        },
+      },
+      {
+        key: 'person',
+        label: 'People',
+        description: 'Match or create people by the approved email field.',
+        class: 'entity',
+        access: 'write',
+        required: false,
+        match: 'emails',
+        fields: [
+          {
+            key: 'name',
+            label: 'Name',
+            types: ['full_name', 'text'],
+            required: false,
+            create: {
+              universalId: '3b20d1f6-06f6-4a1c-ae1d-5c7734f57777',
+              name: 'name',
+              label: 'Name',
+              type: 'full_name',
+            },
+          },
+          {
+            key: 'emails',
+            label: 'Emails',
+            types: ['emails'],
+            required: true,
+            create: {
+              universalId: '714c634a-9d88-41fa-8264-f66b0396cb55',
+              name: 'emails',
+              label: 'Emails',
+              type: 'emails',
+            },
+          },
+        ],
+        create: {
+          universalId: '81303fa3-a66c-484e-b6d0-689edce4206e',
+          nameSingular: 'person',
+          namePlural: 'people',
+          labelSingular: 'Person',
+          labelPlural: 'People',
+          labelField: 'name',
+          fields: [],
         },
       },
     ],

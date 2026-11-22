@@ -17,6 +17,9 @@ import { idParam, limitParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 
 export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMode = true) {
+  app.get('/extensions/:id/bindings', requireScope('read'), async (c) =>
+    c.json(await extensions.bindings(c.get('caller'), idParam(c))),
+  );
   app.get('/extensions/:id/suggestions', requireScope('read'), async (c) =>
     c.json(await extensions.suggestions(c.get('caller'), idParam(c), c.req.query('version'))),
   );

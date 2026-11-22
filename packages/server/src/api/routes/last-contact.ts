@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireScope } from '../../auth/middleware.js';
 import type { Sql } from '../../db/client.js';
 import { AppError, forbidden } from '../../errors.js';
+import type { StoredBindingPlan } from '../../extension-runtime/bindings.js';
 import type { ExtensionCatalog } from '../../extensions/catalog.js';
 import { idParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
@@ -36,8 +37,33 @@ export function lastContactRoutes(app: Hono<AppEnv>, sql: Sql, catalog: Extensio
           const [job] = await tx`select function_id from extension_jobs where id=${run.jobId}`;
           if (!policy || !policy.functionIds.includes(job?.function_id))
             throw forbidden('this function has no last-contact derivation grant');
+          const [installation] = await tx<{ bindings: StoredBindingPlan | null }[]>`
+            select bindings from extension_installations where id = ${id}`;
+          const plan = installation?.bindings;
+          const eventIds = policy.events
+            ? (plan?.destinations[policy.events]?.objects ?? []).flatMap((id) => {
+                const object = context.schema.objectsByUniversalId.get(id);
+                if (!object?.isEvent)
+                  throw new AppError(
+                    409,
+                    'binding_unavailable',
+                    'A Last contact event type is unavailable.',
+                  );
+                return [object.id];
+              })
+            : context.schema.eventTypeIds;
+          const destinations =
+            policy.destinations?.flatMap((key) => {
+              const selected = plan?.destinations[key];
+              if (!selected) return [];
+              const objectId = selected.objects[0];
+              const fieldId = selected.fields.lastContact?.id;
+              return objectId && fieldId ? [{ objectId, fieldId }] : [];
+            }) ??
+            policy.fields ??
+            [];
           const fields = new Map<string, FieldState>();
-          for (const binding of policy.fields) {
+          for (const binding of destinations) {
             const object = context.schema.objectsByUniversalId.get(binding.objectId),
               field = object?.activeFields.find((entry) => entry.universalId === binding.fieldId);
             const [owned] =
@@ -94,7 +120,10 @@ export function lastContactRoutes(app: Hono<AppEnv>, sql: Sql, catalog: Extensio
               { object_type_id: string }[]
             >`select object_type_id from records where id=${recordId}`;
             const field = fields.get(record?.object_type_id ?? '');
-            if (field && (await reconcileLastContact(tx, context, recordId, field)).changed)
+            if (
+              field &&
+              (await reconcileLastContact(tx, context, recordId, field, eventIds)).changed
+            )
               changed++;
           }
           return { processed: ids.length, changed, nextAfter, through };

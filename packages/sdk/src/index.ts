@@ -1,7 +1,9 @@
 import type {
+  BindingWriteStamp,
   ExtensionAuthorization,
   ExtensionAuthorizationCompletion,
   ExtensionAuthorizeInput,
+  ExtensionBindingPlan,
   ExtensionConnection,
   ExtensionConnectionInput,
   ExtensionInstallation,
@@ -242,7 +244,7 @@ export class RetainerClient {
   }
   createRecord(
     object: string,
-    input: { values: Record<string, unknown>; source?: string },
+    input: { values: Record<string, unknown>; source?: string; bindings?: BindingWriteStamp },
     idempotencyKey?: string,
   ) {
     return this.post<WriteResponse>(
@@ -252,10 +254,10 @@ export class RetainerClient {
       idempotencyKey,
     );
   }
-  upsertRecord(object: string, input: UpsertInput) {
+  upsertRecord(object: string, input: UpsertInput & { bindings?: BindingWriteStamp }) {
     return this.post<WriteResponse>(`/v1/objects/${encodeURIComponent(object)}/upsert`, input);
   }
-  patchRecord(id: string, input: PatchInput) {
+  patchRecord(id: string, input: PatchInput & { bindings?: BindingWriteStamp }) {
     return this.request<WriteResponse>(`/v1/records/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(input),
@@ -281,9 +283,10 @@ export class RetainerClient {
       signal,
     );
   }
-  deleteRecord(id: string) {
+  deleteRecord(id: string, bindings?: BindingWriteStamp) {
     return this.request<DeleteRecordResult>(`/v1/records/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+      ...(bindings ? { body: JSON.stringify({ bindings }) } : {}),
     });
   }
   /** The object's saved views the caller can see, in their saved order. */
@@ -819,6 +822,13 @@ export class RetainerClient {
       }
     >(`/v1/extensions/${encodeURIComponent(id)}`, {}, signal);
   }
+  extensionBindings(id: string, signal?: AbortSignal) {
+    return this.get<ExtensionBindingPlan>(
+      `/v1/extensions/${encodeURIComponent(id)}/bindings`,
+      {},
+      signal,
+    );
+  }
   previewExtension(input: ExtensionInstallInput) {
     return this.post<ExtensionPreview>('/v1/extensions/preview', input);
   }
@@ -1015,6 +1025,7 @@ export class RetainerClient {
     installationId: string,
     input: {
       recordId: string;
+      binding?: string;
       lookup?: string;
       values: Record<string, unknown>;
       observedAt?: string;
@@ -1185,6 +1196,8 @@ export class RetainerClient {
         string,
         import('@retainer/extension').ExtensionMappingChoice & { reason?: string }
       >;
+      bindings?: import('@retainer/extension').ExtensionBindingChoices;
+      bindingReasons?: Record<string, string>;
       settings?: Record<string, string | number | boolean>;
     },
   ) {

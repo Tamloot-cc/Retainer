@@ -152,7 +152,10 @@ describe('first boot', () => {
       expect(schema.body.objects).toEqual([]);
       const proposal = await app.request('/v1/templates/starter/apply', { key, method: 'POST' });
       expect(proposal.body.status).toBe('proposed');
-      const approved = await app.request(`/v1/schema/changes/${proposal.body.change.id}/approve`, { key, method: 'POST' });
+      const approved = await app.request(`/v1/schema/changes/${proposal.body.change.id}/approve`, {
+        key,
+        method: 'POST',
+      });
       expect(approved.body.status).toBe('applied');
     } finally {
       await fresh.drop();

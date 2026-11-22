@@ -1,5 +1,4 @@
 import { defineExtension, type ExtensionManifest } from '@retainer/extension';
-import { BASE_OBJECT_IDS } from '@retainer/shared';
 import { z } from 'zod';
 
 /** Permanent identities of the company enrichment release (spec 4.1). */
@@ -9,16 +8,7 @@ export const ENRICHMENT = {
   backfill: '4768a194-e37e-4e93-af76-f145e2ae3d83',
   setup: 'c3376603-255e-4adb-819f-e3aa173f3ff9',
   enrich: 'ab556674-d905-4839-8516-7b1ee7455c80',
-  /** The base company website field; the lookup, never a destination. */
-  domainField: 'bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641',
-  /**
-   * The base company name field, watched so a renamed company is looked up
-   * again. It isn't protected: where a workspace deleted it, the trigger
-   * watches the domain alone.
-   */
-  nameField: 'ba596fe8-a75f-4a88-9d80-ca22d51d7c72',
-  /** The sales template's company employee count, so Create binds it where it exists. */
-  employeeCountField: '0dc97bea-8bbe-4bd8-9713-0c6628049268',
+  employeeCountField: '509ddbdd-3b4e-45ec-b6b1-709255de3bdc',
   linkedinField: '4341a8ad-8c05-444e-98bb-3e357d5730a7',
   headquartersField: '770bf3de-d5df-48ac-95cb-16ec1c18c302',
 } as const;
@@ -91,49 +81,45 @@ export const certaintySchema = z.enum(['high', 'medium', 'low']);
 export type Certainty = z.infer<typeof certaintySchema>;
 
 /** The reviewed mapping: the domain lookup and the outputs a workspace binds to fields. */
-export const ENRICHMENT_MAPPING = {
-  objectId: BASE_OBJECT_IDS.company,
-  lookup: { fieldId: ENRICHMENT.domainField, type: 'links' as const },
-  outputs: [
-    {
-      key: 'employee_count',
-      label: 'Employee count',
-      description:
-        "Employees Exa finds for the company, mostly from public profiles. Often lower than the company's own size band.",
-      types: ['number' as const],
-      field: {
-        universalId: ENRICHMENT.employeeCountField,
-        name: 'employeeCount',
-        label: 'Employee Count',
-        type: 'number' as const,
-      },
+export const ENRICHMENT_OUTPUT_DEFINITIONS = [
+  {
+    key: 'employee_count',
+    label: 'Employee count',
+    description:
+      "Employees Exa finds for the company, mostly from public profiles. Often lower than the company's own size band.",
+    types: ['number' as const],
+    field: {
+      universalId: ENRICHMENT.employeeCountField,
+      name: 'employeeCount',
+      label: 'Employee Count',
+      type: 'number' as const,
     },
-    {
-      key: 'linkedin_url',
+  },
+  {
+    key: 'linkedin_url',
+    label: 'LinkedIn URL',
+    description: "The company's LinkedIn page, as listed in Exa's company profile.",
+    types: ['links' as const],
+    field: {
+      universalId: ENRICHMENT.linkedinField,
+      name: 'linkedinUrl',
       label: 'LinkedIn URL',
-      description: "The company's LinkedIn page, as listed in Exa's company profile.",
-      types: ['links' as const],
-      field: {
-        universalId: ENRICHMENT.linkedinField,
-        name: 'linkedinUrl',
-        label: 'LinkedIn URL',
-        type: 'links' as const,
-      },
+      type: 'links' as const,
     },
-    {
-      key: 'headquarters',
+  },
+  {
+    key: 'headquarters',
+    label: 'Headquarters',
+    description: "The headquarters city, postcode and country in Exa's company data.",
+    types: ['address' as const],
+    field: {
+      universalId: ENRICHMENT.headquartersField,
+      name: 'headquarters',
       label: 'Headquarters',
-      description: "The headquarters city, postcode and country in Exa's company data.",
-      types: ['address' as const],
-      field: {
-        universalId: ENRICHMENT.headquartersField,
-        name: 'headquarters',
-        label: 'Headquarters',
-        type: 'address' as const,
-      },
+      type: 'address' as const,
     },
-  ],
-};
+  },
+];
 
 export function enrichmentManifest(build: {
   version?: string;
@@ -179,7 +165,58 @@ export function enrichmentManifest(build: {
     },
     schema: [],
     views: [],
-    mapping: ENRICHMENT_MAPPING,
+    bindings: [
+      {
+        key: 'company',
+        label: 'Companies',
+        description: 'Look up companies by website and fill empty company details.',
+        class: 'entity',
+        access: 'write',
+        required: true,
+        fields: [
+          {
+            key: 'domain',
+            label: 'Website',
+            types: ['links'],
+            required: true,
+            lookup: true,
+            create: {
+              universalId: 'b142bbb7-233b-4312-8135-ac152f0fc9d6',
+              name: 'domain',
+              label: 'Website',
+              type: 'links',
+            },
+          },
+          {
+            key: 'name',
+            label: 'Name',
+            types: ['text'],
+            required: false,
+            lookup: true,
+            create: {
+              universalId: 'ded82b59-487b-4a1a-9f07-1e07432ca707',
+              name: 'name',
+              label: 'Name',
+              type: 'text',
+            },
+          },
+          ...ENRICHMENT_OUTPUT_DEFINITIONS.map(({ field, ...output }) => ({
+            ...output,
+            required: false,
+            create: field,
+          })),
+        ],
+        create: {
+          universalId: 'f386596a-181d-4695-b291-55e63872ea6c',
+          nameSingular: 'company',
+          namePlural: 'companies',
+          labelSingular: 'Company',
+          labelPlural: 'Companies',
+          labelField: 'name',
+          fields: [],
+        },
+      },
+    ],
     functions: [
       {
         universalId: ENRICHMENT.configure,
@@ -206,7 +243,7 @@ export function enrichmentManifest(build: {
           properties: { cursor: { type: 'string', maxLength: 4096 } },
         },
         scopes: ['read', 'write'],
-        mappedWrite: true,
+        mappedWrite: 'company',
         uses: ['model'],
       },
       {
@@ -228,14 +265,14 @@ export function enrichmentManifest(build: {
         timeoutSeconds: 120,
         trigger: {
           kind: 'change',
-          objectId: BASE_OBJECT_IDS.company,
-          fieldIds: [ENRICHMENT.domainField, ENRICHMENT.nameField],
+          binding: 'company',
+          fields: ['domain', 'name'],
           related: false,
           operations: ['create', 'update'],
         },
         inputSchema: changeInput,
         scopes: ['read', 'write'],
-        mappedWrite: true,
+        mappedWrite: 'company',
         uses: ['model'],
       },
     ],

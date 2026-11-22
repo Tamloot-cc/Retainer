@@ -6,12 +6,15 @@ import {
 } from '@retainer/extension';
 import { z } from 'zod';
 import type { Sql } from '../db/client.js';
+import { inWorkspace, lockSchemaShared } from '../db/tx.js';
 import { AppError } from '../errors.js';
+import { presentBindingPlan, type StoredBindingPlan } from '../extension-runtime/bindings.js';
 import { cleanGmailAuthorizations } from '../extension-runtime/gmail-cleanup.js';
 import { type ClaimedJob, ExtensionQueue } from '../extension-runtime/queue.js';
 import { MODEL_PROXY_PATH, type RunTokens } from '../extension-runtime/tokens.js';
 import type { ExtensionCatalog } from '../extensions/catalog.js';
 import type { Extensions } from '../extensions/service.js';
+import { loadSchemaState } from '../schema/load.js';
 
 const executableSchema = z.strictObject({
   registrationId: z.uuid(),
@@ -158,6 +161,20 @@ export class ExtensionExecutor {
       const model = modelToken
         ? { origin: this.options.modelOrigin ?? apiOrigin + MODEL_PROXY_PATH, token: modelToken }
         : undefined;
+      const bindings = await inWorkspace(this.options.sql, job.workspaceId, async (tx) => {
+        await lockSchemaShared(tx, job.workspaceId);
+        const [row] = await tx<{ bindings: StoredBindingPlan | null; bindings_revision: number }[]>`
+          select bindings, bindings_revision from extension_installations
+          where id = ${job.installationId} and generation = ${job.generation}`;
+        if (!row)
+          throw new AppError(409, 'installation_disabled', 'Installation generation changed.');
+        if (!row.bindings) return undefined;
+        return presentBindingPlan(
+          await loadSchemaState(tx, job.workspaceId),
+          row.bindings,
+          row.bindings_revision,
+        );
+      });
       const invocation = decodeInvocation(
         JSON.stringify({
           protocolVersion: 1,
@@ -167,6 +184,7 @@ export class ExtensionExecutor {
           releaseDigest: job.releaseDigest,
           functionId: job.functionId,
           input: job.input,
+          ...(bindings ? { bindings } : {}),
           apiOrigin,
           runToken,
           deadline: job.deadline.toISOString(),

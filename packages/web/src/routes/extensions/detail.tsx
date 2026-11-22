@@ -41,6 +41,7 @@ import {
   ReviewIcon,
 } from '../../ui/review.js';
 import { QueryError, useView } from '../state.js';
+import { BindingSummary } from './bindings.js';
 import { ExtensionIcon, extensionName } from './branding.js';
 import { MemberConnectionPanel } from './connections.js';
 import { MappingGroup } from './mapping.js';
@@ -164,11 +165,11 @@ function InstalledExtension({
           },
         ]
       : []),
-    ...(manifest?.mapping && !gone
+    ...((manifest?.mapping || manifest?.bindings?.length) && !gone
       ? [
           {
             value: 'mapping' as const,
-            label: 'Field mapping',
+            label: manifest?.bindings?.length ? 'Bindings' : 'Field mapping',
             hint: 'Which field each value this extension finds is written to.',
           },
         ]
@@ -523,6 +524,7 @@ function MappingSummary({
   installation: Installation;
   admin: boolean;
 }) {
+  const { schema } = useWorkspace();
   const navigate = useNavigate();
   const suggest = useMutation({
     mutationFn: async () => {
@@ -535,8 +537,32 @@ function MappingSummary({
     queryFn: ({ signal }) => api.extension(installation.id, signal),
   });
   const mapping = release.manifest.mapping;
-  if (!mapping) return null;
   if (detail.error) return <QueryError error={detail.error} retry={() => void detail.refetch()} />;
+  if (release.manifest.bindings) {
+    if (!detail.data?.bindingChoices) return <Muted>Loading bindings…</Muted>;
+    return (
+      <ReviewCard>
+        <ReviewCardHeader leading={<ReviewIcon icon={LayoutList} />} title="Approved bindings" />
+        <ReviewCardBody>
+          <BindingSummary
+            declarations={release.manifest.bindings}
+            choices={detail.data.bindingChoices}
+            objects={schema.objects}
+          />
+        </ReviewCardBody>
+        {admin ? (
+          <ReviewCardFooter>
+            <Button asChild>
+              <Link to="/extensions/$id/mapping" params={{ id: installation.id }}>
+                Change setup
+              </Link>
+            </Button>
+          </ReviewCardFooter>
+        ) : null}
+      </ReviewCard>
+    );
+  }
+  if (!mapping) return null;
   const view = detail.data?.mapping;
   if (!view) return <Muted>Loading field mapping…</Muted>;
   const broken = view.outputs.some((o) => o.status !== 'ok');

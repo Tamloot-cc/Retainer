@@ -1,6 +1,5 @@
 import { defineExtension, type ExtensionManifest } from '@retainer/extension';
 import { gmailRegistrationId } from '@retainer/extension/nango-gmail';
-import { BASE_EVENT_TYPE_IDS } from '@retainer/shared';
 
 export const GMAIL = {
   registration: gmailRegistrationId,
@@ -82,9 +81,55 @@ export function gmailManifest(build: {
       verifyFunctionId: GMAIL.connect,
       scanFunctionIds: [GMAIL.poll],
       syncFunctionIds: [GMAIL.import],
-      eventTypeIds: [BASE_EVENT_TYPE_IDS.conversation],
+      event: 'email',
+      people: 'person',
       revisionOrder: 'opaque',
     },
+    bindings: [
+      {
+        key: 'email',
+        label: 'Email',
+        description: 'Gmail messages sent to or received from a matched contact.',
+        class: 'event',
+        access: 'write',
+        required: true,
+        creates: true,
+        fields: [
+          {
+            key: 'medium',
+            label: 'Medium',
+            types: ['select'],
+            required: true,
+            values: ['email'],
+            create: {
+              universalId: '5117792b-5d77-4547-97d1-cdaec700208a',
+              name: 'medium',
+              label: 'Medium',
+              type: 'select',
+              settings: { options: [{ value: 'email', label: 'Email' }] },
+            },
+          },
+        ],
+        create: {
+          universalId: '6809eb60-d200-4416-9b37-09db3bb5b7b7',
+          nameSingular: 'email',
+          namePlural: 'emails',
+          labelSingular: 'Email',
+          labelPlural: 'Emails',
+          fields: [],
+        },
+      },
+      {
+        key: 'person',
+        label: 'People',
+        description: 'Match correspondence through this email field. Gmail never creates contacts.',
+        class: 'entity',
+        access: 'read',
+        required: false,
+        match: 'emails',
+        fields: [{ key: 'emails', label: 'Emails', types: ['emails'], required: true }],
+      },
+    ],
     schema: [],
     views: [],
     functions: [

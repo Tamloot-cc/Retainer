@@ -466,7 +466,11 @@ export async function addLinks(
   schema: CompiledSchema,
   eventId: string,
   stored: readonly StoredLink[],
-  input: { participants: readonly NormalizedParticipant[]; about: readonly string[] },
+  input: {
+    participants: readonly NormalizedParticipant[];
+    about: readonly string[];
+    resolveHandles?: boolean;
+  },
 ): Promise<{ rows: LinkRow[]; changed: LinkRow[] }> {
   // A handle erased by forget is never stored again (2.1). The caller holds
   // the privacy lock in shared mode, so forget cannot run between this check
@@ -477,11 +481,13 @@ export async function addLinks(
       workspaceId,
       input.participants.flatMap((p) => (p.handle ? [p.handle] : [])),
     ),
-    matchEmails(tx, workspaceId, schema, [
-      ...new Set(
-        input.participants.flatMap((p) => (p.handle?.kind === 'email' ? [p.handle.value] : [])),
-      ),
-    ]),
+    input.resolveHandles === false
+      ? new Map<string, EmailMatch>()
+      : matchEmails(tx, workspaceId, schema, [
+          ...new Set(
+            input.participants.flatMap((p) => (p.handle?.kind === 'email' ? [p.handle.value] : [])),
+          ),
+        ]),
   ]);
   const kept = input.participants.map((p) =>
     p.handle && isSuppressed(suppressed, p.handle)

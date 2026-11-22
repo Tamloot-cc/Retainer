@@ -55,13 +55,13 @@ export function registerExtensionTools(server: McpServer, extensions: Extensions
     'preview_extension',
     {
       description:
-        'Preview a bundled extension installation without changes. Human admin approval is required through the admin API. Does not enable triggers. ' +
-        'For a release with a mapping (its outputs are in the extension catalog), pass mapping with one choice per output key: ' +
-        '{"action":"existing","field":"<API name from describe_schema>"}, {"action":"create"} for its suggested field, or {"action":"skip"}. ' +
-        'Use this to check a mapping draft you propose; the admin imports, edits and approves it.',
+        'Preview a bundled extension and propose its binding choices for an admin to review. ' +
+        'Use bindings with an existing object from describe_schema, create from the release suggestion, ' +
+        'or skip an optional binding. Provide field and select value choices when needed. ' +
+        'A human admin approves any change to schema or installation.',
       inputSchema: installInputSchema,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: false, openWorldHint: false },
     },
-    (input) => run(caller, 'schema:write', () => extensions.preview(caller, input)),
+    (input) => run(caller, 'schema:write', () => extensions.preview(caller, input, true)),
   );
 }

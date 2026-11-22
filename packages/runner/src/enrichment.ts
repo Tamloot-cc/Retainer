@@ -1,16 +1,16 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import {
   type ExecutionResult,
-  type ExtensionMapping,
+  type ExtensionBindingChoices,
   type ExtensionMappingChoice,
   type ExtensionMappingView,
   type Invocation,
   isRetryLater,
 } from '@retainer/extension';
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
-import { compatibleFields, normalizeDomain, type ObjectView } from '@retainer/shared';
+import { normalizeDomain, type ObjectView } from '@retainer/shared';
 import { z } from 'zod';
-import { ENRICHMENT, ENRICHMENT_MAPPING } from './enrichment-contract.js';
+import { ENRICHMENT, ENRICHMENT_OUTPUT_DEFINITIONS } from './enrichment-contract.js';
 import {
   enrichmentModel,
   type ModelFailure,
@@ -114,7 +114,7 @@ function mappedContext(
   );
 }
 
-type MappingOutput = ExtensionMapping['outputs'][number];
+type MappingOutput = (typeof ENRICHMENT_OUTPUT_DEFINITIONS)[number];
 /** Each company may need a search and a model call, so pages stay small. */
 const BACKFILL_PAGE = 10;
 /** Companies of a backfill page looked up at once, to stay well inside its 300 s. */
@@ -126,7 +126,37 @@ const REASON_MAX = 500;
 
 /** Company fields an output can be written to; never the domain it looks companies up by. */
 const fieldsFor = (company: ObjectView | undefined, output: MappingOutput) =>
-  compatibleFields(company?.fields ?? [], output, ENRICHMENT_MAPPING.lookup.fieldId);
+  (company?.fields ?? []).filter(
+    (field) =>
+      !field.readOnly && !field.coreRole && output.types.some((type) => type === field.type),
+  );
+
+async function readCompanyBinding(sdk: RetainerClient, invocation: Invocation) {
+  const approved = invocation.bindings ?? (await sdk.extensionBindings(invocation.installationId));
+  const destination = approved.bindings.company;
+  const object = destination?.objects[0];
+  if (!object || !destination) return null;
+  const lookup = destination.fields.domain;
+  const mapping: ExtensionMappingView = {
+    revision: approved.bindings_revision,
+    ...(lookup
+      ? { lookup: { name: lookup.name, status: destination.status === 'ok' ? 'ok' : 'missing' } }
+      : {}),
+    outputs: ENRICHMENT_OUTPUT_DEFINITIONS.map((output) => {
+      const field = destination.fields[output.key];
+      return {
+        output: output.key,
+        action: field ? 'existing' : 'skip',
+        contribution: false,
+        status: field && destination.status !== 'ok' ? 'incompatible' : 'ok',
+        ...(field
+          ? { field: { name: field.name, label: field.label, type: output.field.type } }
+          : {}),
+      };
+    }),
+  };
+  return { object, mapping, nameField: destination.fields.name?.name };
+}
 
 type Choice = ExtensionMappingChoice & { reason?: string };
 type Choices = Record<string, Choice>;
@@ -241,9 +271,9 @@ async function suggestWithModel(
  * when Company's label field is a text field. A workspace may make an email,
  * phone, link or number the label, and that is not a name to send to Exa.
  */
-function companyName(company: ObjectView | undefined, record: { label: string | null }) {
-  const label = company?.fields.find((f) => f.name === company.labelField);
-  return label?.type === 'text' ? record.label : null;
+function boundCompanyName(field: string | undefined, record: { fields: Record<string, unknown> }) {
+  const value = field ? record.fields[field] : undefined;
+  return typeof value === 'string' ? value : null;
 }
 
 /**
@@ -272,6 +302,7 @@ async function fill(
   const written = await run.sdk.extensionMappedWrite(run.installationId, {
     recordId: record.id,
     lookup: domain,
+    binding: 'company',
     values,
     ...(found.confidence < 1 ? { confidence: found.confidence } : {}),
   });
@@ -332,12 +363,22 @@ export async function executeEnrichment(
     if (invocation.functionId === ENRICHMENT.configure) {
       await exa().check();
       const schema = await sdk.schema();
-      const company = schema.objects.find((o) => o.baseObject === 'company');
-      const outputs = ENRICHMENT_MAPPING.outputs;
+      const retained = invocation.bindings?.bindings.company?.objects[0]?.name;
+      const company =
+        schema.objects.find((object) => object.nameSingular === retained) ??
+        schema.objects.find(
+          (object) =>
+            object.class !== 'event' &&
+            (object.nameSingular === 'company' || object.labelPlural === 'Companies'),
+        );
+      const outputs = ENRICHMENT_OUTPUT_DEFINITIONS;
       const reason = configureInput.safeParse(invocation.input).data?.reason;
       let suggested: Choices | null = null;
       try {
-        const current = reason === 'install' ? null : ((await sdk.extension(id)).mapping ?? null);
+        const current =
+          reason === 'install'
+            ? null
+            : ((await readCompanyBinding(sdk, invocation))?.mapping ?? null);
         suggested = await suggestWithModel(sdk, model(), company, outputs, current, signal);
       } catch {
         // Any failure falls back to name-and-type suggestions (spec 6.1).
@@ -346,21 +387,35 @@ export async function executeEnrichment(
       const mapping =
         suggested ??
         Object.fromEntries(outputs.map((output) => [output.key, byNameAndType(company, output)]));
-      await sdk.saveExtensionSuggestions(id, { mapping });
+      const fields = Object.fromEntries(
+        Object.entries(mapping).map(([key, { reason: _reason, ...choice }]) => [key, choice]),
+      );
+      const bindings: ExtensionBindingChoices = {
+        company: company
+          ? { action: 'existing', objects: [company.nameSingular], fields }
+          : { action: 'create', fields },
+      };
+      await sdk.saveExtensionSuggestions(id, {
+        bindings,
+        bindingReasons: Object.fromEntries(
+          Object.entries(mapping).flatMap(([key, { reason }]) =>
+            reason ? [[`company.${key}`, reason]] : [],
+          ),
+        ),
+      });
       return done(suggested ? 'suggestions_ready' : 'suggestions_ready_without_model');
     }
     if (invocation.functionId === ENRICHMENT.backfill) {
       const input = z
         .strictObject({ cursor: z.string().max(4096).optional() })
         .parse(invocation.input);
-      const schema = await sdk.schema();
-      const company = schema.objects.find((o) => o.baseObject === 'company');
-      if (!company) return done('not_applicable');
-      const page = await sdk.queryRecords(company.nameSingular, {
+      const binding = await readCompanyBinding(sdk, invocation);
+      if (!binding) return done('not_applicable');
+      const page = await sdk.queryRecords(binding.object.name, {
         limit: BACKFILL_PAGE,
         ...(input.cursor ? { cursor: input.cursor } : {}),
       });
-      const mapping = (await sdk.extension(id)).mapping;
+      const mapping = binding.mapping;
       if (mapping?.lookup?.status !== 'ok')
         return { status: 'failed', code: 'schema_binding_conflict' };
       const lookupField = mapping.lookup.name;
@@ -386,7 +441,13 @@ export async function executeEnrichment(
           (o) => o.status === 'ok' && o.field && !Object.hasOwn(record.fields, o.field.name),
         );
         if (domain && open.length)
-          await fill(run, mapping, { ...record, name: companyName(company, record) }, domain, open);
+          await fill(
+            run,
+            mapping,
+            { ...record, name: boundCompanyName(binding.nameField, record) },
+            domain,
+            open,
+          );
       });
       if (page.nextCursor)
         await sdk.extensionCheckpoint(id, {
@@ -403,7 +464,7 @@ export async function executeEnrichment(
     if (invocation.functionId === ENRICHMENT.setup) {
       await exa().check();
       const input = invocation.input as { previousVersion?: string | null };
-      const mapping = (await sdk.extension(id)).mapping;
+      const mapping = (await readCompanyBinding(sdk, invocation))?.mapping;
       const previous = await sdk.extensionKv(id, 'mappedOutputs');
       const keys = mapping?.outputs.filter((o) => o.action !== 'skip').map((o) => o.output) ?? [];
       if (
@@ -432,8 +493,9 @@ export async function executeEnrichment(
     const change = await sdk.change(input.data.changePosition);
     if (!change.recordId || !['create', 'update'].includes(change.operation))
       return done('not_applicable');
-    const mapping = (await sdk.extension(id)).mapping;
-    if (!mapping) return { status: 'failed', code: 'mapping_required' };
+    const binding = await readCompanyBinding(sdk, invocation);
+    if (!binding) return { status: 'failed', code: 'binding_unavailable' };
+    const { mapping } = binding;
     const bound = mapping.outputs.filter((output) => output.action !== 'skip');
     if (
       mapping.lookup?.status !== 'ok' ||
@@ -457,12 +519,11 @@ export async function executeEnrichment(
       (output) => output.field && !Object.hasOwn(record.fields, output.field.name),
     );
     if (!open.length) return done('nothing_to_fill');
-    const company = (await sdk.schema()).objects.find((o) => o.baseObject === 'company');
     return done(
       await fill(
         { sdk, installationId: id, exa: exa(), model, signal },
         mapping,
-        { ...record, name: companyName(company, record) },
+        { ...record, name: boundCompanyName(binding.nameField, record) },
         domain,
         open,
       ),

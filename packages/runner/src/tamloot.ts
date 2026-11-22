@@ -8,7 +8,7 @@ import {
   retryLaterResult,
 } from '@retainer/extension';
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
-import { BASE_EVENT_TYPE_IDS, type SourceScan, sourceScanSchema } from '@retainer/shared';
+import { type SourceScan, sourceScanSchema } from '@retainer/shared';
 import { z } from 'zod';
 import { apiFetch, transient } from './outcome.js';
 import {
@@ -280,10 +280,13 @@ async function importSession(
   id: string,
   provider: TamlootProvider,
   itemId: string,
+  approvedBindings?: Invocation['bindings'],
 ) {
+  const bindings = approvedBindings ?? (await sdk.extensionBindings(id));
+  const syncTasks = bindings.bindings.task?.status === 'ok';
   const item = await sdk.sourceItem(id, itemId);
   if (['deleted', 'retracted'].includes(item.state)) {
-    await tasks(sdk, id, itemId, item.revisionId, item.taskWriteRevision, [], true);
+    if (syncTasks) await tasks(sdk, id, itemId, item.revisionId, item.taskWriteRevision, [], true);
     return;
   }
   let session: z.infer<typeof tamlootSession>['data'], snapshot: z.infer<typeof tamlootTasks>;
@@ -293,14 +296,16 @@ async function importSession(
     ).data;
     if (session.id !== item.externalId) throw new TamlootError('provider_identity_mismatch');
     if (session.recording_status !== 'completed') return;
-    snapshot = await provider.request('/v1/tasks', tamlootTasks, { session_id: session.id });
+    snapshot = syncTasks
+      ? await provider.request('/v1/tasks', tamlootTasks, { session_id: session.id })
+      : { data: [] };
   } catch (error) {
     if (!(error instanceof TamlootError) || error.code !== 'provider_session_deleted') throw error;
     await sdk.markSourceUnavailable(id, itemId, {
       status: 'deleted',
       evidence: 'definitive_lookup',
     });
-    await tasks(sdk, id, itemId, item.revisionId, item.taskWriteRevision, [], true);
+    if (syncTasks) await tasks(sdk, id, itemId, item.revisionId, item.taskWriteRevision, [], true);
     return;
   }
   const participants = tamlootParticipants(session);
@@ -314,14 +319,14 @@ async function importSession(
     providerRevision: session.revision,
     expectedRevisionId: item.revisionId,
     event: {
-      type: BASE_EVENT_TYPE_IDS.conversation,
+      binding: 'meeting',
       occurredAt: session.session_date,
       title: session.title ?? 'Tamloot meeting',
       summary: tamlootSummary(session.notes),
       participants,
     },
   });
-  if (result.stale) return;
+  if (result.stale || !syncTasks) return;
   await tasks(
     sdk,
     id,
@@ -449,6 +454,7 @@ export async function executeTamloot(
           id,
           provider,
           z.strictObject({ sourceItemId: z.uuid() }).parse(invocation.input).sourceItemId,
+          invocation.bindings,
         );
       return { status: 'succeeded' };
     },
