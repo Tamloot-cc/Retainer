@@ -34,9 +34,7 @@ type InstallationRow = {
 export async function installedTools(tx: Tx, catalog: RuntimeCatalog): Promise<InstalledTool[]> {
   const rows = await tx<InstallationRow[]>`
     select i.id,i.registration_id,i.version,i.release_digest,i.state,i.connection_health,i.granted_uses,
-      exists(select 1 from extension_credentials c where c.installation_id=i.id
-        and c.generation=i.grant_generation and c.revoked_at is null and not c.pending
-        and (c.kind='key' or retainer_extension_oauth_client_active(c.client_id))) as credential,
+      retainer_extension_credential_live(i.workspace_id,i.id,i.grant_generation) as credential,
       retainer_extension_secret_names(i.id) as secret_names
     from extension_installations i where i.state='active' order by i.created_at,i.id`;
   const tools: InstalledTool[] = [];

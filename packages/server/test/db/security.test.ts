@@ -330,6 +330,7 @@ describe('SECURITY DEFINER functions', () => {
     retainer_connection_secret_names: RUNTIME_ROLE,
     retainer_adopt_member_secret: RUNTIME_ROLE,
     retainer_retire_member_secrets: RUNTIME_ROLE,
+    // Run admission also rechecks standalone tool credentials under the registration lock.
     retainer_admit_secret_run: 'retainer_secret_broker',
     // A standalone app's own credential writes its generated secrets (extensions spec 8).
     retainer_admit_secret_installation: 'retainer_secret_broker',

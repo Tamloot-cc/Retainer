@@ -1588,6 +1588,8 @@ export class Extensions {
    * has no single registered origin shows no link.
    */
   async appLinks(caller: Caller): Promise<{ links: ExtensionAppLink[] }> {
+    if (caller.run || caller.installation)
+      throw forbidden('runtime credentials cannot list sidebar app links');
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       const rows = await tx<Row[]>`select * from extension_installations
         where state='active' order by created_at,id`;

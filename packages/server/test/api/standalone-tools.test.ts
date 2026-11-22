@@ -1,6 +1,8 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { executeRoutine } from '@retainer/runner/routine';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { inWorkspace } from '../../src/db/tx.js';
+import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.js';
 import type { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
@@ -41,43 +43,47 @@ const setting = (generated: boolean) => ({
   ...(generated ? { generated: true } : {}),
 });
 
-async function setup() {
+async function setup(execution: 'standalone' | 'hosted' = 'standalone') {
   const toolId = randomUUID();
+  const jobId = randomUUID();
   const manifest = extensionFixture({
-    execution: 'standalone',
+    execution,
     scopes: ['read', 'write'],
     settings: { toolKey: setting(true), providerKey: setting(false) },
-    schema: [
-      {
-        kind: 'object',
-        definition: {
-          universalId: randomUUID(),
-          nameSingular: 'order',
-          namePlural: 'orders',
-          labelSingular: 'Order',
-          labelPlural: 'Orders',
-          labelField: 'title',
-          fields: [
+    schema:
+      execution === 'hosted'
+        ? []
+        : [
             {
-              universalId: randomUUID(),
-              name: 'orderId',
-              label: 'Order ID',
-              type: 'text',
-              isUnique: true,
-              installationOwned: true,
+              kind: 'object',
+              definition: {
+                universalId: randomUUID(),
+                nameSingular: 'order',
+                namePlural: 'orders',
+                labelSingular: 'Order',
+                labelPlural: 'Orders',
+                labelField: 'title',
+                fields: [
+                  {
+                    universalId: randomUUID(),
+                    name: 'orderId',
+                    label: 'Order ID',
+                    type: 'text',
+                    isUnique: true,
+                    installationOwned: true,
+                  },
+                  {
+                    universalId: randomUUID(),
+                    name: 'title',
+                    label: 'Title',
+                    type: 'text',
+                    installationOwned: true,
+                  },
+                  { universalId: randomUUID(), name: 'note', label: 'Note', type: 'text' },
+                ],
+              },
             },
-            {
-              universalId: randomUUID(),
-              name: 'title',
-              label: 'Title',
-              type: 'text',
-              installationOwned: true,
-            },
-            { universalId: randomUUID(), name: 'note', label: 'Note', type: 'text' },
           ],
-        },
-      },
-    ],
     functions: [
       {
         universalId: toolId,
@@ -93,6 +99,16 @@ async function setup() {
           connection: 'workspace',
           outputSchema: { type: 'object', additionalProperties: false },
         },
+        inputSchema: { type: 'object', additionalProperties: false },
+      },
+      {
+        universalId: jobId,
+        name: 'maintain-slots',
+        description: 'Maintains open times.',
+        handlerDigest: 'c'.repeat(64),
+        timeoutSeconds: 60,
+        secrets: ['toolKey'],
+        trigger: { kind: 'job' },
         inputSchema: { type: 'object', additionalProperties: false },
       },
     ],
@@ -121,12 +137,21 @@ async function setup() {
     headers: { 'Idempotency-Key': randomUUID() },
   });
   expect(installed.status, JSON.stringify(installed.body)).toBe(201);
-  // Standalone: active on approval, with no setup job.
-  expect(installed.body.state).toBe('active');
   const installationId = installed.body.id as string;
-  expect(
-    await db.owner`select 1 from extension_jobs where installation_id=${installationId}`,
-  ).toHaveLength(0);
+  const queue = new ExtensionQueue(app.sql, catalog.runtime);
+  const claim = (id: string) => queue.claim(workspace.id, id, 'test-executor');
+  const jobs = await db.owner<
+    { id: string }[]
+  >`select id from extension_jobs where installation_id=${installationId}`;
+  if (execution === 'hosted') {
+    expect(installed.body.state).toBe('installing');
+    const setupJob = jobs[0] && (await claim(jobs[0].id));
+    if (!setupJob) throw new Error('setup job not claimed');
+    await queue.complete(setupJob, { status: 'succeeded' });
+  } else {
+    expect(installed.body.state).toBe('active');
+    expect(jobs).toHaveLength(0);
+  }
   const issue = async () => {
     const [row] = await db.owner<{ grant_generation: number }[]>`
       select grant_generation from extension_installations where id=${installationId}`;
@@ -143,6 +168,29 @@ async function setup() {
       method: 'PUT',
       body: { expectedRevision, value: `https://app.test|${randomUUID()}` },
     });
+  const revoke = async (credentialId: string) => {
+    const response = await app.request(
+      `/v1/extensions/${installationId}/credentials/${credentialId}`,
+      { key: keys.admin, method: 'DELETE' },
+    );
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+  };
+  const enqueue = async (kind: 'tool' | 'job') => {
+    const id = randomUUID();
+    await db.owner`insert into extension_jobs
+      (id,workspace_id,installation_id,generation,release_digest,function_id,trigger_kind,input,input_hash,dedupe_key)
+      select ${id},workspace_id,id,generation,release_digest,${kind === 'tool' ? toolId : jobId},${kind},'{}',${id},${id}
+      from extension_installations where id=${installationId}`;
+    return id;
+  };
+  const secret = {
+    workspaceId: workspace.id,
+    installationId,
+    registrationId: manifest.universalId,
+    name: 'toolKey',
+  };
+  const readSecret = (key: string) =>
+    app.request(`/v1/extensions/${installationId}/runtime/secrets/toolKey`, { key });
   const toolStatus = async () => {
     const capabilities = await app.request('/v1/routines/capabilities', { key: keys.admin });
     expect(capabilities.status, JSON.stringify(capabilities.body)).toBe(200);
@@ -157,6 +205,11 @@ async function setup() {
     keys,
     installationId,
     issue,
+    revoke,
+    claim,
+    enqueue,
+    secret,
+    readSecret,
     writeSecret,
     toolStatus,
   };
@@ -311,6 +364,133 @@ describe('standalone app with a hosted tool', () => {
       body: { values: { name: 'Globex' } },
     });
     expect(asAdmin.status).toBe(400);
+  });
+});
+
+describe('standalone tool admission', () => {
+  it('cancels a queued tool after the last credential is revoked', async () => {
+    const s = await setup();
+    const credential = await s.issue();
+    expect((await s.writeSecret(credential.key, null)).status).toBe(200);
+    expect(await s.toolStatus()).toBe('ready');
+    const id = await s.enqueue('tool');
+    await s.revoke(credential.id);
+
+    expect(await s.claim(id)).toBeNull();
+    expect(await db.owner`select status,code,attempt from extension_jobs where id=${id}`).toEqual([
+      { status: 'cancelled', code: 'connection_required', attempt: 0 },
+    ]);
+    expect(await s.claim(id)).toBeNull();
+  });
+
+  it('refuses a claimed tool secret after the last credential is revoked', async () => {
+    const s = await setup();
+    const credential = await s.issue();
+    expect((await s.writeSecret(credential.key, null)).status).toBe(200);
+    const run = await s.claim(await s.enqueue('tool'));
+    if (!run) throw new Error('tool not claimed');
+    const token = await tokens.issue(s.app.sql, run, run.registrationId, ['read']);
+    const before = await s.readSecret(token);
+    expect(before.status).toBe(200);
+    expect(before.body.value).toContain('https://app.test');
+
+    await s.revoke(credential.id);
+
+    const refused = await s.readSecret(token);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.code).toBe('installation_disabled');
+    expect(refused.body).not.toHaveProperty('value');
+  });
+
+  it('admits a standalone non-tool job after revocation', async () => {
+    const s = await setup();
+    const credential = await s.issue();
+    expect((await s.writeSecret(credential.key, null)).status).toBe(200);
+    await s.revoke(credential.id);
+    const run = await s.claim(await s.enqueue('job'));
+    if (!run) throw new Error('job not claimed');
+    expect(await broker.readRuntime(s.secret, run)).toMatchObject({ revision: 1 });
+  });
+
+  it('admits a hosted tool without any installation credential', async () => {
+    const s = await setup('hosted');
+    const run = await s.claim(await s.enqueue('tool'));
+    if (!run) throw new Error('tool not claimed');
+    await broker.writeRuntime(s.secret, run, null, 'hosted tool secret');
+    expect(await broker.readRuntime(s.secret, run)).toEqual({
+      revision: 1,
+      value: 'hosted tool secret',
+    });
+  });
+
+  it('serializes revoke against broker admission and queue claim', async () => {
+    const s = await setup();
+    const credential = await s.issue();
+    expect((await s.writeSecret(credential.key, null)).status).toBe(200);
+    const run = await s.claim(await s.enqueue('tool'));
+    if (!run) throw new Error('tool not claimed');
+    const queued = await s.enqueue('tool');
+    const registrationKey = `${s.workspace}:${run.registrationId}`;
+    const waitForBlocked = (count: number) =>
+      vi.waitFor(async () => {
+        const [locks] = await db.owner<{ waiting: number }[]>`
+          select count(*)::int as waiting from pg_locks
+          where locktype='advisory' and classid=21061 and objsubid=2
+            and objid=hashtext(${registrationKey})::oid and not granted`;
+        expect(locks?.waiting).toBe(count);
+      });
+
+    const { outcomes } = await inWorkspace(
+      db.connect({ role: 'retainer_secret_broker' }),
+      s.workspace,
+      async (tx) => {
+        // Hold the locks of a successful admission while revocation queues behind it.
+        const [admission] = await tx<{ admitted: boolean }[]>`select retainer_admit_secret_run(
+          ${run.registrationId}::uuid,${run.installationId}::uuid,${run.generation},${run.jobId}::uuid,
+          ${run.owner},${run.fence}::bigint,${run.releaseDigest},${run.functionId}::uuid,'toolKey',false) as admitted`;
+        expect(admission?.admitted).toBe(true);
+        const revoke = Promise.allSettled([s.revoke(credential.id)]);
+        await waitForBlocked(1);
+        const outcomes = Promise.all([
+          revoke,
+          Promise.allSettled([s.claim(queued)]),
+          Promise.allSettled([broker.readRuntime(s.secret, run)]),
+        ]);
+        await waitForBlocked(3);
+        return { outcomes };
+      },
+    );
+    expect(await outcomes).toEqual([
+      [{ status: 'fulfilled', value: undefined }],
+      [{ status: 'fulfilled', value: null }],
+      [{ status: 'rejected', reason: expect.objectContaining({ code: 'installation_disabled' }) }],
+    ]);
+    await expect(broker.readRuntime(s.secret, run)).rejects.toMatchObject({
+      code: 'installation_disabled',
+    });
+    expect(await db.owner`select status,code from extension_jobs where id=${queued}`).toEqual([
+      { status: 'cancelled', code: 'connection_required' },
+    ]);
+  });
+});
+
+describe('sidebar link credentials', () => {
+  it('forbids installation credentials with read scope', async () => {
+    const s = await setup();
+    const { key } = await s.issue();
+    const response = await s.app.request('/v1/extensions/links', { key });
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe('forbidden');
+  });
+
+  it('forbids hosted run tokens with read scope', async () => {
+    const s = await setup('hosted');
+    const run = await s.claim(await s.enqueue('tool'));
+    if (!run) throw new Error('tool not claimed');
+    const key = await tokens.issue(s.app.sql, run, run.registrationId, ['read']);
+    const response = await s.app.request('/v1/extensions/links', { key });
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe('forbidden');
   });
 });
 

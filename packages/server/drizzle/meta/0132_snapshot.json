@@ -3419,6 +3419,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "run_requires_credential": {
+          "name": "run_requires_credential",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "status": {
           "name": "status",
           "type": "text",
