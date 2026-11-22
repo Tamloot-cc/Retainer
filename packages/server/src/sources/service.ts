@@ -19,7 +19,14 @@ import { logEvent, retractEventClaims } from '../memory/events.js';
 import { isEventIdentitySuppressed, isSuppressed, suppressedOf } from '../privacy/suppression.js';
 import { withRead, withWrite } from '../records/service.js';
 import { normalizeFieldValue, prepareValues } from '../records/values.js';
-import { insertRecord, markDeleted, type WriteContext, writeFields } from '../records/write.js';
+import {
+  insertRecord,
+  lockRecordsForUpdate,
+  markDeleted,
+  refuseOwnedRecordChange,
+  type WriteContext,
+  writeFields,
+} from '../records/write.js';
 import { getSchema } from '../schema/compiled.js';
 import {
   prepareSourceSchema,
@@ -543,7 +550,9 @@ export class Sources {
         let invalidated = emptyInvalidation();
         const retract = input.status === 'deleted' && manifest.onSourceDelete === 'retract';
         if (retract && current) {
-          await tx`select id from records where id=${current.event_id} for update`;
+          const [event] = await lockRecordsForUpdate(tx, caller.workspaceId, [current.event_id]);
+          if (event && !event.deleted_at)
+            await refuseOwnedRecordChange(tx, context, [event], 'delete');
           await context.changes?.capture(tx, current.event_id, 'retract');
           await markDeleted(tx, context, [current.event_id]);
           invalidated = await retractEventClaims(tx, context, [current.event_id]);

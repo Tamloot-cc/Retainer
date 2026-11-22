@@ -13,7 +13,7 @@ import { createFileServer, LocalFileStorage } from '../../src/file-storage/local
 import { requestHash } from '../../src/idempotency.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { extensionFixture } from '../helpers/extensions.js';
+import { bindingStamp, extensionFixture } from '../helpers/extensions.js';
 import { sourceTestBindings } from '../helpers/source-bindings.js';
 
 const db = useTestDatabase();
@@ -1475,6 +1475,110 @@ describe('managed source evidence with real RLS Postgres', () => {
         .code,
     ).toBe('source_retracted');
   });
+  it('leaves the source item and event intact when another installation owns a unique field', async () => {
+    const publisher = extensionFixture({
+      execution: 'standalone',
+      scopes: ['read', 'write'],
+      bindings: [
+        {
+          key: 'conversation',
+          label: 'Conversations',
+          description: 'A unique app reference.',
+          class: 'event',
+          access: 'write',
+          required: true,
+          fields: [
+            {
+              key: 'reference',
+              label: 'App reference',
+              types: ['text'],
+              required: true,
+              owned: true,
+              installationOwned: true,
+              create: {
+                universalId: randomUUID(),
+                name: 'reference',
+                label: 'App reference',
+                type: 'text',
+                isUnique: true,
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const h = await setup('never', true, 'retract', publisher);
+    const item = await h.item();
+    const imported = await h.sync(item.key, item.itemId, '1', null);
+    expect(imported.status, JSON.stringify(imported.body)).toBe(200);
+    const input = {
+      registrationId: publisher.universalId,
+      version: publisher.version,
+      settings: {},
+    };
+    const reviewed = await h.app.request('/v1/extensions/preview', {
+      key: h.keys.admin,
+      body: input,
+    });
+    expect(reviewed.status, JSON.stringify(reviewed.body)).toBe(200);
+    const installed = await h.app.request('/v1/extensions', {
+      key: h.keys.admin,
+      body: { ...input, planDigest: reviewed.body.planDigest },
+      headers: { 'Idempotency-Key': randomUUID() },
+    });
+    expect(installed.status, JSON.stringify(installed.body)).toBe(201);
+    const ownerPath = `/v1/extensions/${installed.body.id}`;
+    const credential = await h.app.request(`${ownerPath}/keys`, {
+      key: h.keys.admin,
+      body: { expectedGeneration: installed.body.generation, scopes: ['read', 'write'] },
+    });
+    expect(credential.status).toBe(201);
+    const key = credential.body.key;
+    const plan = await h.app.request(`${ownerPath}/bindings`, { key });
+    const ownedEvent = await h.app.request('/v1/events', {
+      key,
+      body: {
+        type: 'conversation',
+        channel: 'ownership-fixture',
+        occurredAt: '2026-11-10T10:00:00Z',
+        fields: { reference: 'external-reference' },
+        bindings: bindingStamp(plan.body, 'conversation'),
+      },
+    });
+    expect(ownedEvent.status, JSON.stringify(ownedEvent.body)).toBe(201);
+    const eventId = ownedEvent.body.id;
+    // Model an existing owned event that is also a managed source revision.
+    // Public writes keep a managed revision immutable once it is linked.
+    await db.owner`update source_revisions set event_id=${eventId} where id=${imported.body.revisionId}`;
+    const state = () => db.owner`
+      select s.state, r.deleted_at from source_items s join source_revisions v on v.item_id=s.id
+      join records r on r.id=v.event_id where s.id=${item.itemId} and v.is_current`;
+    const before = await state();
+    const retract = () =>
+      h.app.request(`${h.base}/source-items/${item.itemId}/unavailable`, {
+        key: item.key,
+        body: { status: 'deleted', evidence: 'definitive_lookup' },
+      });
+    const refused = await retract();
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+    expect(refused.body.error.code).toBe('installation_owned');
+    expect(await state()).toEqual(before);
+    expect(
+      (await h.app.request(`/v1/events/${eventId}`, { key: h.keys.admin })).body.fields.reference,
+    ).toBe('external-reference');
+    expect(
+      (
+        await h.app.request(`${ownerPath}/uninstall`, {
+          key: h.keys.admin,
+          method: 'POST',
+        })
+      ).body.state,
+    ).toBe('uninstalled');
+    const retried = await retract();
+    expect(retried.status, JSON.stringify(retried.body)).toBe(200);
+    expect(retried.body.state).toBe('retracted');
+  });
+
   it('purges all managed-source stores with a workspace while preserving pending byte erasure', async () => {
     const h = await setup(),
       s = await h.item();
