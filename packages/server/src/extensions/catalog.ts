@@ -29,7 +29,8 @@ export class ExtensionCatalog {
     const actors = new Map<string, string>();
     const connections = new Map<string, string>();
     const locators = new Map<string, string>();
-    const clients = new Map<string, string>();
+    const clients = new Map<string, string>(),
+      clientOwners = new Map<string, string>();
     for (const release of releases) {
       const manifest = defineExtension(release.manifest);
       const connection = connections.get(manifest.universalId);
@@ -51,7 +52,14 @@ export class ExtensionCatalog {
         const prior = clients.get(manifest.universalId);
         if (prior && prior !== manifest.oauthClientId)
           throw new Error('registration OAuth client cannot change across releases');
+        // One registration per client: a workspace has one installation per
+        // registration, so a client names at most one installation in it,
+        // which app sign-in's token exchange relies on (extensions spec 8).
+        const owner = clientOwners.get(manifest.oauthClientId);
+        if (owner && owner !== manifest.universalId)
+          throw new Error('an OAuth client belongs to one registration');
         clients.set(manifest.universalId, manifest.oauthClientId);
+        clientOwners.set(manifest.oauthClientId, manifest.universalId);
       }
       const priorActor = actors.get(manifest.universalId);
       if (priorActor && priorActor !== release.actorCeiling)

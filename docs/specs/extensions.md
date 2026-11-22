@@ -568,7 +568,9 @@ the app's page inside Retainer's own page can come later and reuse the same
 identity.
 
 Accounts-mode manifests pin `oauthClientId` into the reviewed release digest;
-the same registration cannot switch to a different client across releases.
+the same registration cannot switch to a different client across releases,
+and no two registrations pin the same client, so a client names at most one
+installation in a workspace.
 Clients explicitly register the `/v1` resource; ordinary registrations keep
 their MCP resource default. Consent lists only active matching installations
 in workspaces the person administers. The approval names a current grant generation

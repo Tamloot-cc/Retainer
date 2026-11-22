@@ -116,6 +116,19 @@ describe('release-owned catalog', () => {
     expect(() => defineExtension({ ...initial, execution: 'hosted' })).toThrow();
     expect(() => defineExtension({ ...initial, oauthClientId: ' ' })).toThrow();
   });
+  it('refuses two registrations that pin the same OAuth client', () => {
+    const initial = { ...manifest(), oauthClientId: 'registered-client' };
+    expect(
+      () =>
+        new ExtensionCatalog([
+          { manifest: initial, actorCeiling: 'integration' },
+          {
+            manifest: { ...initial, universalId: '0c6f2b8e-3d55-4a4f-9a3e-7b1d2c4e5f60' },
+            actorCeiling: 'integration',
+          },
+        ]),
+    ).toThrow('an OAuth client belongs to one registration');
+  });
 });
 
 it('keeps a registration connection mode immutable across releases', () => {
