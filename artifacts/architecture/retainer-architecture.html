@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html><html lang="en"><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Retainer Architecture</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -513,7 +513,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
       </div>
       <p class="note">Privacy lock first, then schema (<code>lockForWrite</code> in <code>db/tx.ts</code>), the same order extension imports use.</p>
     </div>
-    <div class="chain" aria-label="Participant resolution">
+    <div class="chain">
       <div class="node o">Handle<small><code>Dana@Acme.com</code></small></div>
       <span class="arr">→</span>
       <div class="node t">Normalize<small>lowercase email, E.164 phone</small></div>
@@ -533,7 +533,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
     <div class="zoom"><span>Concept</span><span>System</span><span>Data</span><span class="on">Rules</span><span>Code</span></div>
     <h2>Who wins a field</h2>
     <p class="prose">First by who wrote it, then by when it was true at the source. The server sets that time: the cited event's time, or the write time.</p>
-    <div class="ladder" aria-label="Precedence: user, then integration, then agent, then system">
+    <div class="ladder">
       <div class="rung r1"><b>user</b><small>a person</small></div><span class="gt">&gt;</span>
       <div class="rung r2"><b>integration</b><small>a sync or standalone app</small></div><span class="gt">&gt;</span>
       <div class="rung"><b>agent</b><small>an AI agent's key</small></div><span class="gt">&gt;</span>
@@ -721,7 +721,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
 
     <h3>How a context pack fills its budget</h3>
     <div class="figure">
-      <div class="budget" aria-label="Context pack: current field values always, then linked records, facts and recent events take turns">
+      <div class="budget">
         <div class="f">Field values (always)</div>
         <div class="t">Linked records</div>
         <div class="fa">Current facts</div>
@@ -789,7 +789,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
         </ul>
       </div>
     </div>
-    <div class="chain" aria-label="Merge B into A">
+    <div class="chain">
       <div class="node t">Lock A and B<small><code>FOR UPDATE</code>, sorted IDs</small></div>
       <span class="arr">→</span>
       <div class="node t">Move B's claims<small>assertions, facts, links, comments, participant matches</small></div>
@@ -880,7 +880,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
         </tbody>
       </table>
     </div>
-    <div class="stack" aria-label="Server layers from top to bottom">
+    <div class="stack">
       <div class="layer"><div class="name">Entry<small>start the server, CLI, Lambda</small></div><div class="tags"><span class="tag">index</span><span class="tag">cli</span><span class="tag">lambda</span><span class="tag">egress-proxy</span><span class="tag">extension-launcher</span><span class="tag">file-server</span></div></div>
       <div class="layer"><div class="name">Interfaces<small>the ways in</small></div><div class="tags"><span class="tag">api</span><span class="tag">mcp</span><span class="tag">worker</span><span class="tag">operator</span><span class="tag">auth</span><span class="tag">http</span><span class="tag">accounts</span><span class="tag">egress</span><span class="tag">model</span><span class="tag">launcher</span><span class="tag">extension-control</span><span class="tag">webhooks</span></div></div>
       <div class="layer l-meta"><div class="name">Admin<small>schema, workspaces, extensions</small></div><div class="tags"><span class="tag">schema-engine</span><span class="tag">templates</span><span class="tag">workspaces</span><span class="tag">extensions</span><span class="tag">routines</span></div></div>
