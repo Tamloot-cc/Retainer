@@ -19,7 +19,6 @@ import { inWorkspace, jsonValue, lockPrivacyShared, lockSchemaShared, type Tx } 
 import { AppError, notFound } from '../errors.js';
 import { requestHash } from '../idempotency.js';
 import { getSchema } from '../schema/compiled.js';
-import { loadSchemaState } from '../schema/load.js';
 import { stableJson } from '../stable-json.js';
 import {
   type RuntimeCatalog,
@@ -38,7 +37,6 @@ import {
   sweepPartialReleases,
 } from './lifecycle.js';
 import { cancelRuns, failDisconnectCleanup, lockExtension, lockQueue } from './locks.js';
-import { type ContributionRow, retiredContributions } from './retired.js';
 
 export type Lease = {
   connectionId?: string | null;
@@ -637,48 +635,32 @@ export class ExtensionQueue {
         const manifest = this.runnableRelease(installation);
         if (!manifest) return { queued: 0, blocked: 0 };
         const schema = await getSchema(tx, workspace);
-        // Each change trigger with its object, when that object is live, and
-        // the keys of its watched fields. A watched field this workspace
-        // doesn't have, or deleted, is skipped: the trigger keeps watching the
-        // fields that remain. A deleted field keeps its key, so the schema
-        // change that deleted it still names it.
-        let handlers = manifest.functions.flatMap((fn) => {
+        const handlers = manifest.functions.flatMap((fn) => {
           if (fn.trigger.kind !== 'change') return [];
           const trigger = fn.trigger;
-          const destination = trigger.binding
-            ? installation.bindings?.destinations[trigger.binding]
-            : null;
-          const ids = trigger.binding ? (destination?.objects ?? []) : [trigger.objectId ?? ''];
-          const scoped = !!(trigger.fields?.length ?? trigger.fieldIds?.length);
-          const fieldIds = trigger.binding
-            ? (trigger.fields ?? []).flatMap((key) => {
-                const field = destination?.fields[key];
-                return field ? [field.id] : [];
-              })
-            : (trigger.fieldIds ?? []);
-          return ids.flatMap((id) => {
-            const found = schema.objectsByUniversalId.get(id);
-            const object = found?.state.status === 'active' && !found.hidden ? found : undefined;
-            const keys = (object?.state.fields ?? [])
-              .filter((field) => fieldIds.includes(field.universalId))
+          const destination = installation.bindings?.destinations[trigger.binding];
+          if (!destination) return [];
+          const scoped = !!trigger.fields?.length;
+          const fieldIds = new Set(
+            (trigger.fields ?? []).flatMap((key) => {
+              const field = destination.fields[key];
+              return field ? [field.id] : [];
+            }),
+          );
+          return destination.objects.flatMap((id) => {
+            const object = schema.objectsByUniversalId.get(id);
+            if (!object || object.hidden || object.state.status !== 'active')
+              throw conflict(
+                'binding_unavailable',
+                'The approved change trigger destination is unavailable.',
+              );
+            const keys = object.activeFields
+              .filter((field) => fieldIds.has(field.universalId))
               .map((field) => field.key);
-            if (scoped && !keys.length && object) return [];
+            if (scoped && !keys.length) return [];
             return [{ functionId: fn.universalId, trigger, object, keys, scoped }];
           });
         });
-        // A trigger on an object the installation contributed and the
-        // workspace deleted never fires, as the install plan promised; any
-        // other unresolved object still fails.
-        if (handlers.some((h) => !h.object)) {
-          const retired = retiredContributions(
-            await loadSchemaState(tx, workspace),
-            manifest,
-            await tx<
-              ContributionRow[]
-            >`select kind,universal_id,element_id,definition from extension_contributions where installation_id=${id}`,
-          );
-          handlers = handlers.filter((h) => h.object || !retired.has(h.trigger.objectId ?? ''));
-        }
         if (!handlers.length) return { queued: 0, blocked: 0 };
         const [checkpoint] = await tx<
           { position: string; generation: number; trigger_starts: Record<string, string> }[]
@@ -740,11 +722,6 @@ export class ExtensionQueue {
               for (const { functionId, trigger, object, keys, scoped } of handlers) {
                 if (BigInt(row.position) <= BigInt(checkpoint.trigger_starts[functionId] ?? '0'))
                   continue;
-                if (!object)
-                  throw conflict(
-                    'schema_binding_conflict',
-                    'change trigger object binding is unavailable',
-                  );
                 // A field-scoped trigger reacts to updates, reviews and
                 // schema changes only when one of its fields is named. A
                 // trigger listing its operations fires only on those, and on
@@ -806,7 +783,7 @@ export class ExtensionQueue {
           await tx`update extension_installations set last_error=${deferred},connection_health='degraded' where id=${id}`;
         else if (!cycles)
           await tx`update extension_installations set connection_health='ok',last_error=null where id=${id}
-        and last_error in ('quota_exceeded','trigger_throttled','cursor_expired','schema_binding_conflict','dispatch_unavailable')
+        and last_error in ('quota_exceeded','trigger_throttled','cursor_expired','binding_unavailable','dispatch_unavailable')
         and not exists(select 1 from extension_jobs where installation_id=${id} and generation=${installation.generation} and status='failed')`;
         return {
           queued,
@@ -828,7 +805,7 @@ export class ExtensionQueue {
             await lockExtension(tx, workspace, current.registration_id, true);
             const code =
               error instanceof AppError &&
-              ['quota_exceeded', 'cursor_expired', 'schema_binding_conflict'].includes(error.code)
+              ['quota_exceeded', 'cursor_expired', 'binding_unavailable'].includes(error.code)
                 ? error.code
                 : 'dispatch_unavailable';
             await tx`update extension_installations set connection_health='degraded',last_error=${code} where id=${id} and generation=${failedGeneration} and state='active'`;

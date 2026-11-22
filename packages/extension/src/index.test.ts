@@ -69,6 +69,7 @@ describe('strict extension contracts', () => {
   it('bounds change handlers to a local feed position and refuses caller-supplied record bodies', () => {
     const input = {
       ...fixture(),
+      bindings: sourceBindings,
       functions: [
         {
           universalId: 'f3f3e359-61f7-4115-9dc9-63d9184c2070',
@@ -77,8 +78,8 @@ describe('strict extension contracts', () => {
           handlerDigest: 'b'.repeat(64),
           trigger: {
             kind: 'change',
-            objectId: 'e449a44f-0b0e-4c43-981c-f50fe507a6a7',
-            fieldIds: [],
+            binding: 'event',
+            fields: [],
           },
           inputSchema: {
             type: 'object',
@@ -562,11 +563,12 @@ describe('member connection manifests', () => {
     for (const trigger of [
       { kind: 'route', route: 'callback' },
       { kind: 'serverRoute', route: 'callback' },
-      { kind: 'change', objectId: randomUUID(), fieldIds: [] },
+      { kind: 'change', binding: 'event', fields: [] },
     ])
       expect(() =>
         defineExtension({
           ...member(),
+          bindings: sourceBindings,
           functions: [hook('connect'), { ...hook('install'), name: 'watch', trigger }],
         }),
       ).toThrow('change or route');

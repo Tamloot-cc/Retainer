@@ -156,6 +156,14 @@ export function parseExtensionCatalog(raw?: string): ExtensionCatalog {
       if (manifest && typeof manifest === 'object') {
         if ('mapping' in manifest) return [];
         if (
+          'functions' in manifest &&
+          Array.isArray(manifest.functions) &&
+          manifest.functions.some(
+            (fn) => fn?.trigger?.kind === 'change' && 'objectId' in fn.trigger,
+          )
+        )
+          return [];
+        if (
           'source' in manifest &&
           manifest.source &&
           typeof manifest.source === 'object' &&

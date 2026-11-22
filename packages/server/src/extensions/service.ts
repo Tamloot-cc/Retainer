@@ -667,9 +667,6 @@ export class Extensions {
     const targets = [
       ...manifest.schema.map((c) => (c.kind === 'object' ? c.definition.universalId : c.objectId)),
       ...manifest.views.flatMap((v) => ('objectId' in v ? [v.objectId] : [])),
-      ...manifest.functions.flatMap((f) =>
-        f.trigger.kind === 'change' && f.trigger.objectId ? [f.trigger.objectId] : [],
-      ),
     ];
     const relationTargets = manifest.schema.flatMap((c) =>
       (c.kind === 'object' ? c.definition.fields : [c.definition]).flatMap((f) =>
@@ -810,18 +807,6 @@ export class Extensions {
     }
     // A change trigger needs its object. A watched field this workspace
     // doesn't have, or deleted, is skipped when changes are dispatched.
-    for (const fn of manifest.functions) {
-      if (fn.trigger.kind !== 'change' || !fn.trigger.objectId) continue;
-      const trigger = fn.trigger;
-      if (
-        !retired.has(trigger.objectId ?? '') &&
-        !planned.desired.objects.some((o) => o.universalId === trigger.objectId)
-      )
-        throw conflict(
-          'schema_binding_conflict',
-          `function ${fn.universalId} has unresolved schema identities`,
-        );
-    }
     const generation = existing?.generation ?? 0;
     const preview: ExtensionPreview = {
       planDigest: hash({
@@ -1156,7 +1141,7 @@ export class Extensions {
         bindings: StoredBindingPlan | null | undefined,
       ) => {
         if (trigger.kind !== 'change') return null;
-        const selected = trigger.binding ? bindings?.destinations[trigger.binding] : null;
+        const selected = bindings?.destinations[trigger.binding];
         return hash({
           trigger,
           objects: selected?.objects,

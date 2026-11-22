@@ -121,6 +121,7 @@ const toolTrigger = z.strictObject({
   connection: z.enum(['workspace', 'member']),
   outputSchema: inputSchema,
 });
+export const bindingKeySchema = z.string().regex(/^[a-z][a-zA-Z0-9_]{0,39}$/);
 const trigger = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('configure') }),
   z.strictObject({ kind: z.literal('install') }),
@@ -138,23 +139,16 @@ const trigger = z.discriminatedUnion('kind', [
   }),
   z.strictObject({
     kind: z.literal('change'),
-    objectId: uuid.optional(),
-    binding: name.optional(),
-    fields: z.array(name).max(200).optional(),
-    /**
-     * The fields whose changes fire an update, by universal ID; empty means
-     * every field. A field the workspace doesn't have, or deleted, is skipped
-     * and the trigger keeps watching the rest.
-     */
-    fieldIds: z.array(uuid).max(200).optional(),
+    binding: bindingKeySchema,
+    fields: z.array(bindingKeySchema).max(200).optional(),
     /**
      * Whether a change to a related record (a link to or from it, or a merge
      * into it) also fires the trigger. Absent means true, the first contract.
      */
     related: z.boolean().optional(),
     /**
-     * Only these direct operations fire it. With `fieldIds`, `update` still
-     * needs a watched field and `create` always fires. Absent means every
+     * Only these direct operations fire it. With `fields`, `update` still
+     * needs a watched field and `create` can fire. Absent means every
      * operation, the first contract.
      */
     operations: z
@@ -208,7 +202,6 @@ const toolDefinition = functionDefinition
   .omit({ trigger: true })
   .extend({ ...toolTrigger.omit({ kind: true }).shape, name: toolName });
 /** Field types a mapped output can target: scalar values only in v1. */
-export const bindingKeySchema = z.string().regex(/^[a-z][a-zA-Z0-9_]{0,39}$/);
 const bindingFieldSchema = z.strictObject({
   key: bindingKeySchema,
   label,
@@ -487,13 +480,7 @@ function checkFunction(fn: z.infer<typeof functionSchema>) {
       input.properties.changePosition.maxLength !== 19
     )
       throw new Error('unsupported_manifest: change handlers accept only a local changePosition');
-    if (
-      fn.trigger.binding
-        ? fn.trigger.objectId || fn.trigger.fieldIds
-        : !fn.trigger.objectId || !fn.trigger.fieldIds || fn.trigger.fields
-    )
-      throw new Error('unsupported_manifest: choose one binding for a change handler');
-    const watched = fn.trigger.fields ?? fn.trigger.fieldIds ?? [];
+    const watched = fn.trigger.fields ?? [];
     if (new Set(watched).size !== watched.length)
       throw new Error('unsupported_manifest: duplicate watched field');
     const operations = fn.trigger.operations ?? [];
