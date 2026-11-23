@@ -61,6 +61,10 @@ export async function recheckPerson(
     const [row] = await tx<{ workspace_id: string | null; role: string | null; user_id: string }[]>`
       select user_id, workspace_id, role from ${access}`;
     ok = row?.user_id === person.id && row.workspace_id === workspaceId && row.role !== null;
+  } else if (check.kind === 'cli') {
+    const [row] = await tx<{ role: string | null }[]>`
+      select role from retainer_cli_access(${check.userId}::uuid, 'retainer-cli', ${check.loginId}::uuid, ${workspaceId}::uuid)`;
+    ok = !!row?.role && check.userId === person.id;
   } else {
     const [row] = await tx<{ workspace_id: string; acts_for_user: string | null }[]>`
       select workspace_id, acts_for_user from retainer_lookup_api_key(${check.hash})`;

@@ -7,14 +7,34 @@ import {
 import { type Context, Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
+import { WORKSPACE_HEADER } from '../auth/account-session.js';
+import { allowsCliAccountRoute } from '../auth/cli-routes.js';
+import { bearerToken } from '../auth/middleware.js';
+import {
+  cliOAuthSettings,
+  tokenNamesAudience,
+  verifyAccountCliToken,
+} from '../auth/oauth-token.js';
 import { requireWebHeader } from '../auth/session.js';
+import { CLI_CLIENT_ID } from '../db/cli.js';
 import type { Sql } from '../db/client.js';
-import { AppError, forbidden } from '../errors.js';
+import { isUuid } from '../db/ids.js';
+import { AppError, forbidden, notFound } from '../errors.js';
 import { ExtensionCatalog } from '../extensions/catalog.js';
 import { idParam, readBody, zodError } from '../http/request.js';
 import { errorResponse, toAppError } from '../http/response.js';
 import { listTemplates } from '../templates/catalog.js';
-import { type Auth, CLIENT_IP_HEADER } from './auth.js';
+import { lockOrganization, lockWorkspaceOrganization } from '../workspaces/organizations.js';
+import { type AccountSession, type Auth, CLIENT_IP_HEADER } from './auth.js';
+import {
+  approvalForBrowser,
+  approvalStatus,
+  decideApproval,
+  endElevation,
+  openElevations,
+  startElevation,
+} from './cli-approvals.js';
+import { cliConsent, ensureCliClient, recordCliLogin, revokeCliLogin } from './cli-logins.js';
 import * as connections from './connections.js';
 import {
   AGENT_OAUTH_SCOPES,
@@ -26,6 +46,13 @@ import {
   installationRequest,
   recordAppSignIn,
 } from './extensions.js';
+import {
+  assertionSchema,
+  passkeyChange,
+  passkeyChangeOptions,
+  proofSchema,
+  removePasskey,
+} from './passkey-changes.js';
 import type { Person } from './people.js';
 import * as people from './people.js';
 import { linkPinnedResource, pinnedRequest } from './pinned.js';
@@ -44,7 +71,7 @@ const named = z.object({ name: z.string().max(200) });
 const role = z.object({ role: z.string() });
 export type AccountsEnv = {
   Bindings: Record<string, unknown>;
-  Variables: { person: Person };
+  Variables: { person: Person; session?: AccountSession };
 };
 
 export type AccountsDeps = {
@@ -60,11 +87,24 @@ export type AccountsDeps = {
 
 export function createAccountsApp(deps: AccountsDeps) {
   const app = new Hono<AccountsEnv>();
+  const { sql } = deps;
+  const cliResource = cliOAuthSettings(deps.publicOrigin).resource;
   const catalog = deps.extensionCatalog ?? new ExtensionCatalog();
   app.onError((error, c) => errorResponse(c, toAppError(error)));
   app.notFound((c) =>
     errorResponse(c, new AppError(404, 'not_found', `no route for ${c.req.method} ${c.req.path}`)),
   );
+
+  app.use('*', async (c, next) => {
+    const bearer = bearerToken(c.req.header('authorization'));
+    if (
+      bearer &&
+      tokenNamesAudience(bearer, cliResource) &&
+      !allowsCliAccountRoute(c.req.method, c.req.path)
+    )
+      throw forbidden('The Retainer CLI cannot call this route.');
+    await next();
+  });
 
   // Better Auth trusts only this header for the client's address, so a
   // value the client sent is replaced, never passed on.
@@ -84,11 +124,13 @@ export function createAccountsApp(deps: AccountsDeps) {
     }
     let request = new Request(c.req.raw, { headers: forwarded(c) });
     if (c.req.method === 'GET' && c.req.path === AUTHORIZE_PATH) {
+      const url = new URL(request.url);
+      const cli = cliConsent(url.search, deps.publicOrigin);
+      if (cli) await ensureCliClient(sql, deps.publicOrigin);
       // A request that names no scope gets the client's registered scopes
       // (the agent scopes for a client with none). Every registered client
       // may ask for the identity scopes, so they are left out: only an app
       // sign-in may ask for them, by name.
-      const url = new URL(request.url);
       if (!url.searchParams.has('scope')) {
         const [client] = await sql<{ scopes: string[] | null }[]>`
           select scopes from oauth_clients where client_id=${url.searchParams.get('client_id') ?? ''}`;
@@ -136,7 +178,7 @@ export function createAccountsApp(deps: AccountsDeps) {
         clients.length === 1 ? clients[0] : undefined,
         deps.publicOrigin,
       );
-      if (pinned) await linkPinnedResource(sql, pinned);
+      if (pinned && !cli) await linkPinnedResource(sql, pinned);
     }
     return deps.auth.handler(request);
   });
@@ -155,15 +197,172 @@ export function createAccountsApp(deps: AccountsDeps) {
   app.get('/account/providers', (c) => c.json({ providers: deps.auth.providers }));
 
   const account = new Hono<AccountsEnv>();
-  account.use('*', signedIn(deps));
-  const { sql } = deps;
-  account.get('/', async (c) =>
-    c.json({
-      ...(await describeAccount(sql, c.get('person'))),
+  const browserOnly = signedIn(deps);
+  account.use('*', async (c, next) => {
+    const authorization = c.req.header('authorization');
+    const bearer = bearerToken(authorization);
+    if (!bearer || !tokenNamesAudience(bearer, cliResource)) return browserOnly(c, next);
+    if (!allowsCliAccountRoute(c.req.method, c.req.path))
+      throw forbidden('The Retainer CLI cannot call this route.');
+    const identity = await verifyAccountCliToken(sql, bearer, cliOAuthSettings(deps.publicOrigin));
+    const [person] = await sql<{ id: string; name: string; email: string }[]>`
+      select u.id, u.name, u.email from cli_logins l
+      join users u on u.id=l.user_id and u.disabled_at is null
+      join oauth_clients cl on cl.client_id=${CLI_CLIENT_ID} and cl.disabled is not true
+      where l.id=${identity.loginId} and u.id=${identity.userId} and l.revoked_at is null`;
+    if (!person) throw new AppError(401, 'unauthorized', 'This CLI login has ended; log in again.');
+    const workspace = c.req.header(WORKSPACE_HEADER)?.toLowerCase();
+    const approvalId = c.req.header('x-retainer-approval')?.toLowerCase();
+    if ((workspace && !isUuid(workspace)) || (approvalId && !isUuid(approvalId)))
+      throw new AppError(400, 'invalid_request', 'Use IDs for the workspace and approval headers.');
+    const routeWorkspace = /^\/account\/workspaces\/([^/]+)/.exec(c.req.path)?.[1]?.toLowerCase();
+    if (
+      workspace &&
+      (routeWorkspace
+        ? workspace !== routeWorkspace
+        : c.req.path.startsWith('/account/organizations/'))
+    )
+      throw new AppError(
+        400,
+        'wrong_workspace',
+        'The workspace header does not match the route target.',
+      );
+    c.set('person', {
+      ...person,
+      cli: {
+        ...identity,
+        origin: deps.publicOrigin,
+        ...(workspace ? { workspace } : {}),
+        ...(approvalId ? { approvalId } : {}),
+      },
+    });
+    c.header('Cache-Control', 'no-store');
+    await next();
+  });
+  account.post('/passkeys/change-options', async (c) => {
+    const session = c.get('session');
+    if (!session) throw forbidden('Use Your account to manage passkeys.');
+    const change = await readBody(c, passkeyChange);
+    return c.json(
+      await passkeyChangeOptions(
+        sql,
+        { userId: session.user.id, sessionId: session.session.id },
+        change,
+        deps.publicOrigin,
+      ),
+    );
+  });
+  account.post('/passkeys/:id/remove', async (c) => {
+    const session = c.get('session');
+    if (!session) throw forbidden('Use Your account to manage passkeys.');
+    const proof = await readBody(c, proofSchema);
+    await removePasskey(
+      sql,
+      { userId: session.user.id, sessionId: session.session.id },
+      idParam(c),
+      proof,
+      deps.publicOrigin,
+    );
+    return c.body(null, 204);
+  });
+  account.post('/cli/approvals', async (c) => {
+    const person = c.get('person');
+    if (!person.cli) throw forbidden('Only a CLI login can start an elevation.');
+    const body = await readBody(
+      c,
+      z.strictObject({
+        workspaceId: z.uuid().optional(),
+        organizationId: z.uuid().optional(),
+        minutes: z.number().int().min(1).max(60).default(30),
+        reason: z.string().trim().max(1000).optional(),
+      }),
+    );
+    const { workspaceId, organizationId } = body;
+    if ((!workspaceId && !organizationId) || (workspaceId && organizationId))
+      throw new AppError(400, 'invalid_request', 'Choose one workspace or organization.');
+    if (person.cli.workspace && person.cli.workspace !== workspaceId)
+      throw new AppError(
+        400,
+        'wrong_workspace',
+        'The workspace header does not match the approval target.',
+      );
+    const identity = person.cli;
+    return c.json(
+      await sql.begin(async (tx) => {
+        if (workspaceId) {
+          await lockWorkspaceOrganization(tx, workspaceId);
+          await people.workspaceAccess(tx, person, workspaceId);
+          return startElevation(
+            tx,
+            identity,
+            { workspaceId },
+            body.minutes,
+            body.reason,
+            deps.publicOrigin,
+          );
+        }
+        if (!organizationId) throw notFound('organization');
+        await lockOrganization(tx, organizationId);
+        await people.requireOrganizationManager(tx, person, organizationId);
+        return startElevation(
+          tx,
+          identity,
+          { organizationId },
+          body.minutes,
+          body.reason,
+          deps.publicOrigin,
+        );
+      }),
+      201,
+    );
+  });
+  account.get('/cli/approvals/:id', async (c) => {
+    const person = c.get('person');
+    const id = idParam(c);
+    return c.json(
+      person.cli
+        ? await approvalStatus(sql, person.cli, id)
+        : await approvalForBrowser(sql, person.id, id, deps.publicOrigin),
+    );
+  });
+  account.post('/cli/approvals/:id/decide', async (c) => {
+    const session = c.get('session');
+    if (!session) throw forbidden('Open the approval in your browser.');
+    const { allow, assertion } = await readBody(
+      c,
+      z.strictObject({
+        allow: z.boolean(),
+        assertion: assertionSchema.optional(),
+      }),
+    );
+    return c.json(
+      await decideApproval(sql, session, idParam(c), allow, deps.publicOrigin, assertion),
+    );
+  });
+  account.post('/cli/approvals/:id/end', async (c) => {
+    const person = c.get('person');
+    await endElevation(sql, person.id, idParam(c), person.cli?.loginId);
+    return c.body(null, 204);
+  });
+  account.delete('/cli/login', async (c) => {
+    const { cli } = c.get('person');
+    if (!cli) throw forbidden('Only a CLI login can log itself out here.');
+    await revokeCliLogin(sql, cli);
+    return c.body(null, 204);
+  });
+  account.get('/', async (c) => {
+    const person = c.get('person');
+    const [account, elevations] = await Promise.all([
+      describeAccount(sql, person),
+      openElevations(sql, person.id, person.cli?.loginId),
+    ]);
+    return c.json({
+      ...account,
       providers: deps.auth.providers,
+      ...(person.cli || elevations.length ? { elevations } : {}),
       ...(deps.hostedOnboarding ? { hostedOnboarding: true } : {}),
-    }),
-  );
+    });
+  });
 
   // Workspaces
   account.get('/templates', (c) => c.json({ templates: listTemplates([]) }));
@@ -275,6 +474,12 @@ export function createAccountsApp(deps: AccountsDeps) {
     return c.body(null, 204);
   });
 
+  account.get('/organizations/:id/invitations', async (c) => {
+    const id = idParam(c);
+    await people.requireOrganizationManager(sql, c.get('person'), id);
+    return c.json({ invitations: await people.pendingInvitations(sql, id) });
+  });
+
   // Invitations: the link is built here, so the web app only shows it.
   account.post('/organizations/:id/invitations', async (c) => {
     const body = await readBody(
@@ -347,9 +552,11 @@ export function createAccountsApp(deps: AccountsDeps) {
         expectedGeneration: z.number().int().positive().optional(),
       }),
     );
-    if (deps.hostedOnboarding) await requireCurrentAuthorization(deps.auth, body.oauth_query);
+    const cli = cliConsent(body.oauth_query, deps.publicOrigin);
+    if (cli || deps.hostedOnboarding)
+      await requireCurrentAuthorization(deps.auth, body.oauth_query);
     const { accept, workspaceId } = body;
-    if (accept && !workspaceId) {
+    if (accept && !workspaceId && !cli) {
       throw new AppError(400, 'invalid_request', 'pick the workspace to connect');
     }
     const headers = forwarded(c);
@@ -360,6 +567,14 @@ export function createAccountsApp(deps: AccountsDeps) {
       headers,
       body: JSON.stringify({ accept, oauth_query: body.oauth_query }),
     });
+    if (cli) {
+      if (workspaceId || body.installationId || body.expectedGeneration)
+        throw new AppError(400, 'invalid_request', 'CLI consent belongs to the account.');
+      if (!accept) return deps.auth.handler(request);
+      return recordCliLogin(sql, c.get('person').id, cli.machineName, (id) =>
+        deps.auth.forWorkspace(request, id),
+      );
+    }
     if (!accept || !workspaceId) return deps.auth.handler(request);
     // An app sign-in never shows this page; nothing else may ask for identity.
     if (appSignInRequest(new URLSearchParams(body.oauth_query)))
@@ -452,6 +667,7 @@ const CLOSED_AUTH_PATHS = new Set([
   '/account/auth/oauth2/continue',
   '/account/auth/link-social',
   '/account/auth/unlink-account',
+  '/account/auth/passkey/delete-passkey',
 ]);
 
 /**
@@ -470,6 +686,7 @@ function signedIn(deps: AccountsDeps) {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) requireWebHeader(c, deps.publicOrigin);
     const found = await deps.auth.getSession(c.req.raw.headers);
     if (!found || found.user.disabledAt) throw new AppError(401, 'unauthorized', 'sign in first');
+    c.set('session', found);
     c.set('person', { id: found.user.id, name: found.user.name, email: found.user.email });
     c.header('Cache-Control', 'no-store');
     await next();
@@ -550,7 +767,7 @@ export async function describeAccount(sql: Sql, person: Person): Promise<Account
     }
   }
   return {
-    user: person,
+    user: { id: person.id, name: person.name, email: person.email },
     organizations: [...organizations.values()],
     invitations,
   };

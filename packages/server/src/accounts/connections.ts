@@ -2,6 +2,8 @@ import { OAUTH_SCOPES } from '@retainer/shared';
 import type { Sql } from '../db/client.js';
 import { forbidden, notFound } from '../errors.js';
 import { endGrants, lockWorkspaceOrganization } from '../workspaces/organizations.js';
+import { accountElevation } from './cli-approvals.js';
+import { revokeCliLogin } from './cli-logins.js';
 import { type Person, workspaceAccess } from './people.js';
 
 /**
@@ -14,7 +16,7 @@ import { type Person, workspaceAccess } from './people.js';
 export type Connection = {
   id: string;
   app: { name: string; uri: string | null };
-  workspace: { id: string; slug: string; name: string };
+  workspace: { id: string; slug: string; name: string } | null;
   person: { id: string; name: string; email: string };
   /** What the app asked for and the person allowed; their role caps it. */
   scopes: string[];
@@ -78,7 +80,22 @@ export async function listWorkspaceConnections(
 
 /** The apps a person connected, in every workspace (Your account). */
 export async function listMyConnections(sql: Sql, person: Person): Promise<Connection[]> {
-  return (await connections(sql, sql`oc.user_id = ${person.id}`)).map(toConnection);
+  const [apps, logins] = await Promise.all([
+    connections(sql, sql`oc.user_id = ${person.id}`),
+    sql<{ id: string; machine_name: string; created_at: Date }[]>`
+      select id, machine_name, created_at from cli_logins where user_id=${person.id} and revoked_at is null`,
+  ]);
+  return [
+    ...apps.map(toConnection),
+    ...logins.map((login) => ({
+      id: login.id,
+      app: { name: `Retainer CLI on ${login.machine_name}`, uri: null },
+      workspace: null,
+      person: { id: person.id, name: person.name, email: person.email },
+      scopes: ['read'],
+      connectedAt: login.created_at.toISOString(),
+    })),
+  ].sort((a, b) => b.connectedAt.localeCompare(a.connectedAt) || a.id.localeCompare(b.id));
 }
 
 /**
@@ -114,6 +131,11 @@ export async function disconnect(
   /** When disconnecting from a workspace's settings: the workspace it must be in. */
   inWorkspace?: string,
 ): Promise<void> {
+  if (!inWorkspace && !person.cli) {
+    const [login] =
+      await sql`select id from cli_logins where id=${connectionId} and user_id=${person.id}`;
+    if (login) return revokeCliLogin(sql, { userId: person.id, loginId: connectionId });
+  }
   await sql.begin(async (tx) => {
     const [found] = await tx<{ workspace_id: string }[]>`
       select oc.reference_id as workspace_id from oauth_consents oc
@@ -131,6 +153,10 @@ export async function disconnect(
       if (role !== 'admin') {
         throw forbidden('Only a workspace admin, or the person who connected it, can do this.');
       }
+    }
+    if (person.cli) {
+      await workspaceAccess(tx, person, consent.workspace_id);
+      await accountElevation(tx, person.cli, { workspaceId: consent.workspace_id });
     }
     await endGrants(tx, tx`oc.id = ${connectionId}`);
   });

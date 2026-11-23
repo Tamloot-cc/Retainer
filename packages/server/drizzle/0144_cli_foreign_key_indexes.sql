@@ -1,0 +1,2 @@
+CREATE INDEX "cli_approvals_decided_by_idx" ON "cli_approvals" USING btree ("decided_by");--> statement-breakpoint
+CREATE INDEX "oauth_grant_references_cli_login_idx" ON "oauth_grant_references" USING btree ("cli_login_id");

@@ -1,4 +1,5 @@
-import type { Actor } from '@retainer/shared';
+import type { Actor, WorkspaceRole } from '@retainer/shared';
+import type { CliIdentity } from './db/cli.js';
 import type { ApiKeyScope } from './db/schema.js';
 
 /**
@@ -23,6 +24,7 @@ export type Caller = {
    * 4.7). The caller is still an agent: `userId` stays unset.
    */
   connectedBy?: string;
+  cli?: CliIdentity & { role: WorkspaceRole; userName: string };
   /**
    * The person whose personal memory this credential reaches, as `me`
    * (personal memory spec 4.3): the signed-in person, the person who
@@ -46,6 +48,7 @@ export type CallerPerson = {
 export type PersonCheck =
   | { kind: 'session'; token: string }
   | { kind: 'oauth'; subject: string; workspace: string; client: string }
+  | ({ kind: 'cli' } & CliIdentity)
   | { kind: 'key'; hash: string };
 
 /** Only a `user` actor with `admin` scope is a human approval (3). */

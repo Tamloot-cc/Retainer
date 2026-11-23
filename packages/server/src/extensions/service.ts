@@ -19,6 +19,7 @@ import {
 import type { Actor } from '@retainer/shared';
 import { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
+import { recheckElevation } from '../db/cli.js';
 import type { Sql } from '../db/client.js';
 import {
   inWorkspace,
@@ -109,6 +110,7 @@ type Row = {
   version: string;
   release_digest: string;
   state: ExtensionInstallation['state'];
+  state_changed_by?: ExtensionInstallation['stateChangedBy'] | null;
   generation: number;
   grant_generation: number;
   settings_revision: number;
@@ -161,6 +163,7 @@ function present(
     version: r.version,
     releaseDigest: r.release_digest,
     state: r.state,
+    ...(r.state_changed_by ? { stateChangedBy: r.state_changed_by } : {}),
     connectionHealth: r.connection_health,
     lastError: r.last_error,
     generation: r.generation,
@@ -1912,6 +1915,7 @@ export class Extensions {
       // since the routing lookup. Disable must never reverse an uninstall.
       const [current] = await tx<Row[]>`select * from extension_installations where id = ${id}`;
       if (!current) throw notFound('extension installation');
+      await recheckElevation(tx, caller.cli, 'admin');
       if (['uninstalled', 'uninstalling'].includes(current.state)) return present(current);
       const resolution =
         state === 'uninstalled' ? resolveRelease(this.catalog.runtime, current) : undefined;
@@ -1933,6 +1937,7 @@ export class Extensions {
       const [row] = await tx<
         Row[]
       >`update extension_installations set state = ${nextState},last_error=null,
+        state_changed_by=${caller.cli ? tx.json(jsonValue(caller.actor)) : null},
         cleanup_deadline=case when ${nextState}='uninstalling' then clock_timestamp()+interval '24 hours' else null end,
         generation = generation + case when state = ${nextState} and last_error is null then 0 else 1 end,
         grant_generation = grant_generation + case when state = ${nextState} then 0 else 1 end, updated_at = now()

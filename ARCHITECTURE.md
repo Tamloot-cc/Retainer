@@ -2084,6 +2084,7 @@ a pool of its own.
 | `packages/server`    | AGPL-3.0 | API, MCP endpoint, workers, schema engine, database                      |
 | `packages/sdk`       | MIT      | TypeScript client                                                        |
 | `packages/web`       | MIT      | Optional static React app for people                                     |
+| `packages/cli`       | MIT      | Browser-authenticated CLI for workspace administration                                    |
 | `packages/mcp`       | MIT      | stdio bridge to the hosted MCP endpoint                                  |
 | `packages/extension` | MIT      | Build-time contracts for extensions (`@retainer/extension`)              |
 | `packages/runner`    | MIT      | Runs first-party extension functions and routine code in fresh processes |

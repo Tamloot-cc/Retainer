@@ -14,6 +14,7 @@ import {
 import { useEffect, useState } from 'react';
 import { useAccount } from '../../accounts/context.js';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
+import { ActorBadge } from '../../provenance/index.js';
 import {
   Badge,
   Button,
@@ -328,6 +329,7 @@ function InstalledExtension({
       ) : tab === 'credentials' ? (
         <InstallationCredentials installation={installation} keyMode={!accountState} />
       ) : null}
+      {installation.stateChangedBy ? <ActorBadge actor={installation.stateChangedBy} /> : null}
       {confirmUninstall ? (
         <Dialog
           open

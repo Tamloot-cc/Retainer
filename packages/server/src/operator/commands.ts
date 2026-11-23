@@ -33,6 +33,8 @@ Organizations and people (accounts mode)
   retainer-ops member add --org <id|name> --email <email> --role <owner|admin|member>
   retainer-ops member add --workspace <slug|id> --email <email> --role <viewer|editor|admin>
 
+  retainer-ops user passkeys clear <email>  Clear passkeys when the person has lost access
+
 API keys
   retainer-ops key create --workspace <slug|id> --name <name> --actor <type:id> --scopes <list>
   retainer-ops key list --workspace <slug|id>
@@ -91,6 +93,27 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
 
   try {
     switch (`${group} ${command ?? ''}`) {
+      case 'user passkeys': {
+        if (rest[0] !== 'clear' || rest.length !== 2)
+          throw new AppError(
+            400,
+            'invalid_request',
+            'use retainer-ops user passkeys clear <email>',
+          );
+        const email = (rest[1] ?? '').trim().toLowerCase();
+        const cleared = await io.sql.begin(async (tx) => {
+          const [user] = await tx<
+            { id: string }[]
+          >`select id from users where email = ${email} for update`;
+          if (!user) throw new AppError(404, 'not_found', 'user not found');
+          await tx`select set_config('app.operator_clear_passkeys', 'true', true)`;
+          await tx`delete from passkey_change_authorizations where user_id = ${user.id}`;
+          const keys = await tx`delete from passkeys where user_id = ${user.id} returning id`;
+          return keys.length;
+        });
+        print(`Cleared ${cleared} passkey(s) for ${email}.`, { email, cleared });
+        return 0;
+      }
       case 'workspace create': {
         const workspace = await createWorkspace(io.sql, {
           name: required(values.name, 'name'),

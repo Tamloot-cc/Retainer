@@ -167,3 +167,5 @@ path of `packages/web/dist` in `.env`.
 
 The server is licensed under [AGPL-3.0](LICENSE). The SDK, shared types and
 MCP bridge, web app and Claude Code plugin are MIT-licensed; see each package's `LICENSE`.
+
+See the [Retainer CLI guide](docs/cli.md) for workspace administration in accounts mode.

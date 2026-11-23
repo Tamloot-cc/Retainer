@@ -40,10 +40,16 @@ export function createControlHandler(
     clientIp: (c) => clientIpOf((c.env as { event?: unknown }).event, config.RETAINER_EDGE_SECRET),
   });
   const http = requireEdge(config.RETAINER_EDGE_SECRET, handle(app as unknown as Hono));
+  let cliReady: Promise<void> | undefined;
   function control(event: PurgeEvent, context?: LambdaContext): Promise<PurgeReport>;
   function control(event: LambdaEvent, context: LambdaContext): ReturnType<typeof http>;
   function control(event: LambdaEvent | PurgeEvent, context?: LambdaContext) {
-    return isPurgeEvent(event) ? purge(openPurgeSql()) : http(event, context as LambdaContext);
+    if (isPurgeEvent(event)) return purge(openPurgeSql());
+    cliReady ??= app.initializeCli().catch((error) => {
+      cliReady = undefined;
+      throw error;
+    });
+    return cliReady.then(() => http(event, context as LambdaContext));
   }
   return control;
 }

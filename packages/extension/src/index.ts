@@ -1149,6 +1149,7 @@ export type ExtensionCredential = {
 };
 
 export type ExtensionInstallation = {
+  stateChangedBy?: import('@retainer/shared').Actor;
   /** Latest configure run for the installed release, when there is one. */
   suggestionsStatus?: 'queued' | 'running' | 'ready' | 'failed';
   id: string;

@@ -2,6 +2,7 @@ import { gmailRegistrationId } from '@retainer/extension/nango-gmail';
 import { type Actor, type ActorType, isProfileAlias } from '@retainer/shared';
 import type { CallerPerson, InstallationBinding, RunBinding } from '../caller.js';
 import type { ChangeCollector } from '../changes/collect.js';
+import type { CliDecision } from '../db/cli.js';
 import { isUuid } from '../db/ids.js';
 import type { AssertionStatus, ReviewReason } from '../db/schema.js';
 import { preciseTimestamp } from '../db/timestamps.js';
@@ -20,6 +21,7 @@ import { compareAssertions, pickWinner, type RankedAssertion, reviewReason } fro
 export type WriteContext = {
   workspaceId: string;
   actor: Actor;
+  cli?: CliDecision;
   run?: RunBinding;
   installation?: InstallationBinding;
   /** Server-only managed-import context; never read from an ordinary record payload. */

@@ -279,6 +279,12 @@ The full table of what each kind of caller can do:
 The human-only rules (`requireUser`, `canApproveDestructive`, the comment rule)
 stay as a separate check. A scope is never a person's approval.
 
+The browser-authenticated [Retainer CLI](cli.md) can read with the person's
+current role. It can make the listed decisions as the person after a
+workspace- or organization-bound elevation, or after an action-specific
+confirmation. These decisions record `via: 'Retainer CLI'`. The credential
+and route boundaries are defined in the CLI spec, sections 4, 5 and 9.1.
+
 The role tables live in `packages/shared`, so the server and the web app read
 one definition. A test runs every role against every route.
 
@@ -377,6 +383,12 @@ session writes nothing. The web app refreshes through the control function when 
 loads. `disabled_at` and "sign out everywhere" end all sessions.
 
 ### 4.5 Workspaces and account routes
+
+Browser routes keep requiring a session and the web client's CSRF header.
+CLI tokens reach only the `/account` routes in the [CLI spec](cli.md#91-the-routes-a-cli-token-reaches).
+The CLI middleware verifies its own audience and login. The services check
+current role and the matching elevation or confirmation in the decision's
+transaction. API keys and MCP tokens cannot use these account routes.
 
 Account routes live under `/account`, take a session cookie only, and are never
 reachable with an API key. An agent's key can therefore never create a key,

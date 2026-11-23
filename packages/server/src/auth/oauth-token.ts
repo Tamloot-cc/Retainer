@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { cappedScopes, pinnedMcpAddress, type WorkspaceRole } from '@retainer/shared';
-import { decodeProtectedHeader, importJWK, type JWK, jwtVerify } from 'jose';
+import { decodeJwt, decodeProtectedHeader, importJWK, type JWK, jwtVerify } from 'jose';
 import type { Caller } from '../caller.js';
+import { CLI_CLIENT_ID, CLI_LOGIN_CLAIM, type CliIdentity } from '../db/cli.js';
 import type { Sql } from '../db/client.js';
 import { isUuid } from '../db/ids.js';
 import { inWorkspace, lockSchemaShared } from '../db/tx.js';
@@ -29,7 +30,7 @@ export type OAuthSettings = {
   issuer: string;
   resource: string;
   resourceMetadata: string;
-  mode?: 'installation';
+  mode?: 'installation' | 'cli';
 };
 
 /** The issuer, the protected resource and its metadata URL, from the public origin. */
@@ -72,6 +73,26 @@ export function installationOAuthSettings(publicOrigin: string): OAuthSettings {
   };
 }
 
+export function cliOAuthSettings(publicOrigin: string): OAuthSettings {
+  const origin = new URL(publicOrigin).origin;
+  return {
+    issuer: `${origin}${AUTH_BASE_PATH}`,
+    resource: `${origin}/cli`,
+    resourceMetadata: `${origin}/.well-known/oauth-protected-resource/cli`,
+    mode: 'cli',
+  };
+}
+
+/** An untrusted routing hint. The selected audience is always verified. */
+export function tokenNamesAudience(token: string, audience: string): boolean {
+  try {
+    const { aud } = decodeJwt(token);
+    return aud === audience || (Array.isArray(aud) && aud.includes(audience));
+  } catch {
+    return false;
+  }
+}
+
 /** A bearer value shaped like a JWT, as opposed to a Retainer API key. */
 export const looksLikeJwt = (value: string) =>
   /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value);
@@ -84,11 +105,12 @@ export function oauthActorId(clientId: string, userId: string): string {
 
 const refused = (message: string) => new AppError(401, 'unauthorized', message);
 
-export async function lookupOAuthToken(
+async function verifyOAuthClaims(
   sql: Sql,
   token: string,
   settings: OAuthSettings,
-): Promise<Caller> {
+  control = false,
+): Promise<Record<string, unknown>> {
   let kid: string | undefined;
   try {
     const header = decodeProtectedHeader(token);
@@ -98,7 +120,7 @@ export async function lookupOAuthToken(
     throw refused('the access token is not valid; connect again');
   }
   const keys = await sql<{ id: string; public_key: string; alg: string | null }[]>`
-    select id, public_key, alg from retainer_token_keys()`;
+    select id, public_key, alg from ${control ? sql`jwks` : sql`retainer_token_keys()`}`;
   const key = keys.find((k) => k.id === kid);
   if (!key) throw refused('the access token is not valid; connect again');
 
@@ -113,7 +135,7 @@ export async function lookupOAuthToken(
         'sub',
         'azp',
         'exp',
-        WORKSPACE_CLAIM,
+        settings.mode === 'cli' ? CLI_LOGIN_CLAIM : WORKSPACE_CLAIM,
         ...(settings.mode === 'installation'
           ? [INSTALLATION_CLAIM, GRANT_CLAIM, GENERATION_CLAIM]
           : []),
@@ -121,6 +143,61 @@ export async function lookupOAuthToken(
     }));
   } catch {
     throw refused('the access token is not valid or has expired; refresh it or connect again');
+  }
+  return claims;
+}
+
+function cliIdentity(claims: Record<string, unknown>, settings: OAuthSettings): CliIdentity {
+  const login = claims[CLI_LOGIN_CLAIM];
+  if (
+    claims.aud !== settings.resource ||
+    claims.azp !== CLI_CLIENT_ID ||
+    typeof claims.sub !== 'string' ||
+    !isUuid(claims.sub) ||
+    typeof login !== 'string' ||
+    !isUuid(login) ||
+    typeof claims.scope !== 'string' ||
+    !claims.scope.split(' ').includes('read')
+  ) {
+    throw refused('the CLI login is not valid; log in again');
+  }
+  return { loginId: login, userId: claims.sub };
+}
+
+export async function verifyAccountCliToken(sql: Sql, token: string, settings: OAuthSettings) {
+  return cliIdentity(await verifyOAuthClaims(sql, token, settings, true), settings);
+}
+
+export async function lookupOAuthToken(
+  sql: Sql,
+  token: string,
+  settings: OAuthSettings,
+  requestedWorkspace?: string,
+): Promise<Caller> {
+  const claims = await verifyOAuthClaims(sql, token, settings);
+  if (settings.mode === 'cli') {
+    const cli = cliIdentity(claims, settings);
+    if (!requestedWorkspace || !isUuid(requestedWorkspace))
+      throw new AppError(400, 'invalid_request', 'send X-Retainer-Workspace with the workspace ID');
+    const [access] = await sql<
+      { user_name: string; workspace_id: string; role: WorkspaceRole | null }[]
+    >`
+      select user_name, workspace_id, role
+      from retainer_cli_access(${cli.userId}::uuid, ${CLI_CLIENT_ID}, ${cli.loginId}::uuid, ${requestedWorkspace}::uuid)`;
+    if (!access) throw refused('This CLI login has ended; log in again.');
+    if (!access.role) throw new AppError(404, 'not_found', 'workspace not found');
+    return {
+      workspaceId: access.workspace_id,
+      actor: {
+        type: 'agent',
+        id: `cli:${cli.loginId}`,
+        name: `Retainer CLI for ${access.user_name}`,
+      },
+      scopes: ['read'],
+      connectedBy: cli.userId,
+      cli: { ...cli, role: access.role, userName: access.user_name },
+      person: { id: cli.userId, name: access.user_name, check: { kind: 'cli', ...cli } },
+    };
   }
   if (settings.mode === 'installation') return installationCaller(sql, claims, settings);
   const subject = claims.sub;

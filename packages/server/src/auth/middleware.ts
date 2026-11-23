@@ -16,7 +16,12 @@ import {
   requestedWorkspace,
   WORKSPACE_HEADER,
 } from './account-session.js';
-import { looksLikeJwt, lookupOAuthToken, type OAuthSettings } from './oauth-token.js';
+import {
+  looksLikeJwt,
+  lookupOAuthToken,
+  type OAuthSettings,
+  tokenNamesAudience,
+} from './oauth-token.js';
 import { authenticateRoutine } from './routine.js';
 import { lookupKey, requireWebHeader, SESSION_COOKIE } from './session.js';
 
@@ -41,7 +46,7 @@ export type AuthOptions = {
    * Accepts MCP OAuth access tokens for this resource (accounts spec 4.7),
    * and points a 401 at its metadata so clients can start signing in.
    */
-  oauth?: OAuthSettings | undefined;
+  oauth?: OAuthSettings | readonly OAuthSettings[] | undefined;
   /**
    * The workspace the address names (`/mcp/w/<id>`, accounts spec 4.7): a
    * credential for any other workspace is refused.
@@ -63,7 +68,13 @@ export type AuthOptions = {
  * from the request body.
  */
 export function authenticate(sql: Sql, options: AuthOptions = {}): MiddlewareHandler<AppEnv> {
-  const { publicOrigin, accountsSecret, oauth } = options;
+  const { publicOrigin, accountsSecret } = options;
+  const audiences: readonly OAuthSettings[] = options.oauth
+    ? 'issuer' in options.oauth
+      ? [options.oauth]
+      : options.oauth
+    : [];
+  const [oauth] = audiences;
   // RFC 9728: tells an OAuth client where to learn how to get a token.
   const challenge = (error?: string) => {
     const params = [
@@ -109,7 +120,12 @@ export function authenticate(sql: Sql, options: AuthOptions = {}): MiddlewareHan
                     throw new AppError(401, 'unauthorized', 'run credentials are not enabled');
                   })()
               : oauth && looksLikeJwt(key)
-                ? await lookupOAuthToken(sql, key, oauth)
+                ? await lookupOAuthToken(
+                    sql,
+                    key,
+                    audiences.find((entry) => tokenNamesAudience(key, entry.resource)) ?? oauth,
+                    c.req.header(WORKSPACE_HEADER),
+                  )
                 : await lookupKey(sql, key);
         // A key belongs to one workspace; naming another is a client mistake.
         const named = c.req.header(WORKSPACE_HEADER);

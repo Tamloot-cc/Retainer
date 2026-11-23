@@ -98,6 +98,7 @@ export function schemaRoutes(app: Hono<AppEnv>, sql: Sql) {
           actor: caller.actor,
           scopes: caller.scopes,
           decision,
+          ...(caller.cli ? { cli: caller.cli } : {}),
         }),
       );
       return c.json(result, result.status === 'failed' ? 409 : 200);

@@ -1,5 +1,16 @@
+import {
+  type PublicKeyCredentialCreationOptionsJSON,
+  startAuthentication,
+  startRegistration,
+} from '@simplewebauthn/browser';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
-import { type Account, authClient, signOutOfAccount, workspaceHref } from '../api/account.js';
+import {
+  type Account,
+  account as accountApi,
+  authClient,
+  signOutOfAccount,
+  workspaceHref,
+} from '../api/account.js';
 import { Button, Dialog, Input, Label, Muted, Notice, Panel, Stack } from '../ui/index.js';
 import { ConnectedApps } from './connections.js';
 import { shortDate as date, providerNames, roleWords } from './format.js';
@@ -24,6 +35,7 @@ export function YourAccount({ account }: { account: Account }) {
       <Panel title="Connected apps">
         <ConnectedApps showWorkspace />
       </Panel>
+      <Elevations account={account} />
       <Panel title="Where you have access">
         {account.organizations.length === 0 ? (
           <Muted>You're not in any workspace yet.</Muted>
@@ -60,6 +72,51 @@ export function YourAccount({ account }: { account: Account }) {
   );
 }
 
+function Elevations({ account }: { account: Account }) {
+  const [elevations, setElevations] = useState(account.elevations ?? []);
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  if (!elevations.length) return null;
+  async function end(id: string) {
+    setPending(id);
+    setError('');
+    try {
+      await accountApi.endCliElevation(id);
+      setElevations((rows) => rows.filter((row) => row.id !== id));
+    } catch (failure) {
+      setError((failure as Error).message);
+    } finally {
+      setPending(null);
+    }
+  }
+  return (
+    <Panel title="Active Retainer CLI windows">
+      {error ? <Notice error>{error}</Notice> : null}
+      {elevations.map((row) => (
+        <div
+          key={row.id}
+          className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+        >
+          <div>
+            <strong>{row.targetName}</strong>
+            <Muted>
+              Retainer CLI on {row.machineName} until {new Date(row.expiresAt).toLocaleTimeString()}
+            </Muted>
+          </div>
+          <Button
+            size="small"
+            variant="outline"
+            disabled={pending !== null}
+            onClick={() => void end(row.id)}
+          >
+            End now
+          </Button>
+        </div>
+      ))}
+    </Panel>
+  );
+}
+
 function Passkeys({ providers }: { providers: Account['providers'] }) {
   const [passkeys, setPasskeys] = useState<Passkey[] | null>(null),
     [error, setError] = useState(''),
@@ -78,21 +135,70 @@ function Passkeys({ providers }: { providers: Account['providers'] }) {
   async function add() {
     setBusy(true);
     setError('');
-    const client = await authClient();
-    const result = await client.passkey.addPasskey({ name: defaultName() });
-    // Better Auth asks for a sign-in within the last day before adding one,
-    // so a stolen session cannot add a passkey of its own.
-    if (result.error && 'code' in result.error && result.error.code === 'SESSION_NOT_FRESH')
-      setStale(true);
-    else if (result.error) setError('The passkey was not added. Try again, or use another device.');
-    await load();
-    setBusy(false);
+    try {
+      const client = await authClient();
+      const name = defaultName();
+      if (!passkeys?.length) {
+        const result = await client.passkey.addPasskey({ name });
+        if (result.error && 'code' in result.error && result.error.code === 'SESSION_NOT_FRESH') {
+          setStale(true);
+        } else if (result.error) throw new Error(result.error.message);
+        return;
+      }
+      const options = await client.$fetch<PublicKeyCredentialCreationOptionsJSON>(
+        '/passkey/generate-register-options',
+        {
+          method: 'GET',
+          query: { name },
+        },
+      );
+      if (options.error && 'code' in options.error && options.error.code === 'SESSION_NOT_FRESH') {
+        setStale(true);
+        return;
+      }
+      if (!options.data) throw new Error(options.error?.message ?? 'Could not start registration.');
+      const response = await startRegistration({ optionsJSON: options.data });
+      const digest = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(response.response.attestationObject),
+      );
+      const attestationHash = Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, '0'),
+      ).join('');
+      const proof = await accountApi.passkeyChange({
+        kind: 'insert',
+        credentialId: response.id,
+        attestationHash,
+      });
+      const assertion = await startAuthentication({ optionsJSON: proof.options });
+      const result = await client.$fetch('/passkey/verify-registration', {
+        method: 'POST',
+        body: { response, name },
+        headers: { 'X-Retainer-Passkey-Proof': JSON.stringify({ id: proof.id, assertion }) },
+      });
+      if (result.error) throw new Error(result.error.message);
+    } catch (failure) {
+      setError(
+        (failure as Error).message || 'The passkey was not added. Try again or use another device.',
+      );
+    } finally {
+      await load();
+      setBusy(false);
+    }
   }
   async function remove(passkey: Passkey) {
-    const client = await authClient();
-    const result = await client.passkey.deletePasskey({ id: passkey.id });
-    if (result.error) setError('The passkey was not removed. Try again.');
-    await load();
+    setBusy(true);
+    setError('');
+    try {
+      const proof = await accountApi.passkeyChange({ kind: 'delete', id: passkey.id });
+      const assertion = await startAuthentication({ optionsJSON: proof.options });
+      await accountApi.removePasskey(passkey.id, { id: proof.id, assertion });
+      await load();
+    } catch (failure) {
+      setError((failure as Error).message || 'The passkey was not removed. Try again.');
+    } finally {
+      setBusy(false);
+    }
   }
   async function rename(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -124,7 +230,12 @@ function Passkeys({ providers }: { providers: Account['providers'] }) {
                 <Button size="small" variant="ghost" onClick={() => setRenaming(passkey)}>
                   Rename
                 </Button>
-                <Button size="small" variant="ghost" onClick={() => void remove(passkey)}>
+                <Button
+                  size="small"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => void remove(passkey)}
+                >
                   Remove
                 </Button>
               </li>

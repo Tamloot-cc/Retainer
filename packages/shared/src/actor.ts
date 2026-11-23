@@ -12,6 +12,7 @@ export const ACTOR_TYPES = ['user', 'integration', 'agent', 'system'] as const;
 export type ActorType = (typeof ACTOR_TYPES)[number];
 
 export const actorSchema = z.object({
+  via: z.string().optional(),
   type: z.enum(ACTOR_TYPES),
   id: z.string().min(1),
   name: z.string().optional(),

@@ -193,6 +193,74 @@ export const passkeys = pgTable(
   (t) => [index('passkeys_user_idx').on(t.userId)],
 );
 
+/** Browser-approved, person-bound CLI sign-ins. */
+export const cliLogins = pgTable(
+  'cli_logins',
+  {
+    id: id(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    machineName: text('machine_name').notNull(),
+    createdAt: createdAt(),
+    revokedAt: timestamptz('revoked_at'),
+  },
+  (t) => [index('cli_logins_user_idx').on(t.userId)],
+).enableRLS();
+
+export const cliApprovals = pgTable(
+  'cli_approvals',
+  {
+    id: id(),
+    loginId: uuid('login_id')
+      .notNull()
+      .references(() => cliLogins.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    organizationId: uuid('organization_id').references(() => organizations.id, {
+      onDelete: 'cascade',
+    }),
+    action: jsonb('action').notNull(),
+    actionHash: text('action_hash').notNull(),
+    resultId: uuid('result_id'),
+    status: text('status').notNull().default('pending'),
+    expiresAt: timestamptz('expires_at').notNull(),
+    decidedBy: uuid('decided_by').references(() => users.id, { onDelete: 'set null' }),
+    decidedAt: timestamptz('decided_at'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('cli_approvals_kind', sql`${t.kind} in ('elevation', 'action')`),
+    check(
+      'cli_approvals_status',
+      sql`${t.status} in ('pending', 'approved', 'denied', 'used', 'ended', 'expired')`,
+    ),
+    check('cli_approvals_target', sql`num_nonnulls(${t.workspaceId}, ${t.organizationId}) = 1`),
+    index('cli_approvals_login_idx').on(t.loginId),
+    index('cli_approvals_workspace_idx').on(t.workspaceId),
+    index('cli_approvals_organization_idx').on(t.organizationId),
+    index('cli_approvals_decided_by_idx').on(t.decidedBy),
+  ],
+).enableRLS();
+
+/** A verified passkey change, consumed by the write trigger. */
+export const passkeyChangeAuthorizations = pgTable(
+  'passkey_change_authorizations',
+  {
+    id: id(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    credentialId: text('credential_id').notNull(),
+    expiresAt: timestamptz('expires_at').notNull(),
+  },
+  (t) => [
+    check('passkey_change_authorizations_kind', sql`${t.kind} in ('insert', 'delete')`),
+    unique('passkey_change_authorizations_target_uq').on(t.userId, t.kind, t.credentialId),
+  ],
+).enableRLS();
+
 /** Sign-in rate limits, shared by every function instance (4.6). */
 export const authRateLimits = pgTable('auth_rate_limits', {
   id: id(),
@@ -1468,6 +1536,7 @@ export const extensionInstallations = pgTable(
     registrationId: uuid('registration_id').notNull(),
     version: text('version').notNull(),
     releaseDigest: text('release_digest').notNull(),
+    stateChangedBy: jsonb('state_changed_by').$type<Actor>(),
     state: text('state').notNull().default('disabled'),
     connectionHealth: text('connection_health').notNull().default('needs_reconnect'),
     lastError: text('last_error'),
@@ -1577,9 +1646,10 @@ export const oauthGrantReferences = pgTable(
   'oauth_grant_references',
   {
     id: id(),
-    workspaceId: workspaceId(),
+    workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
     kind: text('kind').notNull(),
     credentialId: uuid('credential_id'),
+    cliLoginId: uuid('cli_login_id').references(() => cliLogins.id, { onDelete: 'cascade' }),
   },
   (t) => [
     unique('oauth_grant_references_ws_id_uq').on(t.workspaceId, t.id),
@@ -1589,10 +1659,12 @@ export const oauthGrantReferences = pgTable(
       [extensionCredentials.workspaceId, extensionCredentials.id],
     ),
     index('oauth_grant_references_credential_idx').on(t.workspaceId, t.credentialId),
+    index('oauth_grant_references_cli_login_idx').on(t.cliLoginId),
     check(
       'oauth_grant_references_kind',
-      sql`(${t.kind}='person' and ${t.id}=${t.workspaceId} and ${t.credentialId} is null)
-      or (${t.kind}='installation' and ${t.credentialId} is not null and ${t.id}=${t.credentialId})`,
+      sql`(${t.kind}='person' and ${t.workspaceId} is not null and ${t.id}=${t.workspaceId} and ${t.credentialId} is null and ${t.cliLoginId} is null)
+      or (${t.kind}='installation' and ${t.workspaceId} is not null and ${t.credentialId} is not null and ${t.id}=${t.credentialId} and ${t.cliLoginId} is null)
+      or (${t.kind}='cli' and ${t.workspaceId} is null and ${t.credentialId} is null and ${t.cliLoginId} is not null and ${t.id}=${t.cliLoginId})`,
     ),
     pgPolicy('oauth_grant_references_installation', {
       for: 'all',
@@ -3163,6 +3235,7 @@ export const routines = pgTable(
     name: text('name').notNull(),
     /** The person's plain-language text: the lasting record of intent (§5.3). */
     description: text('description').notNull(),
+    stateChangedBy: jsonb('state_changed_by').$type<Actor>(),
     status: text('status').notNull().default('draft'),
     /** Why it paused, as a code: `paused`, `check_failed`, `tool_changed`, `failing`, `approver_left`, `runs_held`, `schedule_over_limit`, `schedule_too_large`. */
     pausedReason: text('paused_reason'),
@@ -3222,6 +3295,7 @@ export const routineVersions = pgTable(
     /** Each listed tool's contract when it was checked: a change pauses the routine. */
     toolContracts: jsonb('tool_contracts').notNull().default({}),
     builtBy: jsonb('built_by').$type<Actor>().notNull(),
+    rejectedBy: jsonb('rejected_by').$type<Actor>(),
     approvedBy: jsonb('approved_by').$type<Actor>(),
     /** The approver's user ID, so their leaving or losing the admin role pauses it. */
     approverUserId: text('approver_user_id'),

@@ -67,9 +67,9 @@ export function ConnectedApps({
           {list.data.map((c) => (
             <Tr key={c.id}>
               <Td first>
-                {c.app.name} for {c.person.name || c.person.email}
+                {c.workspace ? `${c.app.name} for ${c.person.name || c.person.email}` : c.app.name}
               </Td>
-              {showWorkspace ? <Td>{c.workspace.name}</Td> : null}
+              {showWorkspace ? <Td>{c.workspace?.name ?? 'All workspaces you can open'}</Td> : null}
               <Td>
                 {c.scopes
                   .map((s) => APP_SCOPE_WORDS[s])

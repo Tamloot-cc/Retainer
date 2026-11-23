@@ -4,6 +4,7 @@ import { accountsConfig, accountsOrigin, type Config } from '../config.js';
 import type { Sql } from '../db/client.js';
 import { parseExtensionCatalog } from '../extensions/catalog.js';
 import { type AuthOptions, createAuth, type GoogleOverrides } from './auth.js';
+import { ensureCliClient } from './cli-logins.js';
 import { appSignInTarget } from './extensions.js';
 import { createAccountsApp } from './routes.js';
 
@@ -49,6 +50,7 @@ export function createAccountsServer(input: {
         : null;
     },
     sql: input.authSql,
+    controlSql: input.sql,
     config: accountsConfig(config),
     publicOrigin,
     ...(input.google ? { google: input.google } : {}),
@@ -56,7 +58,7 @@ export function createAccountsServer(input: {
     ...(input.rateLimit === undefined ? {} : { rateLimit: input.rateLimit }),
     ...(input.fetchClientMetadata ? { fetchClientMetadata: input.fetchClientMetadata } : {}),
   });
-  return createAccountsApp({
+  const app = createAccountsApp({
     auth,
     ...(input.hostedOnboarding ? { hostedOnboarding: true } : {}),
     sql: input.sql,
@@ -64,4 +66,5 @@ export function createAccountsServer(input: {
     clientIp: input.clientIp,
     extensionCatalog,
   });
+  return Object.assign(app, { initializeCli: () => ensureCliClient(input.sql, publicOrigin) });
 }

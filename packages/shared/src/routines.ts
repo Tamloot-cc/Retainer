@@ -841,6 +841,7 @@ export type RoutineVersionView = {
   facts: string[];
   builtBy: Actor;
   approvedBy: Actor | null;
+  rejectedBy?: Actor;
   approvedAt: string | null;
   createdAt: string;
 };
@@ -850,6 +851,7 @@ export type RoutineView = {
   name: string;
   description: string;
   status: RoutineStatus;
+  stateChangedBy?: Actor;
   pausedReason: string | null;
   pausedAt: string | null;
   nextFireAt: string | null;

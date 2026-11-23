@@ -1,0 +1,29 @@
+{
+  "name": "@retainer/cli",
+  "version": "0.1.0",
+  "description": "Retainer's browser-authenticated administration CLI.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "retainer": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@retainer/sdk": "workspace:*",
+    "@retainer/shared": "workspace:*"
+  }
+}

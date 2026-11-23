@@ -2,8 +2,9 @@ import { resolve } from 'node:path';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { OAUTH_SCOPES, pinnedMcpAddress, ROUTINE_LIMITS } from '@retainer/shared';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
+import { admitCliRoutes } from '../auth/cli-routes.js';
 import { authenticate } from '../auth/middleware.js';
-import { installationOAuthSettings, oauthSettings } from '../auth/oauth-token.js';
+import { cliOAuthSettings, installationOAuthSettings, oauthSettings } from '../auth/oauth-token.js';
 import { meRoute, sessionRoutes } from '../auth/session.js';
 import { publicOriginSchema } from '../config.js';
 import type { Sql } from '../db/client.js';
@@ -119,9 +120,12 @@ export function createApp(deps: AppDeps) {
       runTokens: deps.runTokens,
       installationKeys: !deps.accountsSecret,
       oauth:
-        deps.accountsSecret && publicOrigin ? installationOAuthSettings(publicOrigin) : undefined,
+        deps.accountsSecret && publicOrigin
+          ? [installationOAuthSettings(publicOrigin), cliOAuthSettings(publicOrigin)]
+          : undefined,
     }),
   );
+  v1.use('*', admitCliRoutes());
   v1.use('*', limit);
   meRoute(v1, deps.sql, routinesAvailable);
   webReadRoutes(v1, deps.sql);
@@ -194,6 +198,15 @@ export function createApp(deps: AppDeps) {
     app.use('/mcp', help);
     app.use(PINNED_MCP_ROUTE, help);
     const rest = installationOAuthSettings(publicOrigin);
+    app.get('/.well-known/oauth-protected-resource/cli', (c) => {
+      const cli = cliOAuthSettings(publicOrigin);
+      return c.json({
+        resource: cli.resource,
+        authorization_servers: [cli.issuer],
+        scopes_supported: ['read', 'offline_access'],
+        bearer_methods_supported: ['header'],
+      });
+    });
     app.get('/.well-known/oauth-protected-resource/v1', (c) => {
       c.header('Cache-Control', 'public, max-age=3600');
       return c.json({

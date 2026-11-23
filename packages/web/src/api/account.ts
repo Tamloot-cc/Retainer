@@ -1,3 +1,4 @@
+import type { CliApproval } from '@retainer/sdk';
 import { RetainerApiError } from '@retainer/sdk';
 import type {
   KeyAccess,
@@ -6,6 +7,10 @@ import type {
   SignInProvider,
   WorkspaceRole,
 } from '@retainer/shared';
+import type {
+  AuthenticationResponseJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+} from '@simplewebauthn/browser';
 import { updatingFetch } from './maintenance.js';
 
 /**
@@ -34,6 +39,7 @@ export type Account = {
   /** The providers this server signs people in with. */
   providers: SignInProvider[];
   hostedOnboarding?: boolean;
+  elevations?: CliBrowserApproval[];
 };
 
 export type Workspace = { id: string; slug: string; name: string; organizationId: string };
@@ -88,10 +94,17 @@ export type OrganizationDetails = {
 export type Connection = {
   id: string;
   app: { name: string; uri: string | null };
-  workspace: { id: string; slug: string; name: string };
+  workspace: { id: string; slug: string; name: string } | null;
   person: { id: string; name: string; email: string };
   scopes: Scope[];
   connectedAt: string;
+};
+
+export type CliBrowserApproval = CliApproval & {
+  machineName: string;
+  connectedAt: string;
+  action: { operation: string; arguments: Record<string, unknown> };
+  passkey: PublicKeyCredentialRequestOptionsJSON | null;
 };
 
 export type OAuthInstallation = {
@@ -194,6 +207,35 @@ export const account = {
     }),
   revokeInvitation: (id: string, invitationId: string) =>
     call<void>(`${org(id)}/invitations/${invitationId}`, { method: 'DELETE' }),
+  cliApproval: (id: string) =>
+    call<CliBrowserApproval>(`/account/cli/approvals/${encodeURIComponent(id)}`),
+  decideCliApproval: (id: string, allow: boolean, assertion?: AuthenticationResponseJSON) =>
+    call<{ status: 'approved' | 'denied' }>(
+      `/account/cli/approvals/${encodeURIComponent(id)}/decide`,
+      {
+        method: 'POST',
+        body: { allow, ...(assertion ? { assertion } : {}) },
+      },
+    ),
+  passkeyChange: (
+    change:
+      | { kind: 'insert'; credentialId: string; attestationHash: string }
+      | { kind: 'delete'; id: string },
+  ) =>
+    call<{ id: string; options: PublicKeyCredentialRequestOptionsJSON }>(
+      '/account/passkeys/change-options',
+      {
+        method: 'POST',
+        body: change,
+      },
+    ),
+  removePasskey: (id: string, proof: { id: string; assertion: AuthenticationResponseJSON }) =>
+    call<void>(`/account/passkeys/${encodeURIComponent(id)}/remove`, {
+      method: 'POST',
+      body: proof,
+    }),
+  endCliElevation: (id: string) =>
+    call<void>(`/account/cli/approvals/${encodeURIComponent(id)}/end`, { method: 'POST' }),
   connections: () => call<{ connections: Connection[] }>('/account/connections'),
   workspaceConnections: (id: string) =>
     call<{ connections: Connection[] }>(`${ws(id)}/connections`),
