@@ -15,7 +15,7 @@ export const TAMLOOT = {
   configure: 'd7d30cd8-8dbf-4632-88b2-3a7f3297c9bf',
 } as const;
 /** The model `configure` asks where meetings, tasks and people go. */
-export const TAMLOOT_MODEL = 'claude-opus-5-5';
+export const TAMLOOT_MODEL = 'claude-haiku-5-5';
 export const TAMLOOT_FUNCTION_IDS: string[] = [
   TAMLOOT.connect,
   TAMLOOT.scan,
