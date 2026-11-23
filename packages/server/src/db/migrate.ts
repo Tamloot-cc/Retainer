@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
@@ -84,51 +83,4 @@ export async function migrationsPending(sql: Sql): Promise<boolean> {
       (migration) => !last || Number(last.created_at) < migration.folderMillis,
     )
   );
-}
-
-/**
- * A restricted deployment can keep its old reads only across statements
- * whose locks and semantics are covered. Ordinary non-unique btree indexes
- * on existing plain columns take SHARE, which permits ACCESS SHARE reads.
- * Keep other statements, expressions, DDL against existing rows or columns,
- * and extension installation on the full-maintenance path.
- */
-export function compatibleWithRestrictedReads(statements: string[]): boolean {
-  const name = '"[a-z_][a-z0-9_]*"';
-  const table = `(?:"public"\\.)?${name}`;
-  const columns = `${name}(?:\\s*,\\s*${name})*`;
-  const createIndex = new RegExp(
-    `^CREATE INDEX ${name} ON ${table}(?: USING btree)?\\s*\\(${columns}\\);$`,
-    'i',
-  );
-  return statements.length > 0 && statements.every((sql) => createIndex.test(sql.trim()));
-}
-
-/** Bind restricted eligibility to the complete applied prefix and exact pending files. */
-export async function restrictedMigrationPlan(sql: Sql): Promise<{
-  appliedDigest: string;
-  pending: string[];
-} | null> {
-  const [table] = await sql`select to_regclass('drizzle.__drizzle_migrations') as name`;
-  if (!table?.name) return null;
-  const applied = await sql<{ created_at: string; hash: string }[]>`
-    select created_at, hash from drizzle.__drizzle_migrations order by created_at`;
-  const journal = readMigrationFiles({ migrationsFolder });
-  if (
-    applied.length === 0 ||
-    applied.some(
-      (row, index) =>
-        Number(row.created_at) !== journal[index]?.folderMillis ||
-        row.hash !== journal[index]?.hash,
-    )
-  )
-    return null;
-  const extensions = await sql`select extname from pg_extension`;
-  if (EXTENSIONS.some((name) => !extensions.some((row) => row.extname === name))) return null;
-  const pending = journal.slice(applied.length);
-  if (!compatibleWithRestrictedReads(pending.flatMap((migration) => migration.sql))) return null;
-  return {
-    appliedDigest: createHash('sha256').update(JSON.stringify(applied)).digest('hex'),
-    pending: pending.map((migration) => migration.hash),
-  };
 }

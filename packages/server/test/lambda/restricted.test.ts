@@ -3,7 +3,6 @@ import { expect, it } from 'vitest';
 import { createApp } from '../../src/api/app.js';
 import { createApiKey, revokeApiKey } from '../../src/auth/keys.js';
 import { CONTROL_ROLE, loadConfig, RUNTIME_ROLE } from '../../src/config.js';
-import { compatibleWithRestrictedReads } from '../../src/db/migrate.js';
 import { rateLimit } from '../../src/http/rate-limit.js';
 import { createApiHandler } from '../../src/lambda/api.js';
 import { createControlHandler } from '../../src/lambda/control.js';
@@ -89,12 +88,6 @@ it('serves account, REST and MCP reads on read-only pools and blocks mutations b
   ];
   const createIndex =
     'CREATE INDEX "restricted_fixture" ON "public"."records" USING btree ("label");';
-  expect(compatibleWithRestrictedReads([createIndex])).toBe(true);
-  expect(
-    compatibleWithRestrictedReads([
-      'ALTER TABLE "records" ALTER COLUMN "label" TYPE integer USING length("label");',
-    ]),
-  ).toBe(false);
   await db.owner.begin(async (tx) => {
     await tx.unsafe(createIndex);
     expect(
