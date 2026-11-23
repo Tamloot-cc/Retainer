@@ -1,5 +1,6 @@
 import type { LambdaContext, LambdaEvent } from 'hono/aws-lambda';
 import {
+  isExtensionOperation,
   MAINTENANCE_RETRY_SECONDS,
   maintenanceBody,
   maintenanceHeaders,
@@ -60,7 +61,7 @@ export const createMaintenanceHandler = (secret?: string) =>
   requireEdge(secret, async (event: LambdaEvent) => {
     const headers = event.headers ?? {};
     const path = 'rawPath' in event ? event.rawPath : 'path' in event ? event.path : '';
-    const extension = /^\/(v1\/extensions|extensions\/webhooks)(\/|$)/.test(path ?? '');
+    const extension = isExtensionOperation(path ?? '');
     const navigation =
       headers['sec-fetch-mode'] === 'navigate' ||
       (headers.accept?.includes('text/html') && !headers.accept.includes('application/json'));

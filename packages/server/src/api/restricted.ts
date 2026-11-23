@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
-import { maintenanceResponse } from '../http/maintenance.js';
+import { isExtensionOperation, maintenanceResponse } from '../http/maintenance.js';
 import type { AppEnv } from '../http/response.js';
 
 const uuid = '[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}';
@@ -43,13 +43,13 @@ export const admitRestrictedApi = createMiddleware<AppEnv>(async (c, next) => {
     // With no account server configured, the normal 404 selects key mode.
     if (path === '/account' || path === '/mcp/setup' || mcp.test(path)) return next();
     if (path.startsWith('/.well-known/oauth-protected-resource')) return next();
-    return maintenanceResponse(true, path.startsWith('/v1/extensions') ? 'extensions' : 'reads');
+    return maintenanceResponse(true, isExtensionOperation(path) ? 'extensions' : 'reads');
   }
   if (method === 'POST') {
     if (restPostReads.has(path) || recordQuery.test(path)) return next();
     if (mcp.test(path) && (await restrictedMcpRequest(c.req.raw))) return next();
   }
-  return maintenanceResponse(true, path.startsWith('/v1/extensions') ? 'extensions' : 'writes');
+  return maintenanceResponse(true, isExtensionOperation(path) ? 'extensions' : 'writes');
 });
 
 async function restrictedMcpRequest(request: Request): Promise<boolean> {
