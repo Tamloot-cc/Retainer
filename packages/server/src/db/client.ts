@@ -13,6 +13,8 @@ export type SqlOptions = {
    */
   role?: string;
   max?: number;
+  /** Default to read-only for every transaction, including implicit auth queries. */
+  readOnly?: boolean;
   /**
    * Keep connections open instead of retiring each after postgres.js's
    * random 30–60 minutes. For pools that hold a session lock across many
@@ -38,6 +40,7 @@ export const API_STATEMENT_TIMEOUT_MS = 25_000;
 export function createSql(databaseUrl: string, options: SqlOptions = {}) {
   const connection = {
     ...(options.role ? { role: options.role } : {}),
+    ...(options.readOnly ? { default_transaction_read_only: true } : {}),
     ...(options.statementTimeoutMs ? { statement_timeout: options.statementTimeoutMs } : {}),
   };
   return postgres(databaseUrl, {
@@ -87,7 +90,7 @@ export function createRuntimeSql(config: Config, options: Omit<SqlOptions, 'role
  * a pool of their own without it, since a consolidator pass may run for
  * minutes (accounts spec 4.8).
  */
-export function createApiSql(config: Config, options: Pick<SqlOptions, 'max'> = {}) {
+export function createApiSql(config: Config, options: Pick<SqlOptions, 'max' | 'readOnly'> = {}) {
   return createRuntimeSql(config, { ...options, statementTimeoutMs: API_STATEMENT_TIMEOUT_MS });
 }
 

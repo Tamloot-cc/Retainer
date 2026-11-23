@@ -254,6 +254,7 @@ export const test = base.extend<
     retainer: {
       url: string;
       keys: { user: string; writer: string; agent: string; reader: string; other: string };
+      restrictReads: (active: boolean) => void;
       request: (path: string, body?: unknown, key?: string, method?: string) => Promise<any>;
       /** Runs the consolidator once, which suggests merges. */
       consolidate: () => Promise<unknown>;
@@ -505,7 +506,20 @@ export const test = base.extend<
         : {}),
       webDir: fileURLToPath(new URL('../../web/dist', import.meta.url)),
     });
-    handle = (request) => app.fetch(request);
+    let readers: ReturnType<typeof createSql> | undefined;
+    let restricted: ReturnType<typeof createApp> | undefined;
+    function restrictReads(active: boolean) {
+      if (active && !restricted) {
+        readers = createSql(dbUrl.toString(), { role: RUNTIME_ROLE, readOnly: true });
+        restricted = createApp({
+          sql: readers,
+          webDir: fileURLToPath(new URL('../../web/dist', import.meta.url)),
+          restricted: { rateLimit: async (_c, next) => next() },
+        });
+      }
+      handle = (request) => (active && restricted ? restricted : app).fetch(request);
+    }
+    restrictReads(false);
     async function request(
       path: string,
       body?: unknown,
@@ -807,6 +821,7 @@ export const test = base.extend<
         url,
         keys: { user, writer, agent, reader, other: otherKey },
         request,
+        restrictReads,
         consolidate: () => consolidateWorkspace(sql, workspace.id),
         sourceEvidence,
         activateMembers,
@@ -831,6 +846,7 @@ export const test = base.extend<
       }
       if (fileDirectory) await rm(fileDirectory, { recursive: true, force: true });
       if (secretSql) await secretSql.end();
+      await readers?.end();
       await sql.end();
       await owner.end();
       await admin.unsafe(`drop database "${name}" with (force)`);

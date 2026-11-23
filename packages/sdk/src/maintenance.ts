@@ -29,6 +29,13 @@ export function waitForRetry(ms: number, signal?: AbortSignal | null): Promise<v
   });
 }
 
+const POST_READ =
+  /^\/v1\/(search|feed\/query|events\/query|records\/delete-impact|objects\/[^/]+\/(query|aggregate))$/;
+
+export function isMaintenanceRead(method: string, path: string): boolean {
+  return method === 'GET' || method === 'HEAD' || (method === 'POST' && POST_READ.test(path));
+}
+
 /** Bounded SDK retries, with replay of the same body and idempotency key. */
 export async function maintenanceFetch(
   fetcher: typeof fetch,
@@ -43,9 +50,7 @@ export async function maintenanceFetch(
     const path = new URL(
       typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
     ).pathname;
-    const read =
-      ['GET', 'HEAD'].includes(method) ||
-      (method === 'POST' && /\/(query|aggregate|delete-impact|search)$/.test(path));
+    const read = isMaintenanceRead(method, path);
     // The maintenance handler never forwards to application code. Without
     // that guarantee only reads and server-supported keyed writes retry.
     const keyed =

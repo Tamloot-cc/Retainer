@@ -2,7 +2,12 @@ import { z } from 'zod';
 import { type Config, loadConfig, ownerDatabaseUrl } from '../config.js';
 import { createSql } from '../db/client.js';
 import { applyLogins, loginsPending } from '../db/logins.js';
-import { migrationHistoryCompatible, migrationsPending, runMigrations } from '../db/migrate.js';
+import {
+  migrationHistoryCompatible,
+  migrationsPending,
+  restrictedMigrationPlan,
+  runMigrations,
+} from '../db/migrate.js';
 import { parseExtensionCatalog } from '../extensions/catalog.js';
 import { setLogLevel } from '../log.js';
 import { runCli } from '../operator/commands.js';
@@ -82,6 +87,7 @@ export type OpsResult =
       historyChecked: true;
       needsStop: boolean;
       reasons: string[];
+      restrictedReads?: NonNullable<Awaited<ReturnType<typeof restrictedMigrationPlan>>>;
     }
   | {
       command: 'migrate';
@@ -186,12 +192,14 @@ export function createOpsHandler(config: Config) {
             reasons.push('bindings');
           if (await workspaceUpgradesPending(sql)) reasons.push('definitions');
         }
+        const readPlan = reasons[0] === 'migrations' ? await restrictedMigrationPlan(sql) : null;
         return {
           command: 'migration-status',
           protocol: 1,
           historyChecked: true,
           needsStop: reasons.length > 0,
           reasons,
+          ...(readPlan ? { restrictedReads: readPlan } : {}),
         };
       } finally {
         await sql.end({ timeout: 5 });

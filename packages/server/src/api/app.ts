@@ -18,6 +18,7 @@ import type { ExtensionOAuthClients } from '../extensions/oauth-clients.js';
 import { Extensions } from '../extensions/service.js';
 import type { FileStorage } from '../file-storage/contract.js';
 import { Files } from '../files/service.js';
+import { maintenanceResponse, readOnlyViolation } from '../http/maintenance.js';
 import { type RateLimit, rateLimit } from '../http/rate-limit.js';
 import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
 import { hostedSetup } from '../mcp/hosted-setup.js';
@@ -27,6 +28,7 @@ import { RoutineRuntime } from '../routines/runtime.js';
 import { Routines } from '../routines/service.js';
 import { VERSION } from '../version.js';
 import type { Webhooks } from '../webhooks/service.js';
+import { admitRestrictedApi, admitRestrictedCredential } from './restricted.js';
 import { changeRoutes } from './routes/changes.js';
 import { commentRoutes } from './routes/comments.js';
 import { extensionDataRoutes } from './routes/extension-data.js';
@@ -64,6 +66,13 @@ export type AppDeps = {
   accountsSecret?: string;
   /** The per-workspace rate limit on /v1 and /mcp (accounts spec 4.8); none if unset. */
   rateLimit?: RateLimit;
+  /** Use read-only pools and an independently admitted limiter during a write pause. */
+  restricted?: { rateLimit: MiddlewareHandler<AppEnv> };
+  /** Scope is selected by a trusted caller only after workspace isolation is established. */
+  workspacePause?: {
+    workspaceId: string;
+    reader: (request: Request) => Response | Promise<Response>;
+  };
   /** The caller's address, for the webhook ingress limiter; never read from a client header. */
   clientIp?: (c: Context<AppEnv>) => string | undefined;
   /**
@@ -91,7 +100,12 @@ export function createApp(deps: AppDeps) {
   const app = new Hono<AppEnv>();
   const publicOrigin = deps.publicOrigin ? publicOriginSchema.parse(deps.publicOrigin) : undefined;
 
-  app.onError((error, c) => errorResponse(c, toAppError(error)));
+  app.onError((error, c) =>
+    deps.restricted && readOnlyViolation(error)
+      ? maintenanceResponse(false, 'reads')
+      : errorResponse(c, toAppError(error)),
+  );
+  if (deps.restricted) app.use('*', admitRestrictedApi);
 
   app.notFound((c) =>
     errorResponse(c, new AppError(404, 'not_found', `no route for ${c.req.method} ${c.req.path}`)),
@@ -100,7 +114,12 @@ export function createApp(deps: AppDeps) {
   app.get('/health', async (c) => {
     try {
       await deps.sql`select 1`;
-      return c.json({ status: 'ok', version: VERSION, database: 'ok' });
+      return c.json({
+        status: 'ok',
+        version: VERSION,
+        database: 'ok',
+        ...(deps.restricted ? { restrictedServingProtocol: 1 } : {}),
+      });
     } catch {
       return c.json({ status: 'error', version: VERSION, database: 'unreachable' }, 503);
     }
@@ -111,7 +130,14 @@ export function createApp(deps: AppDeps) {
   const routinesAvailable = deps.routines?.available === true && !!deps.runTokens;
   if (!deps.accountsSecret) sessionRoutes(app, deps.sql, publicOrigin, routinesAvailable);
   const v1 = new Hono<AppEnv>();
-  const limit = rateLimit(deps.sql, deps.rateLimit ?? { limit: 0 });
+  const workspaceLimit = deps.restricted
+    ? admitRestrictedCredential(deps.restricted.rateLimit)
+    : rateLimit(deps.sql, deps.rateLimit ?? { limit: 0 });
+  const limit: MiddlewareHandler<AppEnv> = async (c, next) => {
+    const pause = deps.workspacePause;
+    if (pause && c.get('caller').workspaceId === pause.workspaceId) return pause.reader(c.req.raw);
+    return workspaceLimit(c, next);
+  };
   v1.use(
     '*',
     authenticate(deps.sql, {

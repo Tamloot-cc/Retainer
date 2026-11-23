@@ -25,11 +25,13 @@ export function createApiHandler(
     'extensionCatalog' | 'runTokens' | 'extensionActivation' | 'fileStorage' | 'fileQuota'
   > = {},
   routinesAvailable = false,
+  restricted?: AppDeps['restricted'],
 ) {
   setLogLevel(config.LOG_LEVEL);
   const app = createApp({
     sql,
     ...extensions,
+    ...(restricted ? { restricted } : {}),
     webDir: config.RETAINER_WEB_DIR,
     publicOrigin: config.RETAINER_PUBLIC_ORIGIN,
     // Checks people's session cookies; never loads Better Auth (4.4).

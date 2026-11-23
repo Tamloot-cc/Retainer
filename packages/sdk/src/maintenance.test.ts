@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { RetainerClient } from './index.js';
-import { retryAfterMs } from './maintenance.js';
+import { maintenanceFetch, retryAfterMs } from './maintenance.js';
 
 const maintenance = (guaranteed = false, retry = '1') =>
   Response.json(
@@ -93,4 +93,13 @@ it('retries POST search reads without a not-executed guarantee', async () => {
   await vi.advanceTimersByTimeAsync(1000);
   await result;
   expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
+it('does not infer a POST read from the last path segment', async () => {
+  const fetcher = vi.fn(async () => maintenance());
+  const response = await maintenanceFetch(fetcher, 'https://retainer.test/v1/extensions/search', {
+    method: 'POST',
+  });
+  expect(response.status).toBe(503);
+  expect(fetcher).toHaveBeenCalledTimes(1);
 });

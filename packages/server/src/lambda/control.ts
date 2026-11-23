@@ -28,11 +28,13 @@ export function createControlHandler(
   sql: Sql = createControlSql(config, { max: config.RETAINER_DB_POOL_MAX }),
   authSql: Sql = createControlSql(config, { max: config.RETAINER_DB_POOL_MAX }),
   openPurgeSql: () => Sql = () => createControlSql(config, { max: 1, keepConnections: true }),
+  restricted = false,
 ) {
   setLogLevel(config.LOG_LEVEL);
   const app = createAccountsServer({
     config,
     hostedOnboarding: true,
+    restricted,
     sql,
     authSql,
     // API Gateway's or, behind CloudFront, CloudFront's view of the caller;
@@ -44,7 +46,11 @@ export function createControlHandler(
   function control(event: PurgeEvent, context?: LambdaContext): Promise<PurgeReport>;
   function control(event: LambdaEvent, context: LambdaContext): ReturnType<typeof http>;
   function control(event: LambdaEvent | PurgeEvent, context?: LambdaContext) {
-    if (isPurgeEvent(event)) return purge(openPurgeSql());
+    if (isPurgeEvent(event)) {
+      if (restricted) throw new Error('Purge requires the writer function.');
+      return purge(openPurgeSql());
+    }
+    if (restricted) return http(event, context as LambdaContext);
     cliReady ??= app.initializeCli().catch((error) => {
       cliReady = undefined;
       throw error;

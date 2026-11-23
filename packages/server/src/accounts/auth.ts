@@ -134,6 +134,8 @@ export type AuthOptions = {
   microsoftAuthority?: string;
   /** Off only in tests, which sign in many times from one address. */
   rateLimit?: boolean;
+  /** The restricted control reader validates existing sessions only. */
+  restricted?: boolean;
   /**
    * Fetches client metadata documents. Production resolves the host once,
    * refuses private addresses and pins the address (@better-auth/cimd/node);
@@ -383,6 +385,7 @@ function betterAuthFor(options: AuthOptions) {
         },
       },
     },
+    // The OAuth plugin can seed resources at startup, including on a session read.
     plugins: [
       microsoftAccountKey(),
       passkey({
@@ -600,6 +603,6 @@ function betterAuthFor(options: AuthOptions) {
           if (pinned) await linkPinnedResource(sql, pinned);
         },
       }),
-    ],
+    ].filter(() => !options.restricted),
   });
 }

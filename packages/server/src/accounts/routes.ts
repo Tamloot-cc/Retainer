@@ -21,6 +21,7 @@ import type { Sql } from '../db/client.js';
 import { isUuid } from '../db/ids.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { ExtensionCatalog } from '../extensions/catalog.js';
+import { maintenanceResponse, readOnlyViolation } from '../http/maintenance.js';
 import { idParam, readBody, zodError } from '../http/request.js';
 import { errorResponse, toAppError } from '../http/response.js';
 import { listTemplates } from '../templates/catalog.js';
@@ -77,6 +78,7 @@ export type AccountsEnv = {
 export type AccountsDeps = {
   auth: Auth;
   hostedOnboarding?: boolean;
+  restricted?: boolean;
   extensionCatalog?: ExtensionCatalog;
   /** A connection as the control role. */
   sql: Sql;
@@ -90,7 +92,20 @@ export function createAccountsApp(deps: AccountsDeps) {
   const { sql } = deps;
   const cliResource = cliOAuthSettings(deps.publicOrigin).resource;
   const catalog = deps.extensionCatalog ?? new ExtensionCatalog();
-  app.onError((error, c) => errorResponse(c, toAppError(error)));
+  app.onError((error, c) =>
+    deps.restricted && readOnlyViolation(error)
+      ? maintenanceResponse(false, 'reads')
+      : errorResponse(c, toAppError(error)),
+  );
+  if (deps.restricted)
+    app.use('*', async (c, next) => {
+      const { method, path } = c.req;
+      const read = method === 'GET' || method === 'HEAD';
+      if (read && ['/account', '/account/'].includes(path)) return next();
+      if (method === 'POST' && path === '/account/auth/get-session')
+        return maintenanceResponse(true, 'session-refresh');
+      return maintenanceResponse(true, read ? 'reads' : 'writes');
+    });
   app.notFound((c) =>
     errorResponse(c, new AppError(404, 'not_found', `no route for ${c.req.method} ${c.req.path}`)),
   );
