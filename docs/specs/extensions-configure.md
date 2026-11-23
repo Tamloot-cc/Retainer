@@ -130,9 +130,14 @@ PUT /v1/extensions/:id/runtime/suggestions
   match their scalar type and any declared options. Consent settings can only
   be suggested as `true`; the admin still reviews them. Secret and
   connection-level settings cannot be suggested.
-- Whether a suggested field exists and fits is not checked here. The schema can
-  change before the admin looks, so the suggestions are resolved against the
-  current schema each time they are read (§6.2).
+- On save, the server resolves the suggestions against the current schema
+  with the review's own check, and drops each choice it would reject. A
+  field's problem drops that field's choice; any other problem drops the
+  binding's choice. The reasons for dropped choices go with them. The review
+  then uses the fixed default there instead of opening with an error, and a
+  bundle doesn't need to copy the server's rules. The save still succeeds.
+- The schema can change before the admin looks, so the suggestions are also
+  resolved against the current schema each time they are read (§6.2).
 - Suggestions become visible only after that run succeeds; failed or incomplete
   results never prefill a form. Each retry clears the prior attempt's saved
   values before executing again. The newest-run slot is assigned when enqueueing,

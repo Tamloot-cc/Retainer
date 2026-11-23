@@ -1,5 +1,7 @@
 import {
   bindingChoicesSchema,
+  type ExtensionBindingChoices,
+  type ExtensionManifest,
   type ExtensionSuggestions,
   SUGGESTION_REASON_MAX,
 } from '@retainer/extension';
@@ -9,9 +11,10 @@ import type { Sql } from '../db/client.js';
 import { inWorkspace, jsonValue, lockSchemaShared } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
 import { admitCaller, admitRun } from '../extension-runtime/admission.js';
-import type { StoredBindingPlan } from '../extension-runtime/bindings.js';
+import type { BindingIssue, StoredBindingPlan } from '../extension-runtime/bindings.js';
 import { pendingSecrets } from '../extension-runtime/secrets.js';
 import { loadSchemaState } from '../schema/load.js';
+import type { SchemaState } from '../schema/types.js';
 import { resolveBindingPlan } from './bindings.js';
 import type { ExtensionCatalog } from './catalog.js';
 
@@ -22,6 +25,51 @@ export const suggestionsSchema = z.strictObject({
     .record(z.string(), z.union([z.string(), z.boolean(), z.number().finite()]))
     .optional(),
 });
+
+/** The binding problems a plan resolution reports, or null when it resolves. */
+function bindingIssues(resolve: () => unknown): BindingIssue[] | null {
+  try {
+    resolve();
+    return null;
+  } catch (error) {
+    if (!(error instanceof AppError) || error.code !== 'bindings_invalid') throw error;
+    return (error.details as { bindings?: BindingIssue[] } | undefined)?.bindings ?? [];
+  }
+}
+
+/**
+ * Drops each suggested choice the server would reject, so the review opens
+ * with the fixed default there rather than an error (configure spec 2.2). The
+ * check is the review's own, so a bundle need not copy the server's rules. A
+ * field's problem drops that field's choice; any other problem drops the
+ * binding's whole choice. Problems no suggestion caused stay for the review.
+ */
+function fitSuggestions(
+  state: SchemaState,
+  manifest: ExtensionManifest,
+  suggested: ExtensionBindingChoices,
+  prior: StoredBindingPlan | null | undefined,
+  createPeople: StoredBindingPlan['createPeople'],
+) {
+  const bindings = structuredClone(suggested);
+  for (;;) {
+    const issues = bindingIssues(() =>
+      resolveBindingPlan(state, manifest, structuredClone(bindings), prior, createPeople),
+    );
+    let dropped = false;
+    for (const issue of issues ?? []) {
+      for (const key of issue.binding === '*' ? Object.keys(bindings) : [issue.binding]) {
+        const choice = bindings[key];
+        if (!choice) continue;
+        if (issue.field && choice.action !== 'skip' && choice.fields?.[issue.field])
+          delete choice.fields[issue.field];
+        else delete bindings[key];
+        dropped = true;
+      }
+    }
+    if (!dropped) return bindings;
+  }
+}
 
 export async function saveSuggestions(
   sql: Sql,
@@ -60,9 +108,33 @@ export async function saveSuggestions(
           { key },
         );
     }
+    let bindings = input.bindings;
+    let reasons = input.bindingReasons;
+    if (bindings) {
+      const [stored] = await tx<{ bindings: StoredBindingPlan | null }[]>`
+        select bindings from extension_installations where id=${run.installationId}`;
+      bindings = fitSuggestions(
+        await loadSchemaState(tx, caller.workspaceId),
+        release.manifest,
+        bindings,
+        stored?.bindings,
+        stored?.bindings?.createPeople ?? release.manifest.createPeople,
+      );
+      const kept = bindings;
+      // A reason goes with its choice: `binding` or `binding.field`.
+      reasons = Object.fromEntries(
+        Object.entries(reasons ?? {}).filter(([key]) => {
+          const [binding = '', field] = key.split('.');
+          const choice = kept[binding];
+          return field === undefined
+            ? !!choice
+            : !!choice && choice.action !== 'skip' && !!choice.fields?.[field];
+        }),
+      );
+    }
     const [saved] =
-      await tx`update extension_suggestions set bindings=${tx.json(jsonValue(input.bindings ?? null))},
-      binding_reasons=${tx.json(jsonValue(input.bindingReasons ?? null))},
+      await tx`update extension_suggestions set bindings=${tx.json(jsonValue(bindings ?? null))},
+      binding_reasons=${tx.json(jsonValue(reasons ?? null))},
       settings=${tx.json(jsonValue(input.settings ?? null))}
       where installation_id=${run.installationId} and release_digest=${run.releaseDigest} and job_id=${run.jobId} returning job_id`;
     if (!saved)

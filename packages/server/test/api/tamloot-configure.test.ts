@@ -81,6 +81,8 @@ async function setup(modelKey = true) {
             fields: [
               { name: 'name', label: 'Name', type: 'text' },
               { name: 'emailAddresses', label: 'Email addresses', type: 'emails' },
+              // A text field named like Tamloot's new `emails` field, which the model never sees.
+              { name: 'emails', label: 'Old emails', type: 'text' },
             ],
           },
         },
@@ -262,6 +264,79 @@ describe('Tamloot configure through the real API, Postgres and model proxy', () 
     expect(
       preview.body.operations.filter((op: { op: string }) => op.op === 'create_object'),
     ).toEqual([]);
+  });
+
+  it('drops each suggestion the review would reject, so the default applies there', async () => {
+    const h = await setup();
+    upstream.respond(
+      structured({
+        meeting: { action: 'existing', object: 'call', ...why('Calls hold meetings.') },
+        task: {
+          action: 'existing',
+          object: 'action',
+          ...why('Actions are to-dos.'),
+          fields: {
+            title: { action: 'existing', field: 'subject', ...why('The subject is the title.') },
+            // `contacts` is many-to-many (added below), which a Tamloot task can't use.
+            person: { action: 'existing', field: 'contacts', ...why('It names the contacts.') },
+            status: {
+              action: 'existing',
+              field: 'state',
+              values: { open: 'idea', done: 'completed' },
+              ...why('Idea is open; completed is done.'),
+            },
+          },
+        },
+        person: {
+          action: 'existing',
+          object: 'contact',
+          ...why('Contacts are people.'),
+          fields: {
+            name: { action: 'existing', field: 'name', ...why('Same meaning.') },
+            // A new `emails` field clashes with the contact's text field of that name.
+            emails: { action: 'create', field: null, ...why('No email field fits.') },
+          },
+        },
+      }),
+    );
+    const many = await h.app.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        reason: 'Actions name several contacts',
+        operations: [
+          {
+            op: 'create_field',
+            object: 'action',
+            field: {
+              name: 'contacts',
+              label: 'Contacts',
+              type: 'relation',
+              settings: { targetObject: 'contact', relationCardinality: 'many_to_many' },
+            },
+          },
+        ],
+      },
+    });
+    expect(many.body.status, JSON.stringify(many.body)).toBe('applied');
+    expect(await h.configure()).toEqual({ status: 'succeeded', code: 'suggestions_ready' });
+
+    const saved = await h.app.request(`/v1/extensions/${h.id}/suggestions`, {
+      key: h.keys.admin,
+    });
+    // The clash drops People's choice; the many-to-many relation drops only that field.
+    expect(saved.body.issues).toEqual({});
+    expect(saved.body.bindings.person).toBeUndefined();
+    expect(saved.body.bindings.task).toMatchObject({ action: 'existing', objects: ['action'] });
+    expect(saved.body.bindings.task.fields.person).toBeUndefined();
+    expect(saved.body.bindings.task.fields.title).toEqual({ action: 'existing', field: 'subject' });
+    expect(Object.keys(saved.body.bindingReasons).sort()).toEqual([
+      'meeting',
+      'task',
+      'task.status',
+      'task.title',
+    ]);
+    const preview = await h.review();
+    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
   });
 
   it('opens the review with the fixed default when the server has no model key', async () => {
