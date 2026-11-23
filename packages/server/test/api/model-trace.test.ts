@@ -174,7 +174,11 @@ it('captures a bounded response only inside the approved scope and prunes payloa
     expiresAt: new Date(now + 60_000).toISOString(),
   };
   const bytes = 'a'.repeat(40_000);
-  const send = async (capturePolicy?: typeof policy, content?: string) => {
+  const send = async (
+    capturePolicy?: typeof policy,
+    content?: string,
+    captureWorkspaces: ReadonlySet<string> = new Set(),
+  ) => {
     const proxy = createModelProxy({
       tokens: setup.tokens,
       apiKey: 'fake-key-never-captured',
@@ -183,6 +187,7 @@ it('captures a bounded response only inside the approved scope and prunes payloa
       record: reportUsage(recorder),
       trace: reportTrace(recorder),
       capturePolicy,
+      captureWorkspaces,
     });
     const request = new Request('https://proxy.test/v1/messages', {
       method: 'POST',
@@ -205,7 +210,13 @@ it('captures a bounded response only inside the approved scope and prunes payloa
     expiresAt: new Date(now - 1_000).toISOString(),
   });
   await send(policy, 'Bearer rt_model_secret_fixture');
+  await send(undefined, undefined, new Set([randomUUID()]));
+  await send(undefined, 'Bearer rt_model_secret_fixture', new Set([workspace]));
   expect(await db.owner`select call_id from model_call_payloads`).toHaveLength(0);
+  await send(undefined, undefined, new Set([workspace]));
+  const [automatic] = await db.owner`delete from model_call_payloads returning request_body`;
+  if (!automatic) throw new Error('expected an automatic capture');
+  expect((automatic.request_body as Buffer).toString()).toContain('Synthetic input');
   await send(policy, bytes);
 
   const captures = await db.owner`select * from model_call_payloads`;

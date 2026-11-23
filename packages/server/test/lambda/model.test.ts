@@ -120,6 +120,29 @@ describe('the hosted model function', () => {
     expect(forged.headers.get('cache-control')).toBe('no-store');
   });
 
+  it('loads the workspace capture allowlist for the hosted proxy', async () => {
+    const claims = await executorTokens.verifyModel(token);
+    if (!claims) throw new Error('expected a model token');
+    await expect(
+      createModelApp({ ...env, RETAINER_MODEL_CAPTURE_WORKSPACES: 'invalid' }),
+    ).rejects.toThrow('RETAINER_MODEL_CAPTURE_WORKSPACES');
+    const trace = vi.fn();
+    const app = await createModelApp(
+      { ...env, RETAINER_MODEL_CAPTURE_WORKSPACES: claims.workspaceId },
+      { trace, record: async () => {} },
+    );
+    const response = await post(app, message);
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(trace).toHaveBeenCalledWith(
+      token,
+      expect.objectContaining({ workspaceId: claims.workspaceId }),
+      expect.objectContaining({
+        payload: expect.objectContaining({ requestBody: Buffer.from(message).toString('base64') }),
+      }),
+    );
+  });
+
   it('queues a hosted build and signs its metered model call with only the routine model key', async () => {
     const origin = 'https://model.lambda-url.test';
     const config = loadConfig({

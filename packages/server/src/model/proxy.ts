@@ -2,7 +2,6 @@ import { randomBytes } from 'node:crypto';
 import { bearerToken } from '../auth/middleware.js';
 import type { ModelClaims, RunTokens, VerifiedModelToken } from '../extension-runtime/tokens.js';
 import { readCapped } from '../http/request.js';
-import { log } from '../log.js';
 import {
   allowedPath,
   MODEL_ID,
@@ -62,6 +61,7 @@ export type ModelProxyOptions = {
   record: RecordUsage;
   trace?: RecordTrace | undefined;
   capturePolicy?: CapturePolicy | undefined;
+  captureWorkspaces?: ReadonlySet<string>;
   fetch?: typeof fetch;
   timeoutMs?: number;
 };
@@ -137,7 +137,7 @@ export function createModelProxy(options: ModelProxyOptions) {
       if (narrowed) return anthropicError(narrowed.status, narrowed.type, narrowed.message);
       const message = parsed as { stream?: unknown; model?: unknown };
       streamed = message.stream === true;
-      if (options.capturePolicy && path === '/v1/messages') captureCandidate = parsed;
+      if (path === '/v1/messages') captureCandidate = parsed;
       if (typeof message.model === 'string' && MODEL_ID.test(message.model))
         requestedModel = message.model;
     }
@@ -182,7 +182,14 @@ export function createModelProxy(options: ModelProxyOptions) {
     };
     const startReport = metered ? trace(call) : undefined;
     const capture = metered
-      ? captureFor(options.capturePolicy, claims, started, body, captureCandidate)
+      ? captureFor(
+          options.capturePolicy,
+          options.captureWorkspaces,
+          claims,
+          started,
+          body,
+          captureCandidate,
+        )
       : undefined;
     let meter: UsageMeter | undefined;
     let providerRequestId: string | null = null;

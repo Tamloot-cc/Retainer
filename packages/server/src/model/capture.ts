@@ -58,17 +58,22 @@ function hasCredentialFields(content: unknown): boolean {
 
 export function captureFor(
   policy: CapturePolicy | undefined,
+  workspaces: ReadonlySet<string> | undefined,
   claims: ModelClaims,
   started: number,
   request: Uint8Array | undefined,
   parsed: unknown,
 ) {
-  if (!policy || !request || policy.workspaceId !== claims.workspaceId) return;
-  const owner = ownerOf(claims);
-  if (policy.ownerKind !== owner.kind || policy.ownerId !== owner.id) return;
-  const expires = Date.parse(policy.expiresAt);
-  if (started < Date.parse(policy.startsAt) || started >= expires || hasCredentialFields(parsed))
-    return;
+  if (!request) return;
+  let expires = Infinity;
+  if (!workspaces?.has(claims.workspaceId.toLowerCase())) {
+    if (!policy || policy.workspaceId !== claims.workspaceId) return;
+    const owner = ownerOf(claims);
+    if (policy.ownerKind !== owner.kind || policy.ownerId !== owner.id) return;
+    expires = Date.parse(policy.expiresAt);
+    if (started < Date.parse(policy.startsAt) || started >= expires) return;
+  }
+  if (hasCredentialFields(parsed)) return;
 
   const requestBody = Buffer.from(request.subarray(0, MAX_BYTES)).toString('base64');
   const requestTruncated = request.length > MAX_BYTES;
