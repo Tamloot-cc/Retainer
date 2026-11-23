@@ -46,6 +46,7 @@ const TOOLS = [
   'list_extension_runs',
   'list_extensions',
   'list_templates',
+  'list_workspaces',
   'log_event',
   'move_events',
   'preview_extension',

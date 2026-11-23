@@ -553,6 +553,17 @@ function AgentsTab({ state }: { state: AccountState }) {
             connected it, and never does more than they can here.
           </Muted>
           <ConnectedApps workspaceId={state.workspace.id} />
+          <Muted small>
+            To connect an app to this workspace only, give it this address instead of{' '}
+            {window.location.origin}/mcp. It won't ask which workspace to use.
+          </Muted>
+          <div className="flex items-center gap-2">
+            <Code>{`${window.location.origin}/mcp/w/${state.workspace.id}`}</Code>
+            <CopyButton
+              value={`${window.location.origin}/mcp/w/${state.workspace.id}`}
+              label="Copy address"
+            />
+          </div>
         </Stack>
       </Panel>
     </Stack>

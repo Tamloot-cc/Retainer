@@ -156,6 +156,8 @@ export async function connect(
     scope?: string;
     clientId?: string;
     redirectUri?: string;
+    /** The MCP address the app connects to; the base `/mcp` by default. */
+    resource?: string;
   },
 ): Promise<Tokens> {
   const flow = await authorize(accounts, input);
@@ -170,21 +172,22 @@ export async function connect(
     redirect_uri: flow.redirectUri,
     client_id: flow.clientId,
     code_verifier: flow.verifier,
-    resource: `${ORIGIN}/mcp`,
+    resource: input.resource ?? `${ORIGIN}/mcp`,
   });
   if (!exchanged.ok)
     throw new Error(`token answered ${exchanged.status}: ${await exchanged.text()}`);
   return (await exchanged.json()) as Tokens;
 }
 
-/** A JSON-RPC call to /mcp with a bearer token. */
+/** A JSON-RPC call to /mcp, or another MCP path, with a bearer token. */
 export async function mcpCall(
   api: { request: (url: string, init: RequestInit) => Response | Promise<Response> },
   accessToken: string,
   method: string,
   params: Record<string, unknown> = {},
+  path = '/mcp',
 ): Promise<Response> {
-  return api.request(`${ORIGIN}/mcp`, {
+  return api.request(`${ORIGIN}${path}`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${accessToken}`,

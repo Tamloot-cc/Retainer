@@ -64,6 +64,12 @@ naming the resource metadata,
 authorization server under `/account/auth`. OAuth access tokens work on
 `/mcp` only, not on `/v1`.
 
+`/mcp/w/<workspace ID>` is the same MCP server pinned to one workspace. It is
+an OAuth resource of its own, with its metadata at
+`/.well-known/oauth-protected-resource/mcp/w/<workspace ID>`: signing in
+through it offers only that workspace, its tokens work only there, and an API
+key for another workspace gets `400 wrong_workspace`.
+
 The token names the workspace, and on every request Retainer checks that the
 connection still exists and what the person's role is now. The app gets the
 scopes it asked for that the role allows, never `admin`, and writes as an

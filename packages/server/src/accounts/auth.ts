@@ -23,6 +23,7 @@ import {
   INSTALLATION_CLAIM,
   installationOAuthSettings,
   oauthSettings,
+  pinnedWorkspaceOf,
   WORKSPACE_CLAIM,
 } from '../auth/oauth-token.js';
 import { type AccountsConfig, signInProviders } from '../config.js';
@@ -493,6 +494,19 @@ function betterAuthFor(options: AuthOptions) {
           }
           if (reference.kind !== 'person' || reference.workspace_id !== referenceId)
             throw new Error('MCP requires a separate person consent');
+          // An address pinned to one workspace (4.7) is a resource of its
+          // own; its token is for that workspace and that resource alone.
+          const pinned = (resources ?? []).map((resource) =>
+            pinnedWorkspaceOf(resource, publicOrigin),
+          );
+          if (
+            pinned.some((workspace) => workspace !== undefined) &&
+            (pinned.length !== 1 || pinned[0] !== reference.workspace_id)
+          )
+            throw new APIError('BAD_REQUEST', {
+              code: 'invalid_target',
+              message: "This connection's address is for a different workspace.",
+            });
           return { [WORKSPACE_CLAIM]: reference.workspace_id };
         },
         schema: {

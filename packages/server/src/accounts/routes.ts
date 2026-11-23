@@ -27,6 +27,7 @@ import {
 } from './extensions.js';
 import type { Person } from './people.js';
 import * as people from './people.js';
+import { linkPinnedResource, pinnedRequest, pinnedWorkspaceOfQuery } from './pinned.js';
 
 /**
  * /account (accounts spec 4.5): Better Auth's routes, and the routes people
@@ -123,6 +124,18 @@ export function createAccountsApp(deps: AccountsDeps) {
           workspaceId: target.workspaceId,
         });
         return deps.auth.forWorkspace(request, target.workspaceId);
+      }
+      // An address pinned to one workspace (4.7): Better Auth checks the
+      // resource before anyone signs in, so it must exist and be linked to
+      // the client by then. A client met for the first time registers during
+      // the authorization itself; it is linked then, and asked again.
+      const pinned = pinnedRequest(url.searchParams, deps.publicOrigin);
+      if (pinned) {
+        const again = request.clone();
+        const linked = await linkPinnedResource(sql, pinned);
+        const response = await deps.auth.handler(request);
+        if (linked || !(await linkPinnedResource(sql, pinned))) return response;
+        return deps.auth.handler(again);
       }
     }
     return deps.auth.handler(request);
@@ -376,6 +389,15 @@ export function createAccountsApp(deps: AccountsDeps) {
         400,
         'wrong_workspace',
         'This setup prompt connects to a different workspace.',
+      );
+    }
+    // An address pinned to one workspace connects only to it (4.7).
+    const pinned = pinnedWorkspaceOfQuery(body.oauth_query, deps.publicOrigin);
+    if (pinned && pinned !== workspaceId) {
+      throw new AppError(
+        400,
+        'wrong_workspace',
+        "This connection's address is for a different workspace.",
       );
     }
     return connections.recordConsent(sql, c.get('person'), workspaceId, () =>

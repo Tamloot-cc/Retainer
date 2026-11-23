@@ -48,6 +48,20 @@ const hostOf = (url: string | null): string | null => {
   }
 };
 
+const WORKSPACE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * The workspace an address pinned to one workspace names, `/mcp/w/<ID>`
+ * (accounts spec 4.7): its consent offers only that workspace.
+ */
+export function pinnedWorkspace(query: URLSearchParams, origin: string): string | undefined {
+  const prefix = `${origin}/mcp/w/`;
+  const resources = query.getAll('resource');
+  if (resources.length !== 1 || !resources[0]?.startsWith(prefix)) return undefined;
+  const id = resources[0].slice(prefix.length);
+  return WORKSPACE_ID.test(id) ? id : undefined;
+}
+
 /** /app/oauth/consent: which workspace the app may use, and allow or cancel. */
 export function OAuthConsent({ account }: { account: Account }) {
   const resources = new URLSearchParams(window.location.search).getAll('resource');
@@ -68,9 +82,11 @@ function PersonConsent({ account }: { account: Account }) {
     queryFn: () => accountApi.oauthClient(clientId),
     retry: false,
   });
-  const boundWorkspace = client.data?.workspaceId;
-  const reachable = allWorkspaces(account).filter(
-    ({ workspace }) => !boundWorkspace || workspace.id === boundWorkspace,
+  // A setup prompt's client and a pinned address each allow one workspace.
+  const pinned = pinnedWorkspace(query, window.location.origin);
+  const bound = [client.data?.workspaceId, pinned].filter((id) => id !== undefined);
+  const reachable = allWorkspaces(account).filter(({ workspace }) =>
+    bound.every((id) => workspace.id === id),
   );
   const [selected, setSelected] = useState('');
   const picked = reachable.length === 1 ? reachable[0]?.workspace.id : selected;
@@ -117,7 +133,12 @@ function PersonConsent({ account }: { account: Account }) {
     >
       {reachable.length === 0 ? (
         <Stack>
-          {boundWorkspace ? (
+          {pinned ? (
+            <Notice>
+              You don't have access to the workspace this connection's address is for. Sign in with
+              the account that can open it.
+            </Notice>
+          ) : bound.length > 0 ? (
             <Notice>
               You don't have access to the workspace in this setup prompt. Sign in with the account
               that can open it.

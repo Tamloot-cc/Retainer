@@ -3,6 +3,8 @@ any objects the workspace adds. Your connection belongs to one workspace;
 every call acts on it, and every write is recorded as yours.
 
 Start with describe_schema and verify the workspace ID if the user specified one.
+If they mean another workspace, call list_workspaces: it gives that
+workspace's address, which your user adds as a separate connection.
 If the workspace is not initialized, read
 get_guide("discover_schema") and follow it: it walks you through exploring
 your user's data, proposing a schema and applying it once they agree.

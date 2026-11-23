@@ -126,12 +126,17 @@ export async function purgeDeletedWorkspaces(sql: Sql): Promise<PurgeReport> {
         );
       const deleted = await sql.begin(async (tx) => {
         await lockSchemaShared(tx, id);
-        return tx`
+        const gone = await tx`
           delete from workspaces
           where id = ${id}
             and deletion_scheduled_at <= now() - make_interval(days => ${DELETION_GRACE_DAYS})
             and not retainer_workspace_extension_cleanup_pending(${id}::uuid)
           returning 1`;
+        // The address pinned to it was an OAuth resource (accounts spec 4.7);
+        // its client links cascade.
+        if (gone.length > 0)
+          await tx`delete from oauth_resources where identifier like ${`%/mcp/w/${id}`}`;
+        return gone;
       });
       report.purged += deleted.length;
     } catch (error) {

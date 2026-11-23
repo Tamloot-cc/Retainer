@@ -112,3 +112,41 @@ describe('reviewed workspace app consent', () => {
     expect(options).not.toHaveBeenCalled();
   });
 });
+
+describe('an address pinned to one workspace', () => {
+  const sales = '11111111-1111-4111-8111-111111111111';
+  const support = '22222222-2222-4222-8222-222222222222';
+  const pinnedAccount: Account = {
+    ...account,
+    organizations: [
+      {
+        id: 'org',
+        name: 'Organization',
+        role: 'member',
+        workspaces: [
+          { id: sales, name: 'Sales', slug: 'sales', role: 'editor' },
+          { id: support, name: 'Support', slug: 'support', role: 'viewer' },
+        ],
+      },
+    ],
+  };
+
+  it('offers only the workspace the address names, and consents for it', async () => {
+    const approve = vi
+      .spyOn(api, 'oauthConsent')
+      .mockRejectedValue(new Error('Test stops before redirect'));
+    mount(`/mcp/w/${support}`, pinnedAccount);
+    expect(await screen.findByText(/as Dana/)).toBeTruthy();
+    expect(screen.queryByRole('radio', { name: /Sales/ })).toBeNull();
+    expect(screen.getByText('Support')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+    expect(await screen.findByText('Test stops before redirect')).toBeTruthy();
+    expect(approve).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: support }));
+  });
+
+  it("says so when the person can't reach that workspace", async () => {
+    mount('/mcp/w/33333333-3333-4333-8333-333333333333', pinnedAccount);
+    expect(await screen.findByText(/address is for/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Allow' })).toBeNull();
+  });
+});

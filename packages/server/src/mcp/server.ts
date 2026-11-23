@@ -22,8 +22,9 @@ import { registerWriteTools } from './tools/write.js';
  * The MCP tools (6.2). They are generic, not one per object, and each calls
  * the same service as its REST route, so both interfaces share validation,
  * write rules and error messages; get_guide is the exception, serving static
- * text that only agents need. The workspace and actor come from the API
- * key, so no tool takes either.
+ * text that only agents need. The workspace and actor come from the
+ * credential, so no tool takes either: a connection works in one workspace,
+ * and list_workspaces gives the address of each other one (accounts spec 4.7).
  *
  * Builds the MCP server for one authenticated caller.
  */
@@ -36,6 +37,8 @@ export function createMcpServer(
     fileQuota?: number | undefined;
     extensionActivation?: ReadonlySet<string> | undefined;
     routines?: RoutineConfig | undefined;
+    /** Where pinned MCP addresses live, for list_workspaces (accounts spec 4.7). */
+    publicOrigin?: string | undefined;
   } = {},
 ): McpServer {
   const server = new McpServer(
@@ -56,7 +59,7 @@ export function createMcpServer(
     caller,
   );
   registerFileTools(server, new Files(sql, options.fileStorage, options.fileQuota), caller);
-  registerSetupTools(server, sql, caller);
+  registerSetupTools(server, sql, caller, options.publicOrigin);
   registerReadTools(server, sql, caller);
   registerChangeTools(server, sql, caller, catalog);
   registerWriteTools(server, sql, caller);

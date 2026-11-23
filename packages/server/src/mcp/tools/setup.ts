@@ -1,9 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { pinnedMcpAddress } from '../../auth/oauth-token.js';
 import type { Caller } from '../../caller.js';
 import type { Sql } from '../../db/client.js';
 import { describeSchema } from '../../schema-engine/service.js';
 import { applyTemplateFor, templatesFor } from '../../templates/service.js';
+import { reachableWorkspaces } from '../../workspaces/reachable.js';
 import { GUIDE_NAMES, GUIDES } from '../guides.js';
 import { run } from '../shared.js';
 
@@ -19,7 +21,36 @@ const getGuideInput = z.strictObject({
 
 const noInput = z.strictObject({});
 
-export function registerSetupTools(server: McpServer, sql: Sql, caller: Caller): void {
+export function registerSetupTools(
+  server: McpServer,
+  sql: Sql,
+  caller: Caller,
+  publicOrigin?: string,
+): void {
+  server.registerTool(
+    'list_workspaces',
+    {
+      title: 'List workspaces',
+      description:
+        'Lists the workspaces your user can reach: id, name, their role, and current, the one ' +
+        'this connection works in. Every call you make acts on the current workspace only. ' +
+        'address is the MCP address pinned to a workspace: to work in another workspace, ' +
+        'your user adds that address as a separate connection in their app (it signs in to ' +
+        "that workspace alone), and you use that connection's tools. Use it when your user " +
+        'names a workspace other than the current one. Never copy data from one workspace ' +
+        'to another unless your user asks.',
+      inputSchema: noInput,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    () =>
+      run(caller, 'read', async () => ({
+        workspaces: (await reachableWorkspaces(sql, caller)).map((workspace) => ({
+          ...workspace,
+          ...(publicOrigin ? { address: pinnedMcpAddress(publicOrigin, workspace.id) } : {}),
+        })),
+      })),
+  );
+
   server.registerTool(
     'describe_schema',
     {
