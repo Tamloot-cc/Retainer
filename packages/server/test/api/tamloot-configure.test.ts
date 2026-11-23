@@ -26,7 +26,7 @@ beforeAll(async () => {
 
 /** Answers a Messages request with structured output, as the model would. */
 const structured = (output: unknown) => (request: Received, res: ServerResponse) =>
-  answer(request, res, 'claude-opus-5-5', { text: JSON.stringify(output), stopReason: 'end_turn' });
+  answer(request, res, 'claude-haiku-5-5', { text: JSON.stringify(output), stopReason: 'end_turn' });
 const why = (text: string) => ({ reason: text });
 
 /** A workspace that calls its meetings calls, its people contacts and its tasks actions. */

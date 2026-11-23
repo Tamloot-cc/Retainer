@@ -213,7 +213,7 @@ release has a `configure` function (configure spec §2) that asks a model.
 runs at access approval, before any member connects Tamloot, so it never
 calls Tamloot. Code: `packages/runner/src/tamloot-configure.ts`.
 
-**Input.** One structured call to `claude-opus-5-5` through the model proxy
+**Input.** One structured call to `claude-haiku-5-5` through the model proxy
 (`model-call.ts`, shared with Enrichment). The user message is JSON:
 
 ```ts
