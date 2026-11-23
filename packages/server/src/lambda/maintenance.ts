@@ -59,6 +59,8 @@ p{margin:0;color:var(--muted)}
 export const createMaintenanceHandler = (secret?: string) =>
   requireEdge(secret, async (event: LambdaEvent) => {
     const headers = event.headers ?? {};
+    const path = 'rawPath' in event ? event.rawPath : 'path' in event ? event.path : '';
+    const extension = /^\/(v1\/extensions|extensions\/webhooks)(\/|$)/.test(path ?? '');
     const navigation =
       headers['sec-fetch-mode'] === 'navigate' ||
       (headers.accept?.includes('text/html') && !headers.accept.includes('application/json'));
@@ -68,7 +70,7 @@ export const createMaintenanceHandler = (secret?: string) =>
         'content-type': navigation ? 'text/html; charset=utf-8' : 'application/json',
         // This means the application was never invoked, so even a write
         // without an idempotency key can safely retry this exact response.
-        ...maintenanceHeaders(true),
+        ...maintenanceHeaders(true, extension ? 'extensions' : undefined),
       },
       body: navigation ? PAGE : JSON.stringify(maintenanceBody),
       isBase64Encoded: false,
