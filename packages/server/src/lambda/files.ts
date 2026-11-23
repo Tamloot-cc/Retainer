@@ -3,6 +3,7 @@ import { createRuntimeSql, createSql } from '../db/client.js';
 import { createFileStorage } from '../file-storage/configuration.js';
 import { FileMaintenance } from '../worker/files.js';
 import { withPassLock } from './deploy-lock.js';
+import { withWriterInvocation } from './writer-admission.js';
 
 /** Dedicated scheduled storage maintenance. Hosted IAM/scheduling live in retainer-cloud. */
 export async function createFileMaintenanceHandler(config: Config) {
@@ -21,13 +22,15 @@ export async function createFileMaintenanceHandler(config: Config) {
   };
 }
 let cached: ReturnType<typeof createFileMaintenanceHandler> | undefined;
-export async function handler(event: unknown) {
+export async function handler(event: unknown, context: { getRemainingTimeInMillis(): number }) {
   if (
     !event ||
     typeof event !== 'object' ||
     (event as { task?: unknown }).task !== 'erase-file-storage'
   )
     throw new Error('invalid file maintenance event');
-  cached ??= createFileMaintenanceHandler(loadConfig());
-  return (await cached)();
+  return withWriterInvocation(context, async () => {
+    cached ??= createFileMaintenanceHandler(loadConfig());
+    return (await cached)();
+  });
 }

@@ -768,9 +768,11 @@ same cards as text, with labels rather than API names.
 ### Not in v1
 
 Creating or editing objects and fields in the UI, manual card order on
-boards, week and day calendars, dashboards, workspace and key management (operator CLI only, 7.1), several
-workspaces per session, bulk record actions, and context packs
-(`GET /v1/records/:id/context`, which serves agents).
+boards, week and day calendars, dashboards, bulk record actions other than
+delete and merge, and context packs (`GET /v1/records/:id/context`, which
+serves agents). Workspace, member and key management is in the web app in
+accounts mode (ARCHITECTURE 7.3); in key mode it stays with the operator CLI
+(7.1).
 
 ---
 

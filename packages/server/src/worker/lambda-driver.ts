@@ -6,6 +6,9 @@ import {
   verificationResultSchema,
 } from '@retainer/extension';
 import type { RoutineInvocation } from '@retainer/shared';
+import type { Sql } from '../db/client.js';
+import { HOSTED_WRITER_BUILD } from '../db/writer-build.js';
+import { acquireWriterLease, settleWriterLease } from '../db/writer-lease.js';
 import type { Executable, ExecutionDriver } from './extensions.js';
 import type { VerificationDriver } from './verifier-driver.js';
 
@@ -20,7 +23,11 @@ export type LambdaInvoke = (
 let client: Promise<LambdaInvoke> | undefined;
 const invokeLambda: LambdaInvoke = async (target, payload, signal) => {
   client ??= import('@aws-sdk/client-lambda').then(({ LambdaClient, InvokeCommand }) => {
-    const lambda = new LambdaClient({});
+    const lambda = new LambdaClient({
+      // The job lease and idempotency keys govern application retries.
+      // A transport retry could start a second remote invocation.
+      maxAttempts: 1,
+    });
     return (FunctionName, Payload, abortSignal) =>
       lambda.send(new InvokeCommand({ FunctionName, Payload, InvocationType: 'RequestResponse' }), {
         abortSignal,
@@ -49,15 +56,52 @@ export class LambdaDriver implements ExecutionDriver {
   constructor(
     prefix: string | undefined,
     private readonly invokeFunction: LambdaInvoke = invokeLambda,
+    private readonly leaseSql?: Sql,
   ) {
     if (!prefix || !prefixPattern.test(prefix))
       throw new Error('invalid extension runtime configuration');
     this.prefix = prefix;
   }
-  protected async request(target: string, input: unknown, signal: AbortSignal, cap: number) {
+  protected async request(
+    target: string,
+    input: unknown,
+    signal: AbortSignal,
+    cap: number,
+    effect?: string,
+  ) {
     assertLambdaTarget(target, this.prefix);
-    const result = await this.invokeFunction(target, Buffer.from(JSON.stringify(input)), signal);
-    // Function errors are platform failures, never a successful handler protocol result.
+    // An aborted socket does not stop a request Lambda accepted. Leave the
+    // durable hold for reconciliation when the result is uncertain.
+    const sql = HOSTED_WRITER_BUILD && effect ? this.leaseSql : undefined;
+    const lease =
+      sql &&
+      (await acquireWriterLease(sql, 320_000, {
+        effect,
+      }));
+    if (signal.aborted) {
+      await settleWriterLease(sql, lease);
+      signal.throwIfAborted();
+    }
+    const result = await this.invokeFunction(
+      target,
+      Buffer.from(JSON.stringify(input)),
+      signal,
+    ).catch(async (error) => {
+      // These are definite AWS refusals. Other failures may be a lost response
+      // after execution and require reconciliation before migration.
+      if (
+        sql &&
+        ['TooManyRequestsException', 'ResourceNotFoundException', 'AccessDeniedException'].includes(
+          (error as { name?: string })?.name ?? '',
+        )
+      )
+        await settleWriterLease(sql, lease);
+      throw error;
+    });
+    // A normal Lambda return settles the invocation before we validate its
+    // protocol response. A function crash can leave an outside result unknown.
+    if (sql && result.StatusCode === 200 && !result.FunctionError)
+      await settleWriterLease(sql, lease);
     if (result.StatusCode !== 200 || result.FunctionError || !result.Payload)
       throw new Error('Lambda execution unavailable');
     if (result.Payload.byteLength > cap) throw new Error('Lambda result exceeds size limit');
@@ -70,7 +114,15 @@ export class LambdaDriver implements ExecutionDriver {
     signal: AbortSignal,
   ) {
     return executionResultSchema.parse(
-      await this.request(executable.driverTarget, invocation, signal, 65536),
+      await this.request(
+        executable.driverTarget,
+        invocation,
+        signal,
+        65536,
+        'installationId' in invocation
+          ? `extension-run:${invocation.runId}`
+          : `routine-run:${invocation.runId}`,
+      ),
     );
   }
   async health(target: string, signal: AbortSignal) {
@@ -94,6 +146,7 @@ export class LambdaVerifier extends LambdaDriver implements VerificationDriver {
         invocation,
         AbortSignal.any([signal, AbortSignal.timeout(remaining)]),
         16384,
+        `verifier:${invocation.verificationId}`,
       ),
     );
   }

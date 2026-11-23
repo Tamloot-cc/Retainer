@@ -1,9 +1,11 @@
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { Caller } from '../caller.js';
+import { isWriterAdmissionDenied } from '../db/writer-lease.js';
 import { AppError } from '../errors.js';
 import { log } from '../log.js';
 import { SchemaValidationError } from '../schema/types.js';
+import { MAINTENANCE_RETRY_SECONDS, maintenanceBody, maintenanceResponse } from './maintenance.js';
 
 /** Hono environment: every authenticated request carries its caller. */
 export type AppEnv = {
@@ -22,6 +24,10 @@ const QUERY_CANCELED = '57014';
 /** Maps a thrown error to the AppError the API reports. An unknown one is logged and hidden. */
 export function toAppError(error: unknown): AppError {
   if (error instanceof AppError) return error;
+  if (isWriterAdmissionDenied(error)) {
+    const { code, message } = maintenanceBody.error;
+    return new AppError(503, code, message, { retryAfterSeconds: MAINTENANCE_RETRY_SECONDS });
+  }
   if (error instanceof SchemaValidationError) {
     return new AppError(422, 'schema_invalid', 'the schema change is invalid', {
       issues: error.issues,
@@ -51,6 +57,9 @@ export function errorBody(error: AppError): ErrorBody {
 }
 
 export function errorResponse(c: Context, error: AppError) {
+  // An operation that reached its transaction may have done earlier work.
+  if (error.status === 503 && error.code === 'maintenance')
+    return maintenanceResponse(false, 'writes');
   const retry = error.details?.retryAfterSeconds;
   if (
     error.status === 429 &&

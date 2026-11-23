@@ -5,6 +5,7 @@ import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { ChangeMaintenance } from '../worker/changes.js';
 import { RoutineMaintenance } from '../worker/routines.js';
 import { withPassLock } from './deploy-lock.js';
+import { withWriterInvocation } from './writer-admission.js';
 
 /** Hosted IAM/scheduling live in retainer-cloud; no provider code runs in this task. */
 export async function createChangeMaintenanceHandler(config: Config) {
@@ -39,13 +40,15 @@ export async function createChangeMaintenanceHandler(config: Config) {
   };
 }
 let cached: ReturnType<typeof createChangeMaintenanceHandler> | undefined;
-export async function handler(event: unknown) {
+export async function handler(event: unknown, context: { getRemainingTimeInMillis(): number }) {
   if (
     !event ||
     typeof event !== 'object' ||
     (event as { task?: unknown }).task !== 'dispatch-record-changes'
   )
     throw new Error('invalid change maintenance event');
-  cached ??= createChangeMaintenanceHandler(loadConfig());
-  return (await cached)();
+  return withWriterInvocation(context, async () => {
+    cached ??= createChangeMaintenanceHandler(loadConfig());
+    return (await cached)();
+  });
 }

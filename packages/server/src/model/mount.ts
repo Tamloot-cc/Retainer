@@ -3,7 +3,13 @@ import type { Sql } from '../db/client.js';
 import type { RunTokens } from '../extension-runtime/tokens.js';
 import type { AppEnv } from '../http/response.js';
 import { createModelProxy } from './proxy.js';
-import { modelProxyRoute, recordDirectly, traceDirectly, usageReportRoute } from './routes.js';
+import {
+  modelLeaseRoute,
+  modelProxyRoute,
+  recordDirectly,
+  traceDirectly,
+  usageReportRoute,
+} from './routes.js';
 
 /**
  * Mounts what this process serves of the model proxy, outside the `/v1`
@@ -21,8 +27,11 @@ export function mountModelRoutes(
 ) {
   const { runTokens: tokens } = deps;
   if (!tokens) return;
-  if (deps.modelUsageSecret)
-    usageReportRoute(app, { sql: deps.sql, tokens, secret: deps.modelUsageSecret });
+  if (deps.modelUsageSecret) {
+    const hosted = { sql: deps.sql, tokens, secret: deps.modelUsageSecret };
+    usageReportRoute(app, hosted);
+    modelLeaseRoute(app, hosted);
+  }
   if (deps.model)
     modelProxyRoute(
       app,

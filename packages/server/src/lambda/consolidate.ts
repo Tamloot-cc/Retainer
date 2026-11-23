@@ -3,6 +3,7 @@ import { createRuntimeSql, type Sql } from '../db/client.js';
 import { setLogLevel } from '../log.js';
 import { type ConsolidatePass, consolidateDue } from '../worker/index.js';
 import { withPassLock } from './deploy-lock.js';
+import { withWriterInvocation } from './writer-admission.js';
 
 /**
  * The consolidator (4.2) as a scheduled AWS Lambda function: each run is one
@@ -40,7 +41,8 @@ export function createConsolidateHandler(
 let cached: ReturnType<typeof createConsolidateHandler> | undefined;
 
 /** The Lambda entry point (`dist/lambda/consolidate.handler`). */
-export const handler = () => {
-  cached ??= createConsolidateHandler(loadConfig());
-  return cached();
-};
+export const handler = (_event: unknown, context: { getRemainingTimeInMillis(): number }) =>
+  withWriterInvocation(context, () => {
+    cached ??= createConsolidateHandler(loadConfig());
+    return cached();
+  });

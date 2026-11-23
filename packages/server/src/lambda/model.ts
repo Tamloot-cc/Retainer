@@ -3,11 +3,12 @@ import { streamHandle } from 'hono/aws-lambda';
 import { importSPKI } from 'jose';
 import { z } from 'zod';
 import { emptyToUndefined as empty, publicOriginSchema } from '../config.js';
+import { HOSTED_WRITER_BUILD } from '../db/writer-build.js';
 import { importRunPublicKey, RunTokens } from '../extension-runtime/tokens.js';
 import { LOG_LEVELS, setLogLevel } from '../log.js';
 import { capturePolicySchema } from '../model/capture.js';
 import { createModelProxy, type RecordUsage } from '../model/proxy.js';
-import { reportTrace, reportUsage } from '../model/routes.js';
+import { hostedModelAdmission, reportTrace, reportUsage } from '../model/routes.js';
 import type { RecordTrace } from '../model/trace.js';
 
 /**
@@ -96,6 +97,7 @@ export async function createModelApp(
     ...(options.fetch ? { fetch: options.fetch } : {}),
     record: options.record ?? reportUsage(reporting),
     trace: options.trace ?? reportTrace(reporting),
+    ...(HOSTED_WRITER_BUILD ? { admit: hostedModelAdmission(reporting, HOSTED_WRITER_BUILD) } : {}),
     capturePolicy: config.RETAINER_MODEL_CAPTURE_POLICY,
     captureWorkspaces: new Set(
       config.RETAINER_MODEL_CAPTURE_WORKSPACES?.map((id) => id.toLowerCase()),

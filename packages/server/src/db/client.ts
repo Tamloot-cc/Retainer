@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { CONTROL_ROLE, type Config, ownerDatabaseUrl, RUNTIME_ROLE } from '../config.js';
 import * as schema from './schema.js';
+import { HOSTED_WRITER_BUILD } from './writer-build.js';
 
 export { RUNTIME_ROLE };
 
@@ -15,6 +16,8 @@ export type SqlOptions = {
   max?: number;
   /** Default to read-only for every transaction, including implicit auth queries. */
   readOnly?: boolean;
+  /** Override only when testing independently deployed Lambda versions. */
+  writerBuild?: string;
   /**
    * Keep connections open instead of retiring each after postgres.js's
    * random 30–60 minutes. For pools that hold a session lock across many
@@ -38,7 +41,9 @@ export type SqlOptions = {
 export const API_STATEMENT_TIMEOUT_MS = 25_000;
 
 export function createSql(databaseUrl: string, options: SqlOptions = {}) {
+  const writerBuild = options.writerBuild ?? HOSTED_WRITER_BUILD;
   const connection = {
+    ...(writerBuild ? { 'retainer.writer_build': writerBuild } : {}),
     ...(options.role ? { role: options.role } : {}),
     ...(options.readOnly ? { default_transaction_read_only: true } : {}),
     ...(options.statementTimeoutMs ? { statement_timeout: options.statementTimeoutMs } : {}),

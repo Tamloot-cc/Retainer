@@ -1316,6 +1316,37 @@ itself.
   routine content (2.1), and a merge moves runs and firings to the survivor
   (`routine-runtime/merge.ts`).
 
+### 4.8 Hosted writer admission
+
+The hosted deployer can opt in after a timed rollout has covered every writer.
+Compose and older hosted deployers use unmanaged mode. Each hosted process
+sets the immutable package build ID on all Postgres connections at startup.
+The active deployment generation admits explicitly enrolled builds. Rolling
+updates enroll compatible builds in the current generation. A stopped rollout
+retires the old builds before reopening a new generation.
+
+A Postgres statement trigger checks admission under a shared transaction lock
+on the connection doing the write. This covers autocommit SQL, Better Auth
+writes, security-definer routines that mutate rows, and scheduled workers.
+The migration runner installs the triggers on new public tables in the same
+transaction as their DDL and journal entries. Retainer writes use read
+committed isolation. Deployment code proves the generation is closed under
+an exclusive lock on the DDL transaction, rechecks the journal, and records
+migration completion with its commit. The closed state remains durable if
+the operator loses the response.
+
+Hosted HTTP and scheduled handlers also register a lease before starting work.
+A normal invocation lease ends at the Lambda hard deadline if the function
+cannot release it. The deployer checks routine runs, extension jobs and
+detached effect leases separately. The model proxy registers through the
+authenticated usage ingress before contacting its upstream. A detached
+effect with a lost outcome remains a migration blocker until an operator
+records evidence from its durable outcome or provider. Routine tool effects
+retain their existing idempotency contract (4.7).
+
+Admission is global in protocol 1. Compatible serving requires a separate
+side-effect audit and a read-only transaction for each supported path.
+
 ## 5. Read paths
 
 | Operation                          | What it returns                                                                                                                                    |
