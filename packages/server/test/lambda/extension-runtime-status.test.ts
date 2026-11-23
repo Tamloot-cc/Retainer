@@ -148,25 +148,46 @@ test('Lambda status checks every distinct packaged target and its release and ro
         RETAINER_EXTENSION_EXECUTABLES: JSON.stringify(roleEntries),
       })(command),
     ).toEqual(result);
-    expect(await createOpsHandler({ ...config, [prefixKey]: undefined })(command)).toEqual({
+    expect(await createOpsHandler({ ...config, [prefixKey]: undefined })(command)).toMatchObject({
       ...result,
       compatible: false,
     });
   }
-  for (const patch of [
-    { releaseDigest: 'f'.repeat(64) },
-    { mode: 'both' },
-    { runtimeVersion: 'node26' },
-    { protocolVersion: 2 },
-  ]) {
+  for (const [patch, field] of [
+    [{ releaseDigest: 'f'.repeat(64) }, 'releaseDigest'],
+    [{ mode: 'both' }, 'mode'],
+    [{ runtimeVersion: 'node26' }, 'runtimeVersion'],
+    [{ protocolVersion: 2 }, 'protocolVersion'],
+  ] as const) {
     respond(patch);
-    expect(await createOpsHandler(config)(command)).toEqual({ ...result, compatible: false });
+    const answer = await createOpsHandler(config)(command);
+    expect(answer).toMatchObject({ ...result, compatible: false });
+    expect(answer).toHaveProperty('reason', expect.stringContaining(field));
   }
   aws.send.mockRejectedValue(new Error('unavailable'));
-  expect(await createOpsHandler(config)(command)).toEqual({ ...result, compatible: false });
+  expect(await createOpsHandler(config)(command)).toEqual({
+    ...result,
+    compatible: false,
+    reason: expect.stringMatching(/health check failed: .*unavailable/),
+  });
   expect(
     await createOpsHandler({ ...config, RETAINER_EXTENSION_EXECUTABLES: '[]' })(command),
-  ).toEqual({ ...result, compatible: false });
+  ).toEqual({ ...result, compatible: false, reason: 'no executables are configured' });
+  // A release the catalog no longer holds is named, not just refused, and is
+  // refused before any target is probed.
+  aws.send.mockClear();
+  const retired = { ...entries[0], releaseDigest: 'a'.repeat(64) };
+  expect(
+    await createOpsHandler({
+      ...config,
+      RETAINER_EXTENSION_EXECUTABLES: JSON.stringify([...entries, retired]),
+    })(command),
+  ).toEqual({
+    ...result,
+    compatible: false,
+    reason: `executable ${manifest.universalId.slice(0, 12)} release aaaaaaaaaaaa function ${retired.functionId.slice(0, 12)} has no function in the catalog`,
+  });
+  expect(aws.send).not.toHaveBeenCalled();
 });
 
 test('Lambda status probes the routine runner, which has no catalog entry, as a job function', async () => {

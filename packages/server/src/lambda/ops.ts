@@ -7,7 +7,10 @@ import { parseExtensionCatalog } from '../extensions/catalog.js';
 import { setLogLevel } from '../log.js';
 import { runCli } from '../operator/commands.js';
 import { extensionReleaseStatus } from '../operator/extension-releases.js';
-import { lambdaRuntimeCompatible } from '../operator/extension-runtime.js';
+import {
+  lambdaRuntimeCompatible,
+  type RuntimeCompatibility,
+} from '../operator/extension-runtime.js';
 import { rebuildSearchText } from '../records/rebuild-search.js';
 import {
   bindingsMigrationPending,
@@ -69,7 +72,7 @@ const opsEvent = z.discriminatedUnion('command', [
 
 export type OpsEvent = z.input<typeof opsEvent>;
 export type OpsResult =
-  | { command: 'extension-runtime-status'; protocol: 1; compatible: boolean }
+  | { command: 'extension-runtime-status'; protocol: 1; compatible: boolean; reason?: string }
   | ({ command: 'extension-release-status'; protocol: 1 } & Awaited<
       ReturnType<typeof extensionReleaseStatus>
     >)
@@ -105,15 +108,18 @@ export function createOpsHandler(config: Config) {
     // locks; the workspace upgrade runs on the same connection.
     if (parsed.data.command === 'extension-runtime-status') {
       if (config.RETAINER_EXTENSION_DRIVER === 'lambda') {
+        let status: RuntimeCompatibility;
         try {
-          return {
-            command: 'extension-runtime-status',
-            protocol: 1,
-            compatible: await lambdaRuntimeCompatible(config),
+          status = await lambdaRuntimeCompatible(config);
+        } catch (error) {
+          status = {
+            compatible: false,
+            reason: `runtime check failed: ${error instanceof Error ? error.message : String(error)}`,
           };
-        } catch {
-          return { command: 'extension-runtime-status', protocol: 1, compatible: false };
         }
+        // The deploy prints the reason; the log keeps it when nobody reads the deploy.
+        if (!status.compatible) console.warn(`extension runtime incompatible: ${status.reason}`);
+        return { command: 'extension-runtime-status', protocol: 1, ...status };
       }
       if (!parsed.data.configurationDigest || !parsed.data.bundles)
         throw new Error('launcher status requires configurationDigest and bundles');
