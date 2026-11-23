@@ -8,7 +8,7 @@ import {
 import { z } from 'zod';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
-import { inWorkspace, jsonValue, lockSchemaShared } from '../db/tx.js';
+import { inWorkspace, jsonValue, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
 import { admitCaller, admitRun } from '../extension-runtime/admission.js';
 import type { BindingIssue, StoredBindingPlan } from '../extension-runtime/bindings.js';
@@ -17,6 +17,7 @@ import { loadSchemaState } from '../schema/load.js';
 import type { SchemaState } from '../schema/types.js';
 import { resolveBindingPlan } from './bindings.js';
 import type { ExtensionCatalog } from './catalog.js';
+import { creationPolicy } from './creation-policy.js';
 
 export const suggestionsSchema = z.strictObject({
   bindings: bindingChoicesSchema.optional(),
@@ -25,6 +26,35 @@ export const suggestionsSchema = z.strictObject({
     .record(z.string(), z.union([z.string(), z.boolean(), z.number().finite()]))
     .optional(),
 });
+
+/**
+ * What the review resolves suggestions against besides the schema: the
+ * installation's stored plan, and the contact policy its approved access
+ * settings ask for. Before the first turn-on there is no plan yet, so the
+ * policy comes from that approval, not the release's ceiling.
+ */
+async function reviewBasis(
+  tx: Tx,
+  installationId: string,
+  release: { digest: string; manifest: ExtensionManifest },
+) {
+  const [row] = await tx<
+    { plan: StoredBindingPlan | null; settings: Record<string, unknown> | null }[]
+  >`
+    select i.bindings as plan, a.settings from extension_installations i
+    left join extension_access_approvals a on a.installation_id=i.id and a.workspace_id=i.workspace_id
+      and a.release_digest=${release.digest} and a.generation=i.generation
+      and a.settings_revision=i.settings_revision
+    where i.id=${installationId}`;
+  const requested = row?.settings?.createPeople;
+  return {
+    prior: row?.plan,
+    createPeople:
+      requested === undefined
+        ? (row?.plan?.createPeople ?? release.manifest.createPeople)
+        : creationPolicy(release.manifest, requested, 'migration'),
+  };
+}
 
 /** The binding problems a plan resolution reports, or null when it resolves. */
 function bindingIssues(resolve: () => unknown): BindingIssue[] | null {
@@ -48,8 +78,7 @@ function fitSuggestions(
   state: SchemaState,
   manifest: ExtensionManifest,
   suggested: ExtensionBindingChoices,
-  prior: StoredBindingPlan | null | undefined,
-  createPeople: StoredBindingPlan['createPeople'],
+  { prior, createPeople }: Awaited<ReturnType<typeof reviewBasis>>,
 ) {
   const bindings = structuredClone(suggested);
   for (;;) {
@@ -111,14 +140,11 @@ export async function saveSuggestions(
     let bindings = input.bindings;
     let reasons = input.bindingReasons;
     if (bindings) {
-      const [stored] = await tx<{ bindings: StoredBindingPlan | null }[]>`
-        select bindings from extension_installations where id=${run.installationId}`;
       bindings = fitSuggestions(
         await loadSchemaState(tx, caller.workspaceId),
         release.manifest,
         bindings,
-        stored?.bindings,
-        stored?.bindings?.createPeople ?? release.manifest.createPeople,
+        await reviewBasis(tx, run.installationId, release),
       );
       const kept = bindings;
       // A reason goes with its choice: `binding` or `binding.field`.
@@ -212,28 +238,11 @@ export async function getSuggestions(
     const issues: Record<string, string> = {};
     if (status === 'ready' && row.bindings) {
       const current = await loadSchemaState(tx, caller.workspaceId);
-      const [stored] = await tx<{ bindings: StoredBindingPlan | null }[]>`
-        select bindings from extension_installations where id=${id}`;
-      try {
-        resolveBindingPlan(
-          current,
-          release.manifest,
-          row.bindings,
-          stored?.bindings,
-          stored?.bindings?.createPeople ?? release.manifest.createPeople,
-        );
-      } catch (error) {
-        if (!(error instanceof AppError)) throw error;
-        const bindings = (
-          error.details as
-            | {
-                bindings?: { binding: string; field?: string; message: string }[];
-              }
-            | undefined
-        )?.bindings;
-        for (const issue of bindings ?? [])
-          issues[[issue.binding, issue.field].filter(Boolean).join('.')] = issue.message;
-      }
+      const { prior, createPeople } = await reviewBasis(tx, id, release);
+      for (const issue of bindingIssues(() =>
+        resolveBindingPlan(current, release.manifest, row.bindings, prior, createPeople),
+      ) ?? [])
+        issues[[issue.binding, issue.field].filter(Boolean).join('.')] = issue.message;
     }
     return {
       status,
