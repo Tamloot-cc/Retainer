@@ -2,7 +2,7 @@ name: Migration compatibility
 
 on:
   pull_request:
-    paths: ["packages/server/drizzle/**"]
+    paths: ["packages/server/drizzle/**", ".github/workflows/migration-compatibility.yml"]
 
 permissions:
   contents: read
@@ -36,6 +36,17 @@ jobs:
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
+      # The old tests run in parallel against base and PR schemas and peak
+      # above Postgres's default 100 connections (53300 too_many_connections).
+      # Service containers take no server flags, so set it and restart, as
+      # ci.yml does.
+      - name: Raise the Postgres connection limit
+        run: |
+          pg=${{ job.services.postgres.id }}
+          docker exec "$pg" psql -U retainer -c "alter system set max_connections = 300"
+          docker restart "$pg"
+          until docker exec "$pg" pg_isready -U retainer; do sleep 1; done
+          docker exec "$pg" psql -U retainer -Atc "show max_connections"
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
