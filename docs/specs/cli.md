@@ -318,20 +318,23 @@ Rules:
   in the same transaction, so a removal followed by a re-invite doesn't bring
   a window back. An organization change that removes the person's effective
   role in a workspace ends that workspace's windows too.
-- **Checked inside each decision.** A new `recheckElevation(tx, binding)` runs
-  in the decision's own transaction, right after `admitCaller`,
-  `recheckPerson` or the role check under lock in `people.*`. The `/account`
-  services take a `person`, not a `Caller`, so their decision routes pass the
-  person with `{ loginId, elevationId, via }`. Schema approval
-  (`schema-engine/engine.ts`) takes its schema locks without `admitCaller`, so
-  it gets the binding too and rechecks after those locks, before it changes
-  the proposal. It reads the
-  `cli_approvals` row `FOR SHARE` and compares `expires_at` with the current
-  time. Ending a window updates that row, so it waits for a decision in
-  progress or is seen by it. A decision waiting on a lock when the window
-  ends is refused with `elevation_required`. The route middleware only sets
-  the identity; it never decides that the window is open. Nothing is half
-  done: each decision is its own transaction.
+- **Checked inside each decision, after its locks.** A new
+  `recheckElevation(tx, binding)` runs in the decision's own transaction,
+  after the decision has taken all its own locks (record, assertion, schema,
+  organization) and before its first change. Checking earlier, right after
+  `admitCaller`, would let a decision pass, wait on a lock while the window
+  expires, and then go ahead; and its hold on the approval row would make
+  `--end` wait behind it. It reads the `cli_approvals` row `FOR SHARE` and
+  compares `expires_at` with the current time. Ending a window updates that
+  row, so it either finishes before a decision's check, which then refuses
+  with `elevation_required`, or waits for a decision that already passed its
+  check to commit. A decision waiting on its own locks when the window ends
+  is therefore refused. The `/account` services take a `person`, not a
+  `Caller`, so their decision routes pass the person with
+  `{ loginId, elevationId, via }`. Schema approval (`schema-engine/engine.ts`)
+  takes its schema locks without `admitCaller`, so it gets the binding too.
+  The route middleware only sets the identity; it never decides that the
+  window is open. Nothing is half done: each decision is its own transaction.
 
 ### 5.2 What changes while elevated
 
