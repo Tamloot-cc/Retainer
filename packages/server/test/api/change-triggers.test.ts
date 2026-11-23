@@ -283,7 +283,7 @@ describe('transactional change dispatch with real Postgres', () => {
     expect(change.body.changedKeys).toEqual(['jobTitle']);
   });
 
-  it('asks the runner to retry when this process has not loaded the run release yet', async () => {
+  it('serves an admitted change run from its pinned release, and asks for a retry only when this process lacks it', async () => {
     const h = await setup();
     const [id] = h.ids;
     if (!id) throw new Error('installation missing');
@@ -294,17 +294,28 @@ describe('transactional change dispatch with real Postgres', () => {
     expect(created.status).toBe(201);
     expect(await h.queue.dispatchChanges(h.workspace.id, id)).toEqual({ queued: 1, blocked: 0 });
     const { key, pending } = await h.claim(id, created.body.id);
-    // Another API instance mid rolling deploy: same database and run keys, an older catalog.
+    // Other API instances mid rolling deploy: same database and run keys.
+    // One has the release with execution not enabled yet: the admitted run still reads.
+    const [manifest] = h.manifests;
+    if (!manifest) throw new Error('manifest missing');
+    const disabled = startTestApp(db, {
+      extensionCatalog: new ExtensionCatalog([{ manifest, actorCeiling: 'integration' }]),
+      runTokens: tokens,
+    });
+    // The other has an older catalog without the release: the runner should retry.
     const behind = startTestApp(db, {
       extensionCatalog: new ExtensionCatalog([]),
       runTokens: tokens,
     });
     try {
+      const served = await disabled.request(`/v1/changes/${pending.input.changePosition}`, { key });
+      expect(served.status).toBe(200);
+      expect(served.body.changedKeys).toEqual(['jobTitle']);
       const change = await behind.request(`/v1/changes/${pending.input.changePosition}`, { key });
       expect(change.status).toBe(503);
       expect(change.body.error.code).toBe('release_not_loaded');
     } finally {
-      await behind.sql.end();
+      await Promise.all([disabled.sql.end(), behind.sql.end()]);
     }
   });
 

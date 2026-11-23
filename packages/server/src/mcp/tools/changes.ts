@@ -1,15 +1,14 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { Caller } from '../../caller.js';
-import { Changes } from '../../changes/service.js';
+import { Changes, type RunReleases } from '../../changes/service.js';
 import type { Sql } from '../../db/client.js';
-import type { RuntimeCatalog } from '../../extension-runtime/availability.js';
 import { run } from '../shared.js';
 export function registerChangeTools(
   server: McpServer,
   sql: Sql,
   caller: Caller,
-  catalog: RuntimeCatalog,
+  catalog: RunReleases,
 ) {
   const changes = new Changes(sql);
   server.registerTool(

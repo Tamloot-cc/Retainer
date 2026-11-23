@@ -140,7 +140,7 @@ export function createApp(deps: AppDeps) {
     deps.extensionOAuthClients,
   );
   extensionRoutes(v1, extensions, !deps.accountsSecret);
-  changeRoutes(v1, deps.sql, extensions.catalog.runtime);
+  changeRoutes(v1, deps.sql, extensions.catalog);
   runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets, extensions.oauthClients);
   extensionDataRoutes(v1, deps.sql, extensions.catalog);
   webhookRuntime(v1, deps.webhooks);
