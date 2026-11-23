@@ -1,4 +1,8 @@
-import { defineExtension, type ExtensionManifest } from '@retainer/extension';
+import {
+  defineExtension,
+  type ExtensionBinding,
+  type ExtensionManifest,
+} from '@retainer/extension';
 import { z } from 'zod';
 
 export const TAMLOOT = {
@@ -8,13 +12,17 @@ export const TAMLOOT = {
   poll: 'f73caeba-09d4-4c76-b36c-a5d157ad67f8',
   sync: '20542a5c-65fb-4593-9336-f6f61014806e',
   disconnect: '0b6f1c7e-3d52-4a8e-9f1b-6c2d7e4a9b35',
+  configure: 'd7d30cd8-8dbf-4632-88b2-3a7f3297c9bf',
 } as const;
+/** The model `configure` asks where meetings, tasks and people go. */
+export const TAMLOOT_MODEL = 'claude-opus-5-5';
 export const TAMLOOT_FUNCTION_IDS: string[] = [
   TAMLOOT.connect,
   TAMLOOT.scan,
   TAMLOOT.poll,
   TAMLOOT.sync,
   TAMLOOT.disconnect,
+  TAMLOOT.configure,
 ];
 /** The connection secrets the release declares (connect spec 5.1). */
 export const TAMLOOT_SECRETS = {
@@ -82,6 +90,138 @@ export const tamlootTasks = z.object({
     )
     .max(500),
 });
+/** What Tamloot writes, in its own words (no built-in objects spec 5). */
+export const TAMLOOT_BINDINGS: ExtensionBinding[] = [
+  {
+    key: 'meeting',
+    label: 'Meetings',
+    description: 'Completed Tamloot meetings with notes and participants.',
+    class: 'event',
+    access: 'write',
+    required: true,
+    creates: true,
+    fields: [],
+    create: {
+      universalId: '417516c1-3ef9-4830-9e49-bf66485e87ac',
+      nameSingular: 'meeting',
+      namePlural: 'meetings',
+      labelSingular: 'Meeting',
+      labelPlural: 'Meetings',
+      fields: [],
+    },
+  },
+  {
+    key: 'task',
+    label: 'Tasks',
+    description: 'Action items from Tamloot meetings.',
+    class: 'entity',
+    access: 'write',
+    required: false,
+    creates: true,
+    fields: [
+      {
+        key: 'title',
+        label: 'Title',
+        types: ['text'],
+        required: true,
+        create: {
+          universalId: '373fdbab-f1bf-4bad-b86f-1a89213b7af0',
+          name: 'title',
+          label: 'Title',
+          type: 'text',
+          isNullable: false,
+        },
+      },
+      {
+        key: 'status',
+        label: 'Status',
+        types: ['select'],
+        required: true,
+        values: ['open', 'done'],
+        create: {
+          universalId: '516adff3-1f74-45ec-929b-aa589880232e',
+          name: 'status',
+          label: 'Status',
+          type: 'select',
+          isNullable: false,
+          settings: {
+            options: [
+              { value: 'open', label: 'Open' },
+              { value: 'done', label: 'Done' },
+            ],
+          },
+        },
+      },
+      {
+        key: 'person',
+        label: 'Person',
+        description: 'The contact associated with the action item.',
+        types: ['relation'],
+        required: false,
+        target: 'person',
+        create: {
+          universalId: 'a4960a8d-6ec7-42d0-8471-dc5f50068b63',
+          name: 'person',
+          label: 'Person',
+          type: 'relation',
+        },
+      },
+    ],
+    create: {
+      universalId: 'f0db09e4-a6e1-4860-a44b-28a85a620c54',
+      nameSingular: 'task',
+      namePlural: 'tasks',
+      labelSingular: 'Task',
+      labelPlural: 'Tasks',
+      labelField: 'title',
+      fields: [],
+    },
+  },
+  {
+    key: 'person',
+    label: 'People',
+    description: 'Match and optionally create meeting participants by email address.',
+    class: 'entity',
+    access: 'write',
+    required: false,
+    match: 'emails',
+    fields: [
+      {
+        key: 'name',
+        label: 'Name',
+        types: ['full_name', 'text'],
+        required: false,
+        create: {
+          universalId: 'f1231700-7ebd-4d64-bf21-cd96277bae0f',
+          name: 'name',
+          label: 'Name',
+          type: 'full_name',
+        },
+      },
+      {
+        key: 'emails',
+        label: 'Emails',
+        types: ['emails'],
+        required: true,
+        create: {
+          universalId: 'dbf832c6-d812-4cd7-8426-37f466f086c1',
+          name: 'emails',
+          label: 'Emails',
+          type: 'emails',
+        },
+      },
+    ],
+    create: {
+      universalId: '40f55446-9e51-41af-a269-d45ecebd5e28',
+      nameSingular: 'person',
+      namePlural: 'people',
+      labelSingular: 'Person',
+      labelPlural: 'People',
+      labelField: 'name',
+      fields: [],
+    },
+  },
+];
 export function tamlootManifest(build: {
   version?: string;
   packageDigest: string;
@@ -201,137 +341,7 @@ export function tamlootManifest(build: {
       revisionOrder: 'integer',
       tasks: 'task',
     },
-    bindings: [
-      {
-        key: 'meeting',
-        label: 'Meetings',
-        description: 'Completed Tamloot meetings with notes and participants.',
-        class: 'event',
-        access: 'write',
-        required: true,
-        creates: true,
-        fields: [],
-        create: {
-          universalId: '417516c1-3ef9-4830-9e49-bf66485e87ac',
-          nameSingular: 'meeting',
-          namePlural: 'meetings',
-          labelSingular: 'Meeting',
-          labelPlural: 'Meetings',
-          fields: [],
-        },
-      },
-      {
-        key: 'task',
-        label: 'Tasks',
-        description: 'Action items from Tamloot meetings.',
-        class: 'entity',
-        access: 'write',
-        required: false,
-        creates: true,
-        fields: [
-          {
-            key: 'title',
-            label: 'Title',
-            types: ['text'],
-            required: true,
-            create: {
-              universalId: '373fdbab-f1bf-4bad-b86f-1a89213b7af0',
-              name: 'title',
-              label: 'Title',
-              type: 'text',
-              isNullable: false,
-            },
-          },
-          {
-            key: 'status',
-            label: 'Status',
-            types: ['select'],
-            required: true,
-            values: ['open', 'done'],
-            create: {
-              universalId: '516adff3-1f74-45ec-929b-aa589880232e',
-              name: 'status',
-              label: 'Status',
-              type: 'select',
-              isNullable: false,
-              settings: {
-                options: [
-                  { value: 'open', label: 'Open' },
-                  { value: 'done', label: 'Done' },
-                ],
-              },
-            },
-          },
-          {
-            key: 'person',
-            label: 'Person',
-            description: 'The contact associated with the action item.',
-            types: ['relation'],
-            required: false,
-            target: 'person',
-            create: {
-              universalId: 'a4960a8d-6ec7-42d0-8471-dc5f50068b63',
-              name: 'person',
-              label: 'Person',
-              type: 'relation',
-            },
-          },
-        ],
-        create: {
-          universalId: 'f0db09e4-a6e1-4860-a44b-28a85a620c54',
-          nameSingular: 'task',
-          namePlural: 'tasks',
-          labelSingular: 'Task',
-          labelPlural: 'Tasks',
-          labelField: 'title',
-          fields: [],
-        },
-      },
-      {
-        key: 'person',
-        label: 'People',
-        description: 'Match and optionally create meeting participants by email address.',
-        class: 'entity',
-        access: 'write',
-        required: false,
-        match: 'emails',
-        fields: [
-          {
-            key: 'name',
-            label: 'Name',
-            types: ['full_name', 'text'],
-            required: false,
-            create: {
-              universalId: 'f1231700-7ebd-4d64-bf21-cd96277bae0f',
-              name: 'name',
-              label: 'Name',
-              type: 'full_name',
-            },
-          },
-          {
-            key: 'emails',
-            label: 'Emails',
-            types: ['emails'],
-            required: true,
-            create: {
-              universalId: 'dbf832c6-d812-4cd7-8426-37f466f086c1',
-              name: 'emails',
-              label: 'Emails',
-              type: 'emails',
-            },
-          },
-        ],
-        create: {
-          universalId: '40f55446-9e51-41af-a269-d45ecebd5e28',
-          nameSingular: 'person',
-          namePlural: 'people',
-          labelSingular: 'Person',
-          labelPlural: 'People',
-          labelField: 'name',
-          fields: [],
-        },
-      },
-    ],
+    bindings: TAMLOOT_BINDINGS,
 
     views: [],
     functions: [
@@ -374,6 +384,13 @@ export function tamlootManifest(build: {
           required: ['sourceItemId'],
         },
       ),
+      {
+        ...fn(TAMLOOT.configure, 'configure', { kind: 'configure' }, empty, []),
+        description:
+          'Suggest where meetings, tasks and people go, using a model, the workspace schema and a few records.',
+        scopes: ['read'],
+        uses: ['model'],
+      },
       {
         ...fn(TAMLOOT.disconnect, 'disconnect', { kind: 'disconnect' }, empty, [tokens]),
         description: 'Give up the connection’s Tamloot sessions.',

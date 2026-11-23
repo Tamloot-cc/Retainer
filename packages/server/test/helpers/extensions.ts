@@ -113,3 +113,41 @@ export function bindingStamp(plan: ExtensionBindingPlan, key: string): BindingWr
     ),
   };
 }
+
+type Requester = {
+  request: (
+    path: string,
+    options: { key?: string; body?: unknown; headers?: Record<string, string> },
+  ) => Promise<{ status: number; body: any }>;
+};
+
+/**
+ * Installs a release that has a `configure` function, in its two steps
+ * (configure spec 4): approve access, which queues `configure`, then review
+ * the bindings and turn it on. Returns the turned-on installation.
+ */
+export async function installReviewed(
+  app: Requester,
+  key: string,
+  input: { bindings?: unknown; [field: string]: unknown },
+) {
+  const { bindings: _bindings, ...access } = input;
+  const accessPreview = await app.request('/v1/extensions/preview', { key, body: access });
+  if (accessPreview.status !== 200) throw new Error(JSON.stringify(accessPreview.body));
+  const configuring = await app.request('/v1/extensions', {
+    key,
+    body: { ...access, planDigest: accessPreview.body.planDigest },
+    headers: { 'Idempotency-Key': randomUUID() },
+  });
+  if (configuring.status !== 201) throw new Error(JSON.stringify(configuring.body));
+  const final = { ...input, installationId: configuring.body.id, turnOn: true };
+  const preview = await app.request('/v1/extensions/preview', { key, body: final });
+  if (preview.status !== 200) throw new Error(JSON.stringify(preview.body));
+  const installed = await app.request(`/v1/extensions/${configuring.body.id}/turn-on`, {
+    key,
+    body: { ...final, planDigest: preview.body.planDigest },
+    headers: { 'Idempotency-Key': randomUUID() },
+  });
+  if (installed.status !== 200) throw new Error(JSON.stringify(installed.body));
+  return installed.body as { id: string; [field: string]: unknown };
+}

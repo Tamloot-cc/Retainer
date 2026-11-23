@@ -11,7 +11,7 @@ export {
   satisfiesServerRange,
 } from './semver.js';
 
-import { type Actor, FIELD_TYPES } from '@retainer/shared';
+import { type Actor, FIELD_TYPES, isInverseRelation } from '@retainer/shared';
 import { z } from 'zod';
 
 /** The icons a sidebar link may name; the web app draws each. */
@@ -220,6 +220,22 @@ const bindingSchema = z.strictObject({
   create: object.optional(),
 });
 export type ExtensionBinding = z.infer<typeof bindingSchema>;
+
+/**
+ * Whether a field can hold a binding field's values: not an event type's core
+ * field, not the read-only side of a relation, and of a type the binding field
+ * takes. The server adds that the field is active; API clients, which see
+ * `readOnly`, add that it is writable. One rule for the server, the bundles
+ * that suggest bindings and the web form.
+ */
+export function bindableField(
+  field: { type: string; coreRole?: unknown; settings: { isInverse?: boolean } },
+  rule: { types: readonly string[] },
+): boolean {
+  return !field.coreRole && !isInverseRelation(field) && rule.types.includes(field.type);
+}
+/** The longest reason a `configure` run may save for one suggestion (configure spec 2.2). */
+export const SUGGESTION_REASON_MAX = 500;
 
 const bindingValueSchema = z.union([name, z.strictObject({ value: name, label })]);
 const bindingFieldChoice = z.discriminatedUnion('action', [

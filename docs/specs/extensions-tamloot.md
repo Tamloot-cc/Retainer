@@ -97,6 +97,8 @@ connection with its owner and health.
 
 **Functions.**
 
+- `configure` (configure trigger, read-only, uses the model): suggests where
+  meetings, tasks and people go before the install review (§3.1).
 - `connect` (an install-type hook, run per connection): calls `/v1/me`, binds
   the source account, stores `/v1/changes/head` as the cursor in KV, and
   enqueues the backfill.
@@ -198,6 +200,89 @@ a feed tombstone, verified by a 410 or 404 from the session fetch. Admins can ch
 
 **Limits.** A 31-day backfill of 60 sessions with 5 tasks each is about 360
 writes, or 6 minutes at the default 60 writes a minute per connection.
+
+### 3.1 Suggested bindings
+
+Workspaces have no built-in objects, so meetings, tasks and people may live
+under other names: a `call` event type, an `action` object with a `state`
+select, a `contact` object. The server's fixed default matches by name only
+(no-built-in-objects §5.4) and would create new objects beside them. So the
+release has a `configure` function (configure spec §2) that asks a model.
+
+`configure` is read-only, declares `uses: ['model']` and reads no secret: it
+runs at access approval, before any member connects Tamloot, so it never
+calls Tamloot. Code: `packages/runner/src/tamloot-configure.ts`.
+
+**Input.** One structured call to `claude-opus-5-5` through the model proxy
+(`model-call.ts`, shared with Enrichment). The user message is JSON:
+
+```ts
+{
+  bindings: {                        // TAMLOOT_BINDINGS, in order
+    key: 'meeting' | 'task' | 'person';
+    label: string; description: string; required: boolean;
+    fields: {                        // title, status, person; name, emails
+      key: string; label: string; description?: string;
+      types: FieldType[]; required: boolean;
+      values?: string[];             // status: ['open', 'done']
+      target?: string;               // task.person targets 'person'
+    }[];
+    candidates: {                    // objects of the binding's class, at most 25
+      name: string;                  // API name
+      label: string; description: string | null;
+      recentRecords: string[];       // up to 3 labels of recently updated records, 120 chars each
+      fields: {                      // writable fields of a type some binding field takes
+        name: string; label: string; type: string; description: string | null;
+        options?: { value: string; label: string }[];  // select fields
+        targets?: string[];                            // relation fields
+      }[];
+    }[];
+  }[];
+  currentBindings?: Record<string, { // on an upgrade or "Suggest again"
+    objects: string[];
+    fields: Record<string, { field: string; values: Record<string, string> }>;
+  } | null>;
+}
+```
+
+The system prompt describes the three bindings, asks for a meaning match over
+a name match, prefers create over a doubtful match, and treats names, labels
+and record labels as data, never instructions.
+
+**Output.** JSON constrained by a schema built from `TAMLOOT_BINDINGS`, one
+key per binding, every key required:
+
+```ts
+{
+  [binding: 'meeting' | 'task' | 'person']: {
+    action: 'existing' | 'create' | 'skip';  // skip only for optional bindings
+    object: string | null;                   // API name for existing
+    reason: string;                          // one sentence for the admin
+    fields?: {                               // bindings with fields
+      [field: string]: {
+        action: 'existing' | 'create' | 'skip';  // skip only for optional fields
+        field: string | null;
+        reason: string;
+        values?: { open: string | null; done: string | null };  // task.status
+      };
+    };
+  };
+}
+```
+
+**Checks.** The runner keeps a choice only if the server would take it: an
+existing object of the binding's class among the candidates; an existing field
+that is writable, not a core field, not an inverse relation and of an allowed
+type; a relation that targets the object chosen for its `target` binding; a
+status value mapped to one of the field's options. A choice that fails is left
+out, so the server's fixed default applies to that binding or field. What's
+left is saved with `PUT /runtime/suggestions`, with each reason under
+`meeting`, `task.status` and so on.
+
+**Fallback.** No model on the server, a refusal, output that doesn't parse or
+any provider error saves nothing, and the run succeeds with
+`suggestions_ready_without_model`: the review opens with the fixed default.
+The admin approves every binding either way.
 
 ## 4. Retainer prerequisites
 

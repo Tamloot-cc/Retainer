@@ -1,22 +1,17 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import {
+  bindableField,
   type ExecutionResult,
   type ExtensionBindingChoices,
   type Invocation,
   isRetryLater,
+  SUGGESTION_REASON_MAX,
 } from '@retainer/extension';
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
 import { normalizeDomain, type ObjectView } from '@retainer/shared';
 import { z } from 'zod';
 import { ENRICHMENT, ENRICHMENT_OUTPUT_DEFINITIONS } from './enrichment-contract.js';
-import {
-  enrichmentModel,
-  type ModelFailure,
-  ModelRequestFailed,
-  pickCandidate,
-  type SuggestField,
-  suggestMapping,
-} from './enrichment-model.js';
+import { pickCandidate, type SuggestField, suggestMapping } from './enrichment-model.js';
 import {
   acceptPick,
   candidateValues,
@@ -25,6 +20,7 @@ import {
   ExaProvider,
   shortcut,
 } from './enrichment-provider.js';
+import { type ModelFailure, ModelRequestFailed, runModel } from './model-call.js';
 import { apiFetch, transient } from './outcome.js';
 
 export { ENRICHMENT_FUNCTION_IDS, enrichmentManifest } from './enrichment-contract.js';
@@ -130,16 +126,11 @@ const BACKFILL_CONCURRENCY = 3;
 const SAMPLE_COMPANIES = 20;
 const SAMPLES_PER_FIELD = 5;
 const SAMPLE_MAX_CHARACTERS = 500;
-const REASON_MAX = 500;
 
 /** Company fields an output can be written to; never the domain it looks companies up by. */
 const fieldsFor = (company: ObjectView | undefined, output: MappingOutput, lookupName = 'domain') =>
   (company?.fields ?? []).filter(
-    (field) =>
-      !field.readOnly &&
-      !field.coreRole &&
-      field.name !== lookupName &&
-      output.types.some((type) => type === field.type),
+    (field) => !field.readOnly && field.name !== lookupName && bindableField(field, output),
   );
 
 async function readCompanyBinding(sdk: RetainerClient, invocation: Invocation) {
@@ -266,7 +257,7 @@ async function suggestWithModel(
   return Object.fromEntries(
     outputs.map((output) => {
       const choice = answer.value[output.key];
-      const reason = choice?.reason.trim().slice(0, REASON_MAX) || undefined;
+      const reason = choice?.reason.trim().slice(0, SUGGESTION_REASON_MAX) || undefined;
       const field = choice?.field;
       if (
         choice?.action === 'existing' &&
@@ -366,7 +357,7 @@ export async function executeEnrichment(
   const id = invocation.installationId;
   let client: Anthropic | null | undefined;
   const model = () => {
-    client ??= enrichmentModel(invocation, transport);
+    client ??= runModel(invocation, transport);
     return client;
   };
   const exa = () => {

@@ -75,7 +75,7 @@ describe('Tamloot OAuth contract (connect spec 5.1)', () => {
       timeoutSeconds: 60,
     });
     expect(TAMLOOT_FUNCTION_IDS).toContain(TAMLOOT.disconnect);
-    expect(new Set(manifest.functions.map((fn) => fn.universalId)).size).toBe(5);
+    expect(new Set(manifest.functions.map((fn) => fn.universalId)).size).toBe(6);
     expect(() => defineExtension(manifest)).not.toThrow();
   });
   it('gives each function exactly the secrets it reads', () => {
@@ -87,6 +87,8 @@ describe('Tamloot OAuth contract (connect spec 5.1)', () => {
     for (const id of [TAMLOOT.poll, TAMLOOT.scan, TAMLOOT.sync])
       expect(secrets(id)).toEqual(['apiKey', 'oauthTokens']);
     expect(secrets(TAMLOOT.disconnect)).toEqual(['oauthTokens']);
+    // Configure runs before anyone connects, so it reads no connection secret.
+    expect(secrets(TAMLOOT.configure)).toEqual([]);
   });
 });
 

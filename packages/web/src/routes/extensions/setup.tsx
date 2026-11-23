@@ -77,7 +77,7 @@ const TITLES: Record<SetupMode, (name: string) => string> = {
 };
 const STEP_LABELS: Record<Step, string> = {
   settings: 'Connect',
-  bindings: 'Choose bindings',
+  bindings: 'Choose destinations',
   review: 'Review and approve',
 };
 
@@ -214,11 +214,6 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
       ) : null}
       {again.error ? <Notice error>{again.error.message}</Notice> : null}
       {cancel.error ? <Notice error>{cancel.error.message}</Notice> : null}
-      {installation ? (
-        <Button disabled={again.isPending} onClick={() => again.mutate()}>
-          {props.mode === 'bindings' ? 'Suggest bindings' : 'Suggest again'}
-        </Button>
-      ) : null}
       {props.mode === 'upgrade' ? (
         <Button onClick={() => setPhase('access')}>Review access again</Button>
       ) : null}
@@ -229,6 +224,13 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
         onCancel={() => cancel.mutate()}
         {...(installation ? { installation } : {})}
         {...(suggested ? { suggestions: suggested } : {})}
+        suggestAction={
+          installation ? (
+            <Button disabled={again.isPending} onClick={() => again.mutate()}>
+              {again.isPending ? 'Requesting…' : suggested ? 'Suggest again' : 'Get suggestions'}
+            </Button>
+          ) : undefined
+        }
       />
     </Stack>
   );
@@ -244,6 +246,7 @@ function BasicExtensionSetup({
   accessOnly = false,
   suggestions,
   providedSecrets = [],
+  suggestAction,
 }: {
   release: Release;
   /** The installation to change, or for `install` an uninstalled one to set up again. */
@@ -253,6 +256,8 @@ function BasicExtensionSetup({
   providedSecrets?: string[];
   suggestions?: ExtensionSuggestions;
   bindingChoices?: ExtensionBindingChoices;
+  /** Asks the extension for new suggestions; shown on the destinations step. */
+  suggestAction?: ReactNode;
   onCancel: () => void;
   onDone: (installationId: string, input?: ExtensionInstallInput) => void;
 }) {
@@ -430,6 +435,7 @@ function BasicExtensionSetup({
               ? `Version ${release.manifest.version} keeps your settings. Change any before you review the upgrade.`
               : release.manifest.description}
         </StepHeader>
+        {suggestAction && !showBindings ? <Row>{suggestAction}</Row> : null}
         <ExtensionCard title="Extension settings" icon={Settings2} actions={actions}>
           <fieldset disabled={busy} className="flex flex-col gap-4">
             <SettingFields
@@ -464,26 +470,37 @@ function BasicExtensionSetup({
         </ExtensionCard>
       </Form>
     );
-  else if (current === 'bindings')
+  else if (current === 'bindings') {
+    const proposedBy =
+      release.bindingProposal &&
+      Object.keys(release.bindingProposal.choices).some((key) => !suggestions?.bindings?.[key])
+        ? (release.bindingProposal.proposedBy.name ?? release.bindingProposal.proposedBy.id)
+        : undefined;
+    const hasSuggestions = !!suggestions?.bindings && Object.keys(suggestions.bindings).length > 0;
     body = (
       <Form onSubmit={next}>
-        <ExtensionCard title="Bindings" icon={LayoutList} actions={actions}>
-          <fieldset disabled={busy} className="flex flex-col gap-3">
-            {release.bindingProposal &&
-            Object.keys(release.bindingProposal.choices).some(
-              (key) => !suggestions?.bindings?.[key],
-            ) ? (
-              <Muted>
-                Agent proposal from{' '}
-                {release.bindingProposal.proposedBy.name ?? release.bindingProposal.proposedBy.id}.
-              </Muted>
-            ) : null}
+        <Stack>
+          <StepHeader title={`Where ${name} saves data`}>
+            Each kind of record {name} imports goes into a list in this workspace.
+            {hasSuggestions || proposedBy
+              ? ' The choices are filled in for you; change anything that looks wrong.'
+              : ' Pick an existing list, or add a new one.'}
+          </StepHeader>
+          {proposedBy || suggestAction ? (
+            <Row>
+              {proposedBy ? <Muted>Proposed by {proposedBy}.</Muted> : null}
+              {suggestAction}
+            </Row>
+          ) : null}
+          <fieldset disabled={busy}>
             {showBindings && declarations ? (
               <BindingFields
+                extension={name}
                 declarations={declarations}
                 choices={bound}
                 objects={schema.objects}
                 issues={bindingIssues}
+                suggested={suggestions?.bindings}
                 reasons={suggestions?.bindingReasons}
                 onChange={(key, choice) => {
                   setBound((prior) => ({ ...prior, [key]: choice }));
@@ -492,10 +509,11 @@ function BasicExtensionSetup({
               />
             ) : null}
           </fieldset>
-        </ExtensionCard>
+          <StepActions>{actions}</StepActions>
+        </Stack>
       </Form>
     );
-  else {
+  } else {
     const backButton =
       steps.length > 1 ? (
         <Button disabled={busy} onClick={() => back(step - 1)}>
@@ -665,6 +683,7 @@ function Review({
         <ReviewCardBody>
           {release.manifest.bindings && preview.bindings ? (
             <BindingSummary
+              extension={extensionName(release.manifest.universalId, release.manifest.name)}
               declarations={release.manifest.bindings}
               choices={preview.bindings}
               objects={schema.objects}

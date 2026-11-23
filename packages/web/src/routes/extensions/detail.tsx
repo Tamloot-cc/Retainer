@@ -168,7 +168,7 @@ function InstalledExtension({
       ? [
           {
             value: 'bindings' as const,
-            label: 'Bindings',
+            label: 'Destinations',
             hint: 'Which field each value this extension finds is written to.',
           },
         ]
@@ -538,12 +538,17 @@ function MappingSummary({
   });
   if (detail.error) return <QueryError error={detail.error} retry={() => void detail.refetch()} />;
   if (!release.manifest.bindings || !detail.data?.bindingChoices)
-    return <Muted>Loading bindings…</Muted>;
+    return <Muted>Loading destinations…</Muted>;
+  const name = extensionName(release.manifest.universalId, release.manifest.name);
   return (
     <ReviewCard>
-      <ReviewCardHeader leading={<ReviewIcon icon={LayoutList} />} title="Approved bindings" />
+      <ReviewCardHeader
+        leading={<ReviewIcon icon={LayoutList} />}
+        title={`Where ${name} saves data`}
+      />
       <ReviewCardBody>
         <BindingSummary
+          extension={name}
           declarations={release.manifest.bindings}
           choices={detail.data.bindingChoices}
           objects={schema.objects}
@@ -554,12 +559,12 @@ function MappingSummary({
         <ReviewCardFooter>
           {canSuggest(release, installation) ? (
             <Button disabled={suggest.isPending} onClick={() => suggest.mutate()}>
-              {suggest.isPending ? 'Requesting suggestions…' : 'Suggest bindings'}
+              {suggest.isPending ? 'Requesting suggestions…' : 'Get suggestions'}
             </Button>
           ) : null}
           <Button asChild>
             <Link to="/extensions/$id/bindings" params={{ id: installation.id }}>
-              Change setup
+              Change destinations
             </Link>
           </Button>
         </ReviewCardFooter>

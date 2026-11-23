@@ -43,7 +43,10 @@ test('reviews and approves an installation, changes settings, inspects runs and 
   await page.getByRole('link', { name: 'Set up browser-fixture', exact: true }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Review installation' }).click();
-  await expect(page.getByText('Fixture status → fixtureStatus')).toBeVisible();
+  // The retained field is reused: the plan names it by its label.
+  await expect(page.getByRole('listitem', { name: 'Companies' })).toContainText(
+    'Fixture status to Fixture status',
+  );
   await expect(page.getByRole('region', { name: 'Structure changes' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Approve installation' }).click();
   await expect(page).toHaveURL(new RegExp(`/extensions/${installed.id}$`));
