@@ -111,6 +111,27 @@ async function setup() {
   return { workspace, keys, installation, base, issue, install, stamp };
 }
 describe('standalone installation keys with real RLS Postgres', () => {
+  it('lets a write-only installation get its own binding stamps', async () => {
+    const h = await setup();
+    const credential = await h.issue(['write']);
+    const bindings = await h.stamp(credential.key);
+    const response = await app.request('/v1/objects/company/records', {
+      key: credential.key,
+      body: { values: { name: 'Write-only app' }, bindings },
+    });
+    expect(response.status).toBe(201);
+  });
+
+  it('refuses binding stamps from another installation to a write-only credential', async () => {
+    const h = await setup();
+    const credential = await h.issue(['write']);
+    const other = await h.install(1);
+    const response = await app.request(`/v1/extensions/${other.id}/bindings`, {
+      key: credential.key,
+    });
+    expect(response.status).toBe(403);
+  });
+
   it('issues human-approved generation-bound credentials once, stores only their hashes and derives the app actor', async () => {
     const h = await setup(),
       credential = await h.issue();

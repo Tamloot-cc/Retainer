@@ -1,10 +1,15 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { Caller } from '../../caller.js';
-import { Changes } from '../../changes/service.js';
+import { Changes, type RunReleases } from '../../changes/service.js';
 import type { Sql } from '../../db/client.js';
 import { run } from '../shared.js';
-export function registerChangeTools(server: McpServer, sql: Sql, caller: Caller) {
+export function registerChangeTools(
+  server: McpServer,
+  sql: Sql,
+  caller: Caller,
+  catalog: RunReleases,
+) {
   const changes = new Changes(sql);
   server.registerTool(
     'get_change',
@@ -14,7 +19,7 @@ export function registerChangeTools(server: McpServer, sql: Sql, caller: Caller)
       inputSchema: z.strictObject({ changePosition: z.string().regex(/^[1-9][0-9]{0,18}$/) }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    ({ changePosition }) => run(caller, 'read', () => changes.at(caller, changePosition)),
+    ({ changePosition }) => run(caller, 'read', () => changes.at(caller, changePosition, catalog)),
   );
   server.registerTool(
     'list_changes',

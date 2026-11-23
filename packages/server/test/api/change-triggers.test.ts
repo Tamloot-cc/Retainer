@@ -32,7 +32,12 @@ type Watch = {
   related?: boolean;
   operations?: ('create' | 'update')[];
 };
-async function setup(count = 1, standalone = 0, watches?: () => Watch[]) {
+async function setup(
+  count = 1,
+  standalone = 0,
+  watches?: () => Watch[],
+  additionalBindings: NonNullable<ExtensionManifest['bindings']> = [],
+) {
   const initial = startTestApp(db),
     { workspace, keys } = await initial.setupWorkspace(
       { name: `Triggers ${randomUUID()}` },
@@ -66,6 +71,7 @@ async function setup(count = 1, standalone = 0, watches?: () => Watch[]) {
             required: false,
           })),
         },
+        ...additionalBindings,
       ],
       functions: [
         {
@@ -251,6 +257,68 @@ async function setup(count = 1, standalone = 0, watches?: () => Watch[]) {
   };
 }
 describe('transactional change dispatch with real Postgres', () => {
+  it('translates changed fields through the trigger binding when another binding targets the same object', async () => {
+    const h = await setup(1, 0, undefined, [
+      {
+        key: 'profile',
+        label: 'People',
+        description: 'Person fields used separately from the change trigger.',
+        class: 'entity',
+        access: 'read',
+        required: true,
+        fields: [{ key: 'name', label: 'Name', types: ['full_name'], required: true }],
+      },
+    ]);
+    const [id] = h.ids;
+    if (!id) throw new Error('installation missing');
+    const created = await h.app.request('/v1/objects/person/records', {
+      key: h.keys.admin,
+      body: { values: { name: 'Ada', jobTitle: 'Engineer' } },
+    });
+    expect(created.status).toBe(201);
+    expect(await h.queue.dispatchChanges(h.workspace.id, id)).toEqual({ queued: 1, blocked: 0 });
+    const { key, pending } = await h.claim(id, created.body.id);
+    const change = await h.app.request(`/v1/changes/${pending.input.changePosition}`, { key });
+    expect(change.status).toBe(200);
+    expect(change.body.changedKeys).toEqual(['jobTitle']);
+  });
+
+  it('serves an admitted change run from its pinned release, and asks for a retry only when this process lacks it', async () => {
+    const h = await setup();
+    const [id] = h.ids;
+    if (!id) throw new Error('installation missing');
+    const created = await h.app.request('/v1/objects/person/records', {
+      key: h.keys.admin,
+      body: { values: { name: 'Ada', jobTitle: 'Engineer' } },
+    });
+    expect(created.status).toBe(201);
+    expect(await h.queue.dispatchChanges(h.workspace.id, id)).toEqual({ queued: 1, blocked: 0 });
+    const { key, pending } = await h.claim(id, created.body.id);
+    // Other API instances mid rolling deploy: same database and run keys.
+    // One has the release with execution not enabled yet: the admitted run still reads.
+    const [manifest] = h.manifests;
+    if (!manifest) throw new Error('manifest missing');
+    const disabled = startTestApp(db, {
+      extensionCatalog: new ExtensionCatalog([{ manifest, actorCeiling: 'integration' }]),
+      runTokens: tokens,
+    });
+    // The other has an older catalog without the release: the runner should retry.
+    const behind = startTestApp(db, {
+      extensionCatalog: new ExtensionCatalog([]),
+      runTokens: tokens,
+    });
+    try {
+      const served = await disabled.request(`/v1/changes/${pending.input.changePosition}`, { key });
+      expect(served.status).toBe(200);
+      expect(served.body.changedKeys).toEqual(['jobTitle']);
+      const change = await behind.request(`/v1/changes/${pending.input.changePosition}`, { key });
+      expect(change.status).toBe(503);
+      expect(change.body.error.code).toBe('release_not_loaded');
+    } finally {
+      await Promise.all([disabled.sql.end(), behind.sql.end()]);
+    }
+  });
+
   it('queues one job per watching installation for a schema-level deprecation', async () => {
     const h = await setup(0, 0, () => [
       { binding: 'person', fields: [] },

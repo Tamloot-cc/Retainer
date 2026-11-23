@@ -1,6 +1,6 @@
 import type { Hono } from 'hono';
 import { z } from 'zod';
-import { requireScope } from '../../auth/middleware.js';
+import { missingScope, requireScope } from '../../auth/middleware.js';
 import { AppError } from '../../errors.js';
 import {
   authorizeInputSchema,
@@ -17,9 +17,15 @@ import { idParam, limitParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 
 export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMode = true) {
-  app.get('/extensions/:id/bindings', requireScope('read'), async (c) =>
-    c.json(await extensions.bindings(c.get('caller'), idParam(c))),
-  );
+  app.get('/extensions/:id/bindings', async (c) => {
+    const caller = c.get('caller');
+    // Standalone writes need the revision and stable IDs in their own plan.
+    const ownWrite =
+      caller.installation?.installationId === c.req.param('id') && caller.scopes.includes('write');
+    const missing = ownWrite ? undefined : missingScope(caller, 'read');
+    if (missing) throw missing;
+    return c.json(await extensions.bindings(caller, idParam(c)));
+  });
   app.get('/extensions/:id/suggestions', requireScope('read'), async (c) =>
     c.json(await extensions.suggestions(c.get('caller'), idParam(c), c.req.query('version'))),
   );

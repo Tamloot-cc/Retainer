@@ -58,7 +58,7 @@ export function createMcpServer(
   registerFileTools(server, new Files(sql, options.fileStorage, options.fileQuota), caller);
   registerSetupTools(server, sql, caller);
   registerReadTools(server, sql, caller);
-  registerChangeTools(server, sql, caller);
+  registerChangeTools(server, sql, caller, catalog);
   registerWriteTools(server, sql, caller);
   if (options.routines) registerRoutineTools(server, new Routines(sql, options.routines), caller);
 
