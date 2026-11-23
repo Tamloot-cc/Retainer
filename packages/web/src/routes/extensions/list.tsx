@@ -110,7 +110,7 @@ export function ExtensionsPage() {
                       version={manifest.version}
                       description={manifest.description}
                     />
-                    {sharing ? <Notice>{sharing}</Notice> : null}
+                    {sharing ? <Notice announce={false}>{sharing}</Notice> : null}
                   </div>
                   {admin ? (
                     <div className="flex justify-end border-t border-border bg-muted/30 px-4 py-2">

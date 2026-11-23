@@ -34,6 +34,43 @@ export const fixture = () => ({
   views: [],
   functions: [],
 });
+/** A source with its pinned verifier and one local-ID ingestion job. */
+const sourceRelease = () => {
+  const verifyId = '5c011ac7-a6b8-4bc5-bac5-5c9b70491ab4',
+    syncId = '50b706e0-2f74-46d4-b454-d9481ed21b24';
+  const fn = { description: 'Source handler', handlerDigest: 'b'.repeat(64) };
+  return {
+    source: {
+      provider: 'fixture',
+      identity: 'account',
+      verifyFunctionId: verifyId,
+      syncFunctionIds: [syncId],
+      event: 'event',
+      revisionOrder: 'opaque',
+    },
+    functions: [
+      {
+        ...fn,
+        universalId: verifyId,
+        name: 'verify',
+        trigger: { kind: 'install' },
+        inputSchema: { type: 'object', additionalProperties: false },
+      },
+      {
+        ...fn,
+        universalId: syncId,
+        name: 'sync',
+        trigger: { kind: 'job' },
+        inputSchema: {
+          type: 'object',
+          properties: { sourceItemId: { type: 'string', maxLength: 36 } },
+          required: ['sourceItemId'],
+          additionalProperties: false,
+        },
+      },
+    ],
+  };
+};
 const sourceBindings = [
   {
     key: 'event',
@@ -137,38 +174,7 @@ describe('strict extension contracts', () => {
       );
   });
   it('requires a pinned setup verifier and local-ID-only source ingestion jobs', () => {
-    const verifyId = '5c011ac7-a6b8-4bc5-bac5-5c9b70491ab4',
-      syncId = '50b706e0-2f74-46d4-b454-d9481ed21b24';
-    const source = {
-      provider: 'fixture',
-      identity: 'account',
-      verifyFunctionId: verifyId,
-      syncFunctionIds: [syncId],
-      event: 'event',
-      revisionOrder: 'opaque',
-    };
-    const fn = { description: 'Source handler', handlerDigest: 'b'.repeat(64) };
-    const functions = [
-      {
-        ...fn,
-        universalId: verifyId,
-        name: 'verify',
-        trigger: { kind: 'install' },
-        inputSchema: { type: 'object', additionalProperties: false },
-      },
-      {
-        ...fn,
-        universalId: syncId,
-        name: 'sync',
-        trigger: { kind: 'job' },
-        inputSchema: {
-          type: 'object',
-          properties: { sourceItemId: { type: 'string', maxLength: 36 } },
-          required: ['sourceItemId'],
-          additionalProperties: false,
-        },
-      },
-    ];
+    const { source, functions } = sourceRelease();
     expect(
       defineExtension({ ...fixture(), source, bindings: sourceBindings, functions }).source
         ?.provider,
@@ -210,38 +216,7 @@ describe('strict extension contracts', () => {
     ).toThrow('local sourceItemId');
   });
   it('lets a source release offer the deletion policy as an installation choice', () => {
-    const verifyId = '5c011ac7-a6b8-4bc5-bac5-5c9b70491ab4',
-      syncId = '50b706e0-2f74-46d4-b454-d9481ed21b24';
-    const source = {
-      provider: 'fixture',
-      identity: 'account',
-      verifyFunctionId: verifyId,
-      syncFunctionIds: [syncId],
-      event: 'event',
-      revisionOrder: 'opaque',
-    };
-    const fn = { description: 'Source handler', handlerDigest: 'b'.repeat(64) };
-    const functions = [
-      {
-        ...fn,
-        universalId: verifyId,
-        name: 'verify',
-        trigger: { kind: 'install' },
-        inputSchema: { type: 'object', additionalProperties: false },
-      },
-      {
-        ...fn,
-        universalId: syncId,
-        name: 'sync',
-        trigger: { kind: 'job' },
-        inputSchema: {
-          type: 'object',
-          properties: { sourceItemId: { type: 'string', maxLength: 36 } },
-          required: ['sourceItemId'],
-          additionalProperties: false,
-        },
-      },
-    ];
+    const { source, functions } = sourceRelease();
     const choice = {
       type: 'string',
       label: 'Deleted in the source',

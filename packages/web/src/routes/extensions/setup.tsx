@@ -686,7 +686,7 @@ function Review({
         <ReviewCardBody>
           {release.manifest.bindings && preview.bindings ? (
             <BindingSummary
-              extension={extensionName(release.manifest.universalId, release.manifest.name)}
+              extension={name}
               declarations={release.manifest.bindings}
               choices={preview.bindings}
               objects={schema.objects}

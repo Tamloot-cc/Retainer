@@ -66,10 +66,10 @@ describe('plain words before and during setup', () => {
       functions: [{ uses: ['model'], trigger: { kind: 'configure' } }],
     } as never;
     expect(accessText(['read'], 'integration', ['model'], configure)).toContain(
-      'To suggest how to set it up, it sends the workspace data it needs',
+      'To suggest how to set it up, this extension sends the workspace data it needs',
     );
     expect(accessText(['read'], 'integration', ['model'])).toContain(
-      'It can send the workspace data it works on to Anthropic',
+      'This extension can send the workspace data it works on to Anthropic',
     );
   });
 });

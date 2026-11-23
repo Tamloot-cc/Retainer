@@ -46,10 +46,17 @@ async function setup(
   policy: 'never' | 'contacted_first' | 'everyone' = 'never',
   verify = true,
   onSourceDelete: 'keep' | 'retract' = 'keep',
-  extra?: ExtensionManifest,
-  withTasks = false,
-  /** Offer the deletion policy as an installation setting, and choose this. */
-  deleteChoice?: 'keep' | 'retract',
+  {
+    extra,
+    withTasks = false,
+    deleteChoice,
+  }: {
+    /** Another release in the same catalog. */
+    extra?: ExtensionManifest;
+    withTasks?: boolean;
+    /** Offer the deletion policy as an installation setting, and choose this. */
+    deleteChoice?: 'keep' | 'retract';
+  } = {},
 ) {
   const verifyId = randomUUID(),
     syncId = randomUUID(),
@@ -955,7 +962,7 @@ describe('managed source evidence with real RLS Postgres', () => {
           },
         ] as ExtensionManifest['functions'],
       });
-    const h = await setup('everyone', true, 'keep', other),
+    const h = await setup('everyone', true, 'keep', { extra: other }),
       s = await h.item();
     expect(
       (
@@ -1543,7 +1550,7 @@ describe('managed source evidence with real RLS Postgres', () => {
     ).toBe('source_retracted');
   });
   it("keeps imported content after a definitive deletion when the admin chose keep over the release's retract", async () => {
-    const h = await setup('never', true, 'retract', undefined, false, 'keep'),
+    const h = await setup('never', true, 'retract', { deleteChoice: 'keep' }),
       s = await h.item();
     const imported = await h.sync(s.key, s.itemId, '1', null);
     expect(imported.status).toBe(200);
@@ -1589,7 +1596,7 @@ describe('managed source evidence with real RLS Postgres', () => {
         },
       ],
     });
-    const h = await setup('never', true, 'retract', publisher);
+    const h = await setup('never', true, 'retract', { extra: publisher });
     const item = await h.item();
     const imported = await h.sync(item.key, item.itemId, '1', null);
     expect(imported.status, JSON.stringify(imported.body)).toBe(200);
@@ -1734,7 +1741,7 @@ const updateOnlyCreationFixture = extensionFixture({
 
 async function standaloneCreationAudit() {
   const manifest = updateOnlyCreationFixture;
-  const h = await setup('never', true, 'keep', manifest);
+  const h = await setup('never', true, 'keep', { extra: manifest });
   const input = { registrationId: manifest.universalId, version: manifest.version, settings: {} };
   const preview = await h.app.request('/v1/extensions/preview', { key: h.keys.admin, body: input });
   expect(preview.status, JSON.stringify(preview.body)).toBe(200);
@@ -1885,7 +1892,7 @@ it.each([
   [
     'managed source tasks',
     async () => {
-      const h = await setup('never', true, 'keep', undefined, true);
+      const h = await setup('never', true, 'keep', { withTasks: true });
       const item = await h.item();
       const first = await h.sync(item.key, item.itemId, '1', null);
       expect(first.status).toBe(200);

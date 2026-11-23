@@ -4,6 +4,7 @@ import {
   MODEL_USE_NOTICE,
   modelUseNotice,
   newestReleases,
+  POLICY_OPTION_LABELS,
 } from '@retainer/extension';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
@@ -22,20 +23,9 @@ export const appLinksKey = (workspaceId: string) => [...queryKey, 'links', works
 export const stateLabel = (state: string) =>
   state.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
 
-/** Plain words for the options of the settings the platform itself acts on. */
-const OPTION_LABELS: Record<string, Record<string, string>> = {
-  createPeople: {
-    never: 'Never',
-    contacted_first: 'Only people you contacted first',
-    everyone: 'Everyone',
-  },
-  onSourceDelete: {
-    retract: 'Remove what was imported',
-    keep: 'Keep what was imported',
-  },
-};
+/** Plain words for a setting's option: the platform's for its own policies. */
 export const optionLabel = (setting: string, value: string) =>
-  OPTION_LABELS[setting]?.[value] ?? stateLabel(value);
+  POLICY_OPTION_LABELS[setting]?.[value] ?? stateLabel(value);
 
 /**
  * Said before setup: what a source extension imports is visible to the whole
@@ -200,7 +190,5 @@ export const accessText = (
   manifest?: Pick<ExtensionManifest, 'functions'>,
 ) =>
   `It can ${scopes.join(' and ')} workspace CRM data. Its changes are recorded as made by an ${actor}.${
-    uses.includes('model')
-      ? ` ${((manifest && modelUseNotice(manifest)) ?? MODEL_USE_NOTICE).replace(/this extension/i, 'it').replace(/^./, (c) => c.toUpperCase())}`
-      : ''
+    uses.includes('model') ? ` ${(manifest && modelUseNotice(manifest)) ?? MODEL_USE_NOTICE}` : ''
   }`;

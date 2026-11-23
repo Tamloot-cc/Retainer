@@ -243,11 +243,11 @@ describe('extension pages and human approval', () => {
     vi.spyOn(api, 'extensions').mockResolvedValue({ installations: [] });
     mount(<ExtensionsPage />);
     const card = (await screen.findByRole('link', { name: 'Set up Fixture' })).closest('li');
-    expect(
-      within(card as HTMLElement).getByText(
-        'Each member connects their own Fixture account. What it imports from them is visible to everyone in this workspace.',
-      ),
-    ).toBeTruthy();
+    const note = within(card as HTMLElement).getByText(
+      'Each member connects their own Fixture account. What it imports from them is visible to everyone in this workspace.',
+    );
+    // Part of the card, not news: one per card must not each be a live region.
+    expect(note.closest('[role="status"]')).toBeNull();
     // An extension that imports nothing has no such note.
     const exa = screen.getByRole('link', { name: 'Set up Exa' }).closest('li');
     expect(within(exa as HTMLElement).queryByText(/visible to everyone/)).toBeNull();

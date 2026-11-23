@@ -55,17 +55,32 @@ export function modelUseNotice(manifest: Pick<ExtensionManifest, 'functions'>) {
  * an item it imported; absent, the release's `onSourceDelete` applies.
  */
 export const SOURCE_DELETE_SETTING = 'onSourceDelete';
+const sourceDeletePolicies = z.enum(['keep', 'retract']);
 /** What happens to imported content when the source deletes it, for these installation settings. */
 export function sourceDeletePolicy(
   manifest: Pick<ExtensionManifest, 'onSourceDelete' | 'settings'>,
   settings: Record<string, unknown>,
 ): ExtensionManifest['onSourceDelete'] {
-  const chosen = settings[SOURCE_DELETE_SETTING];
-  return (chosen === 'keep' || chosen === 'retract') &&
-    manifest.settings[SOURCE_DELETE_SETTING]?.options?.includes(chosen)
-    ? chosen
+  const chosen = sourceDeletePolicies.safeParse(settings[SOURCE_DELETE_SETTING]);
+  return chosen.success && manifest.settings[SOURCE_DELETE_SETTING]?.options?.includes(chosen.data)
+    ? chosen.data
     : manifest.onSourceDelete;
 }
+/**
+ * Plain words for the options of the policies the platform itself applies,
+ * wherever they are chosen or shown.
+ */
+export const POLICY_OPTION_LABELS: Record<string, Record<string, string>> = {
+  createPeople: {
+    never: 'Never',
+    contacted_first: 'Only people you contacted first',
+    everyone: 'Everyone',
+  },
+  [SOURCE_DELETE_SETTING]: {
+    retract: 'Remove what was imported',
+    keep: 'Keep what was imported',
+  },
+};
 
 const uuid = z.uuid();
 const name = z.string().regex(/^[a-z][a-zA-Z0-9-]{0,99}$/);
@@ -408,7 +423,7 @@ const manifestSchema = z.strictObject({
     .max(2),
   connection: z.enum(['workspace', 'member']),
   createPeople: z.enum(['never', 'contacted_first', 'everyone']),
-  onSourceDelete: z.enum(['keep', 'retract']),
+  onSourceDelete: sourceDeletePolicies,
   /** Narrow server-computed derivation; only these functions may replace their own derived claims. */
   lastContact: z
     .strictObject({
@@ -817,7 +832,7 @@ export function defineExtension(value: unknown): ExtensionManifest {
       deletion.secret ||
       (deletion.level ?? 'installation') !== 'installation' ||
       !deletion.options?.length ||
-      deletion.options.some((option) => option !== 'keep' && option !== 'retract') ||
+      deletion.options.some((option) => !sourceDeletePolicies.safeParse(option).success) ||
       (deletion.default !== undefined && !deletion.options.includes(String(deletion.default))))
   )
     throw new Error(
