@@ -6,6 +6,7 @@ import { createApiSql, type Sql } from '../db/client.js';
 import { extensionServices } from '../extension-control/configuration.js';
 import { setLogLevel } from '../log.js';
 import { clientIpOf, requireEdge } from './edge.js';
+import { withHttpWriter } from './writer-admission.js';
 
 /**
  * The API as an AWS Lambda function behind API Gateway: the
@@ -53,22 +54,24 @@ export function createApiHandler(
 let cached: Promise<ReturnType<typeof createApiHandler>> | undefined;
 /** The Lambda entry point (`dist/lambda/api.handler`). */
 export const handler = async (event: LambdaEvent, context: LambdaContext) => {
-  cached ??= (async () => {
-    const config = loadConfig(),
-      sql = createApiSql(config, { max: config.RETAINER_DB_POOL_MAX });
-    const extensions = await extensionServices(config);
-    return createApiHandler(
-      config,
-      sql,
-      {
-        fileStorage: extensions.fileStorage,
-        fileQuota: config.RETAINER_FILE_QUOTA_BYTES,
-        extensionCatalog: extensions.catalog,
-        extensionActivation: extensions.activationReady,
-        ...(extensions.tokens ? { runTokens: extensions.tokens } : {}),
-      },
-      extensions.routinesAvailable,
-    );
-  })();
-  return (await cached)(event, context);
+  return withHttpWriter(event, context, async () => {
+    cached ??= (async () => {
+      const config = loadConfig(),
+        sql = createApiSql(config, { max: config.RETAINER_DB_POOL_MAX });
+      const extensions = await extensionServices(config);
+      return createApiHandler(
+        config,
+        sql,
+        {
+          fileStorage: extensions.fileStorage,
+          fileQuota: config.RETAINER_FILE_QUOTA_BYTES,
+          extensionCatalog: extensions.catalog,
+          extensionActivation: extensions.activationReady,
+          ...(extensions.tokens ? { runTokens: extensions.tokens } : {}),
+        },
+        extensions.routinesAvailable,
+      );
+    })();
+    return (await cached)(event, context);
+  });
 };

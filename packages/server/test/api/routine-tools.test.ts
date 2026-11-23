@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { executeRoutine } from '@retainer/runner/routine';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { loadConfig } from '../../src/config.js';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import type { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { createOpsHandler } from '../../src/lambda/ops.js';
 import { RoutineExecutor, RoutineMaintenance } from '../../src/worker/routines.js';
 import {
   createOrganization,
@@ -32,7 +34,7 @@ afterEach(async () => {
     await db.owner`delete from workspaces where id=any(${workspaces.splice(0)}::uuid[])`;
 });
 
-async function setup(connection: 'workspace' | 'member' = 'workspace') {
+async function setup(connection: 'workspace' | 'member' = 'workspace', writerBuild?: string) {
   const installId = randomUUID(),
     toolId = randomUUID();
   const manifest = extensionFixture({
@@ -92,12 +94,18 @@ async function setup(connection: 'workspace' | 'member' = 'workspace') {
       { manifest, actorCeiling: 'integration', runtimeEnabled: true },
     ]),
     release = catalog.get(manifest.universalId, manifest.version);
-  const app = startTestApp(db, {
-    extensionCatalog: catalog,
-    extensionActivation: new Set([release.digest]),
-    runTokens: tokens,
-    routines: { available: true, modelAvailable: false },
-  });
+  const app = startTestApp(
+    {
+      ...db,
+      connect: (options) => db.connect({ ...options, writerBuild }),
+    },
+    {
+      extensionCatalog: catalog,
+      extensionActivation: new Set([release.digest]),
+      runTokens: tokens,
+      routines: { available: true, modelAvailable: false },
+    },
+  );
   const { workspace, keys } = await app.setupWorkspace(
     { name: `Routine tools ${randomUUID()}` },
     { admin: { actor: { type: 'user', id: 'admin', name: 'Ada' }, scopes: ['admin'] } },
@@ -181,7 +189,7 @@ async function setup(connection: 'workspace' | 'member' = 'workspace') {
       { runId: claimed.runId, routineId, fence: claimed.fence, mode: 'run', tools: claimed.tools },
       new Date(Date.now() + 60000),
     );
-    return { runId: claimed.runId, token };
+    return { runId: claimed.runId, token, claimed };
   };
   const another = async () =>
     (
@@ -496,5 +504,70 @@ describe('routine tool calls', () => {
     const [cancelled] = await db.owner<{ status: string; input: unknown }[]>`
       select status,input from extension_jobs where id=${stranded.body.tool.callId}`;
     expect(cancelled).toEqual({ status: 'cancelled', input: {} });
+  });
+
+  it('drains a routine waiting on a tool and preserves the single durable effect', async () => {
+    const oldBuild = 'a'.repeat(40);
+    const candidate = 'b'.repeat(40);
+    const s = await setup('workspace', oldBuild);
+    const config = loadConfig({ DATABASE_URL: db.url, LOG_LEVEL: 'error' });
+    const nextOps = createOpsHandler(config, candidate);
+    const state = await createOpsHandler(
+      config,
+      oldBuild,
+    )({
+      command: 'writer-admission-open',
+      protocol: 1,
+      candidate: oldBuild,
+    });
+    if (!('generation' in state) || !state.generation) throw new Error('missing generation');
+    const deployment = randomUUID();
+    const close = () =>
+      nextOps({
+        command: 'writer-admission-close',
+        protocol: 1,
+        timed: false,
+        expectedBuilds: [oldBuild],
+        ownership: { generation: state.generation, deployment, candidate },
+      });
+    try {
+      const { runId, token, claimed } = await s.press();
+      const call = () =>
+        s.app.request('/v1/routines/runtime/effects', {
+          key: token,
+          body: {
+            position: 1,
+            operation: 'tool',
+            args: { name: 'check_address', input: { address: 'ada@example.com' } },
+          },
+        });
+      const first = await call();
+      expect(first.body).toMatchObject({ state: 'pending' });
+      expect((await call()).body.tool.callId).toBe(first.body.tool.callId);
+      await expect(close()).resolves.toMatchObject({ phase: 'busy' });
+
+      const job = await s.queue.claim(s.workspace, first.body.tool.callId, 'tool-runner');
+      if (!job) throw new Error('expected a claimed tool job');
+      await expect(close()).resolves.toMatchObject({ phase: 'busy' });
+      await s.queue.complete(job, { status: 'succeeded', output: { deliverable: true } });
+      const poll = await s.app.request('/v1/routines/runtime/effects/1', { key: token });
+      expect(poll.body).toMatchObject({ state: 'done', result: { deliverable: true } });
+      await s.executor.complete(claimed, {
+        status: 'succeeded',
+        output: { outcome: 'succeeded', result: { deliverable: true } },
+      });
+
+      await expect(close()).resolves.toMatchObject({ phase: 'closed' });
+      expect(await db.owner`select id from extension_jobs where caller_run_id = ${runId}`).toEqual([
+        { id: job.jobId },
+      ]);
+      expect(
+        await db.owner`select state from routine_run_results where run_id = ${runId} and position = 1`,
+      ).toEqual([{ state: 'done' }]);
+    } finally {
+      // Restore unmanaged state for this file's workspace cleanup.
+      await db.owner`update retainer_deploy.admission set generation = null, deployment = null,
+        candidate = null, closed_at = null, builds = '{}' where singleton`;
+    }
   });
 });

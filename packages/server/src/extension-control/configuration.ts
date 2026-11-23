@@ -224,7 +224,11 @@ export async function extensionServices(
         broker,
         registry: new ExecutionRegistry(entries as Executable[]),
         driver: lambda
-          ? new LambdaVerifier(config.RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX)
+          ? new LambdaVerifier(
+              config.RETAINER_EXTENSION_VERIFIER_LAMBDA_PREFIX,
+              undefined,
+              options.ingressSql,
+            )
           : new LauncherVerifier(
               config.RETAINER_EXTENSION_VERIFIER_ORIGIN as string,
               config.RETAINER_VERIFIER_TOKEN as string,
@@ -252,7 +256,7 @@ export async function extensionServices(
         registry,
         tokens,
         driver: lambda
-          ? new LambdaDriver(config.RETAINER_EXTENSION_LAMBDA_PREFIX)
+          ? new LambdaDriver(config.RETAINER_EXTENSION_LAMBDA_PREFIX, undefined, options.workerSql)
           : new LauncherDriver(
               config.RETAINER_EXTENSION_LAUNCHER_ORIGIN as string,
               config.RETAINER_LAUNCHER_TOKEN as string,
@@ -281,7 +285,11 @@ export async function extensionServices(
           discoverySql: discovery,
           tokens,
           driver: lambda
-            ? new LambdaDriver(config.RETAINER_EXTENSION_LAMBDA_PREFIX)
+            ? new LambdaDriver(
+                config.RETAINER_EXTENSION_LAMBDA_PREFIX,
+                undefined,
+                options.workerSql,
+              )
             : new LauncherDriver(
                 config.RETAINER_EXTENSION_LAUNCHER_ORIGIN as string,
                 config.RETAINER_LAUNCHER_TOKEN as string,

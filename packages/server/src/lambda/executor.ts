@@ -7,6 +7,7 @@ import { RUN_GRACE_SECONDS } from '../routines/runs.js';
 import type { ExtensionExecutor } from '../worker/extensions.js';
 import type { RoutineExecutor } from '../worker/routines.js';
 import { withPassLock } from './deploy-lock.js';
+import { withWriterInvocation } from './writer-admission.js';
 
 export const EXECUTOR_LEADER = 0x52544e07;
 const DRAIN_BUDGET_MS = (300 + 15 + 30) * 1000;
@@ -177,6 +178,8 @@ export async function handler(event: unknown, context: { getRemainingTimeInMilli
     (event as { task?: unknown }).task !== 'execute-extension-jobs'
   )
     throw new Error('invalid extension executor event');
-  cached ??= createExecutorHandler(loadConfig());
-  return (await cached)(context);
+  return withWriterInvocation(context, async () => {
+    cached ??= createExecutorHandler(loadConfig());
+    return (await cached)(context);
+  });
 }

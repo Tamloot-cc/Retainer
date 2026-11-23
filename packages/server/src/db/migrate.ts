@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { loadConfig, ownerDatabaseUrl } from '../config.js';
-import type { Sql } from './client.js';
-import { createDb } from './client.js';
+import { createSql, type Sql } from './client.js';
+import type { Tx } from './tx.js';
+import { WRITER_ADMISSION_LOCK } from './writer-lease.js';
 
 const migrationsFolder = fileURLToPath(new URL('../../drizzle', import.meta.url));
 
@@ -30,22 +30,51 @@ export function assertSupportedServer(serverVersionNum: number): void {
  * them.
  */
 export async function runMigrations(databaseUrl: string): Promise<void> {
-  const { db, sql } = createDb(databaseUrl, { max: 1 });
+  const sql = createSql(databaseUrl, { max: 1 });
   try {
-    const [server] = await sql<{ version: number }[]>`
-      select current_setting('server_version_num')::int as version`;
-    assertSupportedServer(server?.version ?? 0);
-    if (!(await migrationHistoryCompatible(sql)))
-      throw new Error(
-        'database migration history is incompatible with this build; deploy compatible code before migrating',
-      );
-    for (const extension of EXTENSIONS) {
-      await sql.unsafe(`create extension if not exists ${extension}`);
-    }
-    await migrate(db, { migrationsFolder });
+    await sql.begin(async (tx) => {
+      const [gate] = await tx`select to_regclass('retainer_deploy.admission') as name`;
+      if (gate?.name) {
+        await tx`select pg_advisory_xact_lock(${WRITER_ADMISSION_LOCK})`;
+        const [active] =
+          await tx`select generation is not null as active from retainer_deploy.admission where singleton`;
+        if (active?.active !== false)
+          throw new Error('managed writer admission requires the hosted migration command');
+      }
+      await applyMigrationJournal(tx);
+    });
   } finally {
     await sql.end();
   }
+}
+
+/** Applies DDL, journal rows and writer guards on one connection and transaction. */
+export async function applyMigrationJournal(sql: Tx): Promise<void> {
+  const [server] = await sql<{ version: number }[]>`
+    select current_setting('server_version_num')::int as version`;
+  assertSupportedServer(server?.version ?? 0);
+  if (!(await migrationHistoryCompatible(sql)))
+    throw new Error(
+      'database migration history is incompatible with this build; deploy compatible code before migrating',
+    );
+  for (const extension of EXTENSIONS) {
+    await sql.unsafe(`create extension if not exists ${extension}`);
+  }
+  // Use Drizzle's files, hashes and table format. The caller owns the
+  // transaction so its deployment lock and journal commit cannot separate.
+  await sql`create schema if not exists drizzle`;
+  await sql`create table if not exists drizzle.__drizzle_migrations (
+    id serial primary key, hash text not null, created_at bigint)`;
+  const [last] = await sql<{ created_at: string }[]>`
+    select created_at from drizzle.__drizzle_migrations order by created_at desc limit 1`;
+  for (const migration of readMigrationFiles({ migrationsFolder })) {
+    if (last && Number(last.created_at) >= migration.folderMillis) continue;
+    for (const statement of migration.sql) await sql.unsafe(statement);
+    await sql`insert into drizzle.__drizzle_migrations (hash, created_at)
+      values (${migration.hash}, ${migration.folderMillis})`;
+  }
+  const [guards] = await sql`select to_regprocedure('retainer_deploy.install_guards()') as name`;
+  if (guards?.name) await sql`select retainer_deploy.install_guards()`;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -55,7 +84,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 }
 
 /** Read-only: every applied timestamp/hash must be known to this build before it can migrate. */
-export async function migrationHistoryCompatible(sql: Sql): Promise<boolean> {
+export async function migrationHistoryCompatible(sql: Sql | Tx): Promise<boolean> {
   const [table] = await sql`select to_regclass('drizzle.__drizzle_migrations') as name`;
   if (!table?.name) return true;
   const known = new Map(
