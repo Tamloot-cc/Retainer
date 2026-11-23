@@ -34,6 +34,23 @@ function Cell({ onSave = vi.fn(), onOutside = vi.fn() }) {
 }
 
 describe('EditableCell', () => {
+  it('opens from the cell value without opening its row', async () => {
+    const onOpenRow = vi.fn();
+    const onSave = vi.fn();
+    render(
+      // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: mirrors the grid row click shortcut.
+      <div onClick={onOpenRow}>
+        <Cell onSave={onSave} />
+      </div>,
+    );
+    await userEvent.click(screen.getByText('Ready', { exact: true }));
+    expect(screen.getByRole('textbox', { name: 'Stage' })).toBe(document.activeElement);
+    expect(onOpenRow).not.toHaveBeenCalled();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('textbox', { name: 'Stage' })).toBeNull();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it('lets the editor decide what a click outside means', async () => {
     const onOutside = vi.fn();
     render(<Cell onOutside={onOutside} />);

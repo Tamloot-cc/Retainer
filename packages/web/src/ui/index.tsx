@@ -542,11 +542,13 @@ export function RecordLink({
   inSheet = false,
   avatar,
   wrap = false,
+  showOpenIcon = false,
   children,
 }: {
   id: string;
   inSheet?: boolean;
   avatar?: ReactNode;
+  showOpenIcon?: boolean;
   /** Show the full name over multiple lines instead of truncating. */
   wrap?: boolean;
   children: ReactNode;
@@ -556,10 +558,18 @@ export function RecordLink({
     'inline-flex min-w-0 max-w-full items-center gap-1.5 font-medium',
     avatar ? 'group/record' : textClassName,
     !avatar && 'hover:underline',
+    showOpenIcon && 'w-full',
   );
   const content = avatar ? (
     <>
       {avatar}
+      {showOpenIcon ? (
+        <ArrowUpRight
+          aria-hidden
+          size={13}
+          className="order-last ml-auto shrink-0 text-muted-foreground pointer-fine:opacity-0 group-hover/record:opacity-100 group-focus-visible/record:opacity-100"
+        />
+      ) : null}
       <span className={cn('min-w-0 group-hover/record:underline', textClassName)}>{children}</span>
     </>
   ) : (
@@ -831,6 +841,7 @@ export {
 export { Checkbox, Radio, Switch } from './choice.js';
 export { Badge, CategoryTag, type Tone } from './core.js';
 export {
+  CopyableCell,
   DataGrid,
   EditableCell,
   FilterChip,

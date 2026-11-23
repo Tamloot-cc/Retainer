@@ -15,11 +15,13 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import { FieldPicker, pickerFor } from '../../fields/common.js';
+import { primaryCopyValue } from '../../fields/copy-value.js';
 import { fields } from '../../fields/index.js';
 import { AssertionSource, SourcedValue } from '../../provenance/index.js';
 import {
   Badge,
   Button,
+  CopyButton,
   Dialog,
   Muted,
   Notice,
@@ -318,6 +320,7 @@ export function FieldProperty({
   const [markdown, setMarkdown] = useState(false);
   const editButton = useRef<HTMLButtonElement>(null);
   const Display = fields[field.type].Display;
+  const copyValue = primaryCopyValue(field.type, record.fields[field.name]);
   function done(outside = false) {
     // Commit the close first, so the Edit button exists to take focus back;
     // after a click elsewhere, focus stays where the click put it.
@@ -327,11 +330,15 @@ export function FieldProperty({
   return (
     <Property
       label={field.label}
+      description={field.description}
       apiName={apiName}
       onEdit={editable ? () => setEditing(true) : undefined}
       editor={editing ? <InlineEditor record={record} field={field} onDone={done} /> : null}
       actions={
         <>
+          {copyValue ? (
+            <CopyButton label={`Copy ${field.label}`} value={copyValue} iconOnly />
+          ) : null}
           {field.type === 'text' && record.fields[field.name] ? (
             <Button
               variant="ghost"

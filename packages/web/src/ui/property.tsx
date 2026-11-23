@@ -12,6 +12,7 @@ import {
 import { cn, focusFirst, isPlainClick, PANEL } from './core.js';
 import { ApiName } from './layout.js';
 import { PanelBody } from './popover.js';
+import { DescriptionTooltip } from './tooltip.js';
 
 /** A titled group on a record: fields, relations. */
 export function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -35,6 +36,7 @@ export function PropertyList({ children }: { children: ReactNode }) {
  */
 export function Property({
   label,
+  description,
   apiName,
   actions,
   onEdit,
@@ -42,6 +44,7 @@ export function Property({
   children,
 }: {
   label: string;
+  description?: string | null;
   /** Developer view: the API name, shown beside the label. */
   apiName?: string;
   actions?: ReactNode;
@@ -69,7 +72,9 @@ export function Property({
             : 'px-2 [overflow-wrap:anywhere] @sm/properties:truncate @sm/properties:px-0 @sm/properties:py-1.5',
         )}
       >
-        {label}
+        <DescriptionTooltip description={description}>
+          <span tabIndex={description?.trim() ? 0 : undefined}>{label}</span>
+        </DescriptionTooltip>
         {apiName ? <ApiName>{apiName}</ApiName> : null}
       </dt>
       <dd className="m-0 min-w-0">

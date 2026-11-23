@@ -1,5 +1,5 @@
-import { Check as CheckIcon, Copy, type LucideIcon } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { Check as CheckIcon, Copy, type LucideIcon, TriangleAlert } from 'lucide-react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { CategoryColor } from './colors.js';
 import { cn, type Tone } from './core.js';
 
@@ -176,28 +176,52 @@ export function ApiName({ children }: { children: ReactNode }) {
 }
 
 /** A small button that copies `value` to the clipboard and says so. */
-export function CopyButton({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false);
+export function CopyButton({
+  value,
+  label,
+  iconOnly = false,
+  className,
+}: {
+  value: string;
+  label: string;
+  iconOnly?: boolean;
+  className?: string;
+}) {
+  const [status, setStatus] = useState('');
+  const reset = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(reset.current), []);
   async function copy() {
+    let message = 'Copied';
     try {
       await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
     } catch {
-      /* The clipboard can be refused; the value is on screen to select. */
+      message = 'Copy failed';
     }
+    clearTimeout(reset.current);
+    setStatus(message);
+    reset.current = setTimeout(() => setStatus(''), 1500);
   }
+  const Icon = status === 'Copied' ? CheckIcon : status ? TriangleAlert : Copy;
   return (
-    <button
-      type="button"
-      onClick={() => void copy()}
-      aria-label={label}
-      title={copied ? 'Copied' : label}
-      className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm px-1 text-xs text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      {copied ? <CheckIcon size={12} /> : <Copy size={12} />}
-      {copied ? 'Copied' : null}
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => void copy()}
+        aria-label={label}
+        title={status || label}
+        className={cn(
+          'inline-flex h-6 min-w-6 shrink-0 items-center justify-center gap-1 rounded-sm px-1 text-xs text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          className,
+          status && 'pointer-fine:opacity-100',
+        )}
+      >
+        <Icon size={12} aria-hidden />
+        {iconOnly ? null : status}
+      </button>
+      <span className="sr-only" role="status">
+        {status}
+      </span>
+    </>
   );
 }
 

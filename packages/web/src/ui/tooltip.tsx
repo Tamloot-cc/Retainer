@@ -1,6 +1,6 @@
 // biome-ignore-all lint/a11y/useSemanticElements: Sourced-value triggers can contain relation links; native buttons would nest interactive controls.
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import { type ReactNode, useRef, useState } from 'react';
+import { type ReactElement, type ReactNode, useRef, useState } from 'react';
 export function Tooltip({ children, content }: { children: ReactNode; content: ReactNode }) {
   const [open, setOpen] = useState(false);
   // On a tap, focus arrives after the press and opens the tooltip, so a plain
@@ -43,6 +43,34 @@ export function Tooltip({ children, content }: { children: ReactNode; content: R
             className="z-50 max-w-sm rounded-lg border border-border bg-popover p-3 text-sm text-foreground shadow-md"
           >
             {content}
+          </TooltipPrimitive.Content>
+        </TooltipPrimitive.Portal>
+      </TooltipPrimitive.Root>
+    </TooltipPrimitive.Provider>
+  );
+}
+
+/** Add schema help to a label or sort button without adding an icon. */
+export function DescriptionTooltip({
+  description,
+  children,
+}: {
+  description?: string | null;
+  children: ReactElement;
+}) {
+  if (!description?.trim()) return children;
+  return (
+    <TooltipPrimitive.Provider delayDuration={800}>
+      <TooltipPrimitive.Root>
+        <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
+        <TooltipPrimitive.Portal>
+          <TooltipPrimitive.Content
+            side="bottom"
+            sideOffset={5}
+            collisionPadding={12}
+            className="z-50 max-w-[min(22rem,calc(100vw-1.5rem))] whitespace-pre-wrap rounded-lg border border-border bg-popover p-2.5 text-sm text-foreground shadow-md [overflow-wrap:anywhere]"
+          >
+            {description}
           </TooltipPrimitive.Content>
         </TooltipPrimitive.Portal>
       </TooltipPrimitive.Root>
