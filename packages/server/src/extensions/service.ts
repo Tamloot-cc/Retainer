@@ -839,11 +839,20 @@ export class Extensions {
         : {}),
       ...(bound ? { bindings: bound.review } : {}),
       notices: [
-        // Shown wherever model use is newly granted: a release without
-        // configure grants it here, in its single approval. A configuring
-        // installation was granted it at access approval, which said so.
+        // Shown unless the admin already approved model use as this release
+        // describes it: at this release's access approval (configure), or on
+        // the installed release with model use granted and the same notice.
+        // A release whose model use widens, such as from setup suggestions to
+        // every run, says so again although `granted_uses` is unchanged.
         ...(modelNotice &&
-        (!existing || existing.state === 'uninstalled' || !existing.granted_uses.includes('model'))
+        !approval &&
+        !(
+          existing &&
+          existing.state !== 'uninstalled' &&
+          existing.granted_uses.includes('model') &&
+          installedRelease &&
+          modelUseNotice(installedRelease) === modelNotice
+        )
           ? [modelNotice]
           : []),
         // Approving the installation covers sign-in for the workspace's members.

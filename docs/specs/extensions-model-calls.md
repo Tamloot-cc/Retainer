@@ -146,11 +146,15 @@ Model use is access, so an admin approves it and the installation stores it:
     also does this to suggest how to set it up." when `configure` uses it too.
 
   It is a plain note with the access (the preview's `notices`), not a
-  warning, and it is shown where model use is newly granted, before any call:
-  at access approval for a release with `configure`, or in the single approval
-  of one without. Turning on a `configuring` installation doesn't repeat it,
-  because the access approval already granted and explained it. There's no
-  separate list of which fields or records may be sent.
+  warning, shown before any call: at access approval for a release with
+  `configure`, or in the single approval of one without. A later review
+  doesn't repeat it when the admin already approved model use as this
+  release describes it: at this release's access approval (so turning on a
+  `configuring` installation, or a reviewed upgrade after its access step,
+  says nothing new), or on the installed release with the same notice. An
+  upgrade whose model use widens, such as from setup suggestions to every
+  run, says so again even though `granted_uses` is already `['model']`.
+  There's no separate list of which fields or records may be sent.
 - **Granted at access approval.** Committing the access approval grants the
   release's uses in full, so `configure` can call the model before the mapping
   is reviewed. A release without `configure` grants them in its single

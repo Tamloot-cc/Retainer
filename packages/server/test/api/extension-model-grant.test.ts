@@ -68,7 +68,24 @@ const upgradeV1 = extensionFixture({
   ...plainConfigure,
   universalId: '0c7e1f26-8b9c-4dae-9f01-b2c3d4e5f678',
 });
-const releases: ExtensionManifest[] = [single, configured, plainV1, modelV2, upgradeV1, upgradeV2];
+/** Model use for setup suggestions only, then (2.0.0) on every run too. */
+const WIDENING = '5d3c2b1a-0f9e-4d8c-a7b6-c5d4e3f2a1b0';
+const widening = (version: string, runUses: boolean) =>
+  extensionFixture({ ...withConfigure(version, true, runUses), universalId: WIDENING });
+const setupOnlyV1 = widening('1.0.0', false);
+const setupOnlyV11 = widening('1.1.0', false);
+const everyRunV2 = widening('2.0.0', true);
+const releases: ExtensionManifest[] = [
+  single,
+  configured,
+  plainV1,
+  modelV2,
+  upgradeV1,
+  upgradeV2,
+  setupOnlyV1,
+  setupOnlyV11,
+  everyRunV2,
+];
 const catalog = new ExtensionCatalog(
   releases.map((manifest) => ({ manifest, actorCeiling: 'agent' as const, runtimeEnabled: true })),
 );
@@ -316,5 +333,37 @@ describe('upgrades', () => {
     const job = await claimConfigure(ws.id, created.id, digest);
     expect(job.releaseDigest).toBe(digest);
     expect(job.uses).toEqual(['model']);
+    // The access approval said it; the upgrade review doesn't say it again.
+    expect(preview.notices).toContain(modelUseNotice(upgradeV2));
+    const upgrade = await t.request('/v1/extensions/preview', {
+      key: keys.admin,
+      body: { ...first, installationId: created.id, version: '2.0.0' },
+    });
+    expect(upgrade.status, JSON.stringify(upgrade.body)).toBe(200);
+    expect(upgrade.body.notices.join(' ')).not.toContain('Anthropic');
+  });
+
+  it('says model use again when an upgrade widens it, though the grant already includes model', async () => {
+    const { keys } = await workspace();
+    const first = { registrationId: WIDENING, version: '1.0.0', settings: { enabled: true } };
+    const { installation: created } = await approve(keys.admin, first);
+    expect(created.grantedUses).toEqual(['model']);
+    await db.owner`update extension_installations set state='active' where id=${created.id}`;
+    const review = (version: string) =>
+      t.request('/v1/extensions/preview', {
+        key: keys.admin,
+        body: { ...first, installationId: created.id, version, grantChange: true },
+      });
+    // Same model use as approved: not repeated.
+    const same = await review('1.1.0');
+    expect(same.status, JSON.stringify(same.body)).toBe(200);
+    expect(same.body.grants.uses).toEqual(['model']);
+    expect(same.body.notices.join(' ')).not.toContain('Anthropic');
+    // From setup suggestions only to every run: said, with the new extent.
+    const wider = await review('2.0.0');
+    expect(wider.status, JSON.stringify(wider.body)).toBe(200);
+    expect(wider.body.grants.uses).toEqual(['model']);
+    expect(wider.body.notices).toContain(modelUseNotice(everyRunV2));
+    expect(modelUseNotice(everyRunV2)).not.toBe(modelUseNotice(setupOnlyV1));
   });
 });
