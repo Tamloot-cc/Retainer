@@ -4,12 +4,15 @@ import { createSql, type Sql } from '../db/client.js';
 import { applyLogins, loginsPending } from '../db/logins.js';
 import {
   applyMigrationJournal,
+  applyOnlineTables,
   applyRestrictedIndexes,
   migrationHistoryCompatible,
   migrationsPending,
+  onlineTableStatus,
   restrictedIndexStatus,
 } from '../db/migrate.js';
 import { HOSTED_WRITER_BUILD } from '../db/writer-build.js';
+import { WRITER_CONTROL_LOCK } from '../db/writer-lease.js';
 import { parseExtensionCatalog } from '../extensions/catalog.js';
 import { setLogLevel } from '../log.js';
 import { runCli } from '../operator/commands.js';
@@ -60,21 +63,30 @@ import {
  * The CLI's output is returned to the caller and never logged: `key create`
  * prints the only copy of a key.
  */
+const journalProof = z.strictObject({
+  appliedDigest: z.string().regex(/^[0-9a-f]{64}$/),
+  pending: z
+    .array(z.string().regex(/^[0-9a-f]{64}$/))
+    .min(1)
+    .max(1000),
+});
+
 const opsEvent = z.discriminatedUnion('command', [
   ...writerCommands,
   z.object({ command: z.literal('migration-status') }),
   z.strictObject({ command: z.literal('restricted-index-status'), protocol: z.literal(1) }),
+  z.strictObject({ command: z.literal('online-table-status'), protocol: z.literal(1) }),
+  z.strictObject({
+    command: z.literal('migrate-online-tables'),
+    protocol: z.literal(1),
+    servingBuild: z.string().regex(/^[0-9a-f]{40}$/),
+    journal: journalProof,
+  }),
   z.strictObject({
     command: z.literal('migrate-restricted-indexes'),
     protocol: z.literal(1),
     writerAdmission: writerOwnership,
-    journal: z.strictObject({
-      appliedDigest: z.string().regex(/^[0-9a-f]{64}$/),
-      pending: z
-        .array(z.string().regex(/^[0-9a-f]{64}$/))
-        .min(1)
-        .max(1000),
-    }),
+    journal: journalProof,
   }),
   z.object({
     command: z.literal('extension-runtime-status'),
@@ -121,11 +133,12 @@ export type OpsResult =
       writerTiming?: { closedAt: Date; permittedAt: Date; journalAppliedAt: Date };
     }
   | {
-      command: 'restricted-index-status';
+      command: 'restricted-index-status' | 'online-table-status';
       protocol: 1;
       writerBuild: string;
       journal: Awaited<ReturnType<typeof restrictedIndexStatus>>;
     }
+  | { command: 'migrate-online-tables'; protocol: 1; writerBuild: string }
   | {
       command: 'migrate-restricted-indexes';
       protocol: 1;
@@ -258,14 +271,40 @@ export function createOpsHandler(
         await sql.end({ timeout: 5 });
       }
     }
-    if (command.command === 'restricted-index-status') {
+    if (
+      command.command === 'restricted-index-status' ||
+      command.command === 'online-table-status'
+    ) {
       if (!writerBuild) throw new Error('Restricted migration requires a hosted writer build.');
       const sql = createSql(databaseUrl, { max: 1, statementTimeoutMs: 5000 });
       try {
+        const inspect =
+          command.command === 'online-table-status' ? onlineTableStatus : restrictedIndexStatus;
         const journal = await sql.begin('isolation level repeatable read read only', (tx) =>
-          restrictedIndexStatus(tx, restrictedFixtureFolder),
+          inspect(tx, restrictedFixtureFolder),
         );
         return { command: command.command, protocol: 1, writerBuild, journal };
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    }
+    if (command.command === 'migrate-online-tables') {
+      if (!writerBuild) throw new Error('Online migration requires a hosted writer build.');
+      const sql = createSql(databaseUrl, { max: 1, statementTimeoutMs: 5000 });
+      try {
+        return await withMigrationLock(sql, 1, async (tx) => {
+          const [lock] =
+            await tx`select pg_try_advisory_xact_lock(${WRITER_CONTROL_LOCK}) as acquired`;
+          if (!lock?.acquired) throw new Error('Writer admission is busy; retry online migration.');
+          const [admission] = await tx`select builds from retainer_deploy.admission
+            where singleton and generation is not null and closed_at is null`;
+          if (admission?.builds?.length !== 1 || admission.builds[0] !== command.servingBuild)
+            throw new Error('Online migration requires the verified serving build.');
+          await applyOnlineTables(tx, command.journal, restrictedFixtureFolder);
+          if ((await otherStopReasons(config, tx as unknown as Sql)).length)
+            throw new Error('Additional migration work requires a stopped deployment.');
+          return { command: command.command, protocol: 1, writerBuild };
+        });
       } finally {
         await sql.end({ timeout: 5 });
       }

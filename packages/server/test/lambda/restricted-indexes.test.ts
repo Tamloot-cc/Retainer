@@ -16,6 +16,7 @@ const previous = 'a'.repeat(40);
 const candidate = 'b'.repeat(40);
 const index = 'CREATE INDEX "restricted_fixture" ON "public"."records" USING btree ("label");';
 const rewrite = 'ALTER TABLE "records" ALTER COLUMN "label" TYPE integer USING length("label");';
+const independentTable = 'CREATE TABLE "public"."restricted_fixture" ("id" uuid PRIMARY KEY);';
 const dirname = fileURLToPath(new URL('../../drizzle/', import.meta.url));
 const sqlFile = 'restricted_fixture.sql';
 let folder: string | undefined;
@@ -75,6 +76,59 @@ async function fixture(sql: string) {
   };
   return { database, input, status, ops, ownership, close, relation };
 }
+
+it('adds an independent table while the serving generation stays open', async () => {
+  const { database, ops, ownership, relation } = await fixture(independentTable);
+  const workspace = await createWorkspace(database.owner, {
+    name: 'Online migration fixture',
+    template: 'starter',
+  });
+  const { key } = await createApiKey(database.owner, {
+    workspace: workspace.id,
+    name: 'Writer',
+    actor: { type: 'agent', id: 'writer' },
+    scopes: ['read', 'write'],
+  });
+  const old = createApp({ sql: database.connect({ role: RUNTIME_ROLE, writerBuild: previous }) });
+  await ownership();
+  const status = await ops({ command: 'online-table-status', protocol: 1 });
+  if (status.command !== 'online-table-status' || !status.journal)
+    throw new Error('Expected an approved table journal');
+  const request = {
+    command: 'migrate-online-tables',
+    protocol: 1,
+    servingBuild: previous,
+    journal: status.journal,
+  } as const;
+  await expect(ops({ ...request, servingBuild: candidate })).rejects.toThrow(
+    'verified serving build',
+  );
+  await expect(relation()).resolves.toBeNull();
+  await database.owner.begin(async (tx) => {
+    await tx`lock table drizzle.__drizzle_migrations in access exclusive mode`;
+    await expect(ops(request)).rejects.toMatchObject({ code: '55P03' });
+  });
+  await expect(relation()).resolves.toBeNull();
+  const [migration, write] = await Promise.all([
+    ops(request),
+    old.request('/v1/objects/person/records', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ values: { name: 'Written through the old build' } }),
+    }),
+  ]);
+  expect(migration).toMatchObject({ command: request.command, writerBuild: candidate });
+  expect(write.status).toBe(201);
+  await expect(relation()).resolves.not.toBeNull();
+  await expect(ops(request)).rejects.toThrow('no longer matches the approved plan');
+});
+
+it('excludes indexes from the online table path', async () => {
+  const { ops } = await fixture(index);
+  await expect(ops({ command: 'online-table-status', protocol: 1 })).resolves.toMatchObject({
+    journal: null,
+  });
+});
 
 it('requires ownership and the same journal on the transaction applying the indexes', async () => {
   const { status, ops, ownership, close, relation, input } = await fixture(index);
