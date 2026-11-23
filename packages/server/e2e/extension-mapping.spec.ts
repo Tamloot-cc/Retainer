@@ -11,24 +11,36 @@ test('reviews and approves binding choices, then replans one output', async ({
   await page.getByRole('link', { name: 'Extensions', exact: true }).click();
   await page.getByRole('link', { name: 'Set up browser-enrichment', exact: true }).click();
   const screen = page.getByRole('main');
+  const companies = screen.getByRole('listitem', { name: 'Companies' });
+  // The fields are folded under a one-line summary until opened.
+  await expect(companies).toContainText('Headquarters → Not imported');
+  await companies.getByRole('button', { name: /^Fields/ }).click();
   await expect(
     screen.getByText('Employees the provider finds, mostly from public profiles.'),
   ).toBeVisible();
-  await screen.getByRole('combobox', { name: 'Headquarters', exact: true }).selectOption('address');
+  await companies.getByRole('button', { name: /^Headquarters/ }).click();
+  await page.getByRole('option', { name: 'Address', exact: true }).click();
   await screen.getByRole('button', { name: 'Review installation' }).click();
-  await expect(screen.getByText('Headquarters → address')).toBeVisible();
-  await expect(screen.getByText('Employee count → Create Employee Count')).toBeVisible();
+  const planned = screen.getByRole('listitem', { name: 'Companies' });
+  await expect(planned).toContainText('Headquarters to Address');
+  await expect(planned).toContainText('Employee count to New field “Employee Count”');
   expect((await r.request('/extensions', undefined, r.keys.user)).installations).toHaveLength(0);
   await screen.getByRole('button', { name: 'Approve installation' }).click();
   await expect(page).toHaveURL(/\/extensions\/[0-9a-f-]{36}$/);
   const [installed] = (await r.request('/extensions', undefined, r.keys.user)).installations;
-  await page.getByRole('button', { name: 'Bindings', exact: true }).click();
-  const summary = page.getByRole('region', { name: 'Approved bindings' });
-  await expect(summary.getByText('Headquarters → address')).toBeVisible();
-  await summary.getByRole('link', { name: 'Change setup' }).click();
-  await screen.getByRole('combobox', { name: 'Headquarters', exact: true }).selectOption('skip');
+  await page.getByRole('button', { name: 'Destinations', exact: true }).click();
+  const summary = page.getByRole('region', { name: /saves data$/ });
+  await expect(summary.getByRole('listitem', { name: 'Companies' })).toContainText(
+    'Headquarters to Address',
+  );
+  await summary.getByRole('link', { name: 'Change destinations' }).click();
+  await companies.getByRole('button', { name: /^Fields/ }).click();
+  await companies.getByRole('button', { name: /^Headquarters/ }).click();
+  await page.getByRole('option', { name: 'Don’t import' }).click();
   await screen.getByRole('button', { name: 'Review new plan' }).click();
-  await expect(screen.getByText('Headquarters → Skip')).toBeVisible();
+  await expect(screen.getByRole('listitem', { name: 'Companies' })).toContainText(
+    'Headquarters to Not imported',
+  );
   await screen.getByRole('button', { name: 'Approve new plan' }).click();
   await expect(page).toHaveURL(new RegExp(`/extensions/${installed.id}$`));
   const detail = await r.request(`/extensions/${installed.id}`, undefined, r.keys.user);

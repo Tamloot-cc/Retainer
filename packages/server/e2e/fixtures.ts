@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { test as base, expect } from '@playwright/test';
+import { tamlootManifest } from '@retainer/runner/tamloot-contract';
 import { generateKeyPair } from 'jose';
 import postgres from 'postgres';
 import { createApp } from '../src/api/app.js';
@@ -260,6 +261,8 @@ export const test = base.extend<
       /** Installs the OAuth member fixture as the admin; returns its ID. */
       installOAuthMember: () => Promise<string>;
       finishConfigure: (setup?: boolean) => Promise<void>;
+      /** Saves the suggestions Tamloot's model would make for the starter workspace. */
+      suggestTamloot: () => Promise<void>;
       previousConfiguration: () => Promise<string>;
       expireConfigurationSecrets: () => Promise<void>;
       sourceEvidence: () => Promise<{
@@ -279,6 +282,7 @@ export const test = base.extend<
     oauthMemberFixture: boolean;
     configureFixture: boolean;
     configureSecretFixture: boolean;
+    tamlootFixture: boolean;
   }
 >({
   routineFixture: [false, { option: true }],
@@ -290,6 +294,7 @@ export const test = base.extend<
   mappingFixture: [false, { option: true, scope: 'worker' }],
   configureSecretFixture: [false, { option: true, scope: 'worker' }],
   configureFixture: [false, { option: true, scope: 'worker' }],
+  tamlootFixture: [false, { option: true, scope: 'worker' }],
   memberFixture: [false, { option: true, scope: 'worker' }],
   oauthMemberFixture: [false, { option: true, scope: 'worker' }],
   retainer: async (
@@ -306,6 +311,7 @@ export const test = base.extend<
       oauthMemberFixture,
       configureFixture,
       configureSecretFixture,
+      tamlootFixture,
     },
     use,
   ) => {
@@ -382,8 +388,18 @@ export const test = base.extend<
       : oauthMemberFixture
         ? browserOAuthManifest
         : undefined;
-    const catalog =
-      configureFixture || configureSecretFixture
+    const tamloot = tamlootFixture
+      ? tamlootManifest({
+          packageDigest: 'a'.repeat(64),
+          handlerDigest: 'b'.repeat(64),
+          serverRange: '>=0.1.0 <0.2.0',
+        })
+      : undefined;
+    const catalog = tamloot
+      ? new ExtensionCatalog([
+          { manifest: tamloot, actorCeiling: 'integration', runtimeEnabled: true },
+        ])
+      : configureFixture || configureSecretFixture
         ? new ExtensionCatalog(
             [
               browserConfigurePrevious,
@@ -408,7 +424,7 @@ export const test = base.extend<
               ])
             : undefined;
     const secretSql =
-      memberManifest || configureSecretFixture
+      memberManifest || configureSecretFixture || tamloot
         ? createSql(dbUrl.toString(), { role: 'retainer_secret_broker' })
         : undefined;
     const extensionSecrets = secretSql
@@ -423,7 +439,8 @@ export const test = base.extend<
       memberFixture ||
       oauthMemberFixture ||
       configureFixture ||
-      configureSecretFixture
+      configureSecretFixture ||
+      tamloot
         ? await generateKeyPair('EdDSA')
         : undefined;
     const runTokens = pair
@@ -566,6 +583,54 @@ export const test = base.extend<
         'PUT',
       );
       await queue.complete(job, { status: 'succeeded' });
+    }
+    async function suggestTamloot() {
+      if (!tamloot || !catalog || !runTokens) throw new Error('tamloot fixture is not enabled');
+      const queue = new ExtensionQueue(sql, catalog.runtime);
+      const [pending] =
+        await owner`select id from extension_jobs where status='queued' and trigger_kind='configure' order by id desc limit 1`;
+      if (!pending) throw new Error('no configure job');
+      const job = await queue.claim(workspace.id, pending.id, randomUUID());
+      if (!job) throw new Error('configure claim failed');
+      const token = await runTokens.issue(sql, job, tamloot.universalId, job.scopes);
+      await request(
+        `/extensions/${job.installationId}/runtime/suggestions`,
+        {
+          bindings: {
+            meeting: { action: 'existing', objects: ['conversation'] },
+            task: {
+              action: 'existing',
+              objects: ['task'],
+              fields: {
+                title: { action: 'existing', field: 'title' },
+                status: {
+                  action: 'existing',
+                  field: 'status',
+                  values: { open: 'todo', done: 'done' },
+                },
+                person: { action: 'existing', field: 'person' },
+              },
+            },
+            person: {
+              action: 'existing',
+              objects: ['person'],
+              fields: {
+                name: { action: 'existing', field: 'name' },
+                emails: { action: 'existing', field: 'emails' },
+              },
+            },
+          },
+          bindingReasons: {
+            meeting: 'Conversations already hold meetings, with a medium field.',
+            task: 'Tasks are the to-dos people already track here.',
+            'task.status': 'Open is To do and done is Done.',
+            person: 'People are matched by their email addresses.',
+          },
+        },
+        token,
+        'PUT',
+      );
+      await queue.complete(job, { status: 'succeeded', code: 'suggestions_ready' });
     }
     async function previousConfiguration() {
       const manifest = browserConfigurePrevious;
@@ -751,6 +816,7 @@ export const test = base.extend<
         activateMembers,
         installOAuthMember,
         finishConfigure,
+        suggestTamloot,
         previousConfiguration,
         expireConfigurationSecrets: async () => {
           await owner`update extension_pending_secrets set expires_at=now()-interval '1 second' where workspace_id=${workspace.id} and consumed_at is null`;

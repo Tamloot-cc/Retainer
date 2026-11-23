@@ -729,19 +729,19 @@ Every screen is a page; only the uninstall confirmation is a dialog.
   (Reconnect, Enable, Disable, Uninstall) beside **Upgrade to …**. Tabs
   (`?tab=`): Overview (access, sync progress, where it runs), Connections
   (for extensions each person connects, which open on this tab; a person's
-  connect form is inline), Field mapping, Settings (saved without a review;
+  connect form is inline), Destinations, Settings (saved without a review;
   credentials and account settings go through Reconnect), Runs, and App
   credentials for standalone apps.
 - **Setup** (`/extensions/new/:registration`) and its changes
-  (`/extensions/:id/upgrade`, `/reconnect`, `/mapping`): numbered steps,
-  Connect (settings and secrets), Map fields, then Review and approve,
+  (`/extensions/:id/upgrade`, `/reconnect`, `/bindings`): numbered steps,
+  Connect (settings and secrets), Choose destinations, then Review and approve,
   showing only the steps a release needs. Continuing from the last input step
   stages secrets and asks the server for the preview; nothing is written until
   Approve. Going back to a step drops the preview. Approving opens the
   extension's page.
 
 For releases with `configure`, setup uses Connect → Approve access → Preparing
-suggestions → Map fields → Review and turn on. The access review grants only
+suggestions → Choose destinations → Review and turn on. The access review grants only
 reads and declared secrets; final turn-on applies schema, mapping and writes.
 Preparing suggestions supports Skip suggestions and Continue later. A configuring
 card says “Waiting for your review” and its detail page offers Continue setup.
@@ -749,7 +749,15 @@ Suggested rows show a badge and reason. Reviewed upgrades check for a saved
 valid target approval; otherwise they show Approve access even if access is
 unchanged. A valid approval resumes the run or completed suggestions, while
 expired staged credentials return to access review. The old release stays
-active throughout; Field mapping offers Suggest mapping.
+active throughout; Destinations offers Get suggestions.
+
+**Destinations** (`routes/extensions/bindings.tsx`, `ui/mapping.tsx`) say
+where an extension saves data, in plain words: one card per kind of record it
+imports, an arrow to the list it goes to (an existing list, a new list, or
+Don't import), and, folded under a one-line summary, its fields and any values
+they map, such as each status. A suggestion shows its reason only while the
+choice still matches it. The review step and the Destinations tab show the
+same cards as text, with labels rather than API names.
 
 
 ### Not in v1
