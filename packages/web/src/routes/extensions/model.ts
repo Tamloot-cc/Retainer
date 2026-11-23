@@ -2,7 +2,6 @@ import {
   compareVersions,
   type ExtensionManifest,
   MODEL_USE_NOTICE,
-  modelUseNotice,
   newestReleases,
   POLICY_OPTION_LABELS,
 } from '@retainer/extension';
@@ -187,8 +186,7 @@ export const accessText = (
   scopes: readonly string[],
   actor: string,
   uses: readonly string[] = [],
-  manifest?: Pick<ExtensionManifest, 'functions'>,
 ) =>
   `It can ${scopes.join(' and ')} workspace CRM data. Its changes are recorded as made by an ${actor}.${
-    uses.includes('model') ? ` ${(manifest && modelUseNotice(manifest)) ?? MODEL_USE_NOTICE}` : ''
+    uses.includes('model') ? ` ${MODEL_USE_NOTICE}` : ''
   }`;

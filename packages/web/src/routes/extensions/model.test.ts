@@ -61,15 +61,10 @@ describe('plain words before and during setup', () => {
     );
     expect(sharingNote({ connection: 'workspace' }, 'Exa')).toBeUndefined();
   });
-  it('says when model use sends data, from the functions that use it', () => {
-    const configure = {
-      functions: [{ uses: ['model'], trigger: { kind: 'configure' } }],
-    } as never;
-    expect(accessText(['read'], 'integration', ['model'], configure)).toContain(
-      'To suggest how to set it up, this extension sends the workspace data it needs',
-    );
+  it('says model use sends the data involved to Anthropic', () => {
     expect(accessText(['read'], 'integration', ['model'])).toContain(
-      'This extension can send the workspace data it works on to Anthropic',
+      'When this extension uses a model, it sends the workspace data involved to Anthropic',
     );
+    expect(accessText(['read'], 'integration')).not.toContain('Anthropic');
   });
 });

@@ -1,3 +1,4 @@
+import { MODEL_USE_NOTICE } from '@retainer/extension';
 import type { SchemaDescription, Session } from '@retainer/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen, within } from '@testing-library/react';
@@ -531,7 +532,7 @@ describe('extension pages and human approval', () => {
       ...preview,
       grants: { ...preview.grants, uses: ['model'] },
       previousGrants: { actor: 'integration', scopes: ['read', 'write'], uses: [] },
-      notices: ['When it runs, this extension sends the workspace data it works on to Anthropic.'],
+      notices: [MODEL_USE_NOTICE],
     });
     vi.spyOn(api, 'upgradeExtension').mockResolvedValue({ ...current, version: '1.1.0' });
     mount(
@@ -550,7 +551,7 @@ describe('extension pages and human approval', () => {
       ),
     ).toBeTruthy();
     // The model notice is a plain note in the Access card, not a warning.
-    const notice = screen.getByText(/this extension sends the workspace data it works on/);
+    const notice = screen.getByText(MODEL_USE_NOTICE);
     expect(notice.closest('[role="status"]')?.querySelector('svg')).toBeNull();
     expect(plan.mock.calls[0]?.[0]).toMatchObject({ grantChange: true });
     expect(screen.getByRole('button', { name: 'Approve access and upgrade' })).toBeTruthy();

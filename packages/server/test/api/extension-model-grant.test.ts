@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type ExtensionManifest, type Invocation, modelUseNotice } from '@retainer/extension';
+import { type ExtensionManifest, type Invocation, MODEL_USE_NOTICE } from '@retainer/extension';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import type { RunTokens } from '../../src/extension-runtime/tokens.js';
@@ -68,24 +68,7 @@ const upgradeV1 = extensionFixture({
   ...plainConfigure,
   universalId: '0c7e1f26-8b9c-4dae-9f01-b2c3d4e5f678',
 });
-/** Model use for setup suggestions only, then (2.0.0) on every run too. */
-const WIDENING = '5d3c2b1a-0f9e-4d8c-a7b6-c5d4e3f2a1b0';
-const widening = (version: string, runUses: boolean) =>
-  extensionFixture({ ...withConfigure(version, true, runUses), universalId: WIDENING });
-const setupOnlyV1 = widening('1.0.0', false);
-const setupOnlyV11 = widening('1.1.0', false);
-const everyRunV2 = widening('2.0.0', true);
-const releases: ExtensionManifest[] = [
-  single,
-  configured,
-  plainV1,
-  modelV2,
-  upgradeV1,
-  upgradeV2,
-  setupOnlyV1,
-  setupOnlyV11,
-  everyRunV2,
-];
+const releases: ExtensionManifest[] = [single, configured, plainV1, modelV2, upgradeV1, upgradeV2];
 const catalog = new ExtensionCatalog(
   releases.map((manifest) => ({ manifest, actorCeiling: 'agent' as const, runtimeEnabled: true })),
 );
@@ -150,7 +133,7 @@ describe('access preview and approval', () => {
     const { preview, id } = await installModelRelease(t, db, single);
     expect(preview.grants).toEqual({ actor: 'agent', scopes: ['read', 'write'], uses: ['model'] });
     // A plain note with the access, not a warning.
-    expect(preview.notices).toContain(modelUseNotice(single));
+    expect(preview.notices).toContain(MODEL_USE_NOTICE);
     expect(preview.warnings.join(' ')).not.toContain('Anthropic');
     expect((await installation(id))?.granted_uses).toEqual(['model']);
     const read = await t.request(`/v1/extensions/${id}`, {
@@ -177,7 +160,7 @@ describe('access preview and approval', () => {
     const { preview, installation: created } = await approve(keys.admin, body);
     expect(preview.grants).toEqual({ actor: 'agent', scopes: ['read'], uses: ['model'] });
     // Said at access approval, before configure calls the model.
-    expect(preview.notices).toContain(modelUseNotice(configured));
+    expect(preview.notices).toContain(MODEL_USE_NOTICE);
     expect(preview.warnings).toEqual([]);
     expect(created.state).toBe('configuring');
     expect(created.grantedUses).toEqual(['model']);
@@ -296,7 +279,7 @@ describe('upgrades', () => {
     const { preview } = await approve(key, { ...body, grantChange: true });
     expect(preview.previousGrants).toEqual({ actor: 'agent', scopes: ['read', 'write'], uses: [] });
     expect(preview.grants.uses).toEqual(['model']);
-    expect(preview.notices).toContain(modelUseNotice(modelV2));
+    expect(preview.notices).toContain(MODEL_USE_NOTICE);
     expect((await installation(id))?.granted_uses).toEqual(['model']);
   });
 
@@ -334,36 +317,12 @@ describe('upgrades', () => {
     expect(job.releaseDigest).toBe(digest);
     expect(job.uses).toEqual(['model']);
     // The access approval said it; the upgrade review doesn't say it again.
-    expect(preview.notices).toContain(modelUseNotice(upgradeV2));
+    expect(preview.notices).toContain(MODEL_USE_NOTICE);
     const upgrade = await t.request('/v1/extensions/preview', {
       key: keys.admin,
       body: { ...first, installationId: created.id, version: '2.0.0' },
     });
     expect(upgrade.status, JSON.stringify(upgrade.body)).toBe(200);
     expect(upgrade.body.notices.join(' ')).not.toContain('Anthropic');
-  });
-
-  it('says model use again when an upgrade widens it, though the grant already includes model', async () => {
-    const { keys } = await workspace();
-    const first = { registrationId: WIDENING, version: '1.0.0', settings: { enabled: true } };
-    const { installation: created } = await approve(keys.admin, first);
-    expect(created.grantedUses).toEqual(['model']);
-    await db.owner`update extension_installations set state='active' where id=${created.id}`;
-    const review = (version: string) =>
-      t.request('/v1/extensions/preview', {
-        key: keys.admin,
-        body: { ...first, installationId: created.id, version, grantChange: true },
-      });
-    // Same model use as approved: not repeated.
-    const same = await review('1.1.0');
-    expect(same.status, JSON.stringify(same.body)).toBe(200);
-    expect(same.body.grants.uses).toEqual(['model']);
-    expect(same.body.notices.join(' ')).not.toContain('Anthropic');
-    // From setup suggestions only to every run: said, with the new extent.
-    const wider = await review('2.0.0');
-    expect(wider.status, JSON.stringify(wider.body)).toBe(200);
-    expect(wider.body.grants.uses).toEqual(['model']);
-    expect(wider.body.notices).toContain(modelUseNotice(everyRunV2));
-    expect(modelUseNotice(everyRunV2)).not.toBe(modelUseNotice(setupOnlyV1));
   });
 });

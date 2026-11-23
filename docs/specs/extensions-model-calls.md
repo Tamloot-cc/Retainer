@@ -134,27 +134,20 @@ Model use is access, so an admin approves it and the installation stores it:
   and `uses` on `extension_access_approvals` (configure spec §6.1).
 - **Shown.** The access preview (configure spec §4.1) lists the release's uses
   with its scopes, actor and secrets, and its plan digest covers them. For
-  `model` it says, in plain words, when data goes to Anthropic, read from the
-  functions that declare model use (`modelUseNotice` in
-  `@retainer/extension`):
-  - only `configure`: "To suggest how to set it up, this extension sends the
-    workspace data it needs, such as your lists and fields, to Anthropic. It
-    does this only while preparing suggestions: after you approve access, and
-    when you ask for new ones."
-  - any other function: "When it runs, this extension sends the workspace
-    data it works on to Anthropic, to process it with a model.", adding "It
-    also does this to suggest how to set it up." when `configure` uses it too.
-
-  It is a plain note with the access (the preview's `notices`), not a
-  warning, shown before any call: at access approval for a release with
-  `configure`, or in the single approval of one without. A later review
-  doesn't repeat it when the admin already approved model use as this
-  release describes it: at this release's access approval (so turning on a
-  `configuring` installation, or a reviewed upgrade after its access step,
-  says nothing new), or on the installed release with the same notice. An
-  upgrade whose model use widens, such as from setup suggestions to every
-  run, says so again even though `granted_uses` is already `['model']`.
-  There's no separate list of which fields or records may be sent.
+  `model` it says, in plain words: "When this extension uses a model, it
+  sends the workspace data involved to Anthropic for processing."
+  (`MODEL_USE_NOTICE`). The sentence is the same for every release, because
+  the grant is model use, not a particular extent of it: a release that uses
+  the model only for setup suggestions and one that uses it on every run are
+  approved alike, and an upgrade between them is no grant change. It is a
+  plain note with the access (the preview's `notices`), not a warning, shown
+  where model use is newly granted, before any call: at access approval for
+  a release with `configure`, or in the single approval of one without. A
+  review after this release's access approval (turning on a `configuring`
+  installation, or a reviewed upgrade) doesn't repeat it. There's no separate
+  list of which fields or records may be sent. Recording the approved extent
+  (setup only, or every run) is deferred until an extension needs the
+  distinction.
 - **Granted at access approval.** Committing the access approval grants the
   release's uses in full, so `configure` can call the model before the mapping
   is reviewed. A release without `configure` grants them in its single

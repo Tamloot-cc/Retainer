@@ -247,6 +247,8 @@ describe('strict extension contracts', () => {
       'onSourceDelete must be',
     );
     expect(() => define(choice, false)).toThrow('onSourceDelete must be');
+    // Leaving the setting out must give what the web fills in.
+    expect(() => define({ ...choice, default: 'keep' })).toThrow('onSourceDelete must be');
   });
   it('produces a JSON manifest with explicit policy', () => {
     expect(defineExtension(fixture())).toMatchObject({

@@ -21,7 +21,7 @@ test('shows where Tamloot saves data, with suggestions, folded fields and plain 
   await page.getByRole('option', { name: 'Keep what was imported' }).click();
   await page.getByRole('button', { name: 'Review installation', exact: true }).click();
   // Model use is explained before approving the access that lets configure call it.
-  await expect(page.getByText(/^To suggest how to set it up, this extension sends/)).toBeVisible();
+  await expect(page.getByText(/^When this extension uses a model, it sends/)).toBeVisible();
   await page.getByRole('button', { name: 'Approve access', exact: true }).click();
   await expect(page.getByText('Preparing suggestions…')).toBeVisible();
   await r.suggestTamloot();

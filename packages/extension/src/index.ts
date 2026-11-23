@@ -30,26 +30,13 @@ export const SIDEBAR_INSTALLATION_PARAM = 'retainer_installation';
 /** Capabilities a function may declare in `uses`; open for later ones (model calls spec 11). */
 export const EXTENSION_USES = ['model'] as const;
 export type ExtensionUse = (typeof EXTENSION_USES)[number];
-/** What approving `model` means when the release isn't at hand to say when (model calls spec 3.1). */
-export const MODEL_USE_NOTICE =
-  'This extension can send the workspace data it works on to Anthropic, to process it with a model.';
 /**
- * What approving `model` means for this release, in plain words: when it
- * sends workspace data to Anthropic, read from which functions declare model
- * use (model calls spec 3.1). Undefined when none does.
+ * What approving `model` means, in plain words, wherever access is shown
+ * (model calls spec 3.1). One sentence for every release: the grant is model
+ * use, not a particular extent of it.
  */
-export function modelUseNotice(manifest: Pick<ExtensionManifest, 'functions'>) {
-  const kinds = manifest.functions
-    .filter((fn) => fn.uses?.includes('model'))
-    .map((fn) => fn.trigger.kind);
-  if (!kinds.length) return undefined;
-  const setup = kinds.includes('configure');
-  if (kinds.every((kind) => kind === 'configure'))
-    return 'To suggest how to set it up, this extension sends the workspace data it needs, such as your lists and fields, to Anthropic. It does this only while preparing suggestions: after you approve access, and when you ask for new ones.';
-  return `When it runs, this extension sends the workspace data it works on to Anthropic, to process it with a model.${
-    setup ? ' It also does this to suggest how to set it up.' : ''
-  }`;
-}
+export const MODEL_USE_NOTICE =
+  'When this extension uses a model, it sends the workspace data involved to Anthropic for processing.';
 /**
  * The installation setting that chooses what happens when the source deletes
  * an item it imported; absent, the release's `onSourceDelete` applies.
@@ -832,6 +819,9 @@ export function defineExtension(value: unknown): ExtensionManifest {
       deletion.secret ||
       (deletion.level ?? 'installation') !== 'installation' ||
       !deletion.options?.length ||
+      // A client that leaves the setting out gets the release's policy, so
+      // the default the web fills in must be the same.
+      (deletion.default !== undefined && deletion.default !== manifest.onSourceDelete) ||
       deletion.options.some((option) => !sourceDeletePolicies.safeParse(option).success) ||
       (deletion.default !== undefined && !deletion.options.includes(String(deletion.default))))
   )

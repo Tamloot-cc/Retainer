@@ -9,8 +9,8 @@ import {
   type ExtensionManifest,
   type ExtensionPreview,
   functionSecrets,
+  MODEL_USE_NOTICE,
   mergeBindingChoices,
-  modelUseNotice,
   newestReleases,
   releaseUses,
   runsHostedCode,
@@ -424,7 +424,7 @@ export class Extensions {
     const release = this.catalog.get(input.registrationId, input.version);
     const manifest = release.manifest;
     const uses = releaseUses(manifest);
-    const modelNotice = modelUseNotice(manifest);
+    const modelNotice = uses.includes('model') ? MODEL_USE_NOTICE : undefined;
     if (Buffer.byteLength(JSON.stringify(input.settings)) > 65536)
       throw new AppError(413, 'quota_exceeded', 'settings exceed 64 KiB');
     for (const [key, value] of Object.entries(input.settings)) {
@@ -839,20 +839,12 @@ export class Extensions {
         : {}),
       ...(bound ? { bindings: bound.review } : {}),
       notices: [
-        // Shown unless the admin already approved model use as this release
-        // describes it: at this release's access approval (configure), or on
-        // the installed release with model use granted and the same notice.
-        // A release whose model use widens, such as from setup suggestions to
-        // every run, says so again although `granted_uses` is unchanged.
+        // Shown where model use is newly granted, before any call: a
+        // release without configure grants it here, in its single approval.
+        // An access approval for this release (configure) already said it.
         ...(modelNotice &&
         !approval &&
-        !(
-          existing &&
-          existing.state !== 'uninstalled' &&
-          existing.granted_uses.includes('model') &&
-          installedRelease &&
-          modelUseNotice(installedRelease) === modelNotice
-        )
+        (!existing || existing.state === 'uninstalled' || !existing.granted_uses.includes('model'))
           ? [modelNotice]
           : []),
         // Approving the installation covers sign-in for the workspace's members.
