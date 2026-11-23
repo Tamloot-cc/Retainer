@@ -1,9 +1,10 @@
 name: Release
 
-# Pushing a tag like v0.1.0 publishes @retainer/shared, @retainer/sdk and
-# @retainer/mcp to npm, pushes the Docker image to GitHub Container Registry,
-# and creates a GitHub release. Run it by hand for a dry run that builds and
-# packs everything but publishes nothing. See docs/releasing.md.
+# Pushing a tag like v0.1.0 publishes every workspace package not marked
+# private to npm, pushes the Docker image to GitHub Container Registry, and
+# creates a GitHub release. npm trusts this workflow file (trusted publishing),
+# so no npm token is stored. Run it by hand for a dry run that builds and packs
+# everything but publishes nothing. See docs/releasing.md.
 
 on:
   push:
@@ -50,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # npm provenance
+      id-token: write # npm trusted publishing and provenance
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -58,18 +59,17 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-          registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
       # Builds everything, so whichever packages are not private get published built.
       - run: pnpm build
+      # pnpm packs, npm publishes: npm signs in with this job's OIDC token.
+      # Versions already on npm are skipped.
       - name: Publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ "$DRY_RUN" = true ]; then
-            pnpm -r publish --dry-run --no-git-checks
+            node scripts/publish-npm.mjs --dry-run
           else
-            pnpm -r publish --no-git-checks
+            node scripts/publish-npm.mjs
           fi
 
   docker:
