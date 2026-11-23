@@ -381,8 +381,8 @@ importers:
         specifier: workspace:*
         version: link:../shared
       '@simplewebauthn/browser':
-        specifier: 13.3.0
-        version: 13.3.0
+        specifier: 14.0.0
+        version: 14.0.0
       '@tanstack/react-query':
         specifier: ^5.107.1
         version: 5.107.1(@types/react@19.3.0)(react@19.3.1)
@@ -1861,6 +1861,9 @@ packages:
 
   '@simplewebauthn/browser@13.3.0':
     resolution: {integrity: sha512-BE/UWv6FOToAdVk0EokzkqQQDOWtNydYlY6+OrmiZ5SCNmb41VehttboTetUM3T/fr6EAFYVXjz4My2wg230rQ==}
+
+  '@simplewebauthn/browser@14.0.0':
+    resolution: {integrity: sha512-1odWVqeEBTl7lJ9zMKLEsmTlnyrDO5iRcTvfMKKk1WThUnp/i8JJdffdj2icP+tty159s4PgwE3BiMoEW9NFow==}
 
   '@simplewebauthn/server@13.3.3':
     resolution: {integrity: sha512-LelX/lcy5cjc15A86i/aNxHhB5eU7dd20QsbP0VLAf9e38+SLlsnqCCyecx3xqfGofhmX05h1J9fKRYWxw+luA==}
@@ -4980,6 +4983,8 @@ snapshots:
       selderee: 0.12.0
 
   '@simplewebauthn/browser@13.3.0': {}
+
+  '@simplewebauthn/browser@14.0.0': {}
 
   '@simplewebauthn/server@13.3.3':
     dependencies:
