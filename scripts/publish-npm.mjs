@@ -12,9 +12,13 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const dryRun = process.argv.includes('--dry-run');
-const root = new URL('../', import.meta.url);
+// RETAINER_PUBLISH_ROOT points the script at a fixture repository in tests.
+const root = process.env.RETAINER_PUBLISH_ROOT
+  ? pathToFileURL(`${process.env.RETAINER_PUBLISH_ROOT}/`)
+  : new URL('../', import.meta.url);
 const out = mkdtempSync(join(tmpdir(), 'retainer-npm-'));
 const run = (cmd, args, { cwd, quiet } = {}) =>
   execFileSync(cmd, args, {
@@ -58,7 +62,7 @@ for (const pkg of packages) {
     console.log(`${id} is already on npm; skipped.`);
     continue;
   }
-  const cwd = new URL(`packages/${pkg.dir}/`, root).pathname;
+  const cwd = fileURLToPath(new URL(`packages/${pkg.dir}/`, root));
   const tarball = run('pnpm', ['pack', '--pack-destination', out], { cwd })
     .trim()
     .split('\n')
