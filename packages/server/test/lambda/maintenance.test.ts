@@ -29,3 +29,16 @@ it('serves self-refreshing HTML for browser navigation and enforces the edge sec
   expect(response.body).toContain('a few minutes');
   expect(response.body).not.toContain('5 seconds');
 });
+
+it.each([
+  ['GET', '/v1/extensions/links'],
+  ['POST', '/extensions/hooks/test-registration/receive'],
+  ['POST', '/extensions/hooks/installations/test-binding/receive'],
+])('identifies paused extension traffic for %s %s', async (method, path) => {
+  const result = await createMaintenanceHandler()(httpEvent(method, path), context);
+  expect(result.statusCode).toBe(503);
+  expect(result.headers).toMatchObject({
+    'x-retainer-maintenance': 'not-executed',
+    'x-retainer-paused-operation': 'extensions',
+  });
+});

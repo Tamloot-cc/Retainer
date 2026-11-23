@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'node:url';
-import { readMigrationFiles } from 'drizzle-orm/migrator';
+import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator';
 import { loadConfig, ownerDatabaseUrl } from '../config.js';
 import { createSql, type Sql } from './client.js';
+import { inspectRestrictedIndexes, type RestrictedIndexJournal } from './restricted-indexes.js';
 import type { Tx } from './tx.js';
 import { WRITER_CONTROL_LOCK } from './writer-lease.js';
 
@@ -67,14 +68,60 @@ export async function applyMigrationJournal(sql: Tx): Promise<void> {
     id serial primary key, hash text not null, created_at bigint)`;
   const [last] = await sql<{ created_at: string }[]>`
     select created_at from drizzle.__drizzle_migrations order by created_at desc limit 1`;
-  for (const migration of readMigrationFiles({ migrationsFolder })) {
-    if (last && Number(last.created_at) >= migration.folderMillis) continue;
+  const pending = readMigrationFiles({ migrationsFolder }).filter(
+    (migration) => !last || Number(last.created_at) < migration.folderMillis,
+  );
+  await applyJournalEntries(sql, pending);
+  const [guards] = await sql`select to_regprocedure('retainer_deploy.install_guards()') as name`;
+  if (guards?.name) await sql`select retainer_deploy.install_guards()`;
+}
+
+async function applyJournalEntries(sql: Tx, migrations: MigrationMeta[]): Promise<void> {
+  for (const migration of migrations) {
     for (const statement of migration.sql) await sql.unsafe(statement);
     await sql`insert into drizzle.__drizzle_migrations (hash, created_at)
       values (${migration.hash}, ${migration.folderMillis})`;
   }
-  const [guards] = await sql`select to_regprocedure('retainer_deploy.install_guards()') as name`;
-  if (guards?.name) await sql`select retainer_deploy.install_guards()`;
+}
+
+/** Separately scoped SQL preflight. Checks only the index phase. */
+export async function restrictedIndexStatus(sql: Tx, folder = migrationsFolder) {
+  return (
+    (
+      await inspectRestrictedIndexes(
+        sql,
+        readMigrationFiles({ migrationsFolder: folder }),
+        EXTENSIONS,
+      )
+    )?.plan ?? null
+  );
+}
+
+/** The deployment owns this transaction before applying any reviewed SQL. */
+export async function applyRestrictedIndexes(
+  sql: Tx,
+  expected: RestrictedIndexJournal,
+  folder = migrationsFolder,
+): Promise<void> {
+  const inspected = await inspectRestrictedIndexes(
+    sql,
+    readMigrationFiles({ migrationsFolder: folder }),
+    EXTENSIONS,
+  );
+  if (
+    !inspected ||
+    inspected.plan.appliedDigest !== expected.appliedDigest ||
+    inspected.plan.pending.length !== expected.pending.length ||
+    inspected.plan.pending.some((hash, index) => hash !== expected.pending[index])
+  )
+    throw new Error('The restricted index journal no longer matches the approved plan.');
+
+  await sql`set local search_path to pg_catalog, public`;
+  await sql`set local lock_timeout to '2s'`;
+  await applyJournalEntries(sql, inspected.pending);
+  // Subsequent checks use their normal timeout and search path.
+  await sql`set local lock_timeout to '0'`;
+  await sql`set local search_path to default`;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
