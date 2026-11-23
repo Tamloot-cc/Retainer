@@ -3,7 +3,12 @@ import { z } from 'zod';
 import { missingScope } from '../auth/middleware.js';
 import type { Caller } from '../caller.js';
 import type { ApiKeyScope } from '../db/schema.js';
-import type { AppError } from '../errors.js';
+import { AppError } from '../errors.js';
+import {
+  MAINTENANCE_RETRY_SECONDS,
+  maintenanceBody,
+  readOnlyViolation,
+} from '../http/maintenance.js';
 import { errorBody, toAppError } from '../http/response.js';
 
 /** What every MCP tool file uses: running a call, its result and shared inputs. */
@@ -40,6 +45,12 @@ export async function run(
     const result = await fn();
     return isFailure(result) ? { ...ok(result), isError: true } : ok(result);
   } catch (error) {
+    if (readOnlyViolation(error)) {
+      const { code, message } = maintenanceBody.error;
+      return failure(
+        new AppError(503, code, message, { retryAfterSeconds: MAINTENANCE_RETRY_SECONDS }),
+      );
+    }
     return failure(toAppError(error));
   }
 }

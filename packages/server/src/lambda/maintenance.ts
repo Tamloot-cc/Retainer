@@ -1,9 +1,13 @@
 import type { LambdaContext, LambdaEvent } from 'hono/aws-lambda';
+import {
+  MAINTENANCE_RETRY_SECONDS,
+  maintenanceBody,
+  maintenanceHeaders,
+} from '../http/maintenance.js';
 import { requireEdge } from './edge.js';
 
 /** Seconds a client waits between retries. An update lasts longer than this. */
-const RETRY_SECONDS = 5;
-const MESSAGE = 'Retainer is updating. Please retry shortly.';
+const RETRY_SECONDS = MAINTENANCE_RETRY_SECONDS;
 
 // Keep the mark's drawing in step with packages/web/src/ui/logo-mark.tsx.
 const RING =
@@ -62,15 +66,11 @@ export const createMaintenanceHandler = (secret?: string) =>
       statusCode: 503,
       headers: {
         'content-type': navigation ? 'text/html; charset=utf-8' : 'application/json',
-        'retry-after': String(RETRY_SECONDS),
-        'cache-control': 'no-store',
         // This means the application was never invoked, so even a write
         // without an idempotency key can safely retry this exact response.
-        'x-retainer-maintenance': 'not-executed',
+        ...maintenanceHeaders(true),
       },
-      body: navigation
-        ? PAGE
-        : JSON.stringify({ error: { code: 'maintenance', message: MESSAGE } }),
+      body: navigation ? PAGE : JSON.stringify(maintenanceBody),
       isBase64Encoded: false,
     };
   });

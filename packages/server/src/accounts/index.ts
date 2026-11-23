@@ -18,6 +18,7 @@ export { CLIENT_IP_HEADER } from './auth.js';
 export function createAccountsServer(input: {
   config: Config;
   hostedOnboarding?: boolean;
+  restricted?: boolean;
   /** A connection as the control role. */
   sql: Sql;
   /**
@@ -36,6 +37,8 @@ export function createAccountsServer(input: {
   const { config } = input;
   const publicOrigin = accountsOrigin(config);
   const extensionCatalog = parseExtensionCatalog(config.RETAINER_EXTENSION_CATALOG);
+  const secret = config.RETAINER_AUTH_SECRET;
+  if (input.restricted && !secret) throw new Error('Restricted accounts require a session secret.');
   const auth = createAuth({
     // An app sign-in's ID token names the workspace, role and installation,
     // rechecked when it is issued (extensions spec 8).
@@ -50,8 +53,9 @@ export function createAccountsServer(input: {
         : null;
     },
     sql: input.authSql,
+    ...(input.restricted ? { restricted: true } : {}),
     controlSql: input.sql,
-    config: accountsConfig(config),
+    config: input.restricted && secret ? { secret } : accountsConfig(config),
     publicOrigin,
     ...(input.google ? { google: input.google } : {}),
     ...(input.microsoftAuthority ? { microsoftAuthority: input.microsoftAuthority } : {}),
@@ -60,6 +64,7 @@ export function createAccountsServer(input: {
   });
   const app = createAccountsApp({
     auth,
+    ...(input.restricted ? { restricted: true } : {}),
     ...(input.hostedOnboarding ? { hostedOnboarding: true } : {}),
     sql: input.sql,
     publicOrigin,

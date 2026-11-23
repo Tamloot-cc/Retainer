@@ -22,11 +22,23 @@ export type RateLimit = {
  * are fixed, so a client can make up to twice the limit across a boundary.
  */
 export function rateLimit(sql: Sql, options: RateLimit): MiddlewareHandler<AppEnv> {
+  return workspaceRateLimit(options, (workspaceId, windowSeconds) =>
+    countRequest(sql, workspaceId, windowSeconds),
+  );
+}
+
+export function workspaceRateLimit(
+  options: RateLimit,
+  countRequest: (
+    workspaceId: string,
+    windowSeconds: number,
+  ) => Promise<{ count: number; resetIn: number }>,
+): MiddlewareHandler<AppEnv> {
   const { limit, windowSeconds = 60 } = options;
   if (limit <= 0) return (_c, next) => next();
   return createMiddleware<AppEnv>(async (c, next) => {
     const { workspaceId } = c.get('caller');
-    const { count, resetIn } = await countRequest(sql, workspaceId, windowSeconds);
+    const { count, resetIn } = await countRequest(workspaceId, windowSeconds);
     if (count > limit) {
       const retryAfter = Math.max(1, resetIn);
       c.header('Retry-After', String(retryAfter));

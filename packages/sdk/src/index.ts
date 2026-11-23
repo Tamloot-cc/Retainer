@@ -16,7 +16,7 @@ import type {
 import type { OrganizationRole, WorkspaceRole } from '@retainer/shared';
 import { isMaintenance, maintenanceFetch } from './maintenance.js';
 
-export { isMaintenance, retryAfterMs, waitForRetry } from './maintenance.js';
+export { isMaintenance, isMaintenanceRead, retryAfterMs, waitForRetry } from './maintenance.js';
 
 import type {
   Actor,
