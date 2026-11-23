@@ -45,6 +45,14 @@ const modelConfigSchema = z.object({
       .pipe(capturePolicySchema)
       .optional(),
   ),
+  RETAINER_MODEL_CAPTURE_WORKSPACES: z.preprocess(
+    empty,
+    z
+      .string()
+      .transform((value) => value.split(','))
+      .pipe(z.array(z.uuid()))
+      .optional(),
+  ),
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
 });
 
@@ -89,6 +97,9 @@ export async function createModelApp(
     record: options.record ?? reportUsage(reporting),
     trace: options.trace ?? reportTrace(reporting),
     capturePolicy: config.RETAINER_MODEL_CAPTURE_POLICY,
+    captureWorkspaces: new Set(
+      config.RETAINER_MODEL_CAPTURE_WORKSPACES?.map((id) => id.toLowerCase()),
+    ),
   });
   const app = new Hono();
   // The function URL is the proxy's base URL: the SDK appends `/v1/messages`.
