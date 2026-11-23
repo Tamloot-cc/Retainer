@@ -136,8 +136,8 @@ Model use is access, so an admin approves it and the installation stores it:
   with its scopes, actor and secrets, and its plan digest covers them. For
   `model` it says, in plain words: "When this extension uses a model, it
   sends the workspace data involved to Anthropic for processing."
-  (`MODEL_USE_NOTICE`). The sentence is the same for every release, because
-  the grant is model use, not a particular extent of it: a release that uses
+  (`MODEL_USE_NOTICE`). Tamloot's notice names the exact inputs for mapping
+  suggestions. The grant is model use, not a particular extent of it: a release that uses
   the model only for setup suggestions and one that uses it on every run are
   approved alike, and an upgrade between them is no grant change. It is a
   plain note with the access (the preview's `notices`), not a warning, shown
@@ -151,7 +151,9 @@ Model use is access, so an admin approves it and the installation stores it:
 - **Granted at access approval.** Committing the access approval grants the
   release's uses in full, so `configure` can call the model before the mapping
   is reviewed. A release without `configure` grants them in its single
-  approval.
+  approval. A manual Tamloot install skips this approval and omits the model
+  grant. Subsequent upgrades keep that choice unless an admin approves AI
+  suggestions.
 - **Per run.** A run gets a capability only when its function declares it and
   the grant includes it, the rule scopes already follow
   (`extension-runtime/queue.ts:1023`).

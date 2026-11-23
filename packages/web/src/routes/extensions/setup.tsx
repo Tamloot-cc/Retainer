@@ -2,6 +2,7 @@ import {
   type ExtensionBindingChoices,
   type ExtensionInstallInput,
   type ExtensionSuggestions,
+  hasOptionalSetupModel,
   mergeBindingChoices,
   releaseUses,
   sourceDeletePolicy,
@@ -102,12 +103,25 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
   const client = useQueryClient();
   const refresh = useRefreshExtensions();
   const [installation, setInstallation] = useState(props.installation);
-  const [phase, setPhase] = useState<'checking' | 'access' | 'waiting' | 'review'>(
+  const optionalModel = hasOptionalSetupModel(props.release.manifest);
+  const needsModelApproval =
+    optionalModel &&
+    installation?.releaseDigest === props.release.digest &&
+    !installation.grantedUses.includes('model');
+  const [phase, setPhase] = useState<
+    'choice' | 'manual' | 'checking' | 'access' | 'waiting' | 'review'
+  >(
     props.mode === 'upgrade' && props.installation
       ? 'checking'
-      : props.mode === 'bindings' || props.installation?.state === 'configuring'
-        ? 'waiting'
-        : 'access',
+      : props.mode === 'bindings'
+        ? needsModelApproval
+          ? 'review'
+          : 'waiting'
+        : props.installation?.state === 'configuring'
+          ? 'waiting'
+          : optionalModel
+            ? 'choice'
+            : 'access',
   );
   const [providedSecrets, setProvidedSecrets] = useState<string[]>([]);
   const [suggested, setSuggested] = useState<ExtensionSuggestions>();
@@ -125,7 +139,7 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
     if (phase === 'checking') {
       if (query.isFetching) return;
       if (!query.data.access) {
-        setPhase('access');
+        setPhase(optionalModel ? 'choice' : 'access');
         return;
       }
       const approvedSettings = query.data.access.settings;
@@ -146,7 +160,7 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
       setSuggested(query.data);
       setPhase('review');
     }
-  }, [phase, query.data, query.isFetching]);
+  }, [phase, query.data, query.isFetching, optionalModel]);
   const cancel = useMutation({
     mutationFn: async () => {
       if (installation?.state === 'active')
@@ -178,18 +192,43 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
       setPhase('waiting');
     },
   });
+  if (phase === 'choice')
+    return (
+      <ExtensionCard title="Choose how to set up destinations" icon={LayoutList}>
+        <p className="text-sm">
+          Choose where to save meetings, tasks, and contacts, or ask AI to suggest a setup you can
+          review.
+        </p>
+        <Row>
+          <Button type="button" onClick={() => setPhase('manual')}>
+            Set up manually
+          </Button>
+          <Button type="button" onClick={() => setPhase('access')}>
+            Get AI suggestions
+          </Button>
+        </Row>
+      </ExtensionCard>
+    );
+  if (phase === 'manual')
+    return (
+      <BasicExtensionSetup
+        {...props}
+        manualSetup={props.mode === 'install'}
+        onCancel={() => setPhase('choice')}
+      />
+    );
   if (phase === 'access')
     return (
       <Stack>
-        <Notice>
-          Approve workspace read access and use of the declared secrets to prepare configuration
-          suggestions. Write access and schema changes need a second approval.
-        </Notice>
         {approve.error ? <Notice error>{approve.error.message}</Notice> : null}
         <BasicExtensionSetup
           {...props}
           accessOnly
-          onCancel={() => cancel.mutate()}
+          onCancel={() =>
+            optionalModel
+              ? setPhase(props.mode === 'bindings' ? 'review' : 'choice')
+              : cancel.mutate()
+          }
           onDone={(id, input) => approve.mutate({ id, ...(input ? { input } : {}) })}
         />
       </Stack>
@@ -200,7 +239,9 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
         <Loading>Preparing suggestions…</Loading>
         {query.error ? <Notice error>{query.error.message}</Notice> : null}
         <Row>
-          <Button onClick={() => setPhase('review')}>Skip suggestions</Button>
+          <Button onClick={() => setPhase('review')}>
+            {optionalModel ? 'Continue without waiting' : 'Skip suggestions'}
+          </Button>
           <Button onClick={props.onCancel}>Continue later</Button>
         </Row>
       </ExtensionCard>
@@ -227,8 +268,17 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
         {...(suggested ? { suggestions: suggested } : {})}
         suggestAction={
           installation ? (
-            <Button disabled={again.isPending} onClick={() => again.mutate()}>
-              {again.isPending ? 'Requesting…' : suggested ? 'Suggest again' : 'Get suggestions'}
+            <Button
+              disabled={again.isPending}
+              onClick={() => (needsModelApproval ? setPhase('access') : again.mutate())}
+            >
+              {again.isPending
+                ? 'Requesting…'
+                : suggested
+                  ? 'Suggest again'
+                  : optionalModel
+                    ? 'Get AI suggestions'
+                    : 'Get suggestions'}
             </Button>
           ) : undefined
         }
@@ -245,6 +295,7 @@ function BasicExtensionSetup({
   onCancel,
   onDone,
   accessOnly = false,
+  manualSetup = false,
   suggestions,
   providedSecrets = [],
   suggestAction,
@@ -254,6 +305,7 @@ function BasicExtensionSetup({
   installation?: Installation;
   mode: SetupMode;
   accessOnly?: boolean;
+  manualSetup?: boolean;
   providedSecrets?: string[];
   suggestions?: ExtensionSuggestions;
   bindingChoices?: ExtensionBindingChoices;
@@ -298,7 +350,8 @@ function BasicExtensionSetup({
     !!retained &&
     ((release.manifest.requestedActor === 'integration' && retained.grantedActor === 'agent') ||
       release.manifest.scopes.some((scope) => !retained.grantedScopes.includes(scope)) ||
-      releaseUses(release.manifest).some((use) => !retained.grantedUses.includes(use)));
+      (!hasOptionalSetupModel(release.manifest) &&
+        releaseUses(release.manifest).some((use) => !retained.grantedUses.includes(use))));
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [draftInstallationId, setDraftInstallationId] = useState(installation?.id);
   const [references, setReferences] = useState<Record<string, string>>({});
@@ -323,6 +376,7 @@ function BasicExtensionSetup({
         setSecrets((previous) => ({ ...previous, [name]: '' }));
       }
       const input = {
+        ...(manualSetup ? { manualSetup: true } : {}),
         ...(accessOnly ? { accessOnly: true } : {}),
         ...(turnOn ? { turnOn: true } : {}),
         ...(retained ? { installationId: retained.id } : {}),
@@ -389,13 +443,16 @@ function BasicExtensionSetup({
       ? (error.details as { issues?: { path: string; message: string }[] } | undefined)?.issues
       : undefined;
   const last = step === steps.length - 2;
-  const reviewLabel = reconnect
-    ? 'Review reconnect'
-    : editBindings
-      ? 'Review new plan'
-      : upgrade
-        ? 'Review upgrade'
-        : 'Review installation';
+  const reviewAI = accessOnly && hasOptionalSetupModel(release.manifest);
+  const reviewLabel = reviewAI
+    ? 'Review AI access'
+    : reconnect
+      ? 'Review reconnect'
+      : editBindings
+        ? 'Review new plan'
+        : upgrade
+          ? 'Review upgrade'
+          : 'Review installation';
   const back = (to: number) => {
     if (busy) return;
     setPlan(null);
@@ -529,7 +586,7 @@ function BasicExtensionSetup({
       <Stack>
         <StepHeader title="Review and approve">
           {accessOnly
-            ? `Approve read access so ${name} can prepare suggestions.`
+            ? `Review what ${name} uses to prepare setup suggestions.`
             : `Check what ${name} can access and what will change when you approve.`}
         </StepHeader>
         {plan ? (
@@ -540,10 +597,12 @@ function BasicExtensionSetup({
                 ? 'Approving…'
                 : reconnect
                   ? 'Approve reconnect'
-                  : editBindings
-                    ? 'Approve new plan'
-                    : accessOnly
-                      ? 'Approve access'
+                  : accessOnly
+                    ? reviewAI
+                      ? 'Approve and get suggestions'
+                      : 'Approve access'
+                    : editBindings
+                      ? 'Approve new plan'
                       : turnOn
                         ? 'Review and turn on'
                         : grantIncrease

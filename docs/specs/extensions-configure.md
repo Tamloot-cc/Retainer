@@ -424,13 +424,17 @@ only the steps a release needs. For a release with `configure`:
 **First install:** Connect → Approve access → Preparing suggestions → Map
 fields → Review and turn on.
 
+- Tamloot first offers manual setup or AI suggestions. Manual setup goes through
+  the settings, mapping, and installation review without granting model access or
+  queuing `configure`. An admin can later opt in from the destinations editor.
 - "Approve access" lists what the extension may read and use, in plain words,
   and approves with one button. Model use is explained here, before
   `configure` calls the model (model calls spec §3.1); Review and turn on
   doesn't repeat it, nor show the first full grant as an access change.
 - "Preparing suggestions…" polls `GET …/suggestions`. It offers "Skip
   suggestions", which goes to Map fields with the manifest defaults while the
-  run finishes in the background.
+  run finishes in the background. Tamloot labels this action "Continue without
+  waiting."
 - Map fields shows each suggested row with a "Suggested" badge and its reason.
   The admin can change any row. "Suggest again" queues another run.
 - Leaving midway is fine: the card shows "Waiting for your review" and reopens
