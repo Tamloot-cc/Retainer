@@ -11,12 +11,14 @@ import {
 } from 'react';
 import { Checkbox } from './choice.js';
 import { cn, isPlainClick, PLACEMENT, ROW_STATE } from './core.js';
-import { ApiName } from './layout.js';
+import { ApiName, CopyButton } from './layout.js';
 import { type EditorHandlers, EditorHostContext } from './property.js';
+import { DescriptionTooltip } from './tooltip.js';
 
 export type GridColumn = {
   id: string;
   label: string;
+  description?: string | null;
   /** Developer view: the API name, shown after the label. */
   apiName?: string;
   width: number;
@@ -207,35 +209,40 @@ export function DataGrid({
                   )}
                 >
                   <div className="relative flex h-9 items-center pointer-coarse:h-11">
-                    {c.sortable && onSort ? (
-                      <button
-                        type="button"
-                        onClick={() => onSort(c.id)}
-                        title={`Sort by ${c.label}`}
-                        className="flex h-full min-w-0 flex-1 items-center gap-1.5 px-3 text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                      >
-                        <span className="truncate">
+                    <DescriptionTooltip description={c.description}>
+                      {c.sortable && onSort ? (
+                        <button
+                          type="button"
+                          onClick={() => onSort(c.id)}
+                          title={c.description?.trim() ? undefined : `Sort by ${c.label}`}
+                          className="flex h-full min-w-0 flex-1 items-center gap-1.5 px-3 text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                        >
+                          <span className="truncate">
+                            {c.label}
+                            {c.apiName ? <ApiName>{c.apiName}</ApiName> : null}
+                          </span>
+                          {sorted === 'asc' ? (
+                            <ArrowUp size={12} className="shrink-0 text-foreground" />
+                          ) : sorted === 'desc' ? (
+                            <ArrowDown size={12} className="shrink-0 text-foreground" />
+                          ) : (
+                            <ArrowUp
+                              size={12}
+                              aria-hidden
+                              className="shrink-0 opacity-0 transition-opacity group-hover/th:opacity-40"
+                            />
+                          )}
+                        </button>
+                      ) : (
+                        <span
+                          className="truncate px-3"
+                          tabIndex={c.description?.trim() ? 0 : undefined}
+                        >
                           {c.label}
                           {c.apiName ? <ApiName>{c.apiName}</ApiName> : null}
                         </span>
-                        {sorted === 'asc' ? (
-                          <ArrowUp size={12} className="shrink-0 text-foreground" />
-                        ) : sorted === 'desc' ? (
-                          <ArrowDown size={12} className="shrink-0 text-foreground" />
-                        ) : (
-                          <ArrowUp
-                            size={12}
-                            aria-hidden
-                            className="shrink-0 opacity-0 transition-opacity group-hover/th:opacity-40"
-                          />
-                        )}
-                      </button>
-                    ) : (
-                      <span className="truncate px-3">
-                        {c.label}
-                        {c.apiName ? <ApiName>{c.apiName}</ApiName> : null}
-                      </span>
-                    )}
+                      )}
+                    </DescriptionTooltip>
                     {onResize ? (
                       // biome-ignore lint/a11y/useSemanticElements: a focusable splitter has no native element.
                       <div
@@ -360,12 +367,14 @@ const GridBody = memo(function GridBody({
 export function EditableCell({
   label,
   editor,
+  copyValue,
   wide = false,
   children,
 }: {
   label: string;
   /** The editor, rendered only while open; `close` dismisses it. */
   editor: (close: () => void) => ReactNode;
+  copyValue?: string;
   /** Room for a form of several controls, rather than a list to pick from. */
   wide?: boolean;
   children: ReactNode;
@@ -383,19 +392,34 @@ export function EditableCell({
       }}
     >
       <PopoverPrimitive.Anchor asChild>
-        <span className="flex min-w-0 flex-1 items-center gap-1">
-          <span className="min-w-0 flex-1 truncate">{children}</span>
+        <div className="group/cell relative flex min-w-0 flex-1 items-center self-stretch">
+          {/* The pencil is the keyboard path for the cell's pointer shortcut. */}
+          {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: the adjacent button opens the same editor. */}
+          <span
+            className="flex min-w-0 flex-1 cursor-pointer items-center self-stretch [&>*]:min-w-0"
+            onClick={(e) => {
+              if (!isPlainClick(e)) return;
+              e.stopPropagation();
+              setOpen(true);
+            }}
+          >
+            {children}
+          </span>
+          {copyValue ? <CellCopyButton label={label} value={copyValue} besideEdit /> : null}
           <PopoverPrimitive.Trigger asChild>
             <button
               type="button"
               aria-label={`Edit ${label}`}
               title="Edit"
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 hover:bg-hover hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 data-[state=open]:opacity-100"
+              className={cn(
+                CELL_ACTION,
+                'flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-fine:right-0 data-[state=open]:opacity-100',
+              )}
             >
               <Pencil size={12} />
             </button>
           </PopoverPrimitive.Trigger>
-        </span>
+        </div>
       </PopoverPrimitive.Anchor>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content
@@ -416,6 +440,47 @@ export function EditableCell({
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>
+  );
+}
+
+// Hover controls float over the edge of the cell, leaving the value its full
+// width until needed. On touch they sit alongside the value.
+const CELL_ACTION = `pointer-fine:absolute pointer-fine:top-1/2 pointer-fine:-translate-y-1/2 pointer-fine:bg-background ${ROW_STATE} pointer-fine:opacity-0 pointer-fine:pointer-events-none group-hover/cell:opacity-100 group-hover/cell:pointer-events-auto group-focus-within/cell:opacity-100 group-focus-within/cell:pointer-events-auto`;
+
+function CellCopyButton({
+  label,
+  value,
+  besideEdit = false,
+}: {
+  label: string;
+  value: string;
+  besideEdit?: boolean;
+}) {
+  return (
+    <CopyButton
+      label={`Copy ${label}`}
+      value={value}
+      iconOnly
+      className={cn(CELL_ACTION, besideEdit ? 'pointer-fine:right-6' : 'pointer-fine:right-0')}
+    />
+  );
+}
+
+/** A cell with a copy action and no inline editor. */
+export function CopyableCell({
+  label,
+  value,
+  children,
+}: {
+  label: string;
+  value: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="group/cell relative flex min-w-0 flex-1 items-center self-stretch">
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+      <CellCopyButton label={label} value={value} />
+    </div>
   );
 }
 

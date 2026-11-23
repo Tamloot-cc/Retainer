@@ -15,9 +15,11 @@ import {
 import { useCallback, useMemo, useState } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import { pickerFor } from '../../fields/common.js';
+import { primaryCopyValue } from '../../fields/copy-value.js';
 import { fields } from '../../fields/index.js';
 import {
   Button,
+  CopyableCell,
   DataGrid,
   EditableCell,
   Empty,
@@ -227,6 +229,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
       columns.map((f, i) => ({
         id: f.name,
         label: f.label,
+        description: f.description,
         apiName: apiName(f.name),
         width: prefs?.widths[f.name] ?? defaultColumnWidth(f, i === 0),
         sortable: isSortable(f),
@@ -258,12 +261,13 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
                   references={references}
                 />
               );
-            const cell =
-              i === 0 ? (
+            if (i === 0) {
+              return (
                 <RecordLink
                   key={f.name}
                   id={r.id}
                   inSheet
+                  showOpenIcon
                   avatar={
                     <RecordAvatar
                       id={r.id}
@@ -275,14 +279,24 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
                 >
                   {r.label ? shown : label}
                 </RecordLink>
+              );
+            }
+            const cellLabel = `${f.label} of ${label}`;
+            const copyValue = primaryCopyValue(f.type, r.fields[f.name]);
+            if (!writable || !isWritable(f)) {
+              return copyValue ? (
+                <CopyableCell key={f.name} label={cellLabel} value={copyValue}>
+                  {shown}
+                </CopyableCell>
               ) : (
                 shown
               );
-            if (!writable || !isWritable(f)) return cell;
+            }
             return (
               <EditableCell
                 key={f.name}
-                label={`${f.label} of ${label}`}
+                label={cellLabel}
+                copyValue={copyValue}
                 wide={!pickerFor(f)}
                 editor={(close) => (
                   <InlineEditor
@@ -292,7 +306,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
                   />
                 )}
               >
-                {cell}
+                {shown}
               </EditableCell>
             );
           }),

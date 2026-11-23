@@ -273,6 +273,61 @@ test('aligns the footer on a wide grid and edits a cell in place', async ({
   await expect(row.getByText('CEO', { exact: true })).toBeVisible();
 });
 
+test('explains field labels, edits table cells, and copies contact values', async ({
+  page,
+  context,
+  retainer: r,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: r.url });
+  const { record } = await r.request('/objects/person/records', {
+    values: {
+      name: 'Avi Katz',
+      jobTitle: 'CTO',
+      emails: { primary: 'avi@example.test', additional: ['other@example.test'] },
+    },
+  });
+  await signIn(page, r.url, r.keys.user);
+  await page.getByRole('link', { name: 'People', exact: true }).click();
+  const grid = page.getByRole('region', { name: 'People' });
+  const header = grid.getByRole('columnheader', { name: /^Emails\b/ });
+  await header.getByText('Emails', { exact: true }).hover();
+  await expect(page.getByRole('tooltip')).toHaveText(
+    'Unique: an email identifies exactly one person.',
+  );
+  await page.keyboard.press('Escape');
+
+  const row = grid.getByRole('row').filter({ hasText: 'Avi Katz' });
+  const email = row.getByRole('cell').filter({ hasText: 'avi@example.test' });
+  const copy = email.getByRole('button', { name: 'Copy Emails of Avi Katz' });
+  await expect(copy).toHaveCSS('opacity', '0');
+  await email.hover();
+  await expect(copy).toHaveCSS('opacity', '1');
+  await copy.click();
+  await expect(copy).toHaveAttribute('title', 'Copied');
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe('avi@example.test');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+
+  const jobTitle = row.getByRole('cell', { name: /CTO/ });
+  const pencil = jobTitle.getByRole('button', { name: 'Edit Job title of Avi Katz' });
+  await expect(pencil).toHaveCSS('opacity', '0');
+  await jobTitle.getByText('CTO', { exact: true }).click();
+  const input = page.getByRole('textbox', { name: 'Job title', exact: true });
+  await expect(input).toBeFocused();
+  await input.fill('CEO');
+  await input.press('Enter');
+  await expect(row.getByText('CEO', { exact: true })).toBeVisible();
+  expect((await r.request(`/records/${record.id}`)).fields.jobTitle).toBe('CEO');
+
+  await row.getByRole('link', { name: 'Avi Katz' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Avi Katz' });
+  await sheet.getByText('Emails', { exact: true }).focus();
+  await expect(page.getByRole('tooltip')).toHaveText(
+    'Unique: an email identifies exactly one person.',
+  );
+});
+
 test('finds records, facts and events across objects with the command palette', async ({
   page,
   retainer: r,
