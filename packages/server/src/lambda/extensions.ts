@@ -5,6 +5,7 @@ import { createExtensionControlApp } from '../extension-control/app.js';
 import { extensionServices } from '../extension-control/configuration.js';
 import { setLogLevel } from '../log.js';
 import { clientIpOf, requireEdge } from './edge.js';
+import { withHttpWriter } from './writer-admission.js';
 
 /** Dedicated key/accounts runtime and secret broker, independent of the sign-in control flag. */
 async function createHandler() {
@@ -32,6 +33,8 @@ async function createHandler() {
 }
 let cached: ReturnType<typeof createHandler> | undefined;
 export const handler = async (event: LambdaEvent, context: LambdaContext) => {
-  cached ??= createHandler();
-  return (await cached)(event, context);
+  return withHttpWriter(event, context, async () => {
+    cached ??= createHandler();
+    return (await cached)(event, context);
+  });
 };

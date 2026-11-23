@@ -1,4 +1,5 @@
 import type { Sql } from '../db/client.js';
+import type { Tx } from '../db/tx.js';
 
 /**
  * One version runs at a time (docs/self-hosting.md, Upgrading). Stopping a
@@ -30,37 +31,27 @@ export async function withPassLock<T>(sql: Sql, work: () => Promise<T>): Promise
   return result;
 }
 
-/**
- * Runs `work` holding the deploy lock exclusively (a migration), waiting at
- * most `waitSeconds` for passes in flight.
- */
+/** DDL and its lock belong to the same transaction. A reconnect cannot resume it. */
 export async function withMigrationLock<T>(
   sql: Sql,
   waitSeconds: number,
-  work: () => Promise<T>,
+  work: (tx: Tx) => Promise<T>,
 ): Promise<T> {
-  await sql`select set_config('lock_timeout', ${`${waitSeconds * 1000}ms`}, false)`;
-  try {
-    await sql`select pg_advisory_lock(${DEPLOY_LOCK})`;
-  } catch (error) {
-    if ((error as { code?: string }).code === '55P03') {
-      throw new Error(
-        `A consolidator pass was still running after ${waitSeconds} seconds; nothing was migrated. Run the deploy again.`,
-      );
+  return sql.begin(async (tx) => {
+    await tx`select set_config('lock_timeout', ${`${waitSeconds * 1000}ms`}, true)`;
+    try {
+      await tx`select pg_advisory_xact_lock(${DEPLOY_LOCK})`;
+    } catch (error) {
+      if ((error as { code?: string }).code === '55P03') {
+        throw new Error(
+          `A consolidator pass was still running after ${waitSeconds} seconds; nothing was migrated. Run the deploy again.`,
+        );
+      }
+      throw error;
     }
-    throw error;
-  } finally {
-    await sql`select set_config('lock_timeout', '0', false)`;
-  }
-  let result: T;
-  try {
-    result = await work();
-  } finally {
-    await releaseOrFail(
-      sql<{ released: boolean }[]>`select pg_advisory_unlock(${DEPLOY_LOCK}) as released`,
-    );
-  }
-  return result;
+    await tx`select set_config('lock_timeout', '0', true)`;
+    return work(tx);
+  }) as Promise<T>;
 }
 
 async function releaseOrFail(unlock: PromiseLike<{ released: boolean }[]>) {

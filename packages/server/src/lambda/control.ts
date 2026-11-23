@@ -8,6 +8,7 @@ import { isPurgeEvent, type PurgeEvent } from '../worker/purge.js';
 import { type PurgeReport, purgeDeletedWorkspaces } from '../workspaces/deletion.js';
 import { withPassLock } from './deploy-lock.js';
 import { clientIpOf, requireEdge } from './edge.js';
+import { withHttpWriter, withWriterInvocation } from './writer-admission.js';
 
 /**
  * The control function (accounts spec 4.6): /account behind API Gateway,
@@ -77,6 +78,14 @@ let cached: ReturnType<typeof createControlHandler> | undefined;
 
 /** The Lambda entry point (`dist/lambda/control.handler`). */
 export const handler = (event: LambdaEvent | PurgeEvent, context: LambdaContext) => {
-  cached ??= createControlHandler(loadConfig());
-  return isPurgeEvent(event) ? cached(event) : cached(event, context);
+  if (isPurgeEvent(event)) {
+    return withWriterInvocation(context, () => {
+      cached ??= createControlHandler(loadConfig());
+      return cached(event);
+    });
+  }
+  return withHttpWriter(event, context, () => {
+    cached ??= createControlHandler(loadConfig());
+    return cached(event, context);
+  });
 };

@@ -62,6 +62,8 @@ export type ModelProxyOptions = {
   trace?: RecordTrace | undefined;
   capturePolicy?: CapturePolicy | undefined;
   captureWorkspaces?: ReadonlySet<string>;
+  /** Hosted calls acquire a durable lease before contacting the provider. */
+  admit?: (token: string, callId: string) => Promise<() => Promise<void>>;
   fetch?: typeof fetch;
   timeoutMs?: number;
 };
@@ -174,12 +176,24 @@ export function createModelProxy(options: ModelProxyOptions) {
       requestedModel,
       startedAt: new Date(started).toISOString(),
     };
+    let settleAdmission: (() => Promise<void>) | undefined;
+    try {
+      settleAdmission = await options.admit?.(token, call.id);
+    } catch {
+      clearTimeout(timeout);
+      return anthropicError(503, 'model_unavailable', 'model calls are temporarily paused');
+    }
     // Both recorders retry and log what they lose; the response is unaffected.
     const trace = async (report: ModelTrace) => {
       try {
         await options.trace?.(token, claims, report);
       } catch {}
     };
+    if (request.signal.aborted || abort.signal.aborted) {
+      clearTimeout(timeout);
+      await settleAdmission?.();
+      return anthropicError(502, 'api_error', 'the model request was cancelled');
+    }
     const startReport = metered ? trace(call) : undefined;
     const capture = metered
       ? captureFor(
@@ -204,7 +218,11 @@ export function createModelProxy(options: ModelProxyOptions) {
       finished ??= (async () => {
         clearTimeout(timeout);
         request.signal.removeEventListener('abort', onClientAbort);
-        if (!metered) return;
+        if (!metered) {
+          if (outcome === 'completed' || (outcome === 'provider_error' && !partialBody))
+            await settleAdmission?.();
+          return;
+        }
         const usage = meter?.report(
           call.id,
           providerRequestId,
@@ -228,6 +246,10 @@ export function createModelProxy(options: ModelProxyOptions) {
           }),
           usage ? options.record(token, claims, usage).catch(() => {}) : undefined,
         ]);
+        // A disconnected upstream may still be running. Leave its lease in
+        // place until the ceiling when a response did not finish.
+        if (outcome === 'completed' || (outcome === 'provider_error' && !partialBody))
+          await settleAdmission?.();
       })();
       return finished;
     };
