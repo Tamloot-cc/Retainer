@@ -663,8 +663,6 @@ the docs, and the spec changes this one makes to accounts spec 4.3 and 4.5.
 - Storing credentials in the OS keychain.
 - CI and scripts: `RETAINER_API_KEY` for the commands an agent's key may run
   (listing, proposing). Keys never make decisions or manage people.
-- Publishing: `@retainer/cli` goes to npm with the first release, which is
-  on hold (open question 2). Until then it runs from the repo.
 - `retainer mcp` in place of `retainer-mcp`, and a `retainer mcp add` that
   runs `claude mcp add` with a workspace's pinned address.
 
@@ -727,10 +725,10 @@ runner that buffers output until exit, and an e2e test with Playwright: log
 in through the loopback redirect, elevate through the approval page, approve
 a schema change, check History shows "through Retainer CLI".
 
-## 12. Open questions
+## 12. Decided
 
-1. **Window length.** 30 minutes by default and 60 at most?
-2. **Publishing.** Ship `@retainer/cli` with the first npm release, which is
-   on hold until the product owner asks?
-3. **Device-code login in the first PR?** Needed only for agents in cloud
-   sandboxes. Proposed: later.
+The product owner answered the open questions on 2026-11-23:
+
+1. **Window length.** 30 minutes by default and 60 at most.
+2. **Publishing.** `@retainer/cli` is published to npm.
+3. **Device-code login.** Later, not in the first PR (§10).
