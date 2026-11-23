@@ -1,3 +1,4 @@
+import { TAMLOOT_REGISTRATION_ID } from '@retainer/extension';
 import { Clock, Puzzle } from 'lucide-react';
 import { IdentityTag } from '../../ui/index.js';
 import exa from './logos/exa.svg?no-inline';
@@ -12,7 +13,7 @@ const branding = new Map<string, { name: string; logo?: string }>([
   ['9796c2c7-46f3-4006-8f35-059d5ef3553e', { name: 'Exa', logo: exa }],
   ['4c60fc8e-45f9-49c8-919e-5c05c947a9aa', { name: 'Gmail', logo: gmail }],
   ['9e427713-3c8a-4981-872c-c8db69703113', { name: 'Granola', logo: granola }],
-  ['54326882-cc28-4983-a5fe-cf0298520b68', { name: 'Tamloot', logo: tamloot }],
+  [TAMLOOT_REGISTRATION_ID, { name: 'Tamloot', logo: tamloot }],
   [lastContactId, { name: 'Last Contact' }],
 ]);
 

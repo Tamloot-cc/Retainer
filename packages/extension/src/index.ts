@@ -37,6 +37,7 @@ export type ExtensionUse = (typeof EXTENSION_USES)[number];
  */
 export const MODEL_USE_NOTICE =
   'When this extension uses a model, it sends the workspace data involved to Anthropic for processing.';
+export const TAMLOOT_REGISTRATION_ID = '54326882-cc28-4983-a5fe-cf0298520b68';
 /**
  * The installation setting that chooses what happens when the source deletes
  * an item it imported; absent, the release's `onSourceDelete` applies.
@@ -705,6 +706,12 @@ export function functionUses(fn: Pick<FunctionDefinition, 'uses'>): ExtensionUse
 export function releaseUses(manifest: Pick<ExtensionManifest, 'functions'>): ExtensionUse[] {
   return EXTENSION_USES.filter((use) => manifest.functions.some((fn) => fn.uses?.includes(use)));
 }
+/** Tamloot can install with manual mappings when only its configure hook needs a model. */
+export function hasOptionalSetupModel(manifest: ExtensionManifest): boolean {
+  if (manifest.universalId !== TAMLOOT_REGISTRATION_ID || !manifest.bindings?.length) return false;
+  const modelFunctions = manifest.functions.filter((fn) => functionUses(fn).includes('model'));
+  return modelFunctions.length > 0 && modelFunctions.every((fn) => fn.trigger.kind === 'configure');
+}
 /** Whether a release supports this server: inside its range, or in its exact list. */
 export function supportsServer(
   manifest: Pick<ExtensionManifest, 'serverRange' | 'serverVersions'>,
@@ -1088,6 +1095,8 @@ export function defineTool(value: unknown) {
 export const defineView = (value: unknown) => viewSchema.parse(value);
 
 export type ExtensionInstallInput = {
+  /** Install directly with manually chosen destinations, without running configure. */
+  manualSetup?: boolean;
   /** Access-only preview/approval for a target release. */
   accessOnly?: boolean;
   /** Explicit final approval of a configuring installation. */

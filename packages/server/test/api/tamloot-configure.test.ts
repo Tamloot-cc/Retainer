@@ -138,6 +138,10 @@ async function setup(modelKey = true) {
   const access = await app.request('/v1/extensions/preview', { key: keys.admin, body: input });
   expect(access.status, JSON.stringify(access.body)).toBe(200);
   expect(access.body.grants.uses).toEqual(['model']);
+  expect(access.body.notices).toEqual([
+    'To suggest where your meetings, tasks, and contacts should go, Tamloot sends Anthropic your workspace structure, any existing mappings, and the names or titles of up to three recently updated records per possible destination. Tamloot uses Anthropic only for these suggestions.',
+    'You’ll review the suggestions before applying any changes to your workspace.',
+  ]);
   const configuring = await app.request('/v1/extensions', {
     key: keys.admin,
     body: { ...input, planDigest: access.body.planDigest },

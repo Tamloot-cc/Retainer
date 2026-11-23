@@ -9,6 +9,7 @@ import {
   type ExtensionManifest,
   type ExtensionPreview,
   functionSecrets,
+  hasOptionalSetupModel,
   MODEL_USE_NOTICE,
   mergeBindingChoices,
   newestReleases,
@@ -73,6 +74,7 @@ import { getSuggestions } from './suggestions.js';
 import { installationMonthUsage } from './usage.js';
 
 export const installInputSchema = z.strictObject({
+  manualSetup: z.boolean().optional(),
   accessOnly: z.boolean().optional(),
   turnOn: z.boolean().optional(),
   installationId: z.uuid().optional(),
@@ -426,8 +428,7 @@ export class Extensions {
   private async plan(tx: Tx, caller: Caller, input: ExtensionInstallInput) {
     const release = this.catalog.get(input.registrationId, input.version);
     const manifest = release.manifest;
-    const uses = releaseUses(manifest);
-    const modelNotice = uses.includes('model') ? MODEL_USE_NOTICE : undefined;
+    const optionalModel = hasOptionalSetupModel(manifest);
     if (Buffer.byteLength(JSON.stringify(input.settings)) > 65536)
       throw new AppError(413, 'quota_exceeded', 'settings exceed 64 KiB');
     for (const [key, value] of Object.entries(input.settings)) {
@@ -493,6 +494,12 @@ export class Extensions {
       throw conflict('upgrade_conflict', 'reinstall before upgrading');
     if (!input.installationId && existing && existing.state !== 'uninstalled')
       throw conflict('upgrade_conflict', 'installation exists; use a validated upgrade');
+    if (input.manualSetup && (!optionalModel || input.accessOnly || input.installationId))
+      throw new AppError(
+        400,
+        'invalid_request',
+        'manual setup is available on a fresh Tamloot install',
+      );
     // Reinstall may target any compatible catalog release: the additive plan below
     // reuses the retained schema bindings, and the suppression namespace is keyed
     // by registration, so an installed release that is gone never strands it.
@@ -512,6 +519,23 @@ export class Extensions {
       where installation_id=${existing.id} and release_digest=${release.digest} and generation=${existing.generation}
       and settings_revision=${existing.settings_revision}`
       : [];
+    const configure = manifest.functions.find((fn) => fn.trigger.kind === 'configure');
+    const accessOnly =
+      input.accessOnly === true || (!input.installationId && !input.manualSetup && !!configure);
+    // A regular upgrade or settings edit carries the admin's model choice forward.
+    const withholdModel =
+      optionalModel &&
+      (input.manualSetup ||
+        (input.installationId &&
+          !accessOnly &&
+          !approval &&
+          !existing?.granted_uses.includes('model')));
+    const uses = releaseUses(manifest).filter((use) => use !== 'model' || !withholdModel);
+    const modelNotice = uses.includes('model')
+      ? optionalModel
+        ? 'To suggest where your meetings, tasks, and contacts should go, Tamloot sends Anthropic your workspace structure, any existing mappings, and the names or titles of up to three recently updated records per possible destination. Tamloot uses Anthropic only for these suggestions.'
+        : MODEL_USE_NOTICE
+      : undefined;
     const refs = { ...(input.accessOnly ? {} : approval?.secret_refs), ...input.secretRefs };
     const pending = await pendingSecrets(tx, Object.values(refs));
     if (pending.length !== Object.keys(refs).length)
@@ -574,6 +598,7 @@ export class Extensions {
     const current = await loadSchemaState(tx, caller.workspaceId);
     if (
       existing &&
+      !input.manualSetup &&
       ((manifest.requestedActor === 'integration' && existing.granted_actor === 'agent') ||
         manifest.scopes.some((scope) => !existing.granted_scopes.includes(scope)) ||
         uses.some((use) => !existing.granted_uses.includes(use))) &&
@@ -586,13 +611,8 @@ export class Extensions {
         'grant_required',
         'this release requires a separately approved grant increase',
       );
-    const accessOnly =
-      input.accessOnly === true ||
-      (!input.installationId &&
-        (!existing || existing.state === 'uninstalled') &&
-        manifest.functions.some((fn) => fn.trigger.kind === 'configure'));
     if (accessOnly) {
-      if (!manifest.functions.some((fn) => fn.trigger.kind === 'configure') || input.reconnect)
+      if (!configure || input.reconnect)
         throw new AppError(
           400,
           'invalid_request',
@@ -626,8 +646,15 @@ export class Extensions {
         grants: { actor: manifest.requestedActor, scopes: ['read'], uses },
         // Shown before configure runs, so model use is known before any call.
         notices: [
-          'Approving lets this extension read workspace records and use its declared secrets before turn-on. No schema changes or writes are approved.',
+          ...(optionalModel
+            ? []
+            : [
+                functionSecrets(manifest, configure).length
+                  ? 'Approving lets this extension read workspace records and use its declared secrets to prepare setup suggestions.'
+                  : 'Approving lets this extension read workspace records to prepare setup suggestions.',
+              ]),
           ...(modelNotice ? [modelNotice] : []),
+          'You’ll review the suggestions before applying any changes to your workspace.',
         ],
         warnings: [],
       };
@@ -678,7 +705,7 @@ export class Extensions {
       select choices from extension_binding_proposals where release_digest = ${release.digest}`
         : [];
     const [configured] =
-      existing && hasBindings && replan
+      existing && hasBindings && replan && !input.manualSetup
         ? await tx<{ bindings: ExtensionBindingChoices | null }[]>`
       select s.bindings from extension_suggestions s join extension_jobs j on j.id = s.job_id
       where s.installation_id = ${existing.id} and s.release_digest = ${release.digest}
@@ -1200,7 +1227,7 @@ export class Extensions {
     const [row] = await tx<Row[]>`insert into extension_installations
       (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, granted_uses, settings, created_by, state, setup_kind, bindings, bindings_revision)
       values (${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId}, ${manifest.universalId}, ${manifest.version}, ${plan.release.digest},
-        ${manifest.requestedActor}, ${tx.json(manifest.scopes)}, ${tx.json(releaseUses(manifest))}, ${tx.json(input.settings)}, ${tx.json(caller.actor)}, ${state}, ${setupKind},
+        ${manifest.requestedActor}, ${tx.json(manifest.scopes)}, ${tx.json(plan.preview.grants.uses)}, ${tx.json(input.settings)}, ${tx.json(caller.actor)}, ${state}, ${setupKind},
         ${plan.bound ? tx.json(jsonValue(plan.bound.plan)) : null}, 1)
       on conflict (workspace_id, registration_id) do update set state = excluded.state,setup_kind=excluded.setup_kind,
         last_error=null,connection_health='needs_reconnect',activated_at=null,cleanup_deadline=null,
@@ -1492,17 +1519,28 @@ export class Extensions {
       await this.clearConfigure(tx, row.id, plan.release.digest);
       await tx`insert into extension_access_approvals(workspace_id,installation_id,release_digest,generation,settings_revision,scopes,uses,actor,secret_refs,settings,approved_by)
         values(${caller.workspaceId},${row.id},${plan.release.digest},${row.generation},${row.settings_revision},${tx.json(manifest.scopes)},
-          ${tx.json(releaseUses(manifest))},${manifest.requestedActor},${tx.json(plan.refs)},${tx.json(input.settings)},${tx.json(caller.actor)})
+          ${tx.json(plan.preview.grants.uses)},${manifest.requestedActor},${tx.json(plan.refs)},${tx.json(input.settings)},${tx.json(caller.actor)})
         on conflict(workspace_id,installation_id,release_digest) do update set generation=excluded.generation,
           settings_revision=excluded.settings_revision,scopes=excluded.scopes,uses=excluded.uses,actor=excluded.actor,secret_refs=excluded.secret_refs,
           settings=excluded.settings,approved_by=excluded.approved_by,approved_at=now()`;
+      if (
+        row.release_digest === plan.release.digest &&
+        hasOptionalSetupModel(manifest) &&
+        !row.granted_uses.includes('model')
+      ) {
+        const [approved] = await tx<Row[]>`update extension_installations
+          set granted_uses=${tx.json(plan.preview.grants.uses)},updated_at=now()
+          where id=${row.id} returning *`;
+        if (!approved) throw notFound('extension installation');
+        row = approved;
+      }
     } else {
       if (row) await cancelRuns(tx, row.id);
       const [created] = await tx<
         Row[]
       >`insert into extension_installations(id,workspace_id,registration_id,version,release_digest,granted_actor,granted_scopes,granted_uses,settings,created_by,state,bindings_revision)
         values(${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId},${manifest.universalId},${manifest.version},${plan.release.digest},
-          ${manifest.requestedActor},${tx.json(['read'])},${tx.json(releaseUses(manifest))},${tx.json(input.settings)},${tx.json(caller.actor)},'configuring',1)
+          ${manifest.requestedActor},${tx.json(['read'])},${tx.json(plan.preview.grants.uses)},${tx.json(input.settings)},${tx.json(caller.actor)},'configuring',1)
         on conflict(workspace_id,registration_id) do update set version=excluded.version,release_digest=excluded.release_digest,
           granted_actor=excluded.granted_actor,granted_scopes=excluded.granted_scopes,granted_uses=excluded.granted_uses,settings=excluded.settings,state='configuring',
           created_by=excluded.created_by,generation=extension_installations.generation+1,settings_revision=extension_installations.settings_revision+1,
@@ -1529,7 +1567,10 @@ export class Extensions {
       throw conflict('installation_disabled', 'configure requires active or configuring');
     if (row.state === 'configuring' && target.digest !== row.release_digest)
       throw conflict('grant_required', 'cancel and approve access to the new release first');
-    if (target.digest !== row.release_digest) {
+    if (target.digest === row.release_digest) {
+      if (hasOptionalSetupModel(target.manifest) && !row.granted_uses.includes('model'))
+        throw conflict('grant_required', 'approve AI suggestions before requesting them');
+    } else {
       const [approval] =
         await tx`select 1 from extension_access_approvals where installation_id=${row.id}
         and release_digest=${target.digest} and generation=${row.generation} and settings_revision=${row.settings_revision}`;

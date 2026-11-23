@@ -1,3 +1,4 @@
+import { hasOptionalSetupModel } from '@retainer/extension';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import {
@@ -559,7 +560,9 @@ function MappingSummary({
       </ReviewCardBody>
       {admin ? (
         <ReviewCardFooter>
-          {canSuggest(release, installation) ? (
+          {canSuggest(release, installation) &&
+          (!hasOptionalSetupModel(release.manifest) ||
+            installation.grantedUses.includes('model')) ? (
             <Button disabled={suggest.isPending} onClick={() => suggest.mutate()}>
               {suggest.isPending ? 'Requesting suggestions…' : 'Get suggestions'}
             </Button>
