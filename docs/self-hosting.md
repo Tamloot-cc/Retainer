@@ -32,7 +32,7 @@ connects to the database directly; there is no admin HTTP API, and no API key
 can create a workspace or another key.
 
 ```sh
-alias retainer='docker compose -f docker/compose.yml exec retainer retainer'
+alias retainer-ops='docker compose -f docker/compose.yml exec retainer retainer-ops'
 
 retainer-ops workspace create --name "Acme Clinic" --template clinic
 retainer-ops workspace list
