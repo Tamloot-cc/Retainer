@@ -16,7 +16,10 @@ const previous = 'a'.repeat(40);
 const candidate = 'b'.repeat(40);
 const index = 'CREATE INDEX "restricted_fixture" ON "public"."records" USING btree ("label");';
 const rewrite = 'ALTER TABLE "records" ALTER COLUMN "label" TYPE integer USING length("label");';
-const independentTable = 'CREATE TABLE "public"."restricted_fixture" ("id" uuid PRIMARY KEY);';
+const independentTable = `CREATE TABLE "public"."restricted_fixture" (
+  "id" uuid PRIMARY KEY NOT NULL,
+  "created_at" timestamp with time zone NOT NULL
+);`;
 const dirname = fileURLToPath(new URL('../../drizzle/', import.meta.url));
 const sqlFile = 'restricted_fixture.sql';
 let folder: string | undefined;

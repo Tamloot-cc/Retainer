@@ -11,7 +11,10 @@ const createIndex = new RegExp(
   `^CREATE INDEX ${name} ON (?:"public"\\.)?"([a-z_][a-z0-9_]*)"(?: USING btree)?\\s*\\(${columns}\\);$`,
 );
 const createTable = /^CREATE TABLE (?:"public"\.)?"([a-z_][a-z0-9_]*)"\s*\(([\s\S]+)\);$/;
-const column = `${name}\\s+(?:text|uuid|integer|bigint|boolean|jsonb|timestamptz)(?:\\s+NOT NULL)?(?:\\s+PRIMARY KEY)?`;
+const primitiveType =
+  '(?:text|uuid|integer|bigint|boolean|jsonb|timestamptz|timestamp with time zone)';
+const constraints = '(?: NOT NULL(?: PRIMARY KEY)?| PRIMARY KEY(?: NOT NULL)?)?';
+const column = `${name}\\s+${primitiveType}${constraints}`;
 const simpleColumns = new RegExp(`^\\s*${column}(?:\\s*,\\s*${column})*\\s*$`);
 
 /**
