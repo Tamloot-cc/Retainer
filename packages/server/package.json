@@ -33,7 +33,7 @@
     "@modelcontextprotocol/server": "^2.4.0",
     "@retainer/extension": "workspace:*",
     "@retainer/shared": "workspace:*",
-    "@simplewebauthn/server": "13.3.3",
+    "@simplewebauthn/server": "14.1.0",
     "better-auth": "1.7.25",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.18",
