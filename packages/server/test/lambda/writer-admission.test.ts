@@ -1,10 +1,15 @@
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.js';
 import { RUNTIME_ROLE } from '../../src/db/client.js';
 import { runMigrations } from '../../src/db/migrate.js';
 import { inWorkspace } from '../../src/db/tx.js';
-import { acquireWriterLease, releaseWriterLease } from '../../src/db/writer-lease.js';
+import {
+  acquireWriterLease,
+  releaseWriterLease,
+  WRITER_CONTROL_LOCK,
+} from '../../src/db/writer-lease.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { withMigrationLock } from '../../src/lambda/deploy-lock.js';
 import { createOpsHandler } from '../../src/lambda/ops.js';
@@ -99,7 +104,15 @@ it('fences transactions, pooled reconnects, stale builds and interrupted migrati
 
   const old = db.connect({ role: RUNTIME_ROLE, max: 1, writerBuild: previous });
   const next = db.connect({ role: RUNTIME_ROLE, max: 1, writerBuild: candidate });
-  await expect(
+  const stateLocked = deferred();
+  const releaseState = deferred();
+  const lockState = db.owner.begin(async (tx) => {
+    await tx`select singleton from retainer_deploy.admission where singleton for update`;
+    stateLocked.resolve();
+    await releaseState.promise;
+  });
+  await stateLocked.promise;
+  const enroll = expect(
     ops(rolling)({
       command: 'writer-admission-enroll',
       protocol: 1,
@@ -107,6 +120,32 @@ it('fences transactions, pooled reconnects, stale builds and interrupted migrati
       generation: initial.generation,
     }),
   ).resolves.toMatchObject({ phase: 'open' });
+  try {
+    // Enrollment holds its metadata lock while waiting for the row. Data
+    // writers must continue to commit during the ongoing rolling update.
+    let holding = false;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const [row] = await db.owner`
+        select exists (
+          select 1 from pg_locks where locktype = 'advisory' and granted
+            and objid = ${WRITER_CONTROL_LOCK}::oid
+            and database = (select oid from pg_database where datname = current_database())
+        ) as holding`;
+      if (row?.holding) {
+        holding = true;
+        break;
+      }
+      await delay(10);
+    }
+    expect(holding).toBe(true);
+    await expect(
+      old`insert into writer_fixture values ('during enrollment') returning value`,
+    ).resolves.toEqual([{ value: 'during enrollment' }]);
+  } finally {
+    releaseState.resolve();
+    await lockState;
+    await enroll;
+  }
   const proxyLease = await acquireWriterLease(old, 60_000, {
     peerBuild: previous,
     effect: 'model:rolling',
@@ -195,7 +234,7 @@ it('fences transactions, pooled reconnects, stale builds and interrupted migrati
     writing.resolve();
     await finishLost.promise;
   });
-  await writing.promise;
+  await Promise.race([writing.promise, lost]);
   const lostResult = expect(lost).rejects.toThrow();
   await db.owner`select pg_terminate_backend(${pid})`;
   await lostResult;
@@ -239,7 +278,7 @@ it('fences transactions, pooled reconnects, stale builds and interrupted migrati
     ddl.resolve();
     await finishDdl.promise;
   });
-  await ddl.promise;
+  await Promise.race([ddl.promise, interrupted]);
   const interruptedResult = expect(interrupted).rejects.toThrow();
   await expect(open()).resolves.toMatchObject({ phase: 'busy' });
   await db.owner`select pg_terminate_backend(${ddlPid})`;

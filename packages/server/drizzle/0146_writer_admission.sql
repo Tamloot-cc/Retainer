@@ -44,10 +44,22 @@ RETURNS boolean LANGUAGE plpgsql VOLATILE SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
   gate retainer_deploy.admission%ROWTYPE;
+  previous_timeout text;
 BEGIN
   -- Keep in step with WRITER_ADMISSION_LOCK in db/writer-lease.ts.
   IF NOT pg_try_advisory_xact_lock_shared(1381256713::bigint) THEN
-    RETURN false;
+    -- A close can back out if a lease committed as it obtained the lock.
+    -- Give that short transition time to finish before denying a writer.
+    previous_timeout := current_setting('lock_timeout');
+    BEGIN
+      IF previous_timeout = '0' OR previous_timeout::interval > interval '250 ms' THEN
+        PERFORM set_config('lock_timeout', '250ms', true);
+      END IF;
+      PERFORM pg_advisory_xact_lock_shared(1381256713::bigint);
+    EXCEPTION WHEN lock_not_available THEN
+      RETURN false;
+    END;
+    PERFORM set_config('lock_timeout', previous_timeout, true);
   END IF;
   SELECT * INTO STRICT gate FROM retainer_deploy.admission WHERE singleton;
   IF current_setting('transaction_isolation') <> 'read committed' THEN

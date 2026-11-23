@@ -3,7 +3,7 @@ import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { loadConfig, ownerDatabaseUrl } from '../config.js';
 import { createSql, type Sql } from './client.js';
 import type { Tx } from './tx.js';
-import { WRITER_ADMISSION_LOCK } from './writer-lease.js';
+import { WRITER_CONTROL_LOCK } from './writer-lease.js';
 
 const migrationsFolder = fileURLToPath(new URL('../../drizzle', import.meta.url));
 
@@ -35,7 +35,7 @@ export async function runMigrations(databaseUrl: string): Promise<void> {
     await sql.begin(async (tx) => {
       const [gate] = await tx`select to_regclass('retainer_deploy.admission') as name`;
       if (gate?.name) {
-        await tx`select pg_advisory_xact_lock(${WRITER_ADMISSION_LOCK})`;
+        await tx`select pg_advisory_xact_lock(${WRITER_CONTROL_LOCK})`;
         const [active] =
           await tx`select generation is not null as active from retainer_deploy.admission where singleton`;
         if (active?.active !== false)

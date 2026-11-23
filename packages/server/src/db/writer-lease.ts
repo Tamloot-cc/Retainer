@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { Sql } from './client.js';
 
 export const WRITER_ADMISSION_LOCK = 0x52544e09;
+/** Serializes ops metadata transitions without entering the writer fence. */
+export const WRITER_CONTROL_LOCK = 0x52544e0a;
 
 export class WriterAdmissionDenied extends Error {
   constructor() {

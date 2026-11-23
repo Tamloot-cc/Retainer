@@ -4,7 +4,7 @@ import type { Sql } from '../db/client.js';
 import type { Tx } from '../db/tx.js';
 import { WRITER_BUILD_PATTERN } from '../db/writer-build.js';
 
-import { WRITER_ADMISSION_LOCK } from '../db/writer-lease.js';
+import { WRITER_ADMISSION_LOCK, WRITER_CONTROL_LOCK } from '../db/writer-lease.js';
 
 const BUILD = z.string().regex(WRITER_BUILD_PATTERN);
 export const writerOwnership = z.object({
@@ -90,6 +90,11 @@ async function unsettled(sql: Connection) {
   return row?.busy !== false;
 }
 
+async function takeLock(tx: Tx, key: number) {
+  const [row] = await tx`select pg_try_advisory_xact_lock(${key}) as held`;
+  return row?.held === true;
+}
+
 export async function writerAdmission(
   sql: Sql,
   event: WriterCommand,
@@ -118,8 +123,7 @@ export async function writerAdmission(
     };
   }
   return sql.begin(async (tx) => {
-    const [lock] = await tx`select pg_try_advisory_xact_lock(${WRITER_ADMISSION_LOCK}) as held`;
-    if (lock?.held !== true) return { ...metadata, phase: 'busy' };
+    if (!(await takeLock(tx, WRITER_CONTROL_LOCK))) return { ...metadata, phase: 'busy' };
     const state = await lookup(tx);
     if (!state) throw new Error('writer admission migration is not applied');
     if (event.command === 'writer-admission-reconcile') {
@@ -162,7 +166,13 @@ export async function writerAdmission(
         throw new Error('writer admission coverage changed');
       if (!event.timed && state.builds.includes(ownership.candidate))
         throw new Error('an admitted candidate requires a timed drain');
-      if (await unsettled(tx)) return { ...metadata, phase: 'busy' };
+      // Most unsuccessful closes never contend with actual data writers.
+      if (
+        (await unsettled(tx)) ||
+        !(await takeLock(tx, WRITER_ADMISSION_LOCK)) ||
+        (await unsettled(tx))
+      )
+        return { ...metadata, phase: 'busy' };
       await tx`delete from retainer_deploy.writer_leases where effect is null and until <= clock_timestamp()`;
       const [closed] = await tx<{ closed_at: Date }[]>`
         update retainer_deploy.admission set deployment = ${ownership.deployment},
@@ -181,7 +191,8 @@ export async function writerAdmission(
       throw new Error('writer admission cannot open before the owned migration completes');
     if (state.generation && !state.timed && state.builds.includes(candidate))
       throw new Error('an admitted candidate requires a timed drain');
-    if (await unsettled(tx)) return { ...metadata, phase: 'busy' };
+    if (!(await takeLock(tx, WRITER_ADMISSION_LOCK)) || (await unsettled(tx)))
+      return { ...metadata, phase: 'busy' };
     await tx`insert into retainer_deploy.retired_builds (build)
       select build from unnest(${state.builds}::text[]) as build where build <> ${candidate}
       on conflict do nothing`;
@@ -198,25 +209,19 @@ export async function requireMigrationOwnership(
   ownership: Ownership | undefined,
   build: string | undefined,
 ) {
-  const state = await lookup(tx);
-  if (!state && !ownership) return undefined;
-  if (ownership && (!state || !owns(state, ownership) || ownership.candidate !== build))
-    throw new Error('migration requires closed writer admission and verified deployment ownership');
-  const [lock] = await tx`select pg_try_advisory_xact_lock(${WRITER_ADMISSION_LOCK}) as held`;
-  if (lock?.held !== true) {
-    if (state?.generation && !ownership)
-      throw new Error(
-        'migration requires closed writer admission and verified deployment ownership',
-      );
+  if (!(await takeLock(tx, WRITER_CONTROL_LOCK)))
     throw new Error('writer admission ownership is busy; retry migration');
-  }
-  const lockedState = await lookup(tx);
-  if (!lockedState?.generation && !ownership) return undefined;
-  if (!lockedState || !ownership || !owns(lockedState, ownership) || ownership.candidate !== build)
+  const state = await lookup(tx);
+  if (!state?.generation && !ownership) return undefined;
+  if (!state || !ownership || !owns(state, ownership) || ownership.candidate !== build)
     throw new Error('migration requires closed writer admission and verified deployment ownership');
   if (await unsettled(tx)) throw new Error('unsettled writer leases prevent migration');
+  if (!(await takeLock(tx, WRITER_ADMISSION_LOCK)))
+    throw new Error('writer admission ownership is busy; retry migration');
+  // Ownership cannot change while WRITER_CONTROL_LOCK is held. The closed
+  // generation rejects new leases once we have verified it.
   const [row] = await tx<{ permitted_at: Date }[]>`
     select set_config('retainer.migration_owner', ${ownership.deployment}, true), clock_timestamp() as permitted_at`;
-  if (!row || !lockedState.closed_at) throw new Error('missing admission timestamps');
-  return { closedAt: lockedState.closed_at, permittedAt: row.permitted_at };
+  if (!row || !state.closed_at) throw new Error('missing admission timestamps');
+  return { closedAt: state.closed_at, permittedAt: row.permitted_at };
 }
