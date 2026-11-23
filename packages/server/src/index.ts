@@ -70,12 +70,14 @@ if (accountsMode(config) && (role === 'all' || role === 'control')) {
   // Ended after every stop, so the purger finishes a removal first.
   const control = pool(createControlSql(config, { max: config.RETAINER_DB_POOL_MAX }));
   const authControl = pool(createControlSql(config, { max: config.RETAINER_DB_POOL_MAX }));
-  accounts = createAccountsServer({
+  const accountApp = createAccountsServer({
     config,
     sql: control,
     authSql: authControl,
     clientIp: (c) => getConnInfo(c).remote.address,
   });
+  await accountApp.initializeCli();
+  accounts = accountApp;
   // Removes deleted workspaces for good once their grace period ends (4.5).
   stops.push(startPurger({ sql: control }).stop);
 }

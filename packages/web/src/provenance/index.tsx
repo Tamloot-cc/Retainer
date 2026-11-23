@@ -17,13 +17,17 @@ import {
   Stack,
   Tooltip,
 } from '../ui/index.js';
+export function actorLabel(actor: Actor) {
+  return `${actor.name || actor.id}${actor.via ? `, through ${actor.via}` : ''}`;
+}
+
 export function ActorBadge({ actor }: { actor: Actor }) {
   const Icon = { agent: Bot, user: UserRound, integration: Plug, system: Cog }[actor.type];
   return (
     <IdentityTag identity={`actor:${actor.type}:${actor.id}`}>
       <Icon size={12} aria-hidden className="shrink-0" />
-      <span className="truncate" title={actor.name || actor.id}>
-        {actor.name || actor.id}
+      <span className="truncate" title={actorLabel(actor)}>
+        {actorLabel(actor)}
       </span>
       <span className="shrink-0">· {actor.type}</span>
     </IdentityTag>

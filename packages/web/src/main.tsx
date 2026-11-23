@@ -577,6 +577,10 @@ const CONNECT_CALLBACK = '/app/connect/callback';
 const LazyConnectCallback = lazy(() =>
   import('./routes/extensions/callback.js').then((m) => ({ default: m.ConnectCallback })),
 );
+const LazyCliApproval = lazy(() =>
+  import('./accounts/cli-approval.js').then((m) => ({ default: m.CliApprovalPage })),
+);
+const CLI_APPROVAL_PATH = /^\/app\/cli\/approve\/([0-9a-f-]{36})$/i;
 const LazyYourAccount = lazy(() =>
   import('./accounts/your-account.js').then((m) => ({ default: m.YourAccount })),
 );
@@ -584,6 +588,8 @@ const LazyYourAccount = lazy(() =>
 /** Which screen a signed-in person sees at this address (accounts spec 5). */
 function AccountsApp({ account }: { account: Account }) {
   const path = window.location.pathname;
+  const cliApproval = CLI_APPROVAL_PATH.exec(path)?.[1];
+  if (cliApproval) return <LazyCliApproval id={cliApproval} account={account} />;
   const invite = /^\/app\/invite\/([^/]+)/.exec(path)?.[1];
   if (invite) return <LazyInvite token={invite} account={account} />;
   // Connecting an app over OAuth (accounts spec 4.7).
@@ -671,7 +677,8 @@ function App() {
           // Connecting an app keeps its whole address, signed parameters and
           // all, but not the error of a sign-in that failed.
           <LazySignIn
-            {...(window.location.pathname.startsWith('/app/oauth/')
+            {...(window.location.pathname.startsWith('/app/oauth/') ||
+            CLI_APPROVAL_PATH.test(window.location.pathname)
               ? { returnTo: window.location.pathname + withoutSignInError(window.location.search) }
               : {})}
           />

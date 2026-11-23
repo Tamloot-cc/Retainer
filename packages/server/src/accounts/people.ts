@@ -10,6 +10,7 @@ import {
   type WorkspaceRole,
 } from '@retainer/shared';
 import { type ApiKeyListing, type CreatedApiKey, createApiKey } from '../auth/keys.js';
+import { CLI_VIA } from '../db/cli.js';
 import type { Sql } from '../db/client.js';
 import { RUNTIME_ROLE } from '../db/client.js';
 import { isUuid } from '../db/ids.js';
@@ -31,6 +32,13 @@ import {
   lockWorkspaceOrganization,
 } from '../workspaces/organizations.js';
 import { slugify } from '../workspaces/workspaces.js';
+import {
+  accountElevation,
+  type CliAccountDecision,
+  cliDecisionTransaction,
+  confirmAction,
+  endTargetApprovals,
+} from './cli-approvals.js';
 import { registerOnboardingClients } from './onboarding-clients.js';
 
 /**
@@ -40,7 +48,7 @@ import { registerOnboardingClients } from './onboarding-clients.js';
  * IDs are UUIDs before calling these.
  */
 
-export type Person = { id: string; name: string; email: string };
+export type Person = { id: string; name: string; email: string; cli?: CliAccountDecision };
 
 /** Organization owners and admins are admin there already; it is changed on the organization. */
 const organizationAdminConflict = () =>
@@ -111,14 +119,14 @@ async function asWorkspaceAdmin<T>(
   workspaceId: string,
   write: (tx: Tx, workspace: WorkspaceAccess['workspace']) => Promise<T>,
 ): Promise<T> {
-  return (await sql.begin(async (tx) => {
+  return cliDecisionTransaction(sql, async (tx) => {
     await lockWorkspaceOrganization(tx, workspaceId);
     const { workspace } = await requireWorkspaceAdmin(tx, person, workspaceId);
     return write(tx, workspace);
-  })) as T;
+  });
 }
 
-async function requireOrganizationManager(
+export async function requireOrganizationManager(
   tx: Tx | Sql,
   person: Person,
   organizationId: string,
@@ -143,10 +151,10 @@ async function asOrganizationManager<T>(
   organizationId: string,
   write: (tx: Tx, role: OrganizationRole) => Promise<T>,
 ): Promise<T> {
-  return (await sql.begin(async (tx) => {
+  return cliDecisionTransaction(sql, async (tx) => {
     await lockOrganization(tx, organizationId);
     return write(tx, await requireOrganizationManager(tx, person, organizationId));
-  })) as T;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -178,6 +186,12 @@ export async function createWorkspaceFor(
 ): Promise<Workspace> {
   const name = input.name.trim();
   if (!name) throw new AppError(400, 'invalid_request', 'a workspace needs a name');
+  if (person.cli && !input.organizationId)
+    throw new AppError(
+      400,
+      'invalid_request',
+      'Choose an organization. Create your first workspace in the web app.',
+    );
   const id = await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(${FIRST_WORKSPACE_LOCK}, hashtext(${person.id}))`;
     const organizationId = input.organizationId ?? (await organizationForPerson(tx, person));
@@ -229,6 +243,7 @@ async function insertWorkspace(
   await lockOrganization(tx, organizationId);
   await requireOrganizationManager(tx, person, organizationId);
   await assertWithinLimit(tx, organizationId, 'workspaces');
+  await accountElevation(tx, person.cli, { organizationId });
 
   let workspaceId: string | undefined;
   for (let attempt = 0; !workspaceId && attempt < 5; attempt++) {
@@ -284,6 +299,8 @@ export async function renameWorkspace(
   const trimmed = name.trim();
   if (!trimmed) throw new AppError(400, 'invalid_request', 'a workspace needs a name');
   return asWorkspaceAdmin(sql, person, workspaceId, async (tx, workspace) => {
+    if (person.cli) await tx`select id from workspaces where id=${workspaceId} for no key update`;
+    await accountElevation(tx, person.cli, { workspaceId });
     // The slug stays, so links and agents keep working (5.1).
     await tx`update workspaces set name = ${trimmed}, updated_at = now() where id = ${workspace.id}`;
     return getWorkspace(tx, workspace.id);
@@ -306,7 +323,7 @@ export async function deleteWorkspace(
   confirmName: string,
   extensionCatalog?: RuntimeCatalog,
 ): Promise<{ id: string; deletionScheduledAt: string; purgeAfter: string }> {
-  return (await sql.begin(async (tx) => {
+  return cliDecisionTransaction(sql, async (tx) => {
     const organizationId = await lockWorkspaceOrganization(tx, workspaceId);
     // Before the workspace row: a schema change holds this lock and then
     // updates the row, so taking them the other way round deadlocks.
@@ -319,10 +336,17 @@ export async function deleteWorkspace(
       throw forbidden('Only an owner or admin of the organization can delete a workspace.');
     }
     const [current] = await tx<{ name: string }[]>`
-      select name from workspaces where id = ${workspaceId}`;
+      select name from workspaces where id = ${workspaceId}
+      ${person.cli ? tx`for no key update` : tx``}`;
     if (confirmName.trim() !== current?.name.trim()) {
       throw new AppError(400, 'invalid_request', "type the workspace's name to delete it");
     }
+    await confirmAction(
+      tx,
+      person.cli,
+      { workspaceId },
+      { operation: 'delete workspace', arguments: { name: confirmName } },
+    );
     const [row] = await tx<{ deletion_scheduled_at: Date }[]>`
       update workspaces set deletion_scheduled_at = now(), updated_at = now()
       where id = ${workspaceId} and deletion_scheduled_at is null
@@ -335,7 +359,7 @@ export async function deleteWorkspace(
       deletionScheduledAt: row.deletion_scheduled_at.toISOString(),
       purgeAfter: purgeAfter(row.deletion_scheduled_at).toISOString(),
     };
-  })) as { id: string; deletionScheduledAt: string; purgeAfter: string };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -440,6 +464,11 @@ export async function setWorkspaceRole(
       throw new AppError(409, 'not_a_member', 'invite them to the organization first');
     }
     if (isOrganizationManager(target)) throw organizationAdminConflict();
+    const [before] = await tx<
+      { role: string }[]
+    >`select role from workspace_members where workspace_id = ${workspaceId} and user_id = ${userId}`;
+    await accountElevation(tx, person.cli, { workspaceId });
+    if (before && before.role !== role) await endTargetApprovals(tx, userId, { workspaceId });
     await tx`
       insert into workspace_members (organization_id, workspace_id, user_id, role)
       values (${workspace.organizationId}, ${workspace.id}, ${userId}, ${role})
@@ -460,6 +489,8 @@ export async function removeFromWorkspace(
   await asWorkspaceAdmin(sql, person, workspaceId, async (tx, workspace) => {
     const target = await organizationRole(tx, workspace.organizationId, userId);
     if (target && isOrganizationManager(target)) throw organizationAdminConflict();
+    await accountElevation(tx, person.cli, { workspaceId });
+    await endTargetApprovals(tx, userId, { workspaceId });
     await tx`delete from workspace_members where workspace_id = ${workspace.id} and user_id = ${userId}`;
     // Apps they connected here stop working too, and stay disconnected if
     // they are added back (4.5).
@@ -491,8 +522,17 @@ export async function createWorkspaceKey(
     throw new AppError(400, 'invalid_request', 'access must be read, write or schema');
   }
   const scopes = [...KEY_ACCESS[input.access]];
-  return asWorkspaceAdmin(sql, person, workspaceId, (tx, workspace) =>
-    createApiKey(tx, {
+  return asWorkspaceAdmin(sql, person, workspaceId, async (tx, workspace) => {
+    await confirmAction(
+      tx,
+      person.cli,
+      { workspaceId },
+      {
+        operation: 'create API key',
+        arguments: { name, access: input.access, worksForMe: !!input.worksForMe },
+      },
+    );
+    const key = await createApiKey(tx, {
       workspace: workspace.id,
       name,
       // Always an agent: a key from the web app never speaks for a person.
@@ -502,8 +542,11 @@ export async function createWorkspaceKey(
       // "This agent works for me" (personal memory spec 4.3): only ever the
       // person creating the key, so nobody can mint a key into another's memory.
       ...(input.worksForMe ? { actsForUser: person.id } : {}),
-    }),
-  );
+    });
+    if (person.cli?.approvalId)
+      await tx`update cli_approvals set result_id = ${key.id} where id = ${person.cli.approvalId}`;
+    return key;
+  });
 }
 
 export async function listWorkspaceKeys(
@@ -547,6 +590,9 @@ export async function revokeWorkspaceKey(
   keyId: string,
 ): Promise<void> {
   await asWorkspaceAdmin(sql, person, workspaceId, async (tx, workspace) => {
+    if (person.cli)
+      await tx`select id from api_keys where id=${keyId} and workspace_id=${workspaceId} for update`;
+    await accountElevation(tx, person.cli, { workspaceId });
     const rows = await tx`
       update api_keys set revoked_at = coalesce(revoked_at, now())
       where id = ${keyId} and workspace_id = ${workspace.id} returning 1`;
@@ -673,9 +719,30 @@ export async function setOrganizationRole(
     if ((current === 'owner' || role === 'owner') && mine !== 'owner') {
       throw forbidden('Only an owner can make or change owners.');
     }
+    if (person.cli && (current === 'owner' || role === 'owner')) {
+      const [target] = await tx<{ email: string }[]>`select email from users where id=${userId}`;
+      await confirmAction(
+        tx,
+        person.cli,
+        { organizationId },
+        {
+          operation: 'change owner role',
+          arguments: { userId, email: target?.email ?? userId, from: current, role },
+        },
+      );
+    } else await accountElevation(tx, person.cli, { organizationId });
     if (current === 'owner' && role !== 'owner')
       await assertKeepsAnOwner(tx, organizationId, userId);
     const before = await organizationMemberships(tx, organizationId, userId);
+    if (current !== role) {
+      await endTargetApprovals(tx, userId, { organizationId });
+      if (isOrganizationManager(current) !== isOrganizationManager(role)) {
+        await tx`update cli_approvals a set status='ended' from cli_logins l, workspaces w
+          where a.login_id=l.id and l.user_id=${userId} and w.id=a.workspace_id and w.organization_id=${organizationId}
+          and a.status in ('pending', 'approved') and a.expires_at > clock_timestamp()
+          and not exists (select 1 from workspace_members m where m.workspace_id=w.id and m.user_id=l.user_id and m.role='admin')`;
+      }
+    }
     await tx`
       update organization_members set role = ${role}
       where organization_id = ${organizationId} and user_id = ${userId}`;
@@ -698,7 +765,20 @@ export async function removeFromOrganization(
     if (current === 'owner' && mine !== 'owner') {
       throw forbidden('Only an owner can remove an owner.');
     }
-    if (current === 'owner') await assertKeepsAnOwner(tx, organizationId, userId);
+    if (current === 'owner') {
+      await assertKeepsAnOwner(tx, organizationId, userId);
+      const [target] = await tx<{ email: string }[]>`select email from users where id=${userId}`;
+      await confirmAction(
+        tx,
+        person.cli,
+        { organizationId },
+        { operation: 'remove owner', arguments: { userId, email: target?.email ?? userId } },
+      );
+    } else await accountElevation(tx, person.cli, { organizationId });
+    await endTargetApprovals(tx, userId, { organizationId });
+    await tx`update cli_approvals a set status='ended' from cli_logins l, workspaces w
+      where a.login_id=l.id and l.user_id=${userId} and w.id=a.workspace_id and w.organization_id=${organizationId}
+      and a.status in ('pending', 'approved') and a.expires_at > clock_timestamp()`;
     const before = await organizationMemberships(tx, organizationId, userId);
     await tx`
       delete from organization_members
@@ -713,7 +793,11 @@ export async function removeFromOrganization(
   });
 }
 
-const personActor = (person: Person) => ({ type: 'user' as const, id: person.id });
+const personActor = (person: Person) => ({
+  type: 'user' as const,
+  id: person.id,
+  ...(person.cli ? { name: person.name, via: CLI_VIA } : {}),
+});
 
 // ---------------------------------------------------------------------------
 // Invitations (4.5): a link to copy; Retainer sends no email
@@ -723,7 +807,7 @@ const INVITATION_DAYS = 7;
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
 /** Pending invitations to an organization, or only those that include one workspace. */
-async function pendingInvitations(
+export async function pendingInvitations(
   sql: Sql,
   organizationId: string,
   workspaceId?: string,
@@ -795,6 +879,17 @@ export async function createInvitation(
           and deletion_scheduled_at is null`;
       if (found.length !== ids.length) throw notFound('workspace');
     }
+    if (role === 'owner') {
+      await confirmAction(
+        tx,
+        person.cli,
+        { organizationId },
+        {
+          operation: 'invite owner',
+          arguments: { email, role, workspaces },
+        },
+      );
+    } else await accountElevation(tx, person.cli, { organizationId });
     const token = randomBytes(32).toString('base64url');
     const [row] = await tx<{ id: string; expires_at: Date }[]>`
       insert into invitations (organization_id, email, role, workspaces, token_hash, invited_by, expires_at)
@@ -813,6 +908,7 @@ export async function revokeInvitation(
   invitationId: string,
 ): Promise<void> {
   await asOrganizationManager(sql, person, organizationId, async (tx) => {
+    await accountElevation(tx, person.cli, { organizationId });
     const rows = await tx`
       update invitations set revoked_at = now()
       where id = ${invitationId} and organization_id = ${organizationId}

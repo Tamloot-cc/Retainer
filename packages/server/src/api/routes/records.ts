@@ -23,6 +23,7 @@ import {
   findRecords,
   forget,
   mergeRecord,
+  mergeSuggestion,
   patchInputSchema,
   patchRecord,
   readRecord,
@@ -130,6 +131,11 @@ export function recordRoutes(app: Hono<AppEnv>, sql: Sql) {
   app.post('/records/:id/forget', requireScope('admin'), async (c) =>
     c.json(await forget(sql, c.get('caller'), idParam(c))),
   );
+
+  app.post('/review/merges/:id/merge', requireScope('write'), async (c) => {
+    const { keep } = await readBody(c, z.strictObject({ keep: z.uuid() }));
+    return c.json(await mergeSuggestion(sql, c.get('caller'), idParam(c), keep));
+  });
 
   app.post('/review/merges/:id/dismiss', requireScope('write'), async (c) =>
     c.json(await dismissSuggestion(sql, c.get('caller'), idParam(c))),

@@ -682,7 +682,7 @@ const pick = await anthropic.messages.create({
       <dt>Proxy</dt><dd><code>POST /v1/messages</code>, <code>/v1/messages/count_tokens</code>, <code>GET /v1/models</code>. Allow-listed body fields and betas, ≤ 6 MB (else <code>413</code>), <code>no-store</code>, streamed.</dd>
       <dt>Grant</dt><dd><code>uses: ['model']</code> per function → admin approves → <code>granted_uses</code>. A release that adds a use is held.</dd>
       <dt>Consent</dt><dd>"This extension sends data from your workspace to Anthropic, which Retainer uses to process it."</dd>
-      <dt>Usage</dt><dd><code>ai_usage</code>, kind <code>model</code>: tokens, request ID, <code>partial</code> flag, no content. Admins: Overview tab. Operator: <code>retainer model usage</code>.</dd>
+      <dt>Usage</dt><dd><code>ai_usage</code>, kind <code>model</code>: tokens, request ID, <code>partial</code> flag, no content. Admins: Overview tab. Operator: <code>retainer-ops model usage</code>.</dd>
       <dt>Enrichment</dt><dd><code>configure</code>, <code>enrich</code>, <code>backfill</code> use the model; <code>setup</code> doesn't. <code>claude-opus-5-5</code>, effort low. Failure → <code>no_match_model_*</code> or retry.</dd>
       <dt>No key</dt><dd>Self-hosted: <code>503 model_unavailable</code>. Hosted: <code>model</code> won't start, runs retry the 5xx.</dd>
       <dt>Spend</dt><dd>No limits in Retainer yet; monthly cap on Anthropic's side.</dd>

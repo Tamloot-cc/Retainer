@@ -2,8 +2,9 @@ import type { RoutineDetail, RoutineRunView, RoutineVersionView } from '@retaine
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
 import { Ellipsis, Workflow } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
+import { ActorBadge, actorLabel } from '../../provenance/index.js';
 import {
   Badge,
   Button,
@@ -86,6 +87,18 @@ function Routine({ routine }: { routine: RoutineDetail }) {
   const [dryRun, setDryRun] = useState<RoutineVersionView | null>(null);
   const [approving, setApproving] = useState<RoutineVersionView | null>(null);
   const [confirmRunNow, setConfirmRunNow] = useState(false);
+  const deepLinkVersion = new URLSearchParams(window.location.search).get('version');
+  const linkedVersion = routine.versions.find(
+    (version) =>
+      version.state === 'proposed' &&
+      (version.id === deepLinkVersion || String(version.number) === deepLinkVersion),
+  )?.id;
+  const scrolled = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!linkedVersion || scrolled.current === linkedVersion) return;
+    scrolled.current = linkedVersion;
+    document.getElementById(`routine-version-${linkedVersion}`)?.scrollIntoView();
+  }, [linkedVersion]);
   const refresh = () => client.invalidateQueries({ queryKey: routinesKey(session.workspace.id) });
   const state = useMutation({
     mutationFn: (action: 'pause' | 'resume' | 'archive') => api.setRoutineState(routine.id, action),
@@ -242,53 +255,64 @@ function Routine({ routine }: { routine: RoutineDetail }) {
           </Stack>
         </Panel>
       ) : null}
+      {routine.stateChangedBy ? <ActorBadge actor={routine.stateChangedBy} /> : null}
+      {routine.versions
+        .filter((version) => version.rejectedBy)
+        .map((version) => (
+          <Row key={version.id}>
+            <Muted>Version {version.number} rejected by</Muted>
+            {version.rejectedBy ? <ActorBadge actor={version.rejectedBy} /> : null}
+          </Row>
+        ))}
       {proposals.map((version) => (
-        <Panel key={version.id} title={`Version ${version.number}, waiting for review`}>
-          <Stack>
-            <VersionDetails version={version} />
-            {admin ? (
-              <>
-                {active ? (
-                  <Muted>
-                    Approving replaces version {active.number}. Its runs that have not started yet
-                    are discarded.
-                  </Muted>
-                ) : null}
-                <Row>
-                  <Button
-                    variant="primary"
-                    disabled={busy || archived}
-                    onClick={() => setApproving(version)}
-                  >
-                    Approve version {version.number}…
-                  </Button>
-                  <Button
-                    disabled={busy}
-                    onClick={() => decide.mutate({ version, decision: 'reject' })}
-                  >
-                    Reject
-                  </Button>
-                  <Button disabled={busy || archived} onClick={() => setDryRun(version)}>
-                    Dry run…
-                  </Button>
-                  <Button disabled={busy || archived} onClick={() => setTesting(version)}>
-                    Test on a record…
-                  </Button>
-                </Row>
-                <TestLine />
-              </>
-            ) : (
-              <Muted>A workspace admin reviews and approves it.</Muted>
-            )}
-          </Stack>
-        </Panel>
+        <div key={version.id} id={`routine-version-${version.id}`}>
+          <Panel title={`Version ${version.number}, waiting for review`}>
+            <Stack>
+              <VersionDetails version={version} />
+              {admin ? (
+                <>
+                  {active ? (
+                    <Muted>
+                      Approving replaces version {active.number}. Its runs that have not started yet
+                      are discarded.
+                    </Muted>
+                  ) : null}
+                  <Row>
+                    <Button
+                      variant="primary"
+                      disabled={busy || archived}
+                      onClick={() => setApproving(version)}
+                    >
+                      Approve version {version.number}…
+                    </Button>
+                    <Button
+                      disabled={busy}
+                      onClick={() => decide.mutate({ version, decision: 'reject' })}
+                    >
+                      Reject
+                    </Button>
+                    <Button disabled={busy || archived} onClick={() => setDryRun(version)}>
+                      Dry run…
+                    </Button>
+                    <Button disabled={busy || archived} onClick={() => setTesting(version)}>
+                      Test on a record…
+                    </Button>
+                  </Row>
+                  <TestLine />
+                </>
+              ) : (
+                <Muted>A workspace admin reviews and approves it.</Muted>
+              )}
+            </Stack>
+          </Panel>
+        </div>
       ))}
       {active ? (
         <Panel title={`Version ${active.number}, approved`}>
           <Stack>
             {active.approvedBy ? (
               <Muted small>
-                Approved by {active.approvedBy.name || active.approvedBy.id}
+                Approved by {actorLabel(active.approvedBy)}
                 {active.approvedAt ? ` on ${new Date(active.approvedAt).toLocaleString()}` : ''}.
               </Muted>
             ) : null}

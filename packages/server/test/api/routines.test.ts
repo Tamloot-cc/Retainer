@@ -12,7 +12,9 @@ import {
   RoutineExecutor,
   RoutineMaintenance,
 } from '../../src/worker/routines.js';
+import { startAccountsApp } from '../helpers/accounts.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
+import { expectOtherCredentialDenied } from '../helpers/cli-routes.js';
 import { useTestDatabase } from '../helpers/db.js';
 
 /**
@@ -1600,6 +1602,7 @@ describe('routines', () => {
     const { routineId, versionId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
     const acme = await createCompany(s.app, s.keys.admin, 'Acme Reads');
     const { token } = await drive(s, routineId, versionId, acme);
+    await expectOtherCredentialDenied(startAccountsApp(db).accounts, s.app.app, token, s.workspace);
     const read = () =>
       s.app.request('/v1/routines/runtime/read', {
         key: token,

@@ -35,9 +35,9 @@ export function databaseUrl(baseUrl: string, database: string): string {
 }
 
 /** Clones the migrated template into a database of its own. */
-export async function createTestDatabase(): Promise<TestDatabase> {
+export async function createTestDatabase(templateOverride?: string): Promise<TestDatabase> {
   const adminUrl = inject('adminDatabaseUrl');
-  const template = inject('templateDatabase');
+  const template = templateOverride ?? inject('templateDatabase');
   const name = `retainer_test_${randomBytes(8).toString('hex')}`;
   const admin = postgres(adminUrl, { max: 1, onnotice: false });
   try {

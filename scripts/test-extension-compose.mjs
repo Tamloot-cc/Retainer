@@ -149,7 +149,7 @@ try {
       'exec',
       '-T',
       'retainer',
-      'retainer',
+      'retainer-ops',
       'key',
       'create',
       '--workspace',

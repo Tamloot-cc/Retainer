@@ -11,6 +11,7 @@ import {
 } from '@retainer/shared';
 import { z } from 'zod';
 import type { Caller } from '../caller.js';
+import { recheckElevation } from '../db/cli.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, jsonValue, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
@@ -474,7 +475,12 @@ export class Routines {
   async reject(caller: Caller, routineId: string, versionId: string) {
     requireAdmin(caller);
     return this.tx(caller, async (tx) => {
-      const [row] = await tx`update routine_versions set state='rejected'
+      if (caller.cli) {
+        await tx`select id from routine_versions where id=${versionId} and routine_id=${routineId} for update`;
+        await recheckElevation(tx, caller.cli, 'admin');
+      }
+      const [row] = await tx`update routine_versions set state='rejected',
+        rejected_by=${caller.cli ? tx.json(jsonValue(caller.actor)) : null}
         where id=${versionId} and routine_id=${routineId} and state='proposed' returning id`;
       if (!row) throw notFound('routine proposal');
       return { routineId, versionId, state: 'rejected' };
@@ -488,8 +494,10 @@ export class Routines {
         RoutineRow[]
       >`select * from routines where id=${routineId} for no key update`;
       if (!routine) throw notFound('routine');
+      await recheckElevation(tx, caller.cli, 'admin');
       if (routine.status !== 'active') return { routineId, status: routine.status };
       await pauseRoutine(tx, routineId, 'paused', 'paused');
+      await tx`update routines set state_changed_by=${caller.cli ? tx.json(jsonValue(caller.actor)) : null} where id=${routineId}`;
       return { routineId, status: 'paused' };
     });
   }
@@ -505,6 +513,7 @@ export class Routines {
         RoutineRow[]
       >`select * from routines where id=${routineId} for no key update`;
       if (!routine) throw notFound('routine');
+      await recheckElevation(tx, caller.cli, 'admin');
       if (!['paused', 'needs_attention'].includes(routine.status))
         throw new AppError(409, 'not_paused', 'only a paused routine can be resumed');
       const [version] = await tx<VersionRow[]>`
@@ -519,6 +528,16 @@ export class Routines {
         );
       let activeVersion = version.id;
       if (!(await stillAdmin(tx, caller.workspaceId, version.approver_user_id))) {
+        if (caller.cli)
+          throw new AppError(
+            409,
+            'approval_required',
+            'Review and approve the routine in Retainer.',
+            {
+              routineId,
+              versionId: version.id,
+            },
+          );
         activeVersion = await this.copyVersionForApproval(
           tx,
           caller.workspaceId,
@@ -532,6 +551,7 @@ export class Routines {
       }
       const zone = await workspaceZone(tx);
       await this.activate(tx, caller.workspaceId, routineId, version.manifest, zone, activeVersion);
+      await tx`update routines set state_changed_by=${caller.cli ? tx.json(jsonValue(caller.actor)) : null} where id=${routineId}`;
       return { routineId, status: 'active' };
     });
   }
@@ -830,6 +850,7 @@ export type RoutineRow = {
   name: string;
   description: string;
   status: string;
+  state_changed_by: Actor | null;
   paused_reason: string | null;
   paused_at: Date | null;
   active_version_id: string | null;
@@ -857,6 +878,7 @@ export type VersionRow = {
   tool_contracts: Record<string, ToolContract>;
   built_by: Actor;
   approved_by: Actor | null;
+  rejected_by: Actor | null;
   approver_user_id: string | null;
   approved_at: Date | null;
   created_at: Date;
@@ -916,6 +938,7 @@ function presentVersion(version: VersionRow, names: FactsNames) {
     facts,
     builtBy: version.built_by,
     approvedBy: version.approved_by,
+    ...(version.rejected_by ? { rejectedBy: version.rejected_by } : {}),
     approvedAt: version.approved_at?.toISOString() ?? null,
     createdAt: version.created_at.toISOString(),
   };
@@ -929,6 +952,7 @@ function presentRoutine(row: RoutineRow, version: VersionRow | undefined, caps: 
     description: row.description,
     status: row.status,
     pausedReason: row.paused_reason,
+    ...(row.state_changed_by ? { stateChangedBy: row.state_changed_by } : {}),
     pausedAt: row.paused_at?.toISOString() ?? null,
     // A paused routine fires nothing; resuming sets its next time afresh.
     nextFireAt: row.status === 'active' ? (row.next_fire_at?.toISOString() ?? null) : null,

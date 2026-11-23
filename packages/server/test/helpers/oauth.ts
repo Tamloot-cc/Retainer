@@ -82,6 +82,7 @@ export async function authorize(
     redirectUri?: string;
     scope?: string;
     resource?: string;
+    state?: string;
   },
 ): Promise<OAuthFlow> {
   const clientId = input.clientId ?? CLAUDE_CLIENT_ID;
@@ -92,7 +93,7 @@ export async function authorize(
     response_type: 'code',
     client_id: clientId,
     redirect_uri: redirectUri,
-    state: randomBytes(8).toString('hex'),
+    state: input.state ?? randomBytes(8).toString('hex'),
     code_challenge: challenge,
     code_challenge_method: 'S256',
     resource: input.resource ?? `${ORIGIN}/mcp`,
@@ -152,8 +153,9 @@ export async function connect(
   accounts: Hono,
   input: {
     cookie: string;
-    workspaceId: string;
+    workspaceId?: string;
     scope?: string;
+    state?: string;
     clientId?: string;
     redirectUri?: string;
     /** The MCP address the app connects to; the base `/mcp` by default. */

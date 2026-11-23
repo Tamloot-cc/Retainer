@@ -42,7 +42,7 @@ export function firstBootBanner(boot: FirstBoot): string {
     `   ${boot.key}`,
     '',
     ' Create keys for your agents with:',
-    '   retainer key create --workspace default --name <name> \\',
+    '   retainer-ops key create --workspace default --name <name> \\',
     '     --actor agent:<id> --scopes read,write,schema:write',
     '================================================================',
     '',

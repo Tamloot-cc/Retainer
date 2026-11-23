@@ -1,4 +1,5 @@
 import type { Actor } from '@retainer/shared';
+import { recheckElevation } from '../db/cli.js';
 import type { AssertionStatus } from '../db/schema.js';
 import type { Tx } from '../db/tx.js';
 import { AppError, notFound, requireUser } from '../errors.js';
@@ -72,6 +73,7 @@ export async function acceptAssertion(
   // Lock the assertion after its record: rejection locks this row too.
   // Without this lock, rejection could commit between our read and final update.
   const pending = await loadPending(tx, context.workspaceId, assertionId, true);
+  await recheckElevation(tx, context.cli, 'editor');
   if (pending.status !== 'pending_review') {
     throw new AppError(409, 'not_pending', `assertion is ${pending.status}, not pending_review`);
   }
@@ -125,6 +127,7 @@ export async function rejectAssertion(
     from field_assertions
     where id = ${assertionId} and workspace_id = ${context.workspaceId}
     for update`;
+  await recheckElevation(tx, context.cli, 'editor');
   if (!row) throw notFound('assertion', { id: assertionId });
   if (row.status !== 'pending_review') {
     throw new AppError(409, 'not_pending', `assertion is ${row.status}, not pending_review`);

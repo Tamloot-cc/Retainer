@@ -22,6 +22,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { ACCOUNT_COOKIE_PREFIX } from '../auth/account-session.js';
 import {
   AUTH_BASE_PATH,
+  cliOAuthSettings,
   GENERATION_CLAIM,
   GRANT_CLAIM,
   INSTALLATION_CLAIM,
@@ -30,6 +31,7 @@ import {
   WORKSPACE_CLAIM,
 } from '../auth/oauth-token.js';
 import { type AccountsConfig, signInProviders } from '../config.js';
+import { CLI_CLIENT_ID, CLI_LOGIN_CLAIM } from '../db/cli.js';
 import type { Sql } from '../db/client.js';
 import { isUuid } from '../db/ids.js';
 import {
@@ -50,6 +52,7 @@ import {
 } from '../db/schema.js';
 import { AGENT_OAUTH_SCOPES, APP_SIGN_IN_SCOPES, isAppSignInScopes } from './extensions.js';
 import { microsoftAccountKey, microsoftProvider } from './microsoft.js';
+import { authorizePasskeyRegistration, proofSchema } from './passkey-changes.js';
 import { linkPinnedResource, pinnedRequest } from './pinned.js';
 
 /**
@@ -121,6 +124,8 @@ export type GoogleOverrides = Pick<GoogleOptions, 'verifyIdToken' | 'getUserInfo
 export type AuthOptions = {
   /** A connection as the control role. */
   sql: Sql;
+  /** Separate raw connection for writes from a Better Auth hook. */
+  controlSql?: Sql;
   config: AccountsConfig;
   /** Where people reach Retainer, e.g. https://retainer.example. */
   publicOrigin: string;
@@ -155,7 +160,7 @@ export type AccountSession = {
     image?: string | null | undefined;
     disabledAt?: Date | null | undefined;
   };
-  session: { id: string; expiresAt: Date };
+  session: { id: string; expiresAt: Date; createdAt: Date };
 };
 
 /** What the rest of `accounts` uses of Better Auth. */
@@ -241,6 +246,7 @@ function betterAuthFor(options: AuthOptions) {
   const origin = new URL(publicOrigin);
   const oauth = oauthSettings(publicOrigin);
   const restResource = installationOAuthSettings(publicOrigin).resource;
+  const cliResource = cliOAuthSettings(publicOrigin).resource;
   return betterAuth({
     appName: 'Retainer',
     baseURL: publicOrigin,
@@ -386,6 +392,30 @@ function betterAuthFor(options: AuthOptions) {
         origin: origin.origin,
         authenticatorSelection: { userVerification: 'required', residentKey: 'preferred' },
         schema: { passkey: { modelName: 'passkeys' } },
+        registration: {
+          afterVerification: async ({ ctx, verification, user, clientData }) => {
+            const proof = ctx.headers?.get('x-retainer-passkey-proof');
+            if (!proof) return;
+            const session = ctx.context.session?.session;
+            const credential = verification.registrationInfo?.credential;
+            try {
+              if (!session || !credential) throw new Error('missing passkey registration context');
+              await authorizePasskeyRegistration(
+                options.controlSql ?? sql,
+                { userId: user.id, sessionId: session.id },
+                proofSchema.parse(JSON.parse(proof)),
+                origin.origin,
+                credential,
+                clientData.response.attestationObject,
+              );
+            } catch {
+              throw new APIError('FORBIDDEN', {
+                code: 'PASSKEY_PROOF_REQUIRED',
+                message: 'Verify the change with an enrolled passkey and try again.',
+              });
+            }
+          },
+        },
       }),
       // Signs MCP access tokens: EdDSA keys, stored with the private half
       // encrypted. The API verifies with the public half (4.7).
@@ -441,6 +471,15 @@ function betterAuthFor(options: AuthOptions) {
         extensions: [
           {
             claims: {
+              accessToken: ({ resources, client }) => {
+                if (resources?.includes(cliResource) && client.clientId !== CLI_CLIENT_ID) {
+                  throw new APIError('BAD_REQUEST', {
+                    code: 'invalid_grant',
+                    message: 'The CLI resource requires the first-party client.',
+                  });
+                }
+                return {};
+              },
               // An app sign-in's ID token: who the person is in the workspace
               // and which installation they opened. Nothing else gets one.
               idToken: async ({ referenceId, client, user, scopes }) => {
@@ -462,24 +501,38 @@ function betterAuthFor(options: AuthOptions) {
             },
           },
         ],
-        customAccessTokenClaims: async ({ referenceId, resources }) => {
+        customAccessTokenClaims: async ({ referenceId, resources, user }) => {
           if (!referenceId || !isUuid(referenceId) || referenceId === NO_WORKSPACE)
             throw new Error('refusing to issue an access token without an approved reference');
           const [reference] = await sql<
             {
-              kind: 'person' | 'installation';
+              kind: 'person' | 'installation' | 'cli';
+              subject_id: string | null;
               workspace_id: string;
               credential_id: string | null;
               installation_id: string | null;
               generation: number | null;
               active: boolean;
             }[]
-          >`select kind,workspace_id,credential_id,installation_id,generation,active from retainer_oauth_reference(${referenceId}::uuid)`;
+          >`select kind,workspace_id,credential_id,installation_id,generation,subject_id,active from retainer_oauth_reference(${referenceId}::uuid)`;
           if (!reference?.active)
             throw new APIError('BAD_REQUEST', {
               code: 'invalid_grant',
               message: 'This grant is inactive; connect again.',
             });
+          if (resources?.includes(cliResource)) {
+            if (
+              resources.length !== 1 ||
+              reference.kind !== 'cli' ||
+              reference.subject_id !== user?.id
+            ) {
+              throw new APIError('BAD_REQUEST', {
+                code: 'invalid_grant',
+                message: 'The CLI resource requires a CLI login.',
+              });
+            }
+            return { [CLI_LOGIN_CLAIM]: referenceId };
+          }
           if (resources?.includes(restResource)) {
             if (
               resources.length !== 1 ||

@@ -143,7 +143,7 @@ describe('member quota', () => {
   });
 });
 
-describe('retainer org limit', () => {
+describe('retainer-ops org limit', () => {
   async function cli(...argv: string[]) {
     const out: string[] = [];
     const err: string[] = [];

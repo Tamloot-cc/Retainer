@@ -2,6 +2,7 @@ import { bindingWriteStampSchema } from '@retainer/extension';
 import type { MergeResult, MergeSuggestionDecision } from '@retainer/shared';
 import { FieldValueError, MULTI_VALUE_TYPES } from '@retainer/shared';
 import { z } from 'zod';
+import { recheckElevation } from '../db/cli.js';
 import type { Tx } from '../db/tx.js';
 import { AppError, notFound, requireUser } from '../errors.js';
 import { moveRoutineRecord } from '../routine-runtime/merge.js';
@@ -117,6 +118,7 @@ export async function mergeRecords(
   context: WriteContext,
   survivorId: string,
   input: MergeInput,
+  suggestionId?: string,
 ): Promise<MergeResult> {
   requireUser(context.actor, 'merge records');
   const { workspaceId } = context;
@@ -125,6 +127,9 @@ export async function mergeRecords(
   }
   const a = await resolveRecordId(tx, workspaceId, survivorId);
   const b = await resolveRecordId(tx, workspaceId, input.recordId);
+  if (suggestionId && (a !== survivorId || b !== input.recordId)) {
+    throw new AppError(409, 'not_pending', 'The suggested records have already changed.');
+  }
   if (a === b) {
     if (a !== survivorId) {
       throw new AppError(
@@ -181,6 +186,17 @@ export async function mergeRecords(
 
   // Inbound relations: lock their records, then point them at A. The
   // winning assertion stays the same row, so its edge simply follows it.
+  const checkDecision = async () => {
+    if (!suggestionId) return;
+    const [suggestion] = await tx`
+      select id from merge_suggestions where id = ${suggestionId}
+        and workspace_id = ${workspaceId} and record_a_id = ${pair[0]}
+        and record_b_id = ${pair[1]} and status = 'pending'
+      for update`;
+    if (!suggestion)
+      throw new AppError(409, 'not_pending', 'This suggestion has already been decided.');
+    await recheckElevation(tx, context.cli, 'editor');
+  };
   let inboundIds: string[] = [];
   const relationFieldIds = inboundRelationFields(context.schema, object);
   if (relationFieldIds.length > 0) {
@@ -194,6 +210,7 @@ export async function mergeRecords(
     inboundIds = inbound.map((r) => r.record_id).sort();
     await lockRecordsForUpdate(tx, workspaceId, inboundIds);
     for (const id of inboundIds) await context.changes?.capture(tx, id);
+    await checkDecision();
     await tx`
       update field_assertions set value = ${tx.json(a)}
       where workspace_id = ${workspaceId} and field_id = any(${relationFieldIds}::uuid[])
@@ -217,6 +234,8 @@ export async function mergeRecords(
       update record_links set target_record_id = ${a}
       where workspace_id = ${workspaceId} and target_record_id = ${b}
         and source_record_id <> ${b}`;
+  } else {
+    await checkDecision();
   }
 
   // Move B's claims to A and release its identifiers and edges.
@@ -295,6 +314,7 @@ export async function dismissMergeSuggestion(
     select status from merge_suggestions
     where id = ${id} and workspace_id = ${context.workspaceId}
     for update`;
+  await recheckElevation(tx, context.cli, 'editor');
   if (!row) throw notFound('merge suggestion', { id });
   if (row.status !== 'pending') {
     throw new AppError(409, 'not_pending', `merge suggestion is ${row.status}, not pending`);
@@ -304,4 +324,30 @@ export async function dismissMergeSuggestion(
       decided_at = clock_timestamp()
     where id = ${id}`;
   return { id, status: 'dismissed' };
+}
+
+/** Merge only a suggestion's original pair, preserving the ordinary winner rules. */
+export async function mergeSuggestedRecords(
+  tx: Tx,
+  context: WriteContext,
+  id: string,
+  keep: string,
+): Promise<MergeResult> {
+  requireUser(context.actor, 'decide merge suggestions');
+  const [row] = await tx<{ record_a_id: string; record_b_id: string; status: string }[]>`
+    select record_a_id, record_b_id, status from merge_suggestions
+    where id = ${id} and workspace_id = ${context.workspaceId}`;
+  if (!row) throw notFound('merge suggestion', { id });
+  if (row.status !== 'pending')
+    throw new AppError(409, 'not_pending', 'This suggestion has already been decided.');
+  if (keep !== row.record_a_id && keep !== row.record_b_id)
+    throw new AppError(422, 'invalid_merge', 'Keep must name one of the two suggested records.');
+  const recordId = keep === row.record_a_id ? row.record_b_id : row.record_a_id;
+  try {
+    return await mergeRecords(tx, context, keep, { recordId }, id);
+  } catch (error) {
+    if (error instanceof MergeRaceError)
+      throw new AppError(409, 'not_pending', 'The suggested records have already changed.');
+    throw error;
+  }
 }

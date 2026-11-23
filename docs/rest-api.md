@@ -51,7 +51,7 @@ Deleting a workspace (`DELETE /account/workspaces/:id` with its name as
 `{ "name": "…" }`, for an organization owner or admin) takes effect at once:
 every request to it gets `404`, and its keys and connected apps stop working.
 The data is removed for good 7 days later. Until then an operator can undo it
-with `retainer workspace restore`.
+with `retainer-ops workspace restore`.
 
 ### OAuth
 

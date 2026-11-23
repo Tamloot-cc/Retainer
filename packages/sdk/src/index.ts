@@ -13,6 +13,7 @@ import type {
   ExtensionOAuthClient,
   ExtensionPreview,
 } from '@retainer/extension';
+import type { OrganizationRole, WorkspaceRole } from '@retainer/shared';
 import { isMaintenance, maintenanceFetch } from './maintenance.js';
 
 export { isMaintenance, retryAfterMs, waitForRetry } from './maintenance.js';
@@ -85,6 +86,9 @@ export type RetainerClientOptions = {
   baseUrl: string;
   /** Bearer credential: workspace/installation key or a REST installation OAuth access token. */
   apiKey?: string;
+  /** A CLI access token issued after browser consent. */
+  accessToken?: string;
+  approval?: string;
   credentials?: 'omit' | 'same-origin' | 'include';
   /**
    * The workspace ID a signed-in person's cookie requests go to. A person
@@ -137,13 +141,20 @@ export class RetainerClient {
     this.fetchImpl = (input, init) => maintenanceFetch(fetcher, input, init);
   }
   protected headers(): Record<string, string> {
+    if (this.options.accessToken) {
+      return {
+        authorization: `Bearer ${this.options.accessToken}`,
+        ...(this.options.workspace ? { 'X-Retainer-Workspace': this.options.workspace } : {}),
+        ...(this.options.approval ? { 'X-Retainer-Approval': this.options.approval } : {}),
+      };
+    }
     if (this.options.apiKey) return { authorization: `Bearer ${this.options.apiKey}` };
     return this.options.workspace
       ? { 'X-Retainer-Client': 'web', 'X-Retainer-Workspace': this.options.workspace }
       : { 'X-Retainer-Client': 'web' };
   }
   /** `isResult` lets an error status whose body is a result come back as one. */
-  private async request<T>(
+  protected async request<T>(
     path: string,
     init: RequestInit = {},
     isResult?: (body: unknown) => boolean,
@@ -157,6 +168,7 @@ export class RetainerClient {
         ...init.headers,
       },
     });
+    if (response.status === 204) return undefined as T;
     const body = (await response.json()) as {
       error?: { code?: string; message?: string; details?: Record<string, unknown> };
     };
@@ -176,11 +188,11 @@ export class RetainerClient {
     for (const [k, v] of Object.entries(params)) if (v !== undefined) qs.set(k, String(v));
     return { path: `${path}${qs.size ? `?${qs}` : ''}`, signal };
   }
-  private get<T>(path: string, params: Record<string, unknown> = {}, signal?: AbortSignal) {
+  protected get<T>(path: string, params: Record<string, unknown> = {}, signal?: AbortSignal) {
     const q = this.query(path, params, signal);
     return this.request<T>(q.path, { signal });
   }
-  private send<T>(
+  protected send<T>(
     method: string,
     path: string,
     body?: unknown,
@@ -353,6 +365,9 @@ export class RetainerClient {
       input,
       signal,
     );
+  }
+  mergeSuggestion(id: string, keep: string) {
+    return this.post<MergeResult>(`/v1/review/merges/${encodeURIComponent(id)}/merge`, { keep });
   }
   dismissMergeSuggestion(id: string) {
     return this.post<MergeSuggestionDecision>(
@@ -1372,5 +1387,131 @@ export class RetainerClient {
   }
   setTimeZone(timeZone: string) {
     return this.send<{ timeZone: string }>('PUT', '/v1/workspace/time-zone', { timeZone });
+  }
+}
+
+export type CliApprovalRequest = { id: string; url: string; expiresAt: string };
+export type CliApproval = {
+  id: string;
+  kind: 'elevation' | 'action';
+  status: 'pending' | 'approved' | 'denied' | 'used' | 'ended' | 'expired';
+  expiresAt: string;
+  resultId: string | null;
+  workspaceId?: string;
+  organizationId?: string;
+  targetName: string;
+};
+export type CliWorkspace = { id: string; slug: string; name: string; role: WorkspaceRole };
+export type CliOrganization = {
+  id: string;
+  name: string;
+  role: OrganizationRole;
+  workspaces: CliWorkspace[];
+};
+export type CliAccount = {
+  user: { id: string; email: string; name: string };
+  organizations: CliOrganization[];
+  elevations: CliApproval[];
+};
+type Member = {
+  userId: string;
+  email: string;
+  name: string;
+  role: OrganizationRole | WorkspaceRole;
+};
+type Connection = { id: string; workspace: Pick<CliWorkspace, 'id' | 'slug' | 'name'> | null };
+const ws = (id: string) => `/account/workspaces/${encodeURIComponent(id)}`;
+const org = (id: string) => `/account/organizations/${encodeURIComponent(id)}`;
+const approval = (id: string) => `/account/cli/approvals/${encodeURIComponent(id)}`;
+
+export class RetainerAccountClient extends RetainerClient {
+  account() {
+    return this.get<CliAccount>('/account');
+  }
+  organization(id: string) {
+    return this.get<CliOrganization & { members: Member[] }>(org(id));
+  }
+  invitations(id: string) {
+    return this.get<{ invitations: unknown[] }>(`${org(id)}/invitations`);
+  }
+  invite(
+    id: string,
+    input: { email: string; role: string; workspaces: { workspaceId: string; role: string }[] },
+  ) {
+    return this.send<{ id: string; link: string; expiresAt: string }>(
+      'POST',
+      `${org(id)}/invitations`,
+      input,
+    );
+  }
+  revokeInvitation(id: string, invitationId: string) {
+    return this.send<void>('DELETE', `${org(id)}/invitations/${encodeURIComponent(invitationId)}`);
+  }
+  members(id: string) {
+    return this.get<{ members: Member[] }>(`${ws(id)}/members`);
+  }
+  setMemberRole(
+    target: { workspaceId: string } | { organizationId: string },
+    userId: string,
+    role: string,
+  ) {
+    const workspace = 'workspaceId' in target;
+    return this.send<void>(
+      workspace ? 'PUT' : 'PATCH',
+      `${workspace ? ws(target.workspaceId) : org(target.organizationId)}/members/${encodeURIComponent(userId)}`,
+      { role },
+    );
+  }
+  removeMember(target: { workspaceId: string } | { organizationId: string }, userId: string) {
+    return this.send<void>(
+      'DELETE',
+      `${'workspaceId' in target ? ws(target.workspaceId) : org(target.organizationId)}/members/${encodeURIComponent(userId)}`,
+    );
+  }
+  createWorkspace(input: { name: string; organizationId: string; template?: string }) {
+    return this.send<{ workspace: CliWorkspace }>('POST', '/account/workspaces', input);
+  }
+  renameWorkspace(id: string, name: string) {
+    return this.send<CliWorkspace>('PATCH', ws(id), { name });
+  }
+  deleteWorkspace(id: string, name: string) {
+    return this.send<{ id: string; purgeAfter: string }>('DELETE', ws(id), { name });
+  }
+  keys(id: string) {
+    return this.get<{ keys: unknown[] }>(`${ws(id)}/keys`);
+  }
+  createKey(id: string, name: string, access: string) {
+    return this.send<{ id: string; key: string }>('POST', `${ws(id)}/keys`, { name, access });
+  }
+  revokeKey(id: string, keyId: string) {
+    return this.send<void>('DELETE', `${ws(id)}/keys/${encodeURIComponent(keyId)}`);
+  }
+  connections(id?: string) {
+    return this.get<{ connections: Connection[] }>(
+      id ? `${ws(id)}/connections` : '/account/connections',
+    );
+  }
+  disconnect(id: string, workspaceId?: string) {
+    return this.send<void>(
+      'DELETE',
+      `${workspaceId ? ws(workspaceId) : '/account'}/connections/${encodeURIComponent(id)}`,
+    );
+  }
+  startElevation(input: {
+    workspaceId?: string;
+    organizationId?: string;
+    minutes?: number;
+    reason?: string;
+  }) {
+    return this.send<CliApprovalRequest>('POST', '/account/cli/approvals', input);
+  }
+  approval(id: string) {
+    return this.get<CliApproval>(approval(id));
+  }
+  endElevation(id: string) {
+    return this.send<void>('POST', `${approval(id)}/end`);
+  }
+  logout() {
+    return this.send<void>('DELETE', '/account/cli/login');
   }
 }

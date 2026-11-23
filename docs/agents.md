@@ -14,7 +14,7 @@ Claude's web app, can connect without a key
 ([below](#connecting-claudes-web-app-over-oauth)).
 
 ```sh
-retainer key create --workspace acme --name "Inbox agent" \
+retainer-ops key create --workspace acme --name "Inbox agent" \
   --actor agent:inbox --scopes read,write,schema:write
 ```
 
@@ -332,3 +332,5 @@ Things worth knowing:
 Give each agent its own key. Every write is attributed to the agent that made
 it; between agents the most recent observation wins, and the full history of
 each field stays available through the REST API and the web app.
+
+For workspace administration and human review decisions, see the [Retainer CLI guide](cli.md).

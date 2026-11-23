@@ -102,7 +102,7 @@ const key = async (name, actor, scopes) =>
       'exec',
       '-T',
       'retainer',
-      'retainer',
+      'retainer-ops',
       'key',
       'create',
       '--workspace',

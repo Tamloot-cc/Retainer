@@ -5,6 +5,7 @@ import {
   type SchemaOwner,
 } from '@retainer/shared';
 import { canApproveDestructive } from '../caller.js';
+import { type CliDecision, recheckElevation } from '../db/cli.js';
 import type { ApiKeyScope, AppliedTemplate, SchemaChangeStatus } from '../db/schema.js';
 import { jsonValue, lockPrivacyShared, lockSchemaExclusive, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
@@ -300,6 +301,7 @@ export async function decideSchemaChange(
     actor: Actor;
     scopes: readonly ApiKeyScope[];
     decision: 'approve' | 'reject';
+    cli?: CliDecision;
   },
 ): Promise<SchemaChangeResult> {
   const { workspaceId, changeId, actor } = input;
@@ -311,6 +313,7 @@ export async function decideSchemaChange(
   const [row] = await tx<ChangeRow[]>`
     select * from schema_changes where id = ${changeId} and workspace_id = ${workspaceId}
     for update`;
+  await recheckElevation(tx, input.cli, 'admin');
   if (!row) throw notFound('schema change');
   if (row.status !== 'proposed') {
     throw new AppError(409, 'already_decided', `this change is already ${row.status}`);

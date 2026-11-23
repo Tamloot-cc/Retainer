@@ -51,9 +51,68 @@ const hostOf = (url: string | null): string | null => {
 /** /app/oauth/consent: which workspace the app may use, and allow or cancel. */
 export function OAuthConsent({ account }: { account: Account }) {
   const resources = new URLSearchParams(window.location.search).getAll('resource');
+  if (resources.length === 1 && resources[0] === `${window.location.origin}/cli`)
+    return <CliConsent account={account} />;
   if (resources.length === 1 && resources[0] === `${window.location.origin}/v1`)
     return <InstallationConsent account={account} />;
   return <PersonConsent account={account} />;
+}
+
+function CliConsent({ account }: { account: Account }) {
+  const query = new URLSearchParams(window.location.search);
+  const encoded = query.get('state')?.split('.')[1];
+  let machine = 'this computer';
+  if (encoded) {
+    try {
+      machine = new TextDecoder().decode(
+        Uint8Array.from(atob(encoded.replaceAll('-', '+').replaceAll('_', '/')), (c) =>
+          c.charCodeAt(0),
+        ),
+      );
+    } catch {
+      // The server verifies the signed request before recording the login.
+    }
+  }
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState('');
+  async function answer(accept: boolean) {
+    setBusy(true);
+    setError('');
+    try {
+      const { url } = await accountApi.oauthConsent({
+        oauthQuery: window.location.search.slice(1),
+        accept,
+      });
+      window.location.assign(url);
+    } catch (failure) {
+      setError((failure as Error).message);
+      setBusy(false);
+    }
+  }
+  return (
+    <AccountFrame
+      title={`Connect the Retainer CLI on ${machine}`}
+      account={account}
+      signOutTo={window.location.pathname + window.location.search}
+    >
+      <Stack>
+        <p>It works as an agent in every workspace you can open. It can read within your role.</p>
+        <p>
+          To let it make decisions for you, approve a short window from{' '}
+          <code>retainer elevate</code>.
+        </p>
+        {error ? <Notice error>{error}</Notice> : null}
+        <div className="flex gap-2">
+          <Button variant="outline" disabled={busy} onClick={() => void answer(false)}>
+            Deny
+          </Button>
+          <Button disabled={busy} onClick={() => void answer(true)}>
+            Allow
+          </Button>
+        </div>
+      </Stack>
+    </AccountFrame>
+  );
 }
 
 function PersonConsent({ account }: { account: Account }) {

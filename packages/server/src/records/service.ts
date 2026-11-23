@@ -44,7 +44,13 @@ import {
 import type { FieldState } from '../schema/types.js';
 import { type AggregateInput, aggregateRecords } from './aggregate.js';
 import { identifiersFor, lookupValue } from './derive.js';
-import { dismissMergeSuggestion, type MergeInput, MergeRaceError, mergeRecords } from './merge.js';
+import {
+  dismissMergeSuggestion,
+  type MergeInput,
+  MergeRaceError,
+  mergeRecords,
+  mergeSuggestedRecords,
+} from './merge.js';
 import { EVENT_QUERY_OBJECT, type QueryInput, queryEvents, queryRecords } from './query.js';
 import { getRecord, type PresentedRecord } from './read.js';
 import { acceptAssertion, type DecisionResult, rejectAssertion } from './review.js';
@@ -123,6 +129,7 @@ export async function withWrite<T>(
             select settings from workspaces where id = ${caller.workspaceId}`;
           const changes = await ChangeCollector.forCaller(tx, caller, schema);
           const result = await fn(tx, {
+            ...(caller.cli ? { cli: caller.cli } : {}),
             workspaceId: caller.workspaceId,
             actor: caller.actor,
             ...(caller.run ? { run: caller.run } : {}),
@@ -779,6 +786,10 @@ export async function mergeRecord(
       throw new AppError(409, 'merge_conflict', 'the records changed during the merge; retry');
     }
   }
+}
+
+export function mergeSuggestion(sql: Sql, caller: Caller, id: string, keep: string) {
+  return withWrite(sql, caller, (tx, context) => mergeSuggestedRecords(tx, context, id, keep));
 }
 
 export async function dismissSuggestion(
