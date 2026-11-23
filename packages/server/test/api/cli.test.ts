@@ -299,3 +299,157 @@ it('does not let dynamic registration link the CLI resource', async () => {
     await db.owner`select client_id from oauth_client_resources where resource_id=${`${ORIGIN}/cli`}`,
   ).toEqual([{ client_id: 'retainer-cli' }]);
 });
+
+it('closes workspace windows when roles change and organization windows cannot substitute', async () => {
+  const t = await fixture();
+  const viewer = await app.signIn({ email: 'cli-viewer@example.test', name: 'Viewer' });
+  await setOrganizationMember(db.owner, {
+    organization: t.workspace.organizationId,
+    email: 'cli-viewer@example.test',
+    role: 'member',
+  });
+  const member = `/account/workspaces/${t.workspace.id}/members/${viewer.userId}`;
+  const changeRole = (role: string) => t.request(member, 'PUT', { role }, t.userHeaders);
+  expect((await changeRole('admin')).status).toBe(204);
+  const granted = await connect(app.accounts, {
+    cookie: viewer.cookie,
+    clientId: 'retainer-cli',
+    redirectUri: redir,
+    scope: 'read offline_access',
+    resource: `${ORIGIN}/cli`,
+    state: `${randomBytes(32).toString('base64url')}.VGVzdCBNYWM`,
+  });
+  const headers = { ...t.cliHeaders, authorization: `Bearer ${granted.access_token}` };
+  const workspace = `/account/workspaces/${t.workspace.id}`;
+  const start = async (
+    target: { workspaceId: string } | { organizationId: string },
+    owner = false,
+  ) => {
+    const response = await t.request(
+      '/account/cli/approvals',
+      'POST',
+      target,
+      owner ? { authorization: t.cliHeaders.authorization } : headers,
+    );
+    expect(response.status).toBe(201);
+    const { id } = (await response.json()) as { id: string };
+    const path = `/account/cli/approvals/${id}`;
+    const approved = await t.request(
+      `${path}/decide`,
+      'POST',
+      { allow: true },
+      owner ? t.userHeaders : { ...t.userHeaders, cookie: viewer.cookie },
+    );
+    expect(approved.status).toBe(200);
+    return path;
+  };
+  await start({ organizationId: t.workspace.organizationId }, true);
+  expect(
+    await (await t.request(workspace, 'PATCH', { name: 'Wrong target' })).json(),
+  ).toMatchObject({
+    error: { code: 'elevation_required' },
+  });
+
+  const approval = await start({ workspaceId: t.workspace.id });
+  expect((await t.request(workspace, 'PATCH', { name: 'Allowed' }, headers)).ok).toBe(true);
+  expect((await changeRole('viewer')).status).toBe(204);
+  expect(await (await t.request(approval, 'GET', undefined, headers)).json()).toMatchObject({
+    status: 'ended',
+  });
+  await start({ workspaceId: t.workspace.id });
+  expect(
+    (await t.request(workspace, 'PATCH', { name: 'Viewer cannot rename' }, headers)).status,
+  ).toBe(403);
+  expect((await changeRole('admin')).status).toBe(204);
+  expect(
+    await (
+      await t.request(workspace, 'PATCH', { name: 'Old window cannot revive' }, headers)
+    ).json(),
+  ).toMatchObject({
+    error: { code: 'elevation_required' },
+  });
+});
+
+it('requires action-specific confirmation for owner invitations and workspace deletion', async () => {
+  const t = await fixture();
+  const headers = { authorization: t.cliHeaders.authorization };
+  const invite = `/account/organizations/${t.workspace.organizationId}/invitations`;
+  const workspace = `/account/workspaces/${t.workspace.id}`;
+  for (const [method, path, args] of [
+    ['POST', invite, { email: 'owner@example.test', role: 'owner', workspaces: [] }],
+    ['DELETE', workspace, { name: t.workspace.name }],
+  ] as const) {
+    const result = await t.request(path, method, args, headers);
+    const { error } = (await result.json()) as { error: { code: string; details: { id: string } } };
+    expect(error.code).toBe('confirmation_required');
+    expect(
+      (
+        await t.request(
+          `/account/cli/approvals/${error.details.id}/decide`,
+          'POST',
+          { allow: true },
+          t.userHeaders,
+        )
+      ).status,
+    ).toBe(200);
+    const confirmation = { ...headers, 'x-retainer-approval': error.details.id };
+    expect((await t.request(path, method, args, confirmation)).ok).toBe(true);
+  }
+});
+
+it('keeps explicitly excluded routes closed even after workspace elevation', async () => {
+  const t = await fixture();
+  const id = randomUUID();
+  const org = `/account/organizations/${t.workspace.organizationId}`;
+  const routine = `/v1/routines/${id}`;
+  const extension = `/v1/extensions/${id}`;
+  const routes = [
+    ['GET', '/account/auth/get-session'],
+    ['GET', '/account/providers'],
+    ['GET', '/account/oauth/client'],
+    ['POST', '/account/oauth/consent'],
+    ['POST', `/account/invitations/${id}/accept`],
+    ['PATCH', org],
+    ['DELETE', org],
+    ['POST', '/account/passkeys/change-options'],
+    ['POST', `/account/passkeys/${id}/remove`],
+    ['POST', `/account/cli/approvals/${id}/decide`],
+    ['POST', `/v1/records/${id}/merge`],
+    ['POST', `/v1/records/${id}/forget`],
+    ['POST', '/v1/events/move'],
+    ['POST', '/v1/schema/changes'],
+    ['POST', '/v1/objects/company/records'],
+    ['POST', '/v1/views'],
+    ['POST', `${routine}/versions/${id}/approve`],
+    ['POST', `${routine}/archive`],
+    ['POST', '/v1/extensions'],
+    ['POST', `${extension}/upgrade`],
+    ['POST', `${extension}/configure`],
+    ['POST', `${extension}/access`],
+    ['POST', `${extension}/turn-on`],
+    ['POST', `${extension}/enable`],
+  ] as const;
+  const assertDenied = async () => {
+    for (const [method, path] of routes) {
+      const result = await t.request(path, method, method === 'GET' ? undefined : {});
+      expect(result.status, `${method} ${path}`).toBe(403);
+    }
+  };
+  await assertDenied();
+  const response = await t.request('/account/cli/approvals', 'POST', {
+    workspaceId: t.workspace.id,
+  });
+  expect(response.status).toBe(201);
+  const approval = (await response.json()) as { id: string };
+  expect(
+    (
+      await t.request(
+        `/account/cli/approvals/${approval.id}/decide`,
+        'POST',
+        { allow: true },
+        t.userHeaders,
+      )
+    ).ok,
+  ).toBe(true);
+  await assertDenied();
+});

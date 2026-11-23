@@ -11,6 +11,7 @@ import { createApiKey } from '../../src/auth/keys.js';
 import { runMigrations } from '../../src/db/migrate.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { ORIGIN, startAccountsApp } from '../helpers/accounts.js';
+import { expectOtherCredentialDenied } from '../helpers/cli-routes.js';
 import { createTestDatabase } from '../helpers/db.js';
 import { extensionFixture, testCompanyBinding } from '../helpers/extensions.js';
 import {
@@ -181,6 +182,7 @@ it('keeps pre-CLI grants, API keys and workspace data live across migration', as
     ] as const) {
       const client = 'https://claude.ai/oauth/mcp-oauth-client-metadata';
       const renewed = await refresh(grant, resource, client);
+      await expectOtherCredentialDenied(app.accounts, app.api, renewed.access_token, workspace.id);
       for (const access of [grant.access_token, renewed.access_token]) {
         const response = await mcpCall(
           app.api,
@@ -193,6 +195,8 @@ it('keeps pre-CLI grants, API keys and workspace data live across migration', as
       }
     }
     const renewed = await refresh(installationGrant, rest, installationClient);
+    await expectOtherCredentialDenied(app.accounts, app.api, renewed.access_token, workspace.id);
+    await expectOtherCredentialDenied(app.accounts, app.api, legacyKey.key, workspace.id);
     const read = (headers: Record<string, string>) =>
       app.api.request(`${ORIGIN}/v1/records/${recordId}`, { headers });
     for (const access of [installationGrant.access_token, renewed.access_token])

@@ -214,3 +214,45 @@ test('a passkey verifies the exact approval and step-up protects passkey changes
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(page.getByText('You have no passkeys yet.')).toBeVisible();
 });
+
+test('first-passkey registration cannot commit after another passkey was enrolled', async ({
+  page,
+  context,
+  accounts,
+  browserName,
+}) => {
+  test.skip(browserName !== 'chromium', 'The virtual authenticator is Chromium only');
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('WebAuthn.enable');
+  await cdp.send('WebAuthn.addVirtualAuthenticator', {
+    options: {
+      protocol: 'ctap2',
+      transport: 'internal',
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+    },
+  });
+  await accounts.signIn(context, { email: 'cli-passkey-race@example.test', name: 'Test person' });
+  await page.goto(`${accounts.url}/app/account`);
+  await expect(page.getByText('You have no passkeys yet.')).toBeVisible();
+  const [user] = await accounts.owner<{ id: string }[]>`select id from users`;
+  if (!user) throw new Error('missing user');
+  // Pause the first registration after creation options and a browser
+  // attestation, then commit another first key before releasing the request.
+  await page.route(
+    '**/account/auth/passkey/verify-registration',
+    async (route) => {
+      await accounts.owner`insert into passkeys (name,user_id,credential_id,public_key,counter,device_type,backed_up)
+      values ('Other device', ${user.id}, 'b3RoZXItZGV2aWNl', 'AQID', 0, 'singleDevice', false)`;
+      await route.continue();
+    },
+    { times: 1 },
+  );
+  const response = page.waitForResponse((r) => r.url().endsWith('/passkey/verify-registration'));
+  await page.getByRole('button', { name: 'Add a passkey' }).click();
+  expect((await response).ok()).toBe(false);
+  await expect(page.getByText('Other device')).toBeVisible();
+  expect(await accounts.owner`select name from passkeys`).toEqual([{ name: 'Other device' }]);
+});

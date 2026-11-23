@@ -7,7 +7,9 @@ import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { createRecord, requireObject, withWrite } from '../../src/records/service.js';
 import { prepareValues } from '../../src/records/values.js';
 import { insertRecord, writeFields } from '../../src/records/write.js';
+import { startAccountsApp } from '../helpers/accounts.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
+import { expectOtherCredentialDenied } from '../helpers/cli-routes.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture, testCompanyBinding } from '../helpers/extensions.js';
 
@@ -75,6 +77,13 @@ async function setup(scopes: ('read' | 'write')[] = ['read', 'write']) {
   return { workspace: workspace.id, id, key: keys.admin, queue, lease, token };
 }
 describe('signed run credentials and transactional admission', () => {
+  it('refuses extension runs on the CLI account and decisions routes', async () => {
+    const { token, workspace } = await setup();
+    const whoami = await t.request('/v1/me', { key: token });
+    expect(whoami.status).toBe(200);
+    await expectOtherCredentialDenied(startAccountsApp(db).accounts, t.app, token, workspace);
+  });
+
   it('derives actor and scopes from the installation, keeps a five-minute bound and supports run-only checkpointing', async () => {
     const { id, token, key } = await setup();
     const decoded = decodeJwt(token.slice('rt_run_'.length));

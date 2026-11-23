@@ -172,6 +172,34 @@ const commands = [
   ],
 ] as const;
 
+const noArguments = new Set([
+  'login',
+  'logout',
+  'whoami',
+  'elevate',
+  'workspaces',
+  'members',
+  'invitations',
+  'keys',
+  'connections',
+  'review',
+  'schema-changes',
+  'extensions',
+  'routines',
+]);
+const twoArguments = new Set(['role', 'routine approve', 'routine reject']);
+
+function validateArguments(command: string, args: string[], options: Options) {
+  const expected = noArguments.has(command) ? 0 : twoArguments.has(command) ? 2 : 1;
+  if (args.length > expected || (args.length !== expected && command !== 'mcp-address'))
+    throw new Usage(`Check the arguments for retainer ${command} with retainer --help.`);
+  if (command === 'role' && !!options.org === !!options.workspace?.length)
+    throw new Usage('Choose either --org or --workspace for a role change.');
+  if (command === 'duplicates merge') required(options.keep, '--keep');
+  if (command === 'key create' && !['read', 'write', 'schema'].includes(options.access ?? ''))
+    throw new Usage('Choose --access read, write or schema.');
+}
+
 function parse(argv: string[]) {
   return parseArgs({
     args: argv,
@@ -308,6 +336,42 @@ async function waitFor(ctx: CommandContext, id: string) {
   return { data: { id, status: 'expired' }, exit: 5 };
 }
 
+async function inboxPages(api: RetainerAccountClient) {
+  const inbox = await api.review({ limit: 100 });
+  let pending = inbox.nextCursors.pendingAssertions;
+  let merges = inbox.nextCursors.mergeSuggestions;
+  while (pending || merges) {
+    const page = await api.review({
+      limit: 100,
+      ...(pending ? { pendingAssertionsCursor: pending } : {}),
+      ...(merges ? { mergeSuggestionsCursor: merges } : {}),
+    });
+    if (pending) {
+      inbox.pendingAssertions.push(...page.pendingAssertions);
+      pending = page.nextCursors.pendingAssertions;
+    }
+    if (merges) {
+      inbox.mergeSuggestions.push(...page.mergeSuggestions);
+      merges = page.nextCursors.mergeSuggestions;
+    }
+  }
+  return inbox;
+}
+
+async function proposedChanges(api: RetainerAccountClient) {
+  const result = await api.schemaChanges({ status: 'proposed', limit: 100 });
+  while (result.nextCursor) {
+    const page = await api.schemaChanges({
+      status: 'proposed',
+      limit: 100,
+      cursor: result.nextCursor,
+    });
+    result.changes.push(...page.changes);
+    result.nextCursor = page.nextCursor;
+  }
+  return result;
+}
+
 async function getReview(ctx: CommandContext, id?: string) {
   const account = await ctx.account();
   const workspaces = ctx.explicitWorkspace()
@@ -337,7 +401,12 @@ async function getReview(ctx: CommandContext, id?: string) {
         ...(cursor ? { mergeSuggestionsCursor: cursor } : {}),
       });
       const suggestion = page.mergeSuggestions.find((entry) => entry.id === id);
-      if (suggestion) return { workspace, suggestion };
+      if (suggestion)
+        return {
+          workspace,
+          suggestion,
+          records: await Promise.all(suggestion.recordIds.map((recordId) => api.record(recordId))),
+        };
       cursor = page.nextCursors.mergeSuggestions ?? undefined;
       if (!cursor) break;
     }
@@ -348,9 +417,12 @@ async function getReview(ctx: CommandContext, id?: string) {
       workspaces.map(async (workspace) => {
         const api = await ctx.client(workspace);
         const [inbox, schemaChanges, routines, extensions] = await Promise.all([
-          api.review({ limit: 100 }),
-          api.schemaChanges({ status: 'proposed', limit: 100 }),
-          api.routines(),
+          inboxPages(api),
+          proposedChanges(api),
+          api.routines().catch((error: unknown) => {
+            if (error instanceof RetainerApiError && error.status === 404) return { routines: [] };
+            throw error;
+          }),
           api.extensions(),
         ]);
         return {
@@ -706,7 +778,9 @@ async function main(argv: string[]) {
         'https://retainer.tamloot.cc',
     );
     ctx = new CommandContext(server, parsed.values, file.servers[server]?.workspace);
-    const result = await execute(ctx, command, pair ? tail : parsed.positionals.slice(1));
+    const args = pair ? tail : parsed.positionals.slice(1);
+    validateArguments(command, args, parsed.values);
+    const result = await execute(ctx, command, args);
     print(result.data, json);
     return result.exit ?? 0;
   } catch (error) {
