@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "Retainer's browser-authenticated administration CLI.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tamloot-cc/Retainer.git",
+    "directory": "packages/cli"
+  },
   "type": "module",
   "engines": {
     "node": ">=24"

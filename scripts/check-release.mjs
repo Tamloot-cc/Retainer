@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Checks that every workspace package has the same version and, given a tag
-// (`v0.1.0`), that it matches the tag; that every package `pnpm publish`
-// would publish (not `private`) is MIT; and that CHANGELOG.md covers the
-// version. In GitHub Actions it also writes `version` to the step outputs.
-// Used by the release workflow and `pnpm release:check [tag]`.
+// (`v0.1.0`), that it matches the tag; that every package that would be
+// published (not `private`) is MIT and names this repository; and that
+// CHANGELOG.md covers the version. In GitHub Actions it also writes `version`
+// to the step outputs. Used by the release workflow and
+// `pnpm release:check [tag]`.
 import { appendFileSync, readdirSync, readFileSync } from 'node:fs';
 
 const root = new URL('../', import.meta.url);
@@ -24,6 +25,14 @@ for (const pkg of packages) {
   if (pkg.version !== version) problems.push(`${pkg.path} is ${pkg.version}, expected ${version}`);
   if (!pkg.private && pkg.license !== 'MIT') {
     problems.push(`${pkg.name} would be published but is ${pkg.license}, not MIT`);
+  }
+  // npm rejects a provenance publish whose repository doesn't match the workflow's.
+  const repo = 'git+https://github.com/Tamloot-cc/Retainer.git';
+  const dir = pkg.path.replace(/\/package\.json$/, '');
+  if (!pkg.private && (pkg.repository?.url !== repo || pkg.repository?.directory !== dir)) {
+    problems.push(
+      `${pkg.name} would be published but its repository is not ${repo} (directory ${dir})`,
+    );
   }
 }
 // The whole heading line, as the release workflow extracts the notes by it.

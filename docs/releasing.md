@@ -15,8 +15,9 @@ web app are not published to npm; they ship inside the image.
 
 All packages share one version. `.github/workflows/release.yml` does the work;
 `scripts/check-release.mjs` refuses a release whose package versions or
-changelog disagree with the tag, or that would publish a non-MIT package. Every
-workspace package not marked `private` is published.
+changelog disagree with the tag, or that would publish a package that isn't MIT
+or doesn't name this repository in `repository` (npm rejects provenance without
+it). Every workspace package not marked `private` is published.
 
 ## One-time setup
 
