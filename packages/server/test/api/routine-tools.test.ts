@@ -545,6 +545,9 @@ describe('routine tool calls', () => {
       expect(first.body).toMatchObject({ state: 'pending' });
       expect((await call()).body.tool.callId).toBe(first.body.tool.callId);
       await expect(close()).resolves.toMatchObject({ phase: 'busy' });
+      await expect(
+        nextOps({ command: 'writer-admission-status', protocol: 1, probe: true }),
+      ).resolves.toMatchObject({ phase: 'open', quiescent: false });
 
       const job = await s.queue.claim(s.workspace, first.body.tool.callId, 'tool-runner');
       if (!job) throw new Error('expected a claimed tool job');
@@ -557,6 +560,9 @@ describe('routine tool calls', () => {
         output: { outcome: 'succeeded', result: { deliverable: true } },
       });
 
+      await expect(
+        nextOps({ command: 'writer-admission-status', protocol: 1, probe: true }),
+      ).resolves.toMatchObject({ phase: 'open', quiescent: true });
       await expect(close()).resolves.toMatchObject({ phase: 'closed' });
       expect(await db.owner`select id from extension_jobs where caller_run_id = ${runId}`).toEqual([
         { id: job.jobId },

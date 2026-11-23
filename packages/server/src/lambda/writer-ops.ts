@@ -14,7 +14,11 @@ export const writerOwnership = z.object({
 });
 
 export const writerCommands = [
-  z.object({ command: z.literal('writer-admission-status'), protocol: z.literal(1) }),
+  z.object({
+    command: z.literal('writer-admission-status'),
+    protocol: z.literal(1),
+    probe: z.boolean().optional(),
+  }),
   z.object({
     command: z.literal('writer-admission-close'),
     protocol: z.literal(1),
@@ -106,6 +110,10 @@ export async function writerAdmission(
       ...state,
       uncertainEffects,
       candidateRetired: !!retired,
+      // Advisory for planning the cutover. Only the exclusive close is proof.
+      ...(event.probe
+        ? { quiescent: !!state.generation && !state.deployment && !(await unsettled(sql)) }
+        : {}),
       phase: !state.generation ? 'unmanaged' : state.deployment ? 'closed' : 'open',
     };
   }
