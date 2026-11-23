@@ -394,7 +394,7 @@ function BindingCard({
   const fields = Object.fromEntries(
     binding.fields.map((rule) => [
       rule.key,
-      (choice.action === 'existing' ? choice.fields?.[rule.key] : undefined) ??
+      (choice.action === 'skip' ? undefined : choice.fields?.[rule.key]) ??
         defaultField(binding, rule, object),
     ]),
   ) as Record<string, FieldChoice>;
@@ -456,6 +456,7 @@ function BindingCard({
   );
 
   const create = choice.action === 'create' && binding.create ? choice : undefined;
+  const editable = choice.action === 'skip' ? undefined : choice;
   const newList = binding.create;
   const notes = [
     reason ? <SuggestionNote key="reason">{reason}</SuggestionNote> : null,
@@ -513,14 +514,15 @@ function BindingCard({
       destination={destination}
       note={notes.length ? notes : undefined}
     >
-      {choice.action === 'existing' && object && binding.fields.length ? (
+      {/* A new list's fields can be renamed away or skipped too, so they stay editable. */}
+      {editable && (object || editable.action === 'create') && binding.fields.length ? (
         <FieldDisclosure
           label="Fields"
           summary={fieldsSummary(binding, fields, object)}
           open={open || attention}
           onToggle={setOpen}
         >
-          <FieldMap from={extension} to={object.labelPlural}>
+          <FieldMap from={extension} to={object?.labelPlural ?? newListLabel(binding, choice)}>
             {binding.fields.flatMap((rule) =>
               fieldRows({
                 binding,
@@ -532,7 +534,7 @@ function BindingCard({
                   : undefined,
                 issues: issues.filter((issue) => issue.field === rule.key),
                 update: (next) =>
-                  onChange({ ...choice, fields: { ...choice.fields, [rule.key]: next } }),
+                  onChange({ ...editable, fields: { ...editable.fields, [rule.key]: next } }),
               }),
             )}
           </FieldMap>
@@ -554,7 +556,7 @@ function fieldRows({
 }: {
   binding: ExtensionBinding;
   rule: Rule;
-  object: ObjectView;
+  object: ObjectView | undefined;
   selected: FieldChoice;
   reason?: string;
   issues: BindingReviewIssue[];

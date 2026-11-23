@@ -217,22 +217,33 @@ const answerParser = z.record(z.string(), bindingAnswer);
 type ConfigureAnswer = z.infer<typeof answerParser>;
 
 /**
+ * Where a relation's target binding goes, as kept: an existing object, a new
+ * one, or nowhere (skipped, or a choice that was dropped).
+ */
+type Related = ObjectView | 'create' | undefined;
+
+/**
  * The model's pick for one field, if the server can take it: a skip of an
  * optional field, a field the extension can create, or an existing eligible
- * field (a relation only to the object chosen for its target binding), with
- * only the values that name one of its options.
+ * field, with only the values that name one of its options. A relation needs
+ * its target binding to go somewhere: a new relation field points at that
+ * list, an existing one must already point at the chosen object.
  */
 function fieldSuggestion(
   rule: Rule,
   pick: z.infer<typeof fieldAnswer>,
   object: ObjectView,
-  related: ObjectView | undefined,
+  related: Related,
 ): FieldChoice | undefined {
   if (pick.action === 'skip') return rule.required ? undefined : { action: 'skip' };
-  if (pick.action === 'create') return rule.create ? { action: 'create' } : undefined;
+  if (pick.action === 'create')
+    return rule.create && (!rule.target || related) ? { action: 'create' } : undefined;
   const target = eligible(object, rule).find((entry) => entry.name === pick.field);
   if (!target) return undefined;
-  if (rule.target && !(related && relationTargets(target).includes(related.nameSingular)))
+  if (
+    rule.target &&
+    !(related && related !== 'create' && relationTargets(target).includes(related.nameSingular))
+  )
     return undefined;
   const options = new Set(target.settings.options?.map((option) => option.value));
   const values = Object.fromEntries(
@@ -261,12 +272,17 @@ function toSuggestions(objects: ObjectView[], answer: ConfigureAnswer) {
     const trimmed = text.trim().slice(0, SUGGESTION_REASON_MAX);
     if (trimmed) reasons[key] = trimmed;
   };
-  // Relations are checked against the object chosen for their target binding.
+  // Relations are checked against where their target binding goes, as kept below.
   const chosen = (key: string) => {
     const choice = answer[key];
     const binding = TAMLOOT_BINDINGS.find((entry) => entry.key === key);
     if (choice?.action !== 'existing' || !binding) return undefined;
     return candidates(objects, binding).find((object) => object.nameSingular === choice.object);
+  };
+  const related = (key: string): Related => {
+    const binding = TAMLOOT_BINDINGS.find((entry) => entry.key === key);
+    if (answer[key]?.action === 'create') return binding?.create ? 'create' : undefined;
+    return chosen(key);
   };
   for (const binding of TAMLOOT_BINDINGS) {
     const choice = answer[binding.key];
@@ -285,7 +301,7 @@ function toSuggestions(objects: ObjectView[], answer: ConfigureAnswer) {
         const pick = choice.fields?.[rule.key];
         const field =
           pick &&
-          fieldSuggestion(rule, pick, object, rule.target ? chosen(rule.target) : undefined);
+          fieldSuggestion(rule, pick, object, rule.target ? related(rule.target) : undefined);
         if (!pick || !field) continue;
         fields[rule.key] = field;
         reason(`${binding.key}.${rule.key}`, pick.reason);

@@ -36,6 +36,12 @@ test('shows where Tamloot saves data, with suggestions, folded fields and plain 
   await page.getByRole('option', { name: 'New list: Meetings' }).click();
   await expect(meetings).not.toContainText('Suggested.');
   await expect(meetings).toContainText('Adds a new list, Meetings, to your workspace.');
+  // A new list keeps its fields editable, so an optional one can still be skipped.
+  await tasks.getByRole('button', { name: /^Where tasks go/ }).click();
+  await page.getByRole('option', { name: 'New list: Tasks' }).click();
+  await tasks.getByRole('button', { name: /^Person/ }).click();
+  await page.getByRole('option', { name: 'Don’t import' }).click();
+  await expect(tasks.getByRole('button', { name: /^Person/ })).toContainText('Don’t import');
   await tasks.getByRole('button', { name: /^Where tasks go/ }).click();
   await page.getByRole('option', { name: 'Don’t import' }).click();
   await expect(tasks).toContainText('Tamloot won’t import tasks.');

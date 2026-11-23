@@ -304,6 +304,49 @@ describe('Tamloot configure (spec 3.1)', () => {
     ]);
   });
 
+  it.each([
+    ['skipped', 'skip', undefined],
+    ['dropped', 'existing', 'call'],
+  ])(
+    'leaves a new relation out when People is %s, so the server skips it',
+    async (_case, action, object) => {
+      const c = configure(() =>
+        message({
+          ...good(),
+          task: {
+            ...good().task,
+            fields: { ...good().task.fields, person: { ...pick('create', null), field: null } },
+          },
+          person: { ...pick(action, object ?? null), object: object ?? null },
+        }),
+      );
+      await c.run();
+      const saved = c.saved[0] as { bindings: { task: { fields: Record<string, unknown> } } };
+      expect(saved.bindings.task.fields.person).toBeUndefined();
+      expect(saved.bindings.task.fields.title).toEqual({ action: 'existing', field: 'subject' });
+    },
+  );
+
+  it('keeps a new relation when People goes to a new list', async () => {
+    const c = configure(() =>
+      message({
+        ...good(),
+        task: {
+          ...good().task,
+          fields: { ...good().task.fields, person: { ...pick('create', null), field: null } },
+        },
+        person: { ...pick('create', null), object: null },
+      }),
+    );
+    await c.run();
+    expect(c.saved[0]).toMatchObject({
+      bindings: {
+        task: { fields: { person: { action: 'create' } } },
+        person: { action: 'create' },
+      },
+    });
+  });
+
   it('saves create and skip choices without fields', async () => {
     const c = configure(() =>
       message({
