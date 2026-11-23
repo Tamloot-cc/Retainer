@@ -32,9 +32,9 @@ hold the design, the data model, the write rules and the web app's design.
 | [Comments](specs/comments.md)                                       | Implemented: comments on any record, entity-only event links, the object-or-event rule     |
 | [Workspace upgrades](specs/workspace-upgrade.md)                    | Implemented: bringing existing workspaces up to new built-in definitions                   |
 | [Accounts and access](specs/accounts-and-access.md)                 | Implemented: login with Better Auth, passkeys, organizations, roles, MCP OAuth             |
-| [Hosted onboarding](specs/hosted-onboarding.md)                     | Proposed: connect Codex or Claude Code from the MCP URL, including first workspace creation |
+| [Hosted onboarding](specs/hosted-onboarding.md)                     | Implemented: connect Codex or Claude Code from the MCP URL, including first workspace creation |
 | [Animated mark](specs/assistant-avatar.md)                          | Implemented: the loading indicator and the assistant avatar's moods                        |
-| [Personal and workspace memory](specs/user-and-workspace-memory.md) | Draft: private memory about each person, shared memory about the workspace                 |
+| [Personal and workspace memory](specs/user-and-workspace-memory.md) | Implemented: private memory about each person, shared memory about the workspace           |
 | [Duplicate record classification](specs/duplicate-record-classifier.md) | Proposed: API spike, OpenAI Decisions classifier and sourced merge explanations          |
 
 ## Research
@@ -50,9 +50,10 @@ hold the design, the data model, the write rules and the web app's design.
 
 - **Workspace**: one tenant. Every API key belongs to exactly one workspace,
   so agents never name a workspace in their calls.
-- **Objects and fields**: the schema is data. A workspace starts from a
-  template (`sales`, `services`, `clinic`, `real_estate`, `recruiting`,
-  `blank`) and agents can propose new fields and objects at runtime.
+- **Objects and fields**: the schema is data. A workspace starts empty or
+  from a template (`starter`, or `sales`, `services`, `clinic`,
+  `real_estate` or `recruiting`, which extend it), and agents can propose new
+  fields and objects at runtime.
 - **Records** hold typed field values. Each value is the winner among
   _assertions_ from agents and people: people outrank agents, newer
   observations outrank older ones, and an agent that would overwrite a
