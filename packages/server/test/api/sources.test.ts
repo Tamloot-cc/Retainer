@@ -48,6 +48,8 @@ async function setup(
   onSourceDelete: 'keep' | 'retract' = 'keep',
   extra?: ExtensionManifest,
   withTasks = false,
+  /** Offer the deletion policy as an installation setting, and choose this. */
+  deleteChoice?: 'keep' | 'retract',
 ) {
   const verifyId = randomUUID(),
     syncId = randomUUID(),
@@ -70,6 +72,21 @@ async function setup(
     scopes: ['read', 'write'],
     createPeople: policy,
     onSourceDelete,
+    ...(deleteChoice
+      ? {
+          settings: {
+            onSourceDelete: {
+              type: 'string' as const,
+              label: 'Deleted in the source',
+              required: true,
+              default: onSourceDelete,
+              options: ['retract', 'keep'],
+              secret: false,
+              reconnect: false,
+            },
+          },
+        }
+      : {}),
     bindings: [
       ...sourceTestBindings,
       ...(withTasks
@@ -159,7 +176,7 @@ async function setup(
   const input = {
     registrationId: manifest.universalId,
     version: manifest.version,
-    settings: {},
+    settings: deleteChoice ? { onSourceDelete: deleteChoice } : {},
     ...(withTasks
       ? {
           bindings: {
@@ -1524,6 +1541,20 @@ describe('managed source evidence with real RLS Postgres', () => {
       (await h.sync(s.key, s.itemId, '2', imported.body.revisionId, h.event('Recreate'))).body.error
         .code,
     ).toBe('source_retracted');
+  });
+  it("keeps imported content after a definitive deletion when the admin chose keep over the release's retract", async () => {
+    const h = await setup('never', true, 'retract', undefined, false, 'keep'),
+      s = await h.item();
+    const imported = await h.sync(s.key, s.itemId, '1', null);
+    expect(imported.status).toBe(200);
+    const deleted = await h.app.request(`${h.base}/source-items/${s.itemId}/unavailable`, {
+      key: s.key,
+      body: { status: 'deleted', evidence: 'definitive_lookup' },
+    });
+    expect(deleted.body.state).toBe('deleted');
+    expect(
+      (await h.app.request(`/v1/events/${imported.body.eventId}`, { key: h.keys.admin })).status,
+    ).toBe(200);
   });
   it('leaves the source item and event intact when another installation owns a unique field', async () => {
     const publisher = extensionFixture({

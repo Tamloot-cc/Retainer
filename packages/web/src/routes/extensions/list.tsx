@@ -2,10 +2,21 @@ import { Link } from '@tanstack/react-router';
 import { ArrowUpRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { canMutate, useWorkspace } from '../../api/client.js';
-import { Badge, Button, Empty, Loading, Muted, Page, Row, Section, Stack } from '../../ui/index.js';
+import {
+  Badge,
+  Button,
+  Empty,
+  Loading,
+  Muted,
+  Notice,
+  Page,
+  Row,
+  Section,
+  Stack,
+} from '../../ui/index.js';
 import { QueryError } from '../state.js';
 import { ExtensionIcon, extensionName } from './branding.js';
-import { installedRelease, status, upgradeFor, useExtensions } from './model.js';
+import { installedRelease, sharingNote, status, upgradeFor, useExtensions } from './model.js';
 
 /**
  * Extensions: the ones this workspace has installed, each opening its own
@@ -86,6 +97,7 @@ export function ExtensionsPage() {
             {available.map(({ manifest }) => {
               const registrationId = manifest.universalId;
               const name = extensionName(registrationId, manifest.name);
+              const sharing = sharingNote(manifest, name);
               return (
                 <li
                   key={registrationId}
@@ -98,6 +110,7 @@ export function ExtensionsPage() {
                       version={manifest.version}
                       description={manifest.description}
                     />
+                    {sharing ? <Notice>{sharing}</Notice> : null}
                   </div>
                   {admin ? (
                     <div className="flex justify-end border-t border-border bg-muted/30 px-4 py-2">

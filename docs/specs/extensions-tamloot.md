@@ -47,10 +47,12 @@ option; the method is fixed per connection
 
 **Who does what.**
 
-- A human admin installs once. They review the schema, the actor
-  (`integration`), the create-people and source-deletion policies, and this
-  consent statement: "Meetings that members connect become visible to the
-  whole workspace."
+- A human admin installs once. Before setup, Tamloot's catalog card says that
+  what members connect is visible to everyone in the workspace. During setup
+  the admin gives this consent, chooses the create-people and
+  source-deletion policies, and reviews the schema and the actor
+  (`integration`). The review shows those choices as rows, not as
+  warnings.
 - A member opens the installation and connects their own account. The
   connection is owned by the member's identity: the person in accounts mode,
   or the user actor of their key in key mode.
@@ -196,7 +198,9 @@ logged event (ARCHITECTURE.md 1.2 and 4.1). Matching never uses field names:
 
 **Deletion.** `onSourceDelete: "retract"` is the default for this
 registration. Deleting a session in Tamloot is a deliberate act and arrives as
-a feed tombstone, verified by a 410 or 404 from the session fetch. Admins can choose `keep`.
+a feed tombstone, verified by a 410 or 404 from the session fetch. Admins can
+choose `keep` with the optional "Meetings deleted in Tamloot" setting, at setup
+or later in Settings.
 
 **Limits.** A 31-day backfill of 60 sessions with 5 tasks each is about 360
 writes, or 6 minutes at the default 60 writes a minute per connection.

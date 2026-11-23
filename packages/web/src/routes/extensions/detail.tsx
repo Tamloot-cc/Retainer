@@ -381,6 +381,7 @@ function Overview({
             installation.grantedScopes,
             installation.grantedActor,
             installation.grantedUses,
+            release?.manifest,
           )}
         </p>
       </ExtensionCard>

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { defineExtension, functionUses, modelClient, releaseUses } from './index.js';
+import {
+  defineExtension,
+  functionUses,
+  MODEL_USE_NOTICE,
+  modelClient,
+  modelUseNotice,
+  releaseUses,
+} from './index.js';
 import { invocationSchema } from './protocol.js';
 
 const fixture = () => ({
@@ -80,6 +87,37 @@ describe('uses in the manifest (model calls spec 3.1)', () => {
       ],
     });
     expect(releaseUses(manifest)).toEqual(['model']);
+  });
+});
+
+describe('what approving model use means, in plain words (spec 3.1)', () => {
+  const release = (...functions: ReturnType<typeof fn>[]) =>
+    defineExtension({ ...fixture(), functions });
+  const configure = fn(
+    '0b6f6c50-9d1e-4b5d-8a3c-2f1e4d5c6b7a',
+    'suggest',
+    { uses: ['model'], scopes: ['read'] },
+    { kind: 'configure' },
+  );
+  const job = fn('1c7f7d61-ae2f-4c6e-9b4d-3a2f5e6d7c8b', 'enrich', { uses: ['model'] });
+
+  it('says a release that uses the model only for setup suggestions does so only then', () => {
+    const notice = modelUseNotice(release(configure));
+    expect(notice).toMatch(/^To suggest how to set it up, this extension sends/);
+    expect(notice).toContain('only while preparing suggestions');
+    expect(notice).not.toContain('When it runs');
+  });
+  it('says a release that uses the model when it runs does so each run, and for setup too', () => {
+    expect(modelUseNotice(release(job))).toBe(
+      'When it runs, this extension sends the workspace data it works on to Anthropic, to process it with a model.',
+    );
+    expect(modelUseNotice(release(configure, job))).toContain(
+      'It also does this to suggest how to set it up.',
+    );
+  });
+  it('says nothing for a release without model use', () => {
+    expect(modelUseNotice(release())).toBeUndefined();
+    expect(MODEL_USE_NOTICE).toContain('Anthropic');
   });
 });
 

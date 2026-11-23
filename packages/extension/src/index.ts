@@ -30,9 +30,42 @@ export const SIDEBAR_INSTALLATION_PARAM = 'retainer_installation';
 /** Capabilities a function may declare in `uses`; open for later ones (model calls spec 11). */
 export const EXTENSION_USES = ['model'] as const;
 export type ExtensionUse = (typeof EXTENSION_USES)[number];
-/** What approving `model` means, in plain words, wherever access is shown (model calls spec 3.1). */
+/** What approving `model` means when the release isn't at hand to say when (model calls spec 3.1). */
 export const MODEL_USE_NOTICE =
-  'This extension sends data from your workspace to Anthropic, which Retainer uses to process it.';
+  'This extension can send the workspace data it works on to Anthropic, to process it with a model.';
+/**
+ * What approving `model` means for this release, in plain words: when it
+ * sends workspace data to Anthropic, read from which functions declare model
+ * use (model calls spec 3.1). Undefined when none does.
+ */
+export function modelUseNotice(manifest: Pick<ExtensionManifest, 'functions'>) {
+  const kinds = manifest.functions
+    .filter((fn) => fn.uses?.includes('model'))
+    .map((fn) => fn.trigger.kind);
+  if (!kinds.length) return undefined;
+  const setup = kinds.includes('configure');
+  if (kinds.every((kind) => kind === 'configure'))
+    return 'To suggest how to set it up, this extension sends the workspace data it needs, such as your lists and fields, to Anthropic. It does this only while preparing suggestions: after you approve access, and when you ask for new ones.';
+  return `When it runs, this extension sends the workspace data it works on to Anthropic, to process it with a model.${
+    setup ? ' It also does this to suggest how to set it up.' : ''
+  }`;
+}
+/**
+ * The installation setting that chooses what happens when the source deletes
+ * an item it imported; absent, the release's `onSourceDelete` applies.
+ */
+export const SOURCE_DELETE_SETTING = 'onSourceDelete';
+/** What happens to imported content when the source deletes it, for these installation settings. */
+export function sourceDeletePolicy(
+  manifest: Pick<ExtensionManifest, 'onSourceDelete' | 'settings'>,
+  settings: Record<string, unknown>,
+): ExtensionManifest['onSourceDelete'] {
+  const chosen = settings[SOURCE_DELETE_SETTING];
+  return (chosen === 'keep' || chosen === 'retract') &&
+    manifest.settings[SOURCE_DELETE_SETTING]?.options?.includes(chosen)
+    ? chosen
+    : manifest.onSourceDelete;
+}
 
 const uuid = z.uuid();
 const name = z.string().regex(/^[a-z][a-zA-Z0-9-]{0,99}$/);
@@ -776,6 +809,20 @@ export function defineExtension(value: unknown): ExtensionManifest {
   if ((manifest.serverRange === undefined) === (manifest.serverVersions === undefined))
     throw new Error('unsupported_manifest: give exactly one of serverRange or serverVersions');
   if (manifest.serverRange !== undefined) parseServerRange(manifest.serverRange);
+  const deletion = manifest.settings[SOURCE_DELETE_SETTING];
+  if (
+    deletion &&
+    (!manifest.source ||
+      deletion.type !== 'string' ||
+      deletion.secret ||
+      (deletion.level ?? 'installation') !== 'installation' ||
+      !deletion.options?.length ||
+      deletion.options.some((option) => option !== 'keep' && option !== 'retract') ||
+      (deletion.default !== undefined && !deletion.options.includes(String(deletion.default))))
+  )
+    throw new Error(
+      'unsupported_manifest: onSourceDelete must be an installation choice of keep or retract on a source release',
+    );
   const configure = manifest.functions.filter((fn) => fn.trigger.kind === 'configure');
   if (
     configure.length > 1 ||
@@ -1078,6 +1125,9 @@ export type ExtensionPreview = {
     uses: ExtensionUse[];
   };
   bindings?: ExtensionBindingChoices;
+  /** Plain facts about the access being approved, such as when it uses a model. */
+  notices: string[];
+  /** Cautions: what approving changes or leaves undone that the admin may not expect. */
   warnings: string[];
 };
 export type ExtensionCredential = {

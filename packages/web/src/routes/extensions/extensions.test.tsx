@@ -55,6 +55,7 @@ const preview: Awaited<ReturnType<typeof api.previewExtension>> = {
   operations: [],
   views: [],
   grants: { actor: 'integration', scopes: ['read', 'write'], uses: [] },
+  notices: [],
   warnings: ['Runtime activation is unavailable.'],
 };
 function mount(element: React.ReactNode, admin = true) {
@@ -130,7 +131,7 @@ describe('extension pages and human approval', () => {
           },
           createPeople: {
             type: 'string' as const,
-            label: 'Create contacts',
+            label: 'Create people',
             secret: false,
             reconnect: false,
             required: true,
@@ -219,6 +220,76 @@ describe('extension pages and human approval', () => {
     expect(setup.closest('li')?.querySelector('img[alt=""]')?.getAttribute('src')).toContain('exa');
   });
 
+  it('says on the catalog card, before setup, that imported content is shared with the workspace', async () => {
+    const source = {
+      provider: 'fixture',
+      identity: 'account' as const,
+      verifyFunctionId: '5b0f5c1e-61d9-4d55-9a0e-6f0f0f6c0c01',
+      syncFunctionIds: ['5b0f5c1e-61d9-4d55-9a0e-6f0f0f6c0c02'],
+    } as unknown as NonNullable<Release['manifest']['source']>;
+    vi.spyOn(api, 'extensionCatalog').mockResolvedValue({
+      releases: [
+        { ...release, manifest: { ...release.manifest, source, connection: 'member' } },
+        {
+          ...release,
+          manifest: {
+            ...release.manifest,
+            universalId: '9796c2c7-46f3-4006-8f35-059d5ef3553e',
+            name: 'company-enrichment',
+          },
+        },
+      ],
+    });
+    vi.spyOn(api, 'extensions').mockResolvedValue({ installations: [] });
+    mount(<ExtensionsPage />);
+    const card = (await screen.findByRole('link', { name: 'Set up Fixture' })).closest('li');
+    expect(
+      within(card as HTMLElement).getByText(
+        'Each member connects their own Fixture account. What it imports from them is visible to everyone in this workspace.',
+      ),
+    ).toBeTruthy();
+    // An extension that imports nothing has no such note.
+    const exa = screen.getByRole('link', { name: 'Set up Exa' }).closest('li');
+    expect(within(exa as HTMLElement).queryByText(/visible to everyone/)).toBeNull();
+  });
+  it('lets the admin choose what happens to source deletions and shows the choice on review', async () => {
+    const source = {
+      provider: 'fixture',
+      identity: 'account' as const,
+    } as unknown as NonNullable<Release['manifest']['source']>;
+    const sourced = {
+      ...release,
+      manifest: {
+        ...release.manifest,
+        source,
+        onSourceDelete: 'retract' as const,
+        settings: {
+          onSourceDelete: {
+            type: 'string' as const,
+            label: 'Notes deleted in Fixture',
+            secret: false,
+            reconnect: false,
+            required: true,
+            default: 'retract',
+            options: ['retract', 'keep'],
+          },
+        },
+      },
+    };
+    const plan = vi.spyOn(api, 'previewExtension').mockResolvedValue(preview);
+    mount(
+      <ExtensionSetup release={sourced} mode="install" onCancel={() => {}} onDone={() => {}} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /Notes deleted in Fixture/ }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Keep what was imported' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Review installation' }));
+    await vi.waitFor(() => expect(plan).toHaveBeenCalledTimes(1));
+    expect(plan.mock.calls[0]?.[0].settings).toEqual({ onSourceDelete: 'keep' });
+    const row = await screen.findByText('Deleted in Fixture');
+    expect(row.nextElementSibling?.textContent).toBe('Keep what was imported');
+    // Choices the admin made are not repeated as warnings.
+    expect(screen.queryByText(/source deletion/i)).toBeNull();
+  });
   it('marks an update on the installed card and offers it on the extension page', async () => {
     const upgraded = { ...release, manifest: { ...release.manifest, version: '1.0.10' } };
     vi.spyOn(api, 'extensionCatalog').mockResolvedValue({ releases: [upgraded, release] });
@@ -460,6 +531,7 @@ describe('extension pages and human approval', () => {
       ...preview,
       grants: { ...preview.grants, uses: ['model'] },
       previousGrants: { actor: 'integration', scopes: ['read', 'write'], uses: [] },
+      notices: ['When it runs, this extension sends the workspace data it works on to Anthropic.'],
     });
     vi.spyOn(api, 'upgradeExtension').mockResolvedValue({ ...current, version: '1.1.0' });
     mount(
@@ -477,7 +549,9 @@ describe('extension pages and human approval', () => {
         /changes access from read and write as an integration to read and write with model use as an integration/,
       ),
     ).toBeTruthy();
-    expect(screen.getByText(/sends data from your workspace to Anthropic/)).toBeTruthy();
+    // The model notice is a plain note in the Access card, not a warning.
+    const notice = screen.getByText(/this extension sends the workspace data it works on/);
+    expect(notice.closest('[role="status"]')?.querySelector('svg')).toBeNull();
     expect(plan.mock.calls[0]?.[0]).toMatchObject({ grantChange: true });
     expect(screen.getByRole('button', { name: 'Approve access and upgrade' })).toBeTruthy();
   });

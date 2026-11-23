@@ -36,7 +36,7 @@ and tracked separately.
 | Can a member registration take webhooks?                   | Not in v1. The manifest rejects `webhooks` with `connection: 'member'`. Tamloot polls (extensions-tamloot.md §5).                                                                                                                                                                                                                      |
 | A task a person edited                                     | Kept and no longer synced (extensions-tamloot.md §6.1). The server checks all assertions under the task lock. A read followed by an ordinary delete can race a person's edit. Kept tasks are durably detached before source retraction (§4.6).                                                                                         |
 | Create-people default                                      | `everyone`, as manifest ceiling and setting default (extensions-tamloot.md §6.2). The server already applies it (`sources/service.ts:552`).                                                                                                                                                                                            |
-| Deleted sessions                                           | `onSourceDelete: 'retract'`. The policy is release-pinned today (`sources/service.ts:449`), so admins cannot switch it to `keep` in v1.                                                                                                                                                                                                |
+| Deleted sessions                                           | `onSourceDelete: 'retract'` by default. The release offers the optional `onSourceDelete` installation setting, so an admin can choose `keep` at setup or later in Settings (extensions.md §10).                                                                                                                                        |
 
 ## 2. Gaps in the current platform
 
@@ -350,6 +350,15 @@ defineExtension({
       required: true,
       default: 'everyone',
       options: ['never', 'everyone'],
+      label: 'Create people',
+    },
+    onSourceDelete: {
+      type: 'string',
+      level: 'installation',
+      required: false,
+      default: 'retract',
+      options: ['retract', 'keep'],
+      label: 'Meetings deleted in Tamloot',
     },
     backfillDays: { type: 'number', level: 'connection', required: true, default: 31 },
     apiKey: {
@@ -660,5 +669,4 @@ Real Postgres, a fresh database per file, no mocked database.
 
 Tamloot webhooks with a per-connection `route`, the transcript as a `files`
 field, `medium`, a `tamlootUrl` link, merging one meeting recorded by two
-members, organization-wide Tamloot keys, an admin choice of
-`onSourceDelete`, and protecting `person.emails`.
+members, organization-wide Tamloot keys, and protecting `person.emails`.

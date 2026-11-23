@@ -10,6 +10,7 @@ import {
   lifecycleInputSchema,
   mergeBindingChoices,
   runsHostedCode,
+  sourceDeletePolicy,
 } from './index.js';
 
 export const fixture = () => ({
@@ -207,6 +208,70 @@ describe('strict extension contracts', () => {
         ],
       }),
     ).toThrow('local sourceItemId');
+  });
+  it('lets a source release offer the deletion policy as an installation choice', () => {
+    const verifyId = '5c011ac7-a6b8-4bc5-bac5-5c9b70491ab4',
+      syncId = '50b706e0-2f74-46d4-b454-d9481ed21b24';
+    const source = {
+      provider: 'fixture',
+      identity: 'account',
+      verifyFunctionId: verifyId,
+      syncFunctionIds: [syncId],
+      event: 'event',
+      revisionOrder: 'opaque',
+    };
+    const fn = { description: 'Source handler', handlerDigest: 'b'.repeat(64) };
+    const functions = [
+      {
+        ...fn,
+        universalId: verifyId,
+        name: 'verify',
+        trigger: { kind: 'install' },
+        inputSchema: { type: 'object', additionalProperties: false },
+      },
+      {
+        ...fn,
+        universalId: syncId,
+        name: 'sync',
+        trigger: { kind: 'job' },
+        inputSchema: {
+          type: 'object',
+          properties: { sourceItemId: { type: 'string', maxLength: 36 } },
+          required: ['sourceItemId'],
+          additionalProperties: false,
+        },
+      },
+    ];
+    const choice = {
+      type: 'string',
+      label: 'Deleted in the source',
+      required: true,
+      default: 'retract',
+      options: ['retract', 'keep'],
+    };
+    const define = (setting: object, withSource = true) =>
+      defineExtension({
+        ...fixture(),
+        onSourceDelete: 'retract',
+        ...(withSource ? { source, bindings: sourceBindings, functions } : {}),
+        settings: { onSourceDelete: setting },
+      });
+    const manifest = define(choice);
+    expect(sourceDeletePolicy(manifest, {})).toBe('retract');
+    expect(sourceDeletePolicy(manifest, { onSourceDelete: 'keep' })).toBe('keep');
+    // A value the release doesn't offer falls back to its own policy.
+    expect(sourceDeletePolicy(manifest, { onSourceDelete: 'erase' })).toBe('retract');
+    expect(sourceDeletePolicy({ ...manifest, settings: {} }, { onSourceDelete: 'keep' })).toBe(
+      'retract',
+    );
+    expect(() => define({ ...choice, options: ['retract', 'erase'] })).toThrow(
+      'onSourceDelete must be',
+    );
+    expect(() => define({ ...choice, level: 'connection' })).toThrow('onSourceDelete must be');
+    expect(() => define({ type: 'boolean', label: 'Delete', required: true })).toThrow(
+      'onSourceDelete must be',
+    );
+    expect(() => define(choice, false)).toThrow('onSourceDelete must be');
   });
   it('produces a JSON manifest with explicit policy', () => {
     expect(defineExtension(fixture())).toMatchObject({

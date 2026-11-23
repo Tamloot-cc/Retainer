@@ -1,4 +1,10 @@
-import { compareVersions, MODEL_USE_NOTICE, newestReleases } from '@retainer/extension';
+import {
+  compareVersions,
+  type ExtensionManifest,
+  MODEL_USE_NOTICE,
+  modelUseNotice,
+  newestReleases,
+} from '@retainer/extension';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { api, useWorkspace } from '../../api/client.js';
@@ -15,6 +21,35 @@ export const queryKey = ['extensions'];
 export const appLinksKey = (workspaceId: string) => [...queryKey, 'links', workspaceId];
 export const stateLabel = (state: string) =>
   state.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
+
+/** Plain words for the options of the settings the platform itself acts on. */
+const OPTION_LABELS: Record<string, Record<string, string>> = {
+  createPeople: {
+    never: 'Never',
+    contacted_first: 'Only people you contacted first',
+    everyone: 'Everyone',
+  },
+  onSourceDelete: {
+    retract: 'Remove what was imported',
+    keep: 'Keep what was imported',
+  },
+};
+export const optionLabel = (setting: string, value: string) =>
+  OPTION_LABELS[setting]?.[value] ?? stateLabel(value);
+
+/**
+ * Said before setup: what a source extension imports is visible to the whole
+ * workspace. Undefined for a release that imports nothing.
+ */
+export const sharingNote = (
+  manifest: Pick<ExtensionManifest, 'source' | 'connection'>,
+  name: string,
+) =>
+  manifest.source
+    ? manifest.connection === 'member'
+      ? `Each member connects their own ${name} account. What it imports from them is visible to everyone in this workspace.`
+      : `What it imports from ${name} is visible to everyone in this workspace.`
+    : undefined;
 
 const BUSY = ['installing', 'upgrading', 'uninstalling'];
 const GONE = ['uninstalled', 'uninstalling'];
@@ -162,7 +197,10 @@ export const accessText = (
   scopes: readonly string[],
   actor: string,
   uses: readonly string[] = [],
+  manifest?: Pick<ExtensionManifest, 'functions'>,
 ) =>
   `It can ${scopes.join(' and ')} workspace CRM data. Its changes are recorded as made by an ${actor}.${
-    uses.includes('model') ? ` ${MODEL_USE_NOTICE.replace('This extension', 'It')}` : ''
+    uses.includes('model')
+      ? ` ${((manifest && modelUseNotice(manifest)) ?? MODEL_USE_NOTICE).replace(/this extension/i, 'it').replace(/^./, (c) => c.toUpperCase())}`
+      : ''
   }`;

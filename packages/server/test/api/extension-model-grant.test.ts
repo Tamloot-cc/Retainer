@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type ExtensionManifest, type Invocation, MODEL_USE_NOTICE } from '@retainer/extension';
+import { type ExtensionManifest, type Invocation, modelUseNotice } from '@retainer/extension';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import type { RunTokens } from '../../src/extension-runtime/tokens.js';
@@ -132,7 +132,9 @@ describe('access preview and approval', () => {
   it('lists the uses with the access, says what model use means, and stores the grant', async () => {
     const { preview, id } = await installModelRelease(t, db, single);
     expect(preview.grants).toEqual({ actor: 'agent', scopes: ['read', 'write'], uses: ['model'] });
-    expect(preview.warnings).toContain(MODEL_USE_NOTICE);
+    // A plain note with the access, not a warning.
+    expect(preview.notices).toContain(modelUseNotice(single));
+    expect(preview.warnings.join(' ')).not.toContain('Anthropic');
     expect((await installation(id))?.granted_uses).toEqual(['model']);
     const read = await t.request(`/v1/extensions/${id}`, {
       key: (await workspace()).keys.admin,
@@ -144,7 +146,7 @@ describe('access preview and approval', () => {
   it('a release without model use lists none and shows no notice', async () => {
     const { preview, id } = await installModelRelease(t, db, plainV1);
     expect(preview.grants.uses).toEqual([]);
-    expect(preview.warnings).not.toContain(MODEL_USE_NOTICE);
+    expect(preview.notices.join(' ')).not.toContain('Anthropic');
     expect((await installation(id))?.granted_uses).toEqual([]);
   });
 
@@ -157,7 +159,9 @@ describe('access preview and approval', () => {
     };
     const { preview, installation: created } = await approve(keys.admin, body);
     expect(preview.grants).toEqual({ actor: 'agent', scopes: ['read'], uses: ['model'] });
-    expect(preview.warnings).toContain(MODEL_USE_NOTICE);
+    // Said at access approval, before configure calls the model.
+    expect(preview.notices).toContain(modelUseNotice(configured));
+    expect(preview.warnings).toEqual([]);
     expect(created.state).toBe('configuring');
     expect(created.grantedUses).toEqual(['model']);
     const job = await claimConfigure(ws.id, created.id);
@@ -166,6 +170,15 @@ describe('access preview and approval', () => {
     const response = await callModel(await tokens.issueModel(job));
     expect(response.status).toBe(200);
     await response.text();
+    // Turning it on doesn't repeat it, nor present the first full grant as a change.
+    const turnOn = await t.request('/v1/extensions/preview', {
+      key: keys.admin,
+      body: { ...body, installationId: created.id, turnOn: true, grantChange: true },
+    });
+    expect(turnOn.status).toBe(200);
+    expect(turnOn.body.notices.join(' ')).not.toContain('Anthropic');
+    expect(turnOn.body.warnings.join(' ')).not.toContain('Anthropic');
+    expect(turnOn.body.previousGrants).toBeUndefined();
   });
 
   it("a preview's digest covers the uses: the same plan with different uses is a different plan", async () => {
@@ -266,7 +279,7 @@ describe('upgrades', () => {
     const { preview } = await approve(key, { ...body, grantChange: true });
     expect(preview.previousGrants).toEqual({ actor: 'agent', scopes: ['read', 'write'], uses: [] });
     expect(preview.grants.uses).toEqual(['model']);
-    expect(preview.warnings).toContain(MODEL_USE_NOTICE);
+    expect(preview.notices).toContain(modelUseNotice(modelV2));
     expect((await installation(id))?.granted_uses).toEqual(['model']);
   });
 

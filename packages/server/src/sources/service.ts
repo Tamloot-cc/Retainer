@@ -1,4 +1,4 @@
-import type { ExtensionManifest } from '@retainer/extension';
+import { type ExtensionManifest, sourceDeletePolicy } from '@retainer/extension';
 import {
   type SourceScan,
   type SourceSyncStatus,
@@ -111,14 +111,16 @@ export class Sources {
         version: string;
         release_digest: string;
         bindings: StoredBindingPlan | null;
+        settings: Record<string, unknown>;
       }[]
-    >`select version,release_digest,bindings from extension_installations where id=${run.installationId}`;
+    >`select version,release_digest,bindings,settings from extension_installations where id=${run.installationId}`;
     if (!i) throw notFound('installation source');
     const manifest = this.resolve(run.registrationId, i.version, i.release_digest);
     if (!manifest.source) throw forbidden('release has no managed source capability');
     return {
       manifest,
       policy: resolveSourcePolicy(manifest.source, i.bindings ?? undefined),
+      onSourceDelete: sourceDeletePolicy(manifest, i.settings),
     };
   }
   private async binding(tx: Tx, caller: Caller): Promise<Binding> {
@@ -541,7 +543,7 @@ export class Sources {
       caller,
       async (tx, context) => {
         const binding = await this.binding(tx, caller),
-          { policy, manifest } = await this.release(tx, caller);
+          { policy, onSourceDelete } = await this.release(tx, caller);
         await this.ingestionJob(tx, caller, policy, itemId);
         const [item] = await tx<Item[]>`select * from source_items where id=${itemId} for update`;
         if (!item) throw notFound('source item');
@@ -552,7 +554,7 @@ export class Sources {
           Revision[]
         >`select id,event_id,content_digest from source_revisions where item_id=${itemId} and is_current`;
         let invalidated = emptyInvalidation();
-        const retract = input.status === 'deleted' && manifest.onSourceDelete === 'retract';
+        const retract = input.status === 'deleted' && onSourceDelete === 'retract';
         if (retract && current) {
           const [event] = await lockRecordsForUpdate(tx, caller.workspaceId, [current.event_id]);
           if (event && !event.deleted_at)
