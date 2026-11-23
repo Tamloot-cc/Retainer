@@ -3,7 +3,7 @@ import { changeCursor, changePosition, overtaken, retainedFloor } from '../db/ch
 import type { Sql } from '../db/client.js';
 import type { Tx } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
-import { type RuntimeCatalog, requireRelease } from '../extension-runtime/availability.js';
+import { type RuntimeCatalog, resolveRelease } from '../extension-runtime/availability.js';
 import type { StoredBindingPlan } from '../extension-runtime/bindings.js';
 import { withRead } from '../records/service.js';
 import type { CompiledSchema } from '../schema/compiled.js';
@@ -148,12 +148,26 @@ export class Changes {
           const [item] = await this.present(tx, schema, caller.workspaceId, [job.change_snapshot]);
           if (!item) throw notFound('record change');
           if (!job.bindings) return item;
-          const manifest = requireRelease(catalog, {
+          const release = resolveRelease(catalog, {
             registration_id: run.registrationId,
             version: job.version,
             release_digest: run.releaseDigest,
           });
-          const trigger = manifest.functions.find(
+          // Like ExtensionCatalog.forRun: during a rolling deploy this process may
+          // not have loaded the run's release yet, so the runner should retry.
+          if (!release.available)
+            throw release.code === 'release_unavailable'
+              ? new AppError(
+                  503,
+                  'release_not_loaded',
+                  "this server does not have the run's extension release yet; retry shortly",
+                )
+              : new AppError(
+                  409,
+                  release.code,
+                  'pinned extension release is unavailable in this runtime',
+                );
+          const trigger = release.manifest.functions.find(
             (fn) => fn.universalId === run.functionId,
           )?.trigger;
           const binding =

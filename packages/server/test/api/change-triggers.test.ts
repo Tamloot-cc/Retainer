@@ -283,6 +283,31 @@ describe('transactional change dispatch with real Postgres', () => {
     expect(change.body.changedKeys).toEqual(['jobTitle']);
   });
 
+  it('asks the runner to retry when this process has not loaded the run release yet', async () => {
+    const h = await setup();
+    const [id] = h.ids;
+    if (!id) throw new Error('installation missing');
+    const created = await h.app.request('/v1/objects/person/records', {
+      key: h.keys.admin,
+      body: { values: { name: 'Ada', jobTitle: 'Engineer' } },
+    });
+    expect(created.status).toBe(201);
+    expect(await h.queue.dispatchChanges(h.workspace.id, id)).toEqual({ queued: 1, blocked: 0 });
+    const { key, pending } = await h.claim(id, created.body.id);
+    // Another API instance mid rolling deploy: same database and run keys, an older catalog.
+    const behind = startTestApp(db, {
+      extensionCatalog: new ExtensionCatalog([]),
+      runTokens: tokens,
+    });
+    try {
+      const change = await behind.request(`/v1/changes/${pending.input.changePosition}`, { key });
+      expect(change.status).toBe(503);
+      expect(change.body.error.code).toBe('release_not_loaded');
+    } finally {
+      await behind.sql.end();
+    }
+  });
+
   it('queues one job per watching installation for a schema-level deprecation', async () => {
     const h = await setup(0, 0, () => [
       { binding: 'person', fields: [] },
