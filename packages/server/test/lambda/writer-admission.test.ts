@@ -9,6 +9,7 @@ import { inWorkspace } from '../../src/db/tx.js';
 import {
   acquireWriterLease,
   releaseWriterLease,
+  settleWriterLease,
   WRITER_CONTROL_LOCK,
 } from '../../src/db/writer-lease.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
@@ -242,6 +243,27 @@ it('fences transactions, pooled reconnects, stale builds and interrupted migrati
   await db.owner`select pg_terminate_backend(${leasedConnection?.id})`;
   await expect(close()).resolves.toMatchObject({ phase: 'busy' });
   await releaseWriterLease(old, lease);
+
+  const settledRunner = await acquireWriterLease(old, 60_000, { effect: 'runner:settled' });
+  await db.owner`create sequence retainer_deploy.release_attempt`;
+  await db.owner`create function retainer_deploy.fail_first_release() returns trigger language plpgsql as $$
+    begin
+      if nextval('retainer_deploy.release_attempt') = 1 then
+        raise exception 'test release connection loss' using errcode = '08006';
+      end if;
+      return old;
+    end
+  $$`;
+  await db.owner`create trigger fail_first_release before delete on retainer_deploy.writer_leases
+    for each row execute function retainer_deploy.fail_first_release()`;
+  await settleWriterLease(old, settledRunner);
+  expect(
+    await db.owner`select last_value::int as attempts from retainer_deploy.release_attempt`,
+  ).toEqual([{ attempts: 2 }]);
+  expect(
+    await db.owner`select id from retainer_deploy.writer_leases where id = ${settledRunner ?? null}`,
+  ).toHaveLength(0);
+  await db.owner`drop trigger fail_first_release on retainer_deploy.writer_leases`;
 
   // The coordinator may have lost a tool response while a routine is
   // waiting. Finishing the routine does not resolve the orphaned effect.

@@ -4,7 +4,7 @@ import { createControlSql, createRuntimeSql, type Sql } from '../db/client.js';
 import { HOSTED_WRITER_BUILD } from '../db/writer-build.js';
 import {
   acquireWriterLease,
-  releaseWriterLease,
+  settleWriterLease,
   WriterAdmissionDenied,
 } from '../db/writer-lease.js';
 import { createMaintenanceHandler } from './maintenance.js';
@@ -35,7 +35,7 @@ export async function withWriterInvocation<T>(
     return await work();
   } finally {
     // A failed cleanup remains visible to the deployer until the hard deadline.
-    await releaseWriterLease(sql, id).catch(() => {});
+    await settleWriterLease(sql, id);
   }
 }
 

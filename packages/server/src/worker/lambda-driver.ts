@@ -8,7 +8,7 @@ import {
 import type { RoutineInvocation } from '@retainer/shared';
 import type { Sql } from '../db/client.js';
 import { HOSTED_WRITER_BUILD } from '../db/writer-build.js';
-import { acquireWriterLease, releaseWriterLease } from '../db/writer-lease.js';
+import { acquireWriterLease, settleWriterLease } from '../db/writer-lease.js';
 import type { Executable, ExecutionDriver } from './extensions.js';
 import type { VerificationDriver } from './verifier-driver.js';
 
@@ -79,7 +79,7 @@ export class LambdaDriver implements ExecutionDriver {
         effect,
       }));
     if (signal.aborted) {
-      if (sql) await releaseWriterLease(sql, lease).catch(() => {});
+      await settleWriterLease(sql, lease);
       signal.throwIfAborted();
     }
     const result = await this.invokeFunction(
@@ -95,13 +95,13 @@ export class LambdaDriver implements ExecutionDriver {
           (error as { name?: string })?.name ?? '',
         )
       )
-        await releaseWriterLease(sql, lease).catch(() => {});
+        await settleWriterLease(sql, lease);
       throw error;
     });
     // A normal Lambda return settles the invocation before we validate its
     // protocol response. A function crash can leave an outside result unknown.
     if (sql && result.StatusCode === 200 && !result.FunctionError)
-      await releaseWriterLease(sql, lease).catch(() => {});
+      await settleWriterLease(sql, lease);
     if (result.StatusCode !== 200 || result.FunctionError || !result.Payload)
       throw new Error('Lambda execution unavailable');
     if (result.Payload.byteLength > cap) throw new Error('Lambda result exceeds size limit');

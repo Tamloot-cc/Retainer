@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
+import { log } from '../log.js';
 import type { Sql } from './client.js';
 
 export const WRITER_ADMISSION_LOCK = 0x52544e09;
@@ -28,4 +30,18 @@ export async function acquireWriterLease(
 
 export async function releaseWriterLease(sql: Sql, id: string | undefined, peerBuild?: string) {
   if (id) await sql`select retainer_deploy.release_writer(${id}, ${peerBuild ?? null})`;
+}
+
+/** Releases a known outcome even if the first query is lost during a reconnect. */
+export async function settleWriterLease(sql: Sql | undefined, id: string | undefined) {
+  if (!sql || !id) return;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await releaseWriterLease(sql, id);
+      return;
+    } catch {
+      if (attempt < 2) await delay(50 * (attempt + 1));
+    }
+  }
+  log.warn('Writer admission lease release failed', { lease: id });
 }
