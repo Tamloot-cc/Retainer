@@ -424,6 +424,7 @@ export class Extensions {
     const release = this.catalog.get(input.registrationId, input.version);
     const manifest = release.manifest;
     const uses = releaseUses(manifest);
+    const modelNotice = uses.includes('model') ? MODEL_USE_NOTICE : undefined;
     if (Buffer.byteLength(JSON.stringify(input.settings)) > 65536)
       throw new AppError(413, 'quota_exceeded', 'settings exceed 64 KiB');
     for (const [key, value] of Object.entries(input.settings)) {
@@ -620,10 +621,12 @@ export class Extensions {
         operations: [],
         views: [],
         grants: { actor: manifest.requestedActor, scopes: ['read'], uses },
-        warnings: [
+        // Shown before configure runs, so model use is known before any call.
+        notices: [
           'Approving lets this extension read workspace records and use its declared secrets before turn-on. No schema changes or writes are approved.',
-          ...(uses.includes('model') ? [MODEL_USE_NOTICE] : []),
+          ...(modelNotice ? [modelNotice] : []),
         ],
+        warnings: [],
       };
       return {
         preview,
@@ -683,7 +686,7 @@ export class Extensions {
       ? resolveBindingPlan(current, manifest, choices, existing?.bindings, people)
       : undefined;
     const operations = bound?.operations ?? [];
-    const notices = bound?.notices ?? [];
+    const bindingNotices = bound?.notices ?? [];
     const planned = planSchemaChange(current, operations, 'workspace');
     if (bound && operations.length) {
       try {
@@ -823,7 +826,9 @@ export class Extensions {
         scopes: manifest.scopes,
         uses,
       },
-      ...(existing && input.grantChange
+      // A configuring installation's access approval granted only read for
+      // suggestions; turning it on is the first full grant, not a change.
+      ...(existing && input.grantChange && existing.state !== 'configuring'
         ? {
             previousGrants: {
               actor: existing.granted_actor,
@@ -833,16 +838,22 @@ export class Extensions {
           }
         : {}),
       ...(bound ? { bindings: bound.review } : {}),
-      warnings: [
-        // Shown wherever model use is newly granted: a release without
-        // configure grants it here, in its single approval.
-        ...(uses.includes('model') &&
-        (!existing ||
-          ['configuring', 'uninstalled'].includes(existing.state) ||
-          !existing.granted_uses.includes('model'))
-          ? [MODEL_USE_NOTICE]
+      notices: [
+        // Shown where model use is newly granted, before any call: a
+        // release without configure grants it here, in its single approval.
+        // An access approval for this release (configure) already said it.
+        ...(modelNotice &&
+        !approval &&
+        (!existing || existing.state === 'uninstalled' || !existing.granted_uses.includes('model'))
+          ? [modelNotice]
           : []),
-        ...notices,
+        // Approving the installation covers sign-in for the workspace's members.
+        ...(manifest.sidebarLink
+          ? ['Members can open this app signed in with their Retainer account.']
+          : []),
+      ],
+      warnings: [
+        ...bindingNotices,
         ...viewNotices,
         ...(replan && existing?.bindings
           ? [
@@ -862,16 +873,6 @@ export class Extensions {
                 ? 'Reconnect stops current runs and retires the previous source account binding and callback addresses. Previously imported evidence stays in this workspace.'
                 : 'Reconnect stops current runs and verifies the new credentials against the retained source account. A different account requires explicit account replacement.',
             ]
-          : []),
-        ...(manifest.source
-          ? [
-              `Provider content is shared with everyone in this Retainer workspace. Source identity: ${manifest.source.identity}.`,
-              `Create people: ${input.settings.createPeople ?? manifest.createPeople}; source deletion: ${manifest.onSourceDelete}.`,
-            ]
-          : []),
-        // Approving the installation covers sign-in for the workspace's members.
-        ...(manifest.sidebarLink
-          ? ['Members can open this app signed in with their Retainer account.']
           : []),
         ...(this.ready(manifest, release.digest)
           ? []

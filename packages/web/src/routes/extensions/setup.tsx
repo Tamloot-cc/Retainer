@@ -2,9 +2,9 @@ import {
   type ExtensionBindingChoices,
   type ExtensionInstallInput,
   type ExtensionSuggestions,
-  MODEL_USE_NOTICE,
   mergeBindingChoices,
   releaseUses,
+  sourceDeletePolicy,
 } from '@retainer/extension';
 import { RetainerApiError } from '@retainer/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -46,6 +46,7 @@ import {
   type Installation,
   initialSettings,
   installedRelease,
+  optionLabel,
   type Release,
   upgradeFor,
   useExtensions,
@@ -615,12 +616,6 @@ function grantSummary(grants: { actor: string; scopes: string[]; uses: string[] 
   return `${grants.scopes.join(' and ')}${grants.uses.includes('model') ? ' with model use' : ''} as an ${grants.actor}`;
 }
 
-const CREATE_PEOPLE: Record<string, string> = {
-  never: 'Never',
-  contacted_first: 'Only people you contacted first',
-  everyone: 'Everyone',
-};
-
 /** What approving will do: access, schema changes, field mapping, saved views and warnings. */
 function Review({
   plan,
@@ -637,6 +632,7 @@ function Review({
   const canWrite = grants.scopes.includes('write');
   const schemaOps = preview.operations as DiffOp[];
   const createPeople = String(plan.input.settings.createPeople ?? release.manifest.createPeople);
+  const name = extensionName(release.manifest.universalId, release.manifest.name);
 
   return (
     <Stack>
@@ -659,17 +655,24 @@ function Review({
                 <dt className="text-muted-foreground">Writes recorded as</dt>
                 <dd>{grants.actor === 'agent' ? 'Agent' : 'Integration'}</dd>
                 <dt className="text-muted-foreground">Create people</dt>
-                <dd>{CREATE_PEOPLE[createPeople] ?? createPeople.replaceAll('_', ' ')}</dd>
-                <dt className="text-muted-foreground">Source deletions</dt>
-                <dd>
-                  {release.manifest.onSourceDelete === 'keep'
-                    ? 'Keep what was imported'
-                    : 'Remove what was imported from it'}
-                </dd>
+                <dd>{optionLabel('createPeople', createPeople)}</dd>
+                {release.manifest.source ? (
+                  <>
+                    <dt className="text-muted-foreground">Deleted in {name}</dt>
+                    <dd>
+                      {optionLabel(
+                        'onSourceDelete',
+                        sourceDeletePolicy(release.manifest, plan.input.settings),
+                      )}
+                    </dd>
+                  </>
+                ) : null}
               </>
             ) : null}
           </dl>
-          {grants.uses.includes('model') ? <Notice>{MODEL_USE_NOTICE}</Notice> : null}
+          {preview.notices.map((notice) => (
+            <Notice key={notice}>{notice}</Notice>
+          ))}
           {preview.previousGrants ? (
             <Notice>
               This approval changes access from {grantSummary(preview.previousGrants)} to{' '}
@@ -683,7 +686,7 @@ function Review({
         <ReviewCardBody>
           {release.manifest.bindings && preview.bindings ? (
             <BindingSummary
-              extension={extensionName(release.manifest.universalId, release.manifest.name)}
+              extension={name}
               declarations={release.manifest.bindings}
               choices={preview.bindings}
               objects={schema.objects}

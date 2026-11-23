@@ -723,7 +723,9 @@ Every screen is a page; only the uninstall confirmation is a dialog.
 - **List** (`/extensions`): **Installed** cards (name, a status badge, an
   "Update available" badge when the catalog has a newer release) open the
   extension's page. **Available** cards hold the extensions not installed,
-  each with **Set up** for admins.
+  each with **Set up** for admins. An Available card for an extension that
+  imports from a source says that what it imports is visible to everyone in
+  the workspace.
 - **Extension** (`/extensions/:id`): the status and version, notices for an
   update, a missing runtime or the last error, and an actions menu
   (Reconnect, Enable, Disable, Uninstall) beside **Upgrade to …**. Tabs
@@ -738,7 +740,10 @@ Every screen is a page; only the uninstall confirmation is a dialog.
   showing only the steps a release needs. Continuing from the last input step
   stages secrets and asks the server for the preview; nothing is written until
   Approve. Going back to a step drops the preview. Approving opens the
-  extension's page.
+  extension's page. The review's Access card lists the access and the
+  admin's choices (create people, what happens to source deletions) as rows,
+  with the preview's `notices` (such as model use) as plain notes under them;
+  only the preview's `warnings` are shown as warnings.
 
 For releases with `configure`, setup uses Connect → Approve access → Preparing
 suggestions → Choose destinations → Review and turn on. The access review grants only

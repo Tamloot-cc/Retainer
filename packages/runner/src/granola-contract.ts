@@ -168,7 +168,7 @@ export function granolaManifest(build: {
       },
       createPeople: {
         type: 'string',
-        label: 'Create contacts',
+        label: 'Create people',
         required: true,
         default: 'never',
         options: ['never', 'contacted_first', 'everyone'],

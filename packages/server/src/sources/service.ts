@@ -1,4 +1,4 @@
-import type { ExtensionManifest } from '@retainer/extension';
+import { type ExtensionManifest, sourceDeletePolicy } from '@retainer/extension';
 import {
   type SourceScan,
   type SourceSyncStatus,
@@ -552,7 +552,16 @@ export class Sources {
           Revision[]
         >`select id,event_id,content_digest from source_revisions where item_id=${itemId} and is_current`;
         let invalidated = emptyInvalidation();
-        const retract = input.status === 'deleted' && manifest.onSourceDelete === 'retract';
+        // The admin's choice, read only when a deletion arrives.
+        const retract =
+          input.status === 'deleted' &&
+          sourceDeletePolicy(
+            manifest,
+            (
+              await tx<{ settings: Record<string, unknown> }[]>`
+                select settings from extension_installations where id=${id}`
+            )[0]?.settings ?? {},
+          ) === 'retract';
         if (retract && current) {
           const [event] = await lockRecordsForUpdate(tx, caller.workspaceId, [current.event_id]);
           if (event && !event.deleted_at)

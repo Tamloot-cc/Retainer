@@ -1,6 +1,13 @@
 import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
-import { appLinksKey, initialSettings, queryKey } from './model';
+import {
+  accessText,
+  appLinksKey,
+  initialSettings,
+  optionLabel,
+  queryKey,
+  sharingNote,
+} from './model';
 
 const setting = { type: 'string', label: 'Days', required: true, secret: false, reconnect: false };
 const release = (settings: Record<string, unknown>) =>
@@ -34,5 +41,30 @@ describe('appLinksKey', () => {
     client.setQueryData(appLinksKey('w1'), { links: [] });
     await client.invalidateQueries({ queryKey });
     expect(client.getQueryState(appLinksKey('w1'))?.isInvalidated).toBe(true);
+  });
+});
+
+describe('plain words before and during setup', () => {
+  it('names the options of the settings the platform acts on', () => {
+    expect(optionLabel('onSourceDelete', 'retract')).toBe('Remove what was imported');
+    expect(optionLabel('onSourceDelete', 'keep')).toBe('Keep what was imported');
+    expect(optionLabel('createPeople', 'contacted_first')).toBe('Only people you contacted first');
+    expect(optionLabel('region', 'eu_west')).toBe('Eu west');
+  });
+  it('says what a source shares with the workspace, and nothing for other extensions', () => {
+    const source = { provider: 'tamloot' } as never;
+    expect(sharingNote({ source, connection: 'member' }, 'Tamloot')).toBe(
+      'Each member connects their own Tamloot account. What it imports from them is visible to everyone in this workspace.',
+    );
+    expect(sharingNote({ source, connection: 'workspace' }, 'Granola')).toBe(
+      'What it imports from Granola is visible to everyone in this workspace.',
+    );
+    expect(sharingNote({ connection: 'workspace' }, 'Exa')).toBeUndefined();
+  });
+  it('says model use sends the data involved to Anthropic', () => {
+    expect(accessText(['read'], 'integration', ['model'])).toContain(
+      'When this extension uses a model, it sends the workspace data involved to Anthropic',
+    );
+    expect(accessText(['read'], 'integration')).not.toContain('Anthropic');
   });
 });

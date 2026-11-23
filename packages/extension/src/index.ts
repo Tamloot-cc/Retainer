@@ -30,9 +30,44 @@ export const SIDEBAR_INSTALLATION_PARAM = 'retainer_installation';
 /** Capabilities a function may declare in `uses`; open for later ones (model calls spec 11). */
 export const EXTENSION_USES = ['model'] as const;
 export type ExtensionUse = (typeof EXTENSION_USES)[number];
-/** What approving `model` means, in plain words, wherever access is shown (model calls spec 3.1). */
+/**
+ * What approving `model` means, in plain words, wherever access is shown
+ * (model calls spec 3.1). One sentence for every release: the grant is model
+ * use, not a particular extent of it.
+ */
 export const MODEL_USE_NOTICE =
-  'This extension sends data from your workspace to Anthropic, which Retainer uses to process it.';
+  'When this extension uses a model, it sends the workspace data involved to Anthropic for processing.';
+/**
+ * The installation setting that chooses what happens when the source deletes
+ * an item it imported; absent, the release's `onSourceDelete` applies.
+ */
+export const SOURCE_DELETE_SETTING = 'onSourceDelete';
+const sourceDeletePolicies = z.enum(['keep', 'retract']);
+/** What happens to imported content when the source deletes it, for these installation settings. */
+export function sourceDeletePolicy(
+  manifest: Pick<ExtensionManifest, 'onSourceDelete' | 'settings'>,
+  settings: Record<string, unknown>,
+): ExtensionManifest['onSourceDelete'] {
+  const chosen = sourceDeletePolicies.safeParse(settings[SOURCE_DELETE_SETTING]);
+  return chosen.success && manifest.settings[SOURCE_DELETE_SETTING]?.options?.includes(chosen.data)
+    ? chosen.data
+    : manifest.onSourceDelete;
+}
+/**
+ * Plain words for the options of the policies the platform itself applies,
+ * wherever they are chosen or shown.
+ */
+export const POLICY_OPTION_LABELS: Record<string, Record<string, string>> = {
+  createPeople: {
+    never: 'Never',
+    contacted_first: 'Only people you contacted first',
+    everyone: 'Everyone',
+  },
+  [SOURCE_DELETE_SETTING]: {
+    retract: 'Remove what was imported',
+    keep: 'Keep what was imported',
+  },
+};
 
 const uuid = z.uuid();
 const name = z.string().regex(/^[a-z][a-zA-Z0-9-]{0,99}$/);
@@ -375,7 +410,7 @@ const manifestSchema = z.strictObject({
     .max(2),
   connection: z.enum(['workspace', 'member']),
   createPeople: z.enum(['never', 'contacted_first', 'everyone']),
-  onSourceDelete: z.enum(['keep', 'retract']),
+  onSourceDelete: sourceDeletePolicies,
   /** Narrow server-computed derivation; only these functions may replace their own derived claims. */
   lastContact: z
     .strictObject({
@@ -776,6 +811,23 @@ export function defineExtension(value: unknown): ExtensionManifest {
   if ((manifest.serverRange === undefined) === (manifest.serverVersions === undefined))
     throw new Error('unsupported_manifest: give exactly one of serverRange or serverVersions');
   if (manifest.serverRange !== undefined) parseServerRange(manifest.serverRange);
+  const deletion = manifest.settings[SOURCE_DELETE_SETTING];
+  if (
+    deletion &&
+    (!manifest.source ||
+      deletion.type !== 'string' ||
+      deletion.secret ||
+      (deletion.level ?? 'installation') !== 'installation' ||
+      !deletion.options?.length ||
+      // A client that leaves the setting out gets the release's policy, so
+      // the default the web fills in must be the same.
+      (deletion.default !== undefined && deletion.default !== manifest.onSourceDelete) ||
+      deletion.options.some((option) => !sourceDeletePolicies.safeParse(option).success) ||
+      (deletion.default !== undefined && !deletion.options.includes(String(deletion.default))))
+  )
+    throw new Error(
+      'unsupported_manifest: onSourceDelete must be an installation choice of keep or retract on a source release',
+    );
   const configure = manifest.functions.filter((fn) => fn.trigger.kind === 'configure');
   if (
     configure.length > 1 ||
@@ -1078,6 +1130,9 @@ export type ExtensionPreview = {
     uses: ExtensionUse[];
   };
   bindings?: ExtensionBindingChoices;
+  /** Plain facts about the access being approved, such as when it uses a model. */
+  notices: string[];
+  /** Cautions: what approving changes or leaves undone that the admin may not expect. */
   warnings: string[];
 };
 export type ExtensionCredential = {

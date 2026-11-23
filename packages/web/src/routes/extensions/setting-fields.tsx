@@ -1,6 +1,6 @@
 import type { ExtensionInstallation, ExtensionManifest } from '@retainer/extension';
 import { Checkbox, Input, Label, Muted, SelectMenu } from '../../ui/index.js';
-import { stateLabel } from './model.js';
+import { optionLabel } from './model.js';
 
 type Installation = ExtensionInstallation;
 type Release = { manifest: Pick<ExtensionManifest, 'name' | 'settings'> };
@@ -116,7 +116,7 @@ export function SettingFields({
                     value={typeof values[key] === 'string' ? String(values[key]) : null}
                     options={definition.options.map((value) => ({
                       value,
-                      label: stateLabel(value),
+                      label: optionLabel(key, value),
                     }))}
                     onChange={(value) => onChange(key, value)}
                     fill

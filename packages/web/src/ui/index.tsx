@@ -201,17 +201,20 @@ export function Notice({
   children,
   error = false,
   warning = false,
+  announce = true,
   onDismiss,
 }: {
   children: ReactNode;
   error?: boolean;
   /** A caution before acting, such as a change that alters existing data. */
   warning?: boolean;
+  /** False for a note that is part of the page, not news: it is not a live region. */
+  announce?: boolean;
   onDismiss?: () => void;
 }) {
   return (
     <div
-      role={error ? 'alert' : 'status'}
+      role={error ? 'alert' : announce ? 'status' : undefined}
       className={cn(
         'flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm',
         error

@@ -134,9 +134,20 @@ Model use is access, so an admin approves it and the installation stores it:
   and `uses` on `extension_access_approvals` (configure spec §6.1).
 - **Shown.** The access preview (configure spec §4.1) lists the release's uses
   with its scopes, actor and secrets, and its plan digest covers them. For
-  `model` it says, in plain words: "This extension sends data from your
-  workspace to Anthropic, which Retainer uses to process it." There's no
-  separate list of which fields or records may be sent.
+  `model` it says, in plain words: "When this extension uses a model, it
+  sends the workspace data involved to Anthropic for processing."
+  (`MODEL_USE_NOTICE`). The sentence is the same for every release, because
+  the grant is model use, not a particular extent of it: a release that uses
+  the model only for setup suggestions and one that uses it on every run are
+  approved alike, and an upgrade between them is no grant change. It is a
+  plain note with the access (the preview's `notices`), not a warning, shown
+  where model use is newly granted, before any call: at access approval for
+  a release with `configure`, or in the single approval of one without. A
+  review after this release's access approval (turning on a `configuring`
+  installation, or a reviewed upgrade) doesn't repeat it. There's no separate
+  list of which fields or records may be sent. Recording the approved extent
+  (setup only, or every run) is deferred until an extension needs the
+  distinction.
 - **Granted at access approval.** Committing the access approval grants the
   release's uses in full, so `configure` can call the model before the mapping
   is reviewed. A release without `configure` grants them in its single

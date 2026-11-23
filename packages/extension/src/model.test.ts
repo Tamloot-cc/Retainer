@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { defineExtension, functionUses, modelClient, releaseUses } from './index.js';
+import {
+  defineExtension,
+  functionUses,
+  MODEL_USE_NOTICE,
+  modelClient,
+  releaseUses,
+} from './index.js';
 import { invocationSchema } from './protocol.js';
 
 const fixture = () => ({
@@ -80,6 +86,13 @@ describe('uses in the manifest (model calls spec 3.1)', () => {
       ],
     });
     expect(releaseUses(manifest)).toEqual(['model']);
+  });
+});
+
+describe('what approving model use means, in plain words (spec 3.1)', () => {
+  it('says data goes to Anthropic when the model is used, not that it always does', () => {
+    expect(MODEL_USE_NOTICE).toMatch(/^When this extension uses a model, it sends/);
+    expect(MODEL_USE_NOTICE).toContain('Anthropic');
   });
 });
 

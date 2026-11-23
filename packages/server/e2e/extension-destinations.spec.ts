@@ -9,9 +9,19 @@ test('shows where Tamloot saves data, with suggestions, folded fields and plain 
 }) => {
   await signIn(page, r.url, r.keys.user);
   await page.getByRole('link', { name: 'Extensions', exact: true }).click();
+  // Sharing is said on the card, before setup starts.
+  await expect(
+    page.getByText(
+      'Each member connects their own Tamloot account. What it imports from them is visible to everyone in this workspace.',
+    ),
+  ).toBeVisible();
   await page.getByRole('link', { name: /^Set up Tamloot/ }).click();
   await page.getByText('Allow members to share Tamloot meetings').click();
+  await page.getByRole('button', { name: /^Meetings deleted in Tamloot/ }).click();
+  await page.getByRole('option', { name: 'Keep what was imported' }).click();
   await page.getByRole('button', { name: 'Review installation', exact: true }).click();
+  // Model use is explained before approving the access that lets configure call it.
+  await expect(page.getByText(/^When this extension uses a model, it sends/)).toBeVisible();
   await page.getByRole('button', { name: 'Approve access', exact: true }).click();
   await expect(page.getByText('Preparing suggestions…')).toBeVisible();
   await r.suggestTamloot();
@@ -55,6 +65,13 @@ test('shows where Tamloot saves data, with suggestions, folded fields and plain 
     'Tasks to Not imported',
   );
   await expect(planned.getByRole('listitem', { name: 'People' })).toContainText('Emails to Emails');
+  // The admin's choices are rows; turning on neither repeats the model notice
+  // nor presents the first full grant as an access change.
+  await expect(page.getByText('Deleted in Tamloot', { exact: true })).toBeVisible();
+  await expect(page.getByText('Keep what was imported', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Anthropic/)).toHaveCount(0);
+  await expect(page.getByText(/changes access from/)).toHaveCount(0);
+  await expect(page.getByText(/Source identity|source deletion/)).toHaveCount(0);
   await page.getByRole('button', { name: 'Review and turn on', exact: true }).click();
   await expect(page).toHaveURL(/\/extensions\/[0-9a-f-]{36}$/);
   const [installed] = (await r.request('/extensions', undefined, r.keys.user)).installations;

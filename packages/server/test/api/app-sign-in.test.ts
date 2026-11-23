@@ -86,10 +86,10 @@ async function setup() {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   const input = { registrationId: manifest.universalId, version: manifest.version, settings: {} };
-  const preview = await json<{ planDigest: string; warnings: string[] }>(
+  const preview = await json<{ planDigest: string; notices: string[] }>(
     await v1(admin.cookie, '/v1/extensions/preview', 'POST', input),
   );
-  expect(preview.warnings).toContain(
+  expect(preview.notices).toContain(
     'Members can open this app signed in with their Retainer account.',
   );
   const installation = await json<ExtensionInstallation>(

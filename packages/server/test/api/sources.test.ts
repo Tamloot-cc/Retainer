@@ -46,8 +46,17 @@ async function setup(
   policy: 'never' | 'contacted_first' | 'everyone' = 'never',
   verify = true,
   onSourceDelete: 'keep' | 'retract' = 'keep',
-  extra?: ExtensionManifest,
-  withTasks = false,
+  {
+    extra,
+    withTasks = false,
+    deleteChoice,
+  }: {
+    /** Another release in the same catalog. */
+    extra?: ExtensionManifest;
+    withTasks?: boolean;
+    /** Offer the deletion policy as an installation setting, and choose this. */
+    deleteChoice?: 'keep' | 'retract';
+  } = {},
 ) {
   const verifyId = randomUUID(),
     syncId = randomUUID(),
@@ -70,6 +79,21 @@ async function setup(
     scopes: ['read', 'write'],
     createPeople: policy,
     onSourceDelete,
+    ...(deleteChoice
+      ? {
+          settings: {
+            onSourceDelete: {
+              type: 'string' as const,
+              label: 'Deleted in the source',
+              required: true,
+              default: onSourceDelete,
+              options: ['retract', 'keep'],
+              secret: false,
+              reconnect: false,
+            },
+          },
+        }
+      : {}),
     bindings: [
       ...sourceTestBindings,
       ...(withTasks
@@ -159,7 +183,7 @@ async function setup(
   const input = {
     registrationId: manifest.universalId,
     version: manifest.version,
-    settings: {},
+    settings: deleteChoice ? { onSourceDelete: deleteChoice } : {},
     ...(withTasks
       ? {
           bindings: {
@@ -938,7 +962,7 @@ describe('managed source evidence with real RLS Postgres', () => {
           },
         ] as ExtensionManifest['functions'],
       });
-    const h = await setup('everyone', true, 'keep', other),
+    const h = await setup('everyone', true, 'keep', { extra: other }),
       s = await h.item();
     expect(
       (
@@ -1525,6 +1549,20 @@ describe('managed source evidence with real RLS Postgres', () => {
         .code,
     ).toBe('source_retracted');
   });
+  it("keeps imported content after a definitive deletion when the admin chose keep over the release's retract", async () => {
+    const h = await setup('never', true, 'retract', { deleteChoice: 'keep' }),
+      s = await h.item();
+    const imported = await h.sync(s.key, s.itemId, '1', null);
+    expect(imported.status).toBe(200);
+    const deleted = await h.app.request(`${h.base}/source-items/${s.itemId}/unavailable`, {
+      key: s.key,
+      body: { status: 'deleted', evidence: 'definitive_lookup' },
+    });
+    expect(deleted.body.state).toBe('deleted');
+    expect(
+      (await h.app.request(`/v1/events/${imported.body.eventId}`, { key: h.keys.admin })).status,
+    ).toBe(200);
+  });
   it('leaves the source item and event intact when another installation owns a unique field', async () => {
     const publisher = extensionFixture({
       execution: 'standalone',
@@ -1558,7 +1596,7 @@ describe('managed source evidence with real RLS Postgres', () => {
         },
       ],
     });
-    const h = await setup('never', true, 'retract', publisher);
+    const h = await setup('never', true, 'retract', { extra: publisher });
     const item = await h.item();
     const imported = await h.sync(item.key, item.itemId, '1', null);
     expect(imported.status, JSON.stringify(imported.body)).toBe(200);
@@ -1703,7 +1741,7 @@ const updateOnlyCreationFixture = extensionFixture({
 
 async function standaloneCreationAudit() {
   const manifest = updateOnlyCreationFixture;
-  const h = await setup('never', true, 'keep', manifest);
+  const h = await setup('never', true, 'keep', { extra: manifest });
   const input = { registrationId: manifest.universalId, version: manifest.version, settings: {} };
   const preview = await h.app.request('/v1/extensions/preview', { key: h.keys.admin, body: input });
   expect(preview.status, JSON.stringify(preview.body)).toBe(200);
@@ -1854,7 +1892,7 @@ it.each([
   [
     'managed source tasks',
     async () => {
-      const h = await setup('never', true, 'keep', undefined, true);
+      const h = await setup('never', true, 'keep', { withTasks: true });
       const item = await h.item();
       const first = await h.sync(item.key, item.itemId, '1', null);
       expect(first.status).toBe(200);

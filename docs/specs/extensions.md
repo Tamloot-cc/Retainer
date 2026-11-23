@@ -1192,7 +1192,11 @@ or `(registration, reviewed provider-wide namespace, external ID)` for a
 global-resource provider; keep it across reinstall. This is a deliberate change from the proposal's promise
 of the same event ID on edit and must ship before claiming edited-note sync works.
 
-`onSourceDelete` is a requested policy shown at install. `keep` retains the current
+`onSourceDelete` is a requested policy shown at install. A release may also
+offer it as an optional installation setting with the same name (a string
+choice of `keep` and `retract`, default the release's policy); the admin's
+choice then applies, from the next deletion, and can be changed in the
+installation's settings. `keep` retains the current
 evidence and records source unavailability; `retract` soft-retracts current source
 evidence and its derivatives through normal rules. Neither hard-erases data or
 allows deleting unrelated events. A transient 404/permission error is not proof
@@ -1411,8 +1415,14 @@ Schema errors identify field keys/UUIDs and conflicting properties; never discar
 unmapped values. Runtime errors never include secrets or invisible record data.
 
 Extensions page: catalog → review → configure/connect → setup progress → active.
-Display workspace-sharing consent, actor authority in plain language, created
-schema/views, create-people and source-deletion policies. Distinguish configured,
+A source extension's catalog card says, before setup, that what it imports is
+visible to everyone in the workspace; setup asks for the sharing consent.
+The review shows actor authority in plain language, created schema/views, and
+the create-people and source-deletion choices as rows of the Access card.
+Choices the admin made and facts about the access are not repeated as
+warnings: the preview's `notices` hold plain facts (such as model use), and its
+`warnings` only what approving changes or leaves undone that the admin may not
+expect. Distinguish configured,
 connected, scan completed, imports completed and failed items. Offer disable,
 reconnect, retry and uninstall with clear retention wording. Saved views use the
 existing view service and reference stable object/field identities; user edits

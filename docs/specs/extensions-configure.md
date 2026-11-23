@@ -425,7 +425,9 @@ only the steps a release needs. For a release with `configure`:
 fields → Review and turn on.
 
 - "Approve access" lists what the extension may read and use, in plain words,
-  and approves with one button.
+  and approves with one button. Model use is explained here, before
+  `configure` calls the model (model calls spec §3.1); Review and turn on
+  doesn't repeat it, nor show the first full grant as an access change.
 - "Preparing suggestions…" polls `GET …/suggestions`. It offers "Skip
   suggestions", which goes to Map fields with the manifest defaults while the
   run finishes in the background.
