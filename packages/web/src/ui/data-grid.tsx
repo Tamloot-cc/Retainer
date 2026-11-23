@@ -405,7 +405,7 @@ export function EditableCell({
           >
             {children}
           </span>
-          {copyValue ? <CellCopyButton label={label} value={copyValue} besideEdit /> : null}
+          {copyValue ? <CellCopyButton label={label} value={copyValue} besideAction /> : null}
           <PopoverPrimitive.Trigger asChild>
             <button
               type="button"
@@ -450,18 +450,18 @@ const CELL_ACTION = `pointer-fine:absolute pointer-fine:top-1/2 pointer-fine:-tr
 function CellCopyButton({
   label,
   value,
-  besideEdit = false,
+  besideAction = false,
 }: {
   label: string;
   value: string;
-  besideEdit?: boolean;
+  besideAction?: boolean;
 }) {
   return (
     <CopyButton
       label={`Copy ${label}`}
       value={value}
       iconOnly
-      className={cn(CELL_ACTION, besideEdit ? 'pointer-fine:right-6' : 'pointer-fine:right-0')}
+      className={cn(CELL_ACTION, besideAction ? 'pointer-fine:right-6' : 'pointer-fine:right-0')}
     />
   );
 }
@@ -470,16 +470,18 @@ function CellCopyButton({
 export function CopyableCell({
   label,
   value,
+  besideAction,
   children,
 }: {
   label: string;
   value: string;
+  besideAction?: boolean;
   children: ReactNode;
 }) {
   return (
     <div className="group/cell relative flex min-w-0 flex-1 items-center self-stretch">
       <span className="min-w-0 flex-1 truncate">{children}</span>
-      <CellCopyButton label={label} value={value} />
+      <CellCopyButton label={label} value={value} besideAction={besideAction} />
     </div>
   );
 }

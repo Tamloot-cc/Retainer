@@ -261,8 +261,10 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
                   references={references}
                 />
               );
+            const cellLabel = `${f.label} of ${label}`;
+            const copyValue = primaryCopyValue(f.type, r.fields[f.name]);
             if (i === 0) {
-              return (
+              const recordLink = (
                 <RecordLink
                   key={f.name}
                   id={r.id}
@@ -277,12 +279,17 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
                     />
                   }
                 >
-                  {r.label ? shown : label}
+                  {r.label && f.type !== 'links' ? shown : label}
                 </RecordLink>
               );
+              return copyValue ? (
+                <CopyableCell key={f.name} label={cellLabel} value={copyValue} besideAction>
+                  {recordLink}
+                </CopyableCell>
+              ) : (
+                recordLink
+              );
             }
-            const cellLabel = `${f.label} of ${label}`;
-            const copyValue = primaryCopyValue(f.type, r.fields[f.name]);
             if (!writable || !isWritable(f)) {
               return copyValue ? (
                 <CopyableCell key={f.name} label={cellLabel} value={copyValue}>

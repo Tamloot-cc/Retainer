@@ -180,8 +180,8 @@ test('opens records from the list in a side sheet and edits fields inline', asyn
   const danaLink = grid.getByRole('link', { name: 'Dana Levi' });
   const noaLink = grid.getByRole('link', { name: 'Noa Cohen' });
 
-  // A click anywhere on the row opens the sheet and records it in the URL.
-  await grid.getByRole('row').filter({ hasText: 'Dana Levi' }).getByText('CTO').click();
+  // The name link opens the sheet and records it in the URL.
+  await danaLink.click();
   const sheet = page.getByRole('dialog', { name: 'Dana Levi' });
   await expect(sheet).toBeVisible();
   await expect(sheet).toBeFocused();

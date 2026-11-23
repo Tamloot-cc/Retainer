@@ -45,7 +45,7 @@ test.describe('a routine button', () => {
     await signIn(page, r.url, r.keys.user);
     await page.getByRole('link', { name: 'People', exact: true }).click();
     const grid = page.getByRole('region', { name: 'People' });
-    await grid.getByRole('row').filter({ hasText: 'Dana Levi' }).getByText('CTO').click();
+    await grid.getByRole('link', { name: 'Dana Levi' }).click();
     const sheet = page.getByRole('dialog', { name: 'Dana Levi' });
     await expect(sheet).toBeVisible();
     await sheet.getByRole('button', { name: 'Welcome', exact: true }).click();

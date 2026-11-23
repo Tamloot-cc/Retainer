@@ -305,7 +305,7 @@ test('explains field labels, edits table cells, and copies contact values', asyn
   await copy.click();
   await expect(copy).toHaveAttribute('title', 'Copied');
   await expect
-    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .poll(() => page.evaluate<string>('navigator.clipboard.readText()'))
     .toBe('avi@example.test');
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
@@ -326,6 +326,47 @@ test('explains field labels, edits table cells, and copies contact values', asyn
   await expect(page.getByRole('tooltip')).toHaveText(
     'Unique: an email identifies exactly one person.',
   );
+});
+
+test('copies a primary link used as a record label and still opens the record', async ({
+  page,
+  context,
+  retainer: r,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: r.url });
+  const change = await r.request(
+    '/schema/changes',
+    {
+      operations: [
+        {
+          op: 'create_object',
+          object: {
+            nameSingular: 'site',
+            namePlural: 'sites',
+            labelSingular: 'Site',
+            labelPlural: 'Sites',
+            labelField: 'website',
+            fields: [{ name: 'website', label: 'Website', type: 'links' }],
+          },
+        },
+      ],
+    },
+    r.keys.user,
+  );
+  expect(change.status).toBe('applied');
+  const url = 'https://example.test/docs';
+  const { record } = await r.request('/objects/site/records', { values: { website: url } });
+  await signIn(page, r.url, r.keys.user);
+  await page.goto(`${r.url}/app/o/site`);
+  const grid = page.getByRole('region', { name: 'Sites' });
+  const cell = grid.getByRole('rowheader').filter({ hasText: url });
+  await cell.hover();
+  await cell.getByRole('button', { name: `Copy Website of ${url}` }).click();
+  await expect.poll(() => page.evaluate<string>('navigator.clipboard.readText()')).toBe(url);
+  expect(new URL(page.url()).searchParams.get('record')).toBeNull();
+  await cell.getByRole('link', { name: url }).click();
+  await expect(page.getByRole('dialog', { name: url })).toBeVisible();
+  expect(new URL(page.url()).searchParams.get('record')).toBe(record.id);
 });
 
 test('finds records, facts and events across objects with the command palette', async ({
