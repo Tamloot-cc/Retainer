@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { serveStatic } from '@hono/node-server/serve-static';
-import { OAUTH_SCOPES, ROUTINE_LIMITS } from '@retainer/shared';
-import { type Context, Hono } from 'hono';
+import { OAUTH_SCOPES, pinnedMcpAddress, ROUTINE_LIMITS } from '@retainer/shared';
+import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import { authenticate } from '../auth/middleware.js';
 import { installationOAuthSettings, oauthSettings } from '../auth/oauth-token.js';
 import { meRoute, sessionRoutes } from '../auth/session.js';
@@ -20,7 +20,7 @@ import { Files } from '../files/service.js';
 import { type RateLimit, rateLimit } from '../http/rate-limit.js';
 import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
 import { hostedSetup } from '../mcp/hosted-setup.js';
-import { mcpRoute } from '../mcp/route.js';
+import { mcpRoute, PINNED_MCP_ROUTE } from '../mcp/route.js';
 import { mountModelRoutes } from '../model/mount.js';
 import { RoutineRuntime } from '../routines/runtime.js';
 import { Routines } from '../routines/service.js';
@@ -174,7 +174,7 @@ export function createApp(deps: AppDeps) {
   if (oauth && publicOrigin) {
     const setupUrl = `${publicOrigin}/mcp/setup`;
     app.get('/mcp/setup', (c) => c.text(hostedSetup(publicOrigin)));
-    app.use('/mcp', async (c, next) => {
+    const help: MiddlewareHandler<AppEnv> = async (c, next) => {
       c.header('Link', `<${setupUrl}>; rel="help"`);
       const accept = c.req.header('accept') ?? '';
       // MCP GET requests ask for SSE. A plain, anonymous GET is an agent or
@@ -190,7 +190,9 @@ export function createApp(deps: AppDeps) {
           : c.text(hostedSetup(publicOrigin));
       }
       await next();
-    });
+    };
+    app.use('/mcp', help);
+    app.use(PINNED_MCP_ROUTE, help);
     const rest = installationOAuthSettings(publicOrigin);
     app.get('/.well-known/oauth-protected-resource/v1', (c) => {
       c.header('Cache-Control', 'public, max-age=3600');
@@ -220,6 +222,14 @@ export function createApp(deps: AppDeps) {
         return c.json(metadata);
       });
     }
+    // A pinned address is a resource of its own (accounts spec 4.7).
+    app.get(`/.well-known/oauth-protected-resource${PINNED_MCP_ROUTE}`, (c) => {
+      c.header('Cache-Control', 'public, max-age=3600');
+      return c.json({
+        ...metadata,
+        resource: pinnedMcpAddress(publicOrigin, c.req.param('workspace')),
+      });
+    });
   }
   mcpRoute(app, deps.sql, {
     publicOrigin,

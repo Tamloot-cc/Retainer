@@ -1,5 +1,5 @@
 import { SIDEBAR_INSTALLATION_PARAM } from '@retainer/extension';
-import { OAUTH_SCOPES, type WorkspaceRole } from '@retainer/shared';
+import { OAUTH_SCOPES, pinnedWorkspaceOf, type WorkspaceRole } from '@retainer/shared';
 import type { Sql } from '../db/client.js';
 import { isUuid } from '../db/ids.js';
 import { inWorkspaceTransaction, lockSchemaShared, type Tx } from '../db/tx.js';
@@ -26,7 +26,12 @@ type RequestGrant = { clientId: string; scopes: ('read' | 'write')[] };
 export function installationRequest(query: string, origin: string): RequestGrant | null {
   const params = new URLSearchParams(query),
     resources = params.getAll('resource');
-  if (resources.length === 0 || (resources.length === 1 && resources[0] === `${origin}/mcp`))
+  // The base MCP address and one pinned to a workspace (4.7) are person connections.
+  if (
+    resources.length === 0 ||
+    (resources.length === 1 &&
+      (resources[0] === `${origin}/mcp` || pinnedWorkspaceOf(resources[0] ?? '', origin)))
+  )
     return null;
   if (resources.length !== 1 || resources[0] !== `${origin}/v1`)
     throw new AppError(400, 'invalid_request', 'pick exactly one OAuth resource');

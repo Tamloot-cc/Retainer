@@ -42,6 +42,11 @@ export type AuthOptions = {
    * and points a 401 at its metadata so clients can start signing in.
    */
   oauth?: OAuthSettings | undefined;
+  /**
+   * The workspace the address names (`/mcp/w/<id>`, accounts spec 4.7): a
+   * credential for any other workspace is refused.
+   */
+  workspace?: string | undefined;
 };
 
 /**
@@ -125,6 +130,13 @@ export function authenticate(sql: Sql, options: AuthOptions = {}): MiddlewareHan
                 workspace: requestedWorkspace(c),
               })
             : await lookupKey(sql, keyCookie ?? '');
+      }
+      if (options.workspace !== undefined && caller.workspaceId !== options.workspace) {
+        throw new AppError(
+          400,
+          'wrong_workspace',
+          "This credential belongs to a different workspace from the one in this address; use that workspace's address.",
+        );
       }
       const causedBy = c.req.header(CAUSED_BY_HEADER);
       if (causedBy !== undefined) {

@@ -43,6 +43,13 @@ If the agent has no browser, either login command supports
 \`--no-browser\`. Give the user the displayed authorization URL, then follow
 the client’s prompt to complete the loopback callback.
 
+## More than one workspace
+
+${origin}/mcp asks which workspace to use at sign-in. To keep a connection
+for each workspace, add ${origin}/mcp/w/<workspace ID> as its own server,
+under its own name such as retainer-acme: it signs in to that workspace
+alone. The list_workspaces tool gives each workspace's address.
+
 ## After browser consent
 
 Call describe_schema using the authenticated MCP tools in the agent. Report

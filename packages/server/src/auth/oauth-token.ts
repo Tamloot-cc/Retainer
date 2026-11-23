@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { cappedScopes, type WorkspaceRole } from '@retainer/shared';
+import { cappedScopes, pinnedMcpAddress, type WorkspaceRole } from '@retainer/shared';
 import { decodeProtectedHeader, importJWK, type JWK, jwtVerify } from 'jose';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
@@ -39,6 +39,21 @@ export function oauthSettings(publicOrigin: string): OAuthSettings {
     issuer: `${origin}${AUTH_BASE_PATH}`,
     resource: `${origin}/mcp`,
     resourceMetadata: `${origin}/.well-known/oauth-protected-resource/mcp`,
+  };
+}
+
+/**
+ * The OAuth settings of the MCP address pinned to one workspace,
+ * `/mcp/w/<workspace ID>` (accounts spec 4.7): its own protected resource,
+ * so its consent offers only that workspace and its tokens work only there.
+ */
+export function pinnedOAuthSettings(publicOrigin: string, workspaceId: string): OAuthSettings {
+  const resource = pinnedMcpAddress(publicOrigin, workspaceId);
+  const { origin, pathname } = new URL(resource);
+  return {
+    issuer: `${origin}${AUTH_BASE_PATH}`,
+    resource,
+    resourceMetadata: `${origin}/.well-known/oauth-protected-resource${pathname}`,
   };
 }
 

@@ -575,6 +575,36 @@ _As built,_ where it differs:
 - **The authorization server's metadata** is served by the control function at
   `/.well-known/oauth-authorization-server/account/auth`, and API Gateway routes
   that path to it.
+- **Addresses pinned to one workspace** (added 2026-11-23). `/mcp` still lets the
+  person pick the workspace at consent. `/mcp/w/<workspace ID>` is the same server
+  pinned to one workspace, so one app can hold a connection per workspace and
+  switch by using the other connection, with no state on the server and no
+  workspace argument on the tools. Each pinned address is an OAuth resource of
+  its own (RFC 8707), with its own protected resource metadata:
+  - Better Auth checks a requested resource against its `oauth_resources` row
+    and the client's link to it before anyone signs in, and accepts no pattern.
+    So the authorize route creates the row, while the workspace exists, and the
+    link on the first authorization that names the address. A client met for
+    the first time registers from its metadata document during that same
+    request, before the check: cimd's `onClientCreated` hook links it there.
+    Neither the row nor the link grants anything.
+  - The consent page offers only that workspace, `POST /account/oauth/consent`
+    refuses any other (`wrong_workspace`), and issuing the token checks the
+    consent's workspace against the address again.
+  - The token's audience is the pinned address, so it works there only, and
+    neither a base token nor another workspace's token is accepted there. An
+    API key for another workspace gets `400 wrong_workspace`.
+  - Purging a workspace deletes its pinned resource, and the links cascade.
+  - `list_workspaces` lists the workspaces the connection's person can reach,
+    with each one's pinned address, through `retainer_token_workspaces`, which
+    answers only while the token's consent lasts. An API key sees its own
+    workspace only.
+  - We chose this over a server-side "current workspace" that a switch tool
+    changes. Cloudflare's MCP servers had that (`set_active_account`) and
+    replaced it with pinned tokens and an `account_id` argument. The
+    2026-07-28 MCP spec asks for explicit handles over hidden state. And a
+    pointer shared by a connection would move every chat on it at once. A
+    `workspace` argument on every tool was rejected as too costly.
 
 ### 4.8 Limits
 

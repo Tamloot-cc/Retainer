@@ -45,7 +45,18 @@ browser, where the person:
 Claude then works in that workspace as "Claude for <name>", an `agent` actor,
 so the rules that need a person still apply. It gets what it asked for that the
 person's role allows: a viewer's Claude can only read, and no app can manage
-people or keys. To use another workspace, connect again and pick it.
+people or keys.
+
+### More than one workspace
+
+A connection works in one workspace. To keep one for each workspace, add a
+connector per workspace with its pinned address,
+`https://<your-host>/mcp/w/<workspace ID>`. Signing in through a pinned
+address offers only that workspace, and its connection works only there, so
+the agent can use both without either one switching. The `list_workspaces`
+tool lists the workspaces the person can reach, with each one's address, so
+the agent can tell them what to add. `/mcp` itself keeps asking which
+workspace to use.
 
 Connected apps are listed under Your account, and for workspace admins under
 Settings, Agents. Disconnecting one, removing the person, lowering their role

@@ -18,6 +18,7 @@ import {
   authorize,
   CLAUDE_CLIENT_ID,
   CLAUDE_REDIRECT,
+  callToolOverHttp,
   connect,
   consent,
   fetchClientMetadata,
@@ -68,24 +69,9 @@ async function setup() {
   return { owner, dana, organizationId, sales, other };
 }
 
-/** The JSON-RPC result of a tool call over raw HTTP (stateless MCP). */
-async function callTool(accessToken: string, name: string, args: Record<string, unknown>) {
-  const res = await mcpCall(app.api, accessToken, 'tools/call', { name, arguments: args });
-  if (res.status !== 200) return { status: res.status, isError: true, text: await res.text() };
-  const text = await res.text();
-  const data = text
-    .split('\n')
-    .find((line) => line.startsWith('data:'))
-    ?.slice(5);
-  const message = JSON.parse(data ?? text) as {
-    result: { isError?: boolean; content: { text: string }[] };
-  };
-  return {
-    status: 200,
-    isError: message.result.isError === true,
-    text: message.result.content[0]?.text ?? '',
-  };
-}
+/** The result of a tool call over raw HTTP (stateless MCP). */
+const callTool = (accessToken: string, name: string, args: Record<string, unknown>) =>
+  callToolOverHttp(app.api, accessToken, name, args);
 
 const createPerson = (accessToken: string, last: string) =>
   callTool(accessToken, 'upsert_record', {

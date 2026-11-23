@@ -1529,7 +1529,11 @@ Hosted on the API server at `/mcp` (Streamable HTTP). `@retainer/mcp` is a
 small stdio bridge for local clients that only speak stdio. In accounts mode,
 clients that cannot use an API key, such as Claude's web app, connect over
 OAuth (7.3); person OAuth tokens target `/mcp`, while separately approved
-installation OAuth tokens target `/v1` (4.6).
+installation OAuth tokens target `/v1` (4.6). A connection works in one
+workspace: at `/mcp` the person picks it when they connect, and
+`/mcp/w/<workspace ID>` is the same server pinned to that workspace, so one
+app can hold a connection per workspace. `list_workspaces` gives each
+workspace's pinned address (accounts spec 4.7).
 
 Tools are generic, not one per object. Custom objects would otherwise grow
 the tool list without limit and break clients' tool caching.
@@ -1540,7 +1544,8 @@ the tool list without limit and break clients' tool caching.
 `query_records` on their type, or on `event` for every type at once, so no
 tool is needed per event type.
 
-Beside these core tools: `list_changes` and `get_change` read the change
+Beside these core tools: `list_workspaces` lists the workspaces the
+connection's person can reach, with each one's pinned address; `list_changes` and `get_change` read the change
 feed; `create_file_upload`, `finalize_file`, `get_file` and `download_file`
 handle files (docs/files.md); `list_extensions`, `get_extension`,
 `list_extension_connections`, `list_extension_runs` and `preview_extension`

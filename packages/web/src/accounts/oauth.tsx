@@ -1,4 +1,4 @@
-import { cappedScopes, OAUTH_SCOPES } from '@retainer/shared';
+import { cappedScopes, OAUTH_SCOPES, pinnedWorkspaceOfResources } from '@retainer/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { type Account, account as accountApi } from '../api/account.js';
@@ -68,9 +68,13 @@ function PersonConsent({ account }: { account: Account }) {
     queryFn: () => accountApi.oauthClient(clientId),
     retry: false,
   });
-  const boundWorkspace = client.data?.workspaceId;
+  // A setup prompt's client and an address pinned to one workspace (4.7)
+  // each allow only that workspace.
+  const setupWorkspace = client.data?.workspaceId;
+  const pinned = pinnedWorkspaceOfResources(query.getAll('resource'), window.location.origin);
   const reachable = allWorkspaces(account).filter(
-    ({ workspace }) => !boundWorkspace || workspace.id === boundWorkspace,
+    ({ workspace }) =>
+      (!setupWorkspace || workspace.id === setupWorkspace) && (!pinned || workspace.id === pinned),
   );
   const [selected, setSelected] = useState('');
   const picked = reachable.length === 1 ? reachable[0]?.workspace.id : selected;
@@ -117,7 +121,12 @@ function PersonConsent({ account }: { account: Account }) {
     >
       {reachable.length === 0 ? (
         <Stack>
-          {boundWorkspace ? (
+          {pinned ? (
+            <Notice>
+              You don't have access to the workspace this connection's address is for. Sign in with
+              the account that can open it.
+            </Notice>
+          ) : setupWorkspace ? (
             <Notice>
               You don't have access to the workspace in this setup prompt. Sign in with the account
               that can open it.
