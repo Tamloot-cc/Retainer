@@ -50,6 +50,6 @@
     "tsx": "^4.23.15"
   },
   "bin": {
-    "retainer": "./dist/cli.js"
+    "retainer-ops": "./dist/cli.js"
   }
 }

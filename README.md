@@ -37,8 +37,8 @@ API key once. Manage workspaces and keys with the operator CLI, which talks
 to the database directly:
 
 ```sh
-docker compose -f docker/compose.yml exec retainer retainer workspace create --name "Acme Clinic" --template clinic
-docker compose -f docker/compose.yml exec retainer retainer key create --workspace acme-clinic \
+docker compose -f docker/compose.yml exec retainer retainer-ops workspace create --name "Acme Clinic" --template clinic
+docker compose -f docker/compose.yml exec retainer retainer-ops key create --workspace acme-clinic \
   --name "Front-desk agent" --actor agent:front-desk --scopes read,write,schema:write
 ```
 
@@ -57,7 +57,7 @@ The Docker image serves the app at [localhost:8787/app](http://localhost:8787/ap
 Create a separate personal key for each reviewer:
 
 ```sh
-docker compose -f docker/compose.yml exec retainer retainer key create --workspace acme-clinic \
+docker compose -f docker/compose.yml exec retainer retainer-ops key create --workspace acme-clinic \
   --name "Dana (web)" --actor user:dana --scopes read,write,admin
 ```
 
@@ -149,7 +149,7 @@ path of `packages/web/dist` in `.env`.
 | `pnpm lint`                      | Biome lint and format check                                              |
 | `pnpm db:generate --name <name>` | Create a migration from `packages/server/src/db/schema.ts`               |
 | `pnpm db:migrate`                | Apply migrations                                                         |
-| `pnpm retainer <command>`        | Run the operator CLI against `DATABASE_URL`                              |
+| `pnpm retainer-ops <command>`        | Run the operator CLI against `DATABASE_URL`                              |
 | `pnpm release:check [tag]`       | Check versions and changelog before a release ([how](docs/releasing.md)) |
 
 ## Packages

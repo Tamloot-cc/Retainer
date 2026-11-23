@@ -17,7 +17,7 @@
     "db:migrate": "pnpm --filter @retainer/server db:migrate",
     "db:viewer": "pnpm --silent --filter @retainer/server db:viewer",
     "db:studio": "pnpm --filter @retainer/server db:studio",
-    "retainer": "pnpm --silent --filter @retainer/server cli",
+    "retainer-ops": "pnpm --silent --filter @retainer/server cli",
     "dev:web": "pnpm --filter @retainer/web dev",
     "test:web": "pnpm --filter @retainer/server test:web",
     "release:check": "node scripts/check-release.mjs",

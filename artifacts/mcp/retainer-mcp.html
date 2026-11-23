@@ -507,7 +507,7 @@ svg .goodtxt { fill: var(--good); font-weight: 600; }
       <table>
         <thead><tr><th></th><th>API key</th><th>OAuth token</th><th>Extension run token</th></tr></thead>
         <tbody>
-          <tr><th>Who makes it</th><td>An admin, in Settings → Agents or with <code>retainer key create</code></td><td>A person, by signing in and choosing Allow</td><td>The coordinator, per run</td></tr>
+          <tr><th>Who makes it</th><td>An admin, in Settings → Agents or with <code>retainer-ops key create</code></td><td>A person, by signing in and choosing Allow</td><td>The coordinator, per run</td></tr>
           <tr><th>Acts as</th><td>The key's <code>agent</code> actor, e.g. <code>agent:inbox</code></td><td>"Claude for &lt;name&gt;", an <code>agent</code> actor</td><td>The extension</td></tr>
           <tr><th>Scopes</th><td>Set on the key: <code>read</code>, <code>write</code>, <code>schema:write</code></td><td>What the app asked for, capped by the person's role</td><td>What the function declared</td></tr>
           <tr><th>Used by</th><td>The stdio bridge, scripts, self-hosted agents</td><td>The plugin, Claude web, Codex</td><td>REST only</td></tr>

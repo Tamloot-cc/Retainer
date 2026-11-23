@@ -30,9 +30,9 @@ WORKDIR /app
 COPY --from=build /out ./
 COPY --from=build /app/packages/web/dist ./web
 # The operator CLI (ARCHITECTURE.md 7.1):
-#   docker compose exec retainer retainer workspace create --name "Acme"
-RUN printf '#!/bin/sh\nexec node /app/dist/cli.js "$@"\n' > /usr/local/bin/retainer \
-  && chmod +x /usr/local/bin/retainer
+#   docker compose exec retainer retainer-ops workspace create --name "Acme"
+RUN printf '#!/bin/sh\nexec node /app/dist/cli.js "$@"\n' > /usr/local/bin/retainer-ops \
+  && chmod +x /usr/local/bin/retainer-ops
 RUN mkdir -p /data/files && chown node:node /data/files
 USER node
 EXPOSE 8787

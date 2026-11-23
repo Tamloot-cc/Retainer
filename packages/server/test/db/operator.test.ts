@@ -17,7 +17,7 @@ async function cli(...argv: string[]) {
   return { code, out: out.join('\n'), err: err.join('\n') };
 }
 
-describe('retainer workspace', () => {
+describe('retainer-ops workspace', () => {
   it('creates a workspace with a template and lists it', async () => {
     const created = await cli(
       'workspace',
@@ -62,7 +62,7 @@ describe('retainer workspace', () => {
   });
 });
 
-describe('retainer key', () => {
+describe('retainer-ops key', () => {
   it('creates a key that authenticates as its actor, then revokes it', async () => {
     const created = await cli(
       'key',

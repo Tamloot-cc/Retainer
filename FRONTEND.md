@@ -100,7 +100,7 @@ Retainer knows callers only by API key (7). Each person gets their own key
 from the operator CLI, with a `user` actor:
 
 ```sh
-retainer key create --workspace acme --name "Maayan (web)" \
+retainer-ops key create --workspace acme --name "Maayan (web)" \
   --actor user:maayan --scopes read,write,admin
 ```
 

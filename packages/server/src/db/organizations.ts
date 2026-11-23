@@ -38,7 +38,7 @@ export async function getOrganization(sql: Sql | Tx, idOrName: string): Promise<
     throw new AppError(
       409,
       'ambiguous',
-      `more than one organization is named "${idOrName}"; use its ID (retainer org list)`,
+      `more than one organization is named "${idOrName}"; use its ID (retainer-ops org list)`,
     );
   }
   return toOrganization(row);

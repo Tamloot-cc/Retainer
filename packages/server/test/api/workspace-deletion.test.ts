@@ -280,7 +280,7 @@ describe('removing deleted workspaces for good', () => {
   });
 });
 
-describe('retainer workspace restore', () => {
+describe('retainer-ops workspace restore', () => {
   it('undoes a deletion, so keys work again', async () => {
     const t = await setup();
     expect((await remove(t.owner, t.workspace.id, 'Doomed')).status).toBe(200);

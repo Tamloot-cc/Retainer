@@ -1883,12 +1883,12 @@ workspace key can create another workspace. On a self-hosted install, the
 server image includes a CLI that talks to the database directly:
 
 ```sh
-docker compose exec retainer retainer workspace create --name "Acme Clinic" --template clinic
-docker compose exec retainer retainer workspace list
-docker compose exec retainer retainer key create --workspace acme-clinic \
+docker compose exec retainer retainer-ops workspace create --name "Acme Clinic" --template clinic
+docker compose exec retainer retainer-ops workspace list
+docker compose exec retainer retainer-ops key create --workspace acme-clinic \
   --name "Front-desk agent" --actor agent:front-desk --scopes read,write,schema:write
-docker compose exec retainer retainer key list --workspace acme-clinic
-docker compose exec retainer retainer key revoke <key-id>
+docker compose exec retainer retainer-ops key list --workspace acme-clinic
+docker compose exec retainer retainer-ops key revoke <key-id>
 ```
 
 `--template` is optional; without it, the first agent chooses one (3.1).

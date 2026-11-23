@@ -34,12 +34,12 @@ can create a workspace or another key.
 ```sh
 alias retainer='docker compose -f docker/compose.yml exec retainer retainer'
 
-retainer workspace create --name "Acme Clinic" --template clinic
-retainer workspace list
-retainer key create --workspace acme-clinic \
+retainer-ops workspace create --name "Acme Clinic" --template clinic
+retainer-ops workspace list
+retainer-ops key create --workspace acme-clinic \
   --name "Front-desk agent" --actor agent:front-desk --scopes read,write,schema:write
-retainer key list --workspace acme-clinic
-retainer key revoke <key-id>
+retainer-ops key list --workspace acme-clinic
+retainer-ops key revoke <key-id>
 ```
 
 `key create` prints the key (`rtn_…`) once. Add `--json` to any command for
@@ -96,7 +96,7 @@ The image serves the review and records app at `http://<host>:8787/app/`.
 Create a personal key for each reviewer with a `user` actor:
 
 ```sh
-retainer key create --workspace acme-clinic \
+retainer-ops key create --workspace acme-clinic \
   --name "Dana (web)" --actor user:dana --scopes read,write,admin
 ```
 
@@ -168,16 +168,16 @@ set a quota. Once full, creating a workspace or inviting someone more is
 refused with `limit_reached`; `none` removes a limit:
 
 ```sh
-retainer org limit --org Acme --workspaces 3 --members 10
-retainer org limit --org Acme --members none
+retainer-ops org limit --org Acme --workspaces 3 --members 10
+retainer-ops org limit --org Acme --members none
 ```
 
 Workspaces that existed before go into one organization named `Default`, with
 no owner. Give it one once that person has signed in:
 
 ```sh
-retainer org list
-retainer member add --org Default --email dana@example.com --role owner
+retainer-ops org list
+retainer-ops member add --org Default --email dana@example.com --role owner
 ```
 
 Owners and admins of an organization are admins in every workspace in it.
@@ -194,10 +194,10 @@ send; Retainer sends no email. The CLI can do the same for people who have
 signed in once:
 
 ```sh
-retainer org create --name "Acme"
-retainer workspace create --name "Acme Clinic" --org Acme
-retainer workspace move acme-clinic --org Acme
-retainer member add --workspace acme-clinic --email ben@example.com --role editor
+retainer-ops org create --name "Acme"
+retainer-ops workspace create --name "Acme Clinic" --org Acme
+retainer-ops workspace move acme-clinic --org Acme
+retainer-ops member add --workspace acme-clinic --email ben@example.com --role editor
 ```
 
 Removing someone, or lowering their role, applies at their next request, and
@@ -211,9 +211,9 @@ from the `control` (or `all`) process. Until then you can undo it, or remove
 it at once:
 
 ```sh
-retainer workspace list                 # marks deleted ones and when they go for good
-retainer workspace restore acme-clinic
-retainer workspace purge                # removes every workspace deleted over 7 days ago
+retainer-ops workspace list                 # marks deleted ones and when they go for good
+retainer-ops workspace restore acme-clinic
+retainer-ops workspace purge                # removes every workspace deleted over 7 days ago
 ```
 
 ## Upgrading

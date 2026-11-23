@@ -17,32 +17,32 @@ import {
 } from '../workspaces/organizations.js';
 import { createWorkspace } from '../workspaces/workspaces.js';
 
-export const USAGE = `Usage: retainer <command>
+export const USAGE = `Usage: retainer-ops <command>
 
 Workspaces
-  retainer workspace create --name <name> [--slug <slug>] [--template <template>] [--org <id|name>]
-  retainer workspace list
-  retainer workspace move <slug|id> --org <id|name>
-  retainer workspace restore <slug|id>     Undo a deletion within its 7 days
-  retainer workspace purge                 Remove workspaces deleted over 7 days ago now
+  retainer-ops workspace create --name <name> [--slug <slug>] [--template <template>] [--org <id|name>]
+  retainer-ops workspace list
+  retainer-ops workspace move <slug|id> --org <id|name>
+  retainer-ops workspace restore <slug|id>     Undo a deletion within its 7 days
+  retainer-ops workspace purge                 Remove workspaces deleted over 7 days ago now
 
 Organizations and people (accounts mode)
-  retainer org create --name <name>
-  retainer org list
-  retainer org limit --org <id|name> [--workspaces <n|none>] [--members <n|none>]
-  retainer member add --org <id|name> --email <email> --role <owner|admin|member>
-  retainer member add --workspace <slug|id> --email <email> --role <viewer|editor|admin>
+  retainer-ops org create --name <name>
+  retainer-ops org list
+  retainer-ops org limit --org <id|name> [--workspaces <n|none>] [--members <n|none>]
+  retainer-ops member add --org <id|name> --email <email> --role <owner|admin|member>
+  retainer-ops member add --workspace <slug|id> --email <email> --role <viewer|editor|admin>
 
 API keys
-  retainer key create --workspace <slug|id> --name <name> --actor <type:id> --scopes <list>
-  retainer key list --workspace <slug|id>
-  retainer key revoke <key-id>
+  retainer-ops key create --workspace <slug|id> --name <name> --actor <type:id> --scopes <list>
+  retainer-ops key list --workspace <slug|id>
+  retainer-ops key revoke <key-id>
 
 Model calls
-  retainer model usage [--days <n>]        Tokens per day across workspaces (default 30 days)
+  retainer-ops model usage [--days <n>]        Tokens per day across workspaces (default 30 days)
 
 Extensions
-  retainer extension connections [--days <n>]
+  retainer-ops extension connections [--days <n>]
                                            New member connections by method, time to connect,
                                            reconnects and access left behind (30 days, at most)
 
@@ -161,7 +161,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         });
         print(
           `Created organization "${organization.name}"\n  id: ${organization.id}\n` +
-            'Add its first owner with: retainer member add --org <id> --email <email> --role owner',
+            'Add its first owner with: retainer-ops member add --org <id> --email <email> --role owner',
           organization,
         );
         return 0;

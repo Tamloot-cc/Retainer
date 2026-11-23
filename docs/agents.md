@@ -14,7 +14,7 @@ Claude's web app, can connect without a key
 ([below](#connecting-claudes-web-app-over-oauth)).
 
 ```sh
-retainer key create --workspace acme --name "Inbox agent" \
+retainer-ops key create --workspace acme --name "Inbox agent" \
   --actor agent:inbox --scopes read,write,schema:write
 ```
 

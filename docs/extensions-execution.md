@@ -161,7 +161,7 @@ omits Routines from its web, REST and MCP interfaces.
 
 The proxy forwards only Messages, token counting and the models list, and only
 listed body fields and beta flags, so no request reaches anything stored in the
-Anthropic account. `retainer model usage [--days <n>]` prints the tokens used
+Anthropic account. `retainer-ops model usage [--days <n>]` prints the tokens used
 per day across workspaces; each extension's Overview tab shows its month.
 
 ## Lifecycle and recovery
