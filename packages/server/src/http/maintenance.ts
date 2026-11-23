@@ -3,6 +3,10 @@ export const MAINTENANCE_RETRY_SECONDS = 5;
 
 export type PausedOperation = 'writes' | 'reads' | 'session-refresh' | 'extensions';
 
+export function isExtensionOperation(path: string): boolean {
+  return /^\/(v1\/extensions|extensions\/hooks)(\/|$)/.test(path);
+}
+
 export function maintenanceHeaders(notExecuted: boolean, operation?: PausedOperation) {
   return {
     'retry-after': String(MAINTENANCE_RETRY_SECONDS),
