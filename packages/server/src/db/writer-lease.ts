@@ -15,11 +15,12 @@ export class WriterAdmissionDenied extends Error {
 export async function acquireWriterLease(
   sql: Sql,
   remainingMs: number,
-  options: { peerBuild?: string; effect?: string } = {},
+  options: { peerBuild?: string; effect?: string; id?: string; acquireBy?: Date } = {},
 ) {
-  const id = randomUUID();
+  const id = options.id ?? randomUUID();
   const [row] = await sql<{ state: 'leased' | 'unmanaged' | 'denied' }[]>`
-    select retainer_deploy.acquire_writer(${id}, ${remainingMs}, ${options.peerBuild ?? null}, ${options.effect ?? null}) as state`;
+    select retainer_deploy.acquire_writer(
+      ${id}, ${remainingMs}, ${options.peerBuild ?? null}, ${options.effect ?? null}, ${options.acquireBy ?? null}) as state`;
   if (row?.state === 'unmanaged') return undefined;
   if (row?.state !== 'leased') throw new WriterAdmissionDenied();
   return id;

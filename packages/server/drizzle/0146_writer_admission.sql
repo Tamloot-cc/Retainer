@@ -127,7 +127,7 @@ REVOKE ALL ON FUNCTION retainer_deploy.install_guards() FROM PUBLIC;
 --> statement-breakpoint
 SELECT retainer_deploy.install_guards();
 --> statement-breakpoint
-CREATE FUNCTION retainer_deploy.acquire_writer(lease_id uuid, remaining_ms integer, peer_build text, external_effect text)
+CREATE FUNCTION retainer_deploy.acquire_writer(lease_id uuid, remaining_ms integer, peer_build text, external_effect text, acquire_by timestamptz)
 RETURNS text LANGUAGE plpgsql VOLATILE SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp AS $$
 BEGIN
@@ -145,25 +145,40 @@ BEGIN
   IF remaining_ms IS NULL OR remaining_ms < 1 OR remaining_ms > 910000 THEN
     RAISE EXCEPTION 'invalid writer lease duration';
   END IF;
+  IF acquire_by IS NOT NULL THEN
+    -- A timed-out model request can release by its own ID. Take the same
+    -- per-call lock so release sees a committed lease, or this insert sees
+    -- that its request deadline has already passed.
+    PERFORM pg_advisory_xact_lock(hashtextextended(lease_id::text, 1381256715));
+    IF clock_timestamp() >= acquire_by THEN
+      RETURN 'denied';
+    END IF;
+  END IF;
   INSERT INTO retainer_deploy.writer_leases (id, build, until, effect, peer_build)
   VALUES (lease_id, current_setting('retainer.writer_build'),
-    clock_timestamp() + remaining_ms * interval '1 millisecond', external_effect, peer_build);
-  RETURN 'leased';
+    clock_timestamp() + remaining_ms * interval '1 millisecond', external_effect, peer_build)
+  ON CONFLICT DO NOTHING;
+  RETURN CASE WHEN FOUND THEN 'leased' ELSE 'denied' END;
 END
 $$;
 --> statement-breakpoint
 CREATE FUNCTION retainer_deploy.release_writer(lease_id uuid, releasing_peer text)
-RETURNS void LANGUAGE sql VOLATILE SECURITY DEFINER
+RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp AS $$
+BEGIN
+  IF releasing_peer IS NOT NULL THEN
+    PERFORM pg_advisory_xact_lock(hashtextextended(lease_id::text, 1381256715));
+  END IF;
   DELETE FROM retainer_deploy.writer_leases
   WHERE id = lease_id AND (
     (releasing_peer IS NULL AND peer_build IS NULL AND build = current_setting('retainer.writer_build', true))
     OR (releasing_peer IS NOT NULL AND peer_build = releasing_peer)
-  )
+  );
+END
 $$;
 --> statement-breakpoint
-REVOKE ALL ON FUNCTION retainer_deploy.acquire_writer(uuid, integer, text, text), retainer_deploy.release_writer(uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION retainer_deploy.acquire_writer(uuid, integer, text, text, timestamptz), retainer_deploy.release_writer(uuid, text) FROM PUBLIC;
 --> statement-breakpoint
 GRANT USAGE ON SCHEMA retainer_deploy TO retainer_app, retainer_control;
 --> statement-breakpoint
-GRANT EXECUTE ON FUNCTION retainer_deploy.acquire_writer(uuid, integer, text, text), retainer_deploy.release_writer(uuid, text) TO retainer_app, retainer_control;
+GRANT EXECUTE ON FUNCTION retainer_deploy.acquire_writer(uuid, integer, text, text, timestamptz), retainer_deploy.release_writer(uuid, text) TO retainer_app, retainer_control;

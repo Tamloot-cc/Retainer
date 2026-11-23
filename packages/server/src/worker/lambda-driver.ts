@@ -98,13 +98,14 @@ export class LambdaDriver implements ExecutionDriver {
         await releaseWriterLease(sql, lease).catch(() => {});
       throw error;
     });
-    // Function errors are platform failures, never a successful handler protocol result.
+    // A normal Lambda return settles the invocation before we validate its
+    // protocol response. A function crash can leave an outside result unknown.
+    if (sql && result.StatusCode === 200 && !result.FunctionError)
+      await releaseWriterLease(sql, lease).catch(() => {});
     if (result.StatusCode !== 200 || result.FunctionError || !result.Payload)
       throw new Error('Lambda execution unavailable');
     if (result.Payload.byteLength > cap) throw new Error('Lambda result exceeds size limit');
-    const response: unknown = JSON.parse(Buffer.from(result.Payload).toString('utf8'));
-    if (sql) await releaseWriterLease(sql, lease).catch(() => {});
-    return response;
+    return JSON.parse(Buffer.from(result.Payload).toString('utf8')) as unknown;
   }
   /** An extension run, or a routine run of the routine runner bundle (routines spec §3.3). */
   async invoke(

@@ -131,6 +131,7 @@ export function usageReportRoute(
   });
 }
 
+const MODEL_ADMISSION_TIMEOUT_MS = 2500;
 const MODEL_LEASE_PATH = '/v1/extensions/internal/model-lease';
 const modelLeaseEvent = z.discriminatedUnion('action', [
   z.strictObject({
@@ -138,6 +139,7 @@ const modelLeaseEvent = z.discriminatedUnion('action', [
     token: z.string().min(1).max(8192),
     build: z.string().regex(WRITER_BUILD_PATTERN),
     callId: z.uuid(),
+    acquireBy: z.iso.datetime(),
   }),
   z.strictObject({
     action: z.literal('release'),
@@ -175,6 +177,8 @@ export function modelLeaseRoute(
     }
     try {
       const id = await acquireWriterLease(deps.sql, 320_000, {
+        id: event.data.callId,
+        acquireBy: new Date(event.data.acquireBy),
         peerBuild: event.data.build,
         effect: `model:${event.data.callId}`,
       });
@@ -195,27 +199,36 @@ export function hostedModelAdmission(options: ReporterOptions, build: string) {
       method: 'POST',
       headers: { authorization: `Bearer ${options.secret}`, 'content-type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(2500),
+      signal: AbortSignal.timeout(MODEL_ADMISSION_TIMEOUT_MS),
       redirect: 'error',
     });
   return async (token: string, callId: string) => {
-    const response = await send({ action: 'acquire', token, build, callId });
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => {});
-      throw new WriterAdmissionDenied();
-    }
-    const { id } = z.object({ id: z.uuid().nullable() }).parse(await response.json());
-    return async () => {
-      if (!id) return;
+    const release = async () => {
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          const released = await send({ action: 'release', token, build, id });
+          const released = await send({ action: 'release', token, build, id: callId });
           await released.body?.cancel();
           if (released.ok || (released.status >= 400 && released.status < 500)) return;
         } catch {}
         if (attempt < 2) await pause(200);
       }
     };
+    const acquireBy = new Date(Date.now() + MODEL_ADMISSION_TIMEOUT_MS).toISOString();
+    try {
+      const response = await send({ action: 'acquire', token, build, callId, acquireBy });
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => {});
+        throw new WriterAdmissionDenied();
+      }
+      const { id } = z.object({ id: z.uuid().nullable() }).parse(await response.json());
+      if (id && id !== callId) throw new WriterAdmissionDenied();
+      return id ? release : async () => {};
+    } catch (error) {
+      // This proxy has not contacted the provider. Clean up even when the
+      // database committed but the HTTP response never reached this process.
+      await release();
+      throw error;
+    }
   };
 }
 

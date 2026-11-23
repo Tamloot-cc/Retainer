@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { Hono } from 'hono';
 import { expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.js';
 import { RUNTIME_ROLE } from '../../src/db/client.js';
@@ -11,9 +12,11 @@ import {
   WRITER_CONTROL_LOCK,
 } from '../../src/db/writer-lease.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import type { AppEnv } from '../../src/http/response.js';
 import { withMigrationLock } from '../../src/lambda/deploy-lock.js';
 import { createOpsHandler } from '../../src/lambda/ops.js';
 import { requireMigrationOwnership } from '../../src/lambda/writer-ops.js';
+import { hostedModelAdmission, modelLeaseRoute } from '../../src/model/routes.js';
 import { recordUsage } from '../../src/model/usage.js';
 import { createRecord } from '../../src/records/service.js';
 import { createWorkspace } from '../../src/workspaces/workspaces.js';
@@ -64,7 +67,8 @@ it('fences transactions, pooled reconnects, stale builds and interrupted migrati
   const modelApp = startTestApp(db, { extensionCatalog: catalog, runTokens: tokens });
   const installation = await installModelRelease(modelApp, db, manifest);
   const job = await claimRun(modelApp, catalog, installation.workspace, installation.id, PICK);
-  const modelClaims = await tokens.verifyModel(await tokens.issueModel(job));
+  const modelToken = await tokens.issueModel(job);
+  const modelClaims = await tokens.verifyModel(modelToken);
   await db.owner`update extension_jobs set status = 'succeeded', run_until = null, lease_until = null, lease_owner = null where id = ${job.jobId}`;
   const usage = {
     id: randomUUID(),
@@ -146,6 +150,53 @@ it('fences transactions, pooled reconnects, stale builds and interrupted migrati
     await lockState;
     await enroll;
   }
+  const modelIngress = new Hono<AppEnv>();
+  const modelSecret = 'writer-test-model-lease-secret';
+  modelLeaseRoute(modelIngress, { sql: old, tokens, secret: modelSecret });
+  const callId = randomUUID();
+  const releaseAfterLostResponse = hostedModelAdmission(
+    {
+      origin: 'https://retainer.test',
+      secret: modelSecret,
+      fetch: async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input);
+        const response = await modelIngress.request(url, init);
+        if (JSON.parse(String(init?.body)).action === 'acquire') {
+          expect(response.status).toBe(200);
+          expect(await response.json()).toEqual({ id: callId });
+          throw new Error('acquire response lost');
+        }
+        return response;
+      },
+    },
+    previous,
+  );
+  await expect(releaseAfterLostResponse(modelToken, callId)).rejects.toThrow(
+    'acquire response lost',
+  );
+  expect(
+    await db.owner`select id from retainer_deploy.writer_leases where id = ${callId}`,
+  ).toHaveLength(0);
+
+  const tooLate = await modelIngress.request(
+    'https://retainer.test/v1/extensions/internal/model-lease',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${modelSecret}` },
+      body: JSON.stringify({
+        action: 'acquire',
+        token: modelToken,
+        build: previous,
+        callId,
+        acquireBy: new Date(Date.now() - 5000).toISOString(),
+      }),
+    },
+  );
+  expect(tooLate.status).toBe(503);
+  expect(
+    await db.owner`select id from retainer_deploy.writer_leases where id = ${callId}`,
+  ).toHaveLength(0);
+
   const proxyLease = await acquireWriterLease(old, 60_000, {
     peerBuild: previous,
     effect: 'model:rolling',
