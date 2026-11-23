@@ -62,7 +62,9 @@ const handleId = (row: string | undefined, side: 'left' | 'right') =>
   `${row === undefined ? 'header' : `row:${row}`}:${side}`;
 const markerId = (end: 'many' | 'one', lit: boolean) =>
   `retainer-diagram-${end}${lit ? '-lit' : ''}`;
-const FIT_VIEW = { padding: 0.08, maxZoom: 1 };
+// React Flow 13 reads a bare number as pixels; 3.7% per side is the margin
+// the old proportional padding of 0.08 gave.
+const FIT_VIEW = { padding: '3.7%', maxZoom: 1 } as const;
 
 interface Actions {
   onSelectNode: (id: string) => void;
