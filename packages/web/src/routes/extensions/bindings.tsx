@@ -1,4 +1,8 @@
-import type { ExtensionBinding, ExtensionBindingChoices } from '@retainer/extension';
+import {
+  bindableField,
+  type ExtensionBinding,
+  type ExtensionBindingChoices,
+} from '@retainer/extension';
 import type { FieldView, ObjectView } from '@retainer/shared';
 import { Ban, Plus } from 'lucide-react';
 import { useState } from 'react';
@@ -23,6 +27,7 @@ import {
   SuggestionNote,
   TextButton,
 } from '../../ui/index.js';
+import { objectByName } from '../state.js';
 
 /**
  * Where an extension's data goes, in plain words: each kind of record it
@@ -38,6 +43,42 @@ export type BindingReviewIssue = { binding: string; field?: string; message: str
 /** Menu values that aren't API names. */
 const CREATE = '__create',
   SKIP = '__skip';
+
+/** A menu's own rows after the workspace's: add a new one, and not importing when optional. */
+function extraOptions(create: string | undefined, required: boolean): PickerOption[] {
+  return [
+    ...(create
+      ? [{ value: CREATE, label: create, content: <IconLabel icon={Plus}>{create}</IconLabel> }]
+      : []),
+    ...(required
+      ? []
+      : [
+          {
+            value: SKIP,
+            label: 'Don’t import',
+            content: <IconLabel icon={Ban}>Don’t import</IconLabel>,
+          },
+        ]),
+  ];
+}
+/** A choice as a menu value: the existing name, a new one, not imported, or none yet. */
+function menuValue(
+  choice: { action: 'existing' | 'create' | 'skip' },
+  existing: string | undefined,
+  required: boolean,
+) {
+  if (choice.action === 'existing') return existing ?? null;
+  if (choice.action === 'create') return CREATE;
+  return required ? null : SKIP;
+}
+/** A picked menu value back as an action, with `existing` building the choice for a name. */
+function fromMenu<T>(value: string, existing: (name: string) => T) {
+  return value === CREATE
+    ? ({ action: 'create' } as const)
+    : value === SKIP
+      ? ({ action: 'skip' } as const)
+      : existing(value);
+}
 
 const candidatesFor = (binding: ExtensionBinding, objects: readonly ObjectView[]) =>
   objects.filter((object) => (object.class ?? 'entity') === binding.class);
@@ -59,9 +100,12 @@ function defaultChoice(binding: ExtensionBinding, objects: readonly ObjectView[]
 }
 
 const fieldCandidates = (object: ObjectView | undefined, rule: Rule) =>
-  object?.fields.filter(
-    (entry) => !entry.readOnly && !entry.coreRole && rule.types.includes(entry.type),
-  ) ?? [];
+  object?.fields.filter((entry) => !entry.readOnly && bindableField(entry, rule)) ?? [];
+/** The existing field a choice names, if it still exists. */
+const existingField = (object: ObjectView | undefined, choice: FieldChoice) =>
+  choice.action === 'existing'
+    ? object?.fields.find((field) => field.name === choice.field)
+    : undefined;
 const canCreateField = (binding: ExtensionBinding, rule: Rule) =>
   !!(rule.create || binding.create?.fields.some((entry) => entry.name === rule.key));
 
@@ -92,8 +136,6 @@ function valueTarget(
   return name ? { label: option?.label ?? name, value: name } : undefined;
 }
 
-const objectLabel = (objects: readonly ObjectView[], name: string) =>
-  objects.find((object) => object.nameSingular === name)?.labelPlural ?? name;
 const newListLabel = (binding: ExtensionBinding, choice: Choice) =>
   choice.action === 'create'
     ? (choice.labelPlural ?? binding.create?.labelPlural ?? binding.label)
@@ -102,7 +144,7 @@ const newListLabel = (binding: ExtensionBinding, choice: Choice) =>
 function fieldTargetLabel(rule: Rule, choice: FieldChoice, object?: ObjectView) {
   if (choice.action === 'skip') return 'Not imported';
   if (choice.action === 'create') return `New field “${rule.create?.label ?? rule.label}”`;
-  return object?.fields.find((field) => field.name === choice.field)?.label ?? choice.field;
+  return existingField(object, choice)?.label ?? choice.field;
 }
 
 /** "Title → Title · Status → Status (Open → To do, Done → Done)", for a folded field list. */
@@ -116,10 +158,7 @@ function fieldsSummary(
       const choice = fields[rule.key];
       if (!choice) return [];
       const target = fieldTargetLabel(rule, choice, object);
-      const options =
-        choice.action === 'existing'
-          ? object?.fields.find((field) => field.name === choice.field)?.settings.options
-          : undefined;
+      const options = existingField(object, choice)?.settings.options;
       const values =
         choice.action === 'existing' && rule.values?.length
           ? ` (${rule.values
@@ -154,25 +193,23 @@ const BindingIcon = ({ binding }: { binding: ExtensionBinding }) => (
 );
 
 /**
- * The approved or proposed plan as text: each kind of record and the list it
- * goes to, with its fields. `plain` drops the cards' frames inside another card.
+ * The approved or proposed plan as text, inside another card: each kind of
+ * record and the list it goes to, with its fields.
  */
 export function BindingSummary({
   extension,
   declarations,
   choices,
   objects,
-  plain = true,
 }: {
   /** The extension's display name, heading the column of its fields. */
   extension: string;
   declarations: ExtensionBinding[];
   choices: ExtensionBindingChoices;
   objects: readonly ObjectView[];
-  plain?: boolean;
 }) {
   return (
-    <MappingList label="Where data goes" plain={plain}>
+    <MappingList label="Where data goes" plain>
       {declarations.map((binding) => {
         const choice = choices[binding.key];
         return choice ? (
@@ -217,7 +254,9 @@ function SummaryDestination({
         ) : undefined
       }
     >
-      {choice.objects.map((name) => objectLabel(objects, name)).join(', ')}
+      {choice.objects
+        .map((name) => objectByName({ objects: [...objects] }, name)?.labelPlural ?? name)
+        .join(', ')}
     </Destination>
   );
 }
@@ -271,10 +310,7 @@ function SummaryField({
   choice: FieldChoice;
   object?: ObjectView;
 }) {
-  const options =
-    choice.action === 'existing'
-      ? object?.fields.find((field) => field.name === choice.field)?.settings.options
-      : undefined;
+  const options = existingField(object, choice)?.settings.options;
   return (
     <>
       <FieldMapRow label={rule.label}>{fieldTargetLabel(rule, choice, object)}</FieldMapRow>
@@ -388,24 +424,7 @@ function BindingCard({
           </IconLabel>
         ),
       })),
-    ...(binding.create
-      ? [
-          {
-            value: CREATE,
-            label: `New list: ${binding.create.labelPlural}`,
-            content: <IconLabel icon={Plus}>New list: {binding.create.labelPlural}</IconLabel>,
-          },
-        ]
-      : []),
-    ...(!binding.required
-      ? [
-          {
-            value: SKIP,
-            label: 'Don’t import',
-            content: <IconLabel icon={Ban}>Don’t import</IconLabel>,
-          },
-        ]
-      : []),
+    ...extraOptions(binding.create && `New list: ${binding.create.labelPlural}`, binding.required),
   ];
   const destination = many ? (
     <SelectMenu
@@ -425,82 +444,66 @@ function BindingCard({
       label={`Where ${label} go`}
       placeholder="Choose a list"
       options={options}
-      value={
-        choice.action === 'existing'
-          ? (choice.objects[0] ?? null)
-          : choice.action === 'create'
-            ? CREATE
-            : binding.required
-              ? null
-              : SKIP
-      }
+      value={menuValue(
+        choice,
+        choice.action === 'existing' ? choice.objects[0] : undefined,
+        binding.required,
+      )}
       onChange={(value) =>
-        onChange(
-          value === CREATE
-            ? { action: 'create' }
-            : value === SKIP
-              ? { action: 'skip' }
-              : { action: 'existing', objects: [value] },
-        )
+        onChange(fromMenu(value, (name) => ({ action: 'existing', objects: [name] }) as const))
       }
     />
   );
 
-  const create = choice.action === 'create' ? choice : undefined;
-  const note = (
-    <>
-      {reason ? <SuggestionNote>{reason}</SuggestionNote> : null}
-      {create && binding.create ? (
-        <MappingNote>
-          Adds a new list, {create.labelPlural ?? binding.create.labelPlural}, to your workspace.{' '}
-          <TextButton onClick={() => setRenaming(!renaming)}>
-            {renaming ? 'Keep the name' : 'Change its API name'}
-          </TextButton>
-        </MappingNote>
-      ) : null}
-      {create && binding.create && renaming ? (
-        <Row>
-          <Label quiet>
-            API name
-            <Input
-              placeholder={binding.create.nameSingular}
-              value={create.nameSingular ?? ''}
-              onChange={(event) =>
-                onChange({ ...create, nameSingular: event.target.value || undefined })
-              }
-            />
-          </Label>
-          <Label quiet>
-            Plural API name
-            <Input
-              placeholder={binding.create.namePlural}
-              value={create.namePlural ?? ''}
-              onChange={(event) =>
-                onChange({ ...create, namePlural: event.target.value || undefined })
-              }
-            />
-          </Label>
-        </Row>
-      ) : null}
-      {choice.action === 'skip' && !binding.required ? (
-        <MappingNote>
-          {extension} won’t import {label}.
-        </MappingNote>
-      ) : null}
-      {issues
-        .filter((issue) => !issue.field)
-        .map((issue) => (
-          <Notice key={issue.message} error>
-            {issue.message}
-          </Notice>
-        ))}
-    </>
-  );
-  const hasNote =
-    !!reason ||
-    !!create ||
-    (choice.action === 'skip' && !binding.required) ||
-    issues.some((issue) => !issue.field);
+  const create = choice.action === 'create' && binding.create ? choice : undefined;
+  const newList = binding.create;
+  const notes = [
+    reason ? <SuggestionNote key="reason">{reason}</SuggestionNote> : null,
+    create && newList ? (
+      <MappingNote key="create">
+        Adds a new list, {create.labelPlural ?? newList.labelPlural}, to your workspace.{' '}
+        <TextButton onClick={() => setRenaming(!renaming)}>
+          {renaming ? 'Keep the name' : 'Change its API name'}
+        </TextButton>
+      </MappingNote>
+    ) : null,
+    create && newList && renaming ? (
+      <Row key="rename">
+        <Label quiet>
+          API name
+          <Input
+            placeholder={newList.nameSingular}
+            value={create.nameSingular ?? ''}
+            onChange={(event) =>
+              onChange({ ...create, nameSingular: event.target.value || undefined })
+            }
+          />
+        </Label>
+        <Label quiet>
+          Plural API name
+          <Input
+            placeholder={newList.namePlural}
+            value={create.namePlural ?? ''}
+            onChange={(event) =>
+              onChange({ ...create, namePlural: event.target.value || undefined })
+            }
+          />
+        </Label>
+      </Row>
+    ) : null,
+    choice.action === 'skip' && !binding.required ? (
+      <MappingNote key="skip">
+        {extension} won’t import {label}.
+      </MappingNote>
+    ) : null,
+    ...issues
+      .filter((issue) => !issue.field)
+      .map((issue) => (
+        <Notice key={issue.message} error>
+          {issue.message}
+        </Notice>
+      )),
+  ].filter(Boolean);
 
   return (
     <MappingCard
@@ -508,14 +511,14 @@ function BindingCard({
       title={binding.label}
       description={binding.description}
       destination={destination}
-      note={hasNote ? note : undefined}
+      note={notes.length ? notes : undefined}
     >
       {choice.action === 'existing' && object && binding.fields.length ? (
         <FieldDisclosure
           label="Fields"
           summary={fieldsSummary(binding, fields, object)}
           open={open || attention}
-          onToggle={() => setOpen(!(open || attention))}
+          onToggle={setOpen}
         >
           <FieldMap from={extension} to={object.labelPlural}>
             {binding.fields.flatMap((rule) =>
@@ -562,39 +565,20 @@ function fieldRows({
     selected.action === 'existing'
       ? candidates.find((entry) => entry.name === selected.field)
       : undefined;
-  const canCreate = canCreateField(binding, rule);
   const options: PickerOption[] = [
     ...candidates
       .filter((entry) => !rule.owned || entry === target)
       .map((entry) => ({ value: entry.name, label: entry.label })),
-    ...(canCreate
-      ? [
-          {
-            value: CREATE,
-            label: `New field: ${rule.create?.label ?? rule.label}`,
-            content: (
-              <IconLabel icon={Plus}>New field: {rule.create?.label ?? rule.label}</IconLabel>
-            ),
-          },
-        ]
-      : []),
-    ...(!rule.required
-      ? [
-          {
-            value: SKIP,
-            label: 'Don’t import',
-            content: <IconLabel icon={Ban}>Don’t import</IconLabel>,
-          },
-        ]
-      : []),
+    ...extraOptions(
+      canCreateField(binding, rule) ? `New field: ${rule.create?.label ?? rule.label}` : undefined,
+      rule.required,
+    ),
   ];
-  const note =
-    reason || rule.description ? (
-      <>
-        {reason ? <SuggestionNote>{reason}</SuggestionNote> : null}
-        {!reason && rule.description ? <MappingNote>{rule.description}</MappingNote> : null}
-      </>
-    ) : undefined;
+  const note = reason ? (
+    <SuggestionNote>{reason}</SuggestionNote>
+  ) : rule.description ? (
+    <MappingNote>{rule.description}</MappingNote>
+  ) : undefined;
   const rows = [
     <FieldMapRow
       key={rule.key}
@@ -616,23 +600,13 @@ function fieldRows({
         label={rule.label}
         placeholder="Choose a field"
         options={options}
-        value={
-          selected.action === 'existing'
-            ? selected.field
-            : selected.action === 'create'
-              ? CREATE
-              : rule.required
-                ? null
-                : SKIP
-        }
+        value={menuValue(
+          selected,
+          selected.action === 'existing' ? selected.field : undefined,
+          rule.required,
+        )}
         onChange={(value) =>
-          update(
-            value === CREATE
-              ? { action: 'create' }
-              : value === SKIP
-                ? { action: 'skip' }
-                : { action: 'existing', field: value },
-          )
+          update(fromMenu(value, (field) => ({ action: 'existing', field }) as const))
         }
       />
     </FieldMapRow>,
@@ -652,11 +626,7 @@ function fieldRows({
           placeholder="Choose an option"
           options={[
             ...fieldOptions.map((option) => ({ value: option.value, label: option.label })),
-            {
-              value: CREATE,
-              label: `Add “${name}” as an option`,
-              content: <IconLabel icon={Plus}>Add “{name}” as an option</IconLabel>,
-            },
+            ...extraOptions(`Add “${name}” as an option`, true),
           ]}
           value={current?.value ?? null}
           onChange={(picked) =>

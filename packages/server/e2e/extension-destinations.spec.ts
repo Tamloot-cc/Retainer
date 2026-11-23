@@ -28,7 +28,7 @@ test('shows where Tamloot saves data, with suggestions, folded fields and plain 
   // Fields stay folded under a summary, status values included.
   await expect(tasks).toContainText('Status → Status (Open → To do, Done → Done)');
   await expect(tasks.getByRole('button', { name: /^Title/ })).toHaveCount(0);
-  await tasks.getByRole('button', { name: /^Fields/ }).click();
+  await tasks.getByText('Fields', { exact: true }).click();
   await expect(tasks.getByRole('button', { name: /^Status: Open/ })).toContainText('To do');
 
   // A choice away from the suggestion drops its reason and says what happens instead.

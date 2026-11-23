@@ -224,19 +224,13 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
         onCancel={() => cancel.mutate()}
         {...(installation ? { installation } : {})}
         {...(suggested ? { suggestions: suggested } : {})}
-        {...(installation
-          ? {
-              suggestAction: (
-                <Button disabled={again.isPending} onClick={() => again.mutate()}>
-                  {again.isPending
-                    ? 'Requesting…'
-                    : suggested
-                      ? 'Suggest again'
-                      : 'Get suggestions'}
-                </Button>
-              ),
-            }
-          : {})}
+        suggestAction={
+          installation ? (
+            <Button disabled={again.isPending} onClick={() => again.mutate()}>
+              {again.isPending ? 'Requesting…' : suggested ? 'Suggest again' : 'Get suggestions'}
+            </Button>
+          ) : undefined
+        }
       />
     </Stack>
   );
@@ -482,13 +476,13 @@ function BasicExtensionSetup({
       Object.keys(release.bindingProposal.choices).some((key) => !suggestions?.bindings?.[key])
         ? (release.bindingProposal.proposedBy.name ?? release.bindingProposal.proposedBy.id)
         : undefined;
-    const suggested = !!suggestions?.bindings && Object.keys(suggestions.bindings).length > 0;
+    const hasSuggestions = !!suggestions?.bindings && Object.keys(suggestions.bindings).length > 0;
     body = (
       <Form onSubmit={next}>
         <Stack>
           <StepHeader title={`Where ${name} saves data`}>
             Each kind of record {name} imports goes into a list in this workspace.
-            {suggested || proposedBy
+            {hasSuggestions || proposedBy
               ? ' The choices are filled in for you; change anything that looks wrong.'
               : ' Pick an existing list, or add a new one.'}
           </StepHeader>

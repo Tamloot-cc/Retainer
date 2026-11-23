@@ -1,9 +1,11 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import type {
-  ExecutionResult,
-  ExtensionBinding,
-  ExtensionBindingChoices,
-  ExtensionBindingPlan,
+import {
+  bindableField,
+  type ExecutionResult,
+  type ExtensionBinding,
+  type ExtensionBindingChoices,
+  type ExtensionBindingPlan,
+  SUGGESTION_REASON_MAX,
 } from '@retainer/extension';
 import type { RetainerClient } from '@retainer/sdk';
 import { type FieldView, type ObjectView, relationTargets } from '@retainer/shared';
@@ -26,8 +28,8 @@ const MAX_TOKENS = 8000;
 const MAX_OBJECTS = 25;
 const SAMPLE_RECORDS = 3;
 const SAMPLE_MAX_CHARACTERS = 120;
-/** The suggestions endpoint's limit on each reason (configure spec 2.2). */
-const REASON_MAX = 500;
+/** Sampling queries in flight at once, so one run doesn't burst the API. */
+const SAMPLE_CONCURRENCY = 6;
 
 const SYSTEM = `You set up a meeting recorder's integration with a CRM. The integration writes three kinds of records, called bindings, and you suggest where each one goes in this workspace's schema:
 - meeting: one event per recorded meeting, with its notes and participants.
@@ -51,13 +53,7 @@ type Rule = ExtensionBinding['fields'][number];
 
 /** The fields of `object` a binding field may write to, as the server checks them. */
 const eligible = (object: ObjectView, rule: Rule) =>
-  object.fields.filter(
-    (field) =>
-      !field.readOnly &&
-      !field.coreRole &&
-      !field.settings.isInverse &&
-      (rule.types as string[]).includes(field.type),
-  );
+  object.fields.filter((field) => !field.readOnly && bindableField(field, rule));
 const candidates = (objects: ObjectView[], binding: ExtensionBinding) =>
   objects.filter((object) => object.class === binding.class).slice(0, MAX_OBJECTS);
 
@@ -92,16 +88,19 @@ async function sampleLabels(sdk: RetainerClient, object: ObjectView, signal: Abo
 }
 
 /** The model's input: the bindings, their candidates and the current plan. */
-export async function configureInput(
+async function configureInput(
   sdk: RetainerClient,
   objects: ObjectView[],
   current: ExtensionBindingPlan | undefined,
   signal: AbortSignal,
 ) {
-  const used = new Set(TAMLOOT_BINDINGS.flatMap((binding) => candidates(objects, binding)));
+  const queue = [...new Set(TAMLOOT_BINDINGS.flatMap((binding) => candidates(objects, binding)))];
   const samples = new Map<ObjectView, string[]>();
   await Promise.all(
-    [...used].map(async (object) => samples.set(object, await sampleLabels(sdk, object, signal))),
+    Array.from({ length: Math.min(SAMPLE_CONCURRENCY, queue.length) }, async () => {
+      for (let object = queue.shift(); object; object = queue.shift())
+        samples.set(object, await sampleLabels(sdk, object, signal));
+    }),
   );
   return {
     bindings: TAMLOOT_BINDINGS.map((binding) => ({
@@ -152,65 +151,53 @@ export async function configureInput(
 }
 
 const nullable = (type: Record<string, unknown>) => ({ anyOf: [type, { type: 'null' }] });
+/** A JSON schema object whose every property is required, as structured output needs. */
+const strict = (properties: Record<string, unknown>) => ({
+  type: 'object',
+  properties,
+  required: Object.keys(properties),
+  additionalProperties: false,
+});
+/** A required binding or field can't be skipped. */
+const actions = (required: boolean) =>
+  required ? ['existing', 'create'] : ['existing', 'create', 'skip'];
 
 /** The answer's JSON schema, built from the bindings so it always matches them. */
 export function answerSchema() {
-  const choice = (actions: string[], target: string, extra: Record<string, unknown> = {}) => {
-    const properties = {
-      action: { type: 'string', enum: actions },
+  const choice = (required: boolean, target: string, extra: Record<string, unknown>) =>
+    strict({
+      action: { type: 'string', enum: actions(required) },
       [target]: nullable({ type: 'string' }),
       reason: { type: 'string' },
       ...extra,
-    };
-    return {
-      type: 'object',
-      properties,
-      required: Object.keys(properties),
-      additionalProperties: false,
-    };
-  };
+    });
   const fieldChoice = (rule: Rule) =>
     choice(
-      rule.required ? ['existing', 'create'] : ['existing', 'create', 'skip'],
+      rule.required,
       'field',
       rule.values
         ? {
-            values: {
-              type: 'object',
-              properties: Object.fromEntries(
-                rule.values.map((value) => [value, nullable({ type: 'string' })]),
-              ),
-              required: rule.values,
-              additionalProperties: false,
-            },
+            values: strict(
+              Object.fromEntries(rule.values.map((value) => [value, nullable({ type: 'string' })])),
+            ),
           }
         : {},
     );
   const bindingChoice = (binding: ExtensionBinding) =>
     choice(
-      binding.required ? ['existing', 'create'] : ['existing', 'create', 'skip'],
+      binding.required,
       'object',
       binding.fields.length
         ? {
-            fields: {
-              type: 'object',
-              properties: Object.fromEntries(
-                binding.fields.map((rule) => [rule.key, fieldChoice(rule)]),
-              ),
-              required: binding.fields.map((rule) => rule.key),
-              additionalProperties: false,
-            },
+            fields: strict(
+              Object.fromEntries(binding.fields.map((rule) => [rule.key, fieldChoice(rule)])),
+            ),
           }
         : {},
     );
-  return {
-    type: 'object',
-    properties: Object.fromEntries(
-      TAMLOOT_BINDINGS.map((binding) => [binding.key, bindingChoice(binding)]),
-    ),
-    required: TAMLOOT_BINDINGS.map((binding) => binding.key),
-    additionalProperties: false,
-  };
+  return strict(
+    Object.fromEntries(TAMLOOT_BINDINGS.map((binding) => [binding.key, bindingChoice(binding)])),
+  );
 }
 
 const action = z.enum(['existing', 'create', 'skip']);
@@ -226,8 +213,40 @@ const bindingAnswer = z.strictObject({
   reason: z.string(),
   fields: z.record(z.string(), fieldAnswer).optional(),
 });
-export const answerParser = z.record(z.string(), bindingAnswer);
-export type ConfigureAnswer = z.infer<typeof answerParser>;
+const answerParser = z.record(z.string(), bindingAnswer);
+type ConfigureAnswer = z.infer<typeof answerParser>;
+
+/**
+ * The model's pick for one field, if the server can take it: a skip of an
+ * optional field, a field the extension can create, or an existing eligible
+ * field (a relation only to the object chosen for its target binding), with
+ * only the values that name one of its options.
+ */
+function fieldSuggestion(
+  rule: Rule,
+  pick: z.infer<typeof fieldAnswer>,
+  object: ObjectView,
+  related: ObjectView | undefined,
+): FieldChoice | undefined {
+  if (pick.action === 'skip') return rule.required ? undefined : { action: 'skip' };
+  if (pick.action === 'create') return rule.create ? { action: 'create' } : undefined;
+  const target = eligible(object, rule).find((entry) => entry.name === pick.field);
+  if (!target) return undefined;
+  if (rule.target && !(related && relationTargets(target).includes(related.nameSingular)))
+    return undefined;
+  const options = new Set(target.settings.options?.map((option) => option.value));
+  const values = Object.fromEntries(
+    (rule.values ?? []).flatMap((value) => {
+      const mapped = pick.values?.[value];
+      return mapped && options.has(mapped) ? [[value, mapped]] : [];
+    }),
+  );
+  return {
+    action: 'existing',
+    field: target.name,
+    ...(Object.keys(values).length ? { values } : {}),
+  };
+}
 
 /**
  * Turns the model's answer into binding choices the server can take. A
@@ -235,11 +254,11 @@ export type ConfigureAnswer = z.infer<typeof answerParser>;
  * default applies to it; a status value mapped to an option the field lacks
  * is dropped the same way.
  */
-export function toSuggestions(objects: ObjectView[], answer: ConfigureAnswer) {
+function toSuggestions(objects: ObjectView[], answer: ConfigureAnswer) {
   const bindings: ExtensionBindingChoices = {};
   const reasons: Record<string, string> = {};
   const reason = (key: string, text: string) => {
-    const trimmed = text.trim().slice(0, REASON_MAX);
+    const trimmed = text.trim().slice(0, SUGGESTION_REASON_MAX);
     if (trimmed) reasons[key] = trimmed;
   };
   // Relations are checked against the object chosen for their target binding.
@@ -264,32 +283,10 @@ export function toSuggestions(objects: ObjectView[], answer: ConfigureAnswer) {
       const fields: Record<string, FieldChoice> = {};
       for (const rule of binding.fields) {
         const pick = choice.fields?.[rule.key];
-        if (!pick) continue;
-        let field: FieldChoice | undefined;
-        if (pick.action === 'skip' && !rule.required) field = { action: 'skip' };
-        else if (pick.action === 'create' && rule.create) field = { action: 'create' };
-        else if (pick.action === 'existing') {
-          const target = eligible(object, rule).find((entry) => entry.name === pick.field);
-          const related = rule.target ? chosen(rule.target) : undefined;
-          if (
-            target &&
-            (!rule.target || (related && relationTargets(target).includes(related.nameSingular)))
-          ) {
-            const options = new Set(target.settings.options?.map((option) => option.value));
-            const values = Object.fromEntries(
-              (rule.values ?? []).flatMap((value) => {
-                const mapped = pick.values?.[value];
-                return mapped && options.has(mapped) ? [[value, mapped]] : [];
-              }),
-            );
-            field = {
-              action: 'existing',
-              field: target.name,
-              ...(Object.keys(values).length ? { values } : {}),
-            };
-          }
-        }
-        if (!field) continue;
+        const field =
+          pick &&
+          fieldSuggestion(rule, pick, object, rule.target ? chosen(rule.target) : undefined);
+        if (!pick || !field) continue;
         fields[rule.key] = field;
         reason(`${binding.key}.${rule.key}`, pick.reason);
       }
@@ -325,7 +322,7 @@ export async function configureTamloot(
       {
         model: TAMLOOT_MODEL,
         system: SYSTEM,
-        user: JSON.stringify(input, null, 2),
+        user: JSON.stringify(input),
         schema: answerSchema(),
         maxTokens: MAX_TOKENS,
       },

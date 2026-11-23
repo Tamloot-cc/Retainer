@@ -8,7 +8,6 @@ import {
   enrichmentManifest,
   exaSearchRequest,
 } from './enrichment-contract.js';
-import { enrichmentModel } from './enrichment-model.js';
 import {
   acceptPick,
   type Candidate,
@@ -18,6 +17,7 @@ import {
   normalizeCompanyName,
   shortcut,
 } from './enrichment-provider.js';
+import { runModel } from './model-call.js';
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
@@ -248,7 +248,7 @@ function fakes(
     sdk,
     installationId: 'installation',
     exa: new ExaProvider('exa-key', signal, transport),
-    model: () => enrichmentModel(invocation, transport)?.withOptions({ maxRetries: 0 }) ?? null,
+    model: () => runModel(invocation, transport)?.withOptions({ maxRetries: 0 }) ?? null,
     signal,
   };
   const record = {
@@ -387,20 +387,36 @@ describe('configure (spec 6.1)', () => {
         nameSingular: 'company',
         labelField: 'name',
         fields: [
-          { name: 'name', label: 'Name', type: 'text', readOnly: false, description: null },
+          {
+            name: 'name',
+            label: 'Name',
+            type: 'text',
+            readOnly: false,
+            settings: {},
+            description: null,
+          },
           {
             name: 'domain',
             label: 'Domain',
             type: 'links',
             readOnly: false,
+            settings: {},
             description: null,
           },
-          { name: 'size', label: 'Size', type: 'number', readOnly: false, description: null },
+          {
+            name: 'size',
+            label: 'Size',
+            type: 'number',
+            readOnly: false,
+            settings: {},
+            description: null,
+          },
           {
             name: 'dealSize',
             label: 'Deal size',
             type: 'number',
             readOnly: false,
+            settings: {},
             description: null,
           },
           {
@@ -408,9 +424,17 @@ describe('configure (spec 6.1)', () => {
             label: 'LinkedIn',
             type: 'links',
             readOnly: false,
+            settings: {},
             description: null,
           },
-          { name: 'score', label: 'Score', type: 'number', readOnly: true, description: null },
+          {
+            name: 'score',
+            label: 'Score',
+            type: 'number',
+            readOnly: true,
+            settings: {},
+            description: null,
+          },
         ],
       },
     ],

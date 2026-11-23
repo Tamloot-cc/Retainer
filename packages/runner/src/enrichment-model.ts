@@ -1,11 +1,8 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import type { Invocation } from '@retainer/extension';
 import { z } from 'zod';
 import { type Certainty, certaintySchema, ENRICHMENT_MODEL } from './enrichment-contract.js';
 import type { Candidate } from './enrichment-provider.js';
-import { askModel, type ModelAnswer, runModel } from './model-call.js';
-
-export { type ModelFailure, ModelRequestFailed } from './model-call.js';
+import { askModel, type ModelAnswer } from './model-call.js';
 
 /**
  * Enrichment's model calls (model calls spec 6.1, 6.3 and 6.5), through the
@@ -16,19 +13,6 @@ export { type ModelFailure, ModelRequestFailed } from './model-call.js';
 /** Thinking counts against `max_tokens`, and Opus 5.5 always thinks (spec 6.3). */
 const PICK_MAX_TOKENS = 4000;
 const SUGGEST_MAX_TOKENS = 8000;
-
-/** The run's client, or null when the run has no model. */
-export function enrichmentModel(invocation: Invocation, transport: typeof fetch): Anthropic | null {
-  return runModel(invocation, transport);
-}
-
-const ask = <T>(
-  client: Anthropic | null,
-  request: { system: string; user: string; schema: Record<string, unknown>; maxTokens: number },
-  parse: z.ZodType<T>,
-  signal: AbortSignal,
-): Promise<ModelAnswer<T>> =>
-  askModel(client, { model: ENRICHMENT_MODEL, ...request }, parse, signal);
 
 const PICK_SYSTEM = `You match one company record from a CRM to the company profiles a web search returned for it.
 
@@ -71,9 +55,15 @@ export function pickCandidate(
     JSON.stringify(candidates, null, 2),
     '</profiles>',
   ].join('\n');
-  return ask(
+  return askModel(
     client,
-    { system: PICK_SYSTEM, user, schema: pickSchema, maxTokens: PICK_MAX_TOKENS },
+    {
+      model: ENRICHMENT_MODEL,
+      system: PICK_SYSTEM,
+      user,
+      schema: pickSchema,
+      maxTokens: PICK_MAX_TOKENS,
+    },
     pickAnswer,
     signal,
   );
@@ -158,9 +148,15 @@ export function suggestMapping(
     null,
     2,
   );
-  return ask(
+  return askModel(
     client,
-    { system: SUGGEST_SYSTEM, user, schema, maxTokens: SUGGEST_MAX_TOKENS },
+    {
+      model: ENRICHMENT_MODEL,
+      system: SUGGEST_SYSTEM,
+      user,
+      schema,
+      maxTokens: SUGGEST_MAX_TOKENS,
+    },
     parse,
     signal,
   );

@@ -524,6 +524,18 @@ export const test = base.extend<
       if (!response.ok) throw new Error(JSON.stringify(result));
       return result;
     }
+    /** Claims the newest queued `configure` job, as the runner would, with its run token. */
+    async function claimConfigure(registrationId: string) {
+      if (!catalog || !runTokens) throw new Error('no extension runtime in this fixture');
+      const queue = new ExtensionQueue(sql, catalog.runtime);
+      const [pending] =
+        await owner`select id from extension_jobs where status='queued' and trigger_kind='configure' order by id desc limit 1`;
+      if (!pending) throw new Error('no configure job');
+      const job = await queue.claim(workspace.id, pending.id, randomUUID());
+      if (!job) throw new Error('configure claim failed');
+      const token = await runTokens.issue(sql, job, registrationId, job.scopes);
+      return { queue, job, token };
+    }
     async function finishConfigure(setup = false) {
       if (!catalog || !runTokens) throw new Error('configure fixture is not enabled');
       const queue = new ExtensionQueue(sql, catalog.runtime);
@@ -536,17 +548,7 @@ export const test = base.extend<
         await queue.complete(run, { status: 'succeeded' });
         return;
       }
-      const [pending] =
-        await owner`select id,installation_id from extension_jobs where status='queued' and trigger_kind='configure' order by id desc limit 1`;
-      if (!pending) throw new Error('no configure job');
-      const job = await queue.claim(workspace.id, pending.id, randomUUID());
-      if (!job) throw new Error('configure claim failed');
-      const token = await runTokens.issue(
-        sql,
-        job,
-        browserConfigureManifest.universalId,
-        job.scopes,
-      );
+      const { job, token } = await claimConfigure(browserConfigureManifest.universalId);
       if (configureSecretFixture) {
         const secret = await request(
           `/extensions/${job.installationId}/runtime/secrets/providerKey`,
@@ -585,14 +587,8 @@ export const test = base.extend<
       await queue.complete(job, { status: 'succeeded' });
     }
     async function suggestTamloot() {
-      if (!tamloot || !catalog || !runTokens) throw new Error('tamloot fixture is not enabled');
-      const queue = new ExtensionQueue(sql, catalog.runtime);
-      const [pending] =
-        await owner`select id from extension_jobs where status='queued' and trigger_kind='configure' order by id desc limit 1`;
-      if (!pending) throw new Error('no configure job');
-      const job = await queue.claim(workspace.id, pending.id, randomUUID());
-      if (!job) throw new Error('configure claim failed');
-      const token = await runTokens.issue(sql, job, tamloot.universalId, job.scopes);
+      if (!tamloot) throw new Error('tamloot fixture is not enabled');
+      const { queue, job, token } = await claimConfigure(tamloot.universalId);
       await request(
         `/extensions/${job.installationId}/runtime/suggestions`,
         {

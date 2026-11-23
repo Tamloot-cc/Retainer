@@ -1,8 +1,9 @@
-import type {
-  BindingWriteStamp,
-  ExtensionBinding,
-  ExtensionBindingPlan,
-  ExtensionManifest,
+import {
+  type BindingWriteStamp,
+  bindableField,
+  type ExtensionBinding,
+  type ExtensionBindingPlan,
+  type ExtensionManifest,
 } from '@retainer/extension';
 import { HIDDEN_TYPE_IDS } from '@retainer/shared';
 import { AppError } from '../errors.js';
@@ -36,12 +37,7 @@ export function visibleObject(object: ObjectState, declaration: ExtensionBinding
 }
 
 export function eligibleField(field: FieldState, rule: ExtensionBinding['fields'][number]) {
-  return (
-    field.status === 'active' &&
-    !field.coreRole &&
-    !field.settings.isInverse &&
-    rule.types.includes(field.type)
-  );
+  return field.status === 'active' && bindableField(field, rule);
 }
 
 export function createsRecords(

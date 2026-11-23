@@ -14,7 +14,7 @@ test('reviews and approves binding choices, then replans one output', async ({
   const companies = screen.getByRole('listitem', { name: 'Companies' });
   // The fields are folded under a one-line summary until opened.
   await expect(companies).toContainText('Headquarters → Not imported');
-  await companies.getByRole('button', { name: /^Fields/ }).click();
+  await companies.getByText('Fields', { exact: true }).click();
   await expect(
     screen.getByText('Employees the provider finds, mostly from public profiles.'),
   ).toBeVisible();
@@ -34,7 +34,7 @@ test('reviews and approves binding choices, then replans one output', async ({
     'Headquarters to Address',
   );
   await summary.getByRole('link', { name: 'Change destinations' }).click();
-  await companies.getByRole('button', { name: /^Fields/ }).click();
+  await companies.getByText('Fields', { exact: true }).click();
   await companies.getByRole('button', { name: /^Headquarters/ }).click();
   await page.getByRole('option', { name: 'Don’t import' }).click();
   await screen.getByRole('button', { name: 'Review new plan' }).click();

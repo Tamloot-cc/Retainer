@@ -1,4 +1,8 @@
-import { bindingChoicesSchema, type ExtensionSuggestions } from '@retainer/extension';
+import {
+  bindingChoicesSchema,
+  type ExtensionSuggestions,
+  SUGGESTION_REASON_MAX,
+} from '@retainer/extension';
 import { z } from 'zod';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
@@ -13,7 +17,7 @@ import type { ExtensionCatalog } from './catalog.js';
 
 export const suggestionsSchema = z.strictObject({
   bindings: bindingChoicesSchema.optional(),
-  bindingReasons: z.record(z.string().max(180), z.string().max(500)).optional(),
+  bindingReasons: z.record(z.string().max(180), z.string().max(SUGGESTION_REASON_MAX)).optional(),
   settings: z
     .record(z.string(), z.union([z.string(), z.boolean(), z.number().finite()]))
     .optional(),

@@ -538,16 +538,17 @@ function MappingSummary({
   });
   if (detail.error) return <QueryError error={detail.error} retry={() => void detail.refetch()} />;
   if (!release.manifest.bindings || !detail.data?.bindingChoices)
-    return <Muted>Loading bindings…</Muted>;
+    return <Muted>Loading destinations…</Muted>;
+  const name = extensionName(release.manifest.universalId, release.manifest.name);
   return (
     <ReviewCard>
       <ReviewCardHeader
         leading={<ReviewIcon icon={LayoutList} />}
-        title={`Where ${extensionName(release.manifest.universalId, release.manifest.name)} saves data`}
+        title={`Where ${name} saves data`}
       />
       <ReviewCardBody>
         <BindingSummary
-          extension={extensionName(release.manifest.universalId, release.manifest.name)}
+          extension={name}
           declarations={release.manifest.bindings}
           choices={detail.data.bindingChoices}
           objects={schema.objects}

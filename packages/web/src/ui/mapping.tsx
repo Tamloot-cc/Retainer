@@ -1,6 +1,7 @@
-import { ArrowRight, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
+import { ArrowRight, ChevronRight, Sparkles } from 'lucide-react';
 import { createContext, type ReactNode, useContext, useId } from 'react';
 import { cn } from './core.js';
+import { ReviewNote } from './review.js';
 
 /**
  * Where an extension's data goes: one card per kind of record it imports,
@@ -99,12 +100,9 @@ export function MappingCard({
 /** Why a choice was suggested, marked so it reads as a suggestion and not a rule. */
 export function SuggestionNote({ children }: { children: ReactNode }) {
   return (
-    <p className="flex min-w-0 items-start gap-1.5 text-sm text-muted-foreground">
-      <Sparkles size={14} aria-hidden className="mt-0.5 shrink-0 text-primary" />
-      <span className="min-w-0 [overflow-wrap:anywhere]">
-        <span className="font-medium text-foreground">Suggested.</span> {children}
-      </span>
-    </p>
+    <ReviewNote icon={Sparkles}>
+      <span className="font-medium text-foreground">Suggested.</span> {children}
+    </ReviewNote>
   );
 }
 
@@ -116,8 +114,9 @@ export function MappingNote({ children }: { children: ReactNode }) {
 }
 
 /**
- * The fields, folded under one line that sums them up. `open` is controlled
- * so the form can open it when a field needs attention.
+ * The fields, folded under one line that sums them up. A native `<details>`,
+ * so a folded field still turns up in the browser's Find in page. `open`
+ * opens it, such as when a field needs attention; `onToggle` follows the person.
  */
 export function FieldDisclosure({
   label,
@@ -129,30 +128,26 @@ export function FieldDisclosure({
   label: string;
   summary: ReactNode;
   open: boolean;
-  onToggle: () => void;
+  onToggle: (open: boolean) => void;
   children: ReactNode;
 }) {
-  const id = useId();
-  const Chevron = open ? ChevronDown : ChevronRight;
   return (
-    <div className="min-w-0">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={id}
-        onClick={onToggle}
-        className="-mx-1 flex w-[calc(100%+0.5rem)] min-w-0 items-center gap-2 rounded-sm px-1 py-0.5 text-left text-sm hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <Chevron size={14} aria-hidden className="shrink-0 text-muted-foreground" />
+    <details
+      open={open}
+      onToggle={(event) => onToggle(event.currentTarget.open)}
+      className="group min-w-0"
+    >
+      <summary className="-mx-1 flex min-w-0 cursor-pointer list-none items-center gap-2 rounded-sm px-1 py-0.5 text-sm hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          size={14}
+          aria-hidden
+          className="shrink-0 text-muted-foreground group-open:rotate-90"
+        />
         <span className="shrink-0 font-medium">{label}</span>
-        {open ? null : <span className="min-w-0 truncate text-muted-foreground">{summary}</span>}
-      </button>
-      {open ? (
-        <div id={id} className="pt-3">
-          {children}
-        </div>
-      ) : null}
-    </div>
+        <span className="min-w-0 truncate text-muted-foreground group-open:hidden">{summary}</span>
+      </summary>
+      <div className="pt-3">{children}</div>
+    </details>
   );
 }
 
