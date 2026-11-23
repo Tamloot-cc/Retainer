@@ -32,7 +32,12 @@ type Watch = {
   related?: boolean;
   operations?: ('create' | 'update')[];
 };
-async function setup(count = 1, standalone = 0, watches?: () => Watch[]) {
+async function setup(
+  count = 1,
+  standalone = 0,
+  watches?: () => Watch[],
+  additionalBindings: NonNullable<ExtensionManifest['bindings']> = [],
+) {
   const initial = startTestApp(db),
     { workspace, keys } = await initial.setupWorkspace(
       { name: `Triggers ${randomUUID()}` },
@@ -66,6 +71,7 @@ async function setup(count = 1, standalone = 0, watches?: () => Watch[]) {
             required: false,
           })),
         },
+        ...additionalBindings,
       ],
       functions: [
         {
@@ -251,6 +257,32 @@ async function setup(count = 1, standalone = 0, watches?: () => Watch[]) {
   };
 }
 describe('transactional change dispatch with real Postgres', () => {
+  it('translates changed fields through the trigger binding when another binding targets the same object', async () => {
+    const h = await setup(1, 0, undefined, [
+      {
+        key: 'profile',
+        label: 'People',
+        description: 'Person fields used separately from the change trigger.',
+        class: 'entity',
+        access: 'read',
+        required: true,
+        fields: [{ key: 'name', label: 'Name', types: ['full_name'], required: true }],
+      },
+    ]);
+    const [id] = h.ids;
+    if (!id) throw new Error('installation missing');
+    const created = await h.app.request('/v1/objects/person/records', {
+      key: h.keys.admin,
+      body: { values: { name: 'Ada', jobTitle: 'Engineer' } },
+    });
+    expect(created.status).toBe(201);
+    expect(await h.queue.dispatchChanges(h.workspace.id, id)).toEqual({ queued: 1, blocked: 0 });
+    const { key, pending } = await h.claim(id, created.body.id);
+    const change = await h.app.request(`/v1/changes/${pending.input.changePosition}`, { key });
+    expect(change.status).toBe(200);
+    expect(change.body.changedKeys).toEqual(['jobTitle']);
+  });
+
   it('queues one job per watching installation for a schema-level deprecation', async () => {
     const h = await setup(0, 0, () => [
       { binding: 'person', fields: [] },

@@ -3,6 +3,7 @@ import { changeCursor, changePosition, overtaken, retainedFloor } from '../db/ch
 import type { Sql } from '../db/client.js';
 import type { Tx } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
+import { type RuntimeCatalog, requireRelease } from '../extension-runtime/availability.js';
 import type { StoredBindingPlan } from '../extension-runtime/bindings.js';
 import { withRead } from '../records/service.js';
 import type { CompiledSchema } from '../schema/compiled.js';
@@ -119,7 +120,7 @@ export class Changes {
       hasMore: raw.length > limit,
     };
   }
-  async at(caller: Caller, position: string) {
+  async at(caller: Caller, position: string, catalog: RuntimeCatalog) {
     if (!/^[1-9][0-9]{0,18}$/.test(position) || BigInt(position) > 9223372036854775807n)
       throw new AppError(
         400,
@@ -128,36 +129,49 @@ export class Changes {
       );
     if (!caller.scopes.includes('read') && !caller.scopes.includes('admin'))
       throw new AppError(403, 'forbidden', 'read scope required');
-    if (caller.run) {
+    const run = caller.run;
+    if (run) {
       const owned = await withRead(
         this.sql,
         caller,
         async (tx, schema) => {
           const [job] = await tx<
-            { change_snapshot: ChangeRow | null; bindings: StoredBindingPlan | null }[]
-          >`select j.change_snapshot, i.bindings from extension_jobs j
+            {
+              change_snapshot: ChangeRow | null;
+              bindings: StoredBindingPlan | null;
+              version: string;
+            }[]
+          >`select j.change_snapshot, i.bindings, i.version from extension_jobs j
             join extension_installations i on i.id = j.installation_id
-            where j.id=${caller.run?.jobId ?? null} and j.input->>'changePosition'=${position}`;
+            where j.id=${run.jobId} and j.trigger_kind='change' and j.input->>'changePosition'=${position}`;
           if (!job?.change_snapshot) return undefined;
           const [item] = await this.present(tx, schema, caller.workspaceId, [job.change_snapshot]);
           if (!item) throw notFound('record change');
           if (!job.bindings) return item;
+          const manifest = requireRelease(catalog, {
+            registration_id: run.registrationId,
+            version: job.version,
+            release_digest: run.releaseDigest,
+          });
+          const trigger = manifest.functions.find(
+            (fn) => fn.universalId === run.functionId,
+          )?.trigger;
+          const binding =
+            trigger?.kind === 'change' ? job.bindings.destinations[trigger.binding] : undefined;
           const object = schema.objectsById.get(item.objectTypeId);
+          if (!binding || !object || !binding.objects.includes(object.state.universalId))
+            return { ...item, changedKeys: [] };
           const changed = new Set(item.changedKeys);
-          const keys = new Set<string>();
-          for (const binding of Object.values(job.bindings.destinations)) {
-            if (!binding || !object || !binding.objects.includes(object.state.universalId))
-              continue;
-            for (const [key, field] of Object.entries(binding.fields)) {
-              if (
-                object.activeFields.some(
-                  (entry) => entry.universalId === field.id && changed.has(entry.key),
-                )
-              )
-                keys.add(key);
-            }
-          }
-          return { ...item, changedKeys: [...keys].sort() };
+          const changedIds = new Set(
+            object.activeFields
+              .filter((field) => changed.has(field.key))
+              .map((field) => field.universalId),
+          );
+          const changedKeys = Object.entries(binding.fields)
+            .filter(([, field]) => changedIds.has(field.id))
+            .map(([key]) => key)
+            .sort();
+          return { ...item, changedKeys };
         },
         { privacy: true, schema: true },
       );

@@ -130,7 +130,6 @@ export function createApp(deps: AppDeps) {
   recordRoutes(v1, deps.sql);
   memoryRoutes(v1, deps.sql);
   commentRoutes(v1, deps.sql);
-  changeRoutes(v1, deps.sql);
   retrievalRoutes(v1, deps.sql);
   viewRoutes(v1, deps.sql);
   const extensions = new Extensions(
@@ -141,6 +140,7 @@ export function createApp(deps: AppDeps) {
     deps.extensionOAuthClients,
   );
   extensionRoutes(v1, extensions, !deps.accountsSecret);
+  changeRoutes(v1, deps.sql, extensions.catalog.runtime);
   runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets, extensions.oauthClients);
   extensionDataRoutes(v1, deps.sql, extensions.catalog);
   webhookRuntime(v1, deps.webhooks);
