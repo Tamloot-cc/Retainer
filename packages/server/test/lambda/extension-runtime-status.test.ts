@@ -176,7 +176,9 @@ test('Lambda status checks every distinct packaged target and its release and ro
   // A release the catalog no longer holds is named, not just refused, and is
   // refused before any target is probed.
   aws.send.mockClear();
-  const retired = { ...entries[0], releaseDigest: 'a'.repeat(64) };
+  const [first] = entries;
+  if (!first) throw new Error('missing fixture');
+  const retired = { ...first, releaseDigest: 'a'.repeat(64) };
   expect(
     await createOpsHandler({
       ...config,
