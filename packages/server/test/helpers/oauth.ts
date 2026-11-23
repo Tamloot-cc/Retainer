@@ -197,3 +197,28 @@ export async function mcpCall(
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
   });
 }
+
+/** A tool call over raw HTTP (stateless MCP): its HTTP status, error flag and text. */
+export async function callToolOverHttp(
+  api: { request: (url: string, init: RequestInit) => Response | Promise<Response> },
+  accessToken: string,
+  name: string,
+  args: Record<string, unknown>,
+  path = '/mcp',
+): Promise<{ status: number; isError: boolean; text: string }> {
+  const res = await mcpCall(api, accessToken, 'tools/call', { name, arguments: args }, path);
+  if (res.status !== 200) return { status: res.status, isError: true, text: await res.text() };
+  const text = await res.text();
+  const data = text
+    .split('\n')
+    .find((line) => line.startsWith('data:'))
+    ?.slice(5);
+  const message = JSON.parse(data ?? text) as {
+    result: { isError?: boolean; content: { text: string }[] };
+  };
+  return {
+    status: 200,
+    isError: message.result.isError === true,
+    text: message.result.content[0]?.text ?? '',
+  };
+}

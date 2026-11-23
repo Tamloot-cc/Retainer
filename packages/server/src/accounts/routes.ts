@@ -1,6 +1,7 @@
 import {
   effectiveWorkspaceRole,
   type OrganizationRole,
+  pinnedWorkspaceOfResources,
   type WorkspaceRole,
 } from '@retainer/shared';
 import { type Context, Hono } from 'hono';
@@ -27,7 +28,7 @@ import {
 } from './extensions.js';
 import type { Person } from './people.js';
 import * as people from './people.js';
-import { linkPinnedResource, pinnedRequest, pinnedWorkspaceOfQuery } from './pinned.js';
+import { linkPinnedResource, pinnedRequest } from './pinned.js';
 
 /**
  * /account (accounts spec 4.5): Better Auth's routes, and the routes people
@@ -127,16 +128,15 @@ export function createAccountsApp(deps: AccountsDeps) {
       }
       // An address pinned to one workspace (4.7): Better Auth checks the
       // resource before anyone signs in, so it must exist and be linked to
-      // the client by then. A client met for the first time registers during
-      // the authorization itself; it is linked then, and asked again.
-      const pinned = pinnedRequest(url.searchParams, deps.publicOrigin);
-      if (pinned) {
-        const again = request.clone();
-        const linked = await linkPinnedResource(sql, pinned);
-        const response = await deps.auth.handler(request);
-        if (linked || !(await linkPinnedResource(sql, pinned))) return response;
-        return deps.auth.handler(again);
-      }
+      // the client by then. A client registering during this request is
+      // linked by the client metadata document hook (auth.ts).
+      const clients = url.searchParams.getAll('client_id');
+      const pinned = pinnedRequest(
+        url.searchParams.getAll('resource'),
+        clients.length === 1 ? clients[0] : undefined,
+        deps.publicOrigin,
+      );
+      if (pinned) await linkPinnedResource(sql, pinned);
     }
     return deps.auth.handler(request);
   });
@@ -392,7 +392,10 @@ export function createAccountsApp(deps: AccountsDeps) {
       );
     }
     // An address pinned to one workspace connects only to it (4.7).
-    const pinned = pinnedWorkspaceOfQuery(body.oauth_query, deps.publicOrigin);
+    const pinned = pinnedWorkspaceOfResources(
+      new URLSearchParams(body.oauth_query).getAll('resource'),
+      deps.publicOrigin,
+    );
     if (pinned && pinned !== workspaceId) {
       throw new AppError(
         400,

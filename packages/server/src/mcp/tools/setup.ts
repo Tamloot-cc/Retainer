@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
+import { pinnedMcpAddress } from '@retainer/shared';
 import { z } from 'zod';
-import { pinnedMcpAddress } from '../../auth/oauth-token.js';
 import type { Caller } from '../../caller.js';
 import type { Sql } from '../../db/client.js';
 import { describeSchema } from '../../schema-engine/service.js';

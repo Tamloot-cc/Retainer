@@ -1,24 +1,23 @@
 import { type AuthInfo, createMcpHandler } from '@modelcontextprotocol/server';
 import type { Context, Hono, MiddlewareHandler } from 'hono';
 import { authenticate } from '../auth/middleware.js';
-import {
-  isPinnableWorkspaceId,
-  type OAuthSettings,
-  PINNED_MCP_PATH,
-  pinnedOAuthSettings,
-} from '../auth/oauth-token.js';
+import { type OAuthSettings, pinnedOAuthSettings } from '../auth/oauth-token.js';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
-import { AppError } from '../errors.js';
 import type { ExtensionCatalog } from '../extensions/catalog.js';
 import type { FileStorage } from '../file-storage/contract.js';
-import { type AppEnv, errorResponse } from '../http/response.js';
+import type { AppEnv } from '../http/response.js';
 import { log } from '../log.js';
 import type { RoutineConfig } from '../routines/capabilities.js';
 import { createMcpServer } from './server.js';
 
-/** The address pinned to one workspace, as a route (accounts spec 4.7). */
-export const PINNED_MCP_ROUTE = `${PINNED_MCP_PATH}:workspace`;
+/**
+ * The address pinned to one workspace, as a route (accounts spec 4.7). Only a
+ * lowercase workspace ID matches (`PINNED_WORKSPACE_ID`); anything else is
+ * the app's usual 404.
+ */
+export const PINNED_MCP_ROUTE =
+  '/mcp/w/:workspace{[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}}';
 
 /**
  * Serves MCP over Streamable HTTP at `/mcp` (6.2), and at `/mcp/w/<workspace
@@ -74,14 +73,7 @@ export function mcpRoute(
   // A pinned address is its own OAuth resource: its tokens name it as their
   // audience, and any credential must belong to its workspace.
   app.use(PINNED_MCP_ROUTE, (c, next) => {
-    const workspace = c.req.param('workspace') ?? '';
-    if (!isPinnableWorkspaceId(workspace))
-      return Promise.resolve(
-        errorResponse(
-          c,
-          new AppError(404, 'not_found', `no route for ${c.req.method} ${c.req.path}`),
-        ),
-      );
+    const workspace = c.req.param('workspace');
     return authenticate(sql, {
       publicOrigin,
       oauth: oauth && publicOrigin ? pinnedOAuthSettings(publicOrigin, workspace) : undefined,

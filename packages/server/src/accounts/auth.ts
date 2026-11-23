@@ -7,7 +7,11 @@ import {
   verifyOAuthQueryParams,
 } from '@better-auth/oauth-provider';
 import { passkey } from '@better-auth/passkey';
-import { LAST_SIGN_IN_COOKIE, type SignInProvider } from '@retainer/shared';
+import {
+  LAST_SIGN_IN_COOKIE,
+  pinnedWorkspaceOfResources,
+  type SignInProvider,
+} from '@retainer/shared';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
@@ -23,7 +27,6 @@ import {
   INSTALLATION_CLAIM,
   installationOAuthSettings,
   oauthSettings,
-  pinnedWorkspaceOf,
   WORKSPACE_CLAIM,
 } from '../auth/oauth-token.js';
 import { type AccountsConfig, signInProviders } from '../config.js';
@@ -47,6 +50,7 @@ import {
 } from '../db/schema.js';
 import { AGENT_OAUTH_SCOPES, APP_SIGN_IN_SCOPES, isAppSignInScopes } from './extensions.js';
 import { microsoftAccountKey, microsoftProvider } from './microsoft.js';
+import { linkPinnedResource, pinnedRequest } from './pinned.js';
 
 /**
  * Better Auth (accounts spec A2, 4.4, 4.11, 4.12). Only this module imports
@@ -496,13 +500,8 @@ function betterAuthFor(options: AuthOptions) {
             throw new Error('MCP requires a separate person consent');
           // An address pinned to one workspace (4.7) is a resource of its
           // own; its token is for that workspace and that resource alone.
-          const pinned = (resources ?? []).map((resource) =>
-            pinnedWorkspaceOf(resource, publicOrigin),
-          );
-          if (
-            pinned.some((workspace) => workspace !== undefined) &&
-            (pinned.length !== 1 || pinned[0] !== reference.workspace_id)
-          )
+          const pinned = pinnedWorkspaceOfResources(resources ?? [], publicOrigin);
+          if (pinned && (resources?.length !== 1 || pinned !== reference.workspace_id))
             throw new APIError('BAD_REQUEST', {
               code: 'invalid_target',
               message: "This connection's address is for a different workspace.",
@@ -533,6 +532,20 @@ function betterAuthFor(options: AuthOptions) {
       // from the internet: only the control function has a route out (4.6).
       cimd({
         fetchClientMetadataResource: options.fetchClientMetadata ?? fetchClientMetadataResource,
+        // A client registering from its metadata document during an
+        // authorization that names an address pinned to one workspace (4.7)
+        // is linked to it here, before Better Auth checks the resource. The
+        // authorize route links the clients it already knows.
+        onClientCreated: async ({ client, context }) => {
+          const resource = (context.query as { resource?: string | string[] } | undefined)
+            ?.resource;
+          const pinned = pinnedRequest(
+            resource === undefined ? [] : [resource].flat(),
+            client.clientId,
+            publicOrigin,
+          );
+          if (pinned) await linkPinnedResource(sql, pinned);
+        },
       }),
     ],
   });

@@ -1,4 +1,4 @@
-import { cappedScopes, OAUTH_SCOPES } from '@retainer/shared';
+import { cappedScopes, OAUTH_SCOPES, pinnedWorkspaceOfResources } from '@retainer/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { type Account, account as accountApi } from '../api/account.js';
@@ -48,20 +48,6 @@ const hostOf = (url: string | null): string | null => {
   }
 };
 
-const WORKSPACE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-/**
- * The workspace an address pinned to one workspace names, `/mcp/w/<ID>`
- * (accounts spec 4.7): its consent offers only that workspace.
- */
-export function pinnedWorkspace(query: URLSearchParams, origin: string): string | undefined {
-  const prefix = `${origin}/mcp/w/`;
-  const resources = query.getAll('resource');
-  if (resources.length !== 1 || !resources[0]?.startsWith(prefix)) return undefined;
-  const id = resources[0].slice(prefix.length);
-  return WORKSPACE_ID.test(id) ? id : undefined;
-}
-
 /** /app/oauth/consent: which workspace the app may use, and allow or cancel. */
 export function OAuthConsent({ account }: { account: Account }) {
   const resources = new URLSearchParams(window.location.search).getAll('resource');
@@ -82,11 +68,13 @@ function PersonConsent({ account }: { account: Account }) {
     queryFn: () => accountApi.oauthClient(clientId),
     retry: false,
   });
-  // A setup prompt's client and a pinned address each allow one workspace.
-  const pinned = pinnedWorkspace(query, window.location.origin);
-  const bound = [client.data?.workspaceId, pinned].filter((id) => id !== undefined);
-  const reachable = allWorkspaces(account).filter(({ workspace }) =>
-    bound.every((id) => workspace.id === id),
+  // A setup prompt's client and an address pinned to one workspace (4.7)
+  // each allow only that workspace.
+  const setupWorkspace = client.data?.workspaceId;
+  const pinned = pinnedWorkspaceOfResources(query.getAll('resource'), window.location.origin);
+  const reachable = allWorkspaces(account).filter(
+    ({ workspace }) =>
+      (!setupWorkspace || workspace.id === setupWorkspace) && (!pinned || workspace.id === pinned),
   );
   const [selected, setSelected] = useState('');
   const picked = reachable.length === 1 ? reachable[0]?.workspace.id : selected;
@@ -138,7 +126,7 @@ function PersonConsent({ account }: { account: Account }) {
               You don't have access to the workspace this connection's address is for. Sign in with
               the account that can open it.
             </Notice>
-          ) : bound.length > 0 ? (
+          ) : setupWorkspace ? (
             <Notice>
               You don't have access to the workspace in this setup prompt. Sign in with the account
               that can open it.

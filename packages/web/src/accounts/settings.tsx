@@ -3,6 +3,7 @@ import {
   type KeyAccess,
   ORGANIZATION_ROLE_DESCRIPTIONS,
   type OrganizationRole,
+  pinnedMcpAddress,
   WORKSPACE_ROLE_DESCRIPTIONS,
   type WorkspaceRole,
 } from '@retainer/shared';
@@ -468,6 +469,7 @@ function AgentsTab({ state }: { state: AccountState }) {
     [revoking, setRevoking] = useState<WorkspaceKey | null>(null);
   const refresh = () => client.invalidateQueries({ queryKey: key });
   const active = keys.data?.keys.filter((k) => !k.revokedAt) ?? [];
+  const pinnedAddress = pinnedMcpAddress(window.location.origin, state.workspace.id);
   return (
     <Stack>
       <div className="flex flex-wrap items-center gap-2">
@@ -558,11 +560,8 @@ function AgentsTab({ state }: { state: AccountState }) {
             {window.location.origin}/mcp. It won't ask which workspace to use.
           </Muted>
           <div className="flex items-center gap-2">
-            <Code>{`${window.location.origin}/mcp/w/${state.workspace.id}`}</Code>
-            <CopyButton
-              value={`${window.location.origin}/mcp/w/${state.workspace.id}`}
-              label="Copy address"
-            />
+            <Code>{pinnedAddress}</Code>
+            <CopyButton value={pinnedAddress} label="Copy address" />
           </div>
         </Stack>
       </Panel>

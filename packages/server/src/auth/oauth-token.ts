@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { cappedScopes, type WorkspaceRole } from '@retainer/shared';
+import { cappedScopes, pinnedMcpAddress, type WorkspaceRole } from '@retainer/shared';
 import { decodeProtectedHeader, importJWK, type JWK, jwtVerify } from 'jose';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
@@ -43,40 +43,17 @@ export function oauthSettings(publicOrigin: string): OAuthSettings {
 }
 
 /**
- * Where a connection pinned to one workspace reaches MCP: `/mcp/w/<workspace
- * ID>`. The base `/mcp` lets the person pick the workspace at consent; this
- * address is its own OAuth resource, so its consent page offers only that
- * workspace and its tokens work only here (accounts spec 4.7).
+ * The OAuth settings of the MCP address pinned to one workspace,
+ * `/mcp/w/<workspace ID>` (accounts spec 4.7): its own protected resource,
+ * so its consent offers only that workspace and its tokens work only there.
  */
-export const PINNED_MCP_PATH = '/mcp/w/';
-const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-/** The MCP address pinned to `workspaceId`. */
-export function pinnedMcpAddress(publicOrigin: string, workspaceId: string): string {
-  return `${new URL(publicOrigin).origin}${PINNED_MCP_PATH}${workspaceId}`;
-}
-
-/**
- * A pinned address's workspace ID, or undefined for anything else. Only the
- * lowercase form counts: an OAuth resource matches its identifier exactly.
- */
-export function pinnedWorkspaceOf(resource: string, publicOrigin: string): string | undefined {
-  const prefix = `${new URL(publicOrigin).origin}${PINNED_MCP_PATH}`;
-  if (!resource.startsWith(prefix)) return undefined;
-  const id = resource.slice(prefix.length);
-  return CANONICAL_UUID.test(id) ? id : undefined;
-}
-
-/** Whether a path segment is a workspace ID in the form pinned addresses use. */
-export const isPinnableWorkspaceId = (value: string) => CANONICAL_UUID.test(value);
-
-/** The OAuth settings of the address pinned to one workspace. */
 export function pinnedOAuthSettings(publicOrigin: string, workspaceId: string): OAuthSettings {
-  const origin = new URL(publicOrigin).origin;
+  const resource = pinnedMcpAddress(publicOrigin, workspaceId);
+  const { origin, pathname } = new URL(resource);
   return {
     issuer: `${origin}${AUTH_BASE_PATH}`,
-    resource: pinnedMcpAddress(origin, workspaceId),
-    resourceMetadata: `${origin}/.well-known/oauth-protected-resource${PINNED_MCP_PATH}${workspaceId}`,
+    resource,
+    resourceMetadata: `${origin}/.well-known/oauth-protected-resource${pathname}`,
   };
 }
 

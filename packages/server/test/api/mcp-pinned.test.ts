@@ -16,6 +16,7 @@ import {
   CLAUDE_CLIENT_ID,
   CLAUDE_CODE_CLIENT_ID,
   CLAUDE_REDIRECT,
+  callToolOverHttp,
   connect,
   consent,
   fetchClientMetadata,
@@ -67,29 +68,13 @@ async function setup() {
   return { owner, dana, organizationId, sales, support };
 }
 
-/** The JSON-RPC result of a tool call over raw HTTP (stateless MCP). */
-async function callTool(
+/** The result of a tool call over raw HTTP (stateless MCP). */
+const callTool = (
   accessToken: string,
   name: string,
   args: Record<string, unknown>,
   path = '/mcp',
-) {
-  const res = await mcpCall(app.api, accessToken, 'tools/call', { name, arguments: args }, path);
-  if (res.status !== 200) return { status: res.status, isError: true, text: await res.text() };
-  const text = await res.text();
-  const data = text
-    .split('\n')
-    .find((line) => line.startsWith('data:'))
-    ?.slice(5);
-  const message = JSON.parse(data ?? text) as {
-    result: { isError?: boolean; content: { text: string }[] };
-  };
-  return {
-    status: 200,
-    isError: message.result.isError === true,
-    text: message.result.content[0]?.text ?? '',
-  };
-}
+) => callToolOverHttp(app.api, accessToken, name, args, path);
 
 const status = async (accessToken: string, path = '/mcp') =>
   (await mcpCall(app.api, accessToken, 'tools/list', {}, path)).status;

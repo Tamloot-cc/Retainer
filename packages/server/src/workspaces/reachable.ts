@@ -1,3 +1,4 @@
+import type { WorkspaceRole } from '@retainer/shared';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace } from '../db/tx.js';
@@ -7,7 +8,7 @@ export type ReachableWorkspace = {
   id: string;
   name: string;
   /** The person's role there; absent for a credential that works for nobody. */
-  role?: string;
+  role?: WorkspaceRole;
   /** Whether this connection works in it. */
   current: boolean;
 };
@@ -21,7 +22,7 @@ export type ReachableWorkspace = {
 export async function reachableWorkspaces(sql: Sql, caller: Caller): Promise<ReachableWorkspace[]> {
   const check = caller.person?.check;
   if (check?.kind === 'oauth') {
-    const rows = await sql<{ workspace_id: string; name: string; role: string | null }[]>`
+    const rows = await sql<{ workspace_id: string; name: string; role: WorkspaceRole | null }[]>`
       select workspace_id, name, role
       from retainer_token_workspaces(${check.subject}, ${check.workspace}, ${check.client})`;
     return rows.map((row) => ({

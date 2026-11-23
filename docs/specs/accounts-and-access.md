@@ -586,8 +586,8 @@ _As built,_ where it differs:
     So the authorize route creates the row, while the workspace exists, and the
     link on the first authorization that names the address. A client met for
     the first time registers from its metadata document during that same
-    request, so it is linked then and the authorization runs once more. Neither
-    the row nor the link grants anything.
+    request, before the check: cimd's `onClientCreated` hook links it there.
+    Neither the row nor the link grants anything.
   - The consent page offers only that workspace, `POST /account/oauth/consent`
     refuses any other (`wrong_workspace`), and issuing the token checks the
     consent's workspace against the address again.

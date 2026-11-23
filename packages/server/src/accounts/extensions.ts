@@ -1,6 +1,5 @@
 import { SIDEBAR_INSTALLATION_PARAM } from '@retainer/extension';
-import { OAUTH_SCOPES, type WorkspaceRole } from '@retainer/shared';
-import { pinnedWorkspaceOf } from '../auth/oauth-token.js';
+import { OAUTH_SCOPES, pinnedWorkspaceOf, type WorkspaceRole } from '@retainer/shared';
 import type { Sql } from '../db/client.js';
 import { isUuid } from '../db/ids.js';
 import { inWorkspaceTransaction, lockSchemaShared, type Tx } from '../db/tx.js';
