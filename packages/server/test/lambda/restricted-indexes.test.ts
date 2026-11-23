@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, expect, it } from 'vitest';
+import { createApp } from '../../src/api/app.js';
+import { createApiKey } from '../../src/auth/keys.js';
 import { loadConfig } from '../../src/config.js';
+import { RUNTIME_ROLE } from '../../src/db/client.js';
 import { createOpsHandler } from '../../src/lambda/ops.js';
 import { createWorkspace } from '../../src/workspaces/workspaces.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/db.js';
@@ -158,4 +161,32 @@ it('bounds DDL lock acquisition on the owned connection and leaves its journal i
   });
   expect(await relation()).toBeNull();
   expect(await status()).toMatchObject({ journal });
+});
+
+it('uses the maintenance response without a replay guarantee if a write reaches the database fence', async () => {
+  const { database, ownership, close } = await fixture(index);
+  const workspace = await createWorkspace(database.owner, {
+    name: 'Write fixture',
+    template: 'starter',
+  });
+  const { key } = await createApiKey(database.owner, {
+    workspace: workspace.id,
+    name: 'Writer',
+    actor: { type: 'agent', id: 'writer' },
+    scopes: ['read', 'write'],
+  });
+  const old = createApp({ sql: database.connect({ role: RUNTIME_ROLE, writerBuild: previous }) });
+  await close(await ownership());
+  const response = await old.request('/v1/objects/person/records', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ values: { name: 'Rejected' } }),
+  });
+  expect(response.status).toBe(503);
+  expect(response.headers.get('retry-after')).toBe('5');
+  expect(response.headers.has('x-retainer-maintenance')).toBe(false);
+  expect(await response.json()).toMatchObject({ error: { code: 'maintenance' } });
+  expect(
+    await database.owner`select id from records where workspace_id = ${workspace.id} and label = 'Rejected'`,
+  ).toHaveLength(0);
 });
