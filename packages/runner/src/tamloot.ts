@@ -10,6 +10,7 @@ import {
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
 import { type SourceScan, sourceScanSchema } from '@retainer/shared';
 import { z } from 'zod';
+import { runModel } from './model-call.js';
 import { apiFetch, transient } from './outcome.js';
 import {
   type AccessDeps,
@@ -18,6 +19,7 @@ import {
   releaseAll,
   TamlootAccess,
 } from './tamloot-access.js';
+import { configureTamloot } from './tamloot-configure.js';
 import {
   TAMLOOT,
   TAMLOOT_FUNCTION_IDS,
@@ -370,6 +372,11 @@ export async function executeTamloot(
     if (!input.success) return { status: 'failed', code: 'invalid_input' };
     return outcome(() => releaseAll(deps, input.data, () => sdk.extensionOAuthClient(id)));
   }
+  // Configure reads only the workspace: it runs before anyone connects Tamloot.
+  if (invocation.functionId === TAMLOOT.configure)
+    return outcome(() =>
+      configureTamloot(sdk, id, runModel(invocation, transport), invocation.bindings, signal),
+    );
   let access: TamlootAccess | undefined;
   // `connect` reports every lost exchange; imports report only what they tried (spec 4.7).
   const includeLost = invocation.functionId === TAMLOOT.connect;

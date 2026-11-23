@@ -10,6 +10,7 @@ import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
+import { installReviewed } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
 let tokens: RunTokens, broker: SecretBroker;
@@ -168,15 +169,8 @@ async function fixture(createPeople: 'never' | 'everyone' = 'everyone', custom =
           },
         },
   };
-  const preview = await app.request('/v1/extensions/preview', { key: keys.admin, body: input });
-  expect(preview.status, JSON.stringify(preview.body.error ?? null)).toBe(200);
-  const installed = await app.request('/v1/extensions', {
-    key: keys.admin,
-    headers: { 'Idempotency-Key': randomUUID() },
-    body: { ...input, planDigest: preview.body.planDigest },
-  });
-  expect(installed.status).toBe(201);
-  const id = installed.body.id as string,
+  const installed = await installReviewed(app, keys.admin, input);
+  const id = installed.id,
     base = `/v1/extensions/${id}`,
     queue = new ExtensionQueue(app.sql, catalog.runtime);
   const [installJob] =

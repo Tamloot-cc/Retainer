@@ -12,6 +12,7 @@ import { parseOAuthClients } from '../../src/extensions/oauth-clients.js';
 import { runCli } from '../../src/operator/commands.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
+import { installReviewed } from '../helpers/extensions.js';
 import { testRunTokens } from '../helpers/model.js';
 
 // The whole round trip: the real API and Postgres, the real Tamloot bundle, and
@@ -77,15 +78,8 @@ async function setup() {
     version: manifest.version,
     settings: { shareMeetings: true, createPeople: 'everyone' },
   };
-  const preview = await app.request('/v1/extensions/preview', { key: keys.admin, body: input });
-  expect(preview.status).toBe(200);
-  const installed = await app.request('/v1/extensions', {
-    key: keys.admin,
-    headers: { 'Idempotency-Key': randomUUID() },
-    body: { ...input, planDigest: preview.body.planDigest },
-  });
-  expect(installed.status).toBe(201);
-  const id = installed.body.id as string,
+  const installed = await installReviewed(app, keys.admin, input);
+  const id = installed.id,
     base = `/v1/extensions/${id}`,
     queue = new ExtensionQueue(app.sql, catalog.runtime);
   const [installJob] =
