@@ -1937,12 +1937,17 @@ export class Extensions {
       const [row] = await tx<
         Row[]
       >`update extension_installations set state = ${nextState},last_error=null,
-        state_changed_by=${caller.cli ? tx.json(jsonValue(caller.actor)) : null},
         cleanup_deadline=case when ${nextState}='uninstalling' then clock_timestamp()+interval '24 hours' else null end,
         generation = generation + case when state = ${nextState} and last_error is null then 0 else 1 end,
         grant_generation = grant_generation + case when state = ${nextState} then 0 else 1 end, updated_at = now()
         where id = ${id} returning *`;
       if (!row) throw notFound('extension installation');
+      if (caller.cli || row.state_changed_by) {
+        row.state_changed_by = caller.cli ? caller.actor : null;
+        await tx`update extension_installations
+          set state_changed_by=${row.state_changed_by ? tx.json(jsonValue(row.state_changed_by)) : null}
+          where id=${id}`;
+      }
       if (state === 'uninstalled') {
         const connections =
           await tx`select id from extension_connections where installation_id=${id} and state<>'disconnected' order by id`;
