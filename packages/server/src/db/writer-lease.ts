@@ -5,10 +5,22 @@ export const WRITER_ADMISSION_LOCK = 0x52544e09;
 /** Serializes ops metadata transitions without entering the writer fence. */
 export const WRITER_CONTROL_LOCK = 0x52544e0a;
 
+const DENIED_MESSAGE = 'retainer writer admission denied';
+
 export class WriterAdmissionDenied extends Error {
   constructor() {
-    super('retainer writer admission denied');
+    super(DENIED_MESSAGE);
   }
+}
+
+export function isWriterAdmissionDenied(error: unknown): boolean {
+  const database = error as { code?: unknown; message?: unknown; cause?: unknown } | null;
+  const cause = database?.cause as { code?: unknown; message?: unknown } | null;
+  return (
+    error instanceof WriterAdmissionDenied ||
+    (database?.code === '55000' && database.message === DENIED_MESSAGE) ||
+    (cause?.code === '55000' && cause.message === DENIED_MESSAGE)
+  );
 }
 
 /** A lease survives pool loss. An uncertain invocation retains its lease until its hard deadline. */
