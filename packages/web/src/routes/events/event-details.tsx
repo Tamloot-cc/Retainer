@@ -163,16 +163,10 @@ export function EventDetailsView({
   id,
   event,
   editable: allowEditing,
-  medium,
-  mediumName = 'medium',
 }: {
   id: string;
   event: EventDetails;
   editable: boolean;
-  /** The conversation's medium (meeting, call…), shown when set. */
-  medium?: string;
-  /** The medium field's API name, for Developer view; it may have been renamed. */
-  mediumName?: string;
 }) {
   const { session } = useWorkspace(),
     client = useQueryClient(),
@@ -230,11 +224,6 @@ export function EventDetailsView({
         <Property label="Occurred" apiName={apiName('occurredAt')}>
           {new Date(event.occurredAt).toLocaleString()}
         </Property>
-        {medium ? (
-          <Property label="Medium" apiName={apiName(mediumName)}>
-            <Badge>{medium}</Badge>
-          </Property>
-        ) : null}
         <Property label="Source" apiName={apiName('channel')}>
           {event.channel ?? <Muted>Erased for privacy</Muted>}
         </Property>

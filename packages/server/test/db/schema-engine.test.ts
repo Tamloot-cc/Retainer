@@ -1,8 +1,9 @@
+import { readFile } from 'node:fs/promises';
 import type { Actor } from '@retainer/shared';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { RUNTIME_ROLE, type Sql } from '../../src/db/client.js';
 import type { ApiKeyScope } from '../../src/db/schema.js';
-import { inWorkspace } from '../../src/db/tx.js';
+import { inWorkspace, lockPrivacyShared, lockSchemaExclusive } from '../../src/db/tx.js';
 import { getWorkspace } from '../../src/db/workspaces.js';
 import { AppError } from '../../src/errors.js';
 import { logEventFor } from '../../src/memory/service.js';
@@ -13,6 +14,7 @@ import { SchemaValidationError } from '../../src/schema/types.js';
 import { decideSchemaChange, runSchemaChange } from '../../src/schema-engine/engine.js';
 import type { SchemaOperation } from '../../src/schema-engine/operations.js';
 import { applyTemplate } from '../../src/templates/apply.js';
+import { STARTER_OBJECT_IDS } from '../../src/templates/index.js';
 import { createWorkspace } from '../../src/workspaces/workspaces.js';
 import { useTestDatabase } from '../helpers/db.js';
 
@@ -64,23 +66,40 @@ const newWorkspace = (template?: string) =>
   createWorkspace(db.owner, { name: `Workspace ${++counter}`, ...(template ? { template } : {}) });
 
 describe('workspace creation', () => {
-  it('seeds the base objects through the engine', async () => {
+  it('seeds only hidden types through the engine', async () => {
     const workspace = await newWorkspace();
     expect(workspace).toMatchObject({ schemaVersion: 1, templates: [], initializedAt: null });
-    expect(await fieldNames(workspace.id, 'person')).toEqual([
-      'name',
-      'emails',
-      'phones',
-      'address',
-      'jobTitle',
-      'company',
-      'tasks',
-    ]);
+    expect(await fieldNames(workspace.id, 'person')).toBeUndefined();
+    const schema = await inWorkspace(app, workspace.id, (tx) => getSchema(tx, workspace.id));
+    expect(schema.visibleObjectIds).toHaveLength(0);
+    expect(schema.internalNote).toBeDefined();
     const changes = await db.owner`select status, requested_by from schema_changes
       where workspace_id = ${workspace.id}`;
     expect(changes).toEqual([
       { status: 'applied', requested_by: { type: 'system', id: 'retainer' } },
     ]);
+  });
+
+  it('invalidates the compiled schema once when the protection migration releases old flags', async () => {
+    const affected = await newWorkspace('starter');
+    const other = await newWorkspace('starter');
+    await db.owner`update object_types set is_protected=true where workspace_id=${affected.id} and name_singular='task'`;
+    await db.owner`update fields set is_protected=true where workspace_id=${affected.id} and name='status'`;
+    const cached = await inWorkspace(app, affected.id, (tx) => getSchema(tx, affected.id));
+    expect(cached.objectsByName.get('task')?.state.isProtected).toBe(true);
+    expect(cached.objectsByName.get('task')?.fieldsByName.get('status')?.isProtected).toBe(true);
+    const sql = await readFile(
+      new URL('../../drizzle/0135_release_former_base_schema.sql', import.meta.url),
+      'utf8',
+    );
+    await db.owner.unsafe(sql);
+    const refreshed = await inWorkspace(app, affected.id, (tx) => getSchema(tx, affected.id));
+    expect(refreshed.version).toBe(cached.version + 1);
+    expect(refreshed.objectsByName.get('task')?.state.isProtected).toBe(false);
+    expect(refreshed.objectsByName.get('task')?.fieldsByName.get('status')?.isProtected).toBe(
+      false,
+    );
+    expect((await getWorkspace(db.owner, other.id)).schemaVersion).toBe(other.schemaVersion);
   });
 
   it('applies a template and records it', async () => {
@@ -109,7 +128,7 @@ describe('workspace creation', () => {
 describe('schema changes', () => {
   let workspaceId: string;
   beforeAll(async () => {
-    workspaceId = (await newWorkspace()).id;
+    workspaceId = (await newWorkspace('starter')).id;
   });
 
   it('applies additive changes requested by an agent', async () => {
@@ -120,7 +139,7 @@ describe('schema changes', () => {
         field: { name: 'nickname', label: 'Nickname', type: 'text' },
       },
     ]);
-    expect(result).toMatchObject({ status: 'applied', schemaVersion: 2 });
+    expect(result).toMatchObject({ status: 'applied', schemaVersion: 3 });
     expect(result.change?.requestedBy).toEqual(agent);
     expect(await fieldNames(workspaceId, 'person')).toContain('nickname');
 
@@ -259,61 +278,148 @@ describe('templates', () => {
       applyTemplate(tx, { workspaceId, actor, scopes: ['schema:write'], name }),
     );
 
-  it('applies without approval, as owner system, and only once', async () => {
+  it('records a template only after approval and copies the starter definitions', async () => {
     const { id } = await newWorkspace();
     const first = await apply(id, 'sales');
-    expect(first).toMatchObject({ status: 'applied', alreadyApplied: false });
-    const [deal] = await db.owner`select owner from object_types
-      where workspace_id = ${id} and name_singular = 'deal'`;
-    expect(deal?.owner).toBe('system');
+    expect(first).toMatchObject({ status: 'proposed', change: { template: 'sales' } });
+    expect((await getWorkspace(db.owner, id)).templates).toEqual([]);
+    expect(await fieldNames(id, 'person')).toBeUndefined();
 
-    const second = await apply(id, 'sales');
-    expect(second).toMatchObject({ status: 'unchanged', alreadyApplied: true });
+    if (!first.change) throw new Error('missing template proposal');
+    const result = await decide(id, first.change.id, 'approve');
+    expect(result.status).toBe('applied');
+    const schema = await inWorkspace(app, id, (tx) => getSchema(tx, id));
+    expect([...schema.objectsByName.keys()]).toEqual(
+      expect.arrayContaining(['deal', 'person', 'company', 'task', 'conversation']),
+    );
+    expect(schema.objectsByName.get('person')?.fieldsByName.get('emails')).toMatchObject({
+      isUnique: true,
+      owner: 'workspace',
+    });
     expect((await getWorkspace(db.owner, id)).templates.map((t) => t.name)).toEqual(['sales']);
+    await expect(apply(id, 'sales')).rejects.toMatchObject({ code: 'workspace_not_empty' });
   });
 
-  it('can add a second template later', async () => {
-    const { id } = await newWorkspace('services');
-    await apply(id, 'recruiting');
-    const workspace = await getWorkspace(db.owner, id);
-    expect(workspace.templates.map((t) => t.name)).toEqual(['services', 'recruiting']);
-    expect(await fieldNames(id, 'company')).toEqual(
-      expect.arrayContaining(['projects', 'proposals', 'jobs']),
-    );
-  });
-
-  it('marks the workspace initialized with blank and adds nothing', async () => {
-    const { id, schemaVersion } = await newWorkspace();
-    await apply(id, 'blank');
-    const workspace = await getWorkspace(db.owner, id);
-    expect(workspace.initializedAt).not.toBeNull();
-    expect(workspace.schemaVersion).toBe(schemaVersion);
-  });
-
-  it('fails on collisions with custom names and applies nothing', async () => {
+  it('copies Starter after an earlier object with the same name was deleted', async () => {
     const { id } = await newWorkspace();
-    await change(id, [
-      {
-        op: 'create_field',
-        object: 'company',
-        field: { name: 'industry', label: 'I', type: 'text' },
-      },
-    ]);
-    const before = await getWorkspace(db.owner, id);
-    await expect(apply(id, 'sales')).rejects.toSatisfy(
-      (error: unknown) =>
-        error instanceof SchemaValidationError &&
-        error.issues.some((i) => i.path === 'company.industry'),
+    await change(
+      id,
+      [
+        {
+          op: 'create_object',
+          object: {
+            nameSingular: 'company',
+            namePlural: 'companies',
+            labelSingular: 'Old company',
+            labelPlural: 'Old companies',
+            labelField: 'name',
+            fields: [{ name: 'name', label: 'Name', type: 'text' }],
+          },
+        },
+      ],
+      admin,
+      ALL,
     );
-    const after = await getWorkspace(db.owner, id);
-    expect(after).toEqual(before);
+    expect(
+      (await change(id, [{ op: 'delete_object', object: 'company' }], admin, ALL)).status,
+    ).toBe('applied');
+    const proposal = await apply(id, 'starter');
+    if (!proposal.change) throw new Error('missing template proposal');
+    expect((await decide(id, proposal.change.id, 'approve')).status).toBe('applied');
+    const schema = await inWorkspace(app, id, (tx) => getSchema(tx, id));
+    expect(schema.objectsByName.get('company')?.state.labelSingular).toBe('Company');
+    expect(
+      await db.owner`select status from object_types where workspace_id=${id} and name_singular='company' order by status`,
+    ).toEqual([{ status: 'active' }, { status: 'deprecated' }]);
+  });
+
+  it('names the template object when pre-template history retains its identity', async () => {
+    const { id } = await newWorkspace();
+    const proposal = await apply(id, 'starter');
+    if (!proposal.change) throw new Error('missing template proposal');
+    await change(
+      id,
+      [
+        {
+          op: 'create_object',
+          object: {
+            universalId: STARTER_OBJECT_IDS.company,
+            nameSingular: 'company',
+            namePlural: 'companies',
+            labelSingular: 'Old company',
+            labelPlural: 'Old companies',
+            labelField: 'name',
+            fields: [{ name: 'name', label: 'Name', type: 'text' }],
+          },
+        },
+      ],
+      admin,
+      ALL,
+    );
+    await change(id, [{ op: 'delete_object', object: 'company' }], admin, ALL);
+    const error = {
+      status: 409,
+      code: 'template_retained_identity',
+      message: expect.stringContaining('Company'),
+    };
+    await expect(apply(id, 'starter')).rejects.toMatchObject(error);
+    await expect(decide(id, proposal.change.id, 'approve')).rejects.toMatchObject(error);
+  });
+
+  it('rechecks emptiness at approval while a schema create holds the exclusive lock', async () => {
+    const { id } = await newWorkspace();
+    const proposal = await apply(id, 'sales');
+    if (!proposal.change) throw new Error('missing template proposal');
+    let signalLocked = () => {};
+    let releaseLock = () => {};
+    const locked = new Promise<void>((resolve) => {
+      signalLocked = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    const create = inWorkspace(app, id, async (tx) => {
+      await lockPrivacyShared(tx, id);
+      await lockSchemaExclusive(tx, id);
+      signalLocked();
+      await release;
+      return runSchemaChange(tx, {
+        workspaceId: id,
+        actor: agent,
+        scopes: ['schema:write'],
+        operations: [
+          {
+            op: 'create_object',
+            object: {
+              nameSingular: 'vendor',
+              namePlural: 'vendors',
+              labelSingular: 'Vendor',
+              labelPlural: 'Vendors',
+              labelField: 'name',
+              fields: [{ name: 'name', label: 'Name', type: 'text' }],
+            },
+          },
+        ],
+      });
+    });
+    await locked;
+    const approval = decide(id, proposal.change.id, 'approve');
+    releaseLock();
+    const [created, approved] = await Promise.allSettled([create, approval]);
+    if (created.status === 'rejected') throw created.reason;
+    expect(created.value.status).toBe('applied');
+    expect(approved).toMatchObject({
+      status: 'rejected',
+      reason: { status: 409, code: 'workspace_not_empty' },
+    });
+    expect((await getWorkspace(db.owner, id)).templates).toEqual([]);
     expect(await fieldNames(id, 'deal')).toBeUndefined();
   });
 });
 
 describe('event types', () => {
-  it('seeds the base event types, and hides the internal-note type from the schema', async () => {
-    const { id } = await newWorkspace();
+  it('copies the starter event type, and hides the internal-note type from the schema', async () => {
+    const { id } = await newWorkspace('starter');
     const schema = await inWorkspace(app, id, (tx) => getSchema(tx, id));
     const events = [...schema.objectsByName.values()].filter((o) => o.isEvent);
     expect(events.map((o) => o.name).sort()).toEqual(['conversation']);
@@ -348,7 +454,7 @@ describe('event types', () => {
   });
 
   it('deletes an event type through the event deletion lifecycle, atomically', async () => {
-    const { id } = await newWorkspace();
+    const { id } = await newWorkspace('starter');
     const caller = { workspaceId: id, actor: agent, scopes: ['read', 'write'] as ApiKeyScope[] };
     const call = await logEventFor(app, caller, {
       type: 'conversation',

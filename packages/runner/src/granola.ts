@@ -1,13 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { type ExecutionResult, type Invocation, isRetryLater } from '@retainer/extension';
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
-import {
-  BASE_EVENT_FIELD_IDS,
-  BASE_EVENT_TYPE_IDS,
-  EVENT_CONTENT_MAX,
-  type SourceScan,
-  sourceScanSchema,
-} from '@retainer/shared';
+import { EVENT_CONTENT_MAX, type SourceScan, sourceScanSchema } from '@retainer/shared';
 import { z } from 'zod';
 import {
   GRANOLA,
@@ -362,6 +356,7 @@ async function importNote(
   signal: AbortSignal,
   attempt: number,
   runId: string,
+  approvedBindings?: Invocation['bindings'],
 ) {
   const item = await sdk.sourceItem(id, itemId);
   let note: z.infer<typeof granolaNote>;
@@ -385,17 +380,13 @@ async function importNote(
     itemId,
     participants.map((p) => p.email),
   );
-  const schema = await sdk.schema(),
-    fields: Record<string, unknown> = { [GRANOLA.urlField]: note.web_url };
-  const base = schema.objects.find((o) => o.baseObject === 'conversation');
-  if (!base) throw new GranolaError('source_schema_changed');
-  const allFields = base.fields;
-  const medium = allFields.find((f) => f.baseField === 'conversationMedium');
-  if (medium?.type === 'select' && medium.settings.options?.some((o) => o.value === 'meeting'))
-    fields[BASE_EVENT_FIELD_IDS.conversationMedium] = 'meeting';
-  if (note.transcript?.length) {
-    if (allFields.find((f) => f.baseField === 'conversationTranscript')?.type !== 'files')
-      throw new GranolaError('source_schema_changed');
+  const bindings = approvedBindings ?? (await sdk.extensionBindings(id));
+  const meeting = bindings.bindings.meeting;
+  if (meeting?.status !== 'ok') throw new GranolaError('binding_unavailable');
+  const fields: Record<string, unknown> = {};
+  if (meeting.fields.url) fields.url = note.web_url;
+  if (meeting.fields.medium) fields.medium = 'meeting';
+  if (meeting.fields.transcript && note.transcript?.length) {
     const bytes = Buffer.from(JSON.stringify(note.transcript));
     const intent = await sdk.createFileIntent(
       {
@@ -417,14 +408,14 @@ async function importNote(
     await uploaded.body?.cancel();
     if (!uploaded.ok) throw new GranolaError('file_upload_failed', true);
     await sdk.finalizeFile(intent.id);
-    fields[BASE_EVENT_FIELD_IDS.conversationTranscript] = [intent.id];
+    fields.transcript = [intent.id];
   }
   await sdk.syncSourceEvent(id, {
     sourceItemId: itemId,
     providerRevision: note.updated_at,
     expectedRevisionId: item.revisionId,
     event: {
-      type: BASE_EVENT_TYPE_IDS.conversation,
+      binding: 'meeting',
       title: note.title ?? 'Granola meeting',
       summary: note.summary_text,
       content: granolaTranscriptText(note.transcript),
@@ -481,6 +472,7 @@ export async function executeGranola(
         signal,
         invocation.attempt,
         invocation.runId,
+        invocation.bindings,
       );
     } else return { status: 'failed', code: 'function_not_bundled' };
     return { status: 'succeeded' };

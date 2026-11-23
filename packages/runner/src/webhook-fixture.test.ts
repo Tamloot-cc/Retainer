@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import type { Invocation } from '@retainer/extension';
-import { BASE_EVENT_FIELD_IDS } from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
 import { executeWebhookFixture, WEBHOOK_SETUP_ID, WEBHOOK_SYNC_ID } from './webhook-fixture.js';
 
@@ -21,7 +20,7 @@ const invocation = (functionId: string, input: unknown): Invocation => ({
 const reply = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
 describe('reviewed webhook source fixture', () => {
-  it('stages ownership and finalizes bytes before importing through a stable field UUID, without sending the run bearer to storage', async () => {
+  it('stages ownership and finalizes bytes before importing through an approved binding key, without sending the run bearer to storage', async () => {
     const fileId = randomUUID(),
       calls: { path: string; method: string; body: any }[] = [];
     const transport: typeof fetch = async (url, options) => {
@@ -35,14 +34,8 @@ describe('reviewed webhook source fixture', () => {
       }
       const body = options?.body ? JSON.parse(String(options.body)) : null;
       calls.push({ path, method, body });
-      if (path.endsWith('/schema'))
-        return reply({
-          objects: [
-            {
-              fields: [{ baseField: 'conversationTranscript', type: 'files' }],
-            },
-          ],
-        });
+      if (path.endsWith('/bindings'))
+        return reply({ bindings: { meeting: { fields: { transcript: { id: randomUUID() } } } } });
       if (path.endsWith(`/extensions/${id}`))
         return reply({ settings: { includeTranscript: true } });
       if (path.endsWith('/files/intents'))
@@ -73,7 +66,7 @@ describe('reviewed webhook source fixture', () => {
     expect(upload).toBeLessThan(finalize);
     expect(finalize).toBeLessThan(sync);
     expect(calls[sync]?.body.event.fields).toEqual({
-      [BASE_EVENT_FIELD_IDS.conversationTranscript]: [fileId],
+      transcript: [fileId],
     });
   });
 

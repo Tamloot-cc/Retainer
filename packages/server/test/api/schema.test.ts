@@ -34,9 +34,9 @@ describe('GET /v1/schema', () => {
       id: expect.any(String),
       name: 'Acme Clinic',
       slug: 'acme-clinic',
-      templates: [],
-      initialized: false,
-      schemaVersion: 1,
+      templates: [{ name: 'starter', version: 1, appliedAt: expect.any(String) }],
+      initialized: true,
+      schemaVersion: 2,
     });
     const objects = res.body.objects as { nameSingular: string; class: string }[];
     expect(objects.filter((o) => o.class === 'entity').map((o) => o.nameSingular)).toEqual([
@@ -69,9 +69,7 @@ describe('GET /v1/schema', () => {
     );
     // Medium is an ordinary select a person or agent can correct, documented against channel.
     // Clients find the base event types and medium after a rename, as for base objects.
-    expect(meeting.baseObject).toBe('conversation');
     expect(meeting.fields.find((f: { name: string }) => f.name === 'medium')).toMatchObject({
-      baseField: 'conversationMedium',
       type: 'select',
       isFilterable: true,
       isProtected: false,
@@ -159,7 +157,7 @@ describe('POST /v1/schema/changes', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       status: 'applied',
-      schemaVersion: 2,
+      schemaVersion: 3,
       change: {
         status: 'applied',
         isDestructive: false,
@@ -426,16 +424,17 @@ describe('templates', () => {
       'clinic',
       'real_estate',
       'recruiting',
-      'blank',
+      'starter',
     ]);
     const clinic = res.body.templates.find((x: { name: string }) => x.name === 'clinic');
     expect(clinic).toMatchObject({
       version: 1,
       applied: false,
       adds: {
-        objects: [
+        objects: expect.arrayContaining([
+          { name: 'person', fields: expect.arrayContaining(['emails']) },
           { name: 'appointment', fields: ['title', 'startsAt', 'type', 'status', 'person'] },
-        ],
+        ]),
         fields: [
           { object: 'person', field: 'dateOfBirth' },
           { object: 'person', field: 'preferredChannel' },
@@ -444,29 +443,13 @@ describe('templates', () => {
     });
   });
 
-  it('applies a template with schema:write and reports it as initialized', async () => {
+  it('refuses to apply a template in a workspace with visible objects', async () => {
     expect(
       (await t.request('/v1/templates/clinic/apply', { method: 'POST', key: keys.reader })).status,
     ).toBe(403);
     const res = await t.request('/v1/templates/clinic/apply', { method: 'POST', key: keys.agent });
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ status: 'applied', alreadyApplied: false });
-
-    const again = await t.request('/v1/templates/clinic/apply', {
-      method: 'POST',
-      key: keys.agent,
-    });
-    expect(again.body).toMatchObject({ status: 'unchanged', alreadyApplied: true });
-
-    const schema = await t.request('/v1/schema', { key: keys.reader });
-    expect(schema.body.workspace.initialized).toBe(true);
-    expect(schema.body.workspace.templates).toEqual([
-      { name: 'clinic', version: 1, appliedAt: expect.any(String) },
-    ]);
-    const listed = await t.request('/v1/templates', { key: keys.reader });
-    expect(listed.body.templates.find((x: { name: string }) => x.name === 'clinic').applied).toBe(
-      true,
-    );
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('workspace_not_empty');
   });
 
   it('answers 404 for an unknown template, listing the real ones', async () => {

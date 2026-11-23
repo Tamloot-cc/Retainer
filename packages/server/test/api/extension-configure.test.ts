@@ -1,5 +1,4 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { BASE_OBJECT_IDS } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Caller } from '../../src/caller.js';
@@ -60,12 +59,17 @@ const next = extensionFixture({
 const mapped = extensionFixture({
   ...base,
   version: '3.0.0',
-  mapping: {
-    objectId: BASE_OBJECT_IDS.company,
-    outputs: [
-      { key: 'company_name', label: 'Company name', description: 'Company name', types: ['text'] },
-    ],
-  },
+  bindings: [
+    {
+      key: 'company',
+      label: 'Companies',
+      description: 'Company suggestions',
+      class: 'entity',
+      access: 'write',
+      required: true,
+      fields: [{ key: 'company_name', label: 'Company name', types: ['text'], required: true }],
+    },
+  ],
 });
 const other = extensionFixture({
   ...base,
@@ -240,7 +244,7 @@ describe('configuration before installation approval', () => {
     for (const body of [
       { settings: { apiKey: 'leak' } },
       { settings: { enabled: 'wrong' } },
-      { mapping: { unknown: { action: 'skip' } } },
+      { bindings: { unknown: { action: 'skip' } } },
     ])
       expect(
         (
@@ -276,13 +280,14 @@ describe('configuration before installation approval', () => {
       method: 'PUT',
       key: token,
       body: {
-        mapping: {
-          company_name: {
+        bindings: {
+          company: {
             action: 'existing',
-            field: 'name',
-            reason: 'Use the existing company name.',
+            objects: ['company'],
+            fields: { company_name: { action: 'existing', field: 'name' } },
           },
         },
+        bindingReasons: { 'company.company_name': 'Use the existing company name.' },
       },
     });
     expect(saved.status).toBe(200);
@@ -298,8 +303,8 @@ describe('configuration before installation approval', () => {
     });
     expect(changed.status).toBe(200);
     const read = await t.request(`/v1/extensions/${a.id}/suggestions`, { key: a.key });
-    expect(read.body.mapping.company_name.field).toBe('name');
-    expect(read.body.issues.company_name).toBe('field_not_found');
+    expect(read.body.bindings.company.fields.company_name.field).toBe('name');
+    expect(read.body.issues['company.company_name']).toContain('Company name');
   });
 
   it('serializes suggestion saves with turn-on and rejects stale plans', async () => {

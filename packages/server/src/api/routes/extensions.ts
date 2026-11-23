@@ -17,6 +17,9 @@ import { idParam, limitParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 
 export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMode = true) {
+  app.get('/extensions/:id/bindings', requireScope('read'), async (c) =>
+    c.json(await extensions.bindings(c.get('caller'), idParam(c))),
+  );
   app.get('/extensions/:id/suggestions', requireScope('read'), async (c) =>
     c.json(await extensions.suggestions(c.get('caller'), idParam(c), c.req.query('version'))),
   );
@@ -204,8 +207,8 @@ export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMo
   app.get('/extensions/links', requireScope('read'), async (c) =>
     c.json(await extensions.appLinks(c.get('caller'))),
   );
-  app.get('/extensions/catalog', requireScope('read'), (c) =>
-    c.json({ releases: extensions.catalog.list() }),
+  app.get('/extensions/catalog', requireScope('read'), async (c) =>
+    c.json(await extensions.offered(c.get('caller'))),
   );
   app.get('/extensions', requireScope('read'), async (c) =>
     c.json(await extensions.list(c.get('caller'))),
@@ -261,19 +264,6 @@ export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMo
         400,
         'invalid_request',
         'review a reconnect plan for this installation first',
-      );
-    return c.json(
-      await extensions.install(c.get('caller'), input, c.req.header('Idempotency-Key') ?? ''),
-    );
-  });
-  app.post('/extensions/:id/mapping', requireScope('admin'), async (c) => {
-    const id = idParam(c),
-      input = await readBody(c, commitInputSchema);
-    if (!input.mappingChange || input.installationId !== id)
-      throw new AppError(
-        400,
-        'invalid_request',
-        'review a mapping change plan for this installation first',
       );
     return c.json(
       await extensions.install(c.get('caller'), input, c.req.header('Idempotency-Key') ?? ''),

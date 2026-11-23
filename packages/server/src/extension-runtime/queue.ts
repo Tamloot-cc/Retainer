@@ -19,7 +19,6 @@ import { inWorkspace, jsonValue, lockPrivacyShared, lockSchemaShared, type Tx } 
 import { AppError, notFound } from '../errors.js';
 import { requestHash } from '../idempotency.js';
 import { getSchema } from '../schema/compiled.js';
-import { loadSchemaState } from '../schema/load.js';
 import { stableJson } from '../stable-json.js';
 import {
   type RuntimeCatalog,
@@ -27,6 +26,7 @@ import {
   resolveRelease,
   runnableReleases,
 } from './availability.js';
+import type { StoredBindingPlan } from './bindings.js';
 import {
   failInstallation,
   finishMemberCleanup,
@@ -37,7 +37,6 @@ import {
   sweepPartialReleases,
 } from './lifecycle.js';
 import { cancelRuns, failDisconnectCleanup, lockExtension, lockQueue } from './locks.js';
-import { type ContributionRow, retiredContributions } from './retired.js';
 
 export type Lease = {
   connectionId?: string | null;
@@ -93,6 +92,7 @@ type Installation = {
   cleanup_live: boolean | null;
   granted_scopes: ('read' | 'write')[];
   granted_uses: ExtensionUse[];
+  bindings: StoredBindingPlan | null;
 };
 type Job = {
   connection_id: string | null;
@@ -635,38 +635,36 @@ export class ExtensionQueue {
         const manifest = this.runnableRelease(installation);
         if (!manifest) return { queued: 0, blocked: 0 };
         const schema = await getSchema(tx, workspace);
-        // Each change trigger with its object, when that object is live, and
-        // the keys of its watched fields. A watched field this workspace
-        // doesn't have, or deleted, is skipped: the trigger keeps watching the
-        // fields that remain. A deleted field keeps its key, so the schema
-        // change that deleted it still names it.
-        let handlers = manifest.functions.flatMap((fn) => {
+        const handlers = manifest.functions.flatMap((fn) => {
           if (fn.trigger.kind !== 'change') return [];
           const trigger = fn.trigger;
-          const found = schema.objectsByUniversalId.get(trigger.objectId);
-          const object = found?.state.status === 'active' && !found.hidden ? found : undefined;
-          const keys = (object?.state.fields ?? [])
-            .filter((field) => trigger.fieldIds.includes(field.universalId))
-            .map((field) => field.key);
-          return [{ functionId: fn.universalId, trigger, object, keys }];
-        });
-        // A trigger on an object the installation contributed and the
-        // workspace deleted never fires, as the install plan promised; any
-        // other unresolved object still fails.
-        if (handlers.some((h) => !h.object)) {
-          const retired = retiredContributions(
-            await loadSchemaState(tx, workspace),
-            manifest,
-            await tx<
-              ContributionRow[]
-            >`select kind,universal_id,element_id,definition from extension_contributions where installation_id=${id}`,
+          const destination = installation.bindings?.destinations[trigger.binding];
+          if (!destination) return [];
+          const scoped = !!trigger.fields?.length;
+          const fieldIds = new Set(
+            (trigger.fields ?? []).flatMap((key) => {
+              const field = destination.fields[key];
+              return field ? [field.id] : [];
+            }),
           );
-          handlers = handlers.filter((h) => h.object || !retired.has(h.trigger.objectId));
-        }
+          return destination.objects.flatMap((id) => {
+            const object = schema.objectsByUniversalId.get(id);
+            if (!object || object.hidden || object.state.status !== 'active')
+              throw conflict(
+                'binding_unavailable',
+                'The approved change trigger destination is unavailable.',
+              );
+            const keys = object.activeFields
+              .filter((field) => fieldIds.has(field.universalId))
+              .map((field) => field.key);
+            if (scoped && !keys.length) return [];
+            return [{ functionId: fn.universalId, trigger, object, keys, scoped }];
+          });
+        });
         if (!handlers.length) return { queued: 0, blocked: 0 };
         const [checkpoint] = await tx<
-          { position: string; generation: number }[]
-        >`select position::text,generation from change_dispatch where installation_id=${id} for update`;
+          { position: string; generation: number; trigger_starts: Record<string, string> }[]
+        >`select position::text,generation,trigger_starts from change_dispatch where installation_id=${id} for update`;
         if (!checkpoint || checkpoint.generation !== installation.generation)
           throw conflict(
             'dispatcher_not_initialized',
@@ -721,18 +719,14 @@ export class ExtensionQueue {
           const counts = { queued: 0, blocked: 0, coalesced: 0, cycles: 0 };
           try {
             await tx.savepoint(async (sp) => {
-              for (const { functionId, trigger, object, keys } of handlers) {
-                if (!object)
-                  throw conflict(
-                    'schema_binding_conflict',
-                    'change trigger object binding is unavailable',
-                  );
+              for (const { functionId, trigger, object, keys, scoped } of handlers) {
+                if (BigInt(row.position) <= BigInt(checkpoint.trigger_starts[functionId] ?? '0'))
+                  continue;
                 // A field-scoped trigger reacts to updates, reviews and
                 // schema changes only when one of its fields is named. A
                 // trigger listing its operations fires only on those, and on
                 // an update only when a watched field changed.
-                const watched =
-                  !trigger.fieldIds.length || keys.some((key) => row.field_keys.includes(key));
+                const watched = !scoped || keys.some((key) => row.field_keys.includes(key));
                 const operations = trigger.operations as readonly string[] | undefined;
                 const direct =
                   row.object_type_id === object.id &&
@@ -789,7 +783,7 @@ export class ExtensionQueue {
           await tx`update extension_installations set last_error=${deferred},connection_health='degraded' where id=${id}`;
         else if (!cycles)
           await tx`update extension_installations set connection_health='ok',last_error=null where id=${id}
-        and last_error in ('quota_exceeded','trigger_throttled','cursor_expired','schema_binding_conflict','dispatch_unavailable')
+        and last_error in ('quota_exceeded','trigger_throttled','cursor_expired','binding_unavailable','dispatch_unavailable')
         and not exists(select 1 from extension_jobs where installation_id=${id} and generation=${installation.generation} and status='failed')`;
         return {
           queued,
@@ -811,7 +805,7 @@ export class ExtensionQueue {
             await lockExtension(tx, workspace, current.registration_id, true);
             const code =
               error instanceof AppError &&
-              ['quota_exceeded', 'cursor_expired', 'schema_binding_conflict'].includes(error.code)
+              ['quota_exceeded', 'cursor_expired', 'binding_unavailable'].includes(error.code)
                 ? error.code
                 : 'dispatch_unavailable';
             await tx`update extension_installations set connection_health='degraded',last_error=${code} where id=${id} and generation=${failedGeneration} and state='active'`;
@@ -996,7 +990,7 @@ export class ExtensionQueue {
     await tx`insert into extension_suggestions(workspace_id,installation_id,release_digest,job_id,reason)
       values(${workspace},${id},${digest},${jobId},${String((input as { reason: string }).reason)})
       on conflict(workspace_id,installation_id,release_digest) do update set job_id=excluded.job_id,
-      reason=excluded.reason,mapping=null,settings=null,created_at=now()`;
+      reason=excluded.reason,bindings=null,binding_reasons=null,settings=null,created_at=now()`;
     return { id: jobId };
   }
 
@@ -1164,7 +1158,7 @@ export class ExtensionQueue {
         where id=${id} returning *,run_until-${RUN_GRACE_SECONDS}*interval '1 second' as handler_deadline`;
       if (!claimed) throw new Error('claim returned no row');
       if (job.trigger_kind === 'configure')
-        await tx`update extension_suggestions set mapping=null,settings=null where job_id=${id}`;
+        await tx`update extension_suggestions set bindings=null,binding_reasons=null,settings=null where job_id=${id}`;
       await tx`insert into extension_attempts(workspace_id,job_id,attempt,fence,status)
         values(${workspace},${id},${claimed.attempt},${claimed.fence},'running')`;
       await tx`update extension_installations set last_claimed_at=clock_timestamp() where id=${installation.id}`;
@@ -1360,7 +1354,9 @@ export class ExtensionQueue {
       if (this.manifest(installation).functions.some((fn) => fn.trigger.kind === 'change'))
         await tx`insert into change_dispatch(workspace_id,installation_id,generation,position)
           values(${installation.workspace_id},${installation.id},${installation.generation},coalesce((select position from change_counters where workspace_id=${installation.workspace_id}),0))
-          on conflict(workspace_id,installation_id) do update set generation=excluded.generation,position=excluded.position,blocked_cycles=0`;
+          on conflict(workspace_id,installation_id) do update set generation=excluded.generation,
+            position=excluded.position,blocked_cycles=0,trigger_starts='{}'
+          where change_dispatch.generation<>excluded.generation`;
       await tx`update extension_installations set state='active',connection_health='ok',last_error=null,activated_at=clock_timestamp(),updated_at=now() where id=${installation.id}`;
       if (this.manifest(installation).connection === 'member') {
         const { functionId: hook, secrets } = disconnectHook(this.manifest(installation));

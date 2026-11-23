@@ -150,6 +150,35 @@ export function parseExtensionCatalog(raw?: string): ExtensionCatalog {
     )
     .parse(raw ? JSON.parse(raw) : []);
   return new ExtensionCatalog(
-    entries.map((entry) => ({ ...entry, manifest: defineExtension(entry.manifest) })),
+    entries.flatMap((entry) => {
+      // Published snapshots can retain releases retired by the binding migration.
+      const manifest = entry.manifest;
+      if (manifest && typeof manifest === 'object') {
+        if ('schema' in manifest || 'mapping' in manifest) return [];
+        if (
+          'functions' in manifest &&
+          Array.isArray(manifest.functions) &&
+          manifest.functions.some(
+            (fn) => fn?.trigger?.kind === 'change' && 'objectId' in fn.trigger,
+          )
+        )
+          return [];
+        if (
+          'source' in manifest &&
+          manifest.source &&
+          typeof manifest.source === 'object' &&
+          'eventTypeIds' in manifest.source
+        )
+          return [];
+        if (
+          'lastContact' in manifest &&
+          manifest.lastContact &&
+          typeof manifest.lastContact === 'object' &&
+          'fields' in manifest.lastContact
+        )
+          return [];
+      }
+      return [{ ...entry, manifest: defineExtension(manifest) }];
+    }),
   );
 }

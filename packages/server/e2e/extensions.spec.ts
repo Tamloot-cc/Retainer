@@ -12,6 +12,7 @@ test('reviews and approves an installation, changes settings, inspects runs and 
   await expect(page.getByRole('heading', { name: 'Set up browser-fixture' })).toBeVisible();
   await expect(page.getByLabel('Generated signing secret')).toHaveCount(0);
   await page.getByLabel('Enabled (required)').check();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Review installation' }).click();
   const access = page.getByRole('region', { name: 'Access' });
   await expect(access.getByText('CRM data', { exact: true })).toBeVisible();
@@ -40,8 +41,10 @@ test('reviews and approves an installation, changes settings, inspects runs and 
   await confirm.getByRole('button', { name: 'Uninstall', exact: true }).click();
   await expect(page).toHaveURL(/\/extensions$/);
   await page.getByRole('link', { name: 'Set up browser-fixture', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Review installation' }).click();
-  await expect(page.getByText('No fields, record types or saved views change.')).toBeVisible();
+  await expect(page.getByText('Fixture status → fixtureStatus')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Structure changes' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Approve installation' }).click();
   await expect(page).toHaveURL(new RegExp(`/extensions/${installed.id}$`));
   const schema = await r.request('/schema');
@@ -62,6 +65,7 @@ test('reviews a reconnect before changing account settings or revoking the curre
   await page.getByRole('link', { name: 'Extensions', exact: true }).click();
   await page.getByRole('link', { name: 'Set up browser-fixture', exact: true }).click();
   await page.getByLabel('Provider account').fill('original-account');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Review installation' }).click();
   await page.getByRole('button', { name: 'Approve installation' }).click();
   await expect(page).toHaveURL(/\/extensions\/[0-9a-f-]{36}$/);

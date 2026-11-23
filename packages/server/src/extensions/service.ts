@@ -1,21 +1,22 @@
 import {
+  bindingChoicesSchema,
   compareVersions,
   disconnectHook,
   type ExtensionAppLink,
+  type ExtensionBindingChoices,
   type ExtensionInstallation,
   type ExtensionInstallInput,
   type ExtensionManifest,
-  type ExtensionMappingView,
   type ExtensionPreview,
   functionSecrets,
   MODEL_USE_NOTICE,
-  mappingChoicesSchema,
+  mergeBindingChoices,
   newestReleases,
   releaseUses,
   runsHostedCode,
   SIDEBAR_INSTALLATION_PARAM,
 } from '@retainer/extension';
-import { HIDDEN_TYPE_IDS } from '@retainer/shared';
+import type { Actor } from '@retainer/shared';
 import { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
 import type { Sql } from '../db/client.js';
@@ -35,6 +36,7 @@ import {
   resolveRelease,
   sidebarSignIn,
 } from '../extension-runtime/availability.js';
+import { presentBindingPlan, type StoredBindingPlan } from '../extension-runtime/bindings.js';
 import { disconnectConnection } from '../extension-runtime/connections.js';
 import { hashInstallationKey, mintInstallationKey } from '../extension-runtime/credentials.js';
 import { sweepPartialReleases } from '../extension-runtime/lifecycle.js';
@@ -47,23 +49,24 @@ import {
 import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { pendingSecrets, type SecretBroker } from '../extension-runtime/secrets.js';
 import { log } from '../log.js';
+import { lockRecordsForUpdate, objectOf, recomputeFields } from '../records/write.js';
+import { getSchema } from '../schema/compiled.js';
 import { loadSchemaState } from '../schema/load.js';
+import { deriveUuid } from '../schema-engine/apply.js';
 import { planSchemaChange, runSchemaChange, SYSTEM_ACTOR } from '../schema-engine/engine.js';
+import { checkExistingRecords, SchemaCheckError } from '../schema-engine/persist.js';
+import { detachEditedTasks } from '../sources/task-detach.js';
 import {
   createViewInTransaction,
   type ManagedView,
   managedViewEdited,
   replaceManagedView,
 } from '../views/service.js';
-import { holdReason, type UpgradeTarget, upgradeTargets } from './auto-upgrade.js';
+import { holdReason, releaseContract, type UpgradeTarget, upgradeTargets } from './auto-upgrade.js';
+import { bindingChoicesFromPlan, resolveBindingPlan } from './bindings.js';
 import { ExtensionCatalog, hash } from './catalog.js';
 import { MemberConnections, ownerId } from './connections.js';
-import {
-  type ContributionRow,
-  contributionOperations,
-  retiredContributions,
-} from './contributions.js';
-import { bindingStatus, EMPTY_MAPPING, resolveMapping, type StoredMapping } from './mapping.js';
+import { creationPolicy } from './creation-policy.js';
 import { connectionMethods, type ExtensionOAuthClients } from './oauth-clients.js';
 import { getSuggestions } from './suggestions.js';
 import { installationMonthUsage } from './usage.js';
@@ -79,8 +82,7 @@ export const installInputSchema = z.strictObject({
   registrationId: z.uuid(),
   version: z.string().regex(/^\d+\.\d+\.\d+$/),
   settings: z.record(z.string(), z.union([z.string(), z.boolean(), z.number().finite()])),
-  mapping: mappingChoicesSchema.optional(),
-  mappingChange: z.boolean().optional(),
+  bindings: bindingChoicesSchema.optional(),
 });
 export const commitInputSchema = installInputSchema.extend({
   planDigest: z.string().regex(/^[a-f0-9]{64}$/),
@@ -118,8 +120,8 @@ type Row = {
   connection_health: 'ok' | 'needs_reconnect' | 'degraded';
   last_error: string | null;
   created_by: ExtensionInstallation['createdBy'];
-  mapping: StoredMapping;
-  mapping_revision: number;
+  bindings: StoredBindingPlan | null;
+  bindings_revision: number;
   upgrade_held_digest: string | null;
 };
 
@@ -138,53 +140,6 @@ async function cleanupPending(tx: Tx, installationId: string) {
   return !!pending;
 }
 
-/** A row's stored mapping, tolerating rows written before the column had its shape. */
-function storedMapping(row: Pick<Row, 'mapping'> | undefined): StoredMapping {
-  return row?.mapping?.outputs ? row.mapping : EMPTY_MAPPING;
-}
-
-/** The approved mapping by current field names; a deleted target keeps its last label. */
-export function presentMapping(
-  schema: Awaited<ReturnType<typeof loadSchemaState>>,
-  manifest: ExtensionManifest,
-  stored: StoredMapping,
-  revision: number,
-  owned: (universalId: string) => boolean,
-): ExtensionMappingView | undefined {
-  const mapping = manifest.mapping;
-  if (!mapping) return undefined;
-  const object = schema.objects.find((o) => o.universalId === mapping.objectId);
-  const lookup = mapping.lookup
-    ? object?.fields.find((f) => f.universalId === mapping.lookup?.fieldId)
-    : undefined;
-  return {
-    revision,
-    ...(lookup
-      ? {
-          lookup: {
-            name: lookup.name,
-            status:
-              lookup.status === 'active' && lookup.type === mapping.lookup?.type
-                ? ('ok' as const)
-                : ('missing' as const),
-          },
-        }
-      : {}),
-    outputs: mapping.outputs.map((output) => {
-      const binding = stored.outputs[output.key];
-      if (!binding)
-        return { output: output.key, action: 'skip', contribution: false, status: 'ok' };
-      const { status, field } = bindingStatus(object, output, binding.fieldUniversalId);
-      return {
-        output: output.key,
-        action: 'existing',
-        ...(field ? { field: { name: field.name, label: field.label, type: field.type } } : {}),
-        contribution: owned(binding.fieldUniversalId),
-        status,
-      };
-    }),
-  };
-}
 /** `activation` is undefined when this process does not know the deployed executables. */
 function present(
   r: Row,
@@ -287,6 +242,28 @@ export class Extensions {
     return this.secrets.stage(caller, input);
   }
 
+  async offered(caller: Caller) {
+    const releases = this.catalog.list();
+    if (!canApproveDestructive(caller.actor, caller.scopes)) return { releases };
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      const proposals = await tx<
+        { release_digest: string; choices: ExtensionBindingChoices; proposed_by: Actor }[]
+      >`select release_digest, choices, proposed_by from extension_binding_proposals`;
+      const byRelease = new Map(proposals.map((proposal) => [proposal.release_digest, proposal]));
+      return {
+        releases: releases.map((release) => {
+          const proposal = byRelease.get(release.digest);
+          return proposal
+            ? {
+                ...release,
+                bindingProposal: { choices: proposal.choices, proposedBy: proposal.proposed_by },
+              }
+            : release;
+        }),
+      };
+    });
+  }
+
   async list(caller: Caller) {
     scope(caller, 'read');
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
@@ -340,17 +317,6 @@ export class Extensions {
       const contributions = await tx<{ kind: string; universalId: string; elementId: string }[]>`
         select kind, universal_id as "universalId", element_id as "elementId"
         from extension_contributions where installation_id = ${id} order by kind, universal_id`;
-      const manifest = this.catalog.find(row.registration_id, row.version)?.manifest;
-      const mapping =
-        manifest?.mapping &&
-        presentMapping(
-          await loadSchemaState(tx, caller.workspaceId),
-          manifest,
-          storedMapping(row),
-          row.mapping_revision,
-          (universalId) =>
-            contributions.some((c) => c.kind === 'field' && c.universalId === universalId),
-        );
       const [presence] = await tx<
         { names: string[] }[]
       >`select ${caller.run?.connectionId ? tx`retainer_connection_secret_names(${id}::uuid,${caller.run.connectionId}::uuid)` : tx`retainer_extension_secret_names(${id}::uuid)`} as names`;
@@ -359,8 +325,29 @@ export class Extensions {
         ...(await this.memberView(tx, caller, row)),
         secrets: Object.fromEntries((presence?.names ?? []).map((name) => [name, true])),
         contributions,
-        ...(mapping ? { mapping } : {}),
+        ...(row.bindings
+          ? {
+              bindingChoices: bindingChoicesFromPlan(
+                await loadSchemaState(tx, caller.workspaceId),
+                row.bindings,
+              ),
+            }
+          : {}),
       };
+    });
+  }
+
+  async bindings(caller: Caller, id: string) {
+    if ((caller.run?.installationId ?? caller.installation?.installationId) !== id)
+      throw notFound('extension installation');
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await lockSchemaShared(tx, caller.workspaceId);
+      await admitCaller(tx, caller, false, 'runtime');
+      const [row] = await tx<Pick<Row, 'bindings' | 'bindings_revision'>[]>`
+        select bindings, bindings_revision from extension_installations where id = ${id}`;
+      if (!row?.bindings) throw notFound('installation bindings');
+      const state = await loadSchemaState(tx, caller.workspaceId);
+      return presentBindingPlan(state, row.bindings, row.bindings_revision);
     });
   }
 
@@ -485,33 +472,9 @@ export class Extensions {
       (existing?.state !== 'configuring' ||
         !input.installationId ||
         input.accessOnly ||
-        input.mappingChange ||
         input.reconnect)
     )
       throw conflict('installation_disabled', 'turn-on requires a configuring installation');
-    if (input.mappingChange) {
-      if (!existing || !input.installationId || existing.version !== input.version)
-        throw conflict('upgrade_conflict', 'a mapping change applies to the installed release');
-      if (['uninstalled', 'uninstalling'].includes(existing.state))
-        throw conflict('installation_disabled', 'reinstall before changing the mapping');
-      if (
-        input.reconnect ||
-        input.grantChange ||
-        input.replaceSourceAccount ||
-        Object.keys(input.secretRefs ?? {}).length
-      )
-        throw new AppError(
-          400,
-          'invalid_request',
-          'a mapping change cannot change credentials or grants',
-        );
-      if (hash(input.settings) !== hash(existing.settings))
-        throw conflict('stale_plan', 'settings changed; review the mapping again');
-      if (!manifest.mapping || !input.mapping)
-        throw new AppError(422, 'mapping_invalid', 'a mapping change needs the full mapping');
-    }
-    if (input.reconnect && input.mapping)
-      throw new AppError(400, 'invalid_request', 'change the mapping separately from reconnect');
     if (input.reconnect && (!input.installationId || existing?.version !== input.version))
       throw conflict(
         'connection_required',
@@ -625,12 +588,7 @@ export class Extensions {
         (!existing || existing.state === 'uninstalled') &&
         manifest.functions.some((fn) => fn.trigger.kind === 'configure'));
     if (accessOnly) {
-      if (
-        !manifest.functions.some((fn) => fn.trigger.kind === 'configure') ||
-        input.mapping ||
-        input.reconnect ||
-        input.mappingChange
-      )
+      if (!manifest.functions.some((fn) => fn.trigger.kind === 'configure') || input.reconnect)
         throw new AppError(
           400,
           'invalid_request',
@@ -673,69 +631,92 @@ export class Extensions {
         operations: [],
         existing,
         draftId,
-        retired: new Set<string>(),
-        mapped: {
-          stored: EMPTY_MAPPING,
-          operations: [],
-          contributions: [],
-          bindings: [],
-          warnings: [],
-        },
+        bound: undefined,
+        replan: false,
+        views: [],
         accessOnly,
         refs,
       };
     }
     const owned = existing
       ? await tx<
-          ContributionRow[]
+          {
+            kind: string;
+            universal_id: string;
+            element_id: string;
+            definition: Record<string, unknown>;
+          }[]
         >`select kind, universal_id, element_id, definition from extension_contributions where installation_id = ${existing.id}`
       : [];
-    const owns = (kind: string, id: string) =>
-      owned.some((o) => o.kind === kind && o.universal_id === id);
-    const targets = [
-      ...manifest.schema.map((c) => (c.kind === 'object' ? c.definition.universalId : c.objectId)),
-      ...manifest.views.map((v) => v.objectId),
-      ...manifest.functions.flatMap((f) =>
-        f.trigger.kind === 'change' ? [f.trigger.objectId] : [],
-      ),
-      ...(manifest.mapping ? [manifest.mapping.objectId] : []),
-    ];
-    const relationTargets = manifest.schema.flatMap((c) =>
-      (c.kind === 'object' ? c.definition.fields : [c.definition]).flatMap((f) =>
-        [f.settings?.targetObject, ...(f.settings?.targetObjects ?? [])].filter(
-          (id): id is string => !!id,
-        ),
-      ),
-    );
-    if ([...targets, ...relationTargets].some((id) => HIDDEN_TYPE_IDS.has(id)))
-      throw conflict('schema_binding_conflict', 'extensions cannot target internal memory types');
-    const contributed = contributionOperations(current, manifest, owned);
-    // A first install or a reinstall reviews the mapping afresh; everything
-    // else carries the stored one over unless the input changes it.
     const fresh = !existing || ['configuring', 'uninstalled'].includes(existing.state);
-    if (manifest.mapping && fresh && !input.mapping)
-      throw new AppError(422, 'mapping_invalid', 'choose a field or skip for every output', {
-        outputs: [{ output: '*', reason: 'missing_mapping' }],
-      });
-    const mapped = resolveMapping(
-      current,
-      manifest,
-      input.mapping,
-      fresh ? undefined : storedMapping(existing),
-      owned,
-    );
-    const operations = [...contributed.operations, ...mapped.operations];
-    const notices = [...contributed.notices, ...mapped.warnings];
+    const hasBindings = !!manifest.bindings?.length;
+    if (input.bindings && !hasBindings)
+      throw new AppError(422, 'bindings_invalid', 'This release has no bindings to review.');
+    const people = creationPolicy(manifest, input.settings.createPeople);
+    const installedRelease = existing
+      ? this.catalog.find(existing.registration_id, existing.version)?.manifest
+      : undefined;
+    const replan = hasBindings
+      ? !existing?.bindings ||
+        fresh ||
+        !!input.bindings ||
+        existing.bindings.createPeople !== people ||
+        hash(existing.bindings.declarations) !== hash(manifest.bindings) ||
+        (caller.actor.type !== 'system' &&
+          !!installedRelease &&
+          hash(releaseContract(installedRelease)) !== hash(releaseContract(manifest)))
+      : !!existing?.bindings?.declarations.length;
+    const [proposal] =
+      hasBindings && replan
+        ? await tx<{ choices: ExtensionBindingChoices }[]>`
+      select choices from extension_binding_proposals where release_digest = ${release.digest}`
+        : [];
+    const [configured] =
+      existing && hasBindings && replan
+        ? await tx<{ bindings: ExtensionBindingChoices | null }[]>`
+      select s.bindings from extension_suggestions s join extension_jobs j on j.id = s.job_id
+      where s.installation_id = ${existing.id} and s.release_digest = ${release.digest}
+        and j.generation = ${existing.generation} and j.status = 'succeeded'`
+        : [];
+    const choices = mergeBindingChoices(proposal?.choices, configured?.bindings, input.bindings);
+    const bound = hasBindings
+      ? resolveBindingPlan(current, manifest, choices, existing?.bindings, people)
+      : undefined;
+    const operations = bound?.operations ?? [];
+    const notices = bound?.notices ?? [];
     const planned = planSchemaChange(current, operations, 'workspace');
-    const retired = retiredContributions(current, manifest, owned);
-    const skippedViews = manifest.views.filter(
-      (v) =>
-        !owns('view', v.universalId) && [v.objectId, ...v.fieldIds].some((id) => retired.has(id)),
-    );
+    if (bound && operations.length) {
+      try {
+        await checkExistingRecords(tx, caller.workspaceId, current, planned.desired, planned.ops);
+      } catch (error) {
+        if (!(error instanceof SchemaCheckError)) throw error;
+        const records = await tx<{ id: string; label: string | null }[]>`
+          select id, label from records where workspace_id = ${caller.workspaceId}
+            and id = any(${error.recordIds}::uuid[]) order by label, id`;
+        const labels = records.map((record) => record.label || record.id).join(', ');
+        throw new AppError(422, 'bindings_invalid', `${error.message}. Records: ${labels}.`, {
+          recordIds: error.recordIds,
+          issues: error.issues,
+        });
+      }
+    }
+    const views = manifest.views.flatMap((view) => {
+      const destination = bound?.plan.destinations[view.binding];
+      const objectId = destination?.objects[0];
+      if (!objectId) return [];
+      return [
+        {
+          universalId: deriveUuid(`${view.universalId}:${objectId}`),
+          objectId,
+          name: view.name,
+          kind: view.kind,
+          fieldIds: view.fields.flatMap((key) => destination.fields[key]?.id ?? []),
+        },
+      ];
+    });
     const viewActions = new Map<string, ExtensionPreview['views'][number]['action']>();
     const viewNotices: string[] = [];
-    for (const view of manifest.views) {
-      if (skippedViews.includes(view)) continue;
+    for (const view of views) {
       const [manager] = await tx<
         { installation_id: string }[]
       >`select installation_id from extension_contributions
@@ -780,13 +761,6 @@ export class Extensions {
           );
           continue;
         }
-        if (view.fieldIds.some((id) => retired.has(id))) {
-          viewActions.set(view.universalId, 'retain');
-          viewNotices.push(
-            `View ${view.name} keeps its current columns: this release adds fields that were deleted.`,
-          );
-          continue;
-        }
         viewActions.set(view.universalId, 'update');
       } else viewActions.set(view.universalId, 'create');
       const object = planned.desired.objects.find(
@@ -805,31 +779,7 @@ export class Extensions {
     }
     // A change trigger needs its object. A watched field this workspace
     // doesn't have, or deleted, is skipped when changes are dispatched.
-    for (const fn of manifest.functions) {
-      if (fn.trigger.kind !== 'change') continue;
-      const trigger = fn.trigger;
-      if (
-        !retired.has(trigger.objectId) &&
-        !planned.desired.objects.some((o) => o.universalId === trigger.objectId)
-      )
-        throw conflict(
-          'schema_binding_conflict',
-          `function ${fn.universalId} has unresolved schema identities`,
-        );
-    }
     const generation = existing?.generation ?? 0;
-    if (
-      manifest.source?.eventTypeIds.some(
-        (id) =>
-          !planned.desired.objects.some(
-            (o) => o.universalId === id && o.class === 'event' && o.status === 'active',
-          ),
-      )
-    )
-      throw conflict(
-        'schema_binding_conflict',
-        'managed source event types must resolve to active event schema identities',
-      );
     const preview: ExtensionPreview = {
       planDigest: hash({
         workspace: caller.workspaceId,
@@ -840,16 +790,10 @@ export class Extensions {
         settingsRevision: existing?.settings_revision ?? 0,
         secretRefs: refs,
         draftId,
-        operation: input.turnOn
-          ? 'turn-on'
-          : input.mappingChange
-            ? 'mapping'
-            : input.installationId
-              ? 'upgrade'
-              : 'install',
+        operation: input.turnOn ? 'turn-on' : input.installationId ? 'upgrade' : 'install',
         // The resolved targets by universal ID, so a rename or retype after
         // preview changes the digest.
-        mapping: mapped.stored,
+        bindings: bound?.plan,
         runtimeReady: this.ready(manifest, release.digest),
         reconnect: input.reconnect === true,
         replaceSourceAccount: input.replaceSourceAccount === true,
@@ -869,13 +813,11 @@ export class Extensions {
       generation,
       releaseDigest: release.digest,
       operations: planned.ops,
-      views: manifest.views
-        .filter((view) => !skippedViews.includes(view))
-        .map((view) => ({
-          universalId: view.universalId,
-          name: view.name,
-          action: viewActions.get(view.universalId) ?? 'retain',
-        })),
+      views: views.map((view) => ({
+        universalId: view.universalId,
+        name: view.name,
+        action: viewActions.get(view.universalId) ?? 'retain',
+      })),
       grants: {
         actor: manifest.requestedActor,
         scopes: manifest.scopes,
@@ -890,11 +832,8 @@ export class Extensions {
             },
           }
         : {}),
-      ...(manifest.mapping ? { mapping: mapped.bindings } : {}),
+      ...(bound ? { bindings: bound.review } : {}),
       warnings: [
-        ...skippedViews.map(
-          (view) => `View ${view.name} is skipped: its object or fields were deleted.`,
-        ),
         // Shown wherever model use is newly granted: a release without
         // configure grants it here, in its single approval.
         ...(uses.includes('model') &&
@@ -905,9 +844,16 @@ export class Extensions {
           : []),
         ...notices,
         ...viewNotices,
-        ...(manifest.mapping && (fresh || input.mappingChange)
+        ...(replan && existing?.bindings
           ? [
-              'The mapping applies to records created or changed from now on. Existing records are not filled in.',
+              'Imported history stays in its original objects.',
+              ...(typeof manifest.source?.tasks === 'string' &&
+              hash(existing.bindings.destinations[manifest.source.tasks] ?? null) !==
+                hash(bound?.plan.destinations[manifest.source.tasks] ?? null)
+                ? [
+                    'Previously synced tasks will keep their current values and stop receiving source updates.',
+                  ]
+                : []),
             ]
           : []),
         ...(input.reconnect
@@ -934,15 +880,45 @@ export class Extensions {
             ]),
       ],
     };
-    return { preview, release, operations, existing, draftId, retired, mapped, accessOnly, refs };
+    return {
+      preview,
+      release,
+      operations,
+      existing,
+      draftId,
+      bound,
+      replan,
+      views,
+      accessOnly,
+      refs,
+    };
   }
 
-  async preview(caller: Caller, input: ExtensionInstallInput) {
+  async preview(caller: Caller, input: ExtensionInstallInput, propose = false) {
     scope(caller, 'schema:write');
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       await lockSchemaShared(tx, caller.workspaceId);
       await lockInstallation(tx, caller.workspaceId, input.registrationId);
-      return (await this.plan(tx, caller, input)).preview;
+      const plan = await this.plan(tx, caller, input);
+      if (propose && caller.actor.type === 'agent' && input.bindings) {
+        const current = await loadSchemaState(tx, caller.workspaceId);
+        const people = creationPolicy(plan.release.manifest, input.settings.createPeople);
+        const review =
+          plan.bound ??
+          resolveBindingPlan(
+            current,
+            plan.release.manifest,
+            input.bindings,
+            plan.existing?.bindings,
+            people,
+          );
+        await tx`insert into extension_binding_proposals(workspace_id,release_digest,choices,proposed_by)
+          values(${caller.workspaceId},${plan.release.digest},${tx.json(jsonValue(input.bindings))},${tx.json(caller.actor)})
+          on conflict(workspace_id,release_digest) do update
+          set choices=excluded.choices,proposed_by=excluded.proposed_by,created_at=now()`;
+        return { ...plan.preview, bindings: review.review, proposedBy: caller.actor };
+      }
+      return plan.preview;
     });
   }
 
@@ -982,7 +958,10 @@ export class Extensions {
           throw conflict('stale_plan', 'installation generation changed since this request');
         return receipt.response;
       }
-      const plan = await this.plan(tx, caller, input);
+      const plan = await this.plan(tx, caller, input).catch((error: unknown) => {
+        if (!(error instanceof AppError) || error.code !== 'bindings_invalid') throw error;
+        throw new AppError(409, 'stale_plan', error.message, error.details);
+      });
       if (plan.preview.planDigest !== input.planDigest)
         throw conflict('stale_plan', 'schema, settings or installation changed; preview again');
       return this.commitPlan(tx, caller, input, plan, key, requestHash);
@@ -1008,7 +987,7 @@ export class Extensions {
         'schema_binding_conflict',
         'repair schema bindings through a validated upgrade before reconnecting',
       );
-    if (plan.existing && !input.mappingChange) {
+    if (plan.existing) {
       if (await cleanupPending(tx, plan.existing.id))
         throw new AppError(
           409,
@@ -1019,6 +998,91 @@ export class Extensions {
           },
         );
     }
+    if (plan.replan && plan.existing?.bindings) {
+      const old = plan.existing.bindings;
+      const adopted = plan.bound?.plan;
+      const next = plan.release.manifest;
+      const previous = this.catalog.find(
+        plan.existing.registration_id,
+        plan.existing.version,
+      )?.manifest;
+      const taskKey =
+        typeof next.source?.tasks === 'string'
+          ? next.source.tasks
+          : typeof previous?.source?.tasks === 'string'
+            ? previous.source.tasks
+            : undefined;
+      const context = {
+        workspaceId: caller.workspaceId,
+        actor: { type: plan.existing.granted_actor, id: plan.existing.id, name: old.extension },
+        schema: await getSchema(tx, caller.workspaceId),
+        confidenceThreshold: 0.5,
+      };
+      if (
+        taskKey &&
+        hash(old.destinations[taskKey] ?? null) !== hash(adopted?.destinations[taskKey] ?? null)
+      ) {
+        const tasks = await tx<{ record_id: string }[]>`
+          select record_id from source_tasks where installation_id = ${plan.existing.id} and state = 'synced'`;
+        const locked = await lockRecordsForUpdate(
+          tx,
+          caller.workspaceId,
+          tasks.map((task) => task.record_id),
+        );
+        await detachEditedTasks(tx, context, locked, undefined, plan.existing.id);
+      }
+      for (const declaration of old.declarations) {
+        const destination = old.destinations[declaration.key];
+        const replacement = adopted?.destinations[declaration.key];
+        if (!destination) continue;
+        const released =
+          declaration.owned && destination.objects.some((id) => !replacement?.objects.includes(id))
+            ? [...destination.objects]
+            : [];
+        for (const field of declaration.fields) {
+          const id = destination.fields[field.key]?.id;
+          if (
+            !id ||
+            !(declaration.owned || field.owned) ||
+            replacement?.fields[field.key]?.id === id
+          )
+            continue;
+          released.push(id);
+          const object = context.schema.objectsByUniversalId.get(destination.objects[0] ?? '');
+          const fieldId = object?.activeFields.find((entry) => entry.universalId === id)?.id;
+          if (!fieldId || !previous?.lastContact) continue;
+          const rows = await tx<{ record_id: string }[]>`
+            update field_assertions set status = 'retracted' where field_id = ${fieldId}
+              and actor->>'id' = ${plan.existing.id} and actor->>'type' = ${plan.existing.granted_actor}
+              and status in ('active', 'pending_review', 'superseded') returning record_id`;
+          for (const record of await lockRecordsForUpdate(
+            tx,
+            caller.workspaceId,
+            rows.map((r) => r.record_id),
+          )) {
+            if (!record.deleted_at && !record.merged_into_id)
+              await recomputeFields(tx, context, objectOf(context.schema, record), record, [
+                fieldId,
+              ]);
+          }
+        }
+        if (released.length)
+          await tx`delete from extension_contributions where installation_id = ${plan.existing.id}
+            and kind in ('object', 'field') and universal_id = any(${released}::uuid[])`;
+      }
+      const retainedViews = new Set(plan.views.map((view) => view.universalId));
+      const releasedViews = (previous?.views ?? []).flatMap((view) => {
+        const id = old.destinations[view.binding]?.objects[0];
+        if (!id) return [];
+        const universalId = deriveUuid(`${view.universalId}:${id}`);
+        return retainedViews.has(universalId) ? [] : [universalId];
+      });
+      if (!adopted)
+        await tx`delete from extension_contributions where installation_id = ${plan.existing.id}`;
+      else if (releasedViews.length)
+        await tx`delete from extension_contributions where installation_id = ${plan.existing.id}
+          and kind = 'view' and universal_id = any(${releasedViews}::uuid[])`;
+    }
     const result = await runSchemaChange(tx, {
       workspaceId: caller.workspaceId,
       actor: caller.actor,
@@ -1026,11 +1090,68 @@ export class Extensions {
       operations: plan.operations,
       owner: 'workspace',
       reason: `Install extension ${plan.release.manifest.name}`,
+      replacingBindingPlan: plan.replan ? plan.existing?.id : undefined,
     });
     if (result.status !== 'applied' && result.status !== 'unchanged')
-      throw conflict('schema_binding_conflict', 'extension schema could not be applied');
-    if (input.mappingChange && plan.existing)
-      return this.commitMapping(tx, caller, plan, key, requestHash);
+      throw new AppError(
+        409,
+        'schema_binding_conflict',
+        result.change?.error ?? 'The extension schema could not be applied.',
+        result.recordIds ? { recordIds: result.recordIds } : undefined,
+      );
+    const preservedJobs = [];
+    const starts: Record<string, string> = {};
+    let dispatchAfter: string | undefined;
+    if (plan.bound) {
+      const old = plan.existing?.bindings;
+      const installed =
+        plan.existing &&
+        this.catalog.find(plan.existing.registration_id, plan.existing.version)?.manifest;
+      const [counter] = await tx<{ position: string }[]>`
+        select position::text from change_counters where workspace_id = ${caller.workspaceId}`;
+      const boundary = counter?.position ?? '0';
+      const [dispatch] = plan.existing
+        ? await tx<{ position: string; trigger_starts: Record<string, string> }[]>`
+        select position::text, trigger_starts from change_dispatch where installation_id = ${plan.existing.id}`
+        : [];
+      const fingerprint = (
+        trigger: ExtensionManifest['functions'][number]['trigger'],
+        bindings: StoredBindingPlan | null | undefined,
+      ) => {
+        if (trigger.kind !== 'change') return null;
+        const selected = bindings?.destinations[trigger.binding];
+        return hash({
+          trigger,
+          objects: selected?.objects,
+          fields: trigger.fields?.map((key) => selected?.fields[key]?.id),
+        });
+      };
+      const unchanged = [];
+      for (const fn of plan.release.manifest.functions) {
+        if (fn.trigger.kind !== 'change') continue;
+        const prior = installed?.functions.find((entry) => entry.universalId === fn.universalId);
+        const keep = !!(
+          old &&
+          dispatch &&
+          prior &&
+          fingerprint(prior.trigger, old) === fingerprint(fn.trigger, plan.bound.plan)
+        );
+        if (keep) unchanged.push(fn.universalId);
+        starts[fn.universalId] = keep
+          ? (dispatch?.trigger_starts[fn.universalId] ?? '0')
+          : boundary;
+      }
+      if (unchanged.length && plan.existing) {
+        preservedJobs.push(
+          ...(await tx<{ id: string; status: string }[]>`
+          select id, status from extension_jobs where installation_id = ${plan.existing.id}
+            and generation = ${plan.existing.generation} and trigger_kind = 'change'
+            and status in ('queued', 'running') and function_id = any(${unchanged}::uuid[])`),
+        );
+      }
+      if (Object.keys(starts).length)
+        dispatchAfter = unchanged.length ? (dispatch?.position ?? boundary) : boundary;
+    }
     if (plan.existing) {
       // A partial job past its deadline is failed with its incident, never just cancelled.
       await lockQueue(tx, caller.workspaceId, plan.existing.id);
@@ -1073,21 +1194,33 @@ export class Extensions {
         // Landing disabled ends the app's credentials, as a disable does.
         (standalone && !ready));
     const [row] = await tx<Row[]>`insert into extension_installations
-      (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, granted_uses, settings, created_by, state, setup_kind, mapping)
+      (id,workspace_id, registration_id, version, release_digest, granted_actor, granted_scopes, granted_uses, settings, created_by, state, setup_kind, bindings, bindings_revision)
       values (${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId}, ${manifest.universalId}, ${manifest.version}, ${plan.release.digest},
         ${manifest.requestedActor}, ${tx.json(manifest.scopes)}, ${tx.json(releaseUses(manifest))}, ${tx.json(input.settings)}, ${tx.json(caller.actor)}, ${state}, ${setupKind},
-        ${tx.json(jsonValue(plan.mapped.stored))})
+        ${plan.bound ? tx.json(jsonValue(plan.bound.plan)) : null}, 1)
       on conflict (workspace_id, registration_id) do update set state = excluded.state,setup_kind=excluded.setup_kind,
         last_error=null,connection_health='needs_reconnect',activated_at=null,cleanup_deadline=null,
         version = excluded.version, release_digest = excluded.release_digest,granted_scopes=excluded.granted_scopes,granted_uses=excluded.granted_uses,granted_actor=excluded.granted_actor,
         generation = extension_installations.generation + 1, settings = excluded.settings,
         grant_generation = extension_installations.grant_generation + ${regrant ? 1 : 0},
-        settings_revision = extension_installations.settings_revision + 1, mapping = excluded.mapping,
-        mapping_revision = extension_installations.mapping_revision
-          + case when extension_installations.mapping is distinct from excluded.mapping then 1 else 0 end,
+        settings_revision = extension_installations.settings_revision + 1,
+        bindings = excluded.bindings,
+        bindings_revision = greatest(1, extension_installations.bindings_revision + ${plan.replan ? 1 : 0}),
         updated_at = now()
       returning *`;
     if (!row) throw new Error('installation insert returned no row');
+    if (dispatchAfter !== undefined) {
+      await tx`insert into change_dispatch(workspace_id,installation_id,generation,position,trigger_starts)
+        values(${caller.workspaceId},${row.id},${row.generation},${dispatchAfter}::bigint,${tx.json(starts)})
+        on conflict(workspace_id,installation_id) do update set generation=excluded.generation,
+          position=excluded.position,trigger_starts=excluded.trigger_starts`;
+      for (const job of preservedJobs)
+        await tx`update extension_jobs set generation=${row.generation}, release_digest=${plan.release.digest},
+          status='queued',code=null,lease_owner=null,lease_until=null,run_until=null,fence=fence+1,
+          available_at=case when ${job.status}='running' then now() else available_at end,
+          expires_at=greatest(expires_at,clock_timestamp()+interval '24 hours'),updated_at=now()
+          where id=${job.id}`;
+    }
     if (manifest.connection === 'member') {
       // Membership removal can run before setup finishes. Cache the hook
       // with the release adoption, under the same installation lock.
@@ -1112,29 +1245,18 @@ export class Extensions {
     const schema = await loadSchemaState(tx, caller.workspaceId);
     const save = (kind: string, universalId: string, elementId: string, definition: unknown) =>
       saveContribution(tx, caller.workspaceId, row.id, kind, universalId, elementId, definition);
-    await saveMappingContributions(tx, caller.workspaceId, row.id, schema, plan.mapped);
-    for (const c of manifest.schema) {
+    for (const contribution of plan.bound?.contributions ?? []) {
       const element =
-        c.kind === 'object'
-          ? schema.objects.find((o) => o.universalId === c.definition.universalId)
+        contribution.kind === 'object'
+          ? schema.objects.find((object) => object.universalId === contribution.id)
           : schema.objects
-              .flatMap((o) => o.fields)
-              .find((f) => f.universalId === c.definition.universalId);
-      if (!element?.id && plan.retired.has(c.definition.universalId)) continue;
+              .flatMap((object) => object.fields)
+              .find((field) => field.universalId === contribution.id);
       if (!element?.id)
-        throw conflict('schema_binding_conflict', 'contribution missing after apply');
-      await save(c.kind, c.definition.universalId, element.id, c.definition);
-      if (c.kind === 'object') {
-        const object = schema.objects.find((o) => o.id === element.id);
-        for (const f of c.definition.fields) {
-          const field = object?.fields.find((v) => v.universalId === f.universalId);
-          if (!field?.id && plan.retired.has(f.universalId)) continue;
-          if (!field?.id) throw conflict('schema_binding_conflict', 'contributed field missing');
-          await save('field', f.universalId, field.id, f);
-        }
-      }
+        throw conflict('binding_unavailable', 'A new binding destination is missing.');
+      await save(contribution.kind, contribution.id, element.id, contribution.definition);
     }
-    for (const view of manifest.views) {
+    for (const view of plan.views) {
       const action = plan.preview.views.find((v) => v.universalId === view.universalId)?.action;
       if (!action) continue;
       const [retained] = await tx<
@@ -1205,50 +1327,7 @@ export class Extensions {
         'install',
         previousVersion,
       );
-    await tx`delete from extension_suggestions where installation_id=${row.id}`;
-    await tx`delete from extension_access_approvals where installation_id=${row.id}`;
-    const response = present(row);
-    await tx`insert into extension_receipts (workspace_id, key, request_hash, installation_id, generation, response)
-      values (${caller.workspaceId}, ${key}, ${requestHash}, ${row.id}, ${row.generation}, ${tx.json(jsonValue(response))})`;
-    return response;
-  }
-
-  /**
-   * Commits a reviewed mapping change (spec 3.3). The installation stays in
-   * its state and setup does not re-run. The generation advances, so current
-   * attempts lose write access, and their work and every queued job move to
-   * the new generation: they hold no mapping and read it when they run.
-   */
-  private async commitMapping(
-    tx: Tx,
-    caller: Caller,
-    plan: Plan,
-    key: string,
-    requestHash: string,
-  ) {
-    const existing = plan.existing as Row;
-    const schema = await loadSchemaState(tx, caller.workspaceId);
-    await saveMappingContributions(tx, caller.workspaceId, existing.id, schema, plan.mapped);
-    const [row] = await tx<Row[]>`update extension_installations
-      set mapping = ${tx.json(jsonValue(plan.mapped.stored))}, mapping_revision = mapping_revision + 1,
-        generation = generation + 1, updated_at = now(),
-        -- A remap repairs a broken binding, so its diagnostic goes with it.
-        connection_health = case when last_error = 'schema_binding_conflict' then 'ok' else connection_health end,
-        last_error = case when last_error = 'schema_binding_conflict' then null else last_error end
-      where id = ${existing.id} returning *`;
-    if (!row) throw notFound('extension installation');
-    await tx`update change_dispatch set generation = ${row.generation}
-      where installation_id = ${row.id} and generation = ${existing.generation}`;
-    await tx`update extension_attempts set status = 'cancelled', code = 'mapping_changed', finished_at = now()
-      where finished_at is null and job_id in (select id from extension_jobs where installation_id = ${row.id})`;
-    await tx`update extension_jobs set status='cancelled',code='mapping_changed',lease_owner=null,lease_until=null,run_until=null where installation_id=${row.id} and trigger_kind='configure' and status in ('queued','running')`;
-    await tx`update extension_jobs set generation = ${row.generation}, status = 'queued', lease_owner = null,
-        lease_until = null, run_until = null, fence = fence + 1, available_at = now(), updated_at = now()
-      where installation_id = ${row.id} and status in ('queued', 'running')`;
-    const [presence] = await tx<
-      { names: string[] }[]
-    >`select retainer_extension_secret_names(${row.id}::uuid) as names`;
-    row.secret_names = presence?.names ?? [];
+    await tx`delete from extension_binding_proposals where release_digest = ${plan.release.digest}`;
     await tx`delete from extension_suggestions where installation_id=${row.id}`;
     await tx`delete from extension_access_approvals where installation_id=${row.id}`;
     const response = present(row);
@@ -1380,8 +1459,8 @@ export class Extensions {
         next: plan.release.manifest,
         schemaOperations: plan.operations.length,
         viewActions: plan.preview.views.map((view) => view.action),
-        storedMapping: storedMapping(current),
-        plannedMapping: plan.mapped.stored,
+        storedPlan: current.bindings,
+        plannedPlan: plan.bound?.plan,
       });
       if (reason) return hold(reason);
       // Unique per generation: an installation moved back by a person and
@@ -1417,12 +1496,13 @@ export class Extensions {
       if (row) await cancelRuns(tx, row.id);
       const [created] = await tx<
         Row[]
-      >`insert into extension_installations(id,workspace_id,registration_id,version,release_digest,granted_actor,granted_scopes,granted_uses,settings,created_by,state)
+      >`insert into extension_installations(id,workspace_id,registration_id,version,release_digest,granted_actor,granted_scopes,granted_uses,settings,created_by,state,bindings_revision)
         values(${plan.draftId ?? tx`uuidv7()`},${caller.workspaceId},${manifest.universalId},${manifest.version},${plan.release.digest},
-          ${manifest.requestedActor},${tx.json(['read'])},${tx.json(releaseUses(manifest))},${tx.json(input.settings)},${tx.json(caller.actor)},'configuring')
+          ${manifest.requestedActor},${tx.json(['read'])},${tx.json(releaseUses(manifest))},${tx.json(input.settings)},${tx.json(caller.actor)},'configuring',1)
         on conflict(workspace_id,registration_id) do update set version=excluded.version,release_digest=excluded.release_digest,
           granted_actor=excluded.granted_actor,granted_scopes=excluded.granted_scopes,granted_uses=excluded.granted_uses,settings=excluded.settings,state='configuring',
           created_by=excluded.created_by,generation=extension_installations.generation+1,settings_revision=extension_installations.settings_revision+1,
+          bindings_revision=greatest(1,extension_installations.bindings_revision),
           last_error=null,activated_at=null,cleanup_deadline=null,created_at=now(),updated_at=now() returning *`;
       if (!created) throw new Error('installation insert returned no row');
       row = created;
@@ -1477,9 +1557,11 @@ export class Extensions {
             : 'requested',
       previousVersion: target.digest !== row.release_digest ? row.version : null,
       newOutputs:
-        target.manifest.mapping?.outputs
-          .filter((o) => !storedMapping(row).outputs[o.key])
-          .map((o) => o.key) ?? [],
+        target.manifest.bindings?.flatMap((binding) =>
+          binding.fields
+            .filter((field) => !row.bindings?.destinations[binding.key]?.fields[field.key])
+            .map((field) => field.key),
+        ) ?? [],
     });
   }
 
@@ -1692,6 +1774,15 @@ export class Extensions {
         throw conflict('stale_plan', 'settings revision changed');
       const release = this.catalog.get(current.registration_id, current.version);
       if (hash(input.settings) === hash(current.settings)) return present(current);
+      if (
+        current.bindings &&
+        creationPolicy(release.manifest, input.settings.createPeople) !==
+          current.bindings.createPeople
+      )
+        throw conflict(
+          'binding_plan_required',
+          'Review a new binding plan to change who can be created.',
+        );
       // Account/credential changes need a reconnect flow; never treat them as ordinary settings.
       for (const [key, definition] of Object.entries(release.manifest.settings)) {
         if (
@@ -1886,29 +1977,4 @@ async function saveContribution(
     values (${workspaceId}, ${installationId}, ${kind}, ${universalId}, ${elementId}, ${tx.json(jsonValue(definition))})
     on conflict (workspace_id, kind, universal_id) do update set definition = excluded.definition
       where extension_contributions.installation_id = excluded.installation_id`;
-}
-
-/** Fields a reviewed mapping created become this installation's contributions. */
-async function saveMappingContributions(
-  tx: Tx,
-  workspaceId: string,
-  installationId: string,
-  schema: Awaited<ReturnType<typeof loadSchemaState>>,
-  mapped: ReturnType<typeof resolveMapping>,
-) {
-  for (const created of mapped.contributions) {
-    const field = schema.objects
-      .flatMap((o) => o.fields)
-      .find((f) => f.universalId === created.universalId);
-    if (!field?.id) throw conflict('schema_binding_conflict', 'mapped field missing after apply');
-    await saveContribution(
-      tx,
-      workspaceId,
-      installationId,
-      'field',
-      created.universalId,
-      field.id,
-      created.definition,
-    );
-  }
 }

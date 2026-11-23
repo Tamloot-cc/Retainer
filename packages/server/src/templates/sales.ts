@@ -1,10 +1,11 @@
-import { BASE_OBJECT_IDS } from './base.js';
+import { STARTER_OBJECT_IDS } from './base.js';
 import type { Template } from './types.js';
 
 const DEAL = 'b33dc227-3182-494c-b671-536abda83205';
 
 export const sales: Template = {
   name: 'sales',
+  extends: 'starter',
   version: 1,
   label: 'Sales',
   description:
@@ -61,21 +62,21 @@ export const sales: Template = {
             name: 'company',
             label: 'Company',
             type: 'relation',
-            settings: { targetObject: BASE_OBJECT_IDS.company, inverseField: 'deals' },
+            settings: { targetObject: STARTER_OBJECT_IDS.company, inverseField: 'deals' },
           },
           {
             universalId: '84c1da70-cc05-4a3b-8630-2ab67d799693',
             name: 'pointOfContact',
             label: 'Point of contact',
             type: 'relation',
-            settings: { targetObject: BASE_OBJECT_IDS.person, inverseField: 'deals' },
+            settings: { targetObject: STARTER_OBJECT_IDS.person, inverseField: 'deals' },
           },
         ],
       },
     },
     {
       op: 'create_field',
-      object: BASE_OBJECT_IDS.company,
+      object: STARTER_OBJECT_IDS.company,
       field: {
         universalId: '7a05d786-a047-4782-9c00-8c72d0e793bf',
         name: 'industry',
@@ -86,7 +87,7 @@ export const sales: Template = {
     },
     {
       op: 'create_field',
-      object: BASE_OBJECT_IDS.company,
+      object: STARTER_OBJECT_IDS.company,
       field: {
         universalId: '0dc97bea-8bbe-4bd8-9713-0c6628049268',
         name: 'employeeCount',

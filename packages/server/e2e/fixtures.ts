@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { test as base, expect } from '@playwright/test';
-import { BASE_EVENT_TYPE_IDS, BASE_OBJECT_IDS } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import postgres from 'postgres';
 import { createApp } from '../src/api/app.js';
@@ -19,7 +18,10 @@ import { parseOAuthClients } from '../src/extensions/oauth-clients.js';
 import { createFileServer, LocalFileStorage } from '../src/file-storage/local.js';
 import { consolidateWorkspace } from '../src/worker/consolidate.js';
 import { createWorkspace } from '../src/workspaces/workspaces.js';
-import { extensionFixture as manifestFixture } from '../test/helpers/extensions.js';
+import {
+  extensionFixture as manifestFixture,
+  ownedTestFields,
+} from '../test/helpers/extensions.js';
 import { sourceManifest } from './source-fixture.js';
 export const browserExtensionManifest = manifestFixture({
   universalId: 'e0548bb1-47fd-4de8-8edc-759e26a61e36',
@@ -42,17 +44,15 @@ export const browserExtensionManifest = manifestFixture({
       reconnect: true,
     },
   },
-  schema: [
-    {
-      kind: 'field',
-      objectId: BASE_OBJECT_IDS.company,
-      definition: {
+  bindings: [
+    ownedTestFields('company', 'Companies', [
+      {
         universalId: '2384b956-709d-4edc-8aab-807c51027565',
         name: 'fixtureStatus',
         label: 'Fixture status',
         type: 'text',
       },
-    },
+    ]),
   ],
 });
 export const browserStandaloneManifest = manifestFixture({
@@ -61,36 +61,45 @@ export const browserStandaloneManifest = manifestFixture({
   execution: 'standalone',
   scopes: ['read', 'write'],
 });
-/** A hosted release with an output mapping onto the base company object. */
+/** A hosted release that binds to company fields. */
 export const browserMappingManifest = manifestFixture({
   universalId: 'c3b4d6e2-6a53-4b8c-9f1e-2d7a8b9c0e14',
   name: 'browser-enrichment',
   requestedActor: 'agent',
   scopes: ['read', 'write'],
-  mapping: {
-    objectId: BASE_OBJECT_IDS.company,
-    lookup: { fieldId: 'bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641', type: 'links' },
-    outputs: [
-      {
-        key: 'employee_count',
-        label: 'Employee count',
-        description: 'Employees the provider finds, mostly from public profiles.',
-        types: ['number'],
-        field: {
-          universalId: '7d1a4c55-2b8e-4f0a-9c63-5e8f1a2b3c4d',
-          name: 'employeeCount',
-          label: 'Employee Count',
-          type: 'number',
+  bindings: [
+    {
+      key: 'company',
+      label: 'Companies',
+      description: 'Fill in details on existing companies.',
+      class: 'entity',
+      access: 'write',
+      required: true,
+      fields: [
+        { key: 'domain', label: 'Domain', types: ['links'], required: true, lookup: true },
+        {
+          key: 'employee_count',
+          label: 'Employee count',
+          required: false,
+          types: ['number'],
+          description: 'Employees the provider finds, mostly from public profiles.',
+          create: {
+            universalId: '7d1a4c55-2b8e-4f0a-9c63-5e8f1a2b3c4d',
+            name: 'employeeCount',
+            label: 'Employee Count',
+            type: 'number',
+          },
         },
-      },
-      {
-        key: 'headquarters',
-        label: 'Headquarters',
-        description: 'Headquarters city and country.',
-        types: ['address'],
-      },
-    ],
-  },
+        {
+          key: 'headquarters',
+          label: 'Headquarters',
+          required: false,
+          types: ['address'],
+          description: 'Headquarters city and country.',
+        },
+      ],
+    },
+  ],
 });
 export const browserConfigureManifest = manifestFixture({
   ...browserMappingManifest,
@@ -123,15 +132,13 @@ const browserSecretConfigureManifest = manifestFixture({
   },
   functions: browserConfigureManifest.functions.map((fn) => ({ ...fn, secrets: ['providerKey'] })),
 });
-const browserMapping = browserMappingManifest.mapping;
-if (!browserMapping) throw new Error('mapping fixture needs a mapping');
 const browserConfigurePrevious = manifestFixture({
   ...browserMappingManifest,
   name: 'browser-configure',
-  mapping: {
-    ...browserMapping,
-    outputs: browserMapping.outputs.slice(0, 1),
-  },
+  bindings: browserMappingManifest.bindings?.map((binding) => ({
+    ...binding,
+    fields: binding.fields.filter((field) => field.key !== 'headquarters'),
+  })),
 });
 export const browserMemberManifest = manifestFixture({
   universalId: 'd76ad98b-ac74-4fe5-82ac-0947165f8780',
@@ -242,6 +249,7 @@ export const BROWSER_OAUTH_AUTHORIZE = 'https://provider.test/oauth/start';
 export const test = base.extend<
   {
     routineFixture: boolean;
+    workspaceTemplate: 'starter' | 'sales';
     retainer: {
       url: string;
       keys: { user: string; writer: string; agent: string; reader: string; other: string };
@@ -274,6 +282,7 @@ export const test = base.extend<
   }
 >({
   routineFixture: [false, { option: true }],
+  workspaceTemplate: ['starter', { option: true }],
   extensionFixture: [false, { option: true, scope: 'worker' }],
   standaloneFixture: [false, { option: true, scope: 'worker' }],
   fileStorage: [false, { option: true, scope: 'worker' }],
@@ -288,6 +297,7 @@ export const test = base.extend<
       browserName: _browserName,
       extensionFixture,
       routineFixture,
+      workspaceTemplate,
       standaloneFixture,
       fileStorage: withFiles,
       sourceFixture,
@@ -310,8 +320,8 @@ export const test = base.extend<
     dbUrl.pathname = `/${name}`;
     const owner = createSql(dbUrl.toString()),
       sql = createSql(dbUrl.toString(), { role: RUNTIME_ROLE });
-    const workspace = await createWorkspace(owner, { name: 'Acme' }),
-      other = await createWorkspace(owner, { name: 'Other workspace' });
+    const workspace = await createWorkspace(owner, { name: 'Acme', template: workspaceTemplate }),
+      other = await createWorkspace(owner, { name: 'Other workspace', template: 'starter' });
     const user = (
       await createApiKey(owner, {
         workspace: workspace.id,
@@ -528,16 +538,28 @@ export const test = base.extend<
         );
         if (!secret.value) throw new Error('target secret is missing');
       }
+      const [existingCount] = await owner`
+        select 1 from fields f join object_types o on o.id = f.object_type_id
+        where o.workspace_id = ${workspace.id} and o.name_singular = 'company'
+          and f.name = 'employeeCount' and f.status = 'active'`;
       await request(
         `/extensions/${job.installationId}/runtime/suggestions`,
         {
-          mapping: {
-            employee_count: { action: 'create', reason: 'A dedicated count field.' },
-            headquarters: {
+          bindings: {
+            company: {
               action: 'existing',
-              field: 'address',
-              reason: 'The existing company address.',
+              objects: ['company'],
+              fields: {
+                employee_count: existingCount
+                  ? { action: 'existing', field: 'employeeCount' }
+                  : { action: 'create' },
+                headquarters: { action: 'existing', field: 'address' },
+              },
             },
+          },
+          bindingReasons: {
+            'company.employee_count': 'A dedicated count field.',
+            'company.headquarters': 'The existing company address.',
           },
         },
         token,
@@ -551,7 +573,7 @@ export const test = base.extend<
         registrationId: manifest.universalId,
         version: manifest.version,
         settings: {},
-        mapping: { employee_count: { action: 'create' } },
+        bindings: { company: { action: 'existing', objects: ['company'] } },
       });
     }
     function installOAuthMember() {
@@ -567,7 +589,7 @@ export const test = base.extend<
       registrationId: string;
       version: string;
       settings: Record<string, unknown>;
-      mapping?: Record<string, unknown>;
+      bindings?: Record<string, unknown>;
     }) {
       if (!catalog) throw new Error('no extension catalog in this fixture');
       const preview = await request('/extensions/preview', input, user);
@@ -685,7 +707,7 @@ export const test = base.extend<
           )
         ).record;
       const event = {
-        type: BASE_EVENT_TYPE_IDS.conversation,
+        binding: 'conversation',
         occurredAt: '2026-11-10T10:00:00Z',
         title: 'Original provider note',
         participants: [{ email: 'source-browser@fixture.test' }],

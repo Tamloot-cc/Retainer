@@ -1,7 +1,10 @@
 import type {
+  BindingWriteStamp,
   ExtensionAuthorization,
   ExtensionAuthorizationCompletion,
   ExtensionAuthorizeInput,
+  ExtensionBindingChoices,
+  ExtensionBindingPlan,
   ExtensionConnection,
   ExtensionConnectionInput,
   ExtensionInstallation,
@@ -15,6 +18,7 @@ import { isMaintenance, maintenanceFetch } from './maintenance.js';
 export { isMaintenance, retryAfterMs, waitForRetry } from './maintenance.js';
 
 import type {
+  Actor,
   AddedLinks,
   AggregateInput,
   AggregateResult,
@@ -29,12 +33,12 @@ import type {
   DeleteImpact,
   DeleteRecordResult,
   EventAttachment,
+  LogEventInput as EventInput,
   EventPage,
   EventQueryInput,
   FactPlace,
   ForgetResult,
   LinkedRecordPage,
-  LogEventInput,
   LogEventResult,
   MergeInput,
   MergeResult,
@@ -118,7 +122,8 @@ export type UpsertInput = PatchInput & {
   match?: Record<string, unknown>;
   ifMissing?: 'fail' | 'create';
 };
-export type { LogEventInput, MoveEventsInput, MoveEventsResult };
+export type { MoveEventsInput, MoveEventsResult };
+export type LogEventInput = EventInput & { bindings?: BindingWriteStamp };
 
 type Participant = { handle?: string; recordId?: string; role?: string };
 const isFailedChange = (body: unknown) =>
@@ -242,7 +247,7 @@ export class RetainerClient {
   }
   createRecord(
     object: string,
-    input: { values: Record<string, unknown>; source?: string },
+    input: { values: Record<string, unknown>; source?: string; bindings?: BindingWriteStamp },
     idempotencyKey?: string,
   ) {
     return this.post<WriteResponse>(
@@ -252,10 +257,10 @@ export class RetainerClient {
       idempotencyKey,
     );
   }
-  upsertRecord(object: string, input: UpsertInput) {
+  upsertRecord(object: string, input: UpsertInput & { bindings?: BindingWriteStamp }) {
     return this.post<WriteResponse>(`/v1/objects/${encodeURIComponent(object)}/upsert`, input);
   }
-  patchRecord(id: string, input: PatchInput) {
+  patchRecord(id: string, input: PatchInput & { bindings?: BindingWriteStamp }) {
     return this.request<WriteResponse>(`/v1/records/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(input),
@@ -281,9 +286,10 @@ export class RetainerClient {
       signal,
     );
   }
-  deleteRecord(id: string) {
+  deleteRecord(id: string, bindings?: BindingWriteStamp) {
     return this.request<DeleteRecordResult>(`/v1/records/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+      ...(bindings ? { body: JSON.stringify({ bindings }) } : {}),
     });
   }
   /** The object's saved views the caller can see, in their saved order. */
@@ -520,7 +526,10 @@ export class RetainerClient {
    * Adds links and retries eligible unmatched participants in place; idempotent.
    * Successful resolutions are included in `added.participants.matched`.
    */
-  addEventLinks(id: string, input: { participants?: Participant[]; about?: string[] }) {
+  addEventLinks(
+    id: string,
+    input: { participants?: Participant[]; about?: string[]; bindings?: BindingWriteStamp },
+  ) {
     return this.post<PresentedRecord & { added: AddedLinks }>(
       `/v1/events/${encodeURIComponent(id)}/links`,
       input,
@@ -541,9 +550,10 @@ export class RetainerClient {
     );
   }
   /** Deletes an event and retracts the claims that cite it. */
-  deleteEvent(id: string) {
+  deleteEvent(id: string, bindings?: BindingWriteStamp) {
     return this.request<RetractEventResult>(`/v1/events/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+      ...(bindings ? { body: JSON.stringify({ bindings }) } : {}),
     });
   }
   claims(
@@ -596,7 +606,12 @@ export class RetainerClient {
   }
   extensionCatalog(signal?: AbortSignal) {
     return this.get<{
-      releases: { manifest: ExtensionManifest; digest: string; actorCeiling: string }[];
+      releases: {
+        manifest: ExtensionManifest;
+        digest: string;
+        actorCeiling: string;
+        bindingProposal?: { choices: ExtensionBindingChoices; proposedBy: Actor };
+      }[];
     }>('/v1/extensions/catalog', {}, signal);
   }
   verifySource(installationId: string, input: { sharing: 'workspace'; accountId?: string }) {
@@ -819,6 +834,13 @@ export class RetainerClient {
       }
     >(`/v1/extensions/${encodeURIComponent(id)}`, {}, signal);
   }
+  extensionBindings(id: string, signal?: AbortSignal) {
+    return this.get<ExtensionBindingPlan>(
+      `/v1/extensions/${encodeURIComponent(id)}/bindings`,
+      {},
+      signal,
+    );
+  }
   previewExtension(input: ExtensionInstallInput) {
     return this.post<ExtensionPreview>('/v1/extensions/preview', input);
   }
@@ -938,19 +960,6 @@ export class RetainerClient {
       idempotencyKey,
     );
   }
-  /** Commits a reviewed mapping change: preview with `installationId` and `mappingChange: true` first. */
-  changeExtensionMapping(
-    id: string,
-    input: ExtensionInstallInput & { planDigest: string },
-    idempotencyKey: string,
-  ) {
-    return this.post<ExtensionInstallation>(
-      `/v1/extensions/${encodeURIComponent(id)}/mapping`,
-      { ...input, installationId: id, mappingChange: true },
-      undefined,
-      idempotencyKey,
-    );
-  }
   reconnectExtension(
     id: string,
     connection: string,
@@ -1015,6 +1024,7 @@ export class RetainerClient {
     installationId: string,
     input: {
       recordId: string;
+      binding: string;
       lookup?: string;
       values: Record<string, unknown>;
       observedAt?: string;
@@ -1181,10 +1191,8 @@ export class RetainerClient {
   saveExtensionSuggestions(
     id: string,
     input: {
-      mapping?: Record<
-        string,
-        import('@retainer/extension').ExtensionMappingChoice & { reason?: string }
-      >;
+      bindings?: import('@retainer/extension').ExtensionBindingChoices;
+      bindingReasons?: Record<string, string>;
       settings?: Record<string, string | number | boolean>;
     },
   ) {

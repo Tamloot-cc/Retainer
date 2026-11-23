@@ -44,11 +44,10 @@ export const sourceEventSchema = z.strictObject({
     .regex(/^[a-f0-9]{64}$/)
     .optional(),
   event: z.strictObject({
-    type: z.uuid(),
+    binding: z.string().min(1).max(40),
     occurredAt: isoDateTimeSchema,
     title: z.string().max(500),
     summary: z.string().optional(),
-    /** The full text behind the event (a transcript, a message body), read with get_event_content. */
     content: z.string().min(1).max(EVENT_CONTENT_MAX).optional(),
     fields: z.record(z.string(), z.unknown()).default({}),
     participants: z

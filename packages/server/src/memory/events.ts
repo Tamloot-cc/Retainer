@@ -1,3 +1,4 @@
+import { bindingWriteStampSchema } from '@retainer/extension';
 import type {
   AddedLinks,
   AttachedEvent,
@@ -79,6 +80,7 @@ export const logEventInputSchema = z
     title: z.string().max(500).optional(),
     summary: z.string().max(20_000).optional(),
     fields: z.record(z.string(), z.unknown()).default({}),
+    bindings: bindingWriteStampSchema.optional(),
   })
   .extend(linksInputSchema.shape);
 export type LogEventInput = z.infer<typeof logEventInputSchema>;
@@ -165,6 +167,10 @@ export async function logEvent(
   tx: Tx,
   context: WriteContext,
   input: LogEventInput,
+  options: {
+    resolveHandles?: boolean;
+    beforeInsert?: (object: CompiledObject) => Promise<void>;
+  } = {},
 ): Promise<LogEventResult> {
   const { workspaceId, schema } = context;
   const object = requireEventType(schema, input.type);
@@ -208,7 +214,7 @@ export async function logEvent(
         schema,
         existing.record_id,
         stored,
-        { participants, about: input.about },
+        { participants, about: input.about, resolveHandles: options.resolveHandles },
       );
       const links = await presentLinks(tx, workspaceId, schema, rows, changed);
       return {
@@ -222,6 +228,7 @@ export async function logEvent(
     }
   }
 
+  await options.beforeInsert?.(object);
   const record = await insertRecord(tx, context, object);
   await tx`
     insert into event_records (workspace_id, record_id, occurred_at, channel, external_id)
@@ -236,6 +243,7 @@ export async function logEvent(
   const { rows } = await addLinks(tx, workspaceId, schema, record.id, [], {
     participants,
     about: input.about,
+    resolveHandles: options.resolveHandles,
   });
   const links = await presentLinks(tx, workspaceId, schema, rows);
   return {
@@ -362,6 +370,7 @@ export async function addEventLinks(
   context: WriteContext,
   id: string,
   input: AddLinksInput,
+  options: { resolveHandles?: boolean } = {},
 ): Promise<PresentedRecord & { added: AddedLinks }> {
   const participants = normalizeParticipants(input.participants);
   await lockEvent(tx, context, id);
@@ -370,6 +379,7 @@ export async function addEventLinks(
   const { changed, rows } = await addLinks(tx, context.workspaceId, context.schema, id, stored, {
     participants,
     about: input.about,
+    resolveHandles: options.resolveHandles,
   });
   const links = await presentLinks(tx, context.workspaceId, context.schema, rows, changed);
   return {

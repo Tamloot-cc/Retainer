@@ -256,13 +256,11 @@ effects while Booking continues to treat the reservation as confirmed.
   and CRM fields. Rate-limit public searches, booking submissions and link
   redemption. Guests can view their own booking and submit changes through
   that capability.
-- **CRM summary.** Booking's release contributes one Booking object through
-  the schema engine, with permanent universal IDs for the object and its
-  fields. It does not map onto a workspace's own objects. Writes use the
-  installation's `integration` actor and ordinary field assertions. The
-  `person` relation needs the workspace's Person object, so installing
-  Booking requires it. A workspace started from scratch has none, and the
-  install preview names it as missing.
+- **CRM summary.** Booking's release creates an owned Booking object through
+  the schema engine. Writes use the installation's `integration` actor and
+  ordinary field assertions. The optional `person` relation targets the
+  object approved for the read binding. Booking can be installed without
+  this relation.
 
   | Field | Type | Written by | Note |
   | --- | --- | --- | --- |
@@ -279,6 +277,12 @@ effects while Booking continues to treat the reservation as confirmed.
   `status` is text with documented values, not a select, because select
   options on a contributed field are structural and hard to extend later.
   Attendance and resource labels wait for the features that need them.
+- **Binding plan.** Booking contributes an owned `booking` binding for
+  summaries. An optional read binding picks the contact object its
+  `person` relation targets. Booking reads current names and stable IDs
+  through `GET /v1/extensions/:id/bindings` with its standalone grant.
+  A standalone record write carries the returned binding revision, object ID
+  and stable IDs for the field names it writes or matches.
 - **Installation-owned fields (platform change).** A contributed field can
   declare that only its installation writes it. The API refuses other
   writers, and the field is presented read-only, which already turns off

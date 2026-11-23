@@ -16,32 +16,6 @@ export const SCHEMA_CHANGE_STATUSES = ['applied', 'proposed', 'rejected', 'faile
 export type SchemaChangeStatus = (typeof SCHEMA_CHANGE_STATUSES)[number];
 
 /**
- * Universal IDs of the base objects every workspace has (ARCHITECTURE.md
- * 3.1). They are the same in every workspace and fixed forever, so server
- * code and clients find these objects by ID rather than by API name, which
- * a workspace may rename.
- */
-export const BASE_OBJECT_IDS = {
-  company: '1f24f94d-6bc5-4955-b6ab-ac946e2b140a',
-  person: '7e87d873-8c93-4786-9a0b-95447310c8d3',
-  task: 'd0690d5f-d7f4-47ce-8007-0a81a276a70b',
-} as const;
-
-/** Base fields that server code reads directly, such as open tasks in context packs. */
-export const BASE_FIELD_IDS = {
-  taskStatus: '107158ae-ba0f-482e-afe1-5e45bd6ccfd6',
-  taskDueDate: '368276ea-604d-4dcd-b6ad-796431a84a06',
-  /** The company website; extensions look companies up by it (not protected). */
-  companyDomain: 'bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641',
-} as const;
-
-export type BaseObjectName = keyof typeof BASE_OBJECT_IDS;
-export type BaseFieldName = keyof typeof BASE_FIELD_IDS;
-
-/** The `task.status` option that marks a task closed; protected (1.1). */
-export const TASK_DONE_OPTION = 'done';
-
-/**
  * `entity`: a thing the workspace tracks (a person, a deal). `event`:
  * something that happened, with a time, a source identity, and the records
  * it took part in or concerns (1.3). Fixed when the object is created.
@@ -56,39 +30,6 @@ export type ObjectClass = (typeof OBJECT_CLASSES)[number];
  */
 export const CORE_ROLES = ['title', 'summary'] as const;
 export type CoreRole = (typeof CORE_ROLES)[number];
-
-/**
- * Universal IDs of well-known event types. `conversation` is the only one the
- * base template adds to every workspace; it is not protected. A conversation's
- * kind (meeting, call, email, message) is its `medium` field, not its type, so
- * a misclassified one costs an edit, not a re-log.
- *
- * `note` is reserved, not seeded (C5). Workspaces created before comments keep
- * theirs, and a template or agent that adds a note type gets this ID, so notes
- * are recognized across workspaces.
- */
-export const BASE_EVENT_TYPE_IDS = {
-  conversation: '564ad764-a57c-4741-ad63-61604fa4cf5a',
-  note: 'a4c8e1f6-3b72-4e95-8d1a-7c2f5b9e0d48',
-} as const;
-
-/**
- * Fields of the base event types, found by universal ID like `BASE_FIELD_IDS`.
- * None is protected: `conversation.medium`'s options can be added and removed.
- */
-export const BASE_EVENT_FIELD_IDS = {
-  conversationMedium: '6475aaeb-54ab-4e7c-8e43-d1a4469a12a0',
-  conversationTranscript: 'fe832d36-cccb-48e4-8423-942e793741f9',
-} as const;
-
-export type BaseEventTypeName = keyof typeof BASE_EVENT_TYPE_IDS;
-export type BaseEventFieldName = keyof typeof BASE_EVENT_FIELD_IDS;
-
-/** Every base field a `FieldView` can name as its `baseField`, by that name. */
-export const BASE_FIELD_IDS_BY_NAME: Record<BaseFieldName | BaseEventFieldName, string> = {
-  ...BASE_FIELD_IDS,
-  ...BASE_EVENT_FIELD_IDS,
-};
 
 /**
  * The hidden, protected event type of the notes `remember` creates for

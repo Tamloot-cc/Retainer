@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ExtensionManifest } from '@retainer/extension';
-import { BASE_OBJECT_IDS } from '@retainer/shared';
+import type { BindingWriteStamp, ExtensionManifest } from '@retainer/extension';
 import { generateKeyPair } from 'jose';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
@@ -9,7 +8,7 @@ import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { ChangeMaintenance } from '../../src/worker/changes.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { extensionFixture } from '../helpers/extensions.js';
+import { bindingStamp, extensionFixture } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
 const workspaceIds: string[] = [];
@@ -28,12 +27,12 @@ beforeAll(async () => {
   });
 });
 type Watch = {
-  objectId: string;
-  fieldIds: string[];
+  binding: 'person' | 'company';
+  fields: string[];
   related?: boolean;
   operations?: ('create' | 'update')[];
 };
-async function setup(count = 1, standalone = 0, watches?: (jobTitle: string) => Watch[]) {
+async function setup(count = 1, standalone = 0, watches?: () => Watch[]) {
   const initial = startTestApp(db),
     { workspace, keys } = await initial.setupWorkspace(
       { name: `Triggers ${randomUUID()}` },
@@ -47,10 +46,27 @@ async function setup(count = 1, standalone = 0, watches?: (jobTitle: string) => 
   >`select universal_id,key from fields where workspace_id=${workspace.id} and name='jobTitle'`;
   workspaceIds.push(workspace.id);
   if (!field) throw new Error('watch field missing');
-  const triggers = watches?.(field.universal_id);
-  const manifests = Array.from({ length: triggers?.length ?? count }, (_, i) =>
-    extensionFixture({
+  const triggers = watches?.();
+  const manifests = Array.from({ length: triggers?.length ?? count }, (_, i) => {
+    const watch = triggers?.[i] ?? { binding: 'person' as const, fields: ['jobTitle'] };
+    return extensionFixture({
       scopes: ['read', 'write'],
+      bindings: [
+        {
+          key: watch.binding,
+          label: watch.binding === 'person' ? 'People' : 'Companies',
+          description: 'Records tracked by the change test.',
+          class: 'entity',
+          access: 'read',
+          required: true,
+          fields: watch.fields.map((key) => ({
+            key,
+            label: key,
+            types: [key === 'domain' ? 'links' : key === 'name' ? 'full_name' : 'text'],
+            required: false,
+          })),
+        },
+      ],
       functions: [
         {
           universalId: randomUUID(),
@@ -60,10 +76,7 @@ async function setup(count = 1, standalone = 0, watches?: (jobTitle: string) => 
           timeoutSeconds: 120,
           trigger: {
             kind: 'change',
-            ...(triggers?.[i] ?? {
-              objectId: BASE_OBJECT_IDS.person,
-              fieldIds: [field.universal_id],
-            }),
+            ...watch,
           },
           inputSchema: {
             type: 'object',
@@ -73,10 +86,24 @@ async function setup(count = 1, standalone = 0, watches?: (jobTitle: string) => 
           },
         },
       ],
-    }),
-  );
+    });
+  });
   const apps = Array.from({ length: standalone }, () =>
-    extensionFixture({ execution: 'standalone', scopes: ['read', 'write'] }),
+    extensionFixture({
+      execution: 'standalone',
+      scopes: ['read', 'write'],
+      bindings: [
+        {
+          key: 'person',
+          label: 'People',
+          description: 'Person job titles written by the app.',
+          class: 'entity',
+          access: 'write',
+          required: true,
+          fields: [{ key: 'jobTitle', label: 'Job title', types: ['text'], required: true }],
+        },
+      ],
+    }),
   );
   const catalog = new ExtensionCatalog([
     ...manifests.map((manifest) => ({
@@ -110,7 +137,7 @@ async function setup(count = 1, standalone = 0, watches?: (jobTitle: string) => 
     if (!run) throw new Error('setup missing');
     await queue.complete(run, { status: 'succeeded' });
   }
-  const standaloneKeys: { id: string; key: string }[] = [];
+  const standaloneKeys: { id: string; key: string; bindings: BindingWriteStamp }[] = [];
   for (const manifest of apps) {
     const input = { registrationId: manifest.universalId, version: manifest.version, settings: {} };
     const plan = await app.request('/v1/extensions/preview', { key: keys.admin, body: input });
@@ -125,7 +152,15 @@ async function setup(count = 1, standalone = 0, watches?: (jobTitle: string) => 
       body: { expectedGeneration: installed.body.generation, scopes: ['read', 'write'] },
     });
     expect(issued.status).toBe(201);
-    standaloneKeys.push({ id: installed.body.id, key: issued.body.key });
+    const current = await app.request(`/v1/extensions/${installed.body.id}/bindings`, {
+      key: issued.body.key,
+    });
+    expect(current.status).toBe(200);
+    standaloneKeys.push({
+      id: installed.body.id,
+      key: issued.body.key,
+      bindings: bindingStamp(current.body, 'person'),
+    });
   }
   async function person(name: string) {
     const result = await app.request('/v1/objects/person/records', {
@@ -156,10 +191,11 @@ async function setup(count = 1, standalone = 0, watches?: (jobTitle: string) => 
     };
   }
   async function edit(key: string, record: string, jobTitle: string, headers = {}) {
+    const bindings = standaloneKeys.find((app) => app.key === key)?.bindings;
     const result = await app.request(`/v1/records/${record}`, {
       key,
       method: 'PATCH',
-      body: { values: { jobTitle } },
+      body: { values: { jobTitle }, bindings },
       headers,
     });
     expect(result.status).toBe(200);
@@ -216,10 +252,10 @@ async function setup(count = 1, standalone = 0, watches?: (jobTitle: string) => 
 }
 describe('transactional change dispatch with real Postgres', () => {
   it('queues one job per watching installation for a schema-level deprecation', async () => {
-    const h = await setup(0, 0, (jobTitle) => [
-      { objectId: BASE_OBJECT_IDS.person, fieldIds: [] },
-      { objectId: BASE_OBJECT_IDS.person, fieldIds: [jobTitle] },
-      { objectId: BASE_OBJECT_IDS.company, fieldIds: [] },
+    const h = await setup(0, 0, () => [
+      { binding: 'person', fields: [] },
+      { binding: 'person', fields: ['jobTitle'] },
+      { binding: 'company', fields: [] },
     ]);
     const [whole, other, company] = h.ids;
     if (!whole || !other || !company) throw new Error('installations missing');
@@ -270,7 +306,7 @@ describe('transactional change dispatch with real Postgres', () => {
     const read = await h.app.request(`/v1/changes/${change.position}`, { key });
     expect(read.status).toBe(200);
     expect(read.body).toMatchObject({ recordId: null, operation: 'schema', relatedRecordIds: [] });
-    expect(read.body.changedKeys).toHaveLength(1);
+    expect(read.body.changedKeys).toEqual([]);
   });
   it('deduplicates competing dispatchers and keeps the jobs it accepted before the quota', async () => {
     const h = await setup(),
@@ -301,15 +337,14 @@ describe('transactional change dispatch with real Postgres', () => {
     expect(await h.health(id)).toEqual({ connectionHealth: 'ok', lastError: null });
   });
   it('limits a trigger to its listed operations and skips related-record changes when asked', async () => {
-    const domain = 'bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641';
     const h = await setup(1, 0, () => [
       {
-        objectId: BASE_OBJECT_IDS.company,
-        fieldIds: [domain],
+        binding: 'company',
+        fields: ['domain'],
         related: false,
         operations: ['create', 'update'],
       },
-      { objectId: BASE_OBJECT_IDS.company, fieldIds: [domain] },
+      { binding: 'company', fields: ['domain'] },
     ]);
     const [narrow, legacy] = h.ids as [string, string];
     const dispatch = async () => [
@@ -348,67 +383,31 @@ describe('transactional change dispatch with real Postgres', () => {
     expect(deleted.status).toBeLessThan(300);
     expect(await dispatch()).toEqual([0, 1]);
   });
-  it('skips a watched field that is missing or deleted and keeps watching the rest', async () => {
-    const name = '5c672ecf-9048-42c2-9213-0a6078980071',
-      never = randomUUID();
-    // A field this workspace never had doesn't block the install.
-    const h = await setup(1, 0, (jobTitle) => [
-      { objectId: BASE_OBJECT_IDS.person, fieldIds: [jobTitle, name, never] },
+  it('skips an optional unbound watch and refuses deletion of an active watched field', async () => {
+    const h = await setup(0, 0, () => [
+      { binding: 'person', fields: ['jobTitle', 'never'] },
+      { binding: 'person', fields: ['never'] },
     ]);
-    const id = h.ids[0] as string;
-    const fired = async () => {
-      const result = await h.queue.dispatchChanges(h.workspace.id, id);
-      return result.queued + (result.coalesced ?? 0);
-    };
+    const [active, off] = h.ids;
+    if (!active || !off) throw new Error('missing watches');
     const person = await h.person('Before');
-    expect(await fired()).toBe(1);
     await h.edit(h.keys.admin, person, 'Engineer');
-    expect(await fired()).toBe(1);
-    const schema = async (operations: unknown[]) => {
-      const changed = await h.app.request('/v1/schema/changes', {
-        key: h.keys.admin,
-        body: { operations },
-      });
-      expect(changed.status, JSON.stringify(changed.body)).toBe(200);
-      expect(changed.body.status).toBe('applied');
-    };
-    // Deleting a watched field fires once: its deletion names the field.
-    await schema([{ op: 'delete_field', object: 'person', field: 'jobTitle' }]);
-    expect(await fired()).toBe(1);
-    const patch = async (values: Record<string, unknown>) =>
-      expect(
-        (
-          await h.app.request(`/v1/records/${person}`, {
-            key: h.keys.admin,
-            method: 'PATCH',
-            body: { values },
-          })
-        ).status,
-      ).toBe(200);
-    await patch({ name: 'After' });
-    expect(await fired()).toBe(1);
-    await patch({ address: { city: 'Haifa' } });
-    expect(await fired()).toBe(0);
-    // With every watched field gone, a creation still fires; updates don't.
-    await schema([
-      {
-        op: 'create_field',
-        object: 'person',
-        field: { name: 'displayName', label: 'Display name', type: 'text' },
-      },
-      { op: 'update_object', object: 'person', labelField: 'displayName' },
-      { op: 'delete_field', object: 'person', field: 'name' },
-    ]);
-    expect(await fired()).toBe(1);
-    await patch({ displayName: 'Later' });
-    expect(await fired()).toBe(0);
-    const created = await h.app.request('/v1/objects/person/records', {
+    expect(await h.queue.dispatchChanges(h.workspace.id, active)).toMatchObject({ queued: 2 });
+    expect(await h.queue.dispatchChanges(h.workspace.id, off)).toMatchObject({ queued: 0 });
+    const changed = await h.app.request('/v1/schema/changes', {
       key: h.keys.admin,
-      body: { values: { displayName: 'New' } },
+      body: { operations: [{ op: 'delete_field', object: 'person', field: 'jobTitle' }] },
     });
-    expect(created.status).toBe(201);
-    expect(await fired()).toBe(1);
-    expect(await h.health(id)).toEqual({ connectionHealth: 'ok', lastError: null });
+    expect(changed.status).toBe(422);
+    expect(changed.body.error.details.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'person.jobTitle',
+          message: expect.stringContaining(active),
+        }),
+      ]),
+    );
+    expect(await h.changeJobs(off)).toEqual([]);
   });
   it('keeps UUID/key watches through a rename and ignores an unrelated effective field change', async () => {
     const h = await setup(),
@@ -1036,7 +1035,7 @@ describe('change trigger coalescing and throttling (R9)', () => {
       h.app.request(`/v1/records/${person}`, {
         key,
         method: 'PATCH',
-        body: { values: { jobTitle: `Caused by ${header}` } },
+        body: { values: { jobTitle: `Caused by ${header}` }, bindings: app.bindings },
         headers: { 'Retainer-Caused-By': header },
       });
     expect((await write(app.key, cursor('999999'))).status).toBe(410);
@@ -1066,17 +1065,17 @@ describe('change trigger coalescing and throttling (R9)', () => {
 });
 
 describe('change triggers on retired contributions', () => {
-  it('skips a trigger on a deleted contributed object after reinstall and still dispatches the rest', async () => {
+  it('keeps watching other objects when reinstall replaces a deleted owned destination', async () => {
     const objectId = randomUUID(),
       onTicket = randomUUID(),
       onPerson = randomUUID();
-    const fn = (universalId: string, objectId: string): ExtensionManifest['functions'][number] => ({
+    const fn = (universalId: string, binding: string): ExtensionManifest['functions'][number] => ({
       universalId,
       name: `react${universalId.slice(0, 4)}`,
       description: 'React to changes',
       handlerDigest: 'b'.repeat(64),
       timeoutSeconds: 120,
-      trigger: { kind: 'change', objectId, fieldIds: [] },
+      trigger: { kind: 'change', binding },
       inputSchema: {
         type: 'object',
         properties: { changePosition: { type: 'string', maxLength: 19 } },
@@ -1086,21 +1085,45 @@ describe('change triggers on retired contributions', () => {
     });
     const manifest = extensionFixture({
       scopes: ['read', 'write'],
-      schema: [
+      bindings: [
         {
-          kind: 'object',
-          definition: {
+          key: 'ticket',
+          label: 'Tickets',
+          description: 'The owned ticket destination.',
+          class: 'entity',
+          access: 'read',
+          required: true,
+          owned: true,
+          fields: [
+            {
+              key: 'name',
+              label: 'Name',
+              types: ['text'],
+              required: true,
+              create: { universalId: randomUUID(), name: 'name', label: 'Name', type: 'text' },
+            },
+          ],
+          create: {
             universalId: objectId,
             nameSingular: 'ticket',
             namePlural: 'tickets',
             labelSingular: 'Ticket',
             labelPlural: 'Tickets',
             labelField: 'name',
-            fields: [{ universalId: randomUUID(), name: 'name', label: 'Name', type: 'text' }],
+            fields: [],
           },
         },
+        {
+          key: 'person',
+          label: 'People',
+          description: 'The other watched destination.',
+          class: 'entity',
+          access: 'read',
+          required: true,
+          fields: [],
+        },
       ],
-      functions: [fn(onTicket, objectId), fn(onPerson, BASE_OBJECT_IDS.person)],
+      functions: [fn(onTicket, 'ticket'), fn(onPerson, 'person')],
     });
     const catalog = new ExtensionCatalog([
       { manifest, actorCeiling: 'integration', runtimeEnabled: true },

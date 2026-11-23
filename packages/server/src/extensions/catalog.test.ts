@@ -20,7 +20,7 @@ const manifest = () =>
     createPeople: 'never',
     onSourceDelete: 'keep',
     settings: {},
-    schema: [],
+
     views: [],
     functions: [],
   });

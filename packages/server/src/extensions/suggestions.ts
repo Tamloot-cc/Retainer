@@ -1,31 +1,19 @@
-import {
-  type ExtensionSuggestions,
-  mappingChoiceSchema,
-  outputKeySchema,
-} from '@retainer/extension';
+import { bindingChoicesSchema, type ExtensionSuggestions } from '@retainer/extension';
 import { z } from 'zod';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, jsonValue, lockSchemaShared } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
 import { admitCaller, admitRun } from '../extension-runtime/admission.js';
-import type { ContributionRow } from '../extension-runtime/retired.js';
+import type { StoredBindingPlan } from '../extension-runtime/bindings.js';
 import { pendingSecrets } from '../extension-runtime/secrets.js';
 import { loadSchemaState } from '../schema/load.js';
+import { resolveBindingPlan } from './bindings.js';
 import type { ExtensionCatalog } from './catalog.js';
-import { resolveMapping, type StoredMapping } from './mapping.js';
 
 export const suggestionsSchema = z.strictObject({
-  mapping: z
-    .record(
-      outputKeySchema,
-      z.union([
-        mappingChoiceSchema.options[0].extend({ reason: z.string().max(500).optional() }),
-        mappingChoiceSchema.options[1].extend({ reason: z.string().max(500).optional() }),
-        mappingChoiceSchema.options[2].extend({ reason: z.string().max(500).optional() }),
-      ]),
-    )
-    .optional(),
+  bindings: bindingChoicesSchema.optional(),
+  bindingReasons: z.record(z.string().max(180), z.string().max(500)).optional(),
   settings: z
     .record(z.string(), z.union([z.string(), z.boolean(), z.number().finite()]))
     .optional(),
@@ -48,9 +36,9 @@ export async function saveSuggestions(
     if (job?.trigger_kind !== 'configure')
       throw new AppError(403, 'forbidden', 'only configure runs save suggestions');
     const release = catalog.forRun(run);
-    for (const key of Object.keys(input.mapping ?? {}))
-      if (!release.manifest.mapping?.outputs.some((o) => o.key === key))
-        throw new AppError(400, 'invalid_suggestions', 'unknown output', { key });
+    for (const key of Object.keys(input.bindings ?? {}))
+      if (!release.manifest.bindings?.some((binding) => binding.key === key))
+        throw new AppError(400, 'invalid_suggestions', 'Unknown binding.', { key });
     for (const [key, value] of Object.entries(input.settings ?? {})) {
       const definition = release.manifest.settings[key];
       if (
@@ -69,7 +57,8 @@ export async function saveSuggestions(
         );
     }
     const [saved] =
-      await tx`update extension_suggestions set mapping=${tx.json(jsonValue(input.mapping ?? null))},
+      await tx`update extension_suggestions set bindings=${tx.json(jsonValue(input.bindings ?? null))},
+      binding_reasons=${tx.json(jsonValue(input.bindingReasons ?? null))},
       settings=${tx.json(jsonValue(input.settings ?? null))}
       where installation_id=${run.installationId} and release_digest=${run.releaseDigest} and job_id=${run.jobId} returning job_id`;
     if (!saved)
@@ -121,13 +110,14 @@ export async function getSuggestions(
         : undefined;
     const [row] = await tx<
       {
-        mapping: ExtensionSuggestions['mapping'];
         settings: ExtensionSuggestions['settings'];
+        bindings: ExtensionSuggestions['bindings'];
+        binding_reasons: ExtensionSuggestions['bindingReasons'];
         status: string;
         code: string | null;
       }[]
     >`
-      select s.mapping,s.settings,j.status,j.code from extension_suggestions s join extension_jobs j on j.id=s.job_id
+      select s.settings,s.bindings,s.binding_reasons,j.status,j.code from extension_suggestions s join extension_jobs j on j.id=s.job_id
       join extension_installations i on i.id=s.installation_id and i.generation=j.generation
       where s.installation_id=${id} and s.release_digest=${release.digest}`;
     if (!row)
@@ -144,36 +134,29 @@ export async function getSuggestions(
           ? row.status
           : 'failed';
     const issues: Record<string, string> = {};
-    // Partial suggestions are allowed; missing outputs fall back to the form defaults.
-    if (status === 'ready' && row.mapping) {
+    if (status === 'ready' && row.bindings) {
       const current = await loadSchemaState(tx, caller.workspaceId);
-      const [stored] = await tx<
-        { mapping: StoredMapping }[]
-      >`select mapping from extension_installations where id=${id}`;
-      const owned = await tx<ContributionRow[]>`
-        select kind,universal_id,element_id,definition from extension_contributions where installation_id=${id}`;
-      const choices = Object.fromEntries(
-        release.manifest.mapping?.outputs.map((o) => {
-          const suggestion = row.mapping?.[o.key];
-          return [
-            o.key,
-            suggestion
-              ? mappingChoiceSchema.parse(
-                  Object.fromEntries(Object.entries(suggestion).filter(([k]) => k !== 'reason')),
-                )
-              : { action: 'skip' as const },
-          ];
-        }) ?? [],
-      );
+      const [stored] = await tx<{ bindings: StoredBindingPlan | null }[]>`
+        select bindings from extension_installations where id=${id}`;
       try {
-        resolveMapping(current, release.manifest, choices, stored?.mapping, owned);
+        resolveBindingPlan(
+          current,
+          release.manifest,
+          row.bindings,
+          stored?.bindings,
+          stored?.bindings?.createPeople ?? release.manifest.createPeople,
+        );
       } catch (error) {
         if (!(error instanceof AppError)) throw error;
-        const outputs = (
-          error.details as { outputs?: { output: string; reason: string }[] } | undefined
-        )?.outputs;
-        if (outputs) for (const issue of outputs) issues[issue.output] = issue.reason;
-        else issues['*'] = error.code;
+        const bindings = (
+          error.details as
+            | {
+                bindings?: { binding: string; field?: string; message: string }[];
+              }
+            | undefined
+        )?.bindings;
+        for (const issue of bindings ?? [])
+          issues[[issue.binding, issue.field].filter(Boolean).join('.')] = issue.message;
       }
     }
     return {
@@ -181,7 +164,9 @@ export async function getSuggestions(
       ...(access ? { access } : {}),
       ...(row.code ? { code: row.code } : {}),
       issues,
-      ...(status === 'ready' && row.mapping ? { mapping: row.mapping } : {}),
+      ...(status === 'ready' && row.bindings
+        ? { bindings: row.bindings, bindingReasons: row.binding_reasons ?? undefined }
+        : {}),
       ...(status === 'ready' && row.settings ? { settings: row.settings } : {}),
     };
   });

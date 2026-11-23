@@ -162,7 +162,7 @@ test('filters all activity by type, source, date and linked record, in the addre
   const titles = page.getByRole('button', { name: /^(Acme intro|Globex demo|Acme budget note)$/ });
   await expect(titles).toHaveText(['Acme budget note', 'Globex demo', 'Acme intro']);
   // Grouped by day, with the medium as a chip and the about records linked.
-  await expect(page.getByRole('region', { name: /Today/ })).toContainText('Call');
+  await expect(page.getByRole('region', { name: /Today/ })).toContainText('Conversation');
   await expect(page.getByRole('region', { name: /Today/ })).toContainText(
     'First call with the Acme team',
   );

@@ -8,6 +8,7 @@ import {
   functionScopes,
   functionSecrets,
   lifecycleInputSchema,
+  mergeBindingChoices,
   runsHostedCode,
 } from './index.js';
 
@@ -28,10 +29,23 @@ export const fixture = () => ({
   createPeople: 'never',
   onSourceDelete: 'keep',
   settings: { enabled: { type: 'boolean', label: 'Enabled', required: true } },
-  schema: [],
+
   views: [],
   functions: [],
 });
+const sourceBindings = [
+  {
+    key: 'event',
+    creates: true,
+    label: 'Imported events',
+    description: 'Test event destination',
+    class: 'event',
+    access: 'write',
+    required: true,
+    fields: [],
+  },
+];
+
 describe('strict extension contracts', () => {
   it('refuses secret defaults, invalid choice defaults and preselected sharing consent', () => {
     const setting = {
@@ -57,6 +71,7 @@ describe('strict extension contracts', () => {
   it('bounds change handlers to a local feed position and refuses caller-supplied record bodies', () => {
     const input = {
       ...fixture(),
+      bindings: sourceBindings,
       functions: [
         {
           universalId: 'f3f3e359-61f7-4115-9dc9-63d9184c2070',
@@ -65,8 +80,8 @@ describe('strict extension contracts', () => {
           handlerDigest: 'b'.repeat(64),
           trigger: {
             kind: 'change',
-            objectId: 'e449a44f-0b0e-4c43-981c-f50fe507a6a7',
-            fieldIds: [],
+            binding: 'event',
+            fields: [],
           },
           inputSchema: {
             type: 'object',
@@ -128,7 +143,7 @@ describe('strict extension contracts', () => {
       identity: 'account',
       verifyFunctionId: verifyId,
       syncFunctionIds: [syncId],
-      eventTypeIds: ['d7eec2a6-7217-4923-9cf8-00673f706ab4'],
+      event: 'event',
       revisionOrder: 'opaque',
     };
     const fn = { description: 'Source handler', handlerDigest: 'b'.repeat(64) };
@@ -153,14 +168,31 @@ describe('strict extension contracts', () => {
         },
       },
     ];
-    expect(defineExtension({ ...fixture(), source, functions }).source?.provider).toBe('fixture');
-    expect(() => defineExtension({ ...fixture(), source, functions: functions.slice(1) })).toThrow(
-      'source verification',
-    );
+    expect(
+      defineExtension({ ...fixture(), source, bindings: sourceBindings, functions }).source
+        ?.provider,
+    ).toBe('fixture');
     expect(() =>
       defineExtension({
         ...fixture(),
         source,
+        functions,
+        bindings: sourceBindings.map((binding) => ({ ...binding, creates: undefined })),
+      }),
+    ).toThrow('event binding that creates records');
+    expect(() =>
+      defineExtension({
+        ...fixture(),
+        source,
+        bindings: sourceBindings,
+        functions: functions.slice(1),
+      }),
+    ).toThrow('source verification');
+    expect(() =>
+      defineExtension({
+        ...fixture(),
+        source,
+        bindings: sourceBindings,
         functions: [
           functions[0],
           {
@@ -313,6 +345,7 @@ describe('strict extension contracts', () => {
     });
     const valid = {
       ...fixture(),
+      bindings: sourceBindings,
       settings: {
         signing: { type: 'string', label: 'Signing key', secret: true, generated: true },
       },
@@ -321,7 +354,7 @@ describe('strict extension contracts', () => {
         identity: 'account',
         verifyFunctionId: installId,
         syncFunctionIds: [syncId],
-        eventTypeIds: [randomUUID()],
+        event: 'event',
         revisionOrder: 'opaque',
       },
       functions: [
@@ -430,133 +463,39 @@ describe('strict extension contracts', () => {
       }),
     ).toThrow('function scopes');
   });
-  describe('output mappings', () => {
-    const company = '1f24f94d-6bc5-4955-b6ab-ac946e2b140a';
-    const domain = 'bf87f1cd-b6f4-4c93-9ac7-df7a1b6bf641';
-    const suggested = '6d1f3f0e-2b8c-4d39-9a51-0f7e1b2c3d4e';
-    const changeInput = {
-      type: 'object',
-      properties: { changePosition: { type: 'string', maxLength: 19 } },
-      required: ['changePosition'],
-      additionalProperties: false,
-    };
-    const writer = (over: Record<string, unknown> = {}) => ({
-      universalId: '0f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a',
+  it('requires mapped writes to use a declared entity binding and a write function', () => {
+    const fn = {
+      universalId: randomUUID(),
       name: 'enrich',
       description: 'Enrich',
-      handlerDigest: 'c'.repeat(64),
-      trigger: {
-        kind: 'change',
-        objectId: company,
-        fieldIds: [domain],
-        related: false,
-        operations: ['create', 'update'],
+      handlerDigest: 'a'.repeat(64),
+      trigger: { kind: 'job' },
+      inputSchema: { type: 'object', additionalProperties: false },
+      mappedWrite: 'company',
+    };
+    const bindings = [
+      {
+        key: 'company',
+        label: 'Companies',
+        description: 'Company details',
+        class: 'entity',
+        access: 'write',
+        required: true,
+        fields: [],
       },
-      inputSchema: changeInput,
-      mappedWrite: true,
-      ...over,
-    });
-    const output = (over: Record<string, unknown> = {}) => ({
-      key: 'employee_count',
-      label: 'Employee count',
-      description: 'Employees the provider reports',
-      types: ['number'],
-      field: { universalId: suggested, name: 'employeeCount', label: 'Employees', type: 'number' },
-      ...over,
-    });
-    const manifest = (mapping: Record<string, unknown>, functions = [writer()]) => ({
-      ...fixture(),
-      requestedActor: 'agent',
-      mapping: { objectId: company, lookup: { fieldId: domain, type: 'links' }, ...mapping },
-      functions,
-    });
-
-    it('accepts declared outputs, a lookup field and a mapped-write change handler', () => {
-      const parsed = defineExtension(manifest({ outputs: [output()] }));
-      expect(parsed.mapping?.outputs[0]?.key).toBe('employee_count');
-      expect(parsed.functions[0]).toMatchObject({
-        mappedWrite: true,
-        trigger: { related: false, operations: ['create', 'update'] },
-      });
-    });
-
-    it('keeps manifests without mappings or trigger flags byte-identical', () => {
-      const parsed = defineExtension(fixture());
-      expect('mapping' in parsed).toBe(false);
-      expect(JSON.stringify(parsed)).toBe(JSON.stringify(defineExtension(parsed)));
-    });
-
-    it('refuses ambiguous or unsafe outputs', () => {
-      for (const [mapping, message] of [
-        [{ outputs: [output(), output({ field: undefined })] }, 'duplicate mapping output'],
-        [{ outputs: [output({ types: ['number', 'number'] })] }, 'duplicate output field type'],
-        [{ outputs: [output({ types: ['text'] })] }, 'suggested field type'],
-        [
-          {
-            outputs: [
-              output({
-                field: { universalId: domain, name: 'domain', label: 'Domain', type: 'number' },
-              }),
-            ],
-          },
-          'lookup field',
-        ],
-        [
-          {
-            outputs: [
-              output(),
-              output({
-                key: 'other',
-                field: { universalId: suggested, name: 'other', label: 'Other', type: 'number' },
-              }),
-            ],
-          },
-          'duplicate universal ID',
-        ],
-      ] as const)
-        expect(() => defineExtension(manifest(mapping))).toThrow(message);
-      for (const types of [['relation'], ['files'], []])
-        expect(() =>
-          defineExtension(manifest({ outputs: [output({ types, field: undefined })] })),
-        ).toThrow();
-      expect(() => defineExtension(manifest({ outputs: [output({ key: 'Bad-Key' })] }))).toThrow();
-    });
-
-    it('lets only hosted runtime functions with write call the mapped write', () => {
-      expect(() => defineExtension({ ...fixture(), functions: [writer()] })).toThrow(
-        'mapped writes require a mapping',
-      );
-      expect(() =>
-        defineExtension(manifest({ outputs: [output()] }, [writer({ scopes: ['read'] })])),
-      ).toThrow('runtime function with write');
-      expect(() =>
-        defineExtension(
-          manifest({ outputs: [output()] }, [
-            writer({
-              trigger: { kind: 'install' },
-              inputSchema: { type: 'object', additionalProperties: false },
-            }),
-          ]),
-        ),
-      ).toThrow('runtime function with write');
-      expect(() =>
-        defineExtension({ ...manifest({ outputs: [output()] }), scopes: ['read'], functions: [] }),
-      ).toThrow('hosted write authority');
-      expect(() =>
-        defineExtension(
-          manifest({ outputs: [output()] }, [
-            writer({
-              trigger: {
-                kind: 'change',
-                objectId: company,
-                fieldIds: [],
-                operations: ['create', 'create'],
-              },
-            }),
-          ]),
-        ),
-      ).toThrow('duplicate trigger operation');
-    });
+    ];
+    expect(
+      defineExtension({ ...fixture(), functions: [fn], bindings }).functions[0]?.mappedWrite,
+    ).toBe('company');
+    expect(() => defineExtension({ ...fixture(), functions: [fn] })).toThrow(
+      'entity write binding',
+    );
+    expect(() =>
+      defineExtension({ ...fixture(), functions: [{ ...fn, scopes: ['read'] }], bindings }),
+    ).toThrow('runtime function with write');
+    expect(() =>
+      defineExtension({ ...fixture(), functions: [{ ...fn, mappedWrite: true }], bindings }),
+    ).toThrow();
   });
   it('gives install hooks the previously installed version, null on a first install', () => {
     expect(lifecycleInputSchema.parse({ previousVersion: null })).toEqual({
@@ -590,11 +529,11 @@ describe('member connection manifests', () => {
     functions: [hook('connect')],
   });
 
-  it('preserves the old workspace manifest bytes and digest without adding setting levels', () => {
+  it('keeps workspace settings at the default level in the binding manifest', () => {
     const manifest = defineExtension(fixture());
     expect(manifest.settings.enabled).not.toHaveProperty('level');
     expect(createHash('sha256').update(JSON.stringify(manifest)).digest('hex')).toBe(
-      'e718f3640ab006e4d9407367ea2e3987289698a1fe89c42ff1f7e1180592d416',
+      '349b8a04f3cb432d0002dcf98c91fdf86ad3f7fbead0d61be67f58b5614db8d2',
     );
   });
 
@@ -634,11 +573,12 @@ describe('member connection manifests', () => {
     for (const trigger of [
       { kind: 'route', route: 'callback' },
       { kind: 'serverRoute', route: 'callback' },
-      { kind: 'change', objectId: randomUUID(), fieldIds: [] },
+      { kind: 'change', binding: 'event', fields: [] },
     ])
       expect(() =>
         defineExtension({
           ...member(),
+          bindings: sourceBindings,
           functions: [hook('connect'), { ...hook('install'), name: 'watch', trigger }],
         }),
       ).toThrow('change or route');
@@ -692,7 +632,7 @@ describe('member connection manifests', () => {
       identity: 'account',
       verifyFunctionId: input.functions[0]?.universalId,
       syncFunctionIds: [syncId],
-      eventTypeIds: [randomUUID()],
+      event: 'event',
       revisionOrder: 'integer',
     };
     const sync = {
@@ -707,7 +647,12 @@ describe('member connection manifests', () => {
         additionalProperties: false,
       },
     };
-    const manifest = { ...input, source, functions: [...input.functions, sync] };
+    const manifest = {
+      ...input,
+      source,
+      bindings: sourceBindings,
+      functions: [...input.functions, sync],
+    };
     expect(defineExtension(manifest).source?.verifyFunctionId).toBe(
       input.functions[0]?.universalId,
     );
@@ -896,7 +841,7 @@ describe('configure contract', () => {
       [configure(), configure()],
       [{ ...configure(), scopes: undefined }],
       [{ ...configure(), scopes: ['read', 'write'] }],
-      [{ ...configure(), mappedWrite: true }],
+      [{ ...configure(), mappedWrite: 'company' }],
     ])
       expect(() => defineExtension({ ...fixture(), functions })).toThrow('configure');
     expect(() => defineExtension({ ...fixture(), settings: {}, functions: [configure()] })).toThrow(
@@ -952,37 +897,75 @@ describe('standalone apps (spec 8)', () => {
       defineExtension(standalone({ sidebarLink: { ...link, icon: 'rocket' } })),
     ).toThrow();
   });
-  it('owns contributed fields, but never a mapped output', () => {
-    const owned = {
-      universalId: randomUUID(),
-      name: 'orderId',
+  it('requires the installation to contribute every installation-owned field', () => {
+    const field = {
+      key: 'orderId',
       label: 'Order ID',
-      type: 'text',
+      types: ['text'],
+      required: true,
       installationOwned: true,
+      owned: true,
+      create: { universalId: randomUUID(), name: 'orderId', label: 'Order ID', type: 'text' },
     };
-    const object = {
-      universalId: randomUUID(),
-      nameSingular: 'order',
-      namePlural: 'orders',
-      labelSingular: 'Order',
-      labelPlural: 'Orders',
-      fields: [owned],
+    const binding = {
+      key: 'order',
+      label: 'Orders',
+      description: 'Tracks order IDs.',
+      class: 'entity',
+      access: 'write',
+      required: true,
+      fields: [field],
     };
     expect(
-      defineExtension(standalone({ schema: [{ kind: 'object', definition: object }] })).schema,
-    ).toHaveLength(1);
-    const writer = { ...tool('job'), name: 'fill', mappedWrite: true };
+      defineExtension(standalone({ bindings: [binding] })).bindings?.[0]?.fields[0],
+    ).toMatchObject({ installationOwned: true, owned: true });
     expect(() =>
-      defineExtension({
-        ...fixture(),
-        functions: [writer],
-        mapping: {
-          objectId: object.universalId,
-          outputs: [
-            { key: 'id', label: 'ID', description: 'An ID', types: ['text'], field: owned },
-          ],
-        },
-      }),
-    ).toThrow('installation-owned');
+      defineExtension(
+        standalone({
+          bindings: [{ ...binding, fields: [{ ...field, owned: undefined }] }],
+        }),
+      ),
+    ).toThrow('invalid field order.orderId');
   });
+});
+
+it('merges proposed fields and values only when their target agrees', () => {
+  const proposed = mergeBindingChoices(
+    {
+      task: {
+        action: 'existing',
+        objects: ['task'],
+        fields: {
+          title: { action: 'existing', field: 'title' },
+          status: {
+            action: 'existing',
+            field: 'status',
+            values: { open: 'todo', done: 'finished' },
+          },
+        },
+      },
+    },
+    {
+      task: {
+        action: 'existing',
+        objects: ['task'],
+        fields: {
+          status: { action: 'existing', field: 'status', values: { done: 'complete' } },
+        },
+      },
+    },
+  );
+  expect(proposed.task).toEqual({
+    action: 'existing',
+    objects: ['task'],
+    fields: {
+      title: { action: 'existing', field: 'title' },
+      status: { action: 'existing', field: 'status', values: { open: 'todo', done: 'complete' } },
+    },
+  });
+  expect(
+    mergeBindingChoices(proposed, {
+      task: { action: 'existing', objects: ['action'] },
+    }).task,
+  ).toEqual({ action: 'existing', objects: ['action'] });
 });

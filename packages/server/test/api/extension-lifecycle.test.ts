@@ -8,7 +8,7 @@ import { ChangeMaintenance } from '../../src/worker/changes.js';
 import { ExecutionRegistry, ExtensionExecutor } from '../../src/worker/extensions.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { extensionFixture } from '../helpers/extensions.js';
+import { extensionFixture, testCompanyBinding } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
 const setupId = randomUUID(),
@@ -16,6 +16,7 @@ const setupId = randomUUID(),
   childId = randomUUID();
 const manifest = extensionFixture({
   scopes: ['read', 'write'],
+  bindings: [testCompanyBinding],
   functions: (
     [
       [setupId, 'setup', 'install'],

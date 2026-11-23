@@ -187,7 +187,7 @@ export class MemberConnections {
           'stale_plan',
           'The Gmail history limit changed. Refresh and review it before connecting.',
         );
-      gmailConversationSchema(await getSchema(tx, caller.workspaceId));
+      gmailConversationSchema(await getSchema(tx, caller.workspaceId), i.bindings);
       await assertNoConnection(tx, id, caller);
       await tx`delete from extension_authorizations where installation_id=${id} and owner_id=${caller.actor.id}
         and verifier_ref is null and consumed_at is null`;

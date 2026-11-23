@@ -80,12 +80,9 @@ function Layout() {
       client.setQueryData([session.workspace.id, 'schema', result.workspace.schemaVersion], result);
       return result;
     },
-    refetchInterval: (query) =>
-      query.state.data?.workspace.schemaFromScratch && !query.state.data.workspace.initialized
-        ? 3000
-        : false,
+    refetchInterval: (query) => (query.state.data?.workspace.initialized === false ? 3000 : false),
   });
-  const settingUp = schema.data?.workspace.schemaFromScratch && !schema.data.workspace.initialized;
+  const settingUp = schema.data?.workspace.initialized === false;
   const inbox = useQuery({
     queryKey: [session.workspace.id, 'review', 'sidebar-count'],
     enabled: !settingUp,
@@ -372,10 +369,10 @@ const routeTree = rootRoute.addChildren([
   }),
   createRoute({
     getParentRoute: () => rootRoute,
-    path: '/extensions/$id/mapping',
+    path: '/extensions/$id/bindings',
     component: lazyRouteComponent(
       () => import('./routes/extensions/setup.js'),
-      'ExtensionMappingPage',
+      'ExtensionBindingsPage',
     ),
   }),
   routinesRoute.addChildren([

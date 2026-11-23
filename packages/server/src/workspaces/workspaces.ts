@@ -1,9 +1,9 @@
 import type { Sql } from '../db/client.js';
-import { inWorkspace } from '../db/tx.js';
+import { inWorkspaceTransaction } from '../db/tx.js';
 import { getWorkspace, type Workspace } from '../db/workspaces.js';
 import { AppError } from '../errors.js';
 import { SYSTEM_ACTOR } from '../schema-engine/engine.js';
-import { applyTemplate, seedBaseObjects } from '../templates/apply.js';
+import { applyTemplate, seedWorkspace } from '../templates/apply.js';
 import { organizationForNewWorkspace } from './organizations.js';
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -19,7 +19,7 @@ export function slugify(name: string): string {
 }
 
 /**
- * Creates a workspace with its base objects and, optionally, a template, in
+ * Creates a workspace with its internal types and, optionally, a template, in
  * an organization: the one named (ID or exact name), or `Default`. An
  * operator operation (7.1): `sql` connects as the migration role, since the
  * runtime role cannot create workspaces.
@@ -48,26 +48,21 @@ export async function createWorkspace(
     if (!row) {
       throw new AppError(409, 'slug_taken', `a workspace with slug "${slug}" already exists`);
     }
-    return row.id;
-  });
-
-  try {
-    await inWorkspace(sql, workspaceId, async (tx) => {
-      await seedBaseObjects(tx, workspaceId);
+    const workspaceId = row.id;
+    await inWorkspaceTransaction(tx, workspaceId, async (scoped) => {
+      await seedWorkspace(scoped, workspaceId);
       if (input.template) {
-        await applyTemplate(tx, {
+        await applyTemplate(scoped, {
           workspaceId,
           actor: SYSTEM_ACTOR,
           scopes: ['schema:write'],
           name: input.template,
+          trusted: true,
         });
       }
     });
-  } catch (error) {
-    // Nothing is half-created: drop the empty workspace again.
-    await sql`delete from workspaces where id = ${workspaceId}`;
-    throw error;
-  }
+    return workspaceId;
+  });
 
   return getWorkspace(sql, workspaceId);
 }

@@ -51,6 +51,7 @@ import {
   WORKSPACE_ROLE_OPTIONS,
 } from './format.js';
 import { MemoryTab } from './memory.js';
+import { WorkspaceTemplateField } from './workspace-template.js';
 
 /** `/app/w/<slug>/settings`: people, agents and the workspace (accounts spec 5.1). */
 
@@ -978,9 +979,11 @@ export function NewWorkspaceDialog({
   const [error, setError] = useState('');
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const name = (e.currentTarget.elements.namedItem('name') as HTMLInputElement).value.trim();
+    const values = new FormData(e.currentTarget);
+    const name = String(values.get('name') ?? '').trim();
+    const template = String(values.get('template') ?? '') || undefined;
     try {
-      const workspace = await accountApi.createWorkspace({ name, organizationId });
+      const workspace = await accountApi.createWorkspace({ name, organizationId, template });
       window.location.assign(workspaceHref(workspace.slug));
     } catch (e) {
       setError((e as Error).message);
@@ -994,6 +997,7 @@ export function NewWorkspaceDialog({
             Name
             <Input id="new-workspace-name" name="name" required maxLength={200} autoFocus />
           </Label>
+          <WorkspaceTemplateField />
           {error ? <Notice error>{error}</Notice> : null}
           <Button type="submit" variant="primary">
             Create workspace

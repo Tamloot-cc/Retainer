@@ -50,7 +50,7 @@ import {
   parseFeedSearch,
   rangeText,
 } from './activity-state.js';
-import { eventColumnField, eventMedium, ParticipantsCell } from './event-list.js';
+import { eventColumnField, ParticipantsCell } from './event-list.js';
 import { FeedFilterMenu } from './feed-filters.js';
 
 export function ActivityPage() {
@@ -261,7 +261,6 @@ function ActivityCard({
   const record = item.record;
   const object = objectByName(schema, record.object);
   const event = record.event;
-  const medium = eventMedium(object, record);
   const label = event ? eventTitle(event) : recordTitle(record);
   const changes = expanded ? item.changes : item.changes.slice(0, 2);
   const summary = event?.summary;
@@ -284,7 +283,7 @@ function ActivityCard({
       label={label}
       type={
         event
-          ? (medium ?? object?.labelSingular ?? 'Conversation')
+          ? (object?.labelSingular ?? 'Event')
           : `${object?.labelSingular ?? 'Record'} · ${item.kind === 'record_created' ? 'Added' : 'Updated'}`
       }
       time={

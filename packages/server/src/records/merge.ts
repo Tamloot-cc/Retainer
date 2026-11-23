@@ -1,3 +1,4 @@
+import { bindingWriteStampSchema } from '@retainer/extension';
 import type { MergeResult, MergeSuggestionDecision } from '@retainer/shared';
 import { FieldValueError, MULTI_VALUE_TYPES } from '@retainer/shared';
 import { z } from 'zod';
@@ -26,6 +27,7 @@ import {
  */
 
 export const mergeInputSchema = z.strictObject({
+  bindings: bindingWriteStampSchema.optional(),
   /** The record to merge into the one in the path; it is soft-deleted. */
   recordId: z.uuid(),
   /**

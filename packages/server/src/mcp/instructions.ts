@@ -68,8 +68,7 @@ fact with remember; it then goes through review like any value of yours.
 When a field you need does not exist, use propose_schema_change. Adding is
 applied at once; removing or renaming waits for a person to approve. Read
 get_guide("schema_design") once before you first add an object. Respect
-isProtected and protectedOptions; use baseObject and baseField to find built-ins
-after renames, and use their current API names in calls.
+isProtected and protectedOptions. Use the current API names in calls.
 
 Errors are JSON { error: { code, message, details } }. Messages say what was
 wrong and what is allowed, so read them and retry.`;

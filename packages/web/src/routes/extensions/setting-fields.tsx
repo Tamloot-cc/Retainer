@@ -21,6 +21,7 @@ export function SettingFields({
   connectionSecrets,
   providedLabel = 'Provided for approval',
   omitSecrets = false,
+  omitSetting,
 }: {
   release: Release;
   values: Settings;
@@ -37,6 +38,7 @@ export function SettingFields({
   providedLabel?: string;
   /** Only the non-secret settings, as beside an OAuth connect button. */
   omitSecrets?: boolean;
+  omitSetting?: string;
 }) {
   const presence = connectionSecrets
     ? Object.fromEntries(connectionSecrets.map((name) => [name, true]))
@@ -45,7 +47,8 @@ export function SettingFields({
     <>
       {Object.entries(release.manifest.settings)
         .filter(
-          ([, definition]) =>
+          ([key, definition]) =>
+            key !== omitSetting &&
             !definition.generated &&
             !(omitSecrets && definition.secret) &&
             (definition.level ?? 'installation') === level,

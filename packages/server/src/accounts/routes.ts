@@ -12,6 +12,7 @@ import { AppError, forbidden } from '../errors.js';
 import { ExtensionCatalog } from '../extensions/catalog.js';
 import { idParam, readBody, zodError } from '../http/request.js';
 import { errorResponse, toAppError } from '../http/response.js';
+import { listTemplates } from '../templates/catalog.js';
 import { type Auth, CLIENT_IP_HEADER } from './auth.js';
 import * as connections from './connections.js';
 import {
@@ -152,12 +153,14 @@ export function createAccountsApp(deps: AccountsDeps) {
   );
 
   // Workspaces
+  account.get('/templates', (c) => c.json({ templates: listTemplates([]) }));
   if (deps.hostedOnboarding) {
     account.post('/onboarding/workspace', async (c) => {
       const body = await readBody(
         c,
         z.strictObject({
           skipInvitation: z.boolean().default(false),
+          template: z.string().min(1).max(100).optional(),
           oauthQuery: z.string().min(1).max(8192).optional(),
         }),
       );
@@ -168,6 +171,7 @@ export function createAccountsApp(deps: AccountsDeps) {
           c.get('person'),
           body.skipInvitation,
           deps.publicOrigin,
+          body.template,
         ),
       });
     });
@@ -182,7 +186,7 @@ export function createAccountsApp(deps: AccountsDeps) {
         sql,
         c.get('person'),
         body,
-        deps.hostedOnboarding && !body.template ? deps.publicOrigin : undefined,
+        deps.hostedOnboarding ? deps.publicOrigin : undefined,
       ),
       201,
     );

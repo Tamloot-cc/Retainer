@@ -1,14 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import {
-  BASE_EVENT_FIELD_IDS,
-  BASE_EVENT_TYPE_IDS,
-  BASE_OBJECT_IDS,
-  EVENT_CONTENT_MAX,
-  isoDateTimeSchema,
-} from '@retainer/shared';
+import { EVENT_CONTENT_MAX, isoDateTimeSchema } from '@retainer/shared';
 import { z } from 'zod';
 import type { Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
+import { requireBindingCreation, type StoredBindingPlan } from '../extension-runtime/bindings.js';
 import { requestHash } from '../idempotency.js';
 import { joinEventThreads, storeEventBody } from '../memory/event-bodies.js';
 import { addEventLinks, logEvent } from '../memory/events.js';
@@ -35,29 +30,31 @@ export const gmailMessageSchema = gmailAddressesSchema
   })
   .refine((input) => !!input.targetEmail === !!input.targetPersonId);
 type Input = z.infer<typeof gmailMessageSchema>;
-type Binding = { connectionId: string; installationId: string };
+type Binding = { connectionId: string; installationId: string; plan: StoredBindingPlan | null };
 
 function addressSet(addresses: readonly string[]) {
   return [...new Set(addresses.map(normalizeEmail))].sort();
 }
 
-export function gmailConversationSchema(schema: CompiledSchema) {
-  const object = schema.objectsByUniversalId.get(BASE_EVENT_TYPE_IDS.conversation);
-  const medium = object?.activeFields.find(
-    (field) => field.universalId === BASE_EVENT_FIELD_IDS.conversationMedium,
-  );
+export function gmailConversationSchema(schema: CompiledSchema, plan: StoredBindingPlan | null) {
+  const bound = plan?.destinations.email;
+  const object = schema.objectsByUniversalId.get(bound?.objects[0] ?? '');
+  const mediumChoice = bound?.fields.medium;
+  const medium = object?.activeFields.find((field) => field.universalId === mediumChoice?.id);
+  const value = mediumChoice?.values.email;
   if (
     !object?.isEvent ||
     object.hidden ||
     medium?.type !== 'select' ||
-    !medium.settings.options?.some((option) => option.value === 'email')
+    !value ||
+    !medium.settings.options?.some((option) => option.value === value)
   )
     throw new AppError(
       409,
-      'gmail_schema_unavailable',
-      'Gmail requires Conversation with an email medium',
+      'binding_unavailable',
+      'The approved Gmail event binding is unavailable.',
     );
-  return { object, medium };
+  return { object, medium, value };
 }
 
 /** The pre-fetch check is repeated under the exclusive schema lock at import. */
@@ -65,10 +62,27 @@ export async function matchGmailPeople(
   tx: Tx,
   context: Pick<WriteContext, 'workspaceId' | 'schema'>,
   addresses: { from: string[]; to: string[] },
+  plan: StoredBindingPlan | null,
   mailbox?: { connectionId: string; occurredAt: string },
 ) {
-  const person = context.schema.objectsByUniversalId.get(BASE_OBJECT_IDS.person);
-  if (!person || person.hidden || person.state.status !== 'active') return [];
+  const people = plan?.destinations.person;
+  if (!people) return [];
+  const person = context.schema.objectsByUniversalId.get(people.objects[0] ?? '');
+  const email = person?.activeFields.find(
+    (field) => field.universalId === people.fields.emails?.id,
+  );
+  if (
+    !person ||
+    person.hidden ||
+    person.state.status !== 'active' ||
+    email?.type !== 'emails' ||
+    !email.id
+  )
+    throw new AppError(
+      409,
+      'binding_unavailable',
+      'The approved Gmail email matching field is unavailable.',
+    );
   const values = addressSet([...addresses.from, ...addresses.to]);
   if (!values.length) return [];
   const handles = values.map((value) => ({ kind: 'email' as const, value }));
@@ -81,7 +95,7 @@ export async function matchGmailPeople(
     from record_identifiers i join records r on r.id=i.record_id and r.workspace_id=i.workspace_id
     join fields f on f.id=i.field_id and f.workspace_id=i.workspace_id
     where i.workspace_id=${context.workspaceId} and i.kind='email' and i.value=any(${values}::text[])
-      and r.object_type_id=${person.id} and r.deleted_at is null and r.merged_into_id is null
+      and r.object_type_id=${person.id} and i.field_id=${email.id} and r.deleted_at is null and r.merged_into_id is null
       and r.private_to_user is null and f.status='active'
     group by i.value having count(distinct r.id)=1
       and (${!mailbox} or not exists(
@@ -119,8 +133,8 @@ export async function appendGmailMessage(
   input: Input,
 ) {
   const { workspaceId } = context;
-  const { object, medium } = gmailConversationSchema(context.schema);
-  const participants = await matchGmailPeople(tx, context, input, {
+  const { object, medium, value } = gmailConversationSchema(context.schema, binding.plan);
+  const participants = await matchGmailPeople(tx, context, input, binding.plan, {
     connectionId: binding.connectionId,
     occurredAt: input.occurredAt,
   });
@@ -139,20 +153,36 @@ export async function appendGmailMessage(
   if (await isEventIdentitySuppressed(tx, workspaceId, channel, identity))
     return { kind: 'removed' as const };
 
-  const [prior] = await tx<{ id: string }[]>`
-    select message_id as id from gmail_deliveries
-    where workspace_id=${workspaceId} and connection_id=${binding.connectionId}
-      and provider_message_id=${input.messageId}`;
-  const [duplicate] = await tx<{ id: string; deleted_at: Date | null }[]>`
-    select r.id,r.deleted_at from event_records e
+  const [prior] = await tx<{ id: string; object_type_id: string; deleted_at: Date | null }[]>`
+    select d.message_id as id, r.object_type_id, r.deleted_at from gmail_deliveries d
+    join records r on r.id = d.message_id and r.workspace_id = d.workspace_id
+    where d.workspace_id=${workspaceId} and d.connection_id=${binding.connectionId}
+      and d.provider_message_id=${input.messageId}`;
+  const [duplicate] = await tx<{ id: string; object_type_id: string; deleted_at: Date | null }[]>`
+    select r.id,r.object_type_id,r.deleted_at from event_records e
       join records r on r.id=e.record_id and r.workspace_id=e.workspace_id
       join event_bodies m on m.event_id=r.id and m.workspace_id=r.workspace_id
     where e.workspace_id=${workspaceId} and e.channel=${channel} and e.external_id=${identity}`;
+  const existing = prior ?? duplicate;
+  if (existing?.deleted_at) return { kind: 'removed' as const };
+  if (existing && existing.object_type_id !== object.id) {
+    if (!prior)
+      await tx`insert into gmail_deliveries(workspace_id,installation_id,connection_id,message_id,provider_message_id,provider_thread_id)
+        values(${workspaceId},${binding.installationId},${binding.connectionId},${existing.id},${input.messageId},${input.threadId})`;
+    return {
+      kind: 'imported' as const,
+      messageId: existing.id,
+      eventId: existing.id,
+      created: false,
+    };
+  }
   const groups = await tx<{ id: string; deleted: boolean }[]>`
     select thread_id as id, bool_or(r.deleted_at is not null) as deleted
     from event_bodies m join records r on r.id=m.event_id and r.workspace_id=m.workspace_id
     where m.workspace_id=${workspaceId} and m.thread_id in (
       select candidate.thread_id from event_bodies candidate
+      join records destination on destination.id = candidate.event_id
+        and destination.workspace_id = candidate.workspace_id and destination.object_type_id = ${object.id}
       where candidate.workspace_id=${workspaceId} and (
         candidate.event_id=${prior?.id ?? duplicate?.id ?? null} or candidate.event_id in (
           select d.message_id from gmail_deliveries d
@@ -170,18 +200,30 @@ export async function appendGmailMessage(
   let messageId: string;
   if (existingId) {
     messageId = existingId;
-    await addEventLinks(tx, context, messageId, { participants, about: [] });
+    await addEventLinks(
+      tx,
+      context,
+      messageId,
+      { participants, about: [] },
+      { resolveHandles: false },
+    );
   } else {
-    const event = await logEvent(tx, context, {
-      type: object.name,
-      channel,
-      externalId: identity,
-      occurredAt: input.occurredAt,
-      title: input.subject || '(No subject)',
-      fields: { [medium.name]: 'email' },
-      participants,
-      about: [],
-    });
+    requireBindingCreation(binding.plan, 'email');
+    const event = await logEvent(
+      tx,
+      context,
+      {
+        type: object.name,
+        channel,
+        externalId: identity,
+        occurredAt: input.occurredAt,
+        title: input.subject || '(No subject)',
+        fields: { [medium.name]: value },
+        participants,
+        about: [],
+      },
+      { resolveHandles: false },
+    );
     if (!event.created)
       throw new AppError(409, 'gmail_identity_conflict', 'Gmail evidence identity already in use');
     messageId = event.id;

@@ -1,6 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { ExtensionManifest, InputSchema } from '@retainer/extension';
-import { BASE_EVENT_TYPE_IDS, BASE_FIELD_IDS, BASE_OBJECT_IDS } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { removeFromOrganization } from '../../src/accounts/people.js';
@@ -18,6 +17,7 @@ import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
 import { sessionCaller, team } from '../helpers/people.js';
+import { sourceTestBindings } from '../helpers/source-bindings.js';
 
 const db = useTestDatabase();
 const disconnectId = randomUUID();
@@ -39,22 +39,7 @@ const fn = (
   inputSchema,
   timeoutSeconds: 120,
 });
-const taskFieldId = randomUUID();
 const manifest = extensionFixture({
-  schema: [
-    {
-      kind: 'field',
-      objectId: BASE_OBJECT_IDS.task,
-      definition: {
-        universalId: taskFieldId,
-        name: 'memberTaskId',
-        label: 'Member task ID',
-        type: 'text',
-        isUnique: true,
-        isNullable: true,
-      },
-    },
-  ],
   name: 'member-fixture',
   onSourceDelete: 'retract',
   connection: 'member',
@@ -85,21 +70,40 @@ const manifest = extensionFixture({
       reconnect: true,
     },
   },
-  source: {
-    tasks: {
-      objectId: BASE_OBJECT_IDS.task,
-      identityFieldId: taskFieldId,
-      titleFieldId: '5f37aa96-fac8-4572-9647-6b0da5d6d0c8',
-      statusFieldId: BASE_FIELD_IDS.taskStatus,
-      personFieldId: '3d66fcfe-2e9c-4aeb-a88a-7d6b3c2194ba',
-      statuses: { open: 'todo', done: 'done' },
+  bindings: [
+    ...sourceTestBindings.map((binding) =>
+      binding.key === 'person' ? { ...binding, creates: true as const } : binding,
+    ),
+    {
+      key: 'task',
+      label: 'Tasks',
+      description: 'Tasks from the test source.',
+      class: 'entity',
+      access: 'write',
+      creates: true,
+      required: true,
+      fields: [
+        { key: 'title', label: 'Title', types: ['text'], required: true },
+        {
+          key: 'status',
+          label: 'Status',
+          types: ['select'],
+          values: ['open', 'done'],
+          required: true,
+        },
+        { key: 'person', label: 'Person', types: ['relation'], target: 'person', required: false },
+      ],
     },
+  ],
+  source: {
+    tasks: 'task',
     provider: 'fixture',
     identity: 'account',
     verifyFunctionId: connectId,
     syncFunctionIds: [syncId],
     scanFunctionIds: [pollId],
-    eventTypeIds: [BASE_EVENT_TYPE_IDS.conversation],
+    event: 'conversation',
+    people: 'person',
     revisionOrder: 'integer',
   },
   functions: [
@@ -163,6 +167,16 @@ beforeAll(async () => {
     runTokens: tokens,
   });
 });
+const taskBindingChoices = {
+  task: {
+    action: 'existing',
+    objects: ['task'],
+    fields: {
+      status: { action: 'existing', field: 'status', values: { open: 'todo', done: 'done' } },
+    },
+  },
+} as const;
+
 async function setup() {
   const { workspace, keys } = await t.setupWorkspace(
     { name: `Members ${randomUUID()}` },
@@ -180,6 +194,7 @@ async function setup() {
     registrationId: manifest.universalId,
     version: manifest.version,
     settings: { share: true },
+    bindings: { task: { ...taskBindingChoices.task, objects: ['task'] } },
   };
   const preview = await t.request('/v1/extensions/preview', { key: keys.admin, body: input });
   expect(preview.status).toBe(200);
@@ -568,6 +583,7 @@ describe('member connection API, broker and execution with real Postgres', () =>
       registrationId: manifest.universalId,
       version: manifest.version,
       settings: { share: true },
+      bindings: { task: { ...taskBindingChoices.task, objects: ['task'] } },
     };
     const preview = await extensions.preview(admin, input),
       installed = await extensions.install(
@@ -738,7 +754,7 @@ async function memberTasks(h: Setup, key: string, accountId: string) {
       providerRevision: '1',
       expectedRevisionId: null,
       event: {
-        type: BASE_EVENT_TYPE_IDS.conversation,
+        binding: 'conversation',
         occurredAt: '2026-01-01T12:00:00Z',
         title: 'Meeting',
         summary: 'a'.repeat(21000),
@@ -771,15 +787,23 @@ describe('managed source tasks with real Postgres', () => {
   it('lets one of two accounts importing the same task ID concurrently win and refuses the other as source_task_conflict', async () => {
     const h = await taskFixture(),
       eli = await memberTasks(h, h.keys.eli, 'eli-account');
-    const results = await Promise.all([
-      h.tasks([managedTask('shared')]),
-      eli.tasks([managedTask('shared')]),
-    ]);
+    const writers = [h, eli];
+    const results = await Promise.all(
+      writers.map((writer, i) => writer.tasks([managedTask('shared', `From account ${i}`)])),
+    );
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
-    expect(results.find((r) => r.status === 409)!.body.error.code).toBe('source_task_conflict');
-    expect(
-      await db.owner`select 1 from source_tasks where installation_id=${h.id} and external_id='shared'`,
-    ).toHaveLength(1);
+    expect(results.find((r) => r.status === 409)?.body.error.code).toBe('source_task_conflict');
+    const readTask = () => db.owner`
+      select t.*, r.data from source_tasks t join records r on r.id = t.record_id
+      where t.installation_id = ${h.id} and t.external_id = 'shared'`;
+    const before = await readTask();
+    expect(before).toHaveLength(1);
+    const winner = results.findIndex((r) => r.status === 200);
+    expect(before[0]?.source_event_id).toBe(writers[winner]?.event);
+    expect(Object.values(before[0]?.data)).toContain(`From account ${winner}`);
+    const retry = await writers[1 - winner]?.tasks([managedTask('shared', 'Refused edit')]);
+    expect(retry?.body.error.code).toBe('source_task_conflict');
+    expect(await readTask()).toEqual(before);
   });
   it('serializes competing snapshots, is idempotent and keeps edited tasks permanently', async () => {
     const h = await taskFixture();
@@ -900,7 +924,7 @@ describe('managed task continuation and edit races', () => {
 });
 
 describe('managed task schema and identity safety', () => {
-  it('resolves renamed fields by reviewed IDs and stops safely when an open status is removed', async () => {
+  it('resolves renamed fields by reviewed IDs and protects the bound open option', async () => {
     const h = await taskFixture();
     const renamed = await t.request('/v1/schema/changes', {
       key: h.keys.admin,
@@ -918,10 +942,12 @@ describe('managed task schema and identity safety', () => {
         operations: [{ op: 'remove_option', object: 'task', field: 'status', value: 'todo' }],
       },
     });
-    expect(removed.status).toBe(200);
-    const result = await h.tasks([]);
-    expect(result.status).toBe(200);
-    expect(result.body).toMatchObject({ bindingStatus: 'degraded', removed: 0 });
+    expect(removed.status).toBe(422);
+    expect(removed.body.error.details.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'task.status', message: expect.stringContaining(h.id) }),
+      ]),
+    );
     expect(
       await db.owner`select id from source_tasks where item_id=${h.item} and state='synced'`,
     ).toHaveLength(1);
@@ -974,7 +1000,7 @@ describe('managed task schema and identity safety', () => {
         providerRevision: '1',
         expectedRevisionId: null,
         event: {
-          type: BASE_EVENT_TYPE_IDS.conversation,
+          binding: 'conversation',
           title: 'New meeting',
           occurredAt: '2026-01-02T12:00:00Z',
         },
@@ -1133,7 +1159,7 @@ describe('managed task cascade conflicts', () => {
 });
 
 describe('managed task value validation', () => {
-  it('enforces workspace-required fields instead of bypassing the normal create rules', async () => {
+  it('protects task creation from a newly required field outside the plan', async () => {
     const h = await taskFixture();
     const changed = await t.request('/v1/schema/changes', {
       key: h.keys.admin,
@@ -1147,14 +1173,13 @@ describe('managed task value validation', () => {
         ],
       },
     });
-    expect(changed.status).toBe(200);
-    const result = await h.tasks([managedTask('requires-approval')]);
-    expect(result.status).toBe(422);
-    expect(result.body.error.details.errors).toContainEqual({
-      field: 'approval',
-      message: 'is required',
-    });
-    expect(await db.owner`select id from source_tasks where item_id=${h.item}`).toHaveLength(0);
+    expect(changed.status).toBe(422);
+    expect(changed.body.error.details.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'task', message: expect.stringContaining('Approval') }),
+      ]),
+    );
+    expect((await h.tasks([managedTask('requires-approval')])).status).toBe(200);
   });
 });
 

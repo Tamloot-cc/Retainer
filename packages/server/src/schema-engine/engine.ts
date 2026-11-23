@@ -1,8 +1,14 @@
-import type { Actor, SchemaChange as SchemaChangeView, SchemaOwner } from '@retainer/shared';
+import {
+  type Actor,
+  HIDDEN_TYPE_IDS,
+  type SchemaChange as SchemaChangeView,
+  type SchemaOwner,
+} from '@retainer/shared';
 import { canApproveDestructive } from '../caller.js';
-import type { ApiKeyScope, SchemaChangeStatus } from '../db/schema.js';
+import type { ApiKeyScope, AppliedTemplate, SchemaChangeStatus } from '../db/schema.js';
 import { jsonValue, lockPrivacyShared, lockSchemaExclusive, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
+import { type StoredBindingPlan, validateBindingPlan } from '../extension-runtime/bindings.js';
 import { getSchema } from '../schema/compiled.js';
 import { loadSchemaState } from '../schema/load.js';
 import {
@@ -28,6 +34,8 @@ export type SchemaChangeRequest = {
   scopes: readonly ApiKeyScope[];
   operations: SchemaOperation[];
   reason?: string;
+  replacingBindingPlan?: string;
+  template?: Pick<AppliedTemplate, 'name' | 'version'>;
   /** Owner of what the change creates; defaults from the actor's type. */
   owner?: SchemaOwner;
   /**
@@ -120,6 +128,27 @@ async function refuseContributedDeletes(tx: Tx, current: SchemaState, desired: S
   );
 }
 
+/** Runs under the same exclusive lock as installation approvals. */
+async function validateInstalledBindings(
+  tx: Tx,
+  workspaceId: string,
+  state: SchemaState,
+  replacing?: string,
+) {
+  const installations = await tx<{ id: string; bindings: StoredBindingPlan }[]>`
+    select id, bindings from extension_installations
+    where workspace_id = ${workspaceId} and state <> 'uninstalled' and jsonb_typeof(bindings->'declarations') = 'array'
+      ${replacing ? tx`and id <> ${replacing}` : tx``}
+    order by id`;
+  const issues = installations.flatMap(({ id, bindings }) =>
+    validateBindingPlan(state, bindings).map((issue) => ({
+      path: [issue.binding, issue.field].filter(Boolean).join('.'),
+      message: `${bindings.extension} needs this binding. Change ${bindings.extension}'s setup first. ${issue.message} (Installation ${id}.)`,
+    })),
+  );
+  if (issues.length) throw new SchemaValidationError(issues);
+}
+
 function dedupe(issues: SchemaIssue[]): SchemaIssue[] {
   const seen = new Set<string>();
   return issues.filter((i) => {
@@ -128,6 +157,55 @@ function dedupe(issues: SchemaIssue[]): SchemaIssue[] {
     seen.add(key);
     return true;
   });
+}
+
+async function requireTemplateDestination(
+  tx: Tx,
+  current: SchemaState,
+  workspaceId: string,
+  operations: readonly SchemaOperation[],
+) {
+  const [row] = await tx<{ templates: AppliedTemplate[] }[]>`
+    select templates from workspaces where id = ${workspaceId}`;
+  if (!row) throw notFound('workspace');
+  if (
+    row.templates.length ||
+    current.objects.some((o) => o.status === 'active' && !HIDDEN_TYPE_IDS.has(o.universalId))
+  ) {
+    throw new AppError(
+      409,
+      'workspace_not_empty',
+      'A template can only be copied into an empty workspace. Propose individual schema changes instead.',
+    );
+  }
+  const retired = new Set(
+    current.objects
+      .filter((object) => object.status === 'deprecated')
+      .map((object) => object.universalId),
+  );
+  const clash = operations.find(
+    (operation) =>
+      operation.op === 'create_object' &&
+      operation.object.universalId &&
+      retired.has(operation.object.universalId),
+  );
+  if (clash?.op === 'create_object')
+    throw new AppError(
+      409,
+      'template_retained_identity',
+      `A deleted object still holds the template identity for ${clash.object.labelSingular}. Propose individual schema changes instead.`,
+    );
+}
+
+async function recordTemplate(
+  tx: Tx,
+  workspaceId: string,
+  template: NonNullable<SchemaChangeRequest['template']>,
+) {
+  const applied: AppliedTemplate = { ...template, appliedAt: new Date().toISOString() };
+  await tx`
+    update workspaces set templates = templates || ${tx.json([applied])}
+    where id = ${workspaceId}`;
 }
 
 /**
@@ -143,6 +221,8 @@ export async function runSchemaChange(
   await lockPrivacyShared(tx, workspaceId);
   await lockSchemaExclusive(tx, workspaceId);
   const current = await loadSchemaState(tx, workspaceId);
+  if (request.template)
+    await requireTemplateDestination(tx, current, workspaceId, request.operations);
   const { desired, ops } = planSchemaChange(
     current,
     request.operations,
@@ -150,6 +230,7 @@ export async function runSchemaChange(
     request.trusted,
   );
 
+  await validateInstalledBindings(tx, workspaceId, desired, request.replacingBindingPlan);
   await refuseContributedDeletes(tx, current, desired);
 
   if (ops.length === 0) {
@@ -168,9 +249,13 @@ export async function runSchemaChange(
     isDestructive: destructive,
     reason: request.reason ?? null,
     requestedBy: actor,
+    template: request.template,
   };
 
-  if (destructive && !request.trusted && !canApproveDestructive(actor, request.scopes)) {
+  if (
+    !request.trusted &&
+    (request.template || (destructive && !canApproveDestructive(actor, request.scopes)))
+  ) {
     const change = await insertChange(tx, { ...row, status: 'proposed' }, current);
     return { status: 'proposed', change, schemaVersion: await schemaVersion(tx, workspaceId) };
   }
@@ -193,6 +278,7 @@ export async function runSchemaChange(
   }
 
   const version = await persistSchema(tx, workspaceId, current, desired, ops, actor);
+  if (request.template) await recordTemplate(tx, workspaceId, request.template);
   const change = await insertChange(
     tx,
     { ...row, status: 'applied', appliedVersion: version, decidedBy: actor },
@@ -242,9 +328,15 @@ export async function decideSchemaChange(
   }
 
   const operations = row.request as SchemaOperation[];
+  if (row.template) await requireTemplateDestination(tx, current, workspaceId, operations);
   let planned: ReturnType<typeof planSchemaChange>;
   try {
-    planned = planSchemaChange(current, operations, ownerFor(row.requested_by));
+    planned = planSchemaChange(
+      current,
+      operations,
+      row.template ? 'workspace' : ownerFor(row.requested_by),
+    );
+    await validateInstalledBindings(tx, workspaceId, planned.desired);
     await refuseContributedDeletes(tx, current, planned.desired);
     await checkExistingRecords(tx, workspaceId, current, planned.desired, planned.ops);
   } catch (error) {
@@ -267,6 +359,7 @@ export async function decideSchemaChange(
     planned.ops.length > 0
       ? await persistSchema(tx, workspaceId, current, planned.desired, planned.ops, actor)
       : await schemaVersion(tx, workspaceId);
+  if (row.template) await recordTemplate(tx, workspaceId, row.template);
   const change = await updateChange(
     tx,
     changeId,
@@ -332,6 +425,7 @@ type ChangeRow = {
   is_destructive: boolean;
   reason: string | null;
   requested_by: Actor;
+  template: SchemaChangeRequest['template'] | null;
   decided_by: Actor | null;
   applied_version: number | null;
   error: string | null;
@@ -352,7 +446,7 @@ function changeDiff(row: ChangeRow, state: SchemaState): DiffOp[] {
     const { ops } = planSchemaChange(
       state,
       row.request as SchemaOperation[],
-      ownerFor(row.requested_by),
+      row.template ? 'workspace' : ownerFor(row.requested_by),
     );
     return ops;
   } catch (error) {
@@ -372,6 +466,7 @@ function toView(row: ChangeRow, state: SchemaState): SchemaChangeView {
     // A re-planned proposal is destructive only if what approving would do now is.
     isDestructive: ops === row.operations ? row.is_destructive : isDestructive(ops),
     reason: row.reason,
+    ...(row.template ? { template: row.template.name } : {}),
     requestedBy: row.requested_by,
     decidedBy: row.decided_by,
     appliedVersion: row.applied_version,
@@ -391,6 +486,7 @@ async function insertChange(
     isDestructive: boolean;
     reason: string | null;
     requestedBy: Actor;
+    template?: SchemaChangeRequest['template'];
     decidedBy?: Actor;
     appliedVersion?: number;
     error?: string;
@@ -400,12 +496,12 @@ async function insertChange(
   const decided = change.status !== 'proposed';
   const [row] = await tx<ChangeRow[]>`
     insert into schema_changes (workspace_id, status, request, operations, is_destructive, reason,
-      requested_by, decided_by, applied_version, error, decided_at)
+      requested_by, decided_by, applied_version, error, decided_at, template)
     values (${change.workspaceId}, ${change.status}, ${tx.json(change.request)},
       ${tx.json(jsonValue(change.operations))}, ${change.isDestructive}, ${change.reason},
       ${tx.json(change.requestedBy)}, ${change.decidedBy ? tx.json(change.decidedBy) : null},
       ${change.appliedVersion ?? null}, ${change.error ?? null},
-      ${decided ? tx`now()` : null})
+      ${decided ? tx`now()` : null}, ${change.template ? tx.json(change.template) : null})
     returning *`;
   return toView(row as ChangeRow, state);
 }

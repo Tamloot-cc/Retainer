@@ -3,11 +3,16 @@ import { type Config, loadConfig, ownerDatabaseUrl } from '../config.js';
 import { createSql } from '../db/client.js';
 import { applyLogins, loginsPending } from '../db/logins.js';
 import { migrationHistoryCompatible, migrationsPending, runMigrations } from '../db/migrate.js';
+import { parseExtensionCatalog } from '../extensions/catalog.js';
 import { setLogLevel } from '../log.js';
 import { runCli } from '../operator/commands.js';
 import { extensionReleaseStatus } from '../operator/extension-releases.js';
 import { lambdaRuntimeCompatible } from '../operator/extension-runtime.js';
 import { rebuildSearchText } from '../records/rebuild-search.js';
+import {
+  bindingsMigrationPending,
+  migrateExtensionBindings,
+} from '../workspaces/binding-migration.js';
 import {
   type UpgradeReport,
   upgradeWorkspaces,
@@ -166,6 +171,13 @@ export function createOpsHandler(config: Config) {
           const [stale] =
             await sql`select exists(select 1 from records where search is null and merged_into_id is null) as pending`;
           if (stale?.pending) reasons.push('search');
+          if (
+            await bindingsMigrationPending(
+              sql,
+              parseExtensionCatalog(config.RETAINER_EXTENSION_CATALOG),
+            )
+          )
+            reasons.push('bindings');
           if (await workspaceUpgradesPending(sql)) reasons.push('definitions');
         }
         return {
@@ -184,13 +196,24 @@ export function createOpsHandler(config: Config) {
       try {
         return await withMigrationLock(sql, parsed.data.waitSeconds, async () => {
           await runMigrations(databaseUrl);
+          const bindings = await migrateExtensionBindings(
+            sql,
+            parseExtensionCatalog(config.RETAINER_EXTENSION_CATALOG),
+            false,
+          );
           // Before the api and consolidate functions start with the new login.
           const logins = await applyLogins(config, sql);
           const rebuiltSearchText = await rebuildSearchText(sql);
           const workspaceUpgrade = await upgradeWorkspaces(sql);
           if (workspaceUpgrade.failed.length > 0)
             throw new Error('Workspace upgrades failed; keep maintenance enabled and retry.');
-          return { command: 'migrate', logins, rebuiltSearchText, workspaceUpgrade };
+          return {
+            command: 'migrate',
+            logins,
+            rebuiltSearchText,
+            workspaceUpgrade,
+            bindings: bindings.length,
+          };
         });
       } finally {
         await sql.end({ timeout: 5 });

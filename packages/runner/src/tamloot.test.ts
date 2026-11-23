@@ -2,7 +2,7 @@ import { defineExtension } from '@retainer/extension';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { tamlootSummary } from './tamloot.js';
-import { TAMLOOT, tamlootManifest, tamlootRevision, tamlootSession } from './tamloot-contract.js';
+import { tamlootManifest, tamlootRevision, tamlootSession } from './tamloot-contract.js';
 import { TamlootProvider } from './tamloot-provider.js';
 
 describe('Tamloot release and provider boundaries', () => {
@@ -20,20 +20,9 @@ describe('Tamloot release and provider boundaries', () => {
     });
     expect(manifest.settings.createPeople.default).toBe('everyone');
     expect(manifest.settings.createPeople.options).toEqual(['never', 'everyone']);
-    expect(manifest.source?.tasks?.identityFieldId).toBe(TAMLOOT.taskIdField);
     expect(manifest.settings.apiKey.level).toBe('connection');
-    expect(() => defineExtension({ ...manifest, schema: [] })).toThrow(
-      'contributed unique text field',
-    );
-    expect(() =>
-      defineExtension({
-        ...manifest,
-        source: {
-          ...manifest.source,
-          tasks: { ...manifest.source!.tasks, titleFieldId: TAMLOOT.taskIdField },
-        },
-      }),
-    ).toThrow('distinct');
+    expect(manifest.source).toMatchObject({ event: 'meeting', people: 'person', tasks: 'task' });
+    expect(() => defineExtension({ ...manifest, bindings: [] })).toThrow('write event binding');
   });
   it('rejects unsafe JSON revisions and preserves long notes in source order', () => {
     expect(tamlootRevision.parse(123)).toBe('123');

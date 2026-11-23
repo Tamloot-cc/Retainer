@@ -545,12 +545,10 @@ export const workspaces = pgTable(
     settings: jsonb('settings').$type<WorkspaceSettings>().notNull().default({}),
     /** Templates applied to this workspace, with their versions (3.1). */
     templates: jsonb('templates').$type<AppliedTemplate[]>().notNull().default([]),
-    /** Only internal definitions are seeded/upgraded in a workspace designed from scratch. */
-    schemaFromScratch: boolean('schema_from_scratch').notNull().default(false),
-    /** First template on a legacy workspace, or first visible schema on a scratch workspace. */
+    /** First applied change that adds a visible type. */
     initializedAt: timestamp('initialized_at', { withTimezone: true }),
     /**
-     * Digest of the built-in definitions (base, protection, applied templates)
+     * Digest of the internal definitions and protection rules
      * the workspace was last fully upgraded to (3). Null until the first
      * upgrade run; a mismatch makes the next run plan an upgrade.
      */
@@ -709,6 +707,7 @@ export const schemaChanges = pgTable(
     /** True when any operation is destructive (rename, delete, required…). */
     isDestructive: boolean('is_destructive').notNull(),
     reason: text('reason'),
+    template: jsonb('template').$type<Pick<AppliedTemplate, 'name' | 'version'>>(),
     requestedBy: jsonb('requested_by').$type<Actor>().notNull(),
     decidedBy: jsonb('decided_by').$type<Actor>(),
     /** `schema_version` after this change was applied. */
@@ -1487,12 +1486,9 @@ export const extensionInstallations = pgTable(
     grantedUses: jsonb('granted_uses').$type<string[]>().notNull().default([]),
     settings: jsonb('settings').notNull().default({}),
     settingsRevision: integer('settings_revision').notNull().default(1),
-    /**
-     * The approved output mapping (extensions/mapping.ts): each bound output's
-     * target by universal ID. Changed only through a reviewed plan.
-     */
-    mapping: jsonb('mapping').notNull().default({ outputs: {} }),
-    mappingRevision: integer('mapping_revision').notNull().default(0),
+    bindings: jsonb('bindings'),
+    // Zero identifies pre-binding installations. New installs start at one.
+    bindingsRevision: integer('bindings_revision').notNull().default(0),
     /**
      * The newest release digest the automatic upgrade checked and left for an
      * admin to approve (extensions/auto-upgrade.ts), so it is not planned again
@@ -2660,6 +2656,7 @@ export const sourceReceipts = pgTable(
     key: text('key').notNull(),
     contentDigest: text('content_digest').notNull(),
     response: jsonb('response').notNull(),
+    projection: jsonb('projection'),
   },
   (t) => [
     primaryKey({ columns: [t.workspaceId, t.itemId, t.key] }),
@@ -2763,6 +2760,7 @@ export const changeDispatch = pgTable(
     installationId: uuid('installation_id').notNull(),
     generation: integer('generation').notNull(),
     position: bigint('position', { mode: 'number' }).notNull().default(0),
+    triggerStarts: jsonb('trigger_starts').$type<Record<string, string>>().notNull().default({}),
     blockedCycles: integer('blocked_cycles').notNull().default(0),
   },
   (t) => [
@@ -2909,7 +2907,8 @@ export const extensionSuggestions = pgTable(
     releaseDigest: text('release_digest').notNull(),
     jobId: uuid('job_id').notNull(),
     reason: text('reason').notNull(),
-    mapping: jsonb('mapping'),
+    bindings: jsonb('bindings'),
+    bindingReasons: jsonb('binding_reasons'),
     settings: jsonb('settings'),
     createdAt: createdAt(),
   },
@@ -2920,6 +2919,26 @@ export const extensionSuggestions = pgTable(
       foreignColumns: [extensionInstallations.workspaceId, extensionInstallations.id],
     }).onDelete('cascade'),
     pgPolicy('extension_suggestions_workspace', {
+      for: 'all',
+      to: 'retainer_app',
+      using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+      withCheck: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,
+    }),
+  ],
+).enableRLS();
+
+export const extensionBindingProposals = pgTable(
+  'extension_binding_proposals',
+  {
+    workspaceId: workspaceId(),
+    releaseDigest: text('release_digest').notNull(),
+    choices: jsonb('choices').notNull(),
+    proposedBy: jsonb('proposed_by').$type<Actor>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.releaseDigest] }),
+    pgPolicy('extension_binding_proposals_workspace', {
       for: 'all',
       to: 'retainer_app',
       using: sql`${t.workspaceId} = nullif(current_setting('app.workspace_id', true), '')::uuid`,

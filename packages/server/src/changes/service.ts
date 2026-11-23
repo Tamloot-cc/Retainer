@@ -3,6 +3,7 @@ import { changeCursor, changePosition, overtaken, retainedFloor } from '../db/ch
 import type { Sql } from '../db/client.js';
 import type { Tx } from '../db/tx.js';
 import { AppError, notFound } from '../errors.js';
+import type { StoredBindingPlan } from '../extension-runtime/bindings.js';
 import { withRead } from '../records/service.js';
 import type { CompiledSchema } from '../schema/compiled.js';
 import type { ChangeOperation } from './collect.js';
@@ -133,12 +134,30 @@ export class Changes {
         caller,
         async (tx, schema) => {
           const [job] = await tx<
-            { change_snapshot: ChangeRow | null }[]
-          >`select change_snapshot from extension_jobs where id=${caller.run?.jobId ?? null} and input->>'changePosition'=${position}`;
+            { change_snapshot: ChangeRow | null; bindings: StoredBindingPlan | null }[]
+          >`select j.change_snapshot, i.bindings from extension_jobs j
+            join extension_installations i on i.id = j.installation_id
+            where j.id=${caller.run?.jobId ?? null} and j.input->>'changePosition'=${position}`;
           if (!job?.change_snapshot) return undefined;
           const [item] = await this.present(tx, schema, caller.workspaceId, [job.change_snapshot]);
           if (!item) throw notFound('record change');
-          return item;
+          if (!job.bindings) return item;
+          const object = schema.objectsById.get(item.objectTypeId);
+          const changed = new Set(item.changedKeys);
+          const keys = new Set<string>();
+          for (const binding of Object.values(job.bindings.destinations)) {
+            if (!binding || !object || !binding.objects.includes(object.state.universalId))
+              continue;
+            for (const [key, field] of Object.entries(binding.fields)) {
+              if (
+                object.activeFields.some(
+                  (entry) => entry.universalId === field.id && changed.has(entry.key),
+                )
+              )
+                keys.add(key);
+            }
+          }
+          return { ...item, changedKeys: [...keys].sort() };
         },
         { privacy: true, schema: true },
       );

@@ -39,7 +39,6 @@ import {
 import { useRememberCommand } from '../command-recents.js';
 import { DeveloperFacts, useApiName } from '../developer.js';
 import { EventDetailsView } from '../events/event-details.js';
-import { eventMedium, mediumField } from '../events/event-list.js';
 import { RoutineButtons } from '../routines/record-buttons.js';
 import { classLabel, objectByName, QueryError, recordTitle, relationsTo } from '../state.js';
 import { RecordActions } from './record-actions.js';
@@ -199,13 +198,7 @@ export function RecordView({
       <DeveloperFacts record={r} object={object} />
       {r.event ? (
         <Section title="Event">
-          <EventDetailsView
-            id={r.id}
-            event={r.event}
-            editable={canWrite}
-            medium={eventMedium(object, r)}
-            {...(mediumField(object) ? { mediumName: mediumField(object)?.name } : {})}
-          />
+          <EventDetailsView id={r.id} event={r.event} editable={canWrite} />
         </Section>
       ) : null}
       <Section title="Fields">

@@ -13,6 +13,7 @@ import { FileMaintenance } from '../../src/worker/files.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
+import { sourceTestBindings } from '../helpers/source-bindings.js';
 
 const db = useTestDatabase(),
   bytes = Buffer.from('private transcript fixture'),
@@ -207,6 +208,7 @@ describe('authorized immutable files with real Postgres and real byte service', 
     const manifests = [0, 1].map(() =>
       extensionFixture({
         scopes: ['read', 'write'],
+        bindings: sourceTestBindings.filter((binding) => binding.key === 'conversation'),
         functions: [
           {
             universalId: randomUUID(),

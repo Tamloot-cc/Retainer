@@ -26,7 +26,7 @@ beforeAll(async () => {
     new SecretCipher('test', new Map([['test', randomBytes(32)]])),
   );
 });
-async function fixture(createPeople: 'never' | 'everyone' = 'everyone') {
+async function fixture(createPeople: 'never' | 'everyone' = 'everyone', custom = false) {
   const manifest = tamlootManifest({
       packageDigest: 'a'.repeat(64),
       handlerDigest: 'b'.repeat(64),
@@ -42,22 +42,134 @@ async function fixture(createPeople: 'never' | 'everyone' = 'everyone') {
     extensionSecrets: broker,
   });
   const { workspace, keys } = await app.setupWorkspace(
-    { name: `Tamloot ${randomUUID()}` },
+    { name: `Tamloot ${randomUUID()}`, template: custom ? null : 'starter' },
     {
       admin: {
         actor: { type: 'user', id: 'admin', name: 'Admin' },
         scopes: ['admin', 'read', 'write'],
       },
       member: { actor: { type: 'user', id: 'member', name: 'Dana' }, scopes: ['read', 'write'] },
+      agent: { actor: { type: 'agent', id: 'schema-designer' }, scopes: ['read', 'schema:write'] },
     },
   );
+  if (custom) {
+    const schema = await app.request('/v1/schema/changes', {
+      key: keys.agent,
+      body: {
+        operations: [
+          {
+            op: 'create_object',
+            object: {
+              nameSingular: 'client',
+              namePlural: 'clients',
+              labelSingular: 'Client',
+              labelPlural: 'Clients',
+              labelField: 'name',
+              fields: [{ name: 'name', label: 'Name', type: 'text' }],
+            },
+          },
+          {
+            op: 'create_object',
+            object: {
+              nameSingular: 'contact',
+              namePlural: 'contacts',
+              labelSingular: 'Contact',
+              labelPlural: 'Contacts',
+              labelField: 'name',
+              fields: [
+                { name: 'name', label: 'Name', type: 'text' },
+                { name: 'emailAddresses', label: 'Email addresses', type: 'emails' },
+                {
+                  name: 'client',
+                  label: 'Client',
+                  type: 'relation',
+                  isNullable: false,
+                  settings: { targetObject: 'client' },
+                },
+              ],
+            },
+          },
+          {
+            op: 'create_object',
+            object: {
+              nameSingular: 'action',
+              namePlural: 'actions',
+              labelSingular: 'Action',
+              labelPlural: 'Actions',
+              labelField: 'subject',
+              fields: [
+                { name: 'subject', label: 'Subject', type: 'text' },
+                {
+                  name: 'state',
+                  label: 'State',
+                  type: 'select',
+                  settings: { options: [{ value: 'idea', label: 'Idea' }] },
+                },
+                {
+                  name: 'contact',
+                  label: 'Contact',
+                  type: 'relation',
+                  settings: { targetObject: 'contact' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(schema.body.status).toBe('proposed');
+    const approval = await app.request(`/v1/schema/changes/${schema.body.change.id}/approve`, {
+      key: keys.admin,
+      method: 'POST',
+    });
+    expect(approval.body.status).toBe('applied');
+  }
   const input = {
     registrationId: manifest.universalId,
     version: manifest.version,
     settings: { shareMeetings: true, createPeople },
+    bindings: custom
+      ? {
+          person: {
+            action: 'existing',
+            objects: ['contact'],
+            fields: {
+              emails: { action: 'existing', field: 'emailAddresses' },
+            },
+          },
+          task: {
+            action: 'existing',
+            objects: ['action'],
+            fields: {
+              title: { action: 'existing', field: 'subject' },
+              status: {
+                action: 'existing',
+                field: 'state',
+                values: {
+                  open: 'idea',
+                  done: { value: 'completed', label: 'Completed' },
+                },
+              },
+              person: { action: 'existing', field: 'contact' },
+            },
+          },
+        }
+      : {
+          task: {
+            action: 'existing',
+            objects: ['task'],
+            fields: {
+              status: {
+                action: 'existing',
+                field: 'status',
+                values: { open: 'todo', done: 'done' },
+              },
+            },
+          },
+        },
   };
   const preview = await app.request('/v1/extensions/preview', { key: keys.admin, body: input });
-  expect(preview.status).toBe(200);
+  expect(preview.status, JSON.stringify(preview.body.error ?? null)).toBe(200);
   const installed = await app.request('/v1/extensions', {
     key: keys.admin,
     headers: { 'Idempotency-Key': randomUUID() },
@@ -168,6 +280,11 @@ async function fixture(createPeople: 'never' | 'everyone' = 'everyone') {
     return Response.json({ data: taskRows });
   };
   async function execute(job: ClaimedJob) {
+    if (job.system) {
+      const result = { status: 'succeeded' } as const;
+      await queue.complete(job, result);
+      return result;
+    }
     const token = await tokens.issue(app.sql, job, manifest.universalId, job.scopes);
     const result = await executeTamloot(
       {
@@ -266,6 +383,55 @@ async function fixture(createPeople: 'never' | 'everyone' = 'everyone') {
   };
 }
 describe('Tamloot bundle through real API and Postgres with provider HTTP fixtures', () => {
+  it('syncs meetings and linked actions in a workspace an agent designed from scratch', async () => {
+    const h = await fixture('everyone', true);
+    h.setTasks([
+      {
+        id: h.task1,
+        content: 'Follow up',
+        status: 'open',
+        contact_emails: ['participant@tamloot.test'],
+      },
+      {
+        id: h.task2,
+        content: 'Send notes',
+        status: 'done',
+        contact_emails: ['participant@tamloot.test'],
+      },
+    ]);
+    const schema = await h.app.request('/v1/schema', { key: h.keys.admin });
+    const contact = schema.body.objects.find(
+      (object: { nameSingular: string }) => object.nameSingular === 'contact',
+    );
+    expect(contact.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'emailAddresses', isUnique: true }),
+        expect.objectContaining({ name: 'client', isNullable: true }),
+      ]),
+    );
+    await h.connect();
+    const results = await h.drain();
+    expect(results.every((result) => result.status === 'succeeded')).toBe(true);
+    const found = await h.app.request('/v1/objects/contact/query', { key: h.keys.admin, body: {} });
+    expect(found.body.records).toHaveLength(1);
+    const context = await h.app.request(`/v1/records/${found.body.records[0].id}/context`, {
+      key: h.keys.admin,
+    });
+    expect(context.body.linkedRecords).toMatchObject([
+      {
+        object: 'action',
+        items: expect.arrayContaining([
+          expect.objectContaining({ selects: { state: 'idea' } }),
+          expect.objectContaining({ selects: { state: 'completed' } }),
+        ]),
+      },
+    ]);
+    const meetings = await h.app.request('/v1/events/query', {
+      key: h.keys.admin,
+      body: { filter: { type: { eq: 'meeting' } } },
+    });
+    expect(meetings.body.records).toHaveLength(1);
+  }, 60000);
   it('backfills, matches people, retains full notes and reconciles task-only changes and provider deletion', async () => {
     const h = await fixture(),
       cid = await h.connect();
@@ -275,12 +441,12 @@ describe('Tamloot bundle through real API and Postgres with provider HTTP fixtur
     const tasks =
       await db.owner`select t.*,r.created_by from source_tasks t join records r on r.id=t.record_id where t.installation_id=${h.id} order by external_id`;
     expect(tasks).toHaveLength(2);
-    const [idField] =
-      await db.owner`select key from fields where workspace_id=${h.workspace} and universal_id=${TAMLOOT.taskIdField}`;
-    const shown =
-      await db.owner`select r.data->>${idField!.key} as value from source_tasks t join records r on r.id=t.record_id where t.installation_id=${h.id} order by t.external_id`;
-    // The field shows the provider's own task ID, not an internal account-scoped key.
-    expect(shown.map((r) => r.value)).toEqual(tasks.map((t) => t.external_id));
+    expect(tasks.map((task) => task.external_id)).toEqual([h.task1, h.task2].sort());
+    expect(
+      await db.owner`
+      select id from fields where workspace_id = ${h.workspace} and name = 'tamlootTaskId'
+    `,
+    ).toHaveLength(0);
     expect(tasks[0]!.created_by).toMatchObject({
       type: 'integration',
       id: h.id,
@@ -322,22 +488,76 @@ describe('Tamloot bundle through real API and Postgres with provider HTTP fixtur
     expect(h.bodies.join(' ')).not.toContain('NEVER IMPORT');
     expect(h.bodies.join(' ')).toContain('a'.repeat(22000));
   }, 60000);
-  it('refuses to import a task whose Tamloot task ID another record already holds', async () => {
+  it('detaches tasks before a new meeting revision uses a different status field', async () => {
     const h = await fixture();
-    const local = await h.app.request('/v1/objects/task/records', {
-      key: h.keys.admin,
-      body: { values: { title: 'Typed by hand', tamlootTaskId: h.task1 } },
-    });
-    expect(local.status).toBe(201);
     await h.connect();
-    const results = await h.drain();
-    expect(results).toContainEqual(
-      expect.objectContaining({ status: 'failed', code: 'source_task_conflict' }),
-    );
-    expect(
-      await db.owner`select 1 from source_tasks where installation_id=${h.id} and external_id=${h.task1}`,
-    ).toHaveLength(0);
+    expect((await h.drain()).every((run) => run.status === 'succeeded')).toBe(true);
+    const tasks = () => db.owner`
+      select record_id, state from source_tasks where installation_id=${h.id} order by record_id`;
+    const original = await tasks();
+    expect(original).toHaveLength(2);
+    const changed = await h.app.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_field',
+            object: 'task',
+            field: {
+              name: 'stage',
+              label: 'Stage',
+              type: 'select',
+              settings: {
+                options: [
+                  { value: 'todo', label: 'To do' },
+                  { value: 'done', label: 'Done' },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    });
+    expect(changed.status, JSON.stringify(changed.body)).toBe(200);
+    const input = {
+      installationId: h.id,
+      registrationId: TAMLOOT.registration,
+      version: '1.0.0',
+      settings: { shareMeetings: true, createPeople: 'everyone' },
+      bindings: {
+        task: {
+          action: 'existing',
+          objects: ['task'],
+          fields: {
+            status: { action: 'existing', field: 'stage', values: { open: 'todo', done: 'done' } },
+          },
+        },
+      },
+    };
+    const reviewed = await h.app.request('/v1/extensions/preview', {
+      key: h.keys.admin,
+      body: input,
+    });
+    expect(reviewed.status, JSON.stringify(reviewed.body)).toBe(200);
+    const adopted = await h.app.request(`${h.base}/upgrade`, {
+      key: h.keys.admin,
+      headers: { 'Idempotency-Key': randomUUID() },
+      body: { ...input, planDigest: reviewed.body.planDigest },
+    });
+    expect(adopted.status, JSON.stringify(adopted.body)).toBe(200);
+    expect(await tasks()).toEqual(original.map((task) => ({ ...task, state: 'detached' })));
+    h.setVersion(2);
+    expect((await h.drain()).every((run) => run.status === 'succeeded')).toBe(true);
+    expect((await h.poll()).every((run) => run.status === 'succeeded')).toBe(true);
+    expect(await tasks()).toEqual(original.map((task) => ({ ...task, state: 'detached' })));
+    for (const task of original) {
+      const read = await h.app.request(`/v1/records/${task.record_id}`, { key: h.keys.admin });
+      expect(read.status).toBe(200);
+      expect(read.body.fields.status).toBeDefined();
+      expect(read.body.fields.stage).toBeUndefined();
+    }
   }, 60000);
+
   it('preserves edited tasks across a new meeting revision, recovers an expired cursor and suppresses erased sources', async () => {
     const h = await fixture();
     await h.connect();
@@ -444,6 +664,81 @@ describe('Tamloot backfill ownership before polling', () => {
 });
 
 describe('Tamloot supported contact creation policies', () => {
+  it('keeps an unbound email unresolved and validates a change to contact creation', async () => {
+    const h = await fixture('never', true);
+    const vendor = await h.app.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_object',
+            object: {
+              nameSingular: 'vendor',
+              namePlural: 'vendors',
+              labelSingular: 'Vendor',
+              labelPlural: 'Vendors',
+              labelField: 'name',
+              fields: [
+                { name: 'name', label: 'Name', type: 'text' },
+                { name: 'emails', label: 'Emails', type: 'emails' },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(vendor.status).toBe(200);
+    expect(
+      (
+        await h.app.request('/v1/objects/vendor/records', {
+          key: h.keys.admin,
+          body: { values: { name: 'Vendor', emails: 'participant@tamloot.test' } },
+        })
+      ).status,
+    ).toBe(201);
+    await h.connect();
+    expect((await h.drain()).every((result) => result.status === 'succeeded')).toBe(true);
+    const [link] = await db.owner`
+      select record_id,unmatched_reason from event_links
+      where workspace_id=${h.workspace} and handle='participant@tamloot.test' and link='participant'`;
+    expect(link).toMatchObject({ record_id: null, unmatched_reason: 'no_match' });
+    const shape = async () => {
+      const schema = await h.app.request('/v1/schema', { key: h.keys.admin });
+      return schema.body.objects.find(
+        (object: { nameSingular: string }) => object.nameSingular === 'contact',
+      ).fields;
+    };
+    expect(await shape()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'emailAddresses', isUnique: false }),
+        expect.objectContaining({ name: 'client', isNullable: false }),
+      ]),
+    );
+    const input = {
+      installationId: h.id,
+      registrationId: TAMLOOT.registration,
+      version: '1.0.0',
+      settings: { shareMeetings: true, createPeople: 'everyone' },
+    };
+    const preview = await h.app.request('/v1/extensions/preview', {
+      key: h.keys.admin,
+      body: input,
+    });
+    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+    const adopted = await h.app.request(`${h.base}/upgrade`, {
+      key: h.keys.admin,
+      headers: { 'Idempotency-Key': randomUUID() },
+      body: { ...input, planDigest: preview.body.planDigest },
+    });
+    expect(adopted.status, JSON.stringify(adopted.body)).toBe(200);
+    expect(await shape()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'emailAddresses', isUnique: true }),
+        expect.objectContaining({ name: 'client', isNullable: true }),
+      ]),
+    );
+  }, 60000);
+
   it('offers everyone or never and rejects contacted_first without outbound evidence', async () => {
     const h = await fixture('never');
     const unsupported = await h.app.request('/v1/extensions/preview', {

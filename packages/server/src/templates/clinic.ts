@@ -1,10 +1,11 @@
-import { BASE_OBJECT_IDS } from './base.js';
+import { STARTER_OBJECT_IDS } from './base.js';
 import type { Template } from './types.js';
 
 const APPOINTMENT = '9f1ffdb1-bdf6-46eb-af1e-1409586d26ee';
 
 export const clinic: Template = {
   name: 'clinic',
+  extends: 'starter',
   version: 1,
   label: 'Clinic',
   description:
@@ -70,7 +71,7 @@ export const clinic: Template = {
             label: 'Patient',
             type: 'relation',
             settings: {
-              targetObject: BASE_OBJECT_IDS.person,
+              targetObject: STARTER_OBJECT_IDS.person,
               inverseField: 'appointments',
               rollUpEvents: true,
             },
@@ -80,7 +81,7 @@ export const clinic: Template = {
     },
     {
       op: 'create_field',
-      object: BASE_OBJECT_IDS.person,
+      object: STARTER_OBJECT_IDS.person,
       field: {
         universalId: '1cf4ff48-f7c1-4f44-8eb3-49319b05c3f3',
         name: 'dateOfBirth',
@@ -90,7 +91,7 @@ export const clinic: Template = {
     },
     {
       op: 'create_field',
-      object: BASE_OBJECT_IDS.person,
+      object: STARTER_OBJECT_IDS.person,
       field: {
         universalId: '9cb83cb0-7eed-4f61-b3a0-789322543ca4',
         name: 'preferredChannel',

@@ -25,19 +25,19 @@ async function change(operations: unknown[], key = keys.admin) {
 }
 
 describe('schema protection', () => {
-  it('describes protected objects, fields and options', async () => {
+  it('protects event core fields and leaves starter objects editable', async () => {
     const res = await t.request('/v1/schema', { key: keys.agent });
     const task = res.body.objects.find((o: { nameSingular: string }) => o.nameSingular === 'task');
-    expect(task).toMatchObject({ isProtected: true, baseObject: 'task' });
-    const status = task.fields.find((f: { name: string }) => f.name === 'status');
-    expect(status).toMatchObject({
+    expect(task.isProtected).toBe(false);
+    expect(task.fields.find((f: { name: string }) => f.name === 'status').isProtected).toBe(false);
+    const event = res.body.objects.find(
+      (o: { nameSingular: string }) => o.nameSingular === 'conversation',
+    );
+    expect(event.isProtected).toBe(false);
+    expect(event.fields.find((f: { name: string }) => f.name === 'summary')).toMatchObject({
       isProtected: true,
-      baseField: 'taskStatus',
-      protectedOptions: ['done'],
+      coreRole: 'summary',
     });
-    const title = task.fields.find((f: { name: string }) => f.name === 'title');
-    expect(title.isProtected).toBe(false);
-    expect(title.baseField).toBeUndefined();
   });
 
   it('does not let a caller assign protection', async () => {
@@ -56,10 +56,8 @@ describe('schema protection', () => {
 
   it('refuses to delete or reshape protected elements, even for an admin', async () => {
     for (const operation of [
-      { op: 'delete_object', object: 'company' },
-      { op: 'delete_field', object: 'task', field: 'dueDate' },
-      { op: 'update_field', object: 'task', field: 'status', isNullable: false },
-      { op: 'remove_option', object: 'task', field: 'status', value: 'done' },
+      { op: 'delete_field', object: 'conversation', field: 'summary' },
+      { op: 'update_field', object: 'conversation', field: 'summary', isNullable: false },
     ]) {
       const res = await change([operation]);
       expect(res.status, JSON.stringify(operation)).toBe(422);
@@ -125,9 +123,6 @@ describe('schema protection', () => {
     const todo = schema.body.objects.find(
       (o: { nameSingular: string }) => o.nameSingular === 'todo',
     );
-    expect(todo).toMatchObject({ baseObject: 'task', isProtected: true });
-    expect(todo.fields.find((f: { name: string }) => f.name === 'state').baseField).toBe(
-      'taskStatus',
-    );
+    expect(todo.isProtected).toBe(false);
   });
 });

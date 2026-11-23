@@ -112,9 +112,10 @@ export const errorText = (code: string) =>
 export const detailKey = (id: string) => [...queryKey, 'detail', id];
 
 /** Whether the release has settings a person fills in for the whole workspace. */
-export const hasInstallationSettings = (release: Release) =>
-  Object.values(release.manifest.settings).some(
-    (d) => !d.generated && (d.level ?? 'installation') === 'installation',
+export const hasInstallationSettings = (release: Release, omitSetting?: string) =>
+  Object.entries(release.manifest.settings).some(
+    ([key, d]) =>
+      key !== omitSetting && !d.generated && (d.level ?? 'installation') === 'installation',
   );
 
 /**

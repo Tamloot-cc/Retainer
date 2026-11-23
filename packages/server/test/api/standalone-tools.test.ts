@@ -9,7 +9,7 @@ import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { RoutineExecutor } from '../../src/worker/routines.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { extensionFixture } from '../helpers/extensions.js';
+import { bindingStamp, extensionFixture } from '../helpers/extensions.js';
 import { testRunTokens } from '../helpers/model.js';
 
 /**
@@ -50,40 +50,69 @@ async function setup(execution: 'standalone' | 'hosted' = 'standalone') {
     execution,
     scopes: ['read', 'write'],
     settings: { toolKey: setting(true), providerKey: setting(false) },
-    schema:
-      execution === 'hosted'
-        ? []
-        : [
+    ...(execution === 'standalone'
+      ? {
+          bindings: [
             {
-              kind: 'object',
-              definition: {
+              key: 'order',
+              label: 'Orders',
+              description: 'Orders tracked by the app.',
+              class: 'entity',
+              access: 'write',
+              required: true,
+              owned: true,
+              creates: true,
+              create: {
                 universalId: randomUUID(),
                 nameSingular: 'order',
                 namePlural: 'orders',
                 labelSingular: 'Order',
                 labelPlural: 'Orders',
                 labelField: 'title',
-                fields: [
-                  {
+                fields: [],
+              },
+              fields: [
+                {
+                  key: 'orderId',
+                  label: 'Order ID',
+                  types: ['text'],
+                  required: true,
+                  owned: true,
+                  installationOwned: true,
+                  create: {
                     universalId: randomUUID(),
                     name: 'orderId',
                     label: 'Order ID',
                     type: 'text',
                     isUnique: true,
-                    installationOwned: true,
                   },
-                  {
+                },
+                {
+                  key: 'title',
+                  label: 'Title',
+                  types: ['text'],
+                  required: true,
+                  owned: true,
+                  installationOwned: true,
+                  create: {
                     universalId: randomUUID(),
                     name: 'title',
                     label: 'Title',
                     type: 'text',
-                    installationOwned: true,
                   },
-                  { universalId: randomUUID(), name: 'note', label: 'Note', type: 'text' },
-                ],
-              },
+                },
+                {
+                  key: 'note',
+                  label: 'Note',
+                  types: ['text'],
+                  required: false,
+                  create: { universalId: randomUUID(), name: 'note', label: 'Note', type: 'text' },
+                },
+              ],
             },
           ],
+        }
+      : {}),
     functions: [
       {
         universalId: toolId,
@@ -162,6 +191,11 @@ async function setup(execution: 'standalone' | 'hosted' = 'standalone') {
     expect(issued.status, JSON.stringify(issued.body)).toBe(201);
     return issued.body as { id: string; key: string };
   };
+  const stamp = async (key: string) => {
+    const response = await app.request(`/v1/extensions/${installationId}/bindings`, { key });
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    return bindingStamp(response.body, 'order');
+  };
   const writeSecret = (key: string, expectedRevision: number | null, name = 'toolKey') =>
     app.request(`/v1/extensions/${installationId}/generated-secrets/${name}`, {
       key,
@@ -205,6 +239,7 @@ async function setup(execution: 'standalone' | 'hosted' = 'standalone') {
     keys,
     installationId,
     issue,
+    stamp,
     revoke,
     claim,
     enqueue,
@@ -341,11 +376,12 @@ describe('standalone app with a hosted tool', () => {
     const callId = called.body.tool.callId as string;
 
     // The tool's function hands the call ID to the app; the app's write names it.
+    const bindings = await s.stamp(key);
     const write = (causes: string[]) =>
       s.app.request('/v1/objects/order/records', {
         key,
         headers: { 'Retainer-Caused-By': causes.join(', ') },
-        body: { values: { orderId: randomUUID(), title: 'Intro call' } },
+        body: { values: { orderId: randomUUID(), title: 'Intro call' }, bindings },
       });
     const written = await write([callId]);
     expect(written.status, JSON.stringify(written.body)).toBe(201);
@@ -498,10 +534,11 @@ describe('installation-owned fields', () => {
   it('are written, merged and deleted only by their installation', async () => {
     const s = await setup();
     const { key } = await s.issue();
+    const bindings = await s.stamp(key);
     const create = async (title: string) => {
       const created = await s.app.request('/v1/objects/order/records', {
         key,
-        body: { values: { orderId: randomUUID(), title } },
+        body: { values: { orderId: randomUUID(), title }, bindings },
       });
       expect(created.status, JSON.stringify(created.body)).toBe(201);
       return created.body.id as string;
@@ -509,7 +546,11 @@ describe('installation-owned fields', () => {
     const first = await create('Intro call'),
       second = await create('Follow-up');
     const patch = (credential: string, values: Record<string, unknown>) =>
-      s.app.request(`/v1/records/${first}`, { key: credential, method: 'PATCH', body: { values } });
+      s.app.request(`/v1/records/${first}`, {
+        key: credential,
+        method: 'PATCH',
+        body: { values, ...(credential === key ? { bindings } : {}) },
+      });
 
     // A person cannot outrank the app's value; their own fields stay theirs.
     const refused = await patch(s.keys.admin, { title: 'Renamed' });
@@ -557,9 +598,15 @@ describe('installation-owned fields', () => {
       method: 'DELETE',
     });
     expect(deleted.status).toBe(403);
-    expect((await s.app.request(`/v1/records/${second}`, { key, method: 'DELETE' })).status).toBe(
-      200,
-    );
+    expect(
+      (
+        await s.app.request(`/v1/records/${second}`, {
+          key,
+          method: 'DELETE',
+          body: { bindings },
+        })
+      ).status,
+    ).toBe(200);
     // An admin's erasure still works.
     const forgotten = await s.app.request(`/v1/records/${first}/forget`, {
       key: s.keys.admin,

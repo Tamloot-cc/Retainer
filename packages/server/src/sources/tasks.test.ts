@@ -47,11 +47,11 @@ describe('managed task contract', () => {
       identity: 'account',
       verifyFunctionId: randomUUID(),
       syncFunctionIds: [randomUUID()],
-      eventTypeIds: [randomUUID()],
+      event: 'conversation',
+      plan: { extension: 'Fixture', declarations: [], destinations: {}, createPeople: 'never' },
       revisionOrder: 'integer',
       tasks: {
         objectId: randomUUID(),
-        identityFieldId: randomUUID(),
         titleFieldId: randomUUID(),
         statusFieldId: randomUUID(),
         statuses: { open: 'todo', done: 'done' },

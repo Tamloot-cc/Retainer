@@ -8,7 +8,7 @@ import { GUIDE_NAMES, GUIDES } from '../guides.js';
 import { run } from '../shared.js';
 
 const applyTemplateInput = z.strictObject({
-  name: z.string().min(1).describe('Template name from list_templates, e.g. "sales" or "blank".'),
+  name: z.string().min(1).describe('Template name from list_templates, e.g. "sales" or "starter".'),
 });
 
 const GUIDE_LIST = GUIDE_NAMES.map((name) => `"${name}": ${GUIDES[name].description}`).join(' ');
@@ -25,14 +25,13 @@ export function registerSetupTools(server: McpServer, sql: Sql, caller: Caller):
     {
       title: 'Describe the workspace schema',
       description:
-        'Returns the workspace (id, name, applied templates, initialized, schemaFromScratch, schemaVersion) and ' +
+        'Returns the workspace (id, name, applied templates, initialized, schemaVersion) and ' +
         'every object with its fields: type, options, and whether it is unique, filterable or ' +
         'required. valueFormats shows how to write a value of each field type they use, ' +
         'e.g. full_name as { first, last }. isProtected marks objects that cannot be deleted and fields that cannot be ' +
         'deleted or reshaped; protectedOptions lists option values that cannot be removed. ' +
         'Renames, labels and descriptions remain allowed under the usual approval rules. ' +
-        'baseObject and baseField identify built-ins after renames: use their current API ' +
-        "names in calls. coreRole identifies an event type's protected title and summary " +
+        "Use the current API names in calls. coreRole identifies an event type's protected title and summary " +
         'fields. Objects of class "event" are event types (conversation, ...): ' +
         'log them with log_event, never create them with upsert_record. Every event has a ' +
         'channel (eventColumns): the source system or account, part of its identity. A ' +
@@ -55,8 +54,8 @@ export function registerSetupTools(server: McpServer, sql: Sql, caller: Caller):
     {
       title: 'List templates',
       description:
-        'Lists the templates a workspace can apply (sales, services, clinic, real_estate, ' +
-        'recruiting, blank), what objects and fields each adds, and which are applied. ' +
+        'Lists schema templates (starter, sales, services, clinic, real_estate, recruiting), ' +
+        'what each adds, and which have been applied. ' +
         'Pick the one closest to the business; if unsure, ask your user rather than guess. ' +
         'Check it before creating an object, even in an initialized workspace: a template ' +
         'may already define it.',
@@ -71,12 +70,10 @@ export function registerSetupTools(server: McpServer, sql: Sql, caller: Caller):
     {
       title: 'Apply a template',
       description:
-        "Adds a template's objects and fields to the workspace and marks it initialized. " +
-        'Templates only add, so this applies at once. Applying one twice does nothing; ' +
-        '"blank" adds nothing and only marks the workspace initialized. Needs the ' +
-        'schema:write scope. Workspaces designed from scratch use propose_schema_change instead.',
+        'Proposes copying a template into an empty workspace. A workspace admin approves the ' +
+        'proposal before the template is applied. Needs the schema:write scope.',
       inputSchema: applyTemplateInput,
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
     ({ name }) => run(caller, 'schema:write', () => applyTemplateFor(sql, caller, name)),
   );

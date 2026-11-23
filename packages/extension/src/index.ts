@@ -49,12 +49,6 @@ const field = z.strictObject({
   isUnique: z.boolean().optional(),
   isFilterable: z.boolean().optional(),
   isSearchable: z.boolean().optional(),
-  /**
-   * Only the installation that contributed the field writes it: Retainer
-   * refuses other writers and presents it read-only, and only that
-   * installation may merge or delete a record whose unique field it is.
-   */
-  installationOwned: z.literal(true).optional(),
   settings: z
     .strictObject({
       options: z
@@ -81,11 +75,6 @@ const object = z.strictObject({
   labelField: name.optional(),
   fields: z.array(field).max(200),
 });
-export const contributionSchema = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('object'), definition: object }),
-  z.strictObject({ kind: z.literal('field'), objectId: uuid, definition: field }),
-]);
-
 // A deliberately small JSON Schema subset. No refs, arbitrary keywords or executable defaults.
 export type InputSchema = {
   type: 'object' | 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'null';
@@ -121,6 +110,7 @@ const toolTrigger = z.strictObject({
   connection: z.enum(['workspace', 'member']),
   outputSchema: inputSchema,
 });
+export const bindingKeySchema = z.string().regex(/^[a-z][a-zA-Z0-9_]{0,39}$/);
 const trigger = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('configure') }),
   z.strictObject({ kind: z.literal('install') }),
@@ -138,21 +128,16 @@ const trigger = z.discriminatedUnion('kind', [
   }),
   z.strictObject({
     kind: z.literal('change'),
-    objectId: uuid,
-    /**
-     * The fields whose changes fire an update, by universal ID; empty means
-     * every field. A field the workspace doesn't have, or deleted, is skipped
-     * and the trigger keeps watching the rest.
-     */
-    fieldIds: z.array(uuid).max(200),
+    binding: bindingKeySchema,
+    fields: z.array(bindingKeySchema).max(200).optional(),
     /**
      * Whether a change to a related record (a link to or from it, or a merge
      * into it) also fires the trigger. Absent means true, the first contract.
      */
     related: z.boolean().optional(),
     /**
-     * Only these direct operations fire it. With `fieldIds`, `update` still
-     * needs a watched field and `create` always fires. Absent means every
+     * Only these direct operations fire it. With `fields`, `update` still
+     * needs a watched field and `create` can fire. Absent means every
      * operation, the first contract.
      */
     operations: z
@@ -190,7 +175,7 @@ const functionDefinition = z.strictObject({
    * The function may write the release's mapped outputs through the fill-only
    * mapped write. Reviewed with the release, like `secrets` and `scopes`.
    */
-  mappedWrite: z.literal(true).optional(),
+  mappedWrite: name.optional(),
   /**
    * Platform capabilities the function uses (model calls spec 3.1). Reviewed
    * with the release and approved with its access; a run gets one only when
@@ -205,71 +190,129 @@ export const functionSchema = functionDefinition.refine(
 const toolDefinition = functionDefinition
   .omit({ trigger: true })
   .extend({ ...toolTrigger.omit({ kind: true }).shape, name: toolName });
-/** Field types a mapped output can target: scalar values only in v1. */
-export const MAPPABLE_FIELD_TYPES = FIELD_TYPES.filter(
-  (type) => type !== 'relation' && type !== 'files',
-);
-export const outputKeySchema = z.string().regex(/^[a-z][a-z0-9_]{0,39}$/);
-export const mappingSchema = z.strictObject({
-  /** The object every output targets. */
-  objectId: uuid,
-  /** The field the handler reads to look values up; never a destination. */
-  lookup: z.strictObject({ fieldId: uuid, type: z.enum(FIELD_TYPES) }).optional(),
-  outputs: z
-    .array(
-      z.strictObject({
-        key: outputKeySchema,
-        label,
-        /** What the value means, in the provider's own definition; shown in review. */
-        description: z.string().min(1).max(2000),
-        types: z.array(z.enum(MAPPABLE_FIELD_TYPES)).min(1).max(MAPPABLE_FIELD_TYPES.length),
-        /** The field "Create field" adds, with a permanent universal ID. */
-        field: field.optional(),
-      }),
-    )
-    .min(1)
-    .max(32),
+/** A field destination declared by an extension binding. */
+const bindingFieldSchema = z.strictObject({
+  key: bindingKeySchema,
+  label,
+  description: z.string().max(2000).optional(),
+  types: z.array(z.enum(FIELD_TYPES)).min(1).max(FIELD_TYPES.length),
+  required: z.boolean(),
+  lookup: z.literal(true).optional(),
+  owned: z.literal(true).optional(),
+  installationOwned: z.literal(true).optional(),
+  target: bindingKeySchema.optional(),
+  values: z.array(name).min(1).max(200).optional(),
+  create: field.optional(),
 });
-export type ExtensionMapping = z.infer<typeof mappingSchema>;
-/**
- * One admin choice per declared output: bind an existing field by its current
- * API name, create the output's suggested field, or skip it. This is also the
- * draft an external agent proposes; only a human admin approves it.
- */
-export const mappingChoiceSchema = z.discriminatedUnion('action', [
-  z.strictObject({ action: z.literal('existing'), field: z.string().min(1).max(100) }),
-  z.strictObject({ action: z.literal('create') }),
+
+const bindingSchema = z.strictObject({
+  key: bindingKeySchema,
+  label,
+  description: z.string().min(1).max(2000),
+  class: z.enum(['entity', 'event']),
+  access: z.enum(['read', 'write']),
+  required: z.boolean(),
+  owned: z.literal(true).optional(),
+  match: bindingKeySchema.optional(),
+  /** This binding creates records, so all required schema fields must be supplied. */
+  creates: z.literal(true).optional(),
+  fields: z.array(bindingFieldSchema).max(200),
+  create: object.optional(),
+});
+export type ExtensionBinding = z.infer<typeof bindingSchema>;
+
+const bindingValueSchema = z.union([name, z.strictObject({ value: name, label })]);
+const bindingFieldChoice = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('skip') }),
+  z.strictObject({
+    action: z.literal('existing'),
+    field: name,
+    values: z.record(name, bindingValueSchema).optional(),
+  }),
+  z.strictObject({
+    action: z.literal('create'),
+    name: name.optional(),
+    values: z.record(name, bindingValueSchema).optional(),
+  }),
 ]);
-export const mappingChoicesSchema = z.record(outputKeySchema, mappingChoiceSchema);
-export type ExtensionMappingChoice = z.infer<typeof mappingChoiceSchema>;
-export type ExtensionMappingChoices = z.infer<typeof mappingChoicesSchema>;
-/** A resolved output binding, as preview and installation reads present it. */
-export type ExtensionMappingBinding = {
-  output: string;
-  action: 'existing' | 'create' | 'skip';
-  /** The target by its current API name; absent when skipped or the field is gone. */
-  field?: { name: string; label: string; type: string };
-  /** Created by this installation, so the extension owns it while installed. */
-  contribution: boolean;
-  /** `missing` or `incompatible` means the output cannot be written until remapped. */
-  status: 'ok' | 'missing' | 'incompatible';
-};
-/** The approved mapping of an installation. */
-export type ExtensionMappingView = {
-  revision: number;
-  outputs: ExtensionMappingBinding[];
-  /** The field runs read to look values up, by its current API name. */
-  lookup?: { name: string; status: 'ok' | 'missing' };
-};
-export const viewSchema = z.strictObject({
-  universalId: uuid,
+const bindingFields = z.record(bindingKeySchema, bindingFieldChoice).optional();
+export const bindingChoicesSchema = z.record(
+  bindingKeySchema,
+  z.discriminatedUnion('action', [
+    z.strictObject({ action: z.literal('skip') }),
+    z.strictObject({
+      action: z.literal('existing'),
+      objects: z.array(name).min(1).max(20),
+      fields: bindingFields,
+    }),
+    z.strictObject({
+      action: z.literal('create'),
+      nameSingular: name.optional(),
+      namePlural: name.optional(),
+      labelSingular: label.optional(),
+      labelPlural: label.optional(),
+      fields: bindingFields,
+    }),
+  ]),
+);
+export type ExtensionBindingChoices = z.infer<typeof bindingChoicesSchema>;
+
+/** Later proposals take precedence, retaining suggestions for the same target. */
+export function mergeBindingChoices(
+  ...proposals: (ExtensionBindingChoices | null | undefined)[]
+): ExtensionBindingChoices {
+  const result: ExtensionBindingChoices = {};
+  for (const proposal of proposals) {
+    for (const [key, choice] of Object.entries(proposal ?? {})) {
+      const prior = result[key];
+      if (
+        !prior ||
+        prior.action === 'skip' ||
+        choice.action === 'skip' ||
+        prior.action !== choice.action ||
+        (prior.action === 'existing' &&
+          choice.action === 'existing' &&
+          (prior.objects.length !== choice.objects.length ||
+            !prior.objects.every((object, index) => object === choice.objects[index])))
+      ) {
+        result[key] = choice;
+        continue;
+      }
+      const fields = { ...prior.fields };
+      for (const [fieldKey, field] of Object.entries(choice.fields ?? {})) {
+        const previous = fields[fieldKey];
+        fields[fieldKey] =
+          (previous?.action === 'existing' &&
+            field.action === 'existing' &&
+            previous.field === field.field) ||
+          (previous?.action === 'create' &&
+            field.action === 'create' &&
+            previous.name === field.name)
+            ? { ...field, values: { ...previous.values, ...field.values } }
+            : field;
+      }
+      result[key] = { ...prior, ...choice, fields };
+    }
+  }
+  return result;
+}
+
+export const bindingWriteStampSchema = z.strictObject({
+  bindings_revision: z.number().int().positive(),
   objectId: uuid,
-  name: label,
-  kind: z.literal('table'),
-  fieldIds: z.array(uuid).max(200),
+  fieldIds: z.record(z.string().min(1).max(100), uuid),
 });
-export const manifestSchema = z.strictObject({
+export type BindingWriteStamp = z.infer<typeof bindingWriteStampSchema>;
+
+export type { ExtensionBindingPlan } from './protocol.js';
+
+const viewDefinition = z.strictObject({ universalId: uuid, name: label, kind: z.literal('table') });
+export const viewSchema = viewDefinition.extend({
+  binding: bindingKeySchema,
+  fields: z.array(bindingKeySchema).max(200),
+});
+
+const manifestSchema = z.strictObject({
   manifestVersion: z.literal(1),
   universalId: uuid,
   name,
@@ -321,10 +364,8 @@ export const manifestSchema = z.strictObject({
   lastContact: z
     .strictObject({
       functionIds: z.array(uuid).min(1).max(20),
-      fields: z
-        .array(z.strictObject({ objectId: uuid, fieldId: uuid }))
-        .min(1)
-        .max(20),
+      events: bindingKeySchema,
+      destinations: z.array(bindingKeySchema).min(1).max(20),
     })
     .optional(),
   /** Reviewed, release-pinned ingestion authority; provider code attests only through setup. */
@@ -335,19 +376,11 @@ export const manifestSchema = z.strictObject({
       verifyFunctionId: uuid,
       syncFunctionIds: z.array(uuid).min(1).max(20),
       scanFunctionIds: z.array(uuid).min(1).max(20).optional(),
-      eventTypeIds: z.array(uuid).min(1).max(20),
+      event: bindingKeySchema,
+      people: bindingKeySchema.optional(),
       revisionOrder: z.enum(['integer', 'timestamp', 'opaque']),
       /** Server-managed derived task identities; only the pinned ingestion functions may reconcile them. */
-      tasks: z
-        .strictObject({
-          objectId: uuid,
-          identityFieldId: uuid,
-          titleFieldId: uuid,
-          statusFieldId: uuid,
-          personFieldId: uuid.optional(),
-          statuses: z.strictObject({ open: name, done: name }),
-        })
-        .optional(),
+      tasks: bindingKeySchema.optional(),
     })
     .optional(),
   /** Release-owned ingress contracts; workspace settings cannot choose verifiers or job functions. */
@@ -389,11 +422,9 @@ export const manifestSchema = z.strictObject({
       consent: z.boolean().optional(),
     }),
   ),
-  schema: z.array(contributionSchema).max(500),
+  bindings: z.array(bindingSchema).max(100).optional(),
   views: z.array(viewSchema).max(100),
   functions: z.array(functionSchema).max(100),
-  /** Outputs an admin binds to fields at install; written only through the mapped write. */
-  mapping: mappingSchema.optional(),
   /**
    * A member connection may connect by OAuth (Tamloot connect spec 4.2). The
    * server stages the verifier and the code; the bundle stores the tokens.
@@ -419,7 +450,6 @@ export const manifestSchema = z.strictObject({
     .optional(),
 });
 export type ExtensionManifest = z.infer<typeof manifestSchema>;
-export type SchemaContribution = z.infer<typeof contributionSchema>;
 
 /** Bound traversal before recursive parsing (including objects received directly by build tools). */
 function bounded(value: unknown, depth = 0, seen = new Set<object>()): void {
@@ -478,7 +508,8 @@ function checkFunction(fn: z.infer<typeof functionSchema>) {
       input.properties.changePosition.maxLength !== 19
     )
       throw new Error('unsupported_manifest: change handlers accept only a local changePosition');
-    if (new Set(fn.trigger.fieldIds).size !== fn.trigger.fieldIds.length)
+    const watched = fn.trigger.fields ?? [];
+    if (new Set(watched).size !== watched.length)
       throw new Error('unsupported_manifest: duplicate watched field');
     const operations = fn.trigger.operations ?? [];
     if (new Set(operations).size !== operations.length)
@@ -500,42 +531,80 @@ function checkFunction(fn: z.infer<typeof functionSchema>) {
     nextOccurrence(fn.trigger.cron, new Date('2000-01-01T00:00:00Z'));
   }
 }
-/** The output mapping contract and the functions allowed to write it. */
-function checkMapping(manifest: ExtensionManifest): void {
-  const mapping = manifest.mapping;
-  const writers = manifest.functions.filter((fn) => fn.mappedWrite);
-  if (!mapping) {
-    if (writers.length) throw new Error('unsupported_manifest: mapped writes require a mapping');
-    return;
+function checkBindings(manifest: ExtensionManifest): void {
+  const bindings = manifest.bindings ?? [];
+  const byKey = new Map(bindings.map((binding) => [binding.key, binding]));
+  const keys = new Set(byKey.keys());
+  for (const { trigger } of manifest.functions) {
+    if (trigger.kind !== 'change' || !trigger.binding) continue;
+    const bound = byKey.get(trigger.binding);
+    if (!bound || trigger.fields?.some((key) => !bound.fields.some((field) => field.key === key)))
+      throw new Error('unsupported_manifest: change trigger names an unknown binding or field');
   }
-  if (manifest.execution !== 'hosted' || !manifest.scopes.includes('write'))
-    throw new Error('unsupported_manifest: mappings require hosted write authority');
-  const keys = mapping.outputs.map((output) => output.key);
-  if (new Set(keys).size !== keys.length)
-    throw new Error('unsupported_manifest: duplicate mapping output');
-  for (const output of mapping.outputs) {
-    if (new Set(output.types).size !== output.types.length)
-      throw new Error('unsupported_manifest: duplicate output field type');
-    if (output.field && !output.types.includes(output.field.type as never))
-      throw new Error('unsupported_manifest: suggested field type must be an output type');
-    if (output.field && output.field.universalId === mapping.lookup?.fieldId)
-      throw new Error('unsupported_manifest: the lookup field cannot be an output');
-    if (output.field?.installationOwned)
-      throw new Error('unsupported_manifest: a mapped output cannot be installation-owned');
+  if (keys.size !== bindings.length) throw new Error('unsupported_manifest: duplicate binding key');
+  for (const view of manifest.views) {
+    const binding = byKey.get(view.binding);
+    if (
+      !binding ||
+      (binding.class === 'event' && binding.access === 'read') ||
+      new Set(view.fields).size !== view.fields.length ||
+      view.fields.some((key) => !binding.fields.some((field) => field.key === key))
+    )
+      throw new Error('unsupported_manifest: view names an unknown binding or field');
   }
-  // A mapping edit advances the generation without re-running setup, which
-  // source and webhook bindings (bound per generation) would not survive.
-  if (manifest.source || manifest.webhooks?.length)
-    throw new Error('unsupported_manifest: mappings cannot be combined with managed sources');
-  for (const fn of writers)
+  for (const binding of bindings) {
+    const fields = new Map(binding.fields.map((field) => [field.key, field]));
+    if (fields.size !== binding.fields.length)
+      throw new Error(`unsupported_manifest: duplicate field in binding ${binding.key}`);
+    if (binding.owned && !binding.create)
+      throw new Error(
+        `unsupported_manifest: owned binding ${binding.key} needs a create definition`,
+      );
+    if (binding.creates && binding.access !== 'write')
+      throw new Error(
+        `unsupported_manifest: creating through ${binding.key} requires write access`,
+      );
+    if (binding.match) {
+      const match = fields.get(binding.match);
+      if (!match?.required || match.types.length !== 1 || match.types[0] !== 'emails')
+        throw new Error(`unsupported_manifest: ${binding.key} needs a required emails match field`);
+    }
+    for (const field of binding.fields) {
+      if (
+        (field.target && (!keys.has(field.target) || field.types.join() !== 'relation')) ||
+        (field.values &&
+          (field.types.join() !== 'select' ||
+            new Set(field.values).size !== field.values.length)) ||
+        (field.owned && (!field.create || field.lookup)) ||
+        (field.installationOwned && !field.owned) ||
+        (field.create && !field.types.includes(field.create.type))
+      )
+        throw new Error(`unsupported_manifest: invalid field ${binding.key}.${field.key}`);
+    }
+  }
+}
+
+function checkBoundWrites(manifest: ExtensionManifest): void {
+  for (const fn of manifest.functions) {
+    if (!fn.mappedWrite) continue;
+    const binding = manifest.bindings?.find((entry) => entry.key === fn.mappedWrite);
+    if (
+      manifest.execution !== 'hosted' ||
+      binding?.access !== 'write' ||
+      binding.class !== 'entity'
+    )
+      throw new Error('unsupported_manifest: mapped writes require a hosted entity write binding');
     if (
       !['job', 'change', 'schedule'].includes(fn.trigger.kind) ||
       !functionScopes(manifest, fn).includes('write')
     )
       throw new Error('unsupported_manifest: mapped writes require a runtime function with write');
+  }
 }
+
 type FunctionDefinition = ExtensionManifest['functions'][number];
-/** The secret settings a function's run may read or write (spec 8). */
+
+/** The secret settings a function can access. */
 export function functionSecrets(
   manifest: Pick<ExtensionManifest, 'settings'>,
   fn: Pick<FunctionDefinition, 'secrets'> & { trigger?: FunctionDefinition['trigger'] },
@@ -687,6 +756,7 @@ export function defineExtension(value: unknown): ExtensionManifest {
   if (new TextEncoder().encode(JSON.stringify(value)).length > 1048576)
     throw new Error('unsupported_manifest: maximum size is 1 MiB');
   const manifest = manifestSchema.parse(value);
+  checkBindings(manifest);
   if ((manifest.serverRange === undefined) === (manifest.serverVersions === undefined))
     throw new Error('unsupported_manifest: give exactly one of serverRange or serverVersions');
   if (manifest.serverRange !== undefined) parseServerRange(manifest.serverRange);
@@ -707,20 +777,19 @@ export function defineExtension(value: unknown): ExtensionManifest {
   if (
     configure.length &&
     (!manifest.scopes.includes('read') ||
-      (!manifest.mapping &&
+      (!manifest.bindings?.length &&
         !Object.values(manifest.settings).some((s) => !s.secret && s.level !== 'connection')))
   )
-    throw new Error('unsupported_manifest: configure needs mapping or non-secret settings');
+    throw new Error('unsupported_manifest: configure needs bindings or non-secret settings');
   const ids = [
     manifest.universalId,
     ...manifest.functions.map((f) => f.universalId),
     ...manifest.views.map((v) => v.universalId),
-    ...manifest.schema.flatMap((s) =>
-      s.kind === 'object'
-        ? [s.definition.universalId, ...s.definition.fields.map((f) => f.universalId)]
-        : [s.definition.universalId],
-    ),
-    ...(manifest.mapping?.outputs.flatMap((o) => (o.field ? [o.field.universalId] : [])) ?? []),
+    ...(manifest.bindings ?? []).flatMap((binding) => [
+      ...(binding.create ? [binding.create.universalId] : []),
+      ...binding.fields.flatMap((field) => (field.create ? [field.create.universalId] : [])),
+      ...(binding.create?.fields.map((field) => field.universalId) ?? []),
+    ]),
   ];
   if (manifest.functions.some((fn) => fn.universalId === SYSTEM_LIFECYCLE_FUNCTION_ID))
     throw new Error('unsupported_manifest: reserved lifecycle function ID');
@@ -765,29 +834,43 @@ export function defineExtension(value: unknown): ExtensionManifest {
   checkConnections(manifest);
   if (manifest.lastContact) {
     const policy = manifest.lastContact;
+    const bindings = manifest.bindings ?? [];
+    if (
+      !bindings.some(
+        (b) => b.key === policy.events && b.class === 'event' && b.access === 'read',
+      ) ||
+      new Set(policy.destinations).size !== policy.destinations.length ||
+      !policy.destinations.every((key) =>
+        bindings.some(
+          (b) =>
+            b.key === key &&
+            b.class === 'entity' &&
+            b.access === 'write' &&
+            b.fields.some(
+              (field) =>
+                field.key === 'lastContact' &&
+                field.owned &&
+                field.types.join() === 'date_time' &&
+                field.create?.isNullable !== false &&
+                field.create?.isUnique !== true,
+            ),
+        ),
+      )
+    )
+      throw new Error(
+        'unsupported_manifest: Last contact requires an event read binding and owned date-time fields.',
+      );
+
     if (
       manifest.execution !== 'hosted' ||
       !manifest.scopes.includes('read') ||
       !manifest.scopes.includes('write') ||
       new Set(policy.functionIds).size !== policy.functionIds.length ||
-      new Set(policy.fields.map((entry) => entry.objectId)).size !== policy.fields.length ||
       policy.functionIds.some(
         (id) =>
           !manifest.functions.some(
             (fn) =>
               fn.universalId === id && ['job', 'change', 'schedule'].includes(fn.trigger.kind),
-          ),
-      ) ||
-      policy.fields.some(
-        (entry) =>
-          !manifest.schema.some(
-            (item) =>
-              item.kind === 'field' &&
-              item.objectId === entry.objectId &&
-              item.definition.universalId === entry.fieldId &&
-              item.definition.type === 'date_time' &&
-              item.definition.isNullable !== false &&
-              item.definition.isUnique !== true,
           ),
       )
     )
@@ -851,31 +934,6 @@ export function defineExtension(value: unknown): ExtensionManifest {
   }
   if (manifest.source) {
     const source = manifest.source;
-    if (source.tasks) {
-      const tasks = source.tasks,
-        fields = [
-          tasks.identityFieldId,
-          tasks.titleFieldId,
-          tasks.statusFieldId,
-          ...(tasks.personFieldId ? [tasks.personFieldId] : []),
-        ];
-      if (new Set(fields).size !== fields.length || tasks.statuses.open === tasks.statuses.done)
-        throw new Error('unsupported_manifest: managed task fields and statuses must be distinct');
-      if (
-        !manifest.schema.some(
-          (c) =>
-            c.kind === 'field' &&
-            c.objectId === tasks.objectId &&
-            c.definition.universalId === tasks.identityFieldId &&
-            c.definition.type === 'text' &&
-            c.definition.isUnique === true,
-        )
-      )
-        throw new Error(
-          'unsupported_manifest: managed task identity requires a contributed unique text field',
-        );
-    }
-
     if (
       manifest.execution !== 'hosted' ||
       !manifest.scopes.includes('write') ||
@@ -889,10 +947,29 @@ export function defineExtension(value: unknown): ExtensionManifest {
       throw new Error(
         `unsupported_manifest: source verification requires a registered ${manifest.connection === 'member' ? 'connect' : 'install'} function`,
       );
+    const binding = (key: string | undefined) => manifest.bindings?.find((b) => b.key === key);
     if (
-      new Set(source.syncFunctionIds).size !== source.syncFunctionIds.length ||
-      new Set(source.eventTypeIds).size !== source.eventTypeIds.length
+      binding(source.event)?.class !== 'event' ||
+      binding(source.event)?.access !== 'write' ||
+      !binding(source.event)?.required ||
+      !binding(source.event)?.creates
     )
+      throw new Error(
+        'unsupported_manifest: sources need a required write event binding that creates records',
+      );
+    if (
+      source.people &&
+      (binding(source.people)?.class !== 'entity' || !binding(source.people)?.match)
+    )
+      throw new Error('unsupported_manifest: source people need an email match field');
+    if (
+      source.tasks &&
+      (binding(source.tasks)?.class !== 'entity' ||
+        !binding(source.tasks)?.creates ||
+        binding(source.tasks)?.access !== 'write')
+    )
+      throw new Error('unsupported_manifest: source tasks need an entity that creates records');
+    if (new Set(source.syncFunctionIds).size !== source.syncFunctionIds.length)
       throw new Error('unsupported_manifest: duplicate source binding');
     const scans = source.scanFunctionIds ?? [];
     if (
@@ -921,11 +998,7 @@ export function defineExtension(value: unknown): ExtensionManifest {
         throw new Error('unsupported_manifest: source jobs accept only a local sourceItemId');
     }
   }
-  for (const view of manifest.views) {
-    if (new Set(view.fieldIds).size !== view.fieldIds.length)
-      throw new Error('unsupported_manifest: duplicate view field');
-  }
-  checkMapping(manifest);
+  checkBoundWrites(manifest);
   return manifest;
 }
 export function defineFunction(value: unknown) {
@@ -963,10 +1036,7 @@ export type ExtensionInstallInput = {
   registrationId: string;
   version: string;
   settings: Record<string, string | boolean | number>;
-  /** One choice per output of a release that declares a mapping. */
-  mapping?: ExtensionMappingChoices;
-  /** Review only a new mapping for the installed release: no setup, settings or credential change. */
-  mappingChange?: boolean;
+  bindings?: ExtensionBindingChoices;
 };
 export type ExtensionPreview = {
   planDigest: string;
@@ -991,8 +1061,7 @@ export type ExtensionPreview = {
     scopes: ('read' | 'write')[];
     uses: ExtensionUse[];
   };
-  /** The resolved output bindings, for a release that declares a mapping. */
-  mapping?: ExtensionMappingBinding[];
+  bindings?: ExtensionBindingChoices;
   warnings: string[];
 };
 export type ExtensionCredential = {
@@ -1042,8 +1111,7 @@ export type ExtensionInstallation = {
   /** Platform capabilities an admin approved, such as `model` (model calls spec 3.1). */
   grantedUses: ExtensionUse[];
   createdBy: { type: string; id: string };
-  /** Single-installation reads of a release that declares a mapping. */
-  mapping?: ExtensionMappingView;
+  bindingChoices?: ExtensionBindingChoices;
   /** How a member may connect, for a member release: OAuth, a pasted key, or both. */
   connectionMethods?: ExtensionConnectionMethod[];
   /**
@@ -1154,7 +1222,8 @@ export type ExtensionSuggestions = {
   access?: { settings: Record<string, string | number | boolean>; secrets: string[] };
   status: 'queued' | 'running' | 'ready' | 'failed';
   code?: string;
-  mapping?: Record<string, ExtensionMappingChoice & { reason?: string }>;
+  bindings?: ExtensionBindingChoices;
+  bindingReasons?: Record<string, string>;
   settings?: Record<string, string | number | boolean>;
   issues: Record<string, string>;
 };

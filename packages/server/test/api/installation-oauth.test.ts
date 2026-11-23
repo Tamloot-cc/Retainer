@@ -19,7 +19,7 @@ import {
   startAccountsApp,
 } from '../helpers/accounts.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { extensionFixture } from '../helpers/extensions.js';
+import { bindingStamp, extensionFixture, testCompanyBinding } from '../helpers/extensions.js';
 import {
   authorize,
   consent,
@@ -36,6 +36,32 @@ let directory: string, fileServer: ReturnType<typeof createFileServer>;
 const manifest = extensionFixture({
   execution: 'standalone',
   scopes: ['read', 'write'],
+  bindings: [
+    testCompanyBinding,
+    {
+      key: 'conversation',
+      creates: true,
+      label: 'Conversations',
+      description: 'Meeting transcripts.',
+      class: 'event',
+      access: 'write',
+      required: true,
+      fields: [
+        {
+          key: 'transcripts',
+          label: 'Transcripts',
+          types: ['files'],
+          required: true,
+          create: {
+            universalId: randomUUID(),
+            name: 'transcripts',
+            label: 'Transcripts',
+            type: 'files',
+          },
+        },
+      ],
+    },
+  ],
   settings: {
     label: { type: 'string', label: 'Label', required: false, secret: false, reconnect: false },
   },
@@ -159,6 +185,11 @@ async function setup() {
       headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+  const stamp = async (access: string, key: string) =>
+    bindingStamp(
+      await json(await request(access, `/v1/extensions/${installation.id}/bindings`)),
+      key,
+    );
   const refresh = (tokens: Tokens, resource = `${ORIGIN}/v1`) =>
     token(app.accounts, {
       grant_type: 'refresh_token',
@@ -177,6 +208,7 @@ async function setup() {
     exchange,
     connect,
     request,
+    stamp,
     refresh,
   };
 }
@@ -190,23 +222,15 @@ describe('standalone workspace OAuth with real consent, PKCE, JWT and RLS', () =
       apiKey: tokens.access_token,
       fetch: async (url, init) => app.api.request(String(url), init),
     });
-    const submission = { values: { name: 'Form submission company' } };
+    const submission = {
+      values: { name: 'Form submission company' },
+      bindings: await h.stamp(tokens.access_token, 'company'),
+    };
     const [first, retry] = await Promise.all([
       sdk.createRecord('company', submission, 'form-42'),
       sdk.createRecord('company', submission, 'form-42'),
     ]);
     expect(first.record.id).toBe(retry.record.id);
-    await json(
-      await h.v1('/v1/schema/changes', 'POST', {
-        operations: [
-          {
-            op: 'create_field',
-            object: 'conversation',
-            field: { name: 'transcripts', label: 'Transcripts', type: 'files' },
-          },
-        ],
-      }),
-    );
     const bytes = Buffer.from('Tamloot transcript fixture: full recording text.');
     const intent = await sdk.createFileIntent(
       {
@@ -236,12 +260,14 @@ describe('standalone workspace OAuth with real consent, PKCE, JWT and RLS', () =
       fields: { transcripts: [intent.id] },
       about: [first.record.id],
     };
-    const logged = await sdk.logEvent(event),
-      loggedAgain = await sdk.logEvent(event);
+    await expect(sdk.logEvent(event)).rejects.toMatchObject({ code: 'binding_unavailable' });
+    const stamped = { ...event, bindings: await h.stamp(tokens.access_token, 'conversation') };
+    const logged = await sdk.logEvent(stamped),
+      loggedAgain = await sdk.logEvent(stamped);
     expect(loggedAgain.id).toBe(logged.id);
     expect(loggedAgain.created).toBe(false);
     await expect(
-      sdk.logEvent({ ...event, title: 'Changed original payload' }),
+      sdk.logEvent({ ...stamped, title: 'Changed original payload' }),
     ).rejects.toMatchObject({ status: 409 });
     const download = await sdk.downloadFile(intent.id);
     expect(await (await fetch(download.url)).text()).toBe(bytes.toString());
@@ -250,6 +276,19 @@ describe('standalone workspace OAuth with real consent, PKCE, JWT and RLS', () =
     const [assertion] =
       await db.owner`select actor from field_assertions where record_id=${logged.id} limit 1`;
     expect(assertion?.actor).toMatchObject({ type: 'integration', id: h.installation.id });
+    await expect(sdk.addEventLinks(logged.id, { about: [first.record.id] })).rejects.toMatchObject({
+      code: 'binding_unavailable',
+    });
+    await expect(
+      sdk.addEventLinks(logged.id, {
+        about: [first.record.id],
+        bindings: stamped.bindings,
+      }),
+    ).resolves.toMatchObject({ id: logged.id });
+    await expect(sdk.deleteEvent(logged.id)).rejects.toMatchObject({ code: 'binding_unavailable' });
+    await expect(sdk.deleteEvent(logged.id, stamped.bindings)).resolves.toMatchObject({
+      deleted: true,
+    });
   });
   it('uses the reviewed actor and scope for REST, refreshes, and keeps MCP/person memory separate', async () => {
     const h = await setup(),
@@ -276,6 +315,7 @@ describe('standalone workspace OAuth with real consent, PKCE, JWT and RLS', () =
     const created = await json<{ record: { id: string } }>(
       await h.request(tokens.access_token, '/v1/objects/company/records', 'POST', {
         values: { name: 'App company' },
+        bindings: await h.stamp(tokens.access_token, 'company'),
       }),
       201,
     );
@@ -616,6 +656,7 @@ describe('standalone workspace OAuth with real consent, PKCE, JWT and RLS', () =
       (
         await h.request(refreshed.access_token, '/v1/objects/company/records', 'POST', {
           values: { name: 'After settings' },
+          bindings: await h.stamp(refreshed.access_token, 'company'),
         })
       ).status,
     ).toBe(201);

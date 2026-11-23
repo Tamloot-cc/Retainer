@@ -5,7 +5,6 @@ import { defaultColumnOrder, resolveColumns } from '../views/list-state.js';
 import {
   eventColumnOrder,
   eventListObject,
-  eventMedium,
   listFilterOperators,
   occurredCalendar,
   ParticipantsCell,
@@ -29,7 +28,6 @@ const field = (name: string, rest: Partial<FieldView> = {}): FieldView => ({
 });
 const medium = field('medium', {
   type: 'select',
-  baseField: 'conversationMedium',
   settings: {
     options: [
       { value: 'meeting', label: 'Meeting' },
@@ -43,7 +41,6 @@ const conversation = {
   labelSingular: 'Conversation',
   labelPlural: 'Conversations',
   class: 'event',
-  baseObject: 'conversation',
   labelField: 'title',
   eventColumns: ['occurredAt', 'channel', 'externalId'],
   fields: [
@@ -63,17 +60,16 @@ const person = { ...company, nameSingular: 'person' } as ObjectView;
 const note = {
   ...conversation,
   nameSingular: 'note',
-  baseObject: 'note',
   fields: [],
 } as unknown as ObjectView;
 const schema = { objects: [company, person, conversation, note] };
 
 describe('event type lists', () => {
-  it('lead with when it happened and the medium, end with links and source, and hide the summary', () => {
+  it('leads with when it happened, keeps schema field order, and ends with links and source', () => {
     expect(eventColumnOrder(conversation)).toEqual([
       'occurredAt',
-      'medium',
       'recording',
+      'medium',
       'participants',
       'about',
       'channel',
@@ -89,8 +85,8 @@ describe('event type lists', () => {
     expect(columns).toEqual([
       ['title', 'title'],
       ['occurredAt', 'Occurred'],
-      ['medium', 'medium'],
       ['recording', 'recording'],
+      ['medium', 'medium'],
       ['participants', 'Participants'],
       ['about', 'About'],
       ['channel', 'Source'],
@@ -140,19 +136,11 @@ describe('event type lists', () => {
     expect(of('title')).toContain('contains');
   });
 
-  it('name the medium by its option, and place a calendar by when events happened', () => {
-    expect(eventMedium(conversation, { fields: { medium: 'call' } })).toBe('Call');
-    expect(eventMedium(conversation, { fields: { medium: null } })).toBeUndefined();
-    expect(eventMedium(note, { fields: { medium: 'call' } })).toBeUndefined();
+  it('places a calendar by when events happened', () => {
     expect(occurredCalendar(conversation)).toMatchObject({
       kind: 'calendar',
       dateField: 'occurredAt',
     });
-    const kind = { ...medium, name: 'kind' };
-    const renamed = { ...conversation, fields: [kind] } as ObjectView;
-    expect(eventMedium(renamed, { fields: { kind: 'call' } })).toBe('Call');
-    const namesake = { ...conversation, fields: [{ ...medium, baseField: undefined }] };
-    expect(eventMedium(namesake as ObjectView, { fields: { medium: 'call' } })).toBeUndefined();
   });
 });
 

@@ -65,7 +65,6 @@ const conversation = {
   nameSingular: 'conversation',
   labelSingular: 'Conversation',
   class: 'event',
-  baseObject: 'conversation',
   fields: [],
 } as unknown as ObjectView;
 const A = '10000000-0000-4000-8000-00000000000a';

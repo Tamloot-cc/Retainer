@@ -12,6 +12,7 @@ import { queryInputSchema } from '../../records/query.js';
 import { findLiveRecord } from '../../records/read.js';
 import {
   aggregate,
+  bindingWriteStampSchema,
   bulkDeleteImpact,
   bulkDeleteImpactSchema,
   createRecord,
@@ -32,15 +33,20 @@ import {
   withRead,
 } from '../../records/service.js';
 
-const createSchema = z.strictObject({ values: valuesSchema, source: sourceSchema.optional() });
+const createSchema = z.strictObject({
+  values: valuesSchema,
+  source: sourceSchema.optional(),
+  bindings: bindingWriteStampSchema.optional(),
+});
 
 export function recordRoutes(app: Hono<AppEnv>, sql: Sql) {
   app.post('/objects/:object/records', requireScope('write'), async (c) => {
-    const { values, source } = await readBody(c, createSchema);
+    const { values, source, bindings } = await readBody(c, createSchema);
     const idempotencyKey = c.req.header('idempotency-key');
     const result = await createRecord(sql, c.get('caller'), c.req.param('object'), values, {
       ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       ...(source !== undefined ? { source } : {}),
+      bindings,
     });
     return c.json(result, 201);
   });
@@ -97,9 +103,12 @@ export function recordRoutes(app: Hono<AppEnv>, sql: Sql) {
     c.json(await deleteImpact(sql, c.get('caller'), idParam(c))),
   );
 
-  app.delete('/records/:id', requireScope('write'), async (c) =>
-    c.json(await deleteRecord(sql, c.get('caller'), idParam(c))),
-  );
+  app.delete('/records/:id', requireScope('write'), async (c) => {
+    const { bindings } = c.req.header('content-type')
+      ? await readBody(c, z.strictObject({ bindings: bindingWriteStampSchema.optional() }))
+      : {};
+    return c.json(await deleteRecord(sql, c.get('caller'), idParam(c), bindings));
+  });
 
   app.post('/records/:id/merge', requireScope('write'), async (c) => {
     const id = idParam(c);

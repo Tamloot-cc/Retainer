@@ -223,6 +223,18 @@ source identities and retained data never follow a mutable display name.
 
 ## 6. Persistence and ownership
 
+A release declares the bindings its capabilities use. Each installation
+stores an approved plan that selects an object, fields and select options
+for each binding, or skips optional bindings. A read binding can select
+multiple event types. An owned object or field is created as a contribution.
+Value permissions follow the normal assertion rules. An owned field can
+declare `installationOwned` to reserve writes to the installation that
+created it. The plan can keep that field on a re-plan and release it on
+uninstall. An existing workspace field cannot be adopted as owned.
+
+See [the binding contract](no-built-in-objects.md#52-manifest) for declaration
+and destination shapes.
+
 All new workspace tables have workspace RLS, composite workspace foreign keys
 where applicable, and access through `retainer_app`; secrets use a separate broker
 role with no ordinary read grants. Generate migrations from Drizzle.
@@ -230,7 +242,7 @@ role with no ordinary read grants. Generate migrations from Drizzle.
 | Store                  | Essential data and constraints                                                                                                                                                                                      |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Registrations/releases | Global reviewed identity, actor ceiling, immutable manifest/digests, allowed executables, protocol/runtime range; no workspace-editable publisher metadata.                                                         |
-| Installations          | Workspace, registration, installed release, desired release, state, generation, granted scopes/actor, settings, mapping, installer actor/user, source-account namespace, last error; unique workspace/registration. |
+| Installations          | Workspace, registration, installed release, desired release, state, generation, granted scopes/actor, settings, bindings and binding revision, installer actor/user, source-account namespace, last error; unique workspace/registration. |
 | Contributions          | Installation, element kind, universal ID, actual object/field/view ID and last applied definition; unique managing installation per element. References to shared elements are bindings, not ownership.             |
 | Grants                 | Installation/grant generation, scopes, credential hash or OAuth consent/client reference, expiry and revocation. No plaintext bearer tokens.                                                                        |
 | Secrets/connections    | Encrypted value, key version, installation, provider, refresh revision and status. Separate from KV and settings responses.                                                                                         |
@@ -239,7 +251,7 @@ role with no ordinary read grants. Generate migrations from Drizzle.
 | Webhook receipts       | Route/account binding, delivery identity/digest, accepted time, job ID; unique binding/delivery ID. Payload retention bounded and erased with its source.                                                           |
 | Schedule state         | Installation/function, next due time, last scheduled occurrence; unique job key per scheduled UTC instant.                                                                                                          |
 | Change outbox/feed     | Workspace commit-ordered position, operation, record ID, changed field keys, origin installation, cause chain; no before/after record bodies.                                                                       |
-| Source items/revisions | Stable account-scoped external identity, current revision/event, provider ordering marker, content digest and suppression identity. Revision uniqueness is durable, not the request-idempotency TTL.                |
+| Source items/revisions | Stable account-scoped external identity, current revision/event, provider ordering marker, content digest, accepted projection and suppression identity. Revision uniqueness is durable, not the request-idempotency TTL.                |
 | Files/references       | Workspace, immutable opaque ID, storage key, checksum, media type, byte length, upload state/expiry, reference edges and deletion state.                                                                            |
 
 Global lock order is deployment lock → privacy lock → schema lock → membership
@@ -254,11 +266,18 @@ sorted order. Test these orders under concurrent revocation, import and upgrade.
 
 Keep schema `owner` semantics; extension association is separate metadata. All
 schema contributions pass through `runSchemaChange`, never direct metadata SQL.
-Shared `conversation.transcript` ships as a base `files` field with a fixed
-universal ID. An extension-specific prefix improves readability but grants no
-ownership and cannot prevent identity collisions by itself.
+Imported transcripts use the approved field for their binding. An extension
+prefix helps distinguish proposed object names when a name is already in use.
 
 ## 7. Installation and schema lifecycle
+
+An admin reviews the whole binding plan, including any schema changes it
+needs. Approval validates the same plan under the exclusive schema lock.
+While the installation remains installed, the schema engine uses that
+validator to protect its destinations. Names and labels can change. Only a
+reviewed re-plan changes the destinations and increments the binding revision.
+A re-plan fences old runs, re-verifies setup and preserves imported evidence
+and unfinished jobs for unchanged triggers. Uninstall releases the plan.
 
 An admin with a human actor reviews schema additions, views, workspace-wide data
 access, requested actor class, source sharing, provider permissions and settings.
@@ -266,7 +285,7 @@ In key mode, an existing user/admin key can perform this role. Agent/admin keys
 can preview; they cannot approve an installation or increase a grant. This is
 an extension lifecycle rule, not a change to general additive schema behavior.
 
-1. Preview validates the pinned manifest, mapping and existing schema under the
+1. Preview validates the pinned manifest, proposed bindings and existing schema under the
    schema lock. Return a plan digest tied to schema version, installation
    generation, release digest and non-secret settings digest. Secret inputs use
    opaque pending-secret references, never plaintext in the plan or logs.
@@ -284,7 +303,7 @@ an extension lifecycle rule, not a change to general additive schema behavior.
 
 Releases declaring `configure` first use the access-only approval and
 `configuring` state in [extensions-configure.md](extensions-configure.md). No new
-schema, mapping, write grant or triggers are applied until an explicit turn-on.
+schema, binding plan, write grant or triggers are applied until an explicit turn-on.
 Configure runs can read CRM with approved read access and declared secrets, but
 cannot mutate runtime state or enqueue children. The same read-only run can
 prepare a reviewed upgrade using release-pinned access approval; ordinary runs
@@ -294,11 +313,11 @@ States: `configuring`, `installing`, `active`, `setup_failed`, `disabled`, `upgr
 `uninstalling`, `uninstalled`. Connection health (`ok`, `needs_reconnect`,
 `degraded`) is separate; transient failures do not repeatedly reinstall schema.
 
-V1 upgrade is additive schema plus new code/settings/views. Omission does not
-delete. Existing structural changes, removals and incompatible mappings return
-`409 upgrade_conflict`; make a new field and perform an explicit migration through
-the existing schema engine. A view cannot move to another object; that needs a
-new view identity. A deprecated element stays deprecated.
+Automatic upgrades require an unchanged contract and keep the approved plan.
+A reviewed upgrade can change the plan. Replacing a destination releases the
+old contribution and preserves history. A view on another object gets a new
+view identity. A reinstall proposes still-valid destinations and can replace
+a deleted owned object or field with a new identity.
 
 Presentation is an override layer, as in Twenty
 (`WORKSPACE_LOCAL_STATE_PROPERTIES` and its overridable properties). Each
@@ -318,19 +337,12 @@ view edited after the preview fails the commit with `stale_plan`. Names, types,
 settings (options), nullability, uniqueness, filterability and searchability are
 structural and stay `409 upgrade_conflict`. Do not silently adopt unrelated fields with matching names.
 
-Contributed objects and fields belong to the installation while it is not
-`uninstalled`: the schema engine refuses `delete_object` and `delete_field`
-(directly, by cascade, or when a person approves an earlier proposal) with
-`422 schema_invalid` naming the element and the blocking installation and
-registration, and points to renaming/relabelling or uninstalling first. This
-also blocks deleting a workspace's own object while an extension has added a
-field or relation to it, because the cascade would delete the contribution.
-The check runs under the exclusive schema lock, so it serializes with an
-install or upgrade that contributes the same element. As in Twenty, only presentation is workspace-local. A
-contribution deleted before this rule is treated as absent: plans don't
-recreate it, skip new fields of a deleted object, skip new views over it with a
-warning, and accept triggers on it (they never fire), so upgrade and enable
-still work. Managed source event types must still be active.
+Approved bindings hold while the installation is active, including when runs
+are paused. The schema engine validates the proposed schema against all
+affected binding plans under the exclusive schema lock. If a change would
+break a plan, it returns `422 schema_invalid` and names the extension and
+binding. Rename and presentation changes preserve stable destination IDs.
+Approve a new plan to change destinations, or uninstall to release the plan.
 
 An upgrade may supply pending secret references for secret settings the
 installation does not store, so a release that adds a required secret can be
@@ -480,7 +492,7 @@ Lifecycle functions can read their own non-secret installation settings, secret-
 `configure`, after explicit read-access approval (extensions-configure.md).
 
 A run has no `Caller.person` and cannot read personal memory. V1 permissions are
-workspace-wide within the existing scopes; install UI must say so. A mapping or
+workspace-wide within the existing scopes; install UI must say so. A binding or
 list of watched fields is not a data-access restriction. The installer is audit
 metadata, not an impersonated user; a workspace grant survives their departure
 until an admin disconnects it. User-owned provider credentials cannot be presented
@@ -523,7 +535,7 @@ job either. A tool is ready only when
 the installation has a live, unrevoked credential and the generated secret the
 tool needs exists. Listing tools and the broker both check this, because
 revocation does not change `connection_health`. Rules that require
-`execution: 'hosted'`, such as mappings and member connections, stay as they
+`execution: 'hosted'`, such as managed fill-only writes and member connections, stay as they
 are until a standalone app needs them.
 [Booking](booking-extension.md) is the first user.
 
@@ -919,8 +931,8 @@ contracts; the example header names are not a universal protocol.
 
 Record transactions append an outbox row only when effective values, links,
 visibility or lifecycle state change; assertion-review changes have a separate
-operation kind. Watched fields are permanent keys resolved from manifest UUIDs,
-not mutable names. Include deletion, merge, retraction and source-revision events. An event-type
+operation kind. Dispatch resolves watched fields from the approved binding to permanent keys.
+Jobs report the corresponding binding field keys. Include deletion, merge, retraction and source-revision events. An event-type
 move emits an old-type tombstone and new-type creation in the same transaction,
 so handlers watching either type can recompute.
 Personal memory is excluded from the workspace feed in v1.
@@ -937,16 +949,10 @@ schema rows themselves (plus one search-text rewrite statement when the field
 was searchable). A change trigger on that type queues one job for it; a trigger
 scoped to fields queues it only when one of its fields is named. Its handler
 rescans the type's current records (last-contact queues its paged scan).
-A watched field the workspace doesn't have, or deleted, is skipped: the
-trigger installs without it, keeps watching the fields that remain, and still
-fires on the operations that need no watched field, such as a create. A deleted field keeps
-its key, so the `schema` change that deleted it still names it. A trigger
-whose own object was deleted is different: it cannot be matched, so its
-dispatcher stalls with `schema_binding_conflict` (degraded health, cursor not
-advanced) on every later change, unless the object was the installation's own
-contribution, whose triggers never fire. An admin recovers by upgrading to a
-release that no longer binds the deleted object, or by disabling or
-uninstalling the installation.
+Optional fields skipped in the plan do not participate in the filter. A filter
+whose fields all resolve to nothing does not fire. An unchanged trigger resumes
+from its existing dispatch position after a re-plan, with its unfinished jobs.
+New and changed triggers start at the re-plan's approval boundary.
 Deleting an event type still deletes each event through the event lifecycle,
 so those events also get their own `delete` changes.
 
@@ -1032,21 +1038,18 @@ retraction/deletion; it cannot just retain the maximum timestamp ever seen.
 
 ### 9.5 Deterministic last contact
 
-The first-party `last-contact` release contributes nullable `lastContactAt`
-`date_time` fields to person and company. It computes the latest current visible
-`conversation` in each record's existing event history at or before server time,
-including the existing one-hop `rollUpEvents` paths. Hidden notes, private memory,
-superseded evidence and deleted events do not count. It respects the workspace's
-rollup settings rather than enabling them implicitly. Moving an event to a
-non-conversation type removes it from this projection.
+The first-party `last-contact` release creates an owned nullable
+`lastContactAt` field for each selected entity binding. It uses the latest
+current visible event from the event types in the approved `contact` binding
+at or before server time. It follows the workspace's existing one-hop
+`rollUpEvents` paths and excludes superseded or deleted evidence.
 
-Its optional manifest `lastContact` capability pins the runtime function UUIDs
-and contributed object/field UUIDs. `POST /v1/extensions/:id/runtime/last-contact`
+Its `lastContact` capability pins the functions and the binding keys. `POST /v1/extensions/:id/runtime/last-contact`
 requires a live admitted function with write scope; it accepts only record IDs or
 a bounded scan cursor. It never accepts an actor, value, field override or source.
 The server validates current contribution ownership and field compatibility,
 then computes and replaces only that installation actor's previous claims for
-those fields. Each new claim cites the winning conversation and uses its actual
+those fields. Each new claim cites the winning event and uses its actual
 `occurredAt` as `observedAt`; unlinking the latest event can therefore decrease
 the value without inventing a newer evidence time. No eligible event withdraws
 its own claims. Human values retain ordinary assertion precedence and review
@@ -1061,8 +1064,7 @@ recomputes affected fields in the same privacy transaction. A surviving event
 cannot preserve a company claim derived through a forgotten person. Subsequent
 work can restore a value from other surviving evidence.
 
-Install/re-enable enqueues an initial paged scan after activation. Conversation,
-person and company change handlers recompute affected IDs and their current
+Install or re-enable enqueues an initial paged scan after activation. Change handlers on the bound event and entity types recompute affected IDs and their current
 rollup targets. The scan processes 20 records per API transaction with a fixed
 upper record ID. Scan root/page/cursor/checkpoint lives only in erasable KV;
 child job input is empty, and its dedupe key carries no contact ID. Clearing KV
@@ -1074,6 +1076,14 @@ Excessive incremental fanout falls back to the paged scan, never a silently
 truncated update. Direct self-writes remain quiet under cause-chain dispatch.
 
 ## 10. Source ingestion, edits and deletion
+
+Managed ingestion writes by binding key. The server resolves the approved
+event and field destinations and matches participants through the approved
+email field. Task identity stays in `source_tasks` by source account. One
+installation lock serializes cross-account task reconciliation. Accepted
+source revisions retain their normalization projection for replay. A re-plan
+that moves a task destination detaches existing tasks with their values and
+provider identities intact.
 
 Do not change `logEvent` into an upsert. Add a managed import endpoint,
 `POST /v1/extensions/:installation/source-events`; it is REST only, since runs
@@ -1091,11 +1101,11 @@ type SourceEventImport = {
   providerRevision?: string;
   expectedRevisionId: string | null; // null means create only
   event: {
-    type: string; // event type universal UUID from the release-pinned binding
+    binding: string; // the declared event binding key
     occurredAt: string;
     title: string;
     summary?: string;
-    fields?: Record<string, unknown>; // field universal UUIDs, or permanent field keys
+    fields?: Record<string, unknown>; // binding field keys
     participants?: Array<{ email: string; name?: string; contacted?: boolean }>;
     about?: string[];
   };
@@ -1107,7 +1117,7 @@ isolated install verifier for the live generation. Normal credentials cannot
 attest provider identities. Activation refuses missing verification. Account
 replacement requires a human disconnect, generation revocation and setup again;
 retained data stays in its former namespace. Releases pin provider name, identity
-strategy, verifier function, ingestion job functions, event type UUIDs and revision
+strategy, verifier function, ingestion job functions, binding keys and revision
 ordering. An account-scoped provider must return a stable provider account ID.
 A reviewed `global-resource` strategy is allowed only when provider resource IDs
 have a stable provider-wide namespace; it makes no claim to verify an account ID
@@ -1126,10 +1136,9 @@ case, and survives key rotation/reinstallation.
 
 A live managed-source run can read its current local binding with
 `GET /v1/extensions/:id/source`. Normal keys cannot use this runtime metadata
-surface. Fields in a `source-events` import accept stable field universal UUIDs or
-permanent keys; the server resolves both to permanent keys for canonical content.
-Supplying both aliases for one field is `422 invalid_source_field`. An isolated
-adapter can therefore use public schema identities without learning database keys.
+surface. The approved plan is available from `GET /v1/extensions/:id/bindings`.
+For source writes, the server projects the binding field keys into the workspace
+and keeps the accepted projection with each receipt for replay.
 
 Before enqueueing ingestion, reserve `{sourceAccountId, externalId}` through
 `POST /v1/extensions/:id/source-items`. The bounded `/source-items/batch`
@@ -1368,10 +1377,10 @@ schema changes occur. Read-only preview may be available to schema-capable agent
 | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /v1/extensions/catalog`                                                          | Bundled compatible releases/capabilities; no secrets.                                                                              |
 | `GET /v1/extensions` and `GET /v1/extensions/:id`                                     | Installed state, release, grants, health, settings with secret-presence flags, contributions and sync status.                      |
-| `POST /v1/extensions/preview`                                                         | Registration/release, mappings and settings references → plan digest, schema/view diff, grant changes, warnings/conflicts.         |
+| `POST /v1/extensions/preview`                                                         | Registration/release, bindings and settings references → plan digest, schema/view diff, grant changes, warnings/conflicts.         |
 | `POST /v1/extensions`                                                                 | Commit install using plan digest and idempotency key → installation and lifecycle job.                                             |
 | `POST /v1/extensions/:id/upgrade`                                                     | Commit an upgrade preview; no implicit permission increase.                                                                        |
-| `POST /v1/extensions/:id/disable`, `/enable`, `/uninstall`                            | Generation-fenced lifecycle transitions; enable validates connection and mappings.                                                 |
+| `POST /v1/extensions/:id/disable`, `/enable`, `/uninstall`                            | Generation-fenced lifecycle transitions; enable validates the connection and bindings.                                                 |
 | `POST /v1/extensions/:id/reconnect`                                                   | Reviewed same-release credential/account replacement; human approval and stale-plan fencing.                                       |
 | `PATCH /v1/extensions/:id/settings`                                                   | Expected settings revision, validated settings/secret references; credential/account changes require reconnect and fence old jobs. |
 | `GET /v1/extensions/:id/runs`, `POST /v1/extensions/:id/runs/:run/retry`              | Paginated redacted diagnostics and admin retry; no raw provider bodies.                                                            |

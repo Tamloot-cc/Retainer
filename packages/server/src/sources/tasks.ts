@@ -14,7 +14,6 @@ import {
   insertRecord,
   lockRecordsForUpdate,
   softDeleteRecord,
-  UniqueConflictError,
   type WriteContext,
   writeFields,
 } from '../records/write.js';
@@ -35,14 +34,11 @@ export function taskSchema(schema: CompiledSchema, policy: SourcePolicy) {
   };
   if (!definition || !object || object.hidden || object.isEvent || object.state.status !== 'active')
     errors.push({ field: 'task', reason: 'missing task object' });
-  const identity = field('identity', definition?.identityFieldId, 'text'),
-    title = field('title', definition?.titleFieldId, 'text'),
+  const title = field('title', definition?.titleFieldId, 'text'),
     status = field('status', definition?.statusFieldId, 'select');
   const person = definition?.personFieldId
     ? field('person', definition.personFieldId, 'relation')
     : undefined;
-  if (identity && !identity.isUnique)
-    errors.push({ field: 'identity', reason: 'identity must remain unique' });
   if (
     status &&
     definition &&
@@ -65,13 +61,13 @@ export function taskSchema(schema: CompiledSchema, policy: SourcePolicy) {
   const response: SourceTaskSchema = {
     status: errors.length ? 'degraded' : 'ok',
     fields: Object.fromEntries(
-      Object.entries({ identity, title, status, person }).flatMap(([role, f]) =>
+      Object.entries({ title, status, person }).flatMap(([role, f]) =>
         f ? [[role, { name: f.name, type: f.type }]] : [],
       ),
     ),
     errors,
   };
-  return { response, object, identity, title, status, person, personObject, definition };
+  return { response, object, title, status, person, personObject, definition };
 }
 type Binding = {
   id: string;
@@ -103,15 +99,8 @@ export async function reconcileTasks(
     bindingStatus: resolved.response.status,
     warnings: [],
   };
-  const { object, identity, title, status, person, personObject, definition } = resolved;
-  if (
-    resolved.response.status !== 'ok' ||
-    !object ||
-    !identity ||
-    !title ||
-    !status ||
-    !definition
-  ) {
+  const { object, title, status, person, personObject, definition } = resolved;
+  if (resolved.response.status !== 'ok' || !object || !title || !status || !definition) {
     result.warnings.push('source_task_schema_degraded');
     return result;
   }
@@ -202,9 +191,18 @@ export async function reconcileTasks(
     }
     let personId: string | null = null;
     if (personObject && task.contactEmails.length) {
+      const matchField = personObject.activeFields.find(
+        (field) => field.universalId === definition.matchFieldId,
+      );
+      if (!matchField?.id)
+        throw new AppError(
+          409,
+          'binding_unavailable',
+          'The task contact match field is unavailable.',
+        );
       const matches = await tx<
         { record_id: string }[]
-      >`select distinct i.record_id from record_identifiers i join records r on r.id=i.record_id where i.workspace_id=${context.workspaceId} and i.kind='email' and i.is_claim and i.value=any(${task.contactEmails}::text[]) and r.object_type_id=${personObject.id} and r.deleted_at is null and r.merged_into_id is null limit 2`;
+      >`select distinct i.record_id from record_identifiers i join records r on r.id=i.record_id where i.workspace_id=${context.workspaceId} and i.kind='email' and i.field_id=${matchField.id} and i.value=any(${task.contactEmails}::text[]) and r.object_type_id=${personObject.id} and r.deleted_at is null and r.merged_into_id is null limit 2`;
       if (matches.length === 1) personId = matches[0]!.record_id;
     }
     const digest = requestHash({ eventId, title: task.title, status: task.status, personId });
@@ -217,34 +215,17 @@ export async function reconcileTasks(
       continue;
     }
     if (!(await budget())) break;
-    // People read this field, so it holds the provider's task ID as is. source_tasks keys the
-    // binding by account; a clash across accounts fails below as source_task_conflict.
-    const identityValue = task.externalId;
     const values = prepareValues(
       object,
       {
-        [identity.name]: identityValue,
         [title.name]: task.title,
         [status.name]: definition.statuses[task.status],
         ...(person ? { [person.name]: personId } : {}),
       },
       record ? 'update' : 'create',
     );
-    values.delete(identity);
     if (!record) {
       record = await insertRecord(tx, context, object);
-      // The unique claim waits for a concurrent claimer, so its conflict is the race-free test.
-      try {
-        await writeFields(tx, context, object, record, new Map([[identity, identityValue]]));
-      } catch (error) {
-        if (!(error instanceof UniqueConflictError) || error.field.id !== identity.id) throw error;
-        throw new AppError(
-          409,
-          'source_task_conflict',
-          'the managed task identity is already held by another record',
-          { field: identity.name },
-        );
-      }
     } else if (record.deleted_at) {
       await context.changes?.capture(tx, record.id);
       await tx`update records set deleted_at=null,updated_at=clock_timestamp(),updated_by=${tx.json(context.actor)} where id=${record.id}`;

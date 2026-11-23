@@ -1,4 +1,4 @@
-import { BASE_OBJECT_IDS } from './base.js';
+import { STARTER_OBJECT_IDS } from './base.js';
 import type { Template } from './types.js';
 
 const JOB = 'cefe888f-9349-4493-8f38-3f92aeca03bd';
@@ -6,6 +6,7 @@ const APPLICATION = '46ac1b30-b6c5-403e-b7cb-a75166beb2a3';
 
 export const recruiting: Template = {
   name: 'recruiting',
+  extends: 'starter',
   version: 1,
   label: 'Recruiting',
   description:
@@ -48,7 +49,7 @@ export const recruiting: Template = {
             name: 'company',
             label: 'Company',
             type: 'relation',
-            settings: { targetObject: BASE_OBJECT_IDS.company, inverseField: 'jobs' },
+            settings: { targetObject: STARTER_OBJECT_IDS.company, inverseField: 'jobs' },
           },
         ],
       },
@@ -77,7 +78,7 @@ export const recruiting: Template = {
             label: 'Candidate',
             type: 'relation',
             settings: {
-              targetObject: BASE_OBJECT_IDS.person,
+              targetObject: STARTER_OBJECT_IDS.person,
               inverseField: 'applications',
               rollUpEvents: true,
             },

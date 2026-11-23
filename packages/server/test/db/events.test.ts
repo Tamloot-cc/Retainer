@@ -72,7 +72,7 @@ beforeAll(async () => {
   app = db.connect({ role: RUNTIME_ROLE, max: 20 });
   workspaceId = (await createWorkspace(db.owner, { name: 'Acme', template: 'sales' })).id;
   await addNoteType(db.owner, workspaceId);
-  otherWorkspaceId = (await createWorkspace(db.owner, { name: 'Other' })).id;
+  otherWorkspaceId = (await createWorkspace(db.owner, { name: 'Other', template: 'starter' })).id;
   await schemaChange([
     {
       op: 'create_field',

@@ -1,4 +1,4 @@
-import { BASE_OBJECT_IDS } from './base.js';
+import { STARTER_OBJECT_IDS } from './base.js';
 import type { Template } from './types.js';
 
 const PROPERTY = 'a367961a-005c-49e8-80ef-596d622edd63';
@@ -6,6 +6,7 @@ const VIEWING = 'dc61b186-fb5d-40fd-9d50-941668198e60';
 
 export const realEstate: Template = {
   name: 'real_estate',
+  extends: 'starter',
   version: 2,
   label: 'Real estate',
   description:
@@ -78,7 +79,7 @@ export const realEstate: Template = {
             label: 'Owner',
             description: 'The person selling or letting the property.',
             type: 'relation',
-            settings: { targetObject: BASE_OBJECT_IDS.person, inverseField: 'properties' },
+            settings: { targetObject: STARTER_OBJECT_IDS.person, inverseField: 'properties' },
           },
         ],
       },
@@ -134,7 +135,7 @@ export const realEstate: Template = {
             label: 'Visitor',
             type: 'relation',
             settings: {
-              targetObject: BASE_OBJECT_IDS.person,
+              targetObject: STARTER_OBJECT_IDS.person,
               inverseField: 'viewings',
               rollUpEvents: true,
             },

@@ -1,6 +1,5 @@
 import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import type { InputSchema, VerificationInvocation, VerificationResult } from '@retainer/extension';
-import { BASE_EVENT_TYPE_IDS } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.js';
@@ -17,6 +16,7 @@ import type { VerificationDriver } from '../../src/worker/verifier-driver.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
+import { sourceTestBindings } from '../helpers/source-bindings.js';
 
 const db = useTestDatabase(),
   setupId = randomUUID(),
@@ -31,12 +31,14 @@ const input: InputSchema = {
 };
 const manifest = extensionFixture({
   scopes: ['read', 'write'],
+  bindings: sourceTestBindings,
   source: {
     provider: 'fixture',
     identity: 'account',
     verifyFunctionId: setupId,
     syncFunctionIds: [syncId],
-    eventTypeIds: [BASE_EVENT_TYPE_IDS.conversation],
+    event: 'conversation',
+    people: 'person',
     revisionOrder: 'opaque',
   },
   settings: {

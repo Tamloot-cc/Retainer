@@ -31,7 +31,7 @@ const manifest = (overrides: Partial<ExtensionManifest> = {}) =>
     createPeople: 'never',
     onSourceDelete: 'keep',
     settings: {},
-    schema: [],
+
     views: [],
     functions: [fn],
     ...overrides,
@@ -41,8 +41,8 @@ const base = {
   next: manifest({ version: '1.0.1' }),
   schemaOperations: 0,
   viewActions: ['retain'],
-  storedMapping: { outputs: {} },
-  plannedMapping: { outputs: {} },
+  storedPlan: { outputs: {} },
+  plannedPlan: { outputs: {} },
 };
 
 describe('upgradeTargets', () => {
@@ -111,8 +111,8 @@ describe('holdReason', () => {
     expect(holdReason({ ...base, schemaOperations: 1 })).toBe('schema_changes');
     expect(holdReason({ ...base, viewActions: ['retain', 'create'] })).toBe('view_changes');
     expect(holdReason({ ...base, viewActions: ['update'] })).toBe('view_changes');
-    expect(holdReason({ ...base, plannedMapping: { outputs: { a: { target: 'x' } } } })).toBe(
-      'mapping_changes',
+    expect(holdReason({ ...base, plannedPlan: { outputs: { a: { target: 'x' } } } })).toBe(
+      'binding_changes',
     );
   });
   it('keeps a view the workspace edited or deleted without holding', () => {

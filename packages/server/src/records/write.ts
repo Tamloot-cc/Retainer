@@ -1,5 +1,5 @@
 import { gmailRegistrationId } from '@retainer/extension/nango-gmail';
-import { type Actor, type ActorType, BASE_OBJECT_IDS, isProfileAlias } from '@retainer/shared';
+import { type Actor, type ActorType, isProfileAlias } from '@retainer/shared';
 import type { CallerPerson, InstallationBinding, RunBinding } from '../caller.js';
 import type { ChangeCollector } from '../changes/collect.js';
 import { isUuid } from '../db/ids.js';
@@ -648,7 +648,7 @@ async function claimIdentifiers(
   ];
   const prior = emails.length
     ? await tx<{ value: string }[]>`select distinct value from record_identifiers
-        where record_id=${recordId} and kind='email' and value=any(${emails}::text[])`
+        where record_id=${recordId} and field_id=${fieldId} and kind='email' and value=any(${emails}::text[])`
     : [];
   await tx`delete from record_identifiers where record_id = ${recordId} and field_id = ${fieldId}`;
   for (const identifier of identifiers) {
@@ -683,7 +683,9 @@ async function claimIdentifiers(
       cross join unnest(${added}::text[]) as e(email)
       where r.id=${recordId} and r.workspace_id=${workspaceId} and r.private_to_user is null
         and r.deleted_at is null and r.merged_into_id is null
-        and o.universal_id=${BASE_OBJECT_IDS.person} and i.state='active'
+        and i.state='active'
+        and i.bindings #>> '{destinations,person,objects,0}' = o.universal_id::text
+        and i.bindings #>> '{destinations,person,fields,emails,id}' = ${field.universalId}
         and (i.settings->>'historyDays') ~ '^[0-9]{1,4}$'
         and (i.settings->>'historyDays')::numeric between 0 and 3650`;
   }

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ExtensionManifest } from '@retainer/extension';
-import { BASE_EVENT_TYPE_IDS, type SourceEventImport, type SourceScan } from '@retainer/shared';
+import type { SourceEventImport, SourceScan } from '@retainer/shared';
 import { generateKeyPair } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type ClaimedJob, ExtensionQueue } from '../../src/extension-runtime/queue.js';
@@ -13,7 +13,9 @@ import { createFileServer, LocalFileStorage } from '../../src/file-storage/local
 import { requestHash } from '../../src/idempotency.js';
 import { startTestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { extensionFixture } from '../helpers/extensions.js';
+import { bindingStamp, extensionFixture, testCompanyBinding } from '../helpers/extensions.js';
+import { setupGmailEvidence } from '../helpers/gmail-evidence.js';
+import { sourceTestBindings } from '../helpers/source-bindings.js';
 
 const db = useTestDatabase();
 let storage: LocalFileStorage,
@@ -45,6 +47,7 @@ async function setup(
   verify = true,
   onSourceDelete: 'keep' | 'retract' = 'keep',
   extra?: ExtensionManifest,
+  withTasks = false,
 ) {
   const verifyId = randomUUID(),
     syncId = randomUUID(),
@@ -67,13 +70,41 @@ async function setup(
     scopes: ['read', 'write'],
     createPeople: policy,
     onSourceDelete,
+    bindings: [
+      ...sourceTestBindings,
+      ...(withTasks
+        ? [
+            {
+              key: 'task',
+              label: 'Tasks',
+              description: 'Source tasks in the creation audit.',
+              class: 'entity' as const,
+              access: 'write' as const,
+              required: true,
+              creates: true as const,
+              fields: [
+                { key: 'title', label: 'Title', types: ['text' as const], required: true },
+                {
+                  key: 'status',
+                  label: 'Status',
+                  types: ['select' as const],
+                  values: ['open', 'done'],
+                  required: true,
+                },
+              ],
+            },
+          ]
+        : []),
+    ],
     source: {
       provider: 'fixture',
       identity: 'account',
       verifyFunctionId: verifyId,
       syncFunctionIds: [syncId],
       scanFunctionIds: [backfillId],
-      eventTypeIds: [BASE_EVENT_TYPE_IDS.conversation],
+      event: 'conversation',
+      ...(withTasks ? { tasks: 'task' } : {}),
+      people: 'person',
       revisionOrder: 'integer',
     },
     functions: [
@@ -125,7 +156,28 @@ async function setup(
       agent: { actor: { type: 'agent', id: 'research' }, scopes: ['read', 'write'] },
     },
   );
-  const input = { registrationId: manifest.universalId, version: manifest.version, settings: {} };
+  const input = {
+    registrationId: manifest.universalId,
+    version: manifest.version,
+    settings: {},
+    ...(withTasks
+      ? {
+          bindings: {
+            task: {
+              action: 'existing',
+              objects: ['task'],
+              fields: {
+                status: {
+                  action: 'existing',
+                  field: 'status',
+                  values: { open: 'todo', done: 'done' },
+                },
+              },
+            },
+          },
+        }
+      : {}),
+  };
   const preview = await app.request('/v1/extensions/preview', { key: keys.admin, body: input });
   const installed = await app.request('/v1/extensions', {
     key: keys.admin,
@@ -177,7 +229,7 @@ async function setup(
     return { itemId, ...(await start(itemId)) };
   }
   const event = (title = 'First', participants: { email: string; contacted?: boolean }[] = []) => ({
-    type: BASE_EVENT_TYPE_IDS.conversation,
+    binding: 'conversation',
     occurredAt: '2026-11-10T10:00:00Z',
     title,
     participants,
@@ -424,7 +476,11 @@ describe('managed source evidence with real RLS Postgres', () => {
         })
       ).status,
     ).toBe(200);
-    expect((await h.sync(source.key, source.itemId, '1', null)).body).toEqual(first.body);
+    expect((await h.sync(source.key, source.itemId, '1', null)).body).toMatchObject({
+      ...first.body,
+      created: false,
+      unchanged: true,
+    });
     const [item] = await db.owner`select state from source_items where id=${source.itemId}`;
     expect(item?.state).toBe('live');
     const second = await h.sync(
@@ -439,13 +495,17 @@ describe('managed source evidence with real RLS Postgres', () => {
       key: source.key,
       body: { status: 'unavailable' },
     });
-    expect((await h.sync(source.key, source.itemId, '1', null)).body).toEqual(first.body);
+    expect((await h.sync(source.key, source.itemId, '1', null)).body).toMatchObject({
+      ...first.body,
+      created: false,
+      unchanged: true,
+    });
     const [stillUnavailable] =
       await db.owner`select state from source_items where id=${source.itemId}`;
     expect(stillUnavailable?.state).toBe('unavailable');
     expect(
       (await h.sync(source.key, source.itemId, '2', first.body.revisionId, h.event('Edited'))).body,
-    ).toEqual(second.body);
+    ).toMatchObject({ ...second.body, created: false, unchanged: true });
     const [recovered] = await db.owner`select state from source_items where id=${source.itemId}`;
     expect(recovered?.state).toBe('live');
   });
@@ -489,7 +549,7 @@ describe('managed source evidence with real RLS Postgres', () => {
       null,
       h.event('Original', [{ email: 'dana@source.test' }]),
     );
-    expect(duplicate.body).toEqual(first);
+    expect(duplicate.body).toMatchObject({ ...first, created: false, unchanged: true });
     expect(
       (
         await h.app.request(`/v1/records/${personId}`, {
@@ -611,6 +671,88 @@ describe('managed source evidence with real RLS Postgres', () => {
       await db.owner`select count(*)::int as n from source_revisions where item_id=${s.itemId}`;
     expect(count?.n).toBe(2);
   });
+  it('replays under the accepted projection and sends changed revisions to the new location', async () => {
+    const h = await setup();
+    const source = await h.item();
+    const first = await h.sync(source.key, source.itemId, '1', null);
+    expect(first.status).toBe(200);
+    const change = await h.app.request('/v1/schema/changes', {
+      key: h.keys.admin,
+      body: {
+        operations: [
+          {
+            op: 'create_object',
+            object: {
+              class: 'event',
+              nameSingular: 'call',
+              namePlural: 'calls',
+              labelSingular: 'Call',
+              labelPlural: 'Calls',
+              fields: [{ name: 'tag', label: 'Tag', type: 'text' }],
+            },
+          },
+        ],
+      },
+    });
+    expect(change.status).toBe(200);
+    const input = {
+      installationId: h.id,
+      registrationId: h.manifest.universalId,
+      version: h.manifest.version,
+      settings: {},
+      bindings: { conversation: { action: 'existing', objects: ['call'] } },
+    };
+    const reviewed = await h.app.request('/v1/extensions/preview', {
+      key: h.keys.admin,
+      body: input,
+    });
+    expect(reviewed.status, JSON.stringify(reviewed.body)).toBe(200);
+    const adopted = await h.app.request(`${h.base}/upgrade`, {
+      key: h.keys.admin,
+      headers: { 'Idempotency-Key': randomUUID() },
+      body: { ...input, planDigest: reviewed.body.planDigest },
+    });
+    expect(adopted.status).toBe(200);
+    expect((await h.sync(source.key, source.itemId, '1', null)).status).toBe(409);
+    const [pending] = await db.owner`select id from extension_jobs where installation_id=${h.id}
+      and trigger_kind='install' and status='queued'`;
+    const verification = await h.queue.claim(h.workspace.id, pending?.id, 're-plan verification');
+    if (!verification) throw new Error('re-plan verification did not run');
+    const verified = await h.app.request(`${h.base}/source/verify`, {
+      key: await h.token(verification),
+      body: { accountId: 'provider-workspace-1', sharing: 'workspace' },
+    });
+    expect(verified.body.sourceAccountId).toBe(h.accountId);
+    await h.queue.complete(verification, { status: 'succeeded' });
+    const run = await h.start(source.itemId);
+    const replay = await h.sync(run.key, source.itemId, '1', null, {
+      ...h.event(),
+      fields: { tag: 'Enabled later' },
+    });
+    expect(replay.body).toMatchObject({
+      eventId: first.body.eventId,
+      unchanged: true,
+      created: false,
+    });
+    expect(
+      (await h.sync(run.key, source.itemId, '1', null, h.event('Changed title'))).body.error.code,
+    ).toBe('source_revision_conflict');
+    const unchanged = await h.sync(run.key, source.itemId, '2', first.body.revisionId);
+    expect(unchanged.body).toMatchObject({ eventId: first.body.eventId, unchanged: true });
+    const revised = await h.sync(run.key, source.itemId, '3', first.body.revisionId, {
+      ...h.event('Changed title'),
+      fields: { tag: 'New' },
+    });
+    expect(revised.body).toMatchObject({ previousEventId: first.body.eventId, created: true });
+    const revisions = await db.owner`select o.name_singular, s.is_current from source_revisions s
+      join records r on r.id=s.event_id join object_types o on o.id=r.object_type_id
+      where s.item_id=${source.itemId} order by s.is_current`;
+    expect(revisions).toEqual([
+      { name_singular: 'conversation', is_current: false },
+      { name_singular: 'call', is_current: true },
+    ]);
+  });
+
   it('deduplicates simultaneous deliveries durably and checks canonical content rather than trusting a digest', async () => {
     const h = await setup(),
       s = await h.item();
@@ -619,7 +761,8 @@ describe('managed source evidence with real RLS Postgres', () => {
       h.sync(s.key, s.itemId, '1', null),
     ]);
     expect(responses.every((r) => r.status === 200)).toBe(true);
-    expect(responses[0]?.body).toEqual(responses[1]?.body);
+    expect(responses.map((response) => response.body.created).sort()).toEqual([false, true]);
+    expect(responses[0]?.body.revisionId).toBe(responses[1]?.body.revisionId);
     expect(
       (await h.sync(s.key, s.itemId, '1', null, h.event('Conflicting replay'))).body.error.code,
     ).toBe('source_revision_conflict');
@@ -778,6 +921,7 @@ describe('managed source evidence with real RLS Postgres', () => {
     const workId = randomUUID(),
       other = extensionFixture({
         scopes: ['read', 'write'],
+        bindings: [testCompanyBinding],
         functions: [
           {
             universalId: workId,
@@ -890,7 +1034,7 @@ describe('managed source evidence with real RLS Postgres', () => {
     ).toEqual([{ status: 'cancelled', code: 'privacy_erased' }]);
     expect(
       (
-        await h.app.request('/v1/objects/person/records', {
+        await h.app.request('/v1/objects/company/records', {
           key: unrelatedKey,
           body: { values: { name: 'Stale run' } },
         })
@@ -900,7 +1044,7 @@ describe('managed source evidence with real RLS Postgres', () => {
     if (!resumed) throw new Error('unrelated durable work lost');
     expect(
       (
-        await h.app.request('/v1/objects/person/records', {
+        await h.app.request('/v1/objects/company/records', {
           key: await tokens.issue(h.app.sql, resumed, other.universalId, resumed.scopes),
           body: { values: { name: 'Fresh run' } },
         })
@@ -959,7 +1103,7 @@ describe('managed source evidence with real RLS Postgres', () => {
     ]);
     // A client digest over the event as it sent it, erased handle included, is checked in memory only.
     const submitted = requestHash({
-      type: listed.type,
+      type: listed.binding,
       occurredAt: '2026-11-10T10:00:00.000Z',
       title: 'Later',
       summary: '',
@@ -1084,7 +1228,11 @@ describe('managed source evidence with real RLS Postgres', () => {
     expect(synced.status, JSON.stringify(synced.body)).toBe(200);
     const eventId = synced.body.eventId as string;
     // The content is part of the canonical event: a replay is the same import, a change is not.
-    expect((await h.sync(source.key, source.itemId, '1', null, meeting)).body).toEqual(synced.body);
+    expect((await h.sync(source.key, source.itemId, '1', null, meeting)).body).toMatchObject({
+      ...synced.body,
+      created: false,
+      unchanged: true,
+    });
     const changed = await h.sync(source.key, source.itemId, '1', null, {
       ...meeting,
       content: 'Something else.',
@@ -1167,14 +1315,14 @@ describe('managed source evidence with real RLS Postgres', () => {
       await db.owner`select key,universal_id from fields where workspace_id=${h.workspace.id} and type='files'`;
     const imported = await h.sync(s.key, s.itemId, '1', null, {
       ...h.event('Transcript'),
-      fields: { [field?.universal_id]: [intent.body.id] },
+      fields: { transcript: [intent.body.id] },
     } as ReturnType<typeof h.event>);
     expect(imported.status).toBe(200);
     expect(
       (
         await h.sync(s.key, s.itemId, '2', imported.body.revisionId, {
           ...h.event('Transcript'),
-          fields: { [field?.key]: [intent.body.id], [field?.universal_id]: [intent.body.id] },
+          fields: { transcript: [intent.body.id], [field?.universal_id]: [intent.body.id] },
         })
       ).body.error.code,
     ).toBe('invalid_source_field');
@@ -1201,7 +1349,7 @@ describe('managed source evidence with real RLS Postgres', () => {
     });
     const unchanged = await h.sync(s.key, s.itemId, '2', imported.body.revisionId, {
       ...h.event('Transcript'),
-      fields: { [field?.key]: [retryIntent.body.id] },
+      fields: { transcript: [retryIntent.body.id] },
     } as ReturnType<typeof h.event>);
     expect(unchanged.status).toBe(200);
     expect(unchanged.body.unchanged).toBe(true);
@@ -1377,6 +1525,111 @@ describe('managed source evidence with real RLS Postgres', () => {
         .code,
     ).toBe('source_retracted');
   });
+  it('leaves the source item and event intact when another installation owns a unique field', async () => {
+    const publisher = extensionFixture({
+      execution: 'standalone',
+      scopes: ['read', 'write'],
+      bindings: [
+        {
+          key: 'conversation',
+          creates: true,
+          label: 'Conversations',
+          description: 'A unique app reference.',
+          class: 'event',
+          access: 'write',
+          required: true,
+          fields: [
+            {
+              key: 'reference',
+              label: 'App reference',
+              types: ['text'],
+              required: true,
+              owned: true,
+              installationOwned: true,
+              create: {
+                universalId: randomUUID(),
+                name: 'reference',
+                label: 'App reference',
+                type: 'text',
+                isUnique: true,
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const h = await setup('never', true, 'retract', publisher);
+    const item = await h.item();
+    const imported = await h.sync(item.key, item.itemId, '1', null);
+    expect(imported.status, JSON.stringify(imported.body)).toBe(200);
+    const input = {
+      registrationId: publisher.universalId,
+      version: publisher.version,
+      settings: {},
+    };
+    const reviewed = await h.app.request('/v1/extensions/preview', {
+      key: h.keys.admin,
+      body: input,
+    });
+    expect(reviewed.status, JSON.stringify(reviewed.body)).toBe(200);
+    const installed = await h.app.request('/v1/extensions', {
+      key: h.keys.admin,
+      body: { ...input, planDigest: reviewed.body.planDigest },
+      headers: { 'Idempotency-Key': randomUUID() },
+    });
+    expect(installed.status, JSON.stringify(installed.body)).toBe(201);
+    const ownerPath = `/v1/extensions/${installed.body.id}`;
+    const credential = await h.app.request(`${ownerPath}/keys`, {
+      key: h.keys.admin,
+      body: { expectedGeneration: installed.body.generation, scopes: ['read', 'write'] },
+    });
+    expect(credential.status).toBe(201);
+    const key = credential.body.key;
+    const plan = await h.app.request(`${ownerPath}/bindings`, { key });
+    const ownedEvent = await h.app.request('/v1/events', {
+      key,
+      body: {
+        type: 'conversation',
+        channel: 'ownership-fixture',
+        occurredAt: '2026-11-10T10:00:00Z',
+        fields: { reference: 'external-reference' },
+        bindings: bindingStamp(plan.body, 'conversation'),
+      },
+    });
+    expect(ownedEvent.status, JSON.stringify(ownedEvent.body)).toBe(201);
+    const eventId = ownedEvent.body.id;
+    // Model an existing owned event that is also a managed source revision.
+    // Public writes keep a managed revision immutable once it is linked.
+    await db.owner`update source_revisions set event_id=${eventId} where id=${imported.body.revisionId}`;
+    const state = () => db.owner`
+      select s.state, r.deleted_at from source_items s join source_revisions v on v.item_id=s.id
+      join records r on r.id=v.event_id where s.id=${item.itemId} and v.is_current`;
+    const before = await state();
+    const retract = () =>
+      h.app.request(`${h.base}/source-items/${item.itemId}/unavailable`, {
+        key: item.key,
+        body: { status: 'deleted', evidence: 'definitive_lookup' },
+      });
+    const refused = await retract();
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+    expect(refused.body.error.code).toBe('installation_owned');
+    expect(await state()).toEqual(before);
+    expect(
+      (await h.app.request(`/v1/events/${eventId}`, { key: h.keys.admin })).body.fields.reference,
+    ).toBe('external-reference');
+    expect(
+      (
+        await h.app.request(`${ownerPath}/uninstall`, {
+          key: h.keys.admin,
+          method: 'POST',
+        })
+      ).body.state,
+    ).toBe('uninstalled');
+    const retried = await retract();
+    expect(retried.status, JSON.stringify(retried.body)).toBe(200);
+    expect(retried.body.state).toBe('retracted');
+  });
+
   it('purges all managed-source stores with a workspace while preserving pending byte erasure', async () => {
     const h = await setup(),
       s = await h.item();
@@ -1423,3 +1676,272 @@ describe('managed source evidence with real RLS Postgres', () => {
     ).toHaveLength(1);
   });
 });
+
+const updateOnlyCreationFixture = extensionFixture({
+  name: 'creation-audit',
+  execution: 'standalone',
+  scopes: ['read', 'write'],
+  bindings: [
+    {
+      ...testCompanyBinding,
+      creates: undefined,
+      fields: testCompanyBinding.fields
+        .filter((field) => field.key !== 'attachments')
+        .map((field) => ({ ...field, lookup: undefined })),
+    },
+    {
+      key: 'conversation',
+      label: 'Conversations',
+      description: 'Replay existing events.',
+      class: 'event',
+      access: 'write',
+      required: true,
+      fields: [],
+    },
+  ],
+});
+
+async function standaloneCreationAudit() {
+  const manifest = updateOnlyCreationFixture;
+  const h = await setup('never', true, 'keep', manifest);
+  const input = { registrationId: manifest.universalId, version: manifest.version, settings: {} };
+  const preview = await h.app.request('/v1/extensions/preview', { key: h.keys.admin, body: input });
+  expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+  const installed = await h.app.request('/v1/extensions', {
+    key: h.keys.admin,
+    headers: { 'Idempotency-Key': randomUUID() },
+    body: { ...input, planDigest: preview.body.planDigest },
+  });
+  expect(installed.status, JSON.stringify(installed.body)).toBe(201);
+  const base = `/v1/extensions/${installed.body.id}`;
+  const issued = await h.app.request(`${base}/keys`, {
+    key: h.keys.admin,
+    body: { expectedGeneration: installed.body.generation, scopes: ['read', 'write'] },
+  });
+  expect(issued.status).toBe(201);
+  const key = issued.body.key;
+  const plan = await h.app.request(`${base}/bindings`, { key });
+  expect(plan.status).toBe(200);
+  return { ...h, key, stamp: (binding: string) => bindingStamp(plan.body, binding) };
+}
+
+// Model a stored plan that no longer authorizes a managed insert. A valid manifest
+// cannot normally produce it, but the runtime still checks the approved plan.
+async function removeCreation(id: string, key: string) {
+  await db.owner`update extension_installations i set bindings = jsonb_set(bindings, '{declarations}', (
+    select jsonb_agg(case when declaration->>'key' = ${key} then declaration - 'creates' else declaration end)
+    from jsonb_array_elements(i.bindings->'declarations') declaration
+  )) where i.id = ${id}`;
+}
+
+async function expectCreationRefused(response: {
+  status: number;
+  body: { error?: { code: string } };
+}) {
+  expect(response.status, JSON.stringify(response.body)).toBe(409);
+  expect(response.body.error?.code).toBe('binding_unavailable');
+}
+
+it.each([
+  [
+    'standalone record creation',
+    async () => {
+      const h = await standaloneCreationAudit();
+      await expectCreationRefused(
+        await h.app.request('/v1/objects/company/records', {
+          key: h.key,
+          body: { bindings: h.stamp('company'), values: { name: 'New company' } },
+        }),
+      );
+    },
+  ],
+  [
+    'standalone upsert',
+    async () => {
+      const h = await standaloneCreationAudit();
+      const record = await h.app.request('/v1/objects/company/records', {
+        key: h.keys.admin,
+        body: { values: { externalKey: 'existing-company' } },
+      });
+      expect(record.status).toBe(201);
+      const upsert = (externalKey: string) =>
+        h.app.request('/v1/objects/company/upsert', {
+          key: h.key,
+          body: {
+            bindings: h.stamp('company'),
+            match: { externalKey },
+            values: { name: 'Upserted' },
+            ifMissing: 'create',
+          },
+        });
+      await expectCreationRefused(await upsert('missing-company'));
+      expect((await upsert('existing-company')).body).toMatchObject({
+        id: record.body.id,
+        created: false,
+      });
+    },
+  ],
+  [
+    'standalone event logging',
+    async () => {
+      const h = await standaloneCreationAudit();
+      const event = {
+        type: 'conversation',
+        channel: 'creation-audit',
+        externalId: randomUUID(),
+        occurredAt: '2026-01-01T12:00:00Z',
+        title: 'Creation audit',
+      };
+      const log = (eventInput: typeof event | Omit<typeof event, 'externalId'>) =>
+        h.app.request('/v1/events', {
+          key: h.key,
+          body: { ...eventInput, bindings: h.stamp('conversation') },
+        });
+      await expectCreationRefused(await log(event));
+      const { externalId: _externalId, ...unidentified } = event;
+      await expectCreationRefused(await log(unidentified));
+      const saved = await h.app.request('/v1/events', { key: h.keys.admin, body: event });
+      expect(saved.status).toBe(201);
+      const about = await h.app.request('/v1/objects/company/records', {
+        key: h.keys.admin,
+        body: { values: { name: 'Linked company' } },
+      });
+      const replay = await h.app.request('/v1/events', {
+        key: h.key,
+        body: { ...event, bindings: h.stamp('conversation'), about: [about.body.id] },
+      });
+      expect(replay.status).toBe(200);
+      expect(replay.body).toMatchObject({
+        id: saved.body.id,
+        created: false,
+        added: { about: [about.body.id] },
+      });
+    },
+  ],
+  [
+    'ordinary hosted writes with bindings',
+    async () => {
+      const h = await setup();
+      const { key } = await h.start();
+      await expectCreationRefused(
+        await h.app.request('/v1/objects/person/records', {
+          key,
+          body: { values: { name: 'No contact creation' } },
+        }),
+      );
+      const logged = await h.app.request('/v1/events', {
+        key,
+        body: { type: 'conversation', channel: 'audit-run', occurredAt: '2026-01-01T12:00:00Z' },
+      });
+      expect(logged.status, JSON.stringify(logged.body)).toBe(201);
+    },
+  ],
+  [
+    'managed source revisions',
+    async () => {
+      const h = await setup();
+      const item = await h.item();
+      const first = await h.sync(item.key, item.itemId, '1', null);
+      expect(first.status).toBe(200);
+      await removeCreation(h.id, 'conversation');
+      const replay = await h.sync(item.key, item.itemId, '1', null);
+      expect(replay.body).toMatchObject({ eventId: first.body.eventId, unchanged: true });
+      await expectCreationRefused(
+        await h.sync(item.key, item.itemId, '2', first.body.revisionId, h.event('Updated')),
+      );
+    },
+  ],
+  [
+    'managed source tasks',
+    async () => {
+      const h = await setup('never', true, 'keep', undefined, true);
+      const item = await h.item();
+      const first = await h.sync(item.key, item.itemId, '1', null);
+      expect(first.status).toBe(200);
+      const tasks = async (externalId: string) => {
+        const current = await h.app.request(`${h.base}/source-items/${item.itemId}`, {
+          key: item.key,
+        });
+        return h.app.request(`${h.base}/source-items/${item.itemId}/tasks`, {
+          key: item.key,
+          body: {
+            expectedRevisionId: first.body.revisionId,
+            expectedTaskRevision: current.body.taskWriteRevision,
+            complete: false,
+            tasks: [{ externalId, status: 'open', title: 'Task', contactEmails: [] }],
+          },
+        });
+      };
+      const authorized = await tasks('allowed');
+      expect(authorized.status, JSON.stringify(authorized.body)).toBe(200);
+      expect(authorized.body.applied).toBe(1);
+      await removeCreation(h.id, 'task');
+      await expectCreationRefused(await tasks('refused'));
+    },
+  ],
+  [
+    'managed participant creation',
+    async () => {
+      for (const policy of ['never', 'everyone'] as const) {
+        const h = await setup(policy);
+        const item = await h.item();
+        const email = `${randomUUID()}@example.test`;
+        const synced = await h.sync(
+          item.key,
+          item.itemId,
+          '1',
+          null,
+          h.event('Meeting', [{ email }]),
+        );
+        expect(synced.status).toBe(200);
+        const matches =
+          await db.owner`select record_id from record_identifiers where workspace_id=${h.workspace.id} and value=${email}`;
+        expect(matches).toHaveLength(policy === 'everyone' ? 1 : 0);
+      }
+    },
+  ],
+  [
+    'Gmail message insertion and replay',
+    async () => {
+      const h = await setupGmailEvidence(db);
+      await h.person('dana@example.com');
+      const mailbox = await h.mailbox('creation-audit');
+      const original = await h.save(mailbox);
+      expect(original).toMatchObject({ kind: 'imported', created: true });
+      const updateOnly = {
+        ...mailbox,
+        plan: {
+          ...mailbox.plan,
+          declarations: mailbox.plan.declarations.map((declaration) =>
+            declaration.key === 'email' ? { ...declaration, creates: undefined } : declaration,
+          ),
+        },
+      };
+      expect(await h.save(updateOnly)).toMatchObject({ kind: 'imported', created: false });
+      await expect(
+        h.save(updateOnly, {
+          messageId: 'new-message',
+          rfcMessageId: '<new-message@example.test>',
+        }),
+      ).rejects.toMatchObject({ code: 'binding_unavailable' });
+    },
+  ],
+  [
+    'hidden notes through a fact write',
+    async () => {
+      const h = await standaloneCreationAudit();
+      const seed = await h.app.request('/v1/objects/company/records', {
+        key: h.keys.admin,
+        body: { values: { name: 'Fact subject' } },
+      });
+      const remembered = await h.app.request(`/v1/records/${seed.body.id}/facts`, {
+        key: h.key,
+        body: { text: 'An update under the ordinary facts scope.' },
+      });
+      expect(remembered.status, JSON.stringify(remembered.body)).toBe(201);
+      const [note] = await db.owner`select e.channel from fact_sources f
+      join event_records e on e.record_id=f.source_record_id where f.fact_id=${remembered.body.fact.id}`;
+      expect(note?.channel).toBe('retainer');
+    },
+  ],
+] as const)('audits creation authorization on %s', async (_path, test) => test());

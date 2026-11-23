@@ -64,7 +64,18 @@ const manifest = defineExtension({
   createPeople: 'never',
   onSourceDelete: 'keep',
   settings: {},
-  schema: [],
+  bindings: [
+    {
+      key: 'company',
+      label: 'Companies',
+      description: 'Fixture companies.',
+      class: 'entity',
+      access: 'write',
+      required: true,
+      creates: true,
+      fields: [{ key: 'name', label: 'Name', types: ['text'], required: true }],
+    },
+  ],
   views: [],
   functions: [
     {
@@ -143,6 +154,7 @@ if (development) {
     universalId: '90ce88f0-cb67-48c7-9dc3-97775cfae1f1',
     name: 'verifier-fixture',
     description: 'Inert raw-byte signature and hard-timeout verification fixture.',
+    bindings: [],
     functions: verifierIds.map((id, i) => ({
       universalId: id,
       name: i ? 'timeout' : 'verify',
@@ -200,9 +212,42 @@ if (development) {
       identity: 'account',
       verifyFunctionId: sourceSetupId,
       syncFunctionIds: [sourceSyncId],
-      eventTypeIds: ['564ad764-a57c-4741-ad63-61604fa4cf5a'],
+      event: 'meeting',
       revisionOrder: 'integer',
     },
+    bindings: [
+      {
+        key: 'meeting',
+        label: 'Conversations',
+        description: 'Managed fixture events.',
+        class: 'event',
+        access: 'write',
+        required: true,
+        creates: true,
+        fields: [
+          {
+            key: 'transcript',
+            label: 'Transcript',
+            types: ['files'],
+            required: false,
+            create: {
+              universalId: 'a30dbf1b-a9a4-4ad7-b602-ab62bfd1b866',
+              name: 'transcript',
+              label: 'Transcript',
+              type: 'files',
+            },
+          },
+        ],
+        create: {
+          universalId: 'c1897ea3-6071-481b-b72c-f594fe194115',
+          nameSingular: 'conversation',
+          namePlural: 'conversations',
+          labelSingular: 'Conversation',
+          labelPlural: 'Conversations',
+          fields: [],
+        },
+      },
+    ],
     settings: {
       includeTranscript: {
         type: 'boolean',

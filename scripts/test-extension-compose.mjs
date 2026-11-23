@@ -165,6 +165,14 @@ try {
   );
   const client = new RetainerClient({ baseUrl: origin, apiKey: credential.key });
   await client.me();
+  if (!withWebhook) {
+    const proposal = await client.applyTemplate('starter');
+    const applied =
+      proposal.status === 'proposed'
+        ? await client.decideSchemaChange(proposal.change.id, 'approve')
+        : proposal;
+    assert.equal(applied.status, 'applied');
+  }
   let contactCompany, contactPerson;
   if (withLastContact) {
     await client.proposeSchemaChange([

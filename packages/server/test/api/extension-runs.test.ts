@@ -9,12 +9,13 @@ import { prepareValues } from '../../src/records/values.js';
 import { insertRecord, writeFields } from '../../src/records/write.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
-import { extensionFixture } from '../helpers/extensions.js';
+import { extensionFixture, testCompanyBinding } from '../helpers/extensions.js';
 
 const db = useTestDatabase();
 const functionId = randomUUID();
 const manifest = extensionFixture({
   scopes: ['read', 'write'],
+  bindings: [testCompanyBinding],
   functions: [
     {
       universalId: functionId,

@@ -118,24 +118,9 @@ export function eventListObject(
   };
 }
 
-/** A conversation's `medium` select (its kind), found by base field so a rename keeps it. */
-export const mediumField = (object: ObjectView | undefined) =>
-  object?.fields.find((f) => f.baseField === 'conversationMedium' && f.type === 'select');
-
-/** A conversation's medium as its option's label, if set. */
-export function eventMedium(
-  object: ObjectView | undefined,
-  record: Pick<PresentedRecord, 'fields'>,
-): string | undefined {
-  const field = mediumField(object);
-  const value = field ? record.fields[field.name] : undefined;
-  if (!field || typeof value !== 'string' || !value) return undefined;
-  return field.settings.options?.find((o) => o.value === value)?.label ?? value;
-}
-
 /**
  * The columns an event list shows by default, after the title: when it
- * happened, the type's own fields (`medium` first), participants, `about`
+ * happened, the type's own fields, participants, `about`
  * and the source. The summary is available but hidden.
  */
 export function eventColumnOrder(object: ObjectView): string[] {
@@ -149,15 +134,7 @@ export function eventColumnOrder(object: ObjectView): string[] {
         !isEventColumn(f.name),
     )
     .map((f) => f.name);
-  const medium = mediumField(object)?.name;
-  return [
-    'occurredAt',
-    ...(medium ? [medium] : []),
-    ...own.filter((n) => n !== medium),
-    'participants',
-    'about',
-    'channel',
-  ];
+  return ['occurredAt', ...own, 'participants', 'about', 'channel'];
 }
 
 /**

@@ -37,7 +37,6 @@ export async function describeSchema(sql: Sql, caller: Caller): Promise<SchemaDe
         slug: workspace.slug,
         templates: workspace.templates,
         initialized: workspace.initializedAt !== null,
-        ...(workspace.schemaFromScratch ? { schemaFromScratch: true } : {}),
         schemaVersion: schema.version,
       },
       objects,

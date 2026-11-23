@@ -1,11 +1,12 @@
-import { BASE_EVENT_TYPE_IDS, INTERNAL_NOTE_TYPE_ID } from '@retainer/shared';
+import { INTERNAL_NOTE_TYPE_ID } from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
 import type { SchemaState } from '../schema/types.js';
+import { STARTER_EVENT_TYPE_IDS } from '../templates/base.js';
 import {
-  BASE_EVENT_OPERATIONS,
-  BASE_OBJECT_IDS,
-  BASE_OPERATIONS,
   INTERNAL_OPERATIONS,
+  STARTER_ENTITY_OPERATIONS,
+  STARTER_EVENT_OPERATIONS,
+  STARTER_OBJECT_IDS,
   TEMPLATES,
 } from '../templates/index.js';
 import { applyOperations, coreFieldUniversalId, deriveUuid } from './apply.js';
@@ -34,7 +35,7 @@ function issuesOf(state: SchemaState, operations: SchemaOperation[]) {
   return issues.length > 0 ? issues : validateSchema(desired);
 }
 
-const base = applyValid(EMPTY, BASE_OPERATIONS, 'system');
+const base = applyValid(EMPTY, STARTER_ENTITY_OPERATIONS, 'system');
 
 const field = (state: SchemaState, object: string, name: string) =>
   state.objects
@@ -44,14 +45,14 @@ const field = (state: SchemaState, object: string, name: string) =>
 describe('base objects', () => {
   it('creates person, company and task with fixed universal IDs', () => {
     expect(base.objects.map((o) => [o.nameSingular, o.universalId])).toEqual([
-      ['company', BASE_OBJECT_IDS.company],
-      ['person', BASE_OBJECT_IDS.person],
-      ['task', BASE_OBJECT_IDS.task],
+      ['company', STARTER_OBJECT_IDS.company],
+      ['person', STARTER_OBJECT_IDS.person],
+      ['task', STARTER_OBJECT_IDS.task],
     ]);
   });
 
   it('derives the same inverse fields every time', () => {
-    const again = applyValid(EMPTY, BASE_OPERATIONS, 'system');
+    const again = applyValid(EMPTY, STARTER_ENTITY_OPERATIONS, 'system');
     expect(field(again, 'company', 'people')?.universalId).toBe(
       field(base, 'company', 'people')?.universalId,
     );
@@ -60,7 +61,7 @@ describe('base objects', () => {
       type: 'relation',
       settings: {
         relationCardinality: 'one_to_many',
-        targetObjectId: BASE_OBJECT_IDS.person,
+        targetObjectId: STARTER_OBJECT_IDS.person,
         inverseFieldId: company?.universalId,
       },
     });
@@ -76,17 +77,19 @@ describe('base objects', () => {
 });
 
 describe('templates', () => {
-  for (const template of Object.values(TEMPLATES)) {
+  for (const template of Object.values(TEMPLATES).filter((template) => template.extends)) {
     it(`${template.name} applies to the base objects with additive operations only`, () => {
       const desired = applyValid(base, template.operations, 'system');
       const ops = diffSchemas(base, desired);
       expect(ops.filter((op) => classifyOp(op) !== 'additive')).toEqual([]);
-      expect(ops.length > 0).toBe(template.name !== 'blank');
+      expect(ops.length).toBeGreaterThan(0);
     });
   }
 
   it('can all be applied to one workspace', () => {
-    const all = Object.values(TEMPLATES).flatMap((t) => t.operations);
+    const all = Object.values(TEMPLATES)
+      .filter((t) => t.extends)
+      .flatMap((t) => t.operations);
     const desired = applyValid(base, all, 'system');
     expect(desired.objects.map((o) => o.nameSingular)).toEqual([
       'company',
@@ -104,7 +107,9 @@ describe('templates', () => {
   });
 
   it('uses universal IDs no other template or base object uses', () => {
-    const all = Object.values(TEMPLATES).flatMap((t) => t.operations);
+    const all = Object.values(TEMPLATES)
+      .filter((t) => t.extends)
+      .flatMap((t) => t.operations);
     const desired = applyValid(base, all, 'system');
     const ids = desired.objects.flatMap((o) => [
       o.universalId,
@@ -191,10 +196,8 @@ describe('apply', () => {
     expect(issue?.message).toContain('objects: company, person, task');
   });
 
-  it('protects base objects and label fields', () => {
-    expect(issuesOf(base, [{ op: 'delete_object', object: 'person' }])[0]?.message).toContain(
-      'is protected',
-    );
+  it('keeps the label field and allows deleting starter objects', () => {
+    expect(issuesOf(base, [{ op: 'delete_object', object: 'person' }])).toEqual([]);
     expect(
       issuesOf(base, [{ op: 'delete_field', object: 'person', field: 'name' }])[0]?.message,
     ).toContain('label field');
@@ -265,96 +268,36 @@ describe('schema-level change keys', () => {
 });
 
 describe('protection', () => {
-  const object = (state: SchemaState, name: string) =>
-    state.objects.find((o) => o.nameSingular === name);
-
-  it('protects the base objects and the task fields server code reads', () => {
-    expect(base.objects.filter((o) => o.isProtected).map((o) => o.nameSingular)).toEqual([
-      'company',
-      'person',
-      'task',
+  it('protects hidden types and event core fields', () => {
+    const state = applyValid(base, [...STARTER_EVENT_OPERATIONS, ...INTERNAL_OPERATIONS], 'system');
+    expect(state.objects.filter((o) => o.isProtected).map((o) => o.nameSingular)).toEqual([
+      'internalNote',
+      'workspaceProfile',
+      'memberProfile',
     ]);
-    const protectedFields = base.objects.flatMap((o) =>
-      o.fields.filter((f) => f.isProtected).map((f) => `${o.nameSingular}.${f.name}`),
-    );
-    expect(protectedFields).toEqual(['task.status', 'task.dueDate']);
+    expect(field(state, 'conversation', 'summary')?.isProtected).toBe(true);
+    expect(
+      issuesOf(state, [{ op: 'delete_field', object: 'conversation', field: 'summary' }])[0]
+        ?.message,
+    ).toContain('is protected');
+    expect(
+      issuesOf(state, [
+        { op: 'update_field', object: 'conversation', field: 'summary', isUnique: true },
+      ])[0]?.message,
+    ).toContain('is protected');
   });
 
-  it('never protects what a template or a client creates', () => {
-    const all = Object.values(TEMPLATES).flatMap((t) => t.operations);
-    const desired = applyValid(base, all, 'system');
-    const added = desired.objects.filter(
-      (o) => !base.objects.some((b) => b.universalId === o.universalId),
-    );
-    expect(added.every((o) => !o.isProtected && o.fields.every((f) => !f.isProtected))).toBe(true);
-    expect(desired.objects.filter((o) => o.isProtected)).toHaveLength(3);
-    expect(added.length).toBeGreaterThan(0);
-  });
-
-  it('refuses to delete protected objects and fields', () => {
-    for (const name of ['person', 'company', 'task']) {
-      expect(issuesOf(base, [{ op: 'delete_object', object: name }])[0]?.message).toContain(
-        'is protected',
-      );
-    }
-    for (const name of ['status', 'dueDate']) {
-      expect(
-        issuesOf(base, [{ op: 'delete_field', object: 'task', field: name }])[0]?.message,
-      ).toContain('is protected');
-    }
-  });
-
-  it('allows renames, labels and descriptions of protected objects and fields', () => {
+  it('allows editing and removing former protected task fields and options', () => {
     const desired = applyValid(base, [
       { op: 'rename_object', object: 'task', nameSingular: 'todo', namePlural: 'todos' },
-      { op: 'update_object', object: 'todo', labelSingular: 'To-do', labelPlural: 'To-dos' },
       { op: 'rename_field', object: 'todo', field: 'status', name: 'state' },
-      { op: 'update_field', object: 'todo', field: 'state', label: 'State', description: 'x' },
-      { op: 'rename_field', object: 'todo', field: 'dueDate', name: 'deadline' },
+      { op: 'remove_option', object: 'todo', field: 'state', value: 'done' },
+      { op: 'delete_field', object: 'todo', field: 'dueDate' },
     ]);
-    const todo = object(desired, 'todo');
-    expect(todo?.isProtected).toBe(true);
-    expect(field(desired, 'todo', 'state')).toMatchObject({ isProtected: true, label: 'State' });
-    expect(field(desired, 'todo', 'deadline')?.isProtected).toBe(true);
-  });
-
-  it('refuses to reshape a protected field', () => {
-    for (const change of [
-      { isNullable: false },
-      { isUnique: true },
-      { isFilterable: false },
-      { isSearchable: true },
-    ]) {
-      const [issue] = issuesOf(base, [
-        { op: 'update_field', object: 'task', field: 'status', ...change },
-      ]);
-      expect(issue?.message).toContain('is protected');
-    }
-    // Setting a flag to the value it already has changes nothing.
-    applyValid(base, [{ op: 'update_field', object: 'task', field: 'status', isFilterable: true }]);
-  });
-
-  it('keeps the done option but lets other task statuses change', () => {
-    const [issue] = issuesOf(base, [
-      { op: 'remove_option', object: 'task', field: 'status', value: 'done' },
-    ]);
-    expect(issue?.message).toContain('option "done" is protected');
-
-    const desired = applyValid(base, [
-      {
-        op: 'add_option',
-        object: 'task',
-        field: 'status',
-        option: { value: 'blocked', label: 'Blocked' },
-      },
-      { op: 'update_option', object: 'task', field: 'status', value: 'done', label: 'Finished' },
-      { op: 'remove_option', object: 'task', field: 'status', value: 'in_progress' },
-    ]);
-    expect(field(desired, 'task', 'status')?.settings.options).toEqual([
-      { value: 'todo', label: 'To do' },
-      { value: 'done', label: 'Finished' },
-      { value: 'blocked', label: 'Blocked' },
-    ]);
+    expect(
+      field(desired, 'todo', 'state')?.settings.options?.map((option) => option.value),
+    ).toEqual(['todo', 'in_progress']);
+    expect(field(desired, 'todo', 'dueDate')).toBeUndefined();
   });
 });
 
@@ -420,13 +363,13 @@ describe('polymorphic relations', () => {
   it('stores every allowed target, and one target as an ordinary relation', () => {
     const state = applyValid(base, [customer({ targetObjects: ['company', 'person'] })]);
     expect(field(state, 'task', 'customer')?.settings).toMatchObject({
-      targetObjectIds: [BASE_OBJECT_IDS.company, BASE_OBJECT_IDS.person],
+      targetObjectIds: [STARTER_OBJECT_IDS.company, STARTER_OBJECT_IDS.person],
       relationCardinality: 'many_to_one',
     });
     expect(field(state, 'task', 'customer')?.settings.targetObjectId).toBeUndefined();
     const single = applyValid(base, [customer({ targetObjects: ['company', 'company'] })]);
     expect(field(single, 'task', 'customer')?.settings).toMatchObject({
-      targetObjectId: BASE_OBJECT_IDS.company,
+      targetObjectId: STARTER_OBJECT_IDS.company,
     });
     const set = applyValid(base, [
       customer({ targetObjects: ['company', 'person'], relationCardinality: 'many_to_many' }),
@@ -552,12 +495,14 @@ describe('event rollups', () => {
   });
 
   it('is on in templates only for relations a record belongs to', () => {
-    const on = Object.values(TEMPLATES).flatMap((template) => {
-      const state = applyValid(base, template.operations, 'system');
-      return state.objects.flatMap((o) =>
-        o.fields.filter((f) => f.settings.rollUpEvents).map((f) => `${o.nameSingular}.${f.name}`),
-      );
-    });
+    const on = Object.values(TEMPLATES)
+      .filter((template) => template.extends)
+      .flatMap((template) => {
+        const state = applyValid(base, template.operations, 'system');
+        return state.objects.flatMap((o) =>
+          o.fields.filter((f) => f.settings.rollUpEvents).map((f) => `${o.nameSingular}.${f.name}`),
+        );
+      });
     // Affiliations, ownership and contact assignments stay off (7.2).
     expect(on.sort()).toEqual([
       'application.job',
@@ -573,7 +518,7 @@ describe('event rollups', () => {
 describe('event types', () => {
   const seeded = applyValid(
     base,
-    [...BASE_EVENT_OPERATIONS, ...INTERNAL_OPERATIONS] as SchemaOperation[],
+    [...STARTER_EVENT_OPERATIONS, ...INTERNAL_OPERATIONS] as SchemaOperation[],
     'system',
   );
   const object = (state: SchemaState, name: string) =>
@@ -593,7 +538,7 @@ describe('event types', () => {
   it('seeds the base event types and the internal-note type with fixed universal IDs', () => {
     const events = seeded.objects.filter((o) => o.class === 'event');
     expect(Object.fromEntries(events.map((o) => [o.nameSingular, o.universalId]))).toEqual({
-      conversation: BASE_EVENT_TYPE_IDS.conversation,
+      conversation: STARTER_EVENT_TYPE_IDS.conversation,
       internalNote: INTERNAL_NOTE_TYPE_ID,
     });
     // Base event types can be deleted when unused; the internal one cannot.
@@ -601,45 +546,6 @@ describe('event types', () => {
       'internalNote',
     ]);
     expect(base.objects.every((o) => o.class === 'entity')).toBe(true);
-  });
-
-  it('gives an event type named note its reserved universal ID, not a pinned one', () => {
-    const note = {
-      op: 'create_object',
-      object: {
-        nameSingular: 'note',
-        namePlural: 'notes',
-        labelSingular: 'Note',
-        labelPlural: 'Notes',
-        class: 'event',
-        fields: [],
-      },
-    } as SchemaOperation;
-    const state = applyValid(seeded, [note]);
-    expect(object(state, 'note')?.universalId).toBe(BASE_EVENT_TYPE_IDS.note);
-    // An entity of that name is not a note type, whatever it is called.
-    const entity = {
-      op: 'create_object',
-      object: {
-        nameSingular: 'note',
-        namePlural: 'notes',
-        labelSingular: 'Note',
-        labelPlural: 'Notes',
-        labelField: 'text',
-        fields: [{ name: 'text', label: 'Text', type: 'text' }],
-      },
-    } as SchemaOperation;
-    expect(object(applyValid(seeded, [entity]), 'note')?.universalId).not.toBe(
-      BASE_EVENT_TYPE_IDS.note,
-    );
-    // Added again after deletion, the old row keeps the ID and the new one gets its own.
-    const again = applyValid(
-      applyValid(state, [{ op: 'delete_object', object: 'note' }], 'system'),
-      [note],
-    );
-    const added = again.objects.find((o) => o.nameSingular === 'note' && o.status === 'active');
-    expect(added?.universalId).toBeDefined();
-    expect(added?.universalId).not.toBe(BASE_EVENT_TYPE_IDS.note);
   });
 
   it('gives a new event type protected title and summary fields, the title as its label', () => {
@@ -660,7 +566,7 @@ describe('event types', () => {
   });
 
   it('derives the same core field IDs for a code-defined type every time', () => {
-    const again = applyValid(base, BASE_EVENT_OPERATIONS as SchemaOperation[], 'system');
+    const again = applyValid(base, STARTER_EVENT_OPERATIONS as SchemaOperation[], 'system');
     const ids = (state: SchemaState) =>
       object(state, 'conversation')?.fields.map((f) => f.universalId);
     expect(ids(again)).toEqual(ids(seeded));

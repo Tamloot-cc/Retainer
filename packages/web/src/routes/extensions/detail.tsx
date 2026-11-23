@@ -41,9 +41,9 @@ import {
   ReviewIcon,
 } from '../../ui/review.js';
 import { QueryError, useView } from '../state.js';
+import { BindingSummary } from './bindings.js';
 import { ExtensionIcon, extensionName } from './branding.js';
 import { MemberConnectionPanel } from './connections.js';
-import { MappingGroup } from './mapping.js';
 import {
   accessText,
   canReconnect,
@@ -68,7 +68,7 @@ import { SettingFields } from './setting-fields.js';
 import { ExtensionCard, ExtensionFacts } from './surface.js';
 
 type Settings = Installation['settings'];
-type Tab = 'overview' | 'connections' | 'mapping' | 'settings' | 'runs' | 'credentials';
+type Tab = 'overview' | 'connections' | 'bindings' | 'settings' | 'runs' | 'credentials';
 
 /** `/extensions/:id`: one installed extension, its state up top and the rest in tabs. */
 /** Every extension page's breadcrumb leads back to the list. */
@@ -164,11 +164,11 @@ function InstalledExtension({
           },
         ]
       : []),
-    ...(manifest?.mapping && !gone
+    ...(manifest?.bindings?.length && !gone
       ? [
           {
-            value: 'mapping' as const,
-            label: 'Field mapping',
+            value: 'bindings' as const,
+            label: 'Bindings',
             hint: 'Which field each value this extension finds is written to.',
           },
         ]
@@ -303,7 +303,7 @@ function InstalledExtension({
             void setSearch({ tab: 'runs' });
           }}
         />
-      ) : tab === 'mapping' && release ? (
+      ) : tab === 'bindings' && release ? (
         <MappingSummary release={release} installation={installation} admin={admin} />
       ) : tab === 'settings' && release ? (
         <SettingsForm
@@ -460,7 +460,7 @@ function SettingsForm({
       }),
     onSuccess: (updated) => onSaved(updated.settingsRevision),
   });
-  if (!hasInstallationSettings(release))
+  if (!hasInstallationSettings(release, 'createPeople'))
     return <Empty quiet title="This extension has no settings" />;
   return (
     <form
@@ -493,6 +493,7 @@ function SettingsForm({
         <fieldset disabled={save.isPending} className="flex flex-col gap-4">
           <SettingFields
             release={release}
+            omitSetting="createPeople"
             values={values}
             secrets={{}}
             existing={installation}
@@ -523,56 +524,47 @@ function MappingSummary({
   installation: Installation;
   admin: boolean;
 }) {
+  const { schema } = useWorkspace();
   const navigate = useNavigate();
   const suggest = useMutation({
     mutationFn: async () => {
       await api.configureExtension(installation.id);
-      void navigate({ to: '/extensions/$id/mapping', params: { id: installation.id } });
+      void navigate({ to: '/extensions/$id/bindings', params: { id: installation.id } });
     },
   });
   const detail = useQuery({
     queryKey: detailKey(installation.id),
     queryFn: ({ signal }) => api.extension(installation.id, signal),
   });
-  const mapping = release.manifest.mapping;
-  if (!mapping) return null;
   if (detail.error) return <QueryError error={detail.error} retry={() => void detail.refetch()} />;
-  const view = detail.data?.mapping;
-  if (!view) return <Muted>Loading field mapping…</Muted>;
-  const broken = view.outputs.some((o) => o.status !== 'ok');
+  if (!release.manifest.bindings || !detail.data?.bindingChoices)
+    return <Muted>Loading bindings…</Muted>;
   return (
-    <div className="max-w-2xl">
-      <ReviewCard>
-        <ReviewCardHeader
-          leading={<ReviewIcon icon={LayoutList} />}
-          title="Approved field mapping"
+    <ReviewCard>
+      <ReviewCardHeader leading={<ReviewIcon icon={LayoutList} />} title="Approved bindings" />
+      <ReviewCardBody>
+        <BindingSummary
+          declarations={release.manifest.bindings}
+          choices={detail.data.bindingChoices}
+          objects={schema.objects}
         />
-        <ReviewCardBody>
-          <MappingGroup mapping={mapping} bindings={view.outputs} />
-          {broken ? (
-            <Notice warning>
-              A mapped field was deleted or changed. Its value is not written until you remap or
-              skip it.
-            </Notice>
-          ) : null}
-          {suggest.error ? <Notice error>{suggest.error.message}</Notice> : null}
-        </ReviewCardBody>
-        {admin ? (
-          <ReviewCardFooter>
-            {canSuggest(release, installation) ? (
-              <Button disabled={suggest.isPending} onClick={() => suggest.mutate()}>
-                {suggest.isPending ? 'Requesting suggestions…' : 'Suggest mapping'}
-              </Button>
-            ) : null}
-            <Button asChild className="min-h-11 flex-1 sm:min-h-8 sm:flex-none">
-              <Link to="/extensions/$id/mapping" params={{ id: installation.id }}>
-                Edit mapping
-              </Link>
+        {suggest.error ? <Notice error>{suggest.error.message}</Notice> : null}
+      </ReviewCardBody>
+      {admin ? (
+        <ReviewCardFooter>
+          {canSuggest(release, installation) ? (
+            <Button disabled={suggest.isPending} onClick={() => suggest.mutate()}>
+              {suggest.isPending ? 'Requesting suggestions…' : 'Suggest bindings'}
             </Button>
-          </ReviewCardFooter>
-        ) : null}
-      </ReviewCard>
-    </div>
+          ) : null}
+          <Button asChild>
+            <Link to="/extensions/$id/bindings" params={{ id: installation.id }}>
+              Change setup
+            </Link>
+          </Button>
+        </ReviewCardFooter>
+      ) : null}
+    </ReviewCard>
   );
 }
 

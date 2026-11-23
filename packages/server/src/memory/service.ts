@@ -1,3 +1,4 @@
+import type { BindingWriteStamp } from '@retainer/extension';
 import type {
   AddedLinks,
   EventContentPage,
@@ -13,7 +14,13 @@ import { AppError, forbidden, notFound } from '../errors.js';
 import { claimIdempotencyKey, storeIdempotentResult } from '../idempotency.js';
 import { deletePersonalMemory, type PersonalMemoryCounts } from '../privacy/personal.js';
 import { getRecord } from '../records/read.js';
-import { eventsAmong, withRead, withWrite } from '../records/service.js';
+import {
+  eventsAmong,
+  requireRecordCreationBinding,
+  requireStandaloneBinding,
+  withRead,
+  withWrite,
+} from '../records/service.js';
 import { softDeleteRecord } from '../records/write.js';
 import { eventContentPage } from './event-bodies.js';
 import type { AddLinksInput } from './event-links.js';
@@ -22,6 +29,7 @@ import {
   type LogEventInput,
   logEvent,
   removeEventLink,
+  requireEventType,
   retractEventClaims,
 } from './events.js';
 import {
@@ -47,7 +55,26 @@ export async function logEventFor(
   caller: Caller,
   input: LogEventInput,
 ): Promise<LogEventResult> {
-  return withWrite(sql, caller, (tx, context) => logEvent(tx, context, input));
+  return withWrite(sql, caller, async (tx, context) => {
+    if (context.installation)
+      await requireStandaloneBinding(
+        tx,
+        context,
+        requireEventType(context.schema, input.type),
+        Object.keys(input.fields),
+        input.bindings,
+      );
+    return logEvent(tx, context, input, {
+      beforeInsert: (object) =>
+        requireRecordCreationBinding(
+          tx,
+          context,
+          object,
+          Object.keys(input.fields),
+          input.bindings,
+        ),
+    });
+  });
 }
 
 /** One live event: the record with its built-in columns and links. */
@@ -77,7 +104,19 @@ export async function addEventLinksFor(
   id: string,
   input: AddLinksInput,
 ): Promise<PresentedRecord & { added: AddedLinks }> {
-  return withWrite(sql, caller, (tx, context) => addEventLinks(tx, context, id, input));
+  return withWrite(sql, caller, async (tx, context) => {
+    if (context.installation) {
+      const record = await getRecord(tx, caller.workspaceId, context.schema, id);
+      await requireStandaloneBinding(
+        tx,
+        context,
+        requireEventType(context.schema, record.object),
+        [],
+        input.bindings,
+      );
+    }
+    return addEventLinks(tx, context, id, input);
+  });
 }
 
 /** Removes a participant, or a record from the `about` list; a person only. */
@@ -99,6 +138,7 @@ export async function retractEventFor(
   sql: Sql,
   caller: Caller,
   id: string,
+  bindings?: BindingWriteStamp,
 ): Promise<RetractEventResult> {
   return withWrite(sql, caller, async (tx, context) => {
     const record = await getRecord(tx, caller.workspaceId, context.schema, id).catch((error) => {
@@ -108,6 +148,14 @@ export async function retractEventFor(
       throw error;
     });
     if (!record.event) throw notFound('event', { id });
+    if (context.installation)
+      await requireStandaloneBinding(
+        tx,
+        context,
+        requireEventType(context.schema, record.object),
+        [],
+        bindings,
+      );
     const deleted = await softDeleteRecord(tx, context, record.id);
     for (const id of deleted) await context.changes?.capture(tx, id, 'retract');
     const retraction = await retractEventClaims(

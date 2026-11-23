@@ -1,9 +1,4 @@
-import {
-  BASE_FIELD_IDS,
-  BASE_OBJECT_IDS,
-  HIDDEN_TYPE_IDS,
-  TASK_DONE_OPTION,
-} from '@retainer/shared';
+import { HIDDEN_TYPE_IDS } from '@retainer/shared';
 import type { SchemaState } from '../schema/types.js';
 
 /**
@@ -13,24 +8,9 @@ import type { SchemaState } from '../schema/types.js';
  * a schema element adds it here in the same change. An event type's core
  * fields are protected by the engine when it creates them.
  */
-export const PROTECTED_OBJECT_IDS: ReadonlySet<string> = new Set([
-  ...Object.values(BASE_OBJECT_IDS),
-  ...HIDDEN_TYPE_IDS,
-]);
-
-export const PROTECTED_FIELD_IDS: ReadonlySet<string> = new Set([
-  BASE_FIELD_IDS.taskStatus,
-  BASE_FIELD_IDS.taskDueDate,
-]);
-
-/**
- * Select option values server code reads, by field universal ID. They
- * cannot be removed; their labels can change. Other options of the same
- * field can be added, relabeled and removed.
- */
-export const PROTECTED_OPTIONS: ReadonlyMap<string, readonly string[]> = new Map([
-  [BASE_FIELD_IDS.taskStatus, [TASK_DONE_OPTION]],
-]);
+export const PROTECTED_OBJECT_IDS: ReadonlySet<string> = HIDDEN_TYPE_IDS;
+export const PROTECTED_FIELD_IDS: ReadonlySet<string> = new Set();
+export const PROTECTED_OPTIONS: ReadonlyMap<string, readonly string[]> = new Map();
 
 /** Flags a protected field keeps: changing any of them reshapes the field. */
 export const PROTECTED_FIELD_FLAGS = [

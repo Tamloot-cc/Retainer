@@ -939,6 +939,48 @@
       "when": 1795383503243,
       "tag": "0133_standalone_app_platform",
       "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1795384761050,
+      "tag": "0134_empty_workspaces_and_template_proposals",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1795384762774,
+      "tag": "0135_release_former_base_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1795384792890,
+      "tag": "0136_extension_binding_plans",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1795384794379,
+      "tag": "0137_extension_binding_proposal_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1795384829022,
+      "tag": "0138_capture_installation_mapping_for_binding_migration",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1795384830543,
+      "tag": "0139_remove_installation_mapping",
+      "breakpoints": true
     }
   ]
 }

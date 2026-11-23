@@ -130,6 +130,15 @@ place: give the new person's `recordId`, or retry an email after creating its un
 Ambiguous participants require an explicit `recordId` among their current
 candidates; `suppressed` and `deleted_record` rows stay for people review.
 `POST /v1/events/:id/links` uses the same behavior and `added` response shape.
+
+A standalone app fetches its plan from `GET /v1/extensions/:id/bindings`
+with its installation credential. Record and event writes use a `bindings`
+object with `bindings_revision`, the destination's `objectId`, and
+`fieldIds` keyed by each written field's API name. Event title and summary
+stay top-level. Adding links and deleting records or events need the
+destination ID and revision, with an empty `fieldIds` object. The API returns
+`409 binding_unavailable` if the app has no approved destination or the write
+doesn't match its current plan.
 Nothing is removed by logging again; a different payload is a 409 `event_conflict`, and the
 identity of a deleted or erased event is a 409 `event_retracted`.
 

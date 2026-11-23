@@ -116,7 +116,27 @@ const key = async (name, actor, scopes) =>
       '--json',
     ),
   ).key;
-const since = new Date().toISOString();
+// Read continuously. The daemon keeps only a bounded history shared with
+// unrelated projects, and tests on a busy daemon can outlive that history.
+const watcher = execFile(
+  'docker',
+  [
+    'events',
+    '--since',
+    new Date().toISOString(),
+    '--filter',
+    'type=network',
+    '--filter',
+    'event=connect',
+    '--format',
+    '{{json .}}',
+  ],
+  { encoding: 'utf8' },
+);
+let networkEvents = '';
+watcher.stdout.on('data', (chunk) => {
+  networkEvents += chunk;
+});
 try {
   await compose('up', '-d', '--no-build', '--wait', '--wait-timeout', '120');
   const admin = new RetainerClient({
@@ -127,6 +147,12 @@ try {
     baseUrl: origin,
     apiKey: await key('Builder', 'agent:compose-builder', 'read,write'),
   });
+  const starter = await admin.applyTemplate('starter');
+  const applied =
+    starter.status === 'proposed'
+      ? await admin.decideSchemaChange(starter.change.id, 'approve')
+      : starter;
+  assert.equal(applied.status, 'applied');
   await admin.proposeSchemaChange(
     [
       {
@@ -179,21 +205,7 @@ try {
   // Every run network held the API and the runner, never the egress proxy.
   const api = (await docker('inspect', '-f', '{{.Id}}', `${project}-api`)).trim(),
     egress = (await docker('inspect', '-f', '{{.Id}}', `${project}-egress`)).trim();
-  const events = (
-    await docker(
-      'events',
-      '--since',
-      since,
-      '--until',
-      new Date().toISOString(),
-      '--filter',
-      'type=network',
-      '--filter',
-      'event=connect',
-      '--format',
-      '{{json .}}',
-    )
-  )
+  const events = networkEvents
     .split('\n')
     .filter(Boolean)
     .map((line) => JSON.parse(line).Actor.Attributes)
@@ -218,6 +230,7 @@ try {
     }),
   );
 } finally {
+  watcher.kill();
   await compose('down', '--volumes', '--remove-orphans', '--timeout', '30').catch(() => {});
   rmSync(temp, { recursive: true, force: true });
 }

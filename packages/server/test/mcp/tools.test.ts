@@ -20,6 +20,7 @@ let user: McpTestClient;
 let reader: McpTestClient;
 let outsider: McpTestClient;
 let fresh: McpTestClient;
+let freshAdminKey: string;
 let salesAgentKey: string;
 let salesUserKey: string;
 let salesAdminKey: string;
@@ -83,9 +84,13 @@ beforeAll(async () => {
     { agent: { actor: { type: 'agent', id: 'other' }, scopes: ['read', 'write'] } },
   );
   const blank = await t.setupWorkspace(
-    { name: 'Yael Realty' },
-    { agent: { actor: { type: 'agent', id: 'setup' }, scopes: ['read', 'write', 'schema:write'] } },
+    { name: 'Yael Realty', template: null },
+    {
+      agent: { actor: { type: 'agent', id: 'setup' }, scopes: ['read', 'write', 'schema:write'] },
+      admin: { actor: { type: 'user', id: 'setup-admin' }, scopes: ['admin'] },
+    },
   );
+  freshAdminKey = blank.keys.admin;
   for (const [key, assign] of [
     [sales.keys.agent, (c: McpTestClient) => (agent = c)],
     [sales.keys.agent2, (c: McpTestClient) => (agent2 = c)],
@@ -274,13 +279,7 @@ describe('event history and schema guidance', () => {
       expect(byName.get(name)?.description).toContain('one hop');
     }
     const schema = byName.get('describe_schema')?.description ?? '';
-    for (const marker of [
-      'isProtected',
-      'protectedOptions',
-      'baseObject',
-      'baseField',
-      'coreRole',
-    ]) {
+    for (const marker of ['isProtected', 'protectedOptions', 'coreRole']) {
       expect(schema).toContain(marker);
     }
     expect(schema).toContain('current API');
@@ -295,7 +294,7 @@ describe('event history and schema guidance', () => {
       expect(body).toContain('query_records with linked returns direct attachments only');
       expect(body).toContain('Protected objects cannot be deleted');
       expect(body).toContain('protected option values cannot be removed');
-      expect(body).toContain('Use baseObject and baseField');
+      expect(body).toContain('Use current API names');
       expect(body).toContain('current API names');
     },
   );
@@ -343,12 +342,7 @@ describe('the discover_schema guide', () => {
     const res = await reader.call<string>('get_guide', { name: 'discover_schema' });
     expect(res.isError).toBe(false);
     expect(res.body).toMatch(/^# Discover the schema/);
-    const steps = [
-      'describe_schema',
-      'Propose and wait',
-      'apply_template',
-      'propose_schema_change',
-    ];
+    const steps = ['describe_schema', 'apply_template', 'Propose and wait'];
     const positions = steps.map((step) => res.body.indexOf(step));
     expect(positions.every((p) => p >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
@@ -482,16 +476,17 @@ describe('describe_schema, list_templates and apply_template', () => {
       initialized: false,
       templates: [],
     });
-    // Every workspace starts with the base objects and event types (6.1).
-    expect(before.body.objects.map((o: { nameSingular: string }) => o.nameSingular).sort()).toEqual(
-      ['company', 'conversation', 'person', 'task'],
-    );
+    expect(before.body.objects).toEqual([]);
 
     const list = await fresh.call('list_templates');
     const realEstate = list.body.templates.find((x: { name: string }) => x.name === 'real_estate');
     expect(realEstate).toMatchObject({ applied: false });
     expect(realEstate.adds.objects.map((o: { name: string }) => o.name).sort()).toEqual([
+      'company',
+      'conversation',
+      'person',
       'property',
+      'task',
       'viewing',
     ]);
 
@@ -503,10 +498,16 @@ describe('describe_schema, list_templates and apply_template', () => {
 
     const applied = await fresh.call('apply_template', { name: 'real_estate' });
     expect(applied.isError).toBe(false);
-    expect(applied.body).toMatchObject({ status: 'applied', alreadyApplied: false });
+    expect(applied.body).toMatchObject({ status: 'proposed', change: { template: 'real_estate' } });
+    expect((await fresh.call('describe_schema')).body.workspace.templates).toEqual([]);
 
+    const approval = await t.request(`/v1/schema/changes/${applied.body.change.id}/approve`, {
+      method: 'POST',
+      key: freshAdminKey,
+    });
+    expect(approval.body.status).toBe('applied');
     const again = await fresh.call('apply_template', { name: 'real_estate' });
-    expect(again.body).toMatchObject({ status: 'unchanged', alreadyApplied: true });
+    expect(again.body.error.code).toBe('workspace_not_empty');
 
     const after = await fresh.call('describe_schema');
     expect(after.body.workspace.initialized).toBe(true);

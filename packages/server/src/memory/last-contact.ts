@@ -1,4 +1,3 @@
-import { BASE_EVENT_TYPE_IDS } from '@retainer/shared';
 import type { Tx } from '../db/tx.js';
 import {
   lockRecord,
@@ -16,10 +15,10 @@ export async function reconcileLastContact(
   context: WriteContext,
   id: string,
   field: FieldState,
+  eventTypeIds: string[],
 ) {
   const fieldId = field.id;
   if (!fieldId) throw new Error('persisted derivation field required');
-  const conversation = context.schema.objectsByUniversalId.get(BASE_EVENT_TYPE_IDS.conversation);
   const [latest] = await tx<HistoryRow[]>`select h.* from ${eventHistory(
     tx,
     context.schema,
@@ -27,7 +26,7 @@ export async function reconcileLastContact(
     id,
     {
       limit: 1,
-      eventTypeIds: conversation?.state.status === 'active' ? [conversation.id] : [],
+      eventTypeIds,
       where: (time) => tx`${time}<=clock_timestamp()`,
     },
   )} h order by h.occurred_at desc,h.event_id desc limit 1`;

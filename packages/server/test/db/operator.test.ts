@@ -147,11 +147,16 @@ describe('first boot', () => {
 
       // The admin key is a user with every scope, so it can approve schema changes.
       const app = startTestApp(fresh);
-      const proposal = await app.request('/v1/schema/changes', {
-        key: boots[0]?.key as string,
-        body: { operations: [{ op: 'delete_field', object: 'person', field: 'jobTitle' }] },
+      const key = boots[0]?.key as string;
+      const schema = await app.request('/v1/schema', { key });
+      expect(schema.body.objects).toEqual([]);
+      const proposal = await app.request('/v1/templates/starter/apply', { key, method: 'POST' });
+      expect(proposal.body.status).toBe('proposed');
+      const approved = await app.request(`/v1/schema/changes/${proposal.body.change.id}/approve`, {
+        key,
+        method: 'POST',
       });
-      expect(proposal.body.status).toBe('applied');
+      expect(approved.body.status).toBe('applied');
     } finally {
       await fresh.drop();
     }

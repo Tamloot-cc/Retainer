@@ -104,37 +104,42 @@ test('lists facts as a built-in and event types beside objects, and shows what a
   await expect(page.getByText('occurredAt', { exact: true })).toBeVisible();
   await page.goto(`${r.url}/app/e/${meeting.id}`);
   await expect(page.getByRole('heading', { name: 'Pilot review' })).toBeVisible();
-  await expect(
-    page.getByText('Conversation · Meeting · Source: calendar', { exact: false }),
-  ).toBeVisible();
+  await expect(page.getByText('Conversation · Source: calendar', { exact: false })).toBeVisible();
   await expect(page.getByText('Activity · Conversation')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Acme Pilot Co' })).toBeVisible();
 });
 
-test('draws the objects and relations and opens them from the diagram', async ({
-  page,
-  retainer: r,
-}) => {
-  await r.request('/templates/sales/apply', {});
-  await signIn(page, r.url, r.keys.user);
-  await page.getByRole('link', { name: 'Review inbox' }).click();
-  await page.goto(`${r.url}/app/schema?tab=diagram`);
-  const diagram = page.getByRole('figure', { name: 'Objects and their relations' });
-  await expect(page.getByText(/^5 relations\./)).toBeVisible();
-  // Cards list the label field and the relations, not every field.
-  const deals = diagram.locator('.react-flow__node[data-id="deal"]');
-  await expect(deals.getByRole('button', { name: /^Point of contact/ })).toBeVisible();
-  await expect(deals.getByText('Amount')).toHaveCount(0);
-  // A relation row opens its field in the Objects tab.
-  await deals.getByRole('button', { name: /^Point of contact/ }).click();
-  await expect(page.getByRole('heading', { name: 'Deals', exact: true })).toBeVisible();
-  await expect(page.getByRole('dialog', { name: 'Point of contact' })).toBeVisible();
-  await expect(page).toHaveURL(/object=deal&field=pointOfContact/);
-  // A card's header opens the object.
-  await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Diagram', exact: true }).click();
-  await diagram.locator('.react-flow__node[data-id="company"]').getByRole('button').first().click();
-  await expect(page.getByRole('heading', { name: 'Companies', exact: true })).toBeVisible();
+test.describe('Sales workspace', () => {
+  test.use({ workspaceTemplate: 'sales' });
+
+  test('draws the objects and relations and opens them from the diagram', async ({
+    page,
+    retainer: r,
+  }) => {
+    await signIn(page, r.url, r.keys.user);
+    await page.getByRole('link', { name: 'Review inbox' }).click();
+    await page.goto(`${r.url}/app/schema?tab=diagram`);
+    const diagram = page.getByRole('figure', { name: 'Objects and their relations' });
+    await expect(page.getByText(/^5 relations\./)).toBeVisible();
+    // Cards list the label field and the relations, not every field.
+    const deals = diagram.locator('.react-flow__node[data-id="deal"]');
+    await expect(deals.getByRole('button', { name: /^Point of contact/ })).toBeVisible();
+    await expect(deals.getByText('Amount')).toHaveCount(0);
+    // A relation row opens its field in the Objects tab.
+    await deals.getByRole('button', { name: /^Point of contact/ }).click();
+    await expect(page.getByRole('heading', { name: 'Deals', exact: true })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Point of contact' })).toBeVisible();
+    await expect(page).toHaveURL(/object=deal&field=pointOfContact/);
+    // A card's header opens the object.
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Diagram', exact: true }).click();
+    await diagram
+      .locator('.react-flow__node[data-id="company"]')
+      .getByRole('button')
+      .first()
+      .click();
+    await expect(page.getByRole('heading', { name: 'Companies', exact: true })).toBeVisible();
+  });
 });
 
 test.describe('Schema on touch screens', () => {
@@ -161,13 +166,13 @@ test.describe('Schema on touch screens', () => {
       await page.setViewportSize(viewport);
       await page.goto(`${r.url}/app/schema`);
       await expect(people).toBeInViewport();
-      const intro = page.getByText('Templates and schema basics', { exact: true });
+      const intro = page.getByText('How records and activity work', { exact: true });
       const templates = page.getByRole('heading', { name: 'Start from a template' });
-      await expect(templates).toBeHidden();
+      await expect(templates).toHaveCount(0);
       await intro.tap();
-      await expect(templates).toBeVisible();
+      await expect(intro.locator('..')).toHaveAttribute('open', '');
       await intro.tap();
-      await expect(templates).toBeHidden();
+      await expect(intro.locator('..')).not.toHaveAttribute('open', '');
       expect(await tabs.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       await people.tap();
       const heading = page.getByRole('heading', { name: 'People', exact: true });

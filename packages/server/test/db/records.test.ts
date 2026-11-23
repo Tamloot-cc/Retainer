@@ -582,7 +582,7 @@ describe('deleted and merged records', () => {
 
 describe('row-level security', () => {
   it('stops workspace A from reading or writing workspace B records', async () => {
-    const other = await createWorkspace(db.owner, { name: 'Other' });
+    const other = await createWorkspace(db.owner, { name: 'Other', template: 'starter' });
     const secret = await createRecord(app, as(AGENT, other.id), 'person', { emails: email() });
     await expect(readRecord(app, as(AGENT), secret.id)).rejects.toMatchObject({ status: 404 });
     await expect(

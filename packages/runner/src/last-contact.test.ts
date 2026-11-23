@@ -27,32 +27,35 @@ describe('last-contact adapter', () => {
   it('pins only contributed nullable date fields and runtime functions', () => {
     const manifest = lastContactManifest(build);
     expect(manifest.functions).toHaveLength(6);
-    expect(manifest.lastContact?.fields).toHaveLength(2);
+    expect(manifest.lastContact?.destinations).toEqual(['person', 'company']);
     expect(() =>
       defineExtension({
         ...manifest,
         lastContact: { ...manifest.lastContact, functionIds: [LAST_CONTACT.setup] },
       }),
-    ).toThrow('last-contact');
+    ).toThrow(/last.contact/i);
     expect(() =>
       defineExtension({
         ...manifest,
         lastContact: {
           ...manifest.lastContact,
-          fields: [{ objectId: randomUUID(), fieldId: randomUUID() }],
+          destinations: ['missing'],
         },
       }),
-    ).toThrow('last-contact');
+    ).toThrow(/last.contact/i);
     expect(() =>
       defineExtension({
         ...manifest,
-        schema: manifest.schema.map((entry) => ({
-          ...entry,
-          definition: { ...entry.definition, isUnique: true },
+        bindings: manifest.bindings?.map((binding) => ({
+          ...binding,
+          fields: binding.fields.map((field) => ({
+            ...field,
+            create: field.create && { ...field.create, isUnique: true },
+          })),
         })),
       }),
-    ).toThrow('last-contact');
-    expect(() => defineExtension({ ...manifest, scopes: ['read'] })).toThrow('last-contact');
+    ).toThrow(/last.contact/i);
+    expect(() => defineExtension({ ...manifest, scopes: ['read'] })).toThrow(/last.contact/i);
   });
   it('starts an operational scan atomically from setup and makes a retry of that setup quiet', async () => {
     const run = invocation(LAST_CONTACT.setup),

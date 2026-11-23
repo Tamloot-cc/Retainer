@@ -282,12 +282,14 @@ describe('ops function', () => {
         logins: { runtime: false, control: false },
         rebuiltSearchText: 0,
         workspaceUpgrade: NOTHING_UPGRADED,
+        bindings: 0,
       });
       expect(await ops({ command: 'migrate' })).toEqual({
         command: 'migrate',
         logins: { runtime: false, control: false },
         rebuiltSearchText: 0,
         workspaceUpgrade: NOTHING_UPGRADED,
+        bindings: 0,
       });
 
       const check = postgres(url, { max: 1, onnotice: false });
@@ -334,6 +336,7 @@ describe('deploy lock: one version at a time', () => {
       logins: { runtime: false, control: false },
       rebuiltSearchText: 0,
       workspaceUpgrade: NOTHING_UPGRADED,
+      bindings: 0,
     });
   });
 

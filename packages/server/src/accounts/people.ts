@@ -19,7 +19,7 @@ import { getWorkspace, type Workspace } from '../db/workspaces.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import type { RuntimeCatalog } from '../extension-runtime/availability.js';
 import { SYSTEM_ACTOR } from '../schema-engine/engine.js';
-import { applyTemplate, seedBaseObjects } from '../templates/apply.js';
+import { applyTemplate, seedWorkspace } from '../templates/apply.js';
 import { DELETION_GRACE_DAYS, purgeAfter, uninstallExtensions } from '../workspaces/deletion.js';
 import { endLostMemberships, organizationMemberships } from '../workspaces/leaving.js';
 import {
@@ -193,6 +193,7 @@ export async function ensureDefaultWorkspace(
   person: Person,
   skipInvitation: boolean,
   publicOrigin: string,
+  template?: string,
 ): Promise<Workspace | null> {
   const id = await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(${FIRST_WORKSPACE_LOCK}, hashtext(${person.id}))`;
@@ -206,7 +207,13 @@ export async function ensureDefaultWorkspace(
     if (existing) return existing.id;
     if (!skipInvitation && (await invitationsFor(tx, person)).length > 0) return null;
     const organizationId = await organizationForPerson(tx, person);
-    return insertWorkspace(tx, person, organizationId, { name: 'My workspace' }, publicOrigin);
+    return insertWorkspace(
+      tx,
+      person,
+      organizationId,
+      { name: 'My workspace', template },
+      publicOrigin,
+    );
   });
   return id ? getWorkspace(sql, id) : null;
 }
@@ -223,12 +230,11 @@ async function insertWorkspace(
   await requireOrganizationManager(tx, person, organizationId);
   await assertWithinLimit(tx, organizationId, 'workspaces');
 
-  const fromScratch = onboardingOrigin !== undefined;
   let workspaceId: string | undefined;
   for (let attempt = 0; !workspaceId && attempt < 5; attempt++) {
     const [row] = await tx<{ id: string }[]>`
-      insert into workspaces (organization_id, slug, name, schema_from_scratch)
-      values (${organizationId}, ${suffixedSlug(input.name)}, ${input.name}, ${fromScratch})
+      insert into workspaces (organization_id, slug, name)
+      values (${organizationId}, ${suffixedSlug(input.name)}, ${input.name})
       on conflict (slug) do nothing returning id`;
     workspaceId = row?.id;
   }
@@ -237,13 +243,14 @@ async function insertWorkspace(
 
   await tx.unsafe(`set local role ${RUNTIME_ROLE}`);
   return inWorkspaceTransaction(tx, workspaceId, async (scoped) => {
-    await seedBaseObjects(scoped, workspaceId, fromScratch);
+    await seedWorkspace(scoped, workspaceId);
     if (input.template) {
       await applyTemplate(scoped, {
         workspaceId,
         actor: SYSTEM_ACTOR,
         scopes: ['schema:write'],
         name: input.template,
+        trusted: true,
       });
     }
     return workspaceId;
