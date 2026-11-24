@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures.js';
+import { browserExaMappingManifest, expect, test } from './fixtures.js';
 import { signIn } from './helpers.js';
 
 test.use({ mappingFixture: true });
@@ -12,20 +12,35 @@ test('reviews and approves binding choices, then replans one output', async ({
   await page.getByRole('link', { name: 'Set up browser-enrichment', exact: true }).click();
   const screen = page.getByRole('main');
   const companies = screen.getByRole('listitem', { name: 'Companies' });
-  // The fields are folded under a one-line summary until opened.
-  await expect(companies).toContainText('Headquarters → Not imported');
-  await companies.getByText('Fields', { exact: true }).click();
-  await expect(
-    screen.getByText('Employees the provider finds, mostly from public profiles.'),
-  ).toBeVisible();
+  for (const count of ['1 existing', '1 new', '1 skipped']) {
+    await expect(companies.getByText(count, { exact: true })).toBeVisible();
+  }
+  await expect(companies.getByRole('button', { name: /^Headquarters/ })).toBeHidden();
+  const fields = companies.getByText('Adjust fields', { exact: true });
+  await fields.locator('..').focus();
+  await page.keyboard.press('Enter');
+  const description = companies.getByText(
+    'Employees the provider finds, mostly from public profiles.',
+  );
+  await expect(description).toBeHidden();
+  await companies.getByText('About these fields', { exact: true }).click();
+  await expect(description).toBeVisible();
   await companies.getByRole('button', { name: /^Headquarters/ }).click();
   await page.getByRole('option', { name: 'Address', exact: true }).click();
+  await expect(companies.getByText('2 existing', { exact: true })).toBeVisible();
   await screen.getByRole('button', { name: 'Review installation' }).click();
   const planned = screen.getByRole('listitem', { name: 'Companies' });
-  await expect(planned).toContainText('Headquarters to Address');
-  await expect(planned).toContainText('Employee count to New field “Employee Count”');
+  await expect(screen.getByRole('heading', { name: 'Review setup' })).toBeFocused();
+  await expect(planned.getByText('2 existing', { exact: true })).toBeVisible();
+  await expect(planned.getByText('1 new', { exact: true })).toBeVisible();
+  await expect(planned.getByText('Address', { exact: true })).toBeHidden();
+  await planned.getByText('Field mappings', { exact: true }).click();
+  await expect(planned.getByText('Address', { exact: true })).toBeVisible();
+  await expect(planned.getByText('New field “Employee Count”')).toBeVisible();
+  await screen.getByText('List and field changes', { exact: true }).click();
+  await expect(screen.getByText(/Add field Employee Count/)).toBeVisible();
   expect((await r.request('/extensions', undefined, r.keys.user)).installations).toHaveLength(0);
-  await screen.getByRole('button', { name: 'Approve installation' }).click();
+  await screen.getByRole('button', { name: 'Install browser-enrichment' }).click();
   await expect(page).toHaveURL(/\/extensions\/[0-9a-f-]{36}$/);
   const [installed] = (await r.request('/extensions', undefined, r.keys.user)).installations;
   await page.getByRole('button', { name: 'Destinations', exact: true }).click();
@@ -34,17 +49,43 @@ test('reviews and approves binding choices, then replans one output', async ({
     'Headquarters to Address',
   );
   await summary.getByRole('link', { name: 'Change destinations' }).click();
-  await companies.getByText('Fields', { exact: true }).click();
+  await companies.getByText('Adjust fields', { exact: true }).click();
   await companies.getByRole('button', { name: /^Headquarters/ }).click();
   await page.getByRole('option', { name: 'Don’t import' }).click();
   await screen.getByRole('button', { name: 'Review new plan' }).click();
-  await expect(screen.getByRole('listitem', { name: 'Companies' })).toContainText(
-    'Headquarters to Not imported',
-  );
+  await expect(planned.getByText('1 skipped', { exact: true })).toBeVisible();
+  await planned.getByText('Field mappings', { exact: true }).click();
+  await expect(planned.getByText('Not imported', { exact: true })).toBeVisible();
   await screen.getByRole('button', { name: 'Approve new plan' }).click();
   await expect(page).toHaveURL(new RegExp(`/extensions/${installed.id}$`));
   const detail = await r.request(`/extensions/${installed.id}`, undefined, r.keys.user);
   expect(detail.generation).toBe(installed.generation + 1);
+});
+
+test('keeps review and approval within reach on mobile with Exa’s full field list', async ({
+  page,
+  retainer: r,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page, r.url, r.keys.user);
+  await page.goto(`${r.url}/app/extensions/new/${browserExaMappingManifest.universalId}`);
+  const companies = page.getByRole('listitem', { name: 'Companies' });
+  await expect(companies.getByText('12 new')).toBeVisible();
+  await expect(companies.getByRole('button', { name: /^Employee count/ })).toBeHidden();
+  const review = page.getByRole('button', { name: 'Review installation' });
+  await expect(review).toBeInViewport();
+  await review.click();
+  const planned = page
+    .getByRole('region', { name: 'Workspace changes' })
+    .getByRole('listitem', { name: 'Companies' });
+  await expect(planned.getByText('12 new')).toBeVisible();
+  const employeeCount = planned.getByText('Employee count', { exact: true });
+  const approve = page.getByRole('button', { name: 'Install Exa' });
+  await expect(employeeCount).toBeHidden();
+  await expect(approve).toBeInViewport({ ratio: 1 });
+  await planned.getByText('Field mappings', { exact: true }).click();
+  await expect(employeeCount).toBeVisible();
+  await expect(approve).toBeInViewport({ ratio: 1 });
 });
 
 test('an agent can preview bindings but cannot approve them', async ({ retainer: r }) => {

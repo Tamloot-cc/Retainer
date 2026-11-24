@@ -899,13 +899,11 @@ export {
 export { LogoMark, type LogoMood } from './logo-mark.js';
 export {
   Destination,
-  FieldDisclosure,
   FieldMap,
   FieldMapRow,
   MappingCard,
+  MappingDisclosure,
   MappingList,
-  MappingNote,
-  SuggestionNote,
 } from './mapping.js';
 export { Menu, MenuAction, MenuCheck, MenuChoice, MenuChoices, MenuSeparator } from './menu.js';
 export {

@@ -19,7 +19,7 @@ test('reviews and approves an installation, changes settings, inspects runs and 
   await expect(access.getByText('Read', { exact: true })).toBeVisible();
   await expect(page.getByText(/Runtime activation is unavailable/)).toBeVisible();
   expect((await r.request('/extensions', undefined, r.keys.user)).installations).toHaveLength(0);
-  await page.getByRole('button', { name: 'Approve installation' }).click();
+  await page.getByRole('button', { name: 'Install browser-fixture' }).click();
   await expect(page).toHaveURL(/\/extensions\/[0-9a-f-]{36}$/);
   const installed = (await r.request('/extensions', undefined, r.keys.user)).installations[0];
   expect(page.url()).toMatch(new RegExp(`/extensions/${installed.id}$`));
@@ -44,11 +44,11 @@ test('reviews and approves an installation, changes settings, inspects runs and 
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Review installation' }).click();
   // The retained field is reused: the plan names it by its label.
-  await expect(page.getByRole('listitem', { name: 'Companies' })).toContainText(
-    'Fixture status to Fixture status',
-  );
-  await expect(page.getByRole('region', { name: 'Structure changes' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Approve installation' }).click();
+  const companies = page.getByRole('listitem', { name: 'Companies' });
+  await companies.getByText('Field mappings', { exact: true }).click();
+  await expect(companies).toContainText('Fixture status to Fixture status');
+  await expect(page.getByText('List and field changes', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Install browser-fixture' }).click();
   await expect(page).toHaveURL(new RegExp(`/extensions/${installed.id}$`));
   const schema = await r.request('/schema');
   expect(
@@ -70,7 +70,7 @@ test('reviews a reconnect before changing account settings or revoking the curre
   await page.getByLabel('Provider account').fill('original-account');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Review installation' }).click();
-  await page.getByRole('button', { name: 'Approve installation' }).click();
+  await page.getByRole('button', { name: 'Install browser-fixture' }).click();
   await expect(page).toHaveURL(/\/extensions\/[0-9a-f-]{36}$/);
   const initial = (await r.request('/extensions', undefined, r.keys.user)).installations[0];
   await page.getByRole('button', { name: 'Extension actions' }).click();

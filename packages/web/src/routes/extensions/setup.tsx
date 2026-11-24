@@ -10,14 +10,16 @@ import {
 import { RetainerApiError } from '@retainer/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { Eye, LayoutList, Settings2, Shapes, ShieldCheck, Sparkles } from 'lucide-react';
+import { Info, LayoutList, Settings2, ShieldCheck } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import {
+  Badge,
   Button,
   Checkbox,
   Empty,
   Loading,
+  MappingDisclosure,
   Muted,
   Notice,
   Page,
@@ -28,13 +30,12 @@ import {
   StepHeader,
 } from '../../ui/index.js';
 import {
-  ChangeGroup,
-  ChangeList,
   ReviewCard,
   ReviewCardBody,
   ReviewCardFooter,
   ReviewCardHeader,
   ReviewIcon,
+  ReviewNote,
 } from '../../ui/review.js';
 import { describeDiffOp } from '../schema/schema-model.js';
 import { QueryError } from '../state.js';
@@ -80,7 +81,7 @@ const TITLES: Record<SetupMode, (name: string) => string> = {
 const STEP_LABELS: Record<Step, string> = {
   settings: 'Connect',
   bindings: 'Choose destinations',
-  review: 'Review and approve',
+  review: 'Review setup',
 };
 
 /**
@@ -235,7 +236,7 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
     );
   if (phase === 'waiting' || phase === 'checking')
     return (
-      <ExtensionCard title="Configuration suggestions" icon={Sparkles}>
+      <ExtensionCard title="Configuration suggestions" icon={Settings2}>
         <Loading>Preparing suggestions…</Loading>
         {query.error ? <Notice error>{query.error.message}</Notice> : null}
         <Row>
@@ -269,6 +270,7 @@ function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
         suggestAction={
           installation ? (
             <Button
+              variant="ghost"
               disabled={again.isPending}
               onClick={() => (needsModelApproval ? setPhase('access') : again.mutate())}
             >
@@ -330,6 +332,7 @@ function BasicExtensionSetup({
     ...(showBindings ? (['bindings'] as const) : []),
     'review',
   ];
+  const reviewTitle = accessOnly ? 'Review access' : STEP_LABELS.review;
   const [step, setStep] = useState(0);
   const current = steps[step] ?? 'review';
   const [bound, setBound] = useState<ExtensionBindingChoices>(() =>
@@ -534,22 +537,11 @@ function BasicExtensionSetup({
       Object.keys(release.bindingProposal.choices).some((key) => !suggestions?.bindings?.[key])
         ? (release.bindingProposal.proposedBy.name ?? release.bindingProposal.proposedBy.id)
         : undefined;
-    const hasSuggestions = !!suggestions?.bindings && Object.keys(suggestions.bindings).length > 0;
     body = (
       <Form onSubmit={next}>
         <Stack>
-          <StepHeader title={`Where ${name} saves data`}>
-            Each kind of record {name} imports goes into a list in this workspace.
-            {hasSuggestions || proposedBy
-              ? ' The choices are filled in for you; change anything that looks wrong.'
-              : ' Pick an existing list, or add a new one.'}
-          </StepHeader>
-          {proposedBy || suggestAction ? (
-            <Row>
-              {proposedBy ? <Muted>Proposed by {proposedBy}.</Muted> : null}
-              {suggestAction}
-            </Row>
-          ) : null}
+          <StepHeader title={`Where ${name} saves data`} />
+          {proposedBy ? <Muted>Proposed by {proposedBy}.</Muted> : null}
           <fieldset disabled={busy}>
             {showBindings && declarations ? (
               <BindingFields
@@ -567,7 +559,10 @@ function BasicExtensionSetup({
               />
             ) : null}
           </fieldset>
-          <StepActions>{actions}</StepActions>
+          <StepActions>
+            {suggestAction ? <div className="mr-auto">{suggestAction}</div> : null}
+            {actions}
+          </StepActions>
         </Stack>
       </Form>
     );
@@ -584,17 +579,15 @@ function BasicExtensionSetup({
       );
     body = (
       <Stack>
-        <StepHeader title="Review and approve">
-          {accessOnly
-            ? `Review what ${name} uses to prepare setup suggestions.`
-            : `Check what ${name} can access and what will change when you approve.`}
-        </StepHeader>
+        <StepHeader title={reviewTitle} />
         {plan ? (
           <Review plan={plan} release={release}>
             {backButton}
             <Button variant="primary" disabled={busy} onClick={() => save.mutate()}>
               {save.isPending
-                ? 'Approving…'
+                ? mode === 'install' && !accessOnly && !turnOn
+                  ? 'Installing…'
+                  : 'Approving…'
                 : reconnect
                   ? 'Approve reconnect'
                   : accessOnly
@@ -604,12 +597,12 @@ function BasicExtensionSetup({
                     : editBindings
                       ? 'Approve new plan'
                       : turnOn
-                        ? 'Review and turn on'
+                        ? `Turn on ${name}`
                         : grantIncrease
                           ? 'Approve access and upgrade'
                           : upgrade
                             ? 'Approve upgrade'
-                            : 'Approve installation'}
+                            : `Install ${name}`}
             </Button>
           </Review>
         ) : (
@@ -631,7 +624,10 @@ function BasicExtensionSetup({
   return (
     <StepFlow
       label={`${TITLES[mode](name)} steps`}
-      steps={steps.map((s) => (s === 'settings' && upgrade ? 'Settings' : STEP_LABELS[s]))}
+      steps={steps.map((s) => {
+        if (s === 'review') return reviewTitle;
+        return s === 'settings' && upgrade ? 'Settings' : STEP_LABELS[s];
+      })}
       current={step}
       onBack={back}
     >
@@ -688,113 +684,120 @@ function Review({
   const { schema } = useWorkspace();
   const { preview } = plan;
   const { grants } = preview;
+  const canRead = grants.scopes.includes('read');
   const canWrite = grants.scopes.includes('write');
   const schemaOps = preview.operations as DiffOp[];
+  const hasChanges = schemaOps.length > 0 || !!preview.bindings || preview.views.length > 0;
   const createPeople = String(plan.input.settings.createPeople ?? release.manifest.createPeople);
   const name = extensionName(release.manifest.universalId, release.manifest.name);
+  const notes = [
+    ...preview.notices,
+    ...(preview.previousGrants
+      ? [`Access changes from ${grantSummary(preview.previousGrants)} to ${grantSummary(grants)}.`]
+      : []),
+    ...preview.warnings,
+  ];
+  const access = [
+    {
+      label: 'CRM data',
+      value: canRead ? (canWrite ? 'Read and write' : 'Read') : canWrite ? 'Write' : 'None',
+    },
+    ...(canWrite
+      ? [
+          {
+            label: 'Writes recorded as',
+            value: grants.actor === 'agent' ? 'Agent' : 'Integration',
+          },
+          { label: 'Create people', value: optionLabel('createPeople', createPeople) },
+          ...(release.manifest.source
+            ? [
+                {
+                  label: `Deleted in ${name}`,
+                  value: optionLabel(
+                    'onSourceDelete',
+                    sourceDeletePolicy(release.manifest, plan.input.settings),
+                  ),
+                },
+              ]
+            : []),
+        ]
+      : []),
+  ];
 
   return (
     <Stack>
       <ReviewCard>
         <ReviewCardHeader leading={<ReviewIcon icon={ShieldCheck} />} title="Access" />
         <ReviewCardBody>
-          <dl className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-x-4 gap-y-2 text-sm sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-y-1">
-            <dt className="text-muted-foreground">CRM data</dt>
-            <dd>
-              {grants.scopes.includes('read')
-                ? canWrite
-                  ? 'Read and write'
-                  : 'Read'
-                : canWrite
-                  ? 'Write'
-                  : 'None'}
-            </dd>
-            {canWrite ? (
-              <>
-                <dt className="text-muted-foreground">Writes recorded as</dt>
-                <dd>{grants.actor === 'agent' ? 'Agent' : 'Integration'}</dd>
-                <dt className="text-muted-foreground">Create people</dt>
-                <dd>{optionLabel('createPeople', createPeople)}</dd>
-                {release.manifest.source ? (
-                  <>
-                    <dt className="text-muted-foreground">Deleted in {name}</dt>
-                    <dd>
-                      {optionLabel(
-                        'onSourceDelete',
-                        sourceDeletePolicy(release.manifest, plan.input.settings),
-                      )}
-                    </dd>
-                  </>
-                ) : null}
-              </>
-            ) : null}
+          <dl className="flex flex-wrap gap-2">
+            {access.map(({ label, value }) => (
+              <div key={label} className="min-w-0 max-w-full rounded-md bg-muted/50 px-2.5 py-1.5">
+                <dt className="text-xs text-muted-foreground">{label}</dt>
+                <dd className="text-sm font-medium">{value}</dd>
+              </div>
+            ))}
           </dl>
-          {preview.notices.map((notice) => (
-            <Notice key={notice}>{notice}</Notice>
-          ))}
-          {preview.previousGrants ? (
-            <Notice>
-              This approval changes access from {grantSummary(preview.previousGrants)} to{' '}
-              {grantSummary(grants)}.
-            </Notice>
+          {notes.length ? (
+            <div className="border-t border-border pt-3">
+              <ReviewNote icon={Info}>
+                <ul aria-label="Setup notes" className="space-y-1.5">
+                  {notes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </ReviewNote>
+            </div>
           ) : null}
         </ReviewCardBody>
       </ReviewCard>
-      <ReviewCard>
-        <ReviewCardHeader leading={<ReviewIcon icon={LayoutList} />} title="Workspace changes" />
-        <ReviewCardBody>
-          {release.manifest.bindings && preview.bindings ? (
-            <BindingSummary
-              extension={name}
-              declarations={release.manifest.bindings}
-              choices={preview.bindings}
-              objects={schema.objects}
-            />
-          ) : null}
-          {schemaOps.length ? (
-            <ChangeList label="Structure changes">
-              <ChangeGroup
-                icon={<Shapes aria-hidden size={15} />}
-                title="Structure changes"
-                lines={[]}
+      {hasChanges ? (
+        <ReviewCard>
+          <ReviewCardHeader leading={<ReviewIcon icon={LayoutList} />} title="Workspace changes" />
+          <ReviewCardBody>
+            {release.manifest.bindings && preview.bindings ? (
+              <BindingSummary
+                extension={name}
+                declarations={release.manifest.bindings}
+                choices={preview.bindings}
+                objects={schema.objects}
+                discloseFields
+              />
+            ) : null}
+            {schemaOps.length ? (
+              <MappingDisclosure
+                label="List and field changes"
+                summary={<Badge>{schemaOps.length}</Badge>}
+                subtle={!!preview.bindings}
               >
-                <ul className="space-y-1.5 text-sm">
+                <ul className="list-disc space-y-1 pl-7 text-sm">
                   {schemaOps.map((operation) => (
-                    <li
-                      key={JSON.stringify(operation)}
-                      className="rounded-md bg-muted/50 px-3 py-2"
-                    >
+                    <li key={JSON.stringify(operation)}>
                       {describeDiffOp(operation, schema.objects)}
                     </li>
                   ))}
                 </ul>
-              </ChangeGroup>
-            </ChangeList>
-          ) : null}
-          {preview.views.length ? (
-            <ChangeList label="Saved views">
-              <ChangeGroup icon={<Eye aria-hidden size={15} />} title="Saved views" lines={[]}>
-                <ul className="space-y-1.5 text-sm">
+              </MappingDisclosure>
+            ) : null}
+            {preview.views.length ? (
+              <MappingDisclosure
+                label="Saved views"
+                summary={<Badge>{preview.views.length}</Badge>}
+              >
+                <ul className="list-disc space-y-1 pl-7 text-sm">
                   {preview.views.map((view) => (
-                    <li key={view.universalId} className="rounded-md bg-muted/50 px-3 py-2">
+                    <li key={view.universalId}>
                       {VIEW_ACTIONS[view.action]} {view.name}
                     </li>
                   ))}
                 </ul>
-              </ChangeGroup>
-            </ChangeList>
-          ) : null}
-          {!schemaOps.length && !preview.bindings && !preview.views.length ? (
-            <Muted>No fields, record types or saved views change.</Muted>
-          ) : null}
-          {preview.warnings.map((warning) => (
-            <Notice warning key={warning}>
-              {warning}
-            </Notice>
-          ))}
-        </ReviewCardBody>
-        <ReviewCardFooter>{children}</ReviewCardFooter>
-      </ReviewCard>
+              </MappingDisclosure>
+            ) : null}
+          </ReviewCardBody>
+        </ReviewCard>
+      ) : null}
+      <ReviewCardFooter className="sticky bottom-0 z-10 -mx-4 bg-background pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:static sm:mx-0 sm:rounded-lg sm:border sm:bg-muted/30 sm:pb-3">
+        {children}
+      </ReviewCardFooter>
     </Stack>
   );
 }

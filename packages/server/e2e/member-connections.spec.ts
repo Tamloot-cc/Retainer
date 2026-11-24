@@ -12,7 +12,7 @@ test('a member connects and disconnects; an admin sees and disconnects every own
   await expect(page.getByLabel('Member API key (required)')).toHaveCount(0);
   await page.getByLabel('Share member data (required)').check();
   await page.getByRole('button', { name: 'Review installation' }).click();
-  await page.getByRole('button', { name: 'Approve installation' }).click();
+  await page.getByRole('button', { name: 'Install member-browser' }).click();
   await expect(page).toHaveURL(/\/extensions\/[0-9a-f-]{36}$/);
   await r.activateMembers();
   const installed = (await r.request('/extensions', undefined, r.keys.user)).installations.find(

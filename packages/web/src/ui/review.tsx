@@ -246,9 +246,20 @@ export function ReviewCardBody({ children }: { children: ReactNode }) {
 }
 
 /** The actions, set apart from the content: full width on phones, at the end on larger screens. */
-export function ReviewCardFooter({ children }: { children: ReactNode }) {
+export function ReviewCardFooter({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border bg-muted/30 px-4 py-3 sm:px-5 [&>button]:min-h-11 [&>button]:min-w-0 [&>button]:flex-1 sm:[&>button]:min-h-8 sm:[&>button]:flex-none">
+    <div
+      className={cn(
+        'flex flex-wrap items-center justify-end gap-2 border-t border-border bg-muted/30 px-4 py-3 sm:px-5 [&>button]:min-h-11 [&>button]:min-w-0 [&>button]:flex-1 sm:[&>button]:min-h-8 sm:[&>button]:flex-none',
+        className,
+      )}
+    >
       {children}
     </div>
   );

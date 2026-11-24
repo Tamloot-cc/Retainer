@@ -8,24 +8,22 @@ import { Ban, Plus } from 'lucide-react';
 import { useState } from 'react';
 import {
   Badge,
+  Button,
   Destination,
-  FieldDisclosure,
   FieldMap,
   FieldMapRow,
   IconLabel,
   Input,
   Label,
   MappingCard,
+  MappingDisclosure,
   MappingList,
-  MappingNote,
   Notice,
   ObjectIcon,
   objectIcon,
   type PickerOption,
   Row,
   SelectMenu,
-  SuggestionNote,
-  TextButton,
 } from '../../ui/index.js';
 import { objectByName } from '../state.js';
 
@@ -147,30 +145,16 @@ function fieldTargetLabel(rule: Rule, choice: FieldChoice, object?: ObjectView) 
   return existingField(object, choice)?.label ?? choice.field;
 }
 
-/** "Title → Title · Status → Status (Open → To do, Done → Done)", for a folded field list. */
-function fieldsSummary(
-  binding: ExtensionBinding,
-  fields: Record<string, FieldChoice>,
-  object?: ObjectView,
-) {
-  return binding.fields
-    .flatMap((rule) => {
-      const choice = fields[rule.key];
-      if (!choice) return [];
-      const target = fieldTargetLabel(rule, choice, object);
-      const options = existingField(object, choice)?.settings.options;
-      const values =
-        choice.action === 'existing' && rule.values?.length
-          ? ` (${rule.values
-              .map(
-                (value) =>
-                  `${valueLabel(rule, value)} → ${valueTarget(choice, value, options)?.label ?? 'not set'}`,
-              )
-              .join(', ')})`
-          : '';
-      return [`${rule.label} → ${target}${values}`];
-    })
-    .join(' · ');
+function FieldCounts({ fields }: { fields: Record<string, FieldChoice> }) {
+  const counts = { existing: 0, create: 0, skip: 0 };
+  for (const choice of Object.values(fields)) counts[choice.action]++;
+  return (
+    <span className="flex flex-wrap items-center gap-1.5">
+      {counts.existing ? <Badge>{counts.existing} existing</Badge> : null}
+      {counts.create ? <Badge tone="success">{counts.create} new</Badge> : null}
+      {counts.skip ? <Badge>{counts.skip} skipped</Badge> : null}
+    </span>
+  );
 }
 
 /** Whether a choice still is what was suggested, so the suggestion's reason applies to it. */
@@ -201,12 +185,14 @@ export function BindingSummary({
   declarations,
   choices,
   objects,
+  discloseFields = false,
 }: {
   /** The extension's display name, heading the column of its fields. */
   extension: string;
   declarations: ExtensionBinding[];
   choices: ExtensionBindingChoices;
   objects: readonly ObjectView[];
+  discloseFields?: boolean;
 }) {
   return (
     <MappingList label="Where data goes" plain>
@@ -219,6 +205,7 @@ export function BindingSummary({
             binding={binding}
             choice={choice}
             objects={objects}
+            discloseFields={discloseFields}
           />
         ) : null;
       })}
@@ -266,11 +253,13 @@ function SummaryCard({
   binding,
   choice,
   objects,
+  discloseFields,
 }: {
   extension: string;
   binding: ExtensionBinding;
   choice: Choice;
   objects: readonly ObjectView[];
+  discloseFields: boolean;
 }) {
   const object =
     choice.action === 'existing' && choice.objects.length === 1
@@ -278,24 +267,31 @@ function SummaryCard({
       : undefined;
   const fields = choice.action === 'skip' ? {} : (choice.fields ?? {});
   const rows = binding.fields.filter((rule) => fields[rule.key]);
+  const fieldMap = rows.length ? (
+    <FieldMap from={extension} to={object?.labelPlural ?? newListLabel(binding, choice)}>
+      {rows.map((rule) => (
+        <SummaryField
+          key={rule.key}
+          rule={rule}
+          choice={fields[rule.key] as FieldChoice}
+          object={object}
+        />
+      ))}
+    </FieldMap>
+  ) : null;
   return (
     <MappingCard
       icon={<BindingIcon binding={binding} />}
       title={binding.label}
       destination={<SummaryDestination binding={binding} choice={choice} objects={objects} />}
     >
-      {rows.length ? (
-        <FieldMap from={extension} to={object?.labelPlural ?? newListLabel(binding, choice)}>
-          {rows.map((rule) => (
-            <SummaryField
-              key={rule.key}
-              rule={rule}
-              choice={fields[rule.key] as FieldChoice}
-              object={object}
-            />
-          ))}
-        </FieldMap>
-      ) : null}
+      {fieldMap && discloseFields ? (
+        <MappingDisclosure label="Field mappings" summary={<FieldCounts fields={fields} />}>
+          {fieldMap}
+        </MappingDisclosure>
+      ) : (
+        fieldMap
+      )}
     </MappingCard>
   );
 }
@@ -405,7 +401,6 @@ function BindingCard({
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const label = binding.label.toLowerCase();
-  const reason = sameDestination(choice, suggested) ? reasons[binding.key] : undefined;
   const suggestedFields = suggested && suggested.action !== 'skip' ? suggested.fields : undefined;
 
   const options: PickerOption[] = [
@@ -458,15 +453,32 @@ function BindingCard({
   const create = choice.action === 'create' && binding.create ? choice : undefined;
   const editable = choice.action === 'skip' ? undefined : choice;
   const newList = binding.create;
+  const showFields =
+    editable && (object || editable.action === 'create') && binding.fields.length > 0;
+  const describedFields = binding.fields.filter((rule) => rule.description);
+  const destinationReason = sameDestination(choice, suggested) ? reasons[binding.key] : undefined;
+  const fieldReasons = new Map<string, string[]>();
+  if (showFields) {
+    for (const rule of binding.fields) {
+      if (!sameField(fields[rule.key], suggestedFields?.[rule.key])) continue;
+      const reason = reasons[`${binding.key}.${rule.key}`];
+      if (!reason) continue;
+      const labels = fieldReasons.get(reason);
+      if (labels) labels.push(rule.label);
+      else fieldReasons.set(reason, [rule.label]);
+    }
+  }
   const notes = [
-    reason ? <SuggestionNote key="reason">{reason}</SuggestionNote> : null,
     create && newList ? (
-      <MappingNote key="create">
-        Adds a new list, {create.labelPlural ?? newList.labelPlural}, to your workspace.{' '}
-        <TextButton onClick={() => setRenaming(!renaming)}>
-          {renaming ? 'Keep the name' : 'Change its API name'}
-        </TextButton>
-      </MappingNote>
+      <Button
+        key="create"
+        variant="ghost"
+        size="small"
+        onClick={() => setRenaming(!renaming)}
+        aria-expanded={renaming}
+      >
+        {renaming ? 'Done editing API names' : 'Edit list API names'}
+      </Button>
     ) : null,
     create && newList && renaming ? (
       <Row key="rename">
@@ -492,11 +504,6 @@ function BindingCard({
         </Label>
       </Row>
     ) : null,
-    choice.action === 'skip' && !binding.required ? (
-      <MappingNote key="skip">
-        {extension} won’t import {label}.
-      </MappingNote>
-    ) : null,
     ...issues
       .filter((issue) => !issue.field)
       .map((issue) => (
@@ -515,10 +522,10 @@ function BindingCard({
       note={notes.length ? notes : undefined}
     >
       {/* A new list's fields can be renamed away or skipped too, so they stay editable. */}
-      {editable && (object || editable.action === 'create') && binding.fields.length ? (
-        <FieldDisclosure
-          label="Fields"
-          summary={fieldsSummary(binding, fields, object)}
+      {showFields ? (
+        <MappingDisclosure
+          label="Adjust fields"
+          summary={<FieldCounts fields={fields} />}
           open={open || attention}
           onToggle={setOpen}
         >
@@ -529,16 +536,45 @@ function BindingCard({
                 rule,
                 object,
                 selected: fields[rule.key] as FieldChoice,
-                reason: sameField(fields[rule.key], suggestedFields?.[rule.key])
-                  ? reasons[`${binding.key}.${rule.key}`]
-                  : undefined,
                 issues: issues.filter((issue) => issue.field === rule.key),
                 update: (next) =>
                   onChange({ ...editable, fields: { ...editable.fields, [rule.key]: next } }),
               }),
             )}
           </FieldMap>
-        </FieldDisclosure>
+          {describedFields.length ? (
+            <div className="mt-2">
+              <MappingDisclosure label="About these fields" subtle>
+                <dl className="space-y-2 px-2.5 text-sm">
+                  {describedFields.map((rule) => (
+                    <div key={rule.key}>
+                      <dt className="font-medium">{rule.label}</dt>
+                      <dd className="text-muted-foreground">{rule.description}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </MappingDisclosure>
+            </div>
+          ) : null}
+        </MappingDisclosure>
+      ) : null}
+      {destinationReason || fieldReasons.size ? (
+        <MappingDisclosure label="Why these suggestions?" subtle>
+          <dl className="space-y-2 px-2.5 text-sm">
+            {destinationReason ? (
+              <div>
+                <dt className="font-medium">Destination</dt>
+                <dd className="text-muted-foreground">{destinationReason}</dd>
+              </div>
+            ) : null}
+            {[...fieldReasons].map(([reason, labels]) => (
+              <div key={reason}>
+                <dt className="font-medium">{labels.join(', ')}</dt>
+                <dd className="text-muted-foreground">{reason}</dd>
+              </div>
+            ))}
+          </dl>
+        </MappingDisclosure>
       ) : null}
     </MappingCard>
   );
@@ -550,7 +586,6 @@ function fieldRows({
   rule,
   object,
   selected,
-  reason,
   issues,
   update,
 }: {
@@ -558,7 +593,6 @@ function fieldRows({
   rule: Rule;
   object: ObjectView | undefined;
   selected: FieldChoice;
-  reason?: string;
   issues: BindingReviewIssue[];
   update: (next: FieldChoice) => void;
 }) {
@@ -567,25 +601,24 @@ function fieldRows({
     selected.action === 'existing'
       ? candidates.find((entry) => entry.name === selected.field)
       : undefined;
+  const newLabel = rule.create?.label ?? rule.label;
   const options: PickerOption[] = [
     ...candidates
       .filter((entry) => !rule.owned || entry === target)
       .map((entry) => ({ value: entry.name, label: entry.label })),
     ...extraOptions(
-      canCreateField(binding, rule) ? `New field: ${rule.create?.label ?? rule.label}` : undefined,
+      canCreateField(binding, rule)
+        ? newLabel === rule.label
+          ? 'New field'
+          : `New field: ${newLabel}`
+        : undefined,
       rule.required,
     ),
   ];
-  const note = reason ? (
-    <SuggestionNote>{reason}</SuggestionNote>
-  ) : rule.description ? (
-    <MappingNote>{rule.description}</MappingNote>
-  ) : undefined;
   const rows = [
     <FieldMapRow
       key={rule.key}
       label={rule.label}
-      note={note}
       error={
         issues.length
           ? issues.map((issue) => (

@@ -32,22 +32,23 @@ test('shows where Tamloot saves data, with suggestions, folded fields and plain 
   const list = page.getByRole('list', { name: 'Where Tamloot saves data' });
   const meetings = list.getByRole('listitem', { name: 'Meetings' });
   const tasks = list.getByRole('listitem', { name: 'Tasks' });
-  // Each kind of record shows its suggested list and why.
+  // The suggested list is visible and its reasoning is available on demand.
   await expect(meetings.getByRole('button', { name: /^Where meetings go/ })).toContainText(
     'Conversations',
   );
-  await expect(meetings).toContainText('Suggested. Conversations already hold meetings');
-  // Fields stay folded under a summary, status values included.
-  await expect(tasks).toContainText('Status → Status (Open → To do, Done → Done)');
+  const reason = meetings.getByText(/Conversations already hold meetings/);
+  await expect(reason).toBeHidden();
+  await meetings.getByText('Why these suggestions?', { exact: true }).click();
+  await expect(reason).toBeVisible();
   await expect(tasks.getByRole('button', { name: /^Title/ })).toHaveCount(0);
-  await tasks.getByText('Fields', { exact: true }).click();
+  await tasks.getByText('Adjust fields', { exact: true }).click();
   await expect(tasks.getByRole('button', { name: /^Status: Open/ })).toContainText('To do');
 
   // A choice away from the suggestion drops its reason and says what happens instead.
   await meetings.getByRole('button', { name: /^Where meetings go/ }).click();
   await page.getByRole('option', { name: 'New list: Meetings' }).click();
-  await expect(meetings).not.toContainText('Suggested.');
-  await expect(meetings).toContainText('Adds a new list, Meetings, to your workspace.');
+  await expect(reason).toHaveCount(0);
+  await expect(meetings.getByRole('button', { name: 'Edit list API names' })).toBeVisible();
   // A new list keeps its fields editable, so an optional one can still be skipped.
   await tasks.getByRole('button', { name: /^Where tasks go/ }).click();
   await page.getByRole('option', { name: 'New list: Tasks' }).click();
@@ -56,7 +57,9 @@ test('shows where Tamloot saves data, with suggestions, folded fields and plain 
   await expect(tasks.getByRole('button', { name: /^Person/ })).toContainText('Don’t import');
   await tasks.getByRole('button', { name: /^Where tasks go/ }).click();
   await page.getByRole('option', { name: 'Don’t import' }).click();
-  await expect(tasks).toContainText('Tamloot won’t import tasks.');
+  await expect(tasks.getByRole('button', { name: /^Where tasks go/ })).toContainText(
+    'Don’t import',
+  );
 
   await page.getByRole('button', { name: 'Review installation', exact: true }).click();
   const planned = page.getByRole('list', { name: 'Where data goes' });
@@ -66,15 +69,17 @@ test('shows where Tamloot saves data, with suggestions, folded fields and plain 
   await expect(planned.getByRole('listitem', { name: 'Tasks' })).toContainText(
     'Tasks to Not imported',
   );
-  await expect(planned.getByRole('listitem', { name: 'People' })).toContainText('Emails to Emails');
+  const people = planned.getByRole('listitem', { name: 'People' });
+  await people.getByText('Field mappings', { exact: true }).click();
+  await expect(people).toContainText('Emails to Emails');
   // The admin's choices are rows; turning on neither repeats the model notice
   // nor presents the first full grant as an access change.
   await expect(page.getByText('Deleted in Tamloot', { exact: true })).toBeVisible();
   await expect(page.getByText('Keep what was imported', { exact: true })).toBeVisible();
   await expect(page.getByText(/Anthropic/)).toHaveCount(0);
-  await expect(page.getByText(/changes access from/)).toHaveCount(0);
+  await expect(page.getByText(/access changes from/i)).toHaveCount(0);
   await expect(page.getByText(/Source identity|source deletion/)).toHaveCount(0);
-  await page.getByRole('button', { name: 'Review and turn on', exact: true }).click();
+  await page.getByRole('button', { name: 'Turn on Tamloot', exact: true }).click();
   await expect(page).toHaveURL(/\/extensions\/[0-9a-f-]{36}$/);
   const [installed] = (await r.request('/extensions', undefined, r.keys.user)).installations;
   const detail = await r.request(`/extensions/${installed.id}`, undefined, r.keys.user);
@@ -109,7 +114,7 @@ test('installs with manual destinations and asks before enabling AI suggestions 
   await page.getByRole('option', { name: 'Don’t import' }).click();
   await page.getByRole('button', { name: 'Review installation', exact: true }).click();
   await expect(page.getByText(/Anthropic/)).toHaveCount(0);
-  await page.getByRole('button', { name: 'Approve installation' }).click();
+  await page.getByRole('button', { name: 'Install Tamloot' }).click();
   await expect(page).toHaveURL(/\/extensions\/[0-9a-f-]{36}$/);
 
   const [installed] = (await r.request('/extensions', undefined, r.keys.user)).installations;

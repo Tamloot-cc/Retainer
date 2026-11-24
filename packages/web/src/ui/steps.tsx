@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { Check, ChevronRight } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 import { cn } from './core.js';
 import { Section } from './property.js';
 
@@ -22,6 +22,13 @@ export function StepFlow({
   onBack: (step: number) => void;
   children: ReactNode;
 }) {
+  const previousStep = useRef(current);
+  const content = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (previousStep.current === current) return;
+    previousStep.current = current;
+    content.current?.querySelector<HTMLElement>('[data-step-heading]')?.focus();
+  }, [current]);
   return (
     <div className="grid gap-5 md:grid-cols-[12rem_minmax(0,1fr)] md:gap-10">
       <nav aria-label={label} className="min-w-0 md:sticky md:top-16 md:self-start">
@@ -65,17 +72,25 @@ export function StepFlow({
           })}
         </ol>
       </nav>
-      <div className="flex min-w-0 max-w-2xl flex-col gap-5">{children}</div>
+      <div ref={content} className="flex min-w-0 max-w-2xl flex-col gap-5">
+        {children}
+      </div>
     </div>
   );
 }
 
 /** The heading and plain-words introduction of the current step. */
-export function StepHeader({ title, children }: { title: string; children: ReactNode }) {
+export function StepHeader({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div>
-      <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-      <p className="mt-1 text-sm text-muted-foreground">{children}</p>
+      <h2
+        data-step-heading
+        tabIndex={-1}
+        className="scroll-mt-16 text-xl font-semibold tracking-tight focus:outline-none"
+      >
+        {title}
+      </h2>
+      {children ? <p className="mt-1 text-sm text-muted-foreground">{children}</p> : null}
     </div>
   );
 }
