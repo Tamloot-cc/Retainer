@@ -8,6 +8,7 @@ import {
 } from '@retainer/runner/enrichment-contract';
 import { generateKeyPair } from 'jose';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { wireAnswer } from '../../../runner/src/binding-suggestions-test-fixture.js';
 import { type ClaimedJob, ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
@@ -120,7 +121,7 @@ const structured =
   (output: unknown, stopReason = 'end_turn') =>
   (request: Received, res: ServerResponse) =>
     answer(request, res, 'claude-haiku-5-5', {
-      text: stopReason === 'refusal' ? null : JSON.stringify(output),
+      text: stopReason === 'refusal' ? null : JSON.stringify(wireAnswer(output)),
       stopReason,
     });
 /** The Messages requests that reached the fake Anthropic API, as sent. */

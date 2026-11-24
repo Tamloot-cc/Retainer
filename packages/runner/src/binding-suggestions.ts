@@ -191,61 +191,96 @@ const strict = (properties: Record<string, unknown>) => ({
   required: Object.keys(properties),
   additionalProperties: false,
 });
-/** A required binding or field can't be skipped. */
+/** A required binding can't be skipped. */
 const actions = (required: boolean) =>
   required ? ['existing', 'create'] : ['existing', 'create', 'skip'];
 
-/** The answer's JSON schema, built from the bindings so it always matches them. */
+/**
+ * The answer's JSON schema, built from the bindings. A binding's fields are a
+ * list of one item shape rather than an object with a property per field: the
+ * API compiles the schema to a grammar with a size limit, and enrichment's 23
+ * fields as separate objects went over it. The list stays the same size
+ * however many fields a binding declares; a skip of a required field is
+ * dropped when the answer is read.
+ */
 export function answerSchema(bindings: ExtensionBinding[]) {
-  const choice = (required: boolean, target: string, extra: Record<string, unknown>) =>
+  const fieldItem = (binding: ExtensionBinding) =>
     strict({
-      action: { type: 'string', enum: actions(required) },
-      [target]: optionalName,
+      key: { type: 'string', enum: binding.fields.map((rule) => rule.key) },
+      action: { type: 'string', enum: ['existing', 'create', 'skip'] },
+      field: optionalName,
       reason: { type: 'string' },
-      ...extra,
+      ...(binding.fields.some((rule) => rule.values)
+        ? {
+            values: {
+              type: 'array',
+              description:
+                "For a field with values: each of the integration's values and the chosen field's option it maps to.",
+              items: strict({ value: { type: 'string' }, option: optionalName }),
+            },
+          }
+        : {}),
     });
-  const fieldChoice = (rule: Rule) =>
-    choice(
-      rule.required,
-      'field',
-      rule.values
-        ? {
-            values: strict(Object.fromEntries(rule.values.map((value) => [value, optionalName]))),
-          }
-        : {},
-    );
   const bindingChoice = (binding: ExtensionBinding) =>
-    choice(
-      binding.required,
-      'object',
-      binding.fields.length
+    strict({
+      action: { type: 'string', enum: actions(binding.required) },
+      object: optionalName,
+      reason: { type: 'string' },
+      ...(binding.fields.length
         ? {
-            fields: strict(
-              Object.fromEntries(binding.fields.map((rule) => [rule.key, fieldChoice(rule)])),
-            ),
+            fields: {
+              type: 'array',
+              description: "One entry for each of the binding's fields.",
+              items: fieldItem(binding),
+            },
           }
-        : {},
-    );
+        : {}),
+    });
   return strict(
     Object.fromEntries(bindings.map((binding) => [binding.key, bindingChoice(binding)])),
   );
 }
 
 const action = z.enum(['existing', 'create', 'skip']);
-const fieldAnswer = z.strictObject({
+const fieldEntry = z.strictObject({
+  key: z.string(),
   action,
   field: z.string(),
   reason: z.string(),
-  values: z.record(z.string(), z.string()).optional(),
+  values: z.array(z.strictObject({ value: z.string(), option: z.string() })).optional(),
 });
-const bindingAnswer = z.strictObject({
-  action,
-  object: z.string(),
-  reason: z.string(),
-  fields: z.record(z.string(), fieldAnswer).optional(),
-});
+/** One field's choice, keyed by the field in the parsed answer. */
+type FieldAnswer = {
+  action: z.infer<typeof action>;
+  field: string;
+  reason: string;
+  values?: Record<string, string>;
+};
+const bindingAnswer = z
+  .strictObject({
+    action,
+    object: z.string(),
+    reason: z.string(),
+    fields: z.array(fieldEntry).optional(),
+  })
+  .transform(({ fields, ...choice }) => ({
+    ...choice,
+    ...(fields && {
+      fields: Object.fromEntries(
+        fields.map(({ key, values, ...pick }): [string, FieldAnswer] => [
+          key,
+          {
+            ...pick,
+            ...(values && {
+              values: Object.fromEntries(values.map(({ value, option }) => [value, option])),
+            }),
+          },
+        ]),
+      ),
+    }),
+  }));
 const answerParser = z.record(z.string(), bindingAnswer);
-export type ConfigureAnswer = z.infer<typeof answerParser>;
+export type ConfigureAnswer = z.output<typeof answerParser>;
 
 /**
  * Where a relation's target binding goes, as kept: an existing object, a new
@@ -262,7 +297,7 @@ type Related = ObjectView | 'create' | undefined;
  */
 function fieldSuggestion(
   rule: Rule,
-  pick: z.infer<typeof fieldAnswer>,
+  pick: FieldAnswer,
   object: ObjectView,
   related: Related,
 ): FieldChoice | undefined {

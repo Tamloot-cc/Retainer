@@ -2,6 +2,7 @@ import type { Invocation } from '@retainer/extension';
 import { RetainerClient } from '@retainer/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { answerSchema } from './binding-suggestions.js';
+import { wireAnswer } from './binding-suggestions-test-fixture.js';
 import { executeEnrichment, lookUp, MEDIUM_CONFIDENCE } from './enrichment.js';
 import {
   ENRICHMENT,
@@ -220,7 +221,8 @@ const message = (output: unknown, stop_reason = 'end_turn') =>
     type: 'message',
     role: 'assistant',
     model: ENRICHMENT_MODEL,
-    content: stop_reason === 'refusal' ? [] : [{ type: 'text', text: JSON.stringify(output) }],
+    content:
+      stop_reason === 'refusal' ? [] : [{ type: 'text', text: JSON.stringify(wireAnswer(output)) }],
     stop_reason,
     stop_details: null,
     usage: { input_tokens: 10, output_tokens: 5 },
@@ -678,6 +680,25 @@ describe('configure answer schema', () => {
   it('has no union-typed property, however many outputs the bindings declare', () => {
     // Structured output allows at most 16 union-typed properties.
     expect(JSON.stringify(answerSchema(ENRICHMENT_BINDINGS))).not.toMatch(/"anyOf"|"type":\[/);
+  });
+  it('lists the fields of each binding with one item shape, so it does not grow with the outputs', () => {
+    // The API compiles the schema to a grammar with a size limit; 23 fields as
+    // separate objects went over it.
+    const schema = answerSchema(ENRICHMENT_BINDINGS) as {
+      properties: Record<
+        string,
+        {
+          properties: {
+            fields: { type: string; items: { properties: { key: { enum: string[] } } } };
+          };
+        }
+      >;
+    };
+    for (const binding of ENRICHMENT_BINDINGS) {
+      const { fields } = schema.properties[binding.key]?.properties ?? {};
+      expect(fields?.type).toBe('array');
+      expect(fields?.items.properties.key.enum).toEqual(binding.fields.map((rule) => rule.key));
+    }
   });
 });
 

@@ -633,11 +633,15 @@ Choices the enrichment release made where §6 left them open:
   no server-side fallback: it accepts `fallbacks: 'default'` but a refused
   pick, such as for a security or biotech company, stays refused and ends
   `no_match_model_refused`.
-- **Configure answer schema.** Structured output allows at most 16
-  union-typed properties, and the Companies and People bindings together have
-  about 25 choices whose target can be empty. Each target is a plain string,
-  empty for none, so the schema has no unions however many outputs a binding
-  declares.
+- **Configure answer schema.** The API compiles a structured-output schema
+  to a grammar, with at most 16 union-typed properties and a size limit.
+  Enrichment's 23 fields broke both: each was nullable, and each was its own
+  object with its own enum. A target is now a plain string, empty for none,
+  and a binding's fields are a list of one item shape (key, action, field,
+  reason, and value/option pairs where a field has values), so the schema
+  stays the same size however many outputs a binding declares. The schema no
+  longer rules out skipping a required field; reading the answer drops such a
+  skip, and the server's default applies.
 
 ### 6.8 People and destinations (enrichment v2)
 

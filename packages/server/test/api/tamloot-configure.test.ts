@@ -4,6 +4,7 @@ import { executeTamloot } from '@retainer/runner/tamloot';
 import { TAMLOOT, tamlootManifest } from '@retainer/runner/tamloot-contract';
 import { generateKeyPair } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { wireAnswer } from '../../../runner/src/binding-suggestions-test-fixture.js';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
@@ -27,7 +28,7 @@ beforeAll(async () => {
 /** Answers a Messages request with structured output, as the model would. */
 const structured = (output: unknown) => (request: Received, res: ServerResponse) =>
   answer(request, res, 'claude-haiku-5-5', {
-    text: JSON.stringify(output),
+    text: JSON.stringify(wireAnswer(output)),
     stopReason: 'end_turn',
   });
 const why = (text: string) => ({ reason: text });

@@ -1,5 +1,6 @@
 import type { Invocation } from '@retainer/extension';
 import { describe, expect, it, vi } from 'vitest';
+import { wireAnswer } from './binding-suggestions-test-fixture.js';
 import { executeTamloot } from './tamloot.js';
 import { answerSchema } from './tamloot-configure.js';
 import { TAMLOOT, TAMLOOT_MODEL, tamlootManifest } from './tamloot-contract.js';
@@ -12,7 +13,8 @@ const message = (output: unknown, stop_reason = 'end_turn') =>
     type: 'message',
     role: 'assistant',
     model: TAMLOOT_MODEL,
-    content: stop_reason === 'refusal' ? [] : [{ type: 'text', text: JSON.stringify(output) }],
+    content:
+      stop_reason === 'refusal' ? [] : [{ type: 'text', text: JSON.stringify(wireAnswer(output)) }],
     stop_reason,
     stop_details: null,
     usage: { input_tokens: 10, output_tokens: 5 },
@@ -264,6 +266,23 @@ describe('Tamloot configure (spec 3.1)', () => {
     ]);
     expect(input.bindings[0].candidates[0].fields).toEqual([]);
     expect(input.currentBindings).toBeUndefined();
+  });
+
+  it('drops a skip of a required field, which the answer schema no longer rules out', async () => {
+    const answer = good();
+    const c = configure(() =>
+      message({
+        ...answer,
+        task: {
+          ...answer.task,
+          fields: { ...answer.task.fields, title: { ...pick('skip'), field: '' } },
+        },
+      }),
+    );
+    expect(await c.run()).toEqual({ status: 'succeeded', code: 'suggestions_ready' });
+    const saved = c.saved[0] as { bindings: { task: { fields: Record<string, unknown> } } };
+    expect(saved.bindings.task.fields.title).toBeUndefined();
+    expect(saved.bindings.task.fields.status).toBeDefined();
   });
 
   it('leaves out every choice that cannot fit, so the server default applies', async () => {
