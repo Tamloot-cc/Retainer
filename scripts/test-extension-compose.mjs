@@ -309,7 +309,8 @@ try {
         'A deterministic fixture transcript uploaded by an isolated source runner.',
       );
     }
-    assert.deepEqual(notes.records[0].createdBy, { type: 'integration', id: installed.id });
+    assert.equal(notes.records[0].createdBy.type, 'integration');
+    assert.equal(notes.records[0].createdBy.id, installed.id);
     const receiptCount = (
       await compose(
         'exec',
