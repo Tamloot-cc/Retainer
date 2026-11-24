@@ -119,7 +119,7 @@ function exaPerson(company: string) {
 const structured =
   (output: unknown, stopReason = 'end_turn') =>
   (request: Received, res: ServerResponse) =>
-    answer(request, res, 'claude-opus-5-5', {
+    answer(request, res, 'claude-haiku-5-5', {
       text: stopReason === 'refusal' ? null : JSON.stringify(output),
       stopReason,
     });
@@ -659,7 +659,7 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     expect(row?.confidence).toBeCloseTo(0.7);
     const [sent] = messages().slice(before);
     expect(sent?.body).toMatchObject({
-      model: 'claude-opus-5-5',
+      model: 'claude-haiku-5-5',
       max_tokens: 4000,
       fallbacks: 'default',
       output_config: { effort: 'low' },
@@ -871,11 +871,11 @@ describe('enrichment configure and backfill', () => {
               field: 'employeeCount',
               reason: 'It holds head counts.',
             },
-            linkedin_url: { action: 'skip', field: null, reason: 'Not wanted.' },
+            linkedin_url: { action: 'skip', field: '', reason: 'Not wanted.' },
             headquarters: { action: 'existing', field: 'headquarters', reason: 'Same meaning.' },
           },
         },
-        person: { action: 'skip', object: null, reason: 'No contacts here.' },
+        person: { action: 'skip', object: '', reason: 'No contacts here.' },
       }),
     );
     const before = messages().length;
@@ -902,7 +902,7 @@ describe('enrichment configure and backfill', () => {
     });
     const usage = await db.owner<{ function_id: string; model: string }[]>`
       select function_id,model from ai_usage where installation_id=${h.id}`;
-    expect(usage).toEqual([{ function_id: ENRICHMENT.configure, model: 'claude-opus-5-5' }]);
+    expect(usage).toEqual([{ function_id: ENRICHMENT.configure, model: 'claude-haiku-5-5' }]);
   });
 
   it('falls back to API-name suggestions when the server has no model key', async () => {

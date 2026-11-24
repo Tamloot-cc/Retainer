@@ -152,4 +152,4 @@ Measured on 2026-11-24 against 18 startups that announced a Series A in the prev
 
 The two unmatched companies had domains that did not belong to them. Annual revenue is mostly available for larger companies. The latest round often lags a fresh announcement: several companies that had just announced a Series A were still listed with their seed round.
 
-A person search costs about $0.007 and a LinkedIn read $0.001, plus a model pick when the shortcut can't decide (about $0.04 at `claude-opus-5-5` prices).
+A person search costs about $0.007 and a LinkedIn read $0.001, plus a model pick when the shortcut can't decide (about $0.001 at `claude-haiku-5-5` prices, a fortieth of the $0.04 it cost on `claude-opus-5-5`).

@@ -74,7 +74,7 @@ const schema = {
   ],
 };
 type Answer = () => Response;
-const pick = (action: string, target: string | null) => ({
+const pick = (action: string, target?: string) => ({
   action,
   reason: `Because ${target ?? action}.`,
 });
@@ -271,7 +271,7 @@ describe('Tamloot configure (spec 3.1)', () => {
     const c = configure(() =>
       message({
         // A required binding can't be skipped.
-        meeting: { ...pick('skip', null), object: null },
+        meeting: { ...pick('skip'), object: '' },
         task: {
           ...answer.task,
           fields: {
@@ -315,9 +315,9 @@ describe('Tamloot configure (spec 3.1)', () => {
           ...good(),
           task: {
             ...good().task,
-            fields: { ...good().task.fields, person: { ...pick('create', null), field: null } },
+            fields: { ...good().task.fields, person: { ...pick('create'), field: '' } },
           },
-          person: { ...pick(action, object ?? null), object: object ?? null },
+          person: { ...pick(action, object), object: object ?? '' },
         }),
       );
       await c.run();
@@ -333,9 +333,9 @@ describe('Tamloot configure (spec 3.1)', () => {
         ...good(),
         task: {
           ...good().task,
-          fields: { ...good().task.fields, person: { ...pick('create', null), field: null } },
+          fields: { ...good().task.fields, person: { ...pick('create'), field: '' } },
         },
-        person: { ...pick('create', null), object: null },
+        person: { ...pick('create'), object: '' },
       }),
     );
     await c.run();
@@ -350,8 +350,8 @@ describe('Tamloot configure (spec 3.1)', () => {
   it('saves create and skip choices without fields', async () => {
     const c = configure(() =>
       message({
-        meeting: { ...pick('create', null), object: null },
-        task: { ...pick('skip', null), object: null, fields: good().task.fields },
+        meeting: { ...pick('create'), object: '' },
+        task: { ...pick('skip'), object: '', fields: good().task.fields },
         person: { ...good().person },
       }),
     );
