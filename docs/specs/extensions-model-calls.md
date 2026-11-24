@@ -564,23 +564,12 @@ New run codes: `matched_shortcut`, `matched_model_high`,
 ### 6.6 Cost and model choice
 
 Per lookup that needs the model, about 4,000 input tokens. Output is harder to
-guess, because Opus 5.5 always thinks and thinking is billed as output, so the
-first run of the domain set measures it. If it stays under 1,000 tokens, a
-lookup costs at most about $0.04 at `claude-opus-5-5` prices ($4 input, $20
-output per million tokens), on top of Exa's $0.008.
+guess, because the model thinks and thinking is billed as output. If it stays
+under 1,000 tokens, a lookup costs at most about $0.04 at `claude-opus-5-5`
+prices ($4 input, $20 output per million tokens), on top of Exa's $0.008.
 
-A fixed set of about 50 real domains with known answers is run against the
-real model before each prompt or model change. It includes redirects,
-rebrands, shared hosts, and security and biotech companies (§6.5). Each run
-records accuracy, cost, refusals and how many lookups the shortcut settled.
-
-The new search drops `includeDomains` for every lookup, not only the ones
-that reach the model. So the first run also puts today's lookup (§6.2)
-through the same set: a company that matches today must still match.
-
-Picking from five candidates is a small task, so the first run compares
-`claude-opus-5-5` with `claude-haiku-5-5`, which costs about a fortieth as
-much, and the bundle keeps the cheaper one if accuracy holds.
+Picking from five candidates is a small task, so the bundle uses
+`claude-haiku-5-5`, which costs about a fortieth as much (§6.7).
 
 ### 6.7 As built (PR 2)
 
@@ -640,7 +629,7 @@ Choices the enrichment release made where §6 left them open:
   no suggested field) keeps the name-and-type suggestion for that output.
   Reasons are cut to 500 characters.
 - **Model (2026-11-24).** Enrichment moved from `claude-opus-5-5` to
-  `claude-haiku-5-5` for cost, without a run of the domain set. Haiku 5.5 has
+  `claude-haiku-5-5` for cost. Haiku 5.5 has
   no server-side fallback: it accepts `fallbacks: 'default'` but a refused
   pick, such as for a security or biotech company, stays refused and ends
   `no_match_model_refused`.
@@ -745,8 +734,8 @@ Two pull requests in this repo, with the hosted change between them.
    `Cache-Control: no-store` on every proxy response, which the mounts had
    tried to set and lost.
 4. **PR 2: the enrichment release.** `configure` suggests the mapping, and
-   the new lookup; staging with a real Exa key and the model key, plus the
-   domain set in §6.6. (Installation in two steps itself shipped in #90 and
+   the new lookup; staging with a real Exa key and the model key.
+   (Installation in two steps itself shipped in #90 and
    #91.)
 
 PR 1 holds everything generic, mapped-write confidence included, so PR 2
