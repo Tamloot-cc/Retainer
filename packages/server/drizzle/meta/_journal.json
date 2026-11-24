@@ -1030,6 +1030,13 @@
       "when": 1795468551398,
       "tag": "0146_writer_admission",
       "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1795538454137,
+      "tag": "0147_index_extension_jobs_by_connection",
+      "breakpoints": true
     }
   ]
 }

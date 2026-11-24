@@ -1991,6 +1991,12 @@ export const extensionJobs = pgTable(
       .on(t.expiresAt, t.workspaceId)
       .where(sql`${t.status} in ('queued','running')`),
     index('extension_jobs_install_idx').on(t.workspaceId, t.installationId, t.createdAt),
+    // Connection drains also look up jobs without an installation predicate.
+    index('extension_jobs_connection_generation_status_idx').on(
+      t.connectionId,
+      t.connectionGeneration,
+      t.status,
+    ),
     /** Finds a record's newest live change job, which a later change may coalesce into (R9). */
     index('extension_jobs_coalesce_idx')
       .on(t.installationId, t.functionId, sql`(${t.changeSnapshot}->>'record_id')`)

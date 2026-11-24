@@ -1,0 +1,1 @@
+CREATE INDEX "extension_jobs_connection_generation_status_idx" ON "extension_jobs" USING btree ("connection_id","connection_generation","status");
