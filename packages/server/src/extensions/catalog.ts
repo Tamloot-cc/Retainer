@@ -38,13 +38,15 @@ export class ExtensionCatalog {
     }));
     const newest = new Map<string, string>();
     for (const { manifest } of loaded) {
+      // A release this server can't run is never offered, so it isn't the newest.
+      if (!supportsServer(manifest, VERSION)) continue;
       const prior = newest.get(manifest.universalId);
       if (!prior || compareVersions(manifest.version, prior) > 0)
         newest.set(manifest.universalId, manifest.version);
     }
     for (const { release, manifest: retained } of loaded) {
-      // New installs and upgrades get a registration's newest release, so it
-      // meets every rule. Older releases that installations still run may
+      // New installs and upgrades get a registration's newest release this
+      // server runs, so it meets every rule. Older releases that installations still run may
       // predate required descriptions and load as they were published.
       const manifest =
         newest.get(retained.universalId) === retained.version
