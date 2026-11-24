@@ -2,9 +2,11 @@ import { normalizeDomain } from '@retainer/shared';
 import type { z } from 'zod';
 import {
   type Certainty,
-  type EnrichmentOutput,
   EXA_ORIGIN,
   exaCompanyEntity,
+  exaPeopleRequest,
+  exaPersonEntity,
+  exaProfileRequest,
   exaSearchRequest,
   exaSearchResponse,
   exaTeam,
@@ -25,13 +27,24 @@ export class ExaError extends Error {
   }
 }
 
-export type EnrichmentValues = Partial<Record<EnrichmentOutput, unknown>>;
+export type EnrichmentValues = Record<string, unknown>;
 type ExaSearch = z.infer<typeof exaSearchResponse>;
 
 const LINKEDIN_LINE =
   /^- LinkedIn: (?:https?:\/\/)?(?:[a-z]{2,3}\.)?linkedin\.com\/company\/([A-Za-z0-9_%-]{1,100})\/?$/m;
 const HOMEPAGE_LINE = /^- Homepage: (\S{1,2048})$/m;
 const EXCERPT_CHARACTERS = 1500;
+
+/** Values of a company profile that only fill outputs; the pick doesn't need them. */
+export type CompanyDetails = {
+  industry: string | null;
+  foundedYear: number | null;
+  description: string | null;
+  revenue: number | null;
+  funding: number | null;
+  lastRound: { name: string | null; date: string | null; amount: number | null } | null;
+  visits: number | null;
+};
 
 /** One search result that carries a company entity (model calls spec 6.3, step 2). */
 export type Candidate = {
@@ -44,49 +57,122 @@ export type Candidate = {
   headquarters: { city?: string; postcode?: string; country?: string } | null;
   workforce: number | null;
   excerpt: string;
+  details: CompanyDetails;
 };
 
-/** The search results Exa returned as companies, numbered from 0 in its order. */
-export function companyCandidates(body: ExaSearch): Candidate[] {
+const INDUSTRY_LINE = /^- Industry: (.{1,200})$/m;
+const DESCRIPTION_CHARACTERS = 2000;
+const THIS_YEAR = new Date().getUTCFullYear();
+
+/** A whole number in [min, max], or null. */
+function whole(value: unknown, min: number, max: number): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
+    ? Math.round(value)
+    : null;
+}
+/** Trimmed text, or null when blank. */
+const trimmed = (value: unknown) =>
+  typeof value === 'string' && value.trim() ? value.trim().replace(/\s+/g, ' ') : null;
+/** At most `max` characters, cut at a word boundary. */
+function clip(value: string, max: number): string {
+  if (value.length <= max) return value;
+  const cut = value.slice(0, max);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+/** Exa writes round names in sentence case ("Series a"); a series letter reads upper case. */
+const roundName = (value: unknown) =>
+  trimmed(value)?.replace(
+    /^series ([a-z])\b/i,
+    (_, letter: string) => `Series ${letter.toUpperCase()}`,
+  ) ?? null;
+/** A real calendar date as YYYY-MM-DD, or null. */
+function calendarDate(value: unknown): string | null {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) &&
+    date.toISOString().slice(0, 10) === value &&
+    date.getUTCFullYear() >= 1900 &&
+    date.getUTCFullYear() <= THIS_YEAR + 1
+    ? value
+    : null;
+}
+/** US dollars as a money value, when its micros are an exact integer. */
+function usd(value: number | null) {
+  if (value === null) return undefined;
+  const amountMicros = value * 1_000_000;
+  return Number.isSafeInteger(amountMicros) ? { amountMicros, currency: 'USD' } : undefined;
+}
+
+/** The results that carry an entity of `schema`, built and numbered from 0 in Exa's order. */
+function entityResults<E, C>(
+  body: ExaSearch,
+  schema: z.ZodType<E>,
+  build: (result: ExaSearch['results'][number], entity: E) => C,
+): (C & { index: number })[] {
   return body.results
     .flatMap((result) => {
       const entity = (result.entities ?? [])
-        .map((candidate) => exaCompanyEntity.safeParse(candidate))
+        .map((candidate) => schema.safeParse(candidate))
         .find((parsed) => parsed.success)?.data;
-      if (!entity) return [];
-      const profile = result.text ?? '';
-      const slug = LINKEDIN_LINE.exec(profile)?.[1];
-      const total = entity.properties.workforce?.total;
-      const hq = entity.properties.headquarters;
-      // `address` is not used: Exa returns a locality there, not a street.
-      const headquarters = Object.fromEntries(
-        (
-          [
-            ['city', hq?.city],
-            ['postcode', hq?.postalCode],
-            ['country', hq?.country],
-          ] as const
-        ).flatMap(([key, value]) =>
-          typeof value === 'string' && value.trim() ? [[key, value.trim()]] : [],
-        ),
-      );
-      const name = entity.properties.name?.trim() || result.title?.trim() || null;
-      return [
-        {
-          url: result.url,
-          name,
-          homepage: HOMEPAGE_LINE.exec(profile)?.[1] ?? null,
-          linkedin: slug ? `https://www.linkedin.com/company/${slug}` : null,
-          headquarters: Object.keys(headquarters).length ? headquarters : null,
-          workforce:
-            typeof total === 'number' && Number.isFinite(total) && total >= 0 && total <= 10_000_000
-              ? Math.round(total)
-              : null,
-          excerpt: profile.slice(0, EXCERPT_CHARACTERS),
-        },
-      ];
+      return entity ? [build(result, entity)] : [];
     })
     .map((candidate, index) => ({ index, ...candidate }));
+}
+
+/** The search results Exa returned as companies, numbered from 0 in its order. */
+export function companyCandidates(body: ExaSearch): Candidate[] {
+  return entityResults(body, exaCompanyEntity, (result, entity) => {
+    const profile = result.text ?? '';
+    const slug = LINKEDIN_LINE.exec(profile)?.[1];
+    const total = entity.properties.workforce?.total;
+    const hq = entity.properties.headquarters;
+    // `address` is not used: Exa returns a locality there, not a street.
+    const headquarters = Object.fromEntries(
+      (
+        [
+          ['city', hq?.city],
+          ['postcode', hq?.postalCode],
+          ['country', hq?.country],
+        ] as const
+      ).flatMap(([key, value]) =>
+        typeof value === 'string' && value.trim() ? [[key, value.trim()]] : [],
+      ),
+    );
+    const name = entity.properties.name?.trim() || result.title?.trim() || null;
+    const { financials, webTraffic } = entity.properties;
+    const round = financials?.fundingLatestRound;
+    const money = (value: unknown) => whole(value, 0, 10_000_000_000_000);
+    const lastRound = round
+      ? {
+          name: roundName(round.name),
+          date: calendarDate(round.date),
+          amount: money(round.amount),
+        }
+      : null;
+    const description = trimmed(entity.properties.description);
+    return {
+      url: result.url,
+      name,
+      homepage: HOMEPAGE_LINE.exec(profile)?.[1] ?? null,
+      linkedin: slug ? `https://www.linkedin.com/company/${slug}` : null,
+      headquarters: Object.keys(headquarters).length ? headquarters : null,
+      workforce: whole(total, 0, 10_000_000),
+      excerpt: profile.slice(0, EXCERPT_CHARACTERS),
+      details: {
+        industry: trimmed(INDUSTRY_LINE.exec(profile)?.[1]),
+        foundedYear: whole(entity.properties.foundedYear, 1600, THIS_YEAR),
+        description: description && clip(description, DESCRIPTION_CHARACTERS),
+        revenue: money(financials?.revenueAnnual),
+        funding: money(financials?.fundingTotal),
+        lastRound:
+          lastRound && (lastRound.name || lastRound.date || lastRound.amount !== null)
+            ? lastRound
+            : null,
+        visits: whole(webTraffic?.visitsMonthly, 0, 100_000_000_000),
+      },
+    };
+  });
 }
 
 /** Its result is on the domain, and any `Homepage:` line in its profile agrees. */
@@ -140,20 +226,25 @@ const LEGAL_SUFFIXES = new Set([
   'srl',
 ]);
 /** A company name compared by its words: case, punctuation and legal suffixes dropped. */
-export function normalizeCompanyName(name: string): string {
-  const words = name
-    .normalize('NFKD')
-    .replace(/\p{M}/gu, '')
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    // Dotted abbreviations are one word: S.A. is SA.
-    .replace(/\./g, '')
+/** Lower case without accents. */
+const fold = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase();
+/** The letters-and-digits words of folded text. */
+const words = (text: string) =>
+  text
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim()
     .split(' ')
     .filter(Boolean);
-  while (words.length > 1 && LEGAL_SUFFIXES.has(words[words.length - 1] ?? '')) words.pop();
-  return words.join(' ');
+
+export function normalizeCompanyName(name: string): string {
+  const parts = words(
+    fold(name)
+      .replace(/&/g, ' and ')
+      // Dotted abbreviations are one word: S.A. is SA.
+      .replace(/\./g, ''),
+  );
+  while (parts.length > 1 && LEGAL_SUFFIXES.has(parts[parts.length - 1] ?? '')) parts.pop();
+  return parts.join(' ');
 }
 
 /**
@@ -172,13 +263,167 @@ export function acceptPick(
   return name !== '' && name === normalizeCompanyName(pick.candidate.name);
 }
 
-/** The output values of the chosen candidate (enrichment spec 4.3). */
+/** The output values of the chosen candidate (enrichment spec 4.3, 9.2). */
 export function candidateValues(candidate: Candidate): EnrichmentValues {
   const values: EnrichmentValues = {};
+  const { details } = candidate;
   if (candidate.workforce !== null) values.employee_count = candidate.workforce;
   if (candidate.linkedin)
     values.linkedin_url = { primary: { url: candidate.linkedin }, additional: [] };
   if (candidate.headquarters) values.headquarters = candidate.headquarters;
+  if (details.description) values.description = details.description;
+  if (details.industry) values.industry = details.industry;
+  if (details.foundedYear !== null) values.founded_year = details.foundedYear;
+  const revenue = usd(details.revenue);
+  if (revenue) values.annual_revenue = revenue;
+  const funding = usd(details.funding);
+  if (funding) values.total_funding = funding;
+  if (details.lastRound?.name) values.last_funding_round = details.lastRound.name;
+  if (details.lastRound?.date) values.last_funding_date = details.lastRound.date;
+  const round = usd(details.lastRound?.amount ?? null);
+  if (round) values.last_funding_amount = round;
+  if (details.visits !== null) values.monthly_web_visits = details.visits;
+  return values;
+}
+
+/** A role from a person's work history, as the lookup and the model see it. */
+export type Role = {
+  title: string | null;
+  company: string | null;
+  current: boolean;
+  /** From the profile's experience section, for current roles only. */
+  department: string | null;
+  level: string | null;
+};
+/** One search result that carries a person entity (enrichment spec 7.3). */
+export type PersonCandidate = {
+  index: number;
+  url: string;
+  name: string | null;
+  headline: string | null;
+  location: string | null;
+  /** The person's LinkedIn profile, when the result is one. */
+  linkedin: string | null;
+  roles: Role[];
+};
+
+const PROFILE_URL =
+  /^https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\/([A-Za-z0-9_%-]{1,100})\/?(?:[?#].*)?$/i;
+/** The canonical form of a LinkedIn profile address, or null when `url` isn't one. */
+export function linkedinProfile(url: string | null | undefined): string | null {
+  const slug = url ? PROFILE_URL.exec(url.trim())?.[1] : undefined;
+  return slug ? `https://www.linkedin.com/in/${slug}` : null;
+}
+const EXPERIENCE_HEADER = /^### (.+?) - (?:\[([^\]\n]+)\]\([^)\n]*\)|([^\n]+?)) \(Current\)\s*$/;
+const DEPARTMENT_LINE = /^Department: ([^•\n]+?)\s*•\s*Level: (.+?)\s*$/m;
+/** Past roles the model sees next to the current ones, most recent first. */
+const PAST_ROLES = 3;
+
+/** Department and level of each current role, from the profile's experience section. */
+function currentRoleDetails(profile: string) {
+  const details: { title: string; company: string; department: string; level: string }[] = [];
+  for (const block of profile.split(/^(?=### )/m)) {
+    const header = EXPERIENCE_HEADER.exec(block.split('\n', 1)[0] ?? '');
+    const line = DEPARTMENT_LINE.exec(block);
+    if (header && line?.[1] && line[2])
+      details.push({
+        title: header[1]?.trim() ?? '',
+        company: (header[2] ?? header[3] ?? '').trim(),
+        department: line[1].trim(),
+        level: line[2].trim(),
+      });
+  }
+  return details;
+}
+
+/**
+ * The headline: the first line after the profile's `# Name`, unless that line
+ * is where the person lives (Exa puts the location there when the profile has
+ * no headline) or a count of connections.
+ */
+function headlineOf(profile: string, location: string | null): string | null {
+  const lines = profile.split('\n').map((line) => line.trim());
+  const title = lines.findIndex((line) => line.startsWith('# '));
+  if (title < 0) return null;
+  const line = lines.slice(title + 1).find(Boolean);
+  if (!line || line.startsWith('#') || /\bconnections\b|\bfollowers\b/.test(line)) return null;
+  const place = line.replace(/\s*\([A-Z]{2}\)$/, '');
+  if (/\([A-Z]{2}\)$/.test(line) || (location && place === location)) return null;
+  return clip(line, 500);
+}
+
+/** The search results Exa returned as people, numbered from 0 in its order. */
+export function personCandidates(body: ExaSearch): PersonCandidate[] {
+  return entityResults(body, exaPersonEntity, (result, entity) => {
+    const profile = result.text ?? '';
+    const location = trimmed(entity.properties.location);
+    const details = currentRoleDetails(profile);
+    const history = (entity.properties.workHistory ?? []).map((role) => ({
+      title: trimmed(role.title),
+      company: trimmed(role.company?.name),
+      current: !!role.dates && !role.dates.to,
+    }));
+    const roles: Role[] = [
+      ...history
+        .filter((role) => role.current)
+        .map((role) => {
+          const company = role.company && normalizeCompanyName(role.company);
+          const at = details.filter((d) => company && normalizeCompanyName(d.company) === company);
+          const found = at.find((d) => d.title === role.title) ?? at[0];
+          return { ...role, department: found?.department ?? null, level: found?.level ?? null };
+        }),
+      ...history
+        .filter((role) => !role.current)
+        .slice(0, PAST_ROLES)
+        .map((role) => ({ ...role, department: null, level: null })),
+    ];
+    return {
+      url: result.url,
+      name: trimmed(entity.properties.name) ?? trimmed(result.title),
+      headline: headlineOf(profile, location),
+      location,
+      linkedin: linkedinProfile(result.url),
+      roles,
+    };
+  });
+}
+
+/** A person's name compared by its first and last words: case, accents and punctuation dropped. */
+export function normalizePersonName(name: string): string {
+  const parts = words(fold(name));
+  return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1]}` : (parts[0] ?? '');
+}
+export function sameName(a: string | null, b: string | null): boolean {
+  const key = a ? normalizePersonName(a) : '';
+  return key !== '' && !!b && key === normalizePersonName(b);
+}
+
+/** The candidate's current roles at the company, by name. */
+export function rolesAt(candidate: PersonCandidate, company: string | null): Role[] {
+  const name = company && normalizeCompanyName(company);
+  return name
+    ? candidate.roles.filter(
+        (role) => role.current && role.company && normalizeCompanyName(role.company) === name,
+      )
+    : [];
+}
+
+/**
+ * The output values of the chosen person (enrichment spec 7.2): the title,
+ * level and department of their current role at the record's company, or of
+ * their only current role when the company is unknown or isn't listed.
+ */
+export function personValues(candidate: PersonCandidate, company: string | null): EnrichmentValues {
+  const values: EnrichmentValues = {};
+  const current = candidate.roles.filter((role) => role.current);
+  const role = rolesAt(candidate, company)[0] ?? (current.length === 1 ? current[0] : undefined);
+  if (role?.title) values.job_title = role.title;
+  if (role?.level) values.seniority = role.level;
+  if (role?.department) values.department = role.department;
+  if (candidate.headline) values.headline = candidate.headline;
+  if (candidate.location) values.location = candidate.location;
+  if (candidate.linkedin)
+    values.linkedin_url = { primary: { url: candidate.linkedin }, additional: [] };
   return values;
 }
 
@@ -190,7 +435,7 @@ export class ExaProvider {
   ) {}
 
   private async request<T>(
-    path: '/search' | '/websets/v0/teams/me',
+    path: '/search' | '/contents' | '/websets/v0/teams/me',
     schema: z.ZodType<T>,
     body?: unknown,
   ): Promise<T> {
@@ -273,5 +518,25 @@ export class ExaProvider {
     return companyCandidates(
       await this.request('/search', exaSearchResponse, exaSearchRequest(domain, name)),
     );
+  }
+
+  /** The person candidates for a name and a company's name and domain. */
+  async searchPeople(
+    name: string,
+    company: { name: string | null; domain: string | null },
+  ): Promise<PersonCandidate[]> {
+    return personCandidates(
+      await this.request('/search', exaSearchResponse, exaPeopleRequest(name, company)),
+    );
+  }
+
+  /** The person on one LinkedIn profile, read directly; null when Exa has no person there. */
+  async profile(url: string): Promise<PersonCandidate | null> {
+    const profile = linkedinProfile(url);
+    if (!profile) return null;
+    const [candidate] = personCandidates(
+      await this.request('/contents', exaSearchResponse, exaProfileRequest(profile)),
+    );
+    return candidate ? { ...candidate, linkedin: profile } : null;
   }
 }

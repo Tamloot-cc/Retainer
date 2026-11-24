@@ -1,4 +1,4 @@
-# Company enrichment extension v1
+# Company and people enrichment
 
 **Status** — Proposed. Builds on the [Retainer extensions platform](extensions.md) and its [hosted Lambda runtime](extensions-lambda.md).
 
@@ -69,3 +69,87 @@ Retainer owns the manifest contract, approval UI, guarded write, adapter, tests,
 | Failures are operable                   | Exercise partial provider results, no-match, malformed responses, 429, invalid credentials, disable, and retry. Verify safe diagnostics and that setup and jobs operate through the isolated runner.                                                                                           |
 
 The provider selection, authentication check, response contract, and rate limits are the remaining integration decisions. A fixture with the two launch outputs is sufficient to develop and verify the platform flow before selecting a provider.
+
+## 7. More details and people (v2)
+
+**Status** — Built in release 2.0.0. Sections 1 to 6 describe the first release; where they differ, this section wins.
+
+### 7.1 Scope
+
+- The same Exa company search returns more than v1 used, so it fills more company details at no extra cost.
+- A second, optional destination, **People**, looks up individual contacts with Exa's `people` category and fills their details.
+- `configure` lets the model choose the objects for both destinations as well as every field, as Tamloot's does (§7.4).
+- Fill-only, the mapped write, confidence and the run list behave as in v1 and [extensions-model-calls.md](extensions-model-calls.md) §5 and §6.
+
+### 7.2 Outputs
+
+Company, from the company entity and its profile text:
+
+| Output                | Type    | Source                                                   |
+| --------------------- | ------- | -------------------------------------------------------- |
+| `employee_count`      | number  | `workforce.total` (v1)                                   |
+| `linkedin_url`        | links   | the profile's `LinkedIn:` line (v1)                      |
+| `headquarters`        | address | `headquarters` city, postcode, country (v1)              |
+| `description`         | text    | `description`, at most 2,000 characters                  |
+| `industry`            | text    | the profile's `Industry:` line                           |
+| `founded_year`        | number  | `foundedYear`                                            |
+| `annual_revenue`      | money   | `financials.revenueAnnual`, USD                          |
+| `total_funding`       | money   | `financials.fundingTotal`, USD                           |
+| `last_funding_round`  | text    | `fundingLatestRound.name`, "Series a" read as "Series A" |
+| `last_funding_date`   | date    | `fundingLatestRound.date`                                |
+| `last_funding_amount` | money   | `fundingLatestRound.amount`, USD                         |
+| `monthly_web_visits`  | number  | `webTraffic.visitsMonthly`                               |
+
+Person, from the person entity and its profile text:
+
+| Output         | Type  | Source                                                                 |
+| -------------- | ----- | ---------------------------------------------------------------------- |
+| `job_title`    | text  | the current role at the record's company, or the only current role     |
+| `headline`     | text  | the line after the profile's name, unless it is the location           |
+| `location`     | text  | `location`                                                             |
+| `seniority`    | text  | `Level:` of that role in the profile's experience section              |
+| `department`   | text  | `Department:` of that role; founders are often listed under Consulting |
+| `linkedin_url` | links | the result's `linkedin.com/in/` address                                |
+
+A malformed or out-of-range value is dropped rather than the whole result. Money is written as `amountMicros` in USD; an amount too large for an exact integer of micros (above about $9 billion) is skipped.
+
+### 7.3 People lookup
+
+The **People** destination binds `name` (required), and optionally `email`, `company` (a relation to the Companies object) and the output fields. Its change trigger watches name, email, company and LinkedIn URL.
+
+1. **LinkedIn first.** When the record already has a `linkedin.com/in/` address in its bound LinkedIn field, the run reads that profile with `POST /contents` ($0.001) and fills from it at confidence 1 (`matched_linkedin`).
+2. **Company signal.** Otherwise the run needs a name and a company: the linked company's name and website, read through the Companies destination, or else the domain of a work email. A personal mailbox (Gmail, Outlook, iCloud, Proton and similar) is not a company. With neither, the run ends `no_company` without calling Exa.
+3. **Search.** `category: 'people'`, query `"<name> <company name> <company domain>"`, five results with text. The email address itself is never sent.
+4. **Shortcut.** Exactly one candidate with the same name (first and last word, case and accents dropped) and a current role at a company whose name matches the record's company after `normalizeCompanyName`: confidence 1, no model call.
+5. **Model pick.** Otherwise the model picks, as for companies. Guards: never `low`; the name must match. A current role at the company allows `high` or `medium` (confidence 1 or 0.7), and without one only `high`, so a person known only by an email domain needs a `high` pick.
+
+The mapped write checks the person's primary email as its lookup value, so a run whose person changed email during the lookup writes nothing (`lookup_changed`).
+
+### 7.4 Configure
+
+One model call suggests both destinations, through the configure helper Tamloot shares (`binding-suggestions.ts`). It sees each binding, the candidate objects of the same class with their eligible fields, up to five sampled values per field from the 20 most recently updated records, and the current destinations on an upgrade or a request. Choices the schema can't take are dropped, so the server's default applies to them. People can be skipped. Without a usable answer, company details fall back to API name and type, and People is left to the server's default.
+
+### 7.5 Consent, runs and setup
+
+- The one consent setting, `shareLookups`, now covers people's names and companies. A consent setting must be required, so there is no separate switch for people: skipping the People destination sends no people to Exa.
+- `enrichPerson` and `backfillPerson` mirror `enrich` and `backfill`. Setup keeps the mapped outputs of each destination in its own KV key and queues that destination's backfill when an upgrade maps a new output.
+- A workspace migrated from before bindings keeps People skipped.
+
+### 7.6 Coverage and cost
+
+Measured on 2026-11-24 against 18 startups that announced a Series A in the previous months, through the release's own lookup code:
+
+| Result                              | Companies (16 matched of 18) | People (16 founders or executives) |
+| ----------------------------------- | ---------------------------- | ---------------------------------- |
+| Matched without the model           | 14                           | 16                                 |
+| Matched with a `high` model pick    | 2                            | not needed                         |
+| Description, industry, LinkedIn, HQ | 16                           |                                    |
+| Employees, web visits               | 16                           |                                    |
+| Total funding / founded year        | 15 / 11                      |                                    |
+| Annual revenue                      | 0                            |                                    |
+| Title, location, LinkedIn           |                              | 16                                 |
+| Headline, seniority, department     |                              | 15                                 |
+
+The two unmatched companies had domains that did not belong to them. Annual revenue is mostly available for larger companies. The latest round often lags a fresh announcement: several companies that had just announced a Series A were still listed with their seed round.
+
+A person search costs about $0.007 and a LinkedIn read $0.001, plus a model pick when the shortcut can't decide (about $0.04 at `claude-opus-5-5` prices).

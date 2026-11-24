@@ -640,6 +640,13 @@ Choices the enrichment release made where §6 left them open:
   no suggested field) keeps the name-and-type suggestion for that output.
   Reasons are cut to 500 characters.
 
+### 6.8 People and destinations (enrichment v2)
+
+[extensions-company-enrichment.md](extensions-company-enrichment.md) §7 adds two model calls in the same shape:
+
+- **Configure** now asks where both destinations go, Companies and People, including which object holds each, through the helper Tamloot's configure shares (`binding-suggestions.ts`). The fallback without a model is unchanged for company details.
+- **Person pick.** When the people search's shortcut can't decide, the model picks a candidate with the same certainty scale and untrusted-content framing as §6.3. The guards differ: the name must match, and a pick without a current role at the record's company needs `high`.
+
 ## 7. Tests
 
 - **Proxy (integration, real Postgres):** it refuses a model token with a bad

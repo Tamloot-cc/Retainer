@@ -1,5 +1,5 @@
 import { bindingKeySchema } from '@retainer/extension';
-import { normalizeDomain } from '@retainer/shared';
+import { normalizeDomain, normalizeEmail } from '@retainer/shared';
 import { z } from 'zod';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
@@ -54,6 +54,10 @@ function currentLookup(field: FieldState, value: unknown): string | null {
   if (field.type === 'links') {
     const url = (value as { primary?: { url?: unknown } | null }).primary?.url;
     return typeof url === 'string' ? normalizeDomain(url) : null;
+  }
+  if (field.type === 'emails') {
+    const email = (value as { primary?: unknown }).primary;
+    return typeof email === 'string' ? normalizeEmail(email) : null;
   }
   return typeof value === 'string' ? value : JSON.stringify(value);
 }

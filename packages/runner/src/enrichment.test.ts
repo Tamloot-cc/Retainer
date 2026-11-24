@@ -128,6 +128,15 @@ const candidate = (overrides: Partial<Candidate> = {}): Candidate => ({
   headquarters: null,
   workforce: 12,
   excerpt: '',
+  details: {
+    industry: null,
+    foundedYear: null,
+    description: null,
+    revenue: null,
+    funding: null,
+    lastRound: null,
+    visits: null,
+  },
   ...overrides,
 });
 
@@ -380,62 +389,58 @@ describe('the lookup (spec 6.3-6.5)', () => {
   });
 });
 
-describe('configure (spec 6.1)', () => {
+describe('configure (spec 6.1, enrichment spec 7.4)', () => {
+  const field = (name: string, type: string, extra: Record<string, unknown> = {}) => ({
+    name,
+    label: name,
+    type,
+    readOnly: false,
+    settings: {},
+    description: null,
+    ...extra,
+  });
   const schema = {
     objects: [
       {
         nameSingular: 'company',
+        labelPlural: 'Companies',
+        class: 'entity',
+        description: null,
         labelField: 'name',
         fields: [
-          {
-            name: 'name',
-            label: 'Name',
-            type: 'text',
-            readOnly: false,
-            settings: {},
-            description: null,
-          },
-          {
-            name: 'domain',
-            label: 'Domain',
-            type: 'links',
-            readOnly: false,
-            settings: {},
-            description: null,
-          },
-          {
-            name: 'size',
-            label: 'Size',
-            type: 'number',
-            readOnly: false,
-            settings: {},
-            description: null,
-          },
-          {
-            name: 'dealSize',
-            label: 'Deal size',
-            type: 'number',
-            readOnly: false,
-            settings: {},
-            description: null,
-          },
-          {
-            name: 'linkedinUrl',
-            label: 'LinkedIn',
-            type: 'links',
-            readOnly: false,
-            settings: {},
-            description: null,
-          },
-          {
-            name: 'score',
-            label: 'Score',
-            type: 'number',
-            readOnly: true,
-            settings: {},
-            description: null,
-          },
+          field('name', 'text'),
+          field('domain', 'links'),
+          field('size', 'number'),
+          field('dealSize', 'number'),
+          field('linkedinUrl', 'links'),
+          field('score', 'number', { readOnly: true }),
         ],
+      },
+      {
+        nameSingular: 'contact',
+        labelPlural: 'Contacts',
+        class: 'entity',
+        description: null,
+        labelField: 'fullName',
+        fields: [
+          field('fullName', 'full_name'),
+          field('emails', 'emails'),
+          field('title', 'text'),
+          field('employer', 'relation', {
+            settings: { targetObject: 'company', relationCardinality: 'many_to_one' },
+          }),
+          field('club', 'relation', {
+            settings: { targetObject: 'contact', relationCardinality: 'many_to_one' },
+          }),
+        ],
+      },
+      {
+        nameSingular: 'meeting',
+        labelPlural: 'Meetings',
+        class: 'event',
+        description: null,
+        labelField: 'title',
+        fields: [field('title', 'text')],
       },
     ],
   };
@@ -460,9 +465,14 @@ describe('configure (spec 6.1)', () => {
       if (target.pathname === '/v1/objects/company/query')
         return json({
           records: [
-            { id: 'a', fields: { size: 12, dealSize: 50000, linkedinUrl: null } },
-            { id: 'b', fields: { size: 340, dealSize: 9000 } },
+            { id: 'a', label: 'Acme', fields: { size: 12, dealSize: 50000, linkedinUrl: null } },
+            { id: 'b', label: 'Beta', fields: { size: 340, dealSize: 9000 } },
           ],
+          nextCursor: null,
+        });
+      if (target.pathname === '/v1/objects/contact/query')
+        return json({
+          records: [{ id: 'c', label: 'Ada', fields: { title: 'CTO' } }],
           nextCursor: null,
         });
       if (target.pathname === '/v1/extensions/installation/bindings')
@@ -472,10 +482,9 @@ describe('configure (spec 6.1)', () => {
           bindings: {
             company: {
               status: 'ok',
-              objects: [{ name: 'company' }],
+              objects: [{ id: crypto.randomUUID(), name: 'company', label: 'Companies' }],
               fields: {
-                domain: { name: 'domain' },
-                employee_count: { name: 'size', label: 'Size' },
+                domain: { id: crypto.randomUUID(), name: 'domain', label: 'Domain', values: {} },
               },
             },
           },
@@ -506,11 +515,21 @@ describe('configure (spec 6.1)', () => {
       run: () => executeEnrichment(invocation, new AbortController().signal, transport),
     };
   }
-  const choice = (action: string, field: string | null, reason = 'Because.') => ({
+  const pick = (action: string, field: string | null, reason = 'Because.') => ({
     action,
     field,
     reason,
   });
+  const answer = (company: Record<string, unknown>, person: Record<string, unknown>) =>
+    message({
+      company: {
+        action: 'existing',
+        object: 'company',
+        reason: 'Holds companies.',
+        fields: company,
+      },
+      person: { action: 'existing', object: 'contact', reason: 'Holds people.', fields: person },
+    });
 
   it('fails without making any requests when the deployment key is blank', async () => {
     vi.stubEnv('EXA_API_KEY', ' ');
@@ -521,13 +540,24 @@ describe('configure (spec 6.1)', () => {
     expect(c.transport).not.toHaveBeenCalled();
   });
 
-  it('saves the model’s choices, sampling compatible fields only', async () => {
+  it('asks the model where companies and people go, with sampled values, and saves what fits', async () => {
     const c = configure(() =>
-      message({
-        employee_count: choice('existing', 'size'),
-        linkedin_url: choice('create', null),
-        headquarters: choice('skip', null),
-      }),
+      answer(
+        {
+          domain: pick('existing', 'domain'),
+          name: pick('existing', 'name'),
+          employee_count: pick('existing', 'size'),
+          linkedin_url: pick('create', null),
+          headquarters: pick('skip', null),
+        },
+        {
+          name: pick('existing', 'fullName'),
+          email: pick('existing', 'emails'),
+          company: pick('existing', 'employer'),
+          job_title: pick('existing', 'title'),
+          seniority: pick('skip', null),
+        },
+      ),
     );
     expect(await c.run()).toEqual({ status: 'succeeded', code: 'suggestions_ready' });
     expect(c.saved).toEqual([
@@ -537,57 +567,73 @@ describe('configure (spec 6.1)', () => {
             action: 'existing',
             objects: ['company'],
             fields: {
+              domain: { action: 'existing', field: 'domain' },
+              name: { action: 'existing', field: 'name' },
               employee_count: { action: 'existing', field: 'size' },
               linkedin_url: { action: 'create' },
               headquarters: { action: 'skip' },
             },
           },
+          person: {
+            action: 'existing',
+            objects: ['contact'],
+            fields: {
+              name: { action: 'existing', field: 'fullName' },
+              email: { action: 'existing', field: 'emails' },
+              company: { action: 'existing', field: 'employer' },
+              job_title: { action: 'existing', field: 'title' },
+              seniority: { action: 'skip' },
+            },
+          },
         },
-        bindingReasons: {
+        bindingReasons: expect.objectContaining({
+          company: 'Holds companies.',
+          person: 'Holds people.',
           'company.employee_count': 'Because.',
-          'company.linkedin_url': 'Because.',
-          'company.headquarters': 'Because.',
-        },
+          'person.company': 'Because.',
+        }),
       },
     ]);
-    const sent = JSON.parse(JSON.parse(c.prompts[0] ?? '{}').messages[0].content);
-    // Read-only fields, the lookup field and incompatible types are never offered.
-    expect(sent.companyFields.map((f: { name: string }) => [f.name, f.samples])).toEqual([
-      ['size', [12, 340]],
-      ['dealSize', [50000, 9000]],
-      ['linkedinUrl', []],
-    ]);
-    expect(sent.outputs.map((o: { key: string }) => o.key)).toEqual([
-      'employee_count',
-      'linkedin_url',
-      'headquarters',
-    ]);
-    expect(sent.currentMapping).toBeUndefined();
+    const request = JSON.parse(c.prompts[0] ?? '{}');
+    expect(request.model).toBe(ENRICHMENT_MODEL);
+    const sent = JSON.parse(request.messages[0].content);
+    expect(sent.bindings.map((b: { key: string }) => b.key)).toEqual(['company', 'person']);
+    const companies = sent.bindings[0].candidates;
+    // Event types are never candidates for an entity binding.
+    expect(companies.map((o: { name: string }) => o.name)).toEqual(['company', 'contact']);
+    const size = companies[0].fields.find((f: { name: string }) => f.name === 'size');
+    expect(size.samples).toEqual([12, 340]);
+    // Read-only fields are never offered.
+    expect(companies[0].fields.map((f: { name: string }) => f.name)).not.toContain('score');
+    expect(sent.currentBindings).toBeUndefined();
   });
 
-  it('sends the current mapping on a request and keeps name-and-type for a choice that cannot fit', async () => {
+  it('drops choices the schema cannot take, so the server default applies to them', async () => {
     const c = configure(
       () =>
-        message({
-          employee_count: choice('existing', 'score'),
-          linkedin_url: choice('existing', 'size'),
-          headquarters: choice('existing', 'missing'),
-        }),
+        answer(
+          {
+            domain: pick('existing', 'domain'),
+            employee_count: pick('existing', 'score'),
+            linkedin_url: pick('existing', 'missing'),
+          },
+          { name: pick('existing', 'fullName'), company: pick('existing', 'club') },
+        ),
       'requested',
     );
     expect(await c.run()).toEqual({ status: 'succeeded', code: 'suggestions_ready' });
     expect(c.saved[0]).toMatchObject({
       bindings: {
-        company: {
-          fields: {
-            employee_count: { action: 'create' },
-            linkedin_url: { action: 'existing', field: 'linkedinUrl' },
-            headquarters: { action: 'create' },
-          },
-        },
+        company: { fields: { domain: { action: 'existing', field: 'domain' } } },
+        person: { fields: { name: { action: 'existing', field: 'fullName' } } },
       },
     });
-    expect(c.prompts[0]).toContain('currentMapping');
+    const { company, person } = (c.saved[0] as { bindings: Record<string, { fields: object }> })
+      .bindings;
+    expect(Object.keys(company?.fields ?? {})).toEqual(['domain']);
+    // A relation that doesn't point at the company binding's object is dropped.
+    expect(Object.keys(person?.fields ?? {})).toEqual(['name']);
+    expect(c.prompts[0]).toContain('currentBindings');
   });
 
   it.each([
@@ -596,30 +642,33 @@ describe('configure (spec 6.1)', () => {
       () => json({ type: 'error', error: { type: 'model_unavailable', message: 'x' } }, 503),
     ],
     ['the model refuses', () => message(null, 'refusal')],
-    ['the output does not parse', () => message({ employee_count: 'size' })],
+    ['the output does not parse', () => message({ company: 'company' })],
     [
       'the provider is down',
       () => json({ type: 'error', error: { type: 'x', message: 'x' } }, 500),
     ],
-  ])('falls back to name-and-type suggestions when %s', async (_case, answer) => {
-    const c = configure(answer);
+  ])('falls back to name-and-type suggestions for companies when %s', async (_case, reply) => {
+    const c = configure(reply);
     expect(await c.run()).toEqual({ status: 'succeeded', code: 'suggestions_ready_without_model' });
     expect(c.saved[0]).toMatchObject({
       bindings: {
         company: {
+          action: 'existing',
+          objects: ['company'],
           fields: {
             employee_count: { action: 'create' },
             linkedin_url: { action: 'existing', field: 'linkedinUrl' },
             headquarters: { action: 'create' },
+            monthly_web_visits: { action: 'create' },
           },
         },
       },
       bindingReasons: {
         'company.employee_count': expect.any(String),
         'company.linkedin_url': expect.any(String),
-        'company.headquarters': expect.any(String),
       },
     });
+    expect(Object.keys((c.saved[0] as { bindings: object }).bindings)).toEqual(['company']);
   });
 });
 
@@ -629,18 +678,30 @@ describe('enrichment manifest', () => {
     handlerDigest: 'b'.repeat(64),
     serverRange: '>=0.1.0 <0.2.0',
   });
-  it('declares the reviewed outputs, the domain lookup and a narrow mapped-write trigger', () => {
+  it('declares the company outputs, the domain lookup and a narrow mapped-write trigger', () => {
     expect(manifest.requestedActor).toBe('agent');
     const company = manifest.bindings?.find((binding) => binding.key === 'company');
     expect(
       company?.fields
         .filter((field) => !field.lookup)
-        .map((field) => [field.key, field.types, field.create?.universalId]),
+        .map((field) => [field.key, field.types.join()]),
     ).toEqual([
-      ['employee_count', ['number'], ENRICHMENT.employeeCountField],
-      ['linkedin_url', ['links'], ENRICHMENT.linkedinField],
-      ['headquarters', ['address'], ENRICHMENT.headquartersField],
+      ['employee_count', 'number'],
+      ['linkedin_url', 'links'],
+      ['headquarters', 'address'],
+      ['description', 'text'],
+      ['industry', 'text'],
+      ['founded_year', 'number'],
+      ['annual_revenue', 'money'],
+      ['total_funding', 'money'],
+      ['last_funding_round', 'text'],
+      ['last_funding_date', 'date'],
+      ['last_funding_amount', 'money'],
+      ['monthly_web_visits', 'number'],
     ]);
+    expect(company?.fields.find((f) => f.key === 'employee_count')?.create?.universalId).toBe(
+      ENRICHMENT.employeeCountField,
+    );
     const enrich = manifest.functions.find((f) => f.universalId === ENRICHMENT.enrich);
     expect(enrich).toMatchObject({
       mappedWrite: 'company',
@@ -651,16 +712,45 @@ describe('enrichment manifest', () => {
         operations: ['create', 'update'],
       },
     });
-    expect(Object.keys(manifest.settings)).toEqual(['shareDomains']);
-    expect(manifest.settings.shareDomains).toMatchObject({ consent: true, required: true });
+    expect(Object.keys(manifest.settings)).toEqual(['shareLookups']);
+    expect(manifest.settings.shareLookups).toMatchObject({ consent: true, required: true });
     expect(manifest.functions.every((fn) => !fn.secrets?.length)).toBe(true);
+  });
+  it('declares an optional person binding looked up by name, email domain and company', () => {
+    const person = manifest.bindings?.find((binding) => binding.key === 'person');
+    expect(person).toMatchObject({ required: false, access: 'write', class: 'entity' });
+    expect(
+      person?.fields.map((field) => [field.key, field.types.join(), !!field.lookup, field.target]),
+    ).toEqual([
+      ['email', 'emails', true, undefined],
+      ['name', 'full_name,text', true, undefined],
+      ['company', 'relation', true, 'company'],
+      ['job_title', 'text', false, undefined],
+      ['headline', 'text', false, undefined],
+      ['location', 'text', false, undefined],
+      ['seniority', 'text', false, undefined],
+      ['department', 'text', false, undefined],
+      ['linkedin_url', 'links', false, undefined],
+    ]);
+    const enrich = manifest.functions.find((f) => f.universalId === ENRICHMENT.enrichPerson);
+    expect(enrich).toMatchObject({
+      mappedWrite: 'person',
+      trigger: {
+        binding: 'person',
+        fields: ['name', 'email', 'company', 'linkedin_url'],
+        related: false,
+        operations: ['create', 'update'],
+      },
+    });
   });
   it('uses the model in configure and the lookups, and not in setup', () => {
     expect(Object.fromEntries(manifest.functions.map((f) => [f.name, f.uses ?? []]))).toEqual({
       configure: ['model'],
       backfill: ['model'],
+      backfillPerson: ['model'],
       setup: [],
       enrich: ['model'],
+      enrichPerson: ['model'],
     });
   });
 });

@@ -1,7 +1,11 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { ServerResponse } from 'node:http';
 import { executeEnrichment } from '@retainer/runner/enrichment';
-import { ENRICHMENT, enrichmentManifest } from '@retainer/runner/enrichment-contract';
+import {
+  COMPANY_OUTPUTS,
+  ENRICHMENT,
+  enrichmentManifest,
+} from '@retainer/runner/enrichment-contract';
 import { generateKeyPair } from 'jose';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ClaimedJob, ExtensionQueue } from '../../src/extension-runtime/queue.js';
@@ -73,6 +77,44 @@ function exaCompany(
   };
 }
 
+/** A synthetic people search result shaped like Exa's response, with no real person data. */
+function exaPerson(company: string) {
+  return {
+    requestId: 'fixture',
+    results: [
+      {
+        id: 'https://exa.ai/library/person/fixture',
+        title: 'Ada Example',
+        url: 'https://linkedin.com/in/ada-example-fixture',
+        text: `# Ada Example\n\nFounder at ${company}\n\nSpringfield, United States (US)\n\n## Experience\n\n### CEO - [${company}](https://www.linkedin.com/company/fixture-co) (Current)\n\nDepartment: General Management • Level: C-Level\n`,
+        entities: [
+          {
+            id: 'https://exa.ai/library/person/fixture',
+            type: 'person',
+            version: 1,
+            properties: {
+              name: 'Ada Example',
+              firstName: 'Ada',
+              lastName: 'Example',
+              location: 'Springfield, United States',
+              workHistory: [
+                {
+                  title: 'CEO',
+                  location: null,
+                  dates: { from: '2020-01-01', to: null },
+                  company: { id: null, name: company },
+                },
+              ],
+              educationHistory: [],
+              research: null,
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
 /** Answers a Messages request with structured output, as the model would. */
 const structured =
   (output: unknown, stopReason = 'end_turn') =>
@@ -87,7 +129,24 @@ const messages = () =>
     .filter((r) => r.url === '/v1/messages')
     .map((r) => ({ headers: r.headers, body: JSON.parse(r.body) }));
 
-async function setup(options: { modelKey?: boolean; legacy?: boolean } = {}) {
+/** The original three outputs are created; the later ones are skipped unless a test maps them. */
+const companyFields = Object.fromEntries(
+  COMPANY_OUTPUTS.map((output) => [
+    output.key,
+    ['employee_count', 'linkedin_url', 'headquarters'].includes(output.key)
+      ? { action: 'create' }
+      : { action: 'skip' },
+  ]),
+);
+
+async function setup(
+  options: {
+    modelKey?: boolean;
+    legacy?: boolean;
+    person?: Record<string, unknown>;
+    company?: Record<string, unknown>;
+  } = {},
+) {
   const manifest = enrichmentManifest({
     packageDigest: 'a'.repeat(64),
     handlerDigest: 'b'.repeat(64),
@@ -153,17 +212,14 @@ async function setup(options: { modelKey?: boolean; legacy?: boolean } = {}) {
   const input = {
     registrationId: current.universalId,
     version: options.legacy ? legacy.version : current.version,
-    settings: { shareDomains: true },
+    settings: { shareLookups: true },
     bindings: {
       company: {
         action: 'existing',
         objects: ['company'],
-        fields: {
-          employee_count: { action: 'create' },
-          linkedin_url: { action: 'create' },
-          headquarters: { action: 'create' },
-        },
+        fields: { ...companyFields, ...options.company },
       },
+      person: options.person ?? { action: 'skip' },
     },
   };
   const { bindings: _bindings, ...access } = { ...input, secretRefs };
@@ -203,6 +259,8 @@ async function setup(options: { modelKey?: boolean; legacy?: boolean } = {}) {
   const exa = {
     requests: [] as { path: string; body: Record<string, unknown> | null; key: string | null }[],
     search: (domain: string): Response => Response.json(exaCompany(`https://www.${domain}/`)),
+    people: (_query: string): Response | Promise<Response> =>
+      Response.json(exaPerson('Fixture Co')),
     team: (): Response => Response.json({ object: 'team', id: 'team_fixture', name: 'Fixture' }),
   };
   const apiBodies: string[] = [];
@@ -217,6 +275,7 @@ async function setup(options: { modelKey?: boolean; legacy?: boolean } = {}) {
       });
       if (target.pathname === '/websets/v0/teams/me') return exa.team();
       expect(target.pathname).toBe('/search');
+      if (body.category === 'people') return exa.people(String(body.query));
       return exa.search(String(body.query).split(' ').at(-1) ?? '');
     }
     expect(target.origin).toBe('https://retainer.test');
@@ -290,6 +349,14 @@ async function setup(options: { modelKey?: boolean; legacy?: boolean } = {}) {
     expect(res.status).toBe(201);
     return res.body.id as string;
   };
+  const person = async (values: Record<string, unknown>) => {
+    const res = await app.request('/v1/objects/person/records', {
+      key: keys.admin,
+      body: { values },
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    return res.body.id as string;
+  };
   const patch = (record: string, values: Record<string, unknown>) =>
     app.request(`/v1/records/${record}`, { key: keys.admin, method: 'PATCH', body: { values } });
   const fields = async (record: string) =>
@@ -300,7 +367,7 @@ async function setup(options: { modelKey?: boolean; legacy?: boolean } = {}) {
     registrationId: ENRICHMENT.registration,
     version: current.version,
     installationId: id,
-    settings: { shareDomains: true },
+    settings: { shareLookups: true },
   };
   /** Previews and approves the upgrade to the current release, as an admin reviewing it. */
   async function upgrade() {
@@ -329,6 +396,7 @@ async function setup(options: { modelKey?: boolean; legacy?: boolean } = {}) {
     apiBodies,
     drain,
     company,
+    person,
     patch,
     fields,
     detail,
@@ -792,13 +860,22 @@ describe('enrichment configure and backfill', () => {
     await h.drain();
     upstream.respond(
       structured({
-        employee_count: {
+        company: {
           action: 'existing',
-          field: 'employeeCount',
-          reason: 'It holds head counts.',
+          object: 'company',
+          reason: 'It holds the companies.',
+          fields: {
+            domain: { action: 'existing', field: 'domain', reason: 'The website.' },
+            employee_count: {
+              action: 'existing',
+              field: 'employeeCount',
+              reason: 'It holds head counts.',
+            },
+            linkedin_url: { action: 'skip', field: null, reason: 'Not wanted.' },
+            headquarters: { action: 'existing', field: 'headquarters', reason: 'Same meaning.' },
+          },
         },
-        linkedin_url: { action: 'skip', field: null, reason: 'Not wanted.' },
-        headquarters: { action: 'existing', field: 'headquarters', reason: 'Same meaning.' },
+        person: { action: 'skip', object: null, reason: 'No contacts here.' },
       }),
     );
     const before = messages().length;
@@ -815,11 +892,12 @@ describe('enrichment configure and backfill', () => {
     expect(sent?.headers['x-api-key']).toBe('sk-model-fixture');
     expect(sent?.headers.authorization).toBeUndefined();
     const prompt = JSON.parse(sent?.body.messages[0].content);
+    const companies = prompt.bindings.find((b: { key: string }) => b.key === 'company');
+    const object = companies.candidates.find((o: { name: string }) => o.name === 'company');
     expect(
-      prompt.companyFields.find((f: { name: string }) => f.name === 'employeeCount').samples,
+      object.fields.find((f: { name: string }) => f.name === 'employeeCount').samples,
     ).toContain(340);
-    expect(prompt.currentMapping.employee_count).toEqual({
-      action: 'existing',
+    expect(prompt.currentBindings.company.fields.employee_count).toMatchObject({
       field: 'employeeCount',
     });
     const usage = await db.owner<{ function_id: string; model: string }[]>`
@@ -865,5 +943,114 @@ describe('enrichment configure and backfill', () => {
         .filter((r) => r.path === '/search')
         .map((r) => r.body?.query),
     ).toEqual(['Existing existing.example']);
+  });
+});
+
+describe('people enrichment (enrichment spec 7)', () => {
+  const people = {
+    action: 'existing',
+    objects: ['person'],
+    fields: {
+      name: { action: 'existing', field: 'name' },
+      email: { action: 'existing', field: 'emails' },
+      company: { action: 'existing', field: 'company' },
+      job_title: { action: 'existing', field: 'jobTitle' },
+      seniority: { action: 'create' },
+      linkedin_url: { action: 'create' },
+      headline: { action: 'skip' },
+      location: { action: 'skip' },
+      department: { action: 'skip' },
+    },
+  };
+
+  it('fills a new person from their linked company, keeping what a person set', async () => {
+    const h = await setup({ person: people });
+    await h.drain();
+    const acme = await h.company({ name: 'Fixture Co', domain: 'fixture.example' });
+    await h.drain();
+    const ada = await h.person({
+      name: { first: 'Ada', last: 'Example' },
+      emails: { primary: 'ada@fixture.example' },
+      company: acme,
+      jobTitle: 'Chief Executive',
+    });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
+    const filled = await h.fields(ada);
+    expect(filled.jobTitle).toBe('Chief Executive');
+    expect(filled.seniority).toBe('C-Level');
+    expect(filled.linkedinUrl).toMatchObject({
+      primary: { url: 'https://www.linkedin.com/in/ada-example-fixture' },
+    });
+    const search = h.exa.requests.at(-1);
+    expect(search?.body).toMatchObject({
+      category: 'people',
+      query: 'Ada Example Fixture Co fixture.example',
+    });
+    // The email address never leaves Retainer; only its company's domain does.
+    expect(JSON.stringify(h.exa.requests)).not.toContain('ada@');
+  });
+
+  it('writes nothing looked up for an email the person no longer has', async () => {
+    const h = await setup({ person: people });
+    await h.drain();
+    const ada = await h.person({
+      name: { first: 'Ada', last: 'Example' },
+      emails: { primary: 'ada@fixture.example' },
+    });
+    let changed = false;
+    h.exa.people = async () => {
+      if (!changed) {
+        changed = true;
+        expect((await h.patch(ada, { emails: { primary: 'ada@elsewhere.example' } })).status).toBe(
+          200,
+        );
+      }
+      return Response.json(exaPerson('Elsewhere'));
+    };
+    // Only an email domain to go by, so the model picks.
+    upstream.respond(structured({ index: 0, certainty: 'high' }));
+    const [first] = await h.drain();
+    expect(first).toEqual({ status: 'succeeded', code: 'lookup_changed' });
+    expect((await h.fields(ada)).seniority).toBeUndefined();
+  });
+
+  it('doesn’t search a person with no company and a personal email', async () => {
+    const h = await setup({ person: people });
+    await h.drain();
+    const before = h.exa.requests.length;
+    await h.person({
+      name: { first: 'Ada', last: 'Example' },
+      emails: { primary: 'ada@gmail.com' },
+    });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_company' }]);
+    expect(h.exa.requests).toHaveLength(before);
+  });
+
+  it('fills a company’s new details from the same search', async () => {
+    const h = await setup({
+      company: {
+        industry: { action: 'create' },
+        total_funding: { action: 'create' },
+        last_funding_round: { action: 'create' },
+      },
+    });
+    await h.drain();
+    h.exa.search = (domain) => {
+      const body = exaCompany(`https://www.${domain}/`);
+      const properties = body.results[0]?.entities[0]?.properties as Record<string, unknown>;
+      properties.financials = {
+        revenueAnnual: null,
+        fundingTotal: 18_500_000,
+        fundingLatestRound: { name: 'Series a', date: '2026-03-01', amount: 11_300_000 },
+      };
+      return Response.json(body);
+    };
+    const acme = await h.company({ name: 'Fixture Co', domain: 'fixture.example' });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
+    expect(await h.fields(acme)).toMatchObject({
+      industry: 'Software',
+      totalFunding: { amountMicros: 18_500_000_000_000, currency: 'USD' },
+      lastFundingRound: 'Series A',
+    });
   });
 });

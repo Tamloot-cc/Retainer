@@ -159,6 +159,10 @@ function existingPlan(
       throw new Error('There is no migration for this release’s previous destinations.');
   }
 
+  // An optional binding added after bindings existed had no destination before.
+  for (const declaration of prior.declarations)
+    if (!declaration.required && !choices[declaration.key])
+      choices[declaration.key] = { action: 'skip' };
   const resolved = resolveBindingPlan(state, manifest, choices, prior, prior.createPeople);
   if (resolved.operations.length)
     throw new Error(

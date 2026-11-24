@@ -82,3 +82,27 @@ export function retryAfterSeconds(headers: Headers | undefined, fallback = 30): 
   const seconds = Number(headers?.get('retry-after'));
   return Number.isFinite(seconds) && seconds > 0 ? Math.min(3600, Math.ceil(seconds)) : fallback;
 }
+
+/**
+ * Runs `work` on each item, at most `limit` at a time. After a failure no
+ * more items start; the first error is thrown once the running ones settle.
+ */
+export async function eachLimited<T>(
+  items: T[],
+  limit: number,
+  work: (item: T) => Promise<void>,
+): Promise<void> {
+  const queue = [...items];
+  let failed = false;
+  const results = await Promise.allSettled(
+    Array.from({ length: Math.min(limit, queue.length) }, async () => {
+      for (let item = queue.shift(); item !== undefined && !failed; item = queue.shift())
+        await work(item).catch((error) => {
+          failed = true;
+          throw error;
+        });
+    }),
+  );
+  const rejected = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+  if (rejected) throw rejected.reason;
+}

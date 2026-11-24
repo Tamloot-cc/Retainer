@@ -1,9 +1,10 @@
-import type {
-  AddressValue,
-  EmailsValue,
-  FullNameValue,
-  LinksValue,
-  PhonesValue,
+import {
+  type AddressValue,
+  type EmailsValue,
+  type FullNameValue,
+  type LinksValue,
+  normalizeEmail,
+  type PhonesValue,
 } from '@retainer/shared';
 import { type CountryCode, parsePhoneNumberFromString } from 'libphonenumber-js';
 import type { IdentifierKind } from '../db/schema.js';
@@ -16,9 +17,7 @@ import type { FieldState } from '../schema/types.js';
  * the same way.
  */
 
-export function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
+export { normalizeEmail };
 
 /** E.164 when the number parses; otherwise its digits, with a leading + kept. */
 export function normalizePhone(raw: string, countryCode?: string): string {
