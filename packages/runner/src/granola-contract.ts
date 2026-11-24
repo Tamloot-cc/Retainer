@@ -238,6 +238,7 @@ export function granolaManifest(build: {
           {
             key: 'url',
             label: 'Granola note',
+            description: "A link to the meeting's note in Granola.",
             types: ['links'],
             required: false,
             create: {
@@ -245,11 +246,13 @@ export function granolaManifest(build: {
               name: 'granolaUrl',
               label: 'Granola note',
               type: 'links',
+              description: "A link to the meeting's note in Granola.",
             },
           },
           {
             key: 'medium',
             label: 'Medium',
+            description: 'How the conversation took place. Granola meetings are always meetings.',
             types: ['select'],
             required: false,
             values: ['meeting'],
@@ -258,12 +261,14 @@ export function granolaManifest(build: {
               name: 'medium',
               label: 'Medium',
               type: 'select',
+              description: 'How the conversation took place, such as a meeting.',
               settings: { options: [{ value: 'meeting', label: 'Meeting' }] },
             },
           },
           {
             key: 'transcript',
             label: 'Transcript',
+            description: "The meeting's transcript, as a file.",
             types: ['files'],
             required: false,
             create: {
@@ -271,6 +276,7 @@ export function granolaManifest(build: {
               name: 'transcript',
               label: 'Transcript',
               type: 'files',
+              description: "The meeting's transcript.",
             },
           },
         ],
@@ -280,6 +286,8 @@ export function granolaManifest(build: {
           namePlural: 'conversations',
           labelSingular: 'Conversation',
           labelPlural: 'Conversations',
+          description:
+            'Meetings, calls, emails and chats with the people the workspace works with.',
           fields: [],
         },
       },
@@ -295,6 +303,7 @@ export function granolaManifest(build: {
           {
             key: 'name',
             label: 'Name',
+            description: "A meeting participant's full name.",
             types: ['full_name', 'text'],
             required: false,
             create: {
@@ -302,11 +311,13 @@ export function granolaManifest(build: {
               name: 'name',
               label: 'Name',
               type: 'full_name',
+              description: "The person's full name.",
             },
           },
           {
             key: 'emails',
             label: 'Emails',
+            description: "A meeting participant's email addresses, used to match them to a person.",
             types: ['emails'],
             required: true,
             create: {
@@ -314,6 +325,7 @@ export function granolaManifest(build: {
               name: 'emails',
               label: 'Emails',
               type: 'emails',
+              description: "The person's email addresses.",
             },
           },
         ],
@@ -323,6 +335,7 @@ export function granolaManifest(build: {
           namePlural: 'people',
           labelSingular: 'Person',
           labelPlural: 'People',
+          description: 'People the workspace works with.',
           labelField: 'name',
           fields: [],
         },

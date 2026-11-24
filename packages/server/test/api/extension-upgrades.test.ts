@@ -15,14 +15,27 @@ const registrationId = randomUUID(),
   newFieldId = randomUUID(),
   viewId = randomUUID();
 const managedViewId = deriveUuid(`${viewId}:${objectId}`);
-const title = { universalId: titleId, name: 'name', label: 'Name', type: 'text' as const };
-const status = { universalId: fieldId, name: 'status', label: 'Status', type: 'text' as const };
+const title = {
+  universalId: titleId,
+  name: 'name',
+  label: 'Name',
+  type: 'text' as const,
+  description: 'Fixture description.',
+};
+const status = {
+  universalId: fieldId,
+  name: 'status',
+  label: 'Status',
+  type: 'text' as const,
+  description: 'Fixture description.',
+};
 const item = {
   universalId: objectId,
   nameSingular: 'fixtureItem',
   namePlural: 'fixtureItems',
   labelSingular: 'Fixture item',
   labelPlural: 'Fixture items',
+  description: 'Fixture description.',
   labelField: 'name',
   fields: [title, status],
 };
@@ -51,7 +64,13 @@ const next = extensionFixture({
       ...item,
       fields: [
         ...item.fields,
-        { universalId: newFieldId, name: 'extra', label: 'Extra', type: 'text' },
+        {
+          description: 'Fixture description.',
+          universalId: newFieldId,
+          name: 'extra',
+          label: 'Extra',
+          type: 'text',
+        },
       ],
     }),
   ],

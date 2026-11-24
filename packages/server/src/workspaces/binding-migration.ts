@@ -2,6 +2,7 @@ import {
   compareVersions,
   type ExtensionBindingChoices,
   type ExtensionManifest,
+  TAMLOOT_REGISTRATION_ID,
 } from '@retainer/extension';
 import { gmailRegistrationId } from '@retainer/extension/nango-gmail';
 import type { Sql } from '../db/client.js';
@@ -34,14 +35,15 @@ const old = {
   companyContact: '92166eb2-4d95-477e-8db6-04ed3c0094f5',
 };
 
+const registrations = {
+  tamloot: TAMLOOT_REGISTRATION_ID,
+  granola: '9e427713-3c8a-4981-872c-c8db69703113',
+  gmail: gmailRegistrationId,
+  enrichment: '9796c2c7-46f3-4006-8f35-059d5ef3553e',
+  lastContact: 'c1e8ba8a-69bb-4b2e-8db3-6ddc6c7b1606',
+};
 // Before bindings, these registrations wrote to the former base schema.
-const formerBaseUsers = new Set([
-  '54326882-cc28-4983-a5fe-cf0298520b68', // Tamloot
-  '9e427713-3c8a-4981-872c-c8db69703113', // Granola
-  gmailRegistrationId,
-  '9796c2c7-46f3-4006-8f35-059d5ef3553e', // Enrichment
-  'c1e8ba8a-69bb-4b2e-8db3-6ddc6c7b1606', // Last contact
-]);
+const formerBaseUsers = new Set(Object.values(registrations));
 
 type LegacyMapping = { outputs?: Record<string, { fieldUniversalId: string }> };
 
@@ -115,8 +117,8 @@ function existingPlan(
   const name = person?.fields.find(
     (field) => field.type === 'full_name' && field.status === 'active',
   );
-  switch (manifest.name) {
-    case 'tamloot':
+  switch (manifest.universalId) {
+    case registrations.tamloot:
       bind('meeting', old.conversation);
       bind('person', old.person, { emails: emails?.universalId, name: name?.universalId });
       bind(
@@ -126,7 +128,7 @@ function existingPlan(
         { status: { open: 'todo', done: 'done' } },
       );
       break;
-    case 'granola':
+    case registrations.granola:
       bind(
         'meeting',
         old.conversation,
@@ -135,16 +137,16 @@ function existingPlan(
       );
       bind('person', old.person, { emails: emails?.universalId, name: name?.universalId });
       break;
-    case 'gmail':
+    case registrations.gmail:
       bind('email', old.conversation, { medium: old.medium }, { medium: { email: 'email' } });
       bind('person', old.person, { emails: emails?.universalId });
       break;
-    case 'last-contact':
+    case registrations.lastContact:
       bind('contact', old.conversation);
       bind('person', old.person, { lastContact: old.personContact });
       bind('company', old.company, { lastContact: old.companyContact });
       break;
-    case 'company-enrichment':
+    case registrations.enrichment:
       bind('company', old.company, {
         domain: old.companyDomain,
         name: old.companyName,

@@ -46,6 +46,7 @@ export function ownedTestFields(key: string, label: string, fields: NewField[]):
     fields: fields.map((field) => ({
       key: field.name,
       label: field.label,
+      description: field.description,
       types: [field.type],
       required: true,
       owned: true,
@@ -71,14 +72,22 @@ export const testCompanyBinding: ExtensionBinding = {
   required: true,
   creates: true,
   fields: [
-    { key: 'name', label: 'Name', types: ['text'], required: true },
     {
+      description: 'Fixture description.',
+      key: 'name',
+      label: 'Name',
+      types: ['text'],
+      required: true,
+    },
+    {
+      description: 'Fixture description.',
       key: 'externalKey',
       label: 'External key',
       types: ['text'],
       required: false,
       lookup: true,
       create: {
+        description: 'Fixture description.',
         universalId: randomUUID(),
         name: 'externalKey',
         label: 'External key',
@@ -87,11 +96,13 @@ export const testCompanyBinding: ExtensionBinding = {
       },
     },
     {
+      description: 'Fixture description.',
       key: 'attachments',
       label: 'Attachments',
       types: ['files'],
       required: false,
       create: {
+        description: 'Fixture description.',
         universalId: randomUUID(),
         name: 'attachments',
         label: 'Attachments',

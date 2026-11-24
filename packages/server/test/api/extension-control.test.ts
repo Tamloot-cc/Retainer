@@ -22,14 +22,27 @@ const objectId = randomUUID(),
   extraId = randomUUID(),
   viewId = randomUUID(),
   extraViewId = randomUUID();
-const title = { universalId: titleId, name: 'name', label: 'Name', type: 'text' as const };
-const status = { universalId: statusId, name: 'status', label: 'Status', type: 'text' as const };
+const title = {
+  universalId: titleId,
+  name: 'name',
+  label: 'Name',
+  type: 'text' as const,
+  description: 'Fixture description.',
+};
+const status = {
+  universalId: statusId,
+  name: 'status',
+  label: 'Status',
+  type: 'text' as const,
+  description: 'Fixture description.',
+};
 const object = {
   universalId: objectId,
   nameSingular: 'ticket',
   namePlural: 'tickets',
   labelSingular: 'Ticket',
   labelPlural: 'Tickets',
+  description: 'Fixture description.',
   labelField: 'name',
   fields: [title, status],
 };
@@ -66,7 +79,13 @@ const managedNext = extensionFixture({
       ...object,
       fields: [
         ...object.fields,
-        { universalId: extraId, name: 'extra', label: 'Extra', type: 'text' },
+        {
+          description: 'Fixture description.',
+          universalId: extraId,
+          name: 'extra',
+          label: 'Extra',
+          type: 'text',
+        },
       ],
     }),
   ],
@@ -102,7 +121,13 @@ const secretV2 = extensionFixture({
 
 // An extension whose installed release disappears after a server upgrade.
 const reFieldId = randomUUID();
-const reTier = { universalId: randomUUID(), name: 'reTier', label: 'Tier', type: 'text' as const };
+const reTier = {
+  universalId: randomUUID(),
+  name: 'reTier',
+  label: 'Tier',
+  type: 'text' as const,
+  description: 'Fixture description.',
+};
 const reV1 = extensionFixture({ bindings: [ownedTestFields('company', 'Companies', [reTier])] });
 const reV2 = extensionFixture({
   ...reV1,
@@ -110,7 +135,13 @@ const reV2 = extensionFixture({
   bindings: [
     ownedTestFields('company', 'Companies', [
       reTier,
-      { universalId: reFieldId, name: 'reScore', label: 'Score', type: 'number' },
+      {
+        description: 'Fixture description.',
+        universalId: reFieldId,
+        name: 'reScore',
+        label: 'Score',
+        type: 'number',
+      },
     ]),
   ],
 });
@@ -126,7 +157,13 @@ const projectId = randomUUID(),
 const addsToProject = extensionFixture({
   bindings: [
     ownedTestFields('project', 'Projects', [
-      { universalId: budgetId, name: 'budget', label: 'Budget', type: 'number' },
+      {
+        description: 'Fixture description.',
+        universalId: budgetId,
+        name: 'budget',
+        label: 'Budget',
+        type: 'number',
+      },
     ]),
   ],
 });

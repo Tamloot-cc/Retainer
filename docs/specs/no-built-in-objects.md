@@ -272,10 +272,14 @@ bindings: [
     access: 'write',               // 'write' | 'read'
     required: true,                // false: the admin may skip it
     fields: [
-      { key: 'url', label: 'Tamloot link', types: ['links'], required: false },
+      { key: 'url', label: 'Tamloot link',
+        description: "A link to the meeting in Tamloot.",
+        types: ['links'], required: false },
     ],
     create: {                      // the object a new binding creates, with permanent universal IDs
-      universalId: '…', nameSingular: 'meeting', namePlural: 'meetings', /* labels, fields */
+      universalId: '…', nameSingular: 'meeting', namePlural: 'meetings',
+      description: 'Meetings recorded in Tamloot, with their notes and participants.',
+      /* labels, fields, each field with its own description */
     },
   },
   {
@@ -306,6 +310,11 @@ bindings: [
 ]
 ```
 
+- Every binding field, and every object and field in a `create`, has a
+  non-empty `description`. The configure model reads the binding field's
+  description to choose a destination, and the description of a created
+  object or field becomes part of the workspace schema that agents and later
+  configure runs read. The format refuses a manifest without them.
 - `values` lists the extension's own values for a select. The installation
   maps each to an option of the chosen field (§5.3).
 - `target` makes a relation point at the object bound to another binding.

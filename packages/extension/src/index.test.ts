@@ -943,11 +943,18 @@ describe('standalone apps (spec 8)', () => {
     const field = {
       key: 'orderId',
       label: 'Order ID',
+      description: "The order's ID in the app.",
       types: ['text'],
       required: true,
       installationOwned: true,
       owned: true,
-      create: { universalId: randomUUID(), name: 'orderId', label: 'Order ID', type: 'text' },
+      create: {
+        universalId: randomUUID(),
+        name: 'orderId',
+        label: 'Order ID',
+        type: 'text',
+        description: "The order's ID in the app.",
+      },
     };
     const binding = {
       key: 'order',
@@ -968,6 +975,96 @@ describe('standalone apps (spec 8)', () => {
         }),
       ),
     ).toThrow('invalid field order.orderId');
+  });
+
+  it('requires a description on every binding field and on the objects and fields it creates', () => {
+    const field = {
+      key: 'orderId',
+      label: 'Order ID',
+      description: "The order's ID in the app.",
+      types: ['text'],
+      required: true,
+      create: {
+        universalId: randomUUID(),
+        name: 'orderId',
+        label: 'Order ID',
+        type: 'text',
+        description: "The order's ID in the app.",
+      },
+    };
+    const binding = {
+      key: 'order',
+      label: 'Orders',
+      description: 'Orders tracked by the app.',
+      class: 'entity',
+      access: 'write',
+      required: true,
+      fields: [field],
+      create: {
+        universalId: randomUUID(),
+        nameSingular: 'order',
+        namePlural: 'orders',
+        labelSingular: 'Order',
+        labelPlural: 'Orders',
+        description: 'Orders placed in the app.',
+        fields: [],
+      },
+    };
+    const define = (next: unknown) => () =>
+      defineExtension(standalone({ bindings: [next as typeof binding] }));
+    expect(define(binding)).not.toThrow();
+    for (const description of [undefined, '', '  ']) {
+      expect(define({ ...binding, fields: [{ ...field, description }] })).toThrow();
+      expect(
+        define({ ...binding, fields: [{ ...field, create: { ...field.create, description } }] }),
+      ).toThrow();
+      expect(define({ ...binding, create: { ...binding.create, description } })).toThrow();
+    }
+  });
+
+  it('loads a retained release without descriptions exactly as it was published', () => {
+    const published = {
+      key: 'order',
+      label: 'Orders',
+      description: 'Orders tracked by the app.',
+      class: 'entity',
+      access: 'write',
+      required: true,
+      fields: [
+        {
+          key: 'orderId',
+          label: 'Order ID',
+          types: ['text'],
+          required: true,
+          create: { universalId: randomUUID(), name: 'orderId', label: 'Order ID', type: 'text' },
+        },
+        {
+          key: 'note',
+          label: 'Note',
+          description: '',
+          types: ['text'],
+          required: false,
+        },
+      ],
+      create: {
+        universalId: randomUUID(),
+        nameSingular: 'order',
+        namePlural: 'orders',
+        labelSingular: 'Order',
+        labelPlural: 'Orders',
+        fields: [],
+      },
+    };
+    const manifest = standalone({ bindings: [published as never] });
+    expect(() => defineExtension(manifest)).toThrow();
+    const retained = defineExtension(manifest, { retained: true });
+    expect(retained.bindings?.[0]).toEqual(published);
+    // Every other rule still applies.
+    expect(() =>
+      defineExtension(standalone({ bindings: [{ ...published, class: 'other' } as never] }), {
+        retained: true,
+      }),
+    ).toThrow();
   });
 });
 

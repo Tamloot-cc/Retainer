@@ -407,7 +407,7 @@ async function setup(
   };
 }
 
-describe('company enrichment through a fake Exa', () => {
+describe('Exa enrichment through a fake Exa', () => {
   it('checks the key at setup and fills a new company from its domain', async () => {
     const h = await setup();
     expect(await h.drain()).toEqual([{ status: 'succeeded' }]);
@@ -433,11 +433,21 @@ describe('company enrichment through a fake Exa', () => {
     expect(messages()).toHaveLength(before);
     const filled = await h.fields(acme);
     expect(filled.employeeCount).toBe(12);
+    // The output fields the install created carry the bundle's descriptions.
+    const names = COMPANY_OUTPUTS.map((output) => output.field.name);
+    const created = await db.owner<{ name: string; description: string | null }[]>`
+      select f.name, f.description from fields f join object_types o on o.id=f.object_type_id
+      where f.workspace_id=${h.workspace} and o.name_singular='company' and f.name in ${db.owner(names)}`;
+    expect(created.length).toBeGreaterThan(0);
+    for (const field of created)
+      expect(field.description).toBe(
+        COMPANY_OUTPUTS.find((output) => output.field.name === field.name)?.description,
+      );
     // History labels the writes with the extension's name, not its installation ID.
     const actors = await db.owner<{ actor: unknown }[]>`
       select distinct actor from field_assertions where record_id=${acme} and actor->>'type'='agent'`;
     expect(actors.map((a) => a.actor)).toEqual([
-      { type: 'agent', id: h.id, name: 'Company-enrichment' },
+      { type: 'agent', id: h.id, name: 'Exa-enrichment' },
     ]);
     expect(filled.linkedinUrl).toMatchObject({
       primary: { url: 'https://www.linkedin.com/company/fixture-co' },
@@ -624,7 +634,7 @@ describe('company enrichment through a fake Exa', () => {
     });
     expect(changed.status).toBe(422);
     expect(changed.body.error.details.issues[0].message).toMatch(
-      /change company.enrichment's setup first/i,
+      /change Exa enrichment's setup first/i,
     );
   });
 });

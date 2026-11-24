@@ -21,6 +21,7 @@ const manifest = extensionFixture({
       owned: true,
       creates: true,
       create: {
+        description: 'Fixture description.',
         universalId: randomUUID(),
         nameSingular: 'ticket',
         namePlural: 'tickets',
@@ -31,22 +32,36 @@ const manifest = extensionFixture({
       },
       fields: [
         {
+          description: 'Fixture description.',
           key: 'status',
           label: 'Status',
           types: ['text'],
           required: true,
           owned: true,
           installationOwned: true,
-          create: { universalId: randomUUID(), name: 'status', label: 'Status', type: 'text' },
+          create: {
+            description: 'Fixture description.',
+            universalId: randomUUID(),
+            name: 'status',
+            label: 'Status',
+            type: 'text',
+          },
         },
         {
+          description: 'Fixture description.',
           key: 'person',
           label: 'Person',
           types: ['relation'],
           required: false,
           lookup: true,
           target: 'person',
-          create: { universalId: randomUUID(), name: 'person', label: 'Person', type: 'relation' },
+          create: {
+            description: 'Fixture description.',
+            universalId: randomUUID(),
+            name: 'person',
+            label: 'Person',
+            type: 'relation',
+          },
         },
       ],
     },
@@ -86,8 +101,15 @@ const contacts = extensionFixture({
       creates: true,
       match: 'addresses',
       fields: [
-        { key: 'addresses', label: 'Addresses', types: ['emails'], required: true },
         {
+          description: 'Fixture description.',
+          key: 'addresses',
+          label: 'Addresses',
+          types: ['emails'],
+          required: true,
+        },
+        {
+          description: 'Fixture description.',
           key: 'importState',
           label: 'Import state',
           types: ['text'],
@@ -95,6 +117,7 @@ const contacts = extensionFixture({
           owned: true,
           installationOwned: true,
           create: {
+            description: 'Fixture description.',
             universalId: randomUUID(),
             name: 'importState',
             label: 'Import state',

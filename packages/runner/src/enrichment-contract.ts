@@ -153,7 +153,13 @@ type OutputDefinition = {
   label: string;
   description: string;
   types: [FieldType];
-  field: { universalId: string; name: string; label: string; type: FieldType };
+  field: {
+    universalId: string;
+    name: string;
+    label: string;
+    type: FieldType;
+    description: string;
+  };
 };
 const output = (
   key: string,
@@ -167,7 +173,7 @@ const output = (
   label,
   description,
   types: [type],
-  field: { universalId, name, label, type },
+  field: { universalId, name, label, type, description },
 });
 
 /** What enrichment can write to a company, in the order an admin reviews them. */
@@ -342,6 +348,7 @@ export const ENRICHMENT_BINDINGS: ExtensionBinding[] = [
       {
         key: 'domain',
         label: 'Website',
+        description: "The company's website, the main way to look the company up.",
         types: ['links'],
         required: true,
         lookup: true,
@@ -350,11 +357,13 @@ export const ENRICHMENT_BINDINGS: ExtensionBinding[] = [
           name: 'domain',
           label: 'Website',
           type: 'links',
+          description: "The company's website.",
         },
       },
       {
         key: 'name',
         label: 'Name',
+        description: "The company's name, used with the website to find the right company.",
         types: ['text'],
         required: false,
         lookup: true,
@@ -363,6 +372,7 @@ export const ENRICHMENT_BINDINGS: ExtensionBinding[] = [
           name: 'name',
           label: 'Name',
           type: 'text',
+          description: "The company's name.",
         },
       },
       ...outputFields(COMPANY_OUTPUTS),
@@ -373,6 +383,7 @@ export const ENRICHMENT_BINDINGS: ExtensionBinding[] = [
       namePlural: 'companies',
       labelSingular: 'Company',
       labelPlural: 'Companies',
+      description: 'Companies the workspace works with.',
       labelField: 'name',
       fields: [],
     },
@@ -400,11 +411,13 @@ export const ENRICHMENT_BINDINGS: ExtensionBinding[] = [
           name: 'emails',
           label: 'Emails',
           type: 'emails',
+          description: "The person's email addresses.",
         },
       },
       {
         key: 'name',
         label: 'Name',
+        description: "The person's full name, used with their company to find their profile.",
         types: ['full_name', 'text'],
         required: true,
         lookup: true,
@@ -413,6 +426,7 @@ export const ENRICHMENT_BINDINGS: ExtensionBinding[] = [
           name: 'name',
           label: 'Name',
           type: 'full_name',
+          description: "The person's full name.",
         },
       },
       {
@@ -432,6 +446,7 @@ export const ENRICHMENT_BINDINGS: ExtensionBinding[] = [
       namePlural: 'people',
       labelSingular: 'Person',
       labelPlural: 'People',
+      description: 'People the workspace works with.',
       labelField: 'name',
       fields: [],
     },
@@ -458,7 +473,7 @@ export function enrichmentManifest(build: {
   return defineExtension({
     manifestVersion: 1,
     universalId: ENRICHMENT.registration,
-    name: 'company-enrichment',
+    name: 'exa-enrichment',
     version: build.version ?? '2.0.0',
     description:
       'Fill in empty company and people details from Exa. Companies are looked up by website and name; people by their LinkedIn profile, or by name and company. A model picks the right search result and suggests where each detail goes. Each workspace chooses the fields; values a person or agent set are never replaced.',

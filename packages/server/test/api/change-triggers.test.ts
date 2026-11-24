@@ -67,6 +67,7 @@ async function setup(
           fields: watch.fields.map((key) => ({
             key,
             label: key,
+            description: 'Fixture description.',
             types: [key === 'domain' ? 'links' : key === 'name' ? 'full_name' : 'text'],
             required: false,
           })),
@@ -106,7 +107,15 @@ async function setup(
           class: 'entity',
           access: 'write',
           required: true,
-          fields: [{ key: 'jobTitle', label: 'Job title', types: ['text'], required: true }],
+          fields: [
+            {
+              description: 'Fixture description.',
+              key: 'jobTitle',
+              label: 'Job title',
+              types: ['text'],
+              required: true,
+            },
+          ],
         },
       ],
     }),
@@ -266,7 +275,15 @@ describe('transactional change dispatch with real Postgres', () => {
         class: 'entity',
         access: 'read',
         required: true,
-        fields: [{ key: 'name', label: 'Name', types: ['full_name'], required: true }],
+        fields: [
+          {
+            description: 'Fixture description.',
+            key: 'name',
+            label: 'Name',
+            types: ['full_name'],
+            required: true,
+          },
+        ],
       },
     ]);
     const [id] = h.ids;
@@ -1164,14 +1181,22 @@ describe('change triggers on retired contributions', () => {
           owned: true,
           fields: [
             {
+              description: 'Fixture description.',
               key: 'name',
               label: 'Name',
               types: ['text'],
               required: true,
-              create: { universalId: randomUUID(), name: 'name', label: 'Name', type: 'text' },
+              create: {
+                description: 'Fixture description.',
+                universalId: randomUUID(),
+                name: 'name',
+                label: 'Name',
+                type: 'text',
+              },
             },
           ],
           create: {
+            description: 'Fixture description.',
             universalId: objectId,
             nameSingular: 'ticket',
             namePlural: 'tickets',

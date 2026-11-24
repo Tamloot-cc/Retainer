@@ -98,6 +98,7 @@ export function gmailManifest(build: {
           {
             key: 'medium',
             label: 'Medium',
+            description: 'How the conversation took place. Gmail messages are always emails.',
             types: ['select'],
             required: true,
             values: ['email'],
@@ -106,6 +107,7 @@ export function gmailManifest(build: {
               name: 'medium',
               label: 'Medium',
               type: 'select',
+              description: 'How the conversation took place, such as an email.',
               settings: { options: [{ value: 'email', label: 'Email' }] },
             },
           },
@@ -116,6 +118,7 @@ export function gmailManifest(build: {
           namePlural: 'emails',
           labelSingular: 'Email',
           labelPlural: 'Emails',
+          description: 'Email messages sent to or received from contacts.',
           fields: [],
         },
       },
@@ -127,7 +130,15 @@ export function gmailManifest(build: {
         access: 'read',
         required: false,
         match: 'emails',
-        fields: [{ key: 'emails', label: 'Emails', types: ['emails'], required: true }],
+        fields: [
+          {
+            key: 'emails',
+            label: 'Emails',
+            description: "A correspondent's email addresses, used to match them to a person.",
+            types: ['emails'],
+            required: true,
+          },
+        ],
       },
     ],
 

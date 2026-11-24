@@ -48,11 +48,13 @@ const manifest = extensionFixture({
       required: true,
       fields: [
         {
+          description: 'Fixture description.',
           key: 'transcripts',
           label: 'Transcripts',
           types: ['files'],
           required: true,
           create: {
+            description: 'Fixture description.',
             universalId: randomUUID(),
             name: 'transcripts',
             label: 'Transcripts',

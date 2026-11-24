@@ -10,8 +10,20 @@ export const sourceTestBindings: ExtensionBinding[] = [
     access: 'write',
     required: true,
     fields: [
-      { key: 'transcript', label: 'Transcript', types: ['files'], required: false },
-      { key: 'tag', label: 'Tag', types: ['text'], required: false },
+      {
+        description: 'Fixture description.',
+        key: 'transcript',
+        label: 'Transcript',
+        types: ['files'],
+        required: false,
+      },
+      {
+        description: 'Fixture description.',
+        key: 'tag',
+        label: 'Tag',
+        types: ['text'],
+        required: false,
+      },
     ],
   },
   {
@@ -23,8 +35,20 @@ export const sourceTestBindings: ExtensionBinding[] = [
     required: true,
     match: 'emails',
     fields: [
-      { key: 'emails', label: 'Emails', types: ['emails'], required: true },
-      { key: 'name', label: 'Name', types: ['full_name', 'text'], required: false },
+      {
+        description: 'Fixture description.',
+        key: 'emails',
+        label: 'Emails',
+        types: ['emails'],
+        required: true,
+      },
+      {
+        description: 'Fixture description.',
+        key: 'name',
+        label: 'Name',
+        types: ['full_name', 'text'],
+        required: false,
+      },
     ],
   },
 ];

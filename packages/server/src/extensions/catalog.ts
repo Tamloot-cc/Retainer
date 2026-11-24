@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+  compareVersions,
   defineExtension,
   type ExtensionManifest,
   runsHostedCode,
@@ -31,8 +32,24 @@ export class ExtensionCatalog {
     const locators = new Map<string, string>();
     const clients = new Map<string, string>(),
       clientOwners = new Map<string, string>();
-    for (const release of releases) {
-      const manifest = defineExtension(release.manifest);
+    const loaded = releases.map((release) => ({
+      release,
+      manifest: defineExtension(release.manifest, { retained: true }),
+    }));
+    const newest = new Map<string, string>();
+    for (const { manifest } of loaded) {
+      const prior = newest.get(manifest.universalId);
+      if (!prior || compareVersions(manifest.version, prior) > 0)
+        newest.set(manifest.universalId, manifest.version);
+    }
+    for (const { release, manifest: retained } of loaded) {
+      // New installs and upgrades get a registration's newest release, so it
+      // meets every rule. Older releases that installations still run may
+      // predate required descriptions and load as they were published.
+      const manifest =
+        newest.get(retained.universalId) === retained.version
+          ? defineExtension(release.manifest)
+          : retained;
       const connection = connections.get(manifest.universalId);
       if (connection && connection !== manifest.connection)
         throw new Error('registration connection mode cannot change across releases');
@@ -178,7 +195,8 @@ export function parseExtensionCatalog(raw?: string): ExtensionCatalog {
         )
           return [];
       }
-      return [{ ...entry, manifest: defineExtension(manifest) }];
+      // The catalog holds each registration's newest release to every rule.
+      return [{ ...entry, manifest: defineExtension(manifest, { retained: true }) }];
     }),
   );
 }
