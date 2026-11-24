@@ -20,10 +20,10 @@ test('approves access, prepares suggestions, resumes and turns on the reviewed b
   await page.getByRole('link', { name: /^browser-configure\b/ }).click();
   await page.getByRole('link', { name: 'Continue setup' }).click();
   await r.finishConfigure();
-  await page.getByText('Fields', { exact: true }).click();
+  await page.getByText('Why these suggestions?', { exact: true }).click();
   await expect(page.getByText('A dedicated count field.')).toBeVisible();
   await page.getByRole('button', { name: 'Review installation' }).click();
-  await page.getByRole('button', { name: 'Review and turn on', exact: true }).click();
+  await page.getByRole('button', { name: 'Turn on browser-configure', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/extensions/${installed.id}$`));
   expect((await r.request(`/extensions/${installed.id}`, undefined, r.keys.user)).state).toBe(
     'installing',
@@ -34,7 +34,7 @@ test('approves access, prepares suggestions, resumes and turns on the reviewed b
   await page.getByRole('button', { name: 'Get suggestions', exact: true }).click();
   await expect(page.getByText('Preparing suggestions…')).toBeVisible();
   await r.finishConfigure();
-  await page.getByText('Fields', { exact: true }).click();
+  await page.getByText('Why these suggestions?', { exact: true }).click();
   await expect(page.getByText('A dedicated count field.')).toBeVisible();
 });
 
@@ -68,7 +68,7 @@ test('keeps the old release active while suggesting upgrade bindings', async ({
   await expect(page.getByText('Preparing suggestions…')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Approve access', exact: true })).toHaveCount(0);
   await r.finishConfigure();
-  await page.getByText('Fields', { exact: true }).click();
+  await page.getByText('Why these suggestions?', { exact: true }).click();
   await expect(page.getByText('The existing company address.')).toBeVisible();
   await page.getByRole('button', { name: 'Review upgrade' }).click();
   await page.getByRole('button', { name: 'Approve upgrade', exact: true }).click();

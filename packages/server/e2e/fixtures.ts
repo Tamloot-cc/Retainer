@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { test as base, expect } from '@playwright/test';
+import { ENRICHMENT, ENRICHMENT_BINDINGS } from '@retainer/runner/enrichment-contract';
 import { tamlootManifest } from '@retainer/runner/tamloot-contract';
 import { generateKeyPair } from 'jose';
 import postgres from 'postgres';
@@ -101,6 +102,14 @@ export const browserMappingManifest = manifestFixture({
       ],
     },
   ],
+});
+/** Exa's full field list, without a live provider connection. */
+export const browserExaMappingManifest = manifestFixture({
+  universalId: ENRICHMENT.registration,
+  name: 'company-enrichment',
+  requestedActor: 'agent',
+  scopes: ['read', 'write'],
+  bindings: ENRICHMENT_BINDINGS,
 });
 export const browserConfigureManifest = manifestFixture({
   ...browserMappingManifest,
@@ -493,7 +502,10 @@ export const test = base.extend<
         ? {
             extensionCatalog: new ExtensionCatalog([
               ...(mappingFixture
-                ? [{ manifest: browserMappingManifest, actorCeiling: 'agent' as const }]
+                ? [
+                    { manifest: browserMappingManifest, actorCeiling: 'agent' as const },
+                    { manifest: browserExaMappingManifest, actorCeiling: 'agent' as const },
+                  ]
                 : []),
               ...(extensionFixture
                 ? [{ manifest: browserExtensionManifest, actorCeiling: 'integration' as const }]

@@ -447,9 +447,7 @@ describe('extension pages and human approval', () => {
       />,
     );
     await userEvent.click(screen.getByRole('button', { name: 'Review upgrade' }));
-    expect(
-      await screen.findByText(/This approval changes access from read as an agent/),
-    ).toBeTruthy();
+    expect(await screen.findByText(/Access changes from read as an agent/)).toBeTruthy();
     expect(upgrade).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Approve access and upgrade' }));
     await vi.waitFor(() => expect(upgrade).toHaveBeenCalledTimes(1));
@@ -547,12 +545,11 @@ describe('extension pages and human approval', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Review upgrade' }));
     expect(
       await screen.findByText(
-        /changes access from read and write as an integration to read and write with model use as an integration/,
+        /Access changes from read and write as an integration to read and write with model use as an integration/,
       ),
     ).toBeTruthy();
-    // The model notice is a plain note in the Access card, not a warning.
-    const notice = screen.getByText(MODEL_USE_NOTICE);
-    expect(notice.closest('[role="status"]')?.querySelector('svg')).toBeNull();
+    const notes = within(screen.getByRole('list', { name: 'Setup notes' }));
+    expect(notes.getByText(MODEL_USE_NOTICE).closest('[role="status"]')).toBeNull();
     expect(plan.mock.calls[0]?.[0]).toMatchObject({ grantChange: true });
     expect(screen.getByRole('button', { name: 'Approve access and upgrade' })).toBeTruthy();
   });
@@ -569,7 +566,7 @@ describe('extension pages and human approval', () => {
     mount(<ExtensionSetup release={release} mode="install" onCancel={() => {}} onDone={onDone} />);
     await userEvent.type(screen.getByLabelText('API key (required)'), 'sensitive-fixture');
     await userEvent.click(screen.getByRole('button', { name: 'Review installation' }));
-    expect(await screen.findByRole('button', { name: 'Approve installation' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Install Fixture' })).toBeTruthy();
     expect(install).not.toHaveBeenCalled();
     expect(stage).toHaveBeenCalledWith(expect.objectContaining({ value: 'sensitive-fixture' }));
     expect(plan.mock.calls[0]?.[0]).toMatchObject({
@@ -577,10 +574,14 @@ describe('extension pages and human approval', () => {
       secretRefs: { apiKey: 'opaque-reference' },
     });
     expect(JSON.stringify(plan.mock.calls)).not.toContain('sensitive-fixture');
-    expect(screen.getByText('Runtime activation is unavailable.')).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'Approve installation' }));
+    expect(
+      within(screen.getByRole('list', { name: 'Setup notes' })).getByText(
+        'Runtime activation is unavailable.',
+      ),
+    ).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Install Fixture' }));
     expect(await screen.findByText('Try again')).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'Approve installation' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Install Fixture' }));
     await vi.waitFor(() => expect(install).toHaveBeenCalledTimes(2));
     expect(install.mock.calls[0]?.[1]).toBe(install.mock.calls[1]?.[1]);
     expect(JSON.stringify(install.mock.calls)).not.toContain('sensitive-fixture');
@@ -612,21 +613,20 @@ describe('extension pages and human approval', () => {
     ).toBe('step');
     // A later step cannot be opened before the earlier ones are done.
     expect(
-      (within(steps).getByRole('button', { name: /Review and approve/ }) as HTMLButtonElement)
-        .disabled,
+      (within(steps).getByRole('button', { name: /Review setup/ }) as HTMLButtonElement).disabled,
     ).toBe(true);
     await userEvent.type(screen.getByLabelText('API key (required)'), 'sensitive-fixture');
     await userEvent.click(screen.getByRole('button', { name: 'Review installation' }));
-    expect(await screen.findByRole('button', { name: 'Approve installation' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Install Fixture' })).toBeTruthy();
     expect(screen.queryByLabelText('API key (required)')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Back' }));
-    expect(screen.queryByRole('button', { name: 'Approve installation' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Install Fixture' })).toBeNull();
     // The staged key is kept: it does not have to be typed again.
     expect((screen.getByLabelText('API key (required)') as HTMLInputElement).placeholder).toBe(
       'Provided for approval',
     );
     await userEvent.click(screen.getByRole('button', { name: 'Review installation' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Approve installation' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Install Fixture' }));
     await vi.waitFor(() => expect(onDone).toHaveBeenCalledWith('installed'));
     expect(plan).toHaveBeenCalledTimes(2);
     expect(onCancel).not.toHaveBeenCalled();

@@ -23,7 +23,7 @@ test('reviews workspace app OAuth in the browser and disconnects it from Extensi
   const extensionsUrl = `${a.url}/app/w/${workspace.slug}/extensions`;
   await page.goto(extensionsUrl);
   await page.getByRole('link', { name: 'Set up browser-workspace-app', exact: true }).click();
-  await page.getByRole('button', { name: 'Approve installation' }).click();
+  await page.getByRole('button', { name: 'Install browser-workspace-app' }).click();
   await expect(page.getByText('Active', { exact: true })).toBeVisible();
   await page.route('https://workspace-app.example/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<p>Workspace app</p>' }),

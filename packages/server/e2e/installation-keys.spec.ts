@@ -9,9 +9,9 @@ test('approves standalone access, displays a key once, revokes it and fences old
   await signIn(page, r.url, r.keys.user);
   await page.getByRole('link', { name: 'Extensions', exact: true }).click();
   await page.getByRole('link', { name: 'Set up browser-app', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Approve installation' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Install browser-app' })).toBeVisible();
   await expect(page.getByText(/Runtime activation is unavailable/)).toHaveCount(0);
-  await page.getByRole('button', { name: 'Approve installation' }).click();
+  await page.getByRole('button', { name: 'Install browser-app' }).click();
   await expect(page.getByText('Active', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'App credentials', exact: true }).click();
   const tab = page.getByRole('main');
