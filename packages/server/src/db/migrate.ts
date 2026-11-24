@@ -187,7 +187,7 @@ export async function migrationHistoryCompatible(sql: Sql | Tx): Promise<boolean
 }
 
 /** Read-only: use the same timestamp rule and journal as Drizzle's migrator. */
-export async function migrationsPending(sql: Sql): Promise<boolean> {
+export async function migrationsPending(sql: Sql | Tx): Promise<boolean> {
   const [table] = await sql`select to_regclass('drizzle.__drizzle_migrations') as name`;
   if (!table?.name) return true;
   const [last] =

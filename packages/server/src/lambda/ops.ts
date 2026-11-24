@@ -21,7 +21,7 @@ import {
   lambdaRuntimeCompatible,
   type RuntimeCompatibility,
 } from '../operator/extension-runtime.js';
-import { rebuildSearchText } from '../records/rebuild-search.js';
+import { backfillSearchTextBatch, rebuildSearchText } from '../records/rebuild-search.js';
 import {
   bindingsMigrationPending,
   migrateExtensionBindings,
@@ -76,6 +76,12 @@ const opsEvent = z.discriminatedUnion('command', [
   z.object({ command: z.literal('migration-status') }),
   z.strictObject({ command: z.literal('restricted-index-status'), protocol: z.literal(1) }),
   z.strictObject({ command: z.literal('online-table-status'), protocol: z.literal(1) }),
+  z.strictObject({
+    command: z.literal('backfill-search-text'),
+    protocol: z.literal(1),
+    workspaceId: z.uuid(),
+    batch: z.number().int().min(1).max(100).default(50),
+  }),
   z.strictObject({
     command: z.literal('migrate-online-tables'),
     protocol: z.literal(1),
@@ -143,6 +149,7 @@ export type OpsResult =
       journal: Awaited<ReturnType<typeof restrictedIndexStatus>>;
     }
   | { command: 'migrate-online-tables'; protocol: 1; writerBuild: string }
+  | { command: 'backfill-search-text'; protocol: 1; rebuilt: number; pending: boolean }
   | {
       command: 'migrate-restricted-indexes';
       protocol: 1;
@@ -317,6 +324,26 @@ export function createOpsHandler(
           if ((await otherStopReasons(config, tx as unknown as Sql)).length)
             throw new Error('Additional migration work requires a stopped deployment.');
           return { command: command.command, protocol: 1, writerBuild };
+        });
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    }
+    if (command.command === 'backfill-search-text') {
+      if (!writerBuild) throw new Error('An online backfill requires a hosted writer build.');
+      const sql = createSql(databaseUrl, { max: 1, writerBuild, statementTimeoutMs: 5000 });
+      try {
+        return await withMigrationLock(sql, 1, async (tx) => {
+          if (!(await migrationHistoryCompatible(tx)) || (await migrationsPending(tx)))
+            throw new Error('Apply and verify the migration journal before running a backfill.');
+          const [admission] = await tx<{ admitted: boolean }[]>`
+            select retainer_deploy.admit_writer() and exists (
+              select 1 from retainer_deploy.admission where singleton and generation is not null
+            ) as admitted`;
+          if (!admission?.admitted) throw new Error('The backfill build is not admitted.');
+          await tx`select set_config('lock_timeout', '250ms', true)`;
+          const result = await backfillSearchTextBatch(tx, command.workspaceId, command.batch);
+          return { command: command.command, protocol: 1, ...result };
         });
       } finally {
         await sql.end({ timeout: 5 });
