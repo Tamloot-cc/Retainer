@@ -1,22 +1,49 @@
-import { defineExtension, type ExtensionManifest } from '@retainer/extension';
+import {
+  defineExtension,
+  type ExtensionBinding,
+  type ExtensionManifest,
+} from '@retainer/extension';
+import type { FieldType } from '@retainer/shared';
 import { z } from 'zod';
 
-/** Permanent identities of the company enrichment release (spec 4.1). */
+/** Permanent identities of the enrichment release (spec 4.1). */
 export const ENRICHMENT = {
   registration: '9796c2c7-46f3-4006-8f35-059d5ef3553e',
   configure: 'a71658da-20db-4b37-9064-992ca0fd9fc0',
   backfill: '4768a194-e37e-4e93-af76-f145e2ae3d83',
   setup: 'c3376603-255e-4adb-819f-e3aa173f3ff9',
   enrich: 'ab556674-d905-4839-8516-7b1ee7455c80',
+  enrichPerson: '3edcca1a-6179-4e23-b387-328d7f7c2a88',
+  backfillPerson: '6d72dd76-5c7d-462e-99b2-9f275898a47b',
   employeeCountField: '509ddbdd-3b4e-45ec-b6b1-709255de3bdc',
   linkedinField: '4341a8ad-8c05-444e-98bb-3e357d5730a7',
   headquartersField: '770bf3de-d5df-48ac-95cb-16ec1c18c302',
+  descriptionField: '0d383c6c-ed85-4737-ae5f-10d4b591ffdb',
+  industryField: '57ba2bcc-5124-4064-9671-8055c93f4622',
+  foundedYearField: 'ebd2313c-7ce9-47f6-b6d7-c3b8ada9c493',
+  annualRevenueField: '1e3a7523-915a-4d96-b51c-17d4317943c9',
+  totalFundingField: '27d56c42-b8e1-40ae-b265-75a1b0344208',
+  lastRoundField: 'd1794bf4-418f-46f9-bfa6-d5638dbbf77c',
+  lastRoundDateField: 'fb33cee9-bfd1-4a5a-9a7d-b7c3e99f4c6a',
+  lastRoundAmountField: 'f4b84585-3df5-4180-bc34-9a46b14f5e07',
+  monthlyVisitsField: 'd6db6a7f-10f2-415f-b536-5b873f0306c0',
+  personObject: '5280b14d-3c92-4376-a2eb-1e58d539404b',
+  personNameField: '377ecb56-bff6-4238-a5ac-e08a86576da7',
+  personEmailsField: '43f1fd6e-59f8-4ae6-a67c-73d09b3b1aad',
+  personLinkedinField: '940ab8d5-0072-45f8-983d-2e43bbc8315f',
+  jobTitleField: '35702180-1c96-4766-999e-d33b4dec385c',
+  headlineField: '023b9808-611b-4c09-9aef-27702af16a75',
+  locationField: '10a6d4d8-1e32-47e5-9aa6-f1d55443d359',
+  seniorityField: '9488032e-1bdb-4bd2-8167-d03bfff4cb1c',
+  departmentField: 'bf93eb48-4911-411b-bbe9-ac55c32b26a7',
 } as const;
 export const ENRICHMENT_FUNCTION_IDS: string[] = [
   ENRICHMENT.configure,
   ENRICHMENT.setup,
   ENRICHMENT.enrich,
   ENRICHMENT.backfill,
+  ENRICHMENT.enrichPerson,
+  ENRICHMENT.backfillPerson,
 ];
 
 /** Exa's fixed API origin; no setting or input can change it. */
@@ -30,6 +57,9 @@ export const EXA_ORIGIN = 'https://api.exa.ai';
 export const ENRICHMENT_MODEL = 'claude-opus-5-5';
 
 const text = (max: number) => z.string().max(max).nullable().optional();
+/** A property this adapter can do without: a malformed one reads as null instead of dropping the result. */
+const optional = <T extends z.ZodType>(schema: T) => schema.nullable().optional().catch(null);
+const amount = optional(z.number());
 /** The fields of Exa's `SearchCompanyEntityOutput` this adapter reads; all nullable. */
 export const exaCompanyEntity = z.object({
   type: z.literal('company'),
@@ -40,83 +70,371 @@ export const exaCompanyEntity = z.object({
       .object({ city: text(200), postalCode: text(40), country: text(200) })
       .nullable()
       .optional(),
+    foundedYear: amount,
+    description: optional(z.string()),
+    financials: optional(
+      z.object({
+        revenueAnnual: amount,
+        fundingTotal: amount,
+        fundingLatestRound: optional(
+          z.object({ name: optional(z.string()), date: optional(z.string()), amount }),
+        ),
+      }),
+    ),
+    webTraffic: optional(z.object({ visitsMonthly: amount })),
   }),
 });
-export type ExaCompanyEntity = z.infer<typeof exaCompanyEntity>;
-export const exaSearchResponse = z.object({
-  results: z
-    .array(
-      z.object({
-        url: z.string().max(2048),
-        title: text(1000),
-        text: z.string().max(100000).nullable().optional(),
-        entities: z.array(z.unknown()).max(20).nullable().optional(),
-      }),
-    )
-    .max(10),
+/** The fields of Exa's `SearchPersonEntityOutput` this adapter reads; all nullable. */
+export const exaPersonEntity = z.object({
+  type: z.literal('person'),
+  properties: z.object({
+    name: text(500),
+    location: optional(z.string().max(500)),
+    workHistory: optional(
+      z
+        .array(
+          z.object({
+            title: optional(z.string().max(500)),
+            dates: optional(z.object({ from: optional(z.string()), to: optional(z.string()) })),
+            company: optional(z.object({ name: optional(z.string().max(500)) })),
+          }),
+        )
+        .max(500),
+    ),
+  }),
 });
+const exaResult = z.object({
+  url: z.string().max(2048),
+  title: text(1000),
+  text: z.string().max(100000).nullable().optional(),
+  entities: z.array(z.unknown()).max(20).nullable().optional(),
+});
+export const exaSearchResponse = z.object({ results: z.array(exaResult).max(10) });
 export const exaTeam = z.object({ id: z.string().max(200) });
+
+/** A query part: whitespace collapsed, at most 200 characters. */
+const part = (value: string | null | undefined) =>
+  value?.trim().replace(/\s+/g, ' ').slice(0, 200) ?? '';
+const search = (category: 'company' | 'people', parts: (string | null | undefined)[]) => ({
+  query: parts.map(part).filter(Boolean).join(' '),
+  type: 'auto',
+  category,
+  numResults: 5,
+  contents: { text: { maxCharacters: 4000 } },
+});
 
 /**
  * The search for one company (model calls spec 6.3): its name and domain, or
  * the domain alone, across all domains, so a company whose site redirects or
  * whose profile lives under another domain is still found.
  */
-export function exaSearchRequest(domain: string, name?: string | null) {
-  const label = name?.trim().replace(/\s+/g, ' ').slice(0, 200);
-  return {
-    query: label ? `${label} ${domain}` : domain,
-    type: 'auto',
-    category: 'company',
-    numResults: 5,
-    contents: { text: { maxCharacters: 4000 } },
-  };
-}
+export const exaSearchRequest = (domain: string, name?: string | null) =>
+  search('company', [name, domain]);
 
-export const ENRICHMENT_OUTPUTS = ['employee_count', 'linkedin_url', 'headquarters'] as const;
-export type EnrichmentOutput = (typeof ENRICHMENT_OUTPUTS)[number];
+/**
+ * The search for one person (enrichment spec 7.3): their name and their
+ * company's name and domain. Never an email address or other record data.
+ */
+export const exaPeopleRequest = (
+  name: string,
+  company: { name: string | null; domain: string | null },
+) => search('people', [name, company.name, company.domain]);
+
+/** One LinkedIn profile read directly (enrichment spec 7.3, step 1). */
+export function exaProfileRequest(url: string) {
+  return { urls: [url], text: { maxCharacters: 4000 } };
+}
 
 /** How sure the model is of its pick (model calls spec 6.3). */
 export const certaintySchema = z.enum(['high', 'medium', 'low']);
 export type Certainty = z.infer<typeof certaintySchema>;
 
-/** The reviewed mapping: the domain lookup and the outputs a workspace binds to fields. */
-export const ENRICHMENT_OUTPUT_DEFINITIONS = [
+type OutputDefinition = {
+  key: string;
+  label: string;
+  description: string;
+  types: [FieldType];
+  field: { universalId: string; name: string; label: string; type: FieldType };
+};
+const output = (
+  key: string,
+  label: string,
+  type: FieldType,
+  universalId: string,
+  name: string,
+  description: string,
+): OutputDefinition => ({
+  key,
+  label,
+  description,
+  types: [type],
+  field: { universalId, name, label, type },
+});
+
+/** What enrichment can write to a company, in the order an admin reviews them. */
+export const COMPANY_OUTPUTS = [
+  output(
+    'employee_count',
+    'Employee count',
+    'number',
+    ENRICHMENT.employeeCountField,
+    'employeeCount',
+    "Employees Exa finds for the company, mostly from public profiles. Often lower than the company's own size band.",
+  ),
+  output(
+    'linkedin_url',
+    'LinkedIn URL',
+    'links',
+    ENRICHMENT.linkedinField,
+    'linkedinUrl',
+    "The company's LinkedIn page, as listed in Exa's company profile.",
+  ),
+  output(
+    'headquarters',
+    'Headquarters',
+    'address',
+    ENRICHMENT.headquartersField,
+    'headquarters',
+    "The headquarters city, postcode and country in Exa's company data.",
+  ),
+  output(
+    'description',
+    'Description',
+    'text',
+    ENRICHMENT.descriptionField,
+    'description',
+    'What the company says it does, from its public profile. Up to 2,000 characters.',
+  ),
+  output(
+    'industry',
+    'Industry',
+    'text',
+    ENRICHMENT.industryField,
+    'industry',
+    "The company's industry as its public profile lists it, such as Software Development.",
+  ),
+  output(
+    'founded_year',
+    'Founded year',
+    'number',
+    ENRICHMENT.foundedYearField,
+    'foundedYear',
+    'The year the company was founded.',
+  ),
+  output(
+    'annual_revenue',
+    'Annual revenue',
+    'money',
+    ENRICHMENT.annualRevenueField,
+    'annualRevenue',
+    "Exa's estimate of annual revenue in US dollars. Mostly available for larger companies, rarely for startups.",
+  ),
+  output(
+    'total_funding',
+    'Total funding',
+    'money',
+    ENRICHMENT.totalFundingField,
+    'totalFunding',
+    'Total funding raised in US dollars, from public funding data. May lag a recent round.',
+  ),
+  output(
+    'last_funding_round',
+    'Last funding round',
+    'text',
+    ENRICHMENT.lastRoundField,
+    'lastFundingRound',
+    'The name of the latest funding round Exa knows, such as Series A. May lag a recent announcement.',
+  ),
+  output(
+    'last_funding_date',
+    'Last funding date',
+    'date',
+    ENRICHMENT.lastRoundDateField,
+    'lastFundingDate',
+    'The date of the latest funding round Exa knows.',
+  ),
+  output(
+    'last_funding_amount',
+    'Last funding amount',
+    'money',
+    ENRICHMENT.lastRoundAmountField,
+    'lastFundingAmount',
+    'The amount of the latest funding round Exa knows, in US dollars.',
+  ),
+  output(
+    'monthly_web_visits',
+    'Monthly web visits',
+    'number',
+    ENRICHMENT.monthlyVisitsField,
+    'monthlyWebVisits',
+    "Estimated visits to the company's website in the latest month.",
+  ),
+];
+
+/** What enrichment can write to a person, in the order an admin reviews them. */
+export const PERSON_OUTPUTS = [
+  output(
+    'job_title',
+    'Job title',
+    'text',
+    ENRICHMENT.jobTitleField,
+    'jobTitle',
+    "The person's current title at their company, such as Head of Design.",
+  ),
+  output(
+    'headline',
+    'Headline',
+    'text',
+    ENRICHMENT.headlineField,
+    'headline',
+    "The one-line headline of the person's public profile.",
+  ),
+  output(
+    'location',
+    'Location',
+    'text',
+    ENRICHMENT.locationField,
+    'location',
+    'Where the person is based, such as San Francisco, California, United States.',
+  ),
+  output(
+    'seniority',
+    'Seniority',
+    'text',
+    ENRICHMENT.seniorityField,
+    'seniority',
+    "The level of the person's current role, such as Founder, C-Level or Senior.",
+  ),
+  output(
+    'department',
+    'Department',
+    'text',
+    ENRICHMENT.departmentField,
+    'department',
+    "The department of the person's current role, such as Engineering and Technical. Founders are often listed under Consulting.",
+  ),
+  output(
+    'linkedin_url',
+    'LinkedIn URL',
+    'links',
+    ENRICHMENT.personLinkedinField,
+    'linkedinUrl',
+    "The person's LinkedIn profile. When it is already set, enrichment reads that profile instead of searching.",
+  ),
+];
+
+/** The outputs of each binding enrichment writes to. */
+export const OUTPUTS_BY_BINDING = { company: COMPANY_OUTPUTS, person: PERSON_OUTPUTS } as const;
+export type EnrichmentBindingKey = keyof typeof OUTPUTS_BY_BINDING;
+
+const outputFields = (outputs: OutputDefinition[]) =>
+  outputs.map(({ field, ...rest }) => ({ ...rest, required: false, create: field }));
+
+/** Where enrichment reads and writes, reviewed per workspace. */
+export const ENRICHMENT_BINDINGS: ExtensionBinding[] = [
   {
-    key: 'employee_count',
-    label: 'Employee count',
+    key: 'company',
+    label: 'Companies',
+    description: 'Look up companies by website and fill empty company details.',
+    class: 'entity',
+    access: 'write',
+    required: true,
+    fields: [
+      {
+        key: 'domain',
+        label: 'Website',
+        types: ['links'],
+        required: true,
+        lookup: true,
+        create: {
+          universalId: 'b142bbb7-233b-4312-8135-ac152f0fc9d6',
+          name: 'domain',
+          label: 'Website',
+          type: 'links',
+        },
+      },
+      {
+        key: 'name',
+        label: 'Name',
+        types: ['text'],
+        required: false,
+        lookup: true,
+        create: {
+          universalId: 'ded82b59-487b-4a1a-9f07-1e07432ca707',
+          name: 'name',
+          label: 'Name',
+          type: 'text',
+        },
+      },
+      ...outputFields(COMPANY_OUTPUTS),
+    ],
+    create: {
+      universalId: 'f386596a-181d-4695-b291-55e63872ea6c',
+      nameSingular: 'company',
+      namePlural: 'companies',
+      labelSingular: 'Company',
+      labelPlural: 'Companies',
+      labelField: 'name',
+      fields: [],
+    },
+  },
+  {
+    key: 'person',
+    label: 'People',
     description:
-      "Employees Exa finds for the company, mostly from public profiles. Often lower than the company's own size band.",
-    types: ['number' as const],
-    field: {
-      universalId: ENRICHMENT.employeeCountField,
-      name: 'employeeCount',
-      label: 'Employee Count',
-      type: 'number' as const,
-    },
-  },
-  {
-    key: 'linkedin_url',
-    label: 'LinkedIn URL',
-    description: "The company's LinkedIn page, as listed in Exa's company profile.",
-    types: ['links' as const],
-    field: {
-      universalId: ENRICHMENT.linkedinField,
-      name: 'linkedinUrl',
-      label: 'LinkedIn URL',
-      type: 'links' as const,
-    },
-  },
-  {
-    key: 'headquarters',
-    label: 'Headquarters',
-    description: "The headquarters city, postcode and country in Exa's company data.",
-    types: ['address' as const],
-    field: {
-      universalId: ENRICHMENT.headquartersField,
-      name: 'headquarters',
-      label: 'Headquarters',
-      type: 'address' as const,
+      "Look up people by their LinkedIn profile, or by name and their company, and fill empty details. Skip it to keep people's names away from Exa.",
+    class: 'entity',
+    access: 'write',
+    required: false,
+    fields: [
+      // The first lookup field: the mapped write checks it is unchanged.
+      {
+        key: 'email',
+        label: 'Email',
+        description:
+          'Only the domain of a work email is used, to tell which company the person works at. The address itself is never sent.',
+        types: ['emails'],
+        required: false,
+        lookup: true,
+        create: {
+          universalId: ENRICHMENT.personEmailsField,
+          name: 'emails',
+          label: 'Emails',
+          type: 'emails',
+        },
+      },
+      {
+        key: 'name',
+        label: 'Name',
+        types: ['full_name', 'text'],
+        required: true,
+        lookup: true,
+        create: {
+          universalId: ENRICHMENT.personNameField,
+          name: 'name',
+          label: 'Name',
+          type: 'full_name',
+        },
+      },
+      {
+        key: 'company',
+        label: 'Company',
+        description: "The person's company, whose name and website help find the right person.",
+        types: ['relation'],
+        required: false,
+        lookup: true,
+        target: 'company',
+      },
+      ...outputFields(PERSON_OUTPUTS),
+    ],
+    create: {
+      universalId: ENRICHMENT.personObject,
+      nameSingular: 'person',
+      namePlural: 'people',
+      labelSingular: 'Person',
+      labelPlural: 'People',
+      labelField: 'name',
+      fields: [],
     },
   },
 ];
@@ -133,13 +451,18 @@ export function enrichmentManifest(build: {
     required: ['changePosition'],
     additionalProperties: false,
   };
+  const pageInput = {
+    type: 'object',
+    additionalProperties: false,
+    properties: { cursor: { type: 'string', maxLength: 4096 } },
+  };
   return defineExtension({
     manifestVersion: 1,
     universalId: ENRICHMENT.registration,
     name: 'company-enrichment',
-    version: build.version ?? '1.0.0',
+    version: build.version ?? '2.0.0',
     description:
-      'Fill in empty company details from Exa company search when a company gets a website domain or a new name. A model picks the right search result and suggests which fields to fill. Each workspace chooses the fields; values a person or agent set are never replaced.',
+      'Fill in empty company and people details from Exa. Companies are looked up by website and name; people by their LinkedIn profile, or by name and company. A model picks the right search result and suggests where each detail goes. Each workspace chooses the fields; values a person or agent set are never replaced.',
     packageDigest: build.packageDigest,
     serverRange: build.serverRange,
     runtimeVersion: 'node24',
@@ -151,78 +474,27 @@ export function enrichmentManifest(build: {
     createPeople: 'never',
     onSourceDelete: 'keep',
     settings: {
-      shareDomains: {
+      shareLookups: {
         type: 'boolean',
-        label: 'Send company names and domains to Exa to look up company details',
+        label: 'Send company names and websites, and people’s names and companies, to Exa',
         required: true,
         consent: true,
         default: false,
         reconnect: true,
         secret: false,
         description:
-          "Only the company's name and website domain are sent, never other record data. Exa keeps queries unless Retainer’s Exa account has Zero Data Retention, which Exa offers on its Enterprise plan.",
+          "For a company, only its name and website domain are sent. For a person, their LinkedIn profile address, or their name with their company's name and domain; never an email address or other record data. Skip the People destination to send no people at all. Exa keeps queries unless Retainer’s Exa account has Zero Data Retention, which Exa offers on its Enterprise plan.",
       },
     },
 
     views: [],
-    bindings: [
-      {
-        key: 'company',
-        label: 'Companies',
-        description: 'Look up companies by website and fill empty company details.',
-        class: 'entity',
-        access: 'write',
-        required: true,
-        fields: [
-          {
-            key: 'domain',
-            label: 'Website',
-            types: ['links'],
-            required: true,
-            lookup: true,
-            create: {
-              universalId: 'b142bbb7-233b-4312-8135-ac152f0fc9d6',
-              name: 'domain',
-              label: 'Website',
-              type: 'links',
-            },
-          },
-          {
-            key: 'name',
-            label: 'Name',
-            types: ['text'],
-            required: false,
-            lookup: true,
-            create: {
-              universalId: 'ded82b59-487b-4a1a-9f07-1e07432ca707',
-              name: 'name',
-              label: 'Name',
-              type: 'text',
-            },
-          },
-          ...ENRICHMENT_OUTPUT_DEFINITIONS.map(({ field, ...output }) => ({
-            ...output,
-            required: false,
-            create: field,
-          })),
-        ],
-        create: {
-          universalId: 'f386596a-181d-4695-b291-55e63872ea6c',
-          nameSingular: 'company',
-          namePlural: 'companies',
-          labelSingular: 'Company',
-          labelPlural: 'Companies',
-          labelField: 'name',
-          fields: [],
-        },
-      },
-    ],
+    bindings: ENRICHMENT_BINDINGS,
     functions: [
       {
         universalId: ENRICHMENT.configure,
         name: 'configure',
         description:
-          'Check the provider connection and suggest company fields, using a model and a sample of companies.',
+          'Check the provider connection and suggest where companies, people and each detail go, using a model and a sample of records.',
         handlerDigest: build.handlerDigest,
         timeoutSeconds: 120,
         trigger: { kind: 'configure' },
@@ -237,13 +509,21 @@ export function enrichmentManifest(build: {
         handlerDigest: build.handlerDigest,
         timeoutSeconds: 300,
         trigger: { kind: 'job' },
-        inputSchema: {
-          type: 'object',
-          additionalProperties: false,
-          properties: { cursor: { type: 'string', maxLength: 4096 } },
-        },
+        inputSchema: pageInput,
         scopes: ['read', 'write'],
         mappedWrite: 'company',
+        uses: ['model'],
+      },
+      {
+        universalId: ENRICHMENT.backfillPerson,
+        name: 'backfillPerson',
+        description: 'Fill newly mapped outputs on previously enriched people, in pages.',
+        handlerDigest: build.handlerDigest,
+        timeoutSeconds: 300,
+        trigger: { kind: 'job' },
+        inputSchema: pageInput,
+        scopes: ['read', 'write'],
+        mappedWrite: 'person',
         uses: ['model'],
       },
       {
@@ -273,6 +553,25 @@ export function enrichmentManifest(build: {
         inputSchema: changeInput,
         scopes: ['read', 'write'],
         mappedWrite: 'company',
+        uses: ['model'],
+      },
+      {
+        universalId: ENRICHMENT.enrichPerson,
+        name: 'enrichPerson',
+        description:
+          'Look up a person by their LinkedIn profile, or by name and company, when they are created or one of those changes, and fill their empty mapped fields.',
+        handlerDigest: build.handlerDigest,
+        timeoutSeconds: 120,
+        trigger: {
+          kind: 'change',
+          binding: 'person',
+          fields: ['name', 'email', 'company', 'linkedin_url'],
+          related: false,
+          operations: ['create', 'update'],
+        },
+        inputSchema: changeInput,
+        scopes: ['read', 'write'],
+        mappedWrite: 'person',
         uses: ['model'],
       },
     ],

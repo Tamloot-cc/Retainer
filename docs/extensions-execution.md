@@ -455,17 +455,23 @@ Compose operator environment before starting the launcher. The launcher passes
 it only to Company Enrichment job containers. On the hosted service, Retainer
 configures the key on the dedicated enrichment Lambda and covers Exa usage.
 
-A workspace admin approves sending company names and domains to Exa and
-maps each output (employee count, LinkedIn URL, headquarters) to an existing
-company field, a suggested new field, or nothing. An agent can propose that
-mapping with `preview_extension`; only an admin approves it. When a company is
-created or its domain changes, the extension looks the domain up in Exa company
-search and fills only mapped fields that have no value and were not cleared.
-Values people or other agents set are never replaced, and existing companies are
-not backfilled. **Edit mapping** on the installation reviews a new mapping; it
-applies to later changes only. Each lookup is one Exa search (about $0.008).
-Existing installations switch to the deployment key when an admin updates to
-the new release. The update carries forward consent and compatible mappings.
+A workspace admin approves sending company names and websites, and people's
+names and companies, to Exa. A model suggests which objects hold companies and
+people and where each detail goes; the admin reviews every choice, and can skip
+People so no person is sent. An agent can propose the destinations with
+`preview_extension`; only an admin approves them. When a company is created or
+its name or domain changes, the extension looks it up in Exa company search and
+fills only mapped fields that have no value and were not cleared: employee
+count, LinkedIn URL, headquarters, description, industry, founded year, revenue,
+funding and the latest round, and monthly web visits. When a person is created or
+their name, email, company or LinkedIn URL changes, it reads their LinkedIn
+profile, or searches by name and company, and fills job title, headline,
+location, seniority, department and LinkedIn URL the same way. An email address
+is never sent, only a work email's domain. Values people or other agents set are
+never replaced, and existing records are not backfilled. **Edit mapping** on the
+installation reviews a new mapping; it applies to later changes only. A company
+lookup is one Exa search (about $0.008); a person costs one search, or one
+LinkedIn read ($0.001). Spec: `docs/specs/extensions-company-enrichment.md` §7.
 
 The adapter's Exa transport, matching and lifecycle have deterministic fixtures,
 and the API integration tests use real RLS Postgres. They verify installation

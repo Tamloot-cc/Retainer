@@ -32,3 +32,12 @@ export function normalizeDomain(value: string): string | null {
     return null;
   return host;
 }
+
+/**
+ * An email address as Retainer compares it: trimmed and lower-cased. Shared
+ * like `normalizeDomain`, so the address a run looked up and the address a
+ * write is checked against agree.
+ */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
