@@ -49,9 +49,9 @@ export function requireWebHeader(c: Context, publicOrigin?: string): void {
   if (origin && origin !== (publicOrigin ?? new URL(c.req.url).origin))
     throw new AppError(403, 'csrf', 'origin must match the request origin');
 }
-async function presentSession(sql: Sql, caller: Caller): Promise<Session> {
+async function presentSession(sql: Sql, caller: Caller, waitForSchema = true): Promise<Session> {
   return inWorkspace(sql, caller.workspaceId, async (tx) => {
-    await lockSchemaShared(tx, caller.workspaceId);
+    if (waitForSchema) await lockSchemaShared(tx, caller.workspaceId);
     await admitCaller(tx, caller, false, 'runtime');
     const [workspace] = await tx<
       { id: string; name: string; slug: string }[]
@@ -95,9 +95,15 @@ export function sessionRoutes(
     return c.json({ signedOut: true });
   });
 }
-export function meRoute(app: Hono<AppEnv>, sql: Sql, routinesAvailable = false) {
+export function meRoute(
+  app: Hono<AppEnv>,
+  sql: Sql,
+  options: { routinesAvailable: boolean; restricted: boolean },
+) {
   app.get('/me', async (c) => {
-    const session = await presentSession(sql, c.get('caller'));
-    return c.json(routinesAvailable ? { ...session, routinesAvailable: true } : session);
+    // Restricted admission already refuses machine callers. The remaining
+    // session metadata read can proceed while a workspace schema lock is held.
+    const session = await presentSession(sql, c.get('caller'), !options.restricted);
+    return c.json(options.routinesAvailable ? { ...session, routinesAvailable: true } : session);
   });
 }

@@ -3,6 +3,7 @@ import { expect, it } from 'vitest';
 import { createApp } from '../../src/api/app.js';
 import { createApiKey, revokeApiKey } from '../../src/auth/keys.js';
 import { CONTROL_ROLE, loadConfig, RUNTIME_ROLE } from '../../src/config.js';
+import { lockSchemaExclusive } from '../../src/db/tx.js';
 import { rateLimit } from '../../src/http/rate-limit.js';
 import { createApiHandler } from '../../src/lambda/api.js';
 import { createControlHandler } from '../../src/lambda/control.js';
@@ -145,7 +146,7 @@ it('serves account, REST and MCP reads on read-only pools and blocks mutations b
   expect(await db.owner`select token from sessions where token = ${token}`).toHaveLength(1);
 });
 
-it('keeps a second workspace writable when the authenticated target workspace uses the reader', async () => {
+it('keeps REST and MCP available in a second workspace during a workspace schema lock', async () => {
   const { workspaceId, otherWorkspaceId } = await team(db);
   const sql = db.connect({ role: RUNTIME_ROLE });
   const reader = db.connect({ role: RUNTIME_ROLE, readOnly: true });
@@ -175,20 +176,55 @@ it('keeps a second workspace writable when the authenticated target workspace us
       headers: {
         authorization: `Bearer ${key}`,
         'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
         ...(workspace ? { 'x-retainer-workspace': workspace } : {}),
       },
       body: JSON.stringify(body),
     });
   const path = '/v1/objects/person/records';
   const body = { values: { name: { first: 'Second', last: 'Workspace' } } };
-  const denied = await request(paused.key, path, body);
-  expect(denied.status).toBe(503);
-  expect(denied.headers.get('x-retainer-maintenance')).toBe('not-executed');
-  expect((await request(paused.key, path, body, otherWorkspaceId)).status).toBe(400);
-  const saved = await request(open.key, path, body);
-  expect(saved.status).toBe(201);
-  for (const key of [open.key, paused.key]) {
-    const list = await request(key, '/v1/objects/person/query', {});
-    expect(list.status).toBe(200);
-  }
+  const tool = (key: string, workspace: string, name: string, args: object) =>
+    request(key, `/mcp/w/${workspace}`, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name, arguments: args },
+    });
+  const write = { object: 'person', ...body };
+  await db.owner.begin(async (tx) => {
+    await lockSchemaExclusive(tx, workspaceId);
+    const [deniedRest, deniedMcp, saved, savedMcp] = await Promise.all([
+      request(paused.key, path, body),
+      tool(paused.key, workspaceId, 'upsert_record', write),
+      request(open.key, path, body),
+      tool(open.key, otherWorkspaceId, 'upsert_record', write),
+    ]);
+    for (const response of [deniedRest, deniedMcp]) {
+      expect(response.status).toBe(503);
+      expect(response.headers.get('x-retainer-maintenance')).toBe('not-executed');
+    }
+    expect((await request(paused.key, path, body, otherWorkspaceId)).status).toBe(400);
+    expect(saved.status).toBe(201);
+    expect(savedMcp.status).toBe(200);
+    const mcpWrite = await savedMcp.text();
+    expect(mcpWrite).toContain('"structuredContent"');
+    expect(mcpWrite).not.toContain('"isError":true');
+    const { id } = (await saved.json()) as { id: string };
+    for (const [key, workspace, containsOpenRecord] of [
+      [paused.key, workspaceId, false],
+      [open.key, otherWorkspaceId, true],
+    ] as const) {
+      const session = await api.request('/v1/me', { headers: { authorization: `Bearer ${key}` } });
+      expect(session.status).toBe(200);
+      expect(await session.json()).toMatchObject({ workspace: { id: workspace } });
+      const list = await request(key, '/v1/objects/person/query', {});
+      expect(list.status).toBe(200);
+      expect((await list.text()).includes(id)).toBe(containsOpenRecord);
+      const queried = await tool(key, workspace, 'query_records', { object: 'person' });
+      expect(queried.status).toBe(200);
+      const response = await queried.text();
+      expect(response).not.toContain('"isError":true');
+      expect(response.includes(id)).toBe(containsOpenRecord);
+    }
+  });
 });
