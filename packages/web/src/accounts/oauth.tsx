@@ -1,7 +1,9 @@
 import { cappedScopes, OAUTH_SCOPES, pinnedWorkspaceOfResources } from '@retainer/shared';
 import { useQuery } from '@tanstack/react-query';
+import { ArrowRight, Eye, ShieldCheck, Terminal } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { type Account, account as accountApi } from '../api/account.js';
+import { type Account, account as accountApi, signOutOfAccount } from '../api/account.js';
+import { BrandMark } from '../ui/brand.js';
 import { Button, Muted, Notice, Radio, Stack } from '../ui/index.js';
 import { allWorkspaces } from './context.js';
 import { APP_SCOPE_WORDS, capital, withoutSignInError } from './format.js';
@@ -73,10 +75,11 @@ function CliConsent({ account }: { account: Account }) {
       // The server verifies the signed request before recording the login.
     }
   }
-  const [busy, setBusy] = useState(false),
+  const [pending, setPending] = useState<'allow' | 'deny' | 'sign-out' | null>(null),
     [error, setError] = useState('');
+  const busy = pending !== null;
   async function answer(accept: boolean) {
-    setBusy(true);
+    setPending(accept ? 'allow' : 'deny');
     setError('');
     try {
       const { url } = await accountApi.oauthConsent({
@@ -86,32 +89,140 @@ function CliConsent({ account }: { account: Account }) {
       window.location.assign(url);
     } catch (failure) {
       setError((failure as Error).message);
-      setBusy(false);
+      setPending(null);
     }
   }
+  async function signOut() {
+    setPending('sign-out');
+    setError('');
+    try {
+      await signOutOfAccount(window.location.pathname + window.location.search);
+    } catch (failure) {
+      setError((failure as Error).message);
+      setPending(null);
+    }
+  }
+  const { name, email } = account.user;
   return (
-    <AccountFrame
-      title={`Connect the Retainer CLI on ${machine}`}
-      account={account}
-      signOutTo={window.location.pathname + window.location.search}
-    >
-      <Stack>
-        <p>It works as an agent in every workspace you can open. It can read within your role.</p>
-        <p>
-          To let it make decisions for you, approve a short window from{' '}
-          <code>retainer elevate</code>.
-        </p>
-        {error ? <Notice error>{error}</Notice> : null}
-        <div className="flex gap-2">
-          <Button variant="outline" disabled={busy} onClick={() => void answer(false)}>
-            Deny
-          </Button>
-          <Button disabled={busy} onClick={() => void answer(true)}>
-            Allow
-          </Button>
+    <div className="min-h-dvh bg-frame text-foreground">
+      <header className="border-b border-border">
+        <div className="mx-auto flex max-w-5xl px-4 py-4 sm:px-8">
+          <a
+            href="/app/"
+            className="inline-flex items-center gap-2.5 rounded-md text-[.9375rem] font-semibold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+          >
+            <BrandMark />
+            Retainer
+          </a>
         </div>
-      </Stack>
-    </AccountFrame>
+      </header>
+      <main className="mx-auto w-full max-w-[37rem] px-4 py-5 sm:py-14">
+        <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+          <div className="space-y-5 px-5 py-5 sm:space-y-6 sm:p-8">
+            <div>
+              <span className="mb-3 inline-flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary sm:mb-4 sm:size-12">
+                <Terminal size={24} aria-hidden="true" />
+              </span>
+              <h1 className="text-[clamp(1.625rem,1.375rem+1vw,2rem)] leading-tight font-semibold tracking-tight">
+                Connect the Retainer CLI
+              </h1>
+            </div>
+
+            <dl className="divide-y divide-border rounded-xl border border-border bg-muted/40 text-sm">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3">
+                <dt className="w-24 shrink-0 text-muted-foreground">Device</dt>
+                <dd className="min-w-0 grow wrap-anywhere font-mono font-medium">
+                  <bdi>{machine}</bdi>
+                </dd>
+              </div>
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2">
+                <dt className="w-24 shrink-0 text-muted-foreground">Signed in as</dt>
+                <dd className="flex min-w-0 flex-[1_1_12rem] flex-wrap items-center justify-between gap-x-2">
+                  <div className="min-w-0 grow wrap-anywhere">
+                    <p className="font-semibold">
+                      <bdi>{name || email}</bdi>
+                    </p>
+                    {name && name !== email ? (
+                      <p className="text-muted-foreground">
+                        <bdi>{email}</bdi>
+                      </p>
+                    ) : null}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    className="h-auto min-h-11 px-1.5"
+                    disabled={busy}
+                    onClick={() => void signOut()}
+                  >
+                    {pending === 'sign-out' ? 'Signing out…' : 'Sign out'}
+                  </Button>
+                </dd>
+              </div>
+            </dl>
+
+            <ul className="space-y-4 text-sm">
+              <li className="flex items-start gap-3">
+                <Eye size={19} className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
+                <div>
+                  <h2 className="font-semibold">Read access</h2>
+                  <p className="mt-0.5 text-muted-foreground">
+                    The CLI can read as an agent in every workspace you can open, within the limits
+                    of your role.
+                  </p>
+                </div>
+              </li>
+              <li className="flex items-start gap-3">
+                <ShieldCheck
+                  size={19}
+                  className="mt-0.5 shrink-0 text-primary"
+                  aria-hidden="true"
+                />
+                <div>
+                  <h2 className="font-semibold">Separate approval for decisions</h2>
+                  <p className="mt-0.5 text-muted-foreground">
+                    Use{' '}
+                    <code className="rounded bg-muted px-1 py-0.5 text-foreground">
+                      retainer elevate
+                    </code>{' '}
+                    to let the CLI make decisions on your behalf for a limited time.
+                  </p>
+                </div>
+              </li>
+            </ul>
+            {error ? <Notice error>{error}</Notice> : null}
+          </div>
+          <div className="flex flex-wrap justify-end gap-2 border-t border-border bg-muted/30 px-5 py-4 sm:px-8">
+            <Button
+              variant="outline"
+              className="h-auto min-h-11 grow px-4 py-2 whitespace-normal sm:grow-0"
+              disabled={busy}
+              onClick={() => void answer(false)}
+            >
+              {pending === 'deny' ? 'Denying…' : 'Deny'}
+            </Button>
+            <Button
+              variant="primary"
+              className="h-auto min-h-11 grow px-4 py-2 whitespace-normal sm:grow-0"
+              disabled={busy}
+              onClick={() => void answer(true)}
+            >
+              {pending === 'allow' ? 'Connecting…' : 'Allow connection'}
+              <ArrowRight size={16} aria-hidden="true" />
+            </Button>
+          </div>
+        </section>
+        <p className="mt-4 text-center text-sm text-muted-foreground">
+          You can disconnect the CLI anytime in{' '}
+          <a
+            className="rounded-sm font-medium text-foreground underline decoration-border underline-offset-4 hover:decoration-current focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            href="/app/account"
+          >
+            Your account
+          </a>
+          .
+        </p>
+      </main>
+    </div>
   );
 }
 

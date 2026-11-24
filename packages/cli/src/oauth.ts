@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { hostname } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import type { CliApprovalRequest } from '@retainer/sdk';
+import { sendLoginPage } from './login-page.js';
 import {
   credentials,
   locked,
@@ -217,7 +218,7 @@ async function listen(server: string, discovery: Discovery) {
     try {
       if (denied) {
         await status('denied');
-        response.end('Retainer CLI access was denied. You can close this tab.');
+        sendLoginPage(response, 'denied');
       } else {
         const grant = await tokens(discovery, {
           grant_type: 'authorization_code',
@@ -232,13 +233,11 @@ async function listen(server: string, discovery: Discovery) {
           }),
         );
         await status('done');
-        response.end('Retainer CLI is connected. You can close this tab.');
+        sendLoginPage(response, 'connected');
       }
     } catch {
       await status('failed');
-      response
-        .writeHead(400)
-        .end('Retainer CLI could not sign in. Return to the terminal and try again.');
+      sendLoginPage(response, 'failed');
     } finally {
       http.close();
     }
