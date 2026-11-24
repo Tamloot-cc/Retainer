@@ -3,11 +3,14 @@ import type { InputSchema, VerificationInvocation, VerificationResult } from '@r
 import { generateKeyPair } from 'jose';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.js';
+import { RUNTIME_ROLE } from '../../src/db/client.js';
+import { acquireWriterLease, releaseWriterLease } from '../../src/db/writer-lease.js';
 import { extensionServices } from '../../src/extension-control/configuration.js';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import { SecretBroker, SecretCipher } from '../../src/extension-runtime/secrets.js';
 import { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { createOpsHandler } from '../../src/lambda/ops.js';
 import { IngressLimiter } from '../../src/webhooks/limiter.js';
 import { Webhooks } from '../../src/webhooks/service.js';
 import { ChangeMaintenance } from '../../src/worker/changes.js';
@@ -156,6 +159,7 @@ async function setup(
     rateLimit?: number;
     activate?: boolean;
     optionalHooks?: boolean;
+    writerBuild?: string;
     beforeVerify?: (context: {
       app: ReturnType<typeof startTestApp>;
       id: string;
@@ -181,7 +185,12 @@ async function setup(
   const setupRegistry = new ExecutionRegistry(
     executables.map((entry) => ({ ...entry, releaseDigest: setupRelease.digest })),
   );
-  const base = startTestApp(db);
+  const hostedDb = {
+    ...db,
+    connect: (args: Parameters<typeof db.connect>[0]) =>
+      db.connect({ ...args, writerBuild: options.writerBuild }),
+  };
+  const base = startTestApp(hostedDb);
   const hooks = new Webhooks({
     sql: base.sql,
     catalog: setupCatalog,
@@ -191,7 +200,7 @@ async function setup(
     publicOrigin: 'http://retainer.test',
     rateLimit: options.rateLimit,
   });
-  const app = startTestApp(db, {
+  const app = startTestApp(hostedDb, {
     extensionCatalog: setupCatalog,
     extensionActivation: new Set([setupRelease.digest]),
     extensionSecrets: broker,
@@ -287,6 +296,7 @@ async function setup(
   return {
     app,
     hooks,
+    catalog: setupCatalog,
     workspace: workspace.id,
     keys,
     id,
@@ -303,6 +313,92 @@ async function setup(
 }
 
 describe('verified public ingress with real Postgres', () => {
+  it('waits for an admitted callback and preserves one queued job across the writer cutover', async () => {
+    const oldBuild = 'a'.repeat(40);
+    const candidate = 'b'.repeat(40);
+    const h = await setup({ writerBuild: oldBuild });
+    const config = loadConfig({ DATABASE_URL: db.url, LOG_LEVEL: 'error' });
+    const oldOps = createOpsHandler(config, oldBuild);
+    const nextOps = createOpsHandler(config, candidate);
+    const open = await oldOps({
+      command: 'writer-admission-open',
+      protocol: 1,
+      candidate: oldBuild,
+    });
+    if (!('generation' in open) || !open.generation) throw new Error('missing writer generation');
+    const ownership = { generation: open.generation, deployment: randomUUID(), candidate };
+    const close = () =>
+      nextOps({
+        command: 'writer-admission-close',
+        protocol: 1,
+        ownership,
+        expectedBuilds: [oldBuild],
+        timed: false,
+      });
+    let enter = () => {},
+      resume = () => {};
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    const paused = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    verify = async (...args) => {
+      enter();
+      await paused;
+      return normal(...args);
+    };
+    // Hosted HTTP admission holds the invocation lease during verification,
+    // before the database transaction that creates the receipt and job.
+    const lease = await acquireWriterLease(h.app.sql, 30_000);
+    const pending = Promise.resolve(h.send('admitted-before-cutover'));
+    try {
+      await Promise.race([
+        entered,
+        pending.then((response) => {
+          throw new Error(`Callback exited before verification (${response.status})`);
+        }),
+      ]);
+      await expect(close()).resolves.toMatchObject({ phase: 'busy' });
+      resume();
+      expect((await pending).status).toBe(202);
+      expect((await h.send('admitted-before-cutover')).status).toBe(202);
+      await releaseWriterLease(h.app.sql, lease);
+      await expect(close()).resolves.toMatchObject({ phase: 'closed' });
+      await expect(acquireWriterLease(h.app.sql, 1000)).rejects.toThrow('writer admission denied');
+      const jobs = await db.owner<{ job_id: string }[]>`
+        select job_id from webhook_receipts where workspace_id = ${h.workspace}`;
+      expect(jobs).toHaveLength(1);
+      const jobId = jobs[0]?.job_id;
+      if (!jobId) throw new Error('accepted callback has no durable job');
+      await nextOps({ command: 'migrate', writerAdmission: ownership });
+      await expect(
+        nextOps({ command: 'writer-admission-open', protocol: 1, candidate, ownership }),
+      ).resolves.toMatchObject({ phase: 'open' });
+      await expect(
+        nextOps({ command: 'writer-admission-status', protocol: 1 }),
+      ).resolves.toMatchObject({ phase: 'open', builds: [candidate] });
+      await expect(acquireWriterLease(h.app.sql, 1000)).rejects.toThrow('writer admission denied');
+      const nextQueue = new ExtensionQueue(
+        db.connect({ role: RUNTIME_ROLE, writerBuild: candidate }),
+        h.catalog.runtime,
+      );
+      const job = await nextQueue.claim(h.workspace, jobId, 'resumed-executor');
+      if (!job) throw new Error('accepted webhook could not be resumed');
+      await nextQueue.complete(job, { status: 'succeeded' });
+      expect(await nextQueue.claim(h.workspace, jobId, 'retry-executor')).toBeNull();
+      expect(await db.owner`select status from extension_attempts where job_id = ${jobId}`).toEqual(
+        [{ status: 'succeeded' }],
+      );
+    } finally {
+      resume();
+      await pending.catch(() => {});
+      await db.owner`update retainer_deploy.admission set generation = null, deployment = null,
+        candidate = null, closed_at = null, builds = '{}' where singleton`;
+      await releaseWriterLease(h.app.sql, lease);
+    }
+  });
+
   it('refuses callbacks for a release without a deployed executable before verifier execution', async () => {
     const h = await setup();
     const undeployed = new Webhooks({
