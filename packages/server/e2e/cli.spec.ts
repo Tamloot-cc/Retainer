@@ -41,11 +41,18 @@ test('the CLI logs in through loopback, elevates and records schema approval in 
     >`select id, slug from workspaces`;
     if (!workspace) throw new Error('the workspace did not initialize');
 
+    const declined = await run<{ id: string; url: string }>(['login'], 6);
+    await page.goto(declined.url);
+    await page.getByRole('button', { name: 'Deny', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Connection denied' })).toBeVisible();
+    await expect(run(['wait', declined.id], 7)).resolves.toMatchObject({ status: 'denied' });
+
     const login = await run<{ id: string; url: string }>(['login'], 6);
     await page.goto(login.url);
-    await expect(page.getByRole('heading', { name: /Connect the Retainer CLI on/ })).toBeVisible();
-    await page.getByRole('button', { name: 'Allow', exact: true }).click();
-    await expect(page.getByText('Retainer CLI is connected.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Connect the Retainer CLI' })).toBeVisible();
+    await expect(page.getByText('cli-owner@example.test')).toBeVisible();
+    await page.getByRole('button', { name: 'Allow connection' }).click();
+    await expect(page.getByRole('heading', { name: 'Retainer CLI is connected' })).toBeVisible();
     await expect(run(['wait', login.id])).resolves.toMatchObject({ status: 'done' });
     expect((await stat(join(config, 'retainer', 'credentials.json'))).mode & 0o777).toBe(0o600);
     await expect(run(['whoami', '--workspace', workspace.slug])).resolves.toMatchObject({
