@@ -2,7 +2,11 @@ import { fileURLToPath } from 'node:url';
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator';
 import { loadConfig, ownerDatabaseUrl } from '../config.js';
 import { createSql, type Sql } from './client.js';
-import { inspectRestrictedIndexes, type RestrictedIndexJournal } from './restricted-indexes.js';
+import {
+  inspectOnlineTables,
+  inspectRestrictedIndexes,
+  type RestrictedIndexJournal,
+} from './restricted-indexes.js';
 import type { Tx } from './tx.js';
 import { WRITER_CONTROL_LOCK } from './writer-lease.js';
 
@@ -95,6 +99,42 @@ export async function restrictedIndexStatus(sql: Tx, folder = migrationsFolder) 
       )
     )?.plan ?? null
   );
+}
+
+export async function onlineTableStatus(sql: Tx, folder = migrationsFolder) {
+  return (
+    (await inspectOnlineTables(sql, readMigrationFiles({ migrationsFolder: folder }), EXTENSIONS))
+      ?.plan ?? null
+  );
+}
+
+/** Apply an exact, previously reviewed journal while the current build serves. */
+export async function applyOnlineTables(
+  sql: Tx,
+  expected: RestrictedIndexJournal,
+  folder = migrationsFolder,
+): Promise<void> {
+  await sql`set local lock_timeout to '250ms'`;
+  await sql`set local statement_timeout to '2s'`;
+  const inspected = await inspectOnlineTables(
+    sql,
+    readMigrationFiles({ migrationsFolder: folder }),
+    EXTENSIONS,
+  );
+  if (
+    !inspected ||
+    inspected.plan.appliedDigest !== expected.appliedDigest ||
+    inspected.plan.pending.length !== expected.pending.length ||
+    inspected.plan.pending.some((hash, index) => hash !== expected.pending[index])
+  )
+    throw new Error('The online table journal no longer matches the approved plan.');
+
+  // An unqualified CREATE TABLE targets public. PostgreSQL still searches
+  // pg_catalog first for types because it is implicit.
+  await sql`set local search_path to public`;
+  await applyJournalEntries(sql, inspected.pending);
+  await sql`select retainer_deploy.install_guards()`;
+  await sql`set local search_path to default`;
 }
 
 /** The deployment owns this transaction before applying any reviewed SQL. */
