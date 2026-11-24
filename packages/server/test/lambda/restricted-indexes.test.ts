@@ -93,7 +93,18 @@ it('adds an independent table while the serving generation stays open', async ()
     scopes: ['read', 'write'],
   });
   const old = createApp({ sql: database.connect({ role: RUNTIME_ROLE, writerBuild: previous }) });
-  await ownership();
+  const { generation } = await ownership();
+  const earlier = 'c'.repeat(40);
+  const earlierOps = createOpsHandler(
+    loadConfig({ DATABASE_URL: database.url, LOG_LEVEL: 'error' }),
+    earlier,
+  );
+  await expect(
+    earlierOps({ command: 'writer-admission-enroll', protocol: 1, generation, candidate: earlier }),
+  ).resolves.toMatchObject({ phase: 'open' });
+  const earlierApp = createApp({
+    sql: database.connect({ role: RUNTIME_ROLE, writerBuild: earlier }),
+  });
   const status = await ops({ command: 'online-table-status', protocol: 1 });
   if (status.command !== 'online-table-status' || !status.journal)
     throw new Error('Expected an approved table journal');
@@ -101,9 +112,13 @@ it('adds an independent table while the serving generation stays open', async ()
     command: 'migrate-online-tables',
     protocol: 1,
     servingBuild: previous,
+    admittedBuilds: [earlier, previous],
     journal: status.journal,
   } as const;
   await expect(ops({ ...request, servingBuild: candidate })).rejects.toThrow(
+    'verified serving build',
+  );
+  await expect(ops({ ...request, admittedBuilds: undefined })).rejects.toThrow(
     'verified serving build',
   );
   await expect(relation()).resolves.toBeNull();
@@ -112,16 +127,20 @@ it('adds an independent table while the serving generation stays open', async ()
     await expect(ops(request)).rejects.toMatchObject({ code: '55P03' });
   });
   await expect(relation()).resolves.toBeNull();
-  const [migration, write] = await Promise.all([
-    ops(request),
-    old.request('/v1/objects/person/records', {
+  const write = (app: typeof old, name: string) =>
+    app.request('/v1/objects/person/records', {
       method: 'POST',
       headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ values: { name: 'Written through the old build' } }),
-    }),
+      body: JSON.stringify({ values: { name } }),
+    });
+  const [migration, currentWrite, earlierWrite] = await Promise.all([
+    ops(request),
+    write(old, 'Written through the serving build'),
+    write(earlierApp, 'Written through the earlier admitted build'),
   ]);
   expect(migration).toMatchObject({ command: request.command, writerBuild: candidate });
-  expect(write.status).toBe(201);
+  expect(currentWrite.status).toBe(201);
+  expect(earlierWrite.status).toBe(201);
   await expect(relation()).resolves.not.toBeNull();
   await expect(ops(request)).rejects.toThrow('no longer matches the approved plan');
 });
@@ -130,6 +149,35 @@ it('excludes indexes from the online table path', async () => {
   const { ops } = await fixture(index);
   await expect(ops({ command: 'online-table-status', protocol: 1 })).resolves.toMatchObject({
     journal: null,
+  });
+});
+
+it('rolls back approved online SQL when it exposes a pending workspace upgrade', async () => {
+  const { database, ops, ownership, relation } = await fixture(independentTable);
+  const workspace = await createWorkspace(database.owner, {
+    name: 'Pending upgrade',
+    template: 'starter',
+  });
+  await database.owner`update workspaces set definitions_digest = null where id = ${workspace.id}`;
+  await ownership();
+  const status = await ops({ command: 'online-table-status', protocol: 1 });
+  if (status.command !== 'online-table-status' || !status.journal)
+    throw new Error('Expected an approved table journal');
+  await expect(
+    ops({
+      command: 'migrate-online-tables',
+      protocol: 1,
+      servingBuild: previous,
+      journal: status.journal,
+    }),
+  ).rejects.toThrow('Additional migration work requires a stopped deployment');
+  await expect(relation()).resolves.toBeNull();
+  await expect(ops({ command: 'online-table-status', protocol: 1 })).resolves.toMatchObject({
+    journal: status.journal,
+  });
+  await expect(ops({ command: 'writer-admission-status', protocol: 1 })).resolves.toMatchObject({
+    phase: 'open',
+    builds: [previous],
   });
 });
 
