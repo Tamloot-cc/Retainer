@@ -123,11 +123,17 @@ const moved = extensionFixture({
   ],
   views: [{ universalId: viewId, binding: 'company', name: 'Moved', kind: 'table', fields: [] }],
 });
+// A release published before descriptions were required, as the catalog retains it.
+const undescribed = {
+  ...base,
+  version: '0.9.0',
+  bindings: [ownedTestObject({ ...item, fields: [title, { ...status, description: undefined }] })],
+};
 let t: TestApp;
 beforeAll(() => {
   t = startTestApp(db, {
     extensionCatalog: new ExtensionCatalog(
-      [base, next, bad, grant, renamed, reviewed, moved].map((manifest) => ({
+      [undescribed, base, next, bad, grant, renamed, reviewed, moved].map((manifest) => ({
         manifest,
         actorCeiling: 'integration',
       })),
@@ -196,6 +202,24 @@ describe('additive extension upgrades', () => {
       }),
     ]);
     expect((await sdk.extension(installed.id)).version).toBe('1.0.0');
+  });
+  it('plans no new install or downgrade from a release without descriptions', async () => {
+    const { sdk, installed, input } = await setup();
+    await expect(
+      sdk.previewExtension({ ...input, installationId: installed.id, version: '0.9.0' }),
+    ).rejects.toMatchObject({ code: 'release_retired' });
+    const { keys } = await t.setupWorkspace(
+      { name: `Fresh install ${randomUUID()}` },
+      { admin: { actor: { type: 'user', id: 'admin' }, scopes: ['admin'] } },
+    );
+    const fresh = new RetainerClient({
+      baseUrl: 'http://retainer.test/',
+      apiKey: keys.admin,
+      fetch: t.inProcessFetch,
+    });
+    await expect(fresh.previewExtension({ ...input, version: '0.9.0' })).rejects.toMatchObject({
+      code: 'release_retired',
+    });
   });
   it('keeps a workspace label over a publisher label change and updates only the base', async () => {
     const { sdk, installed, input } = await setup();

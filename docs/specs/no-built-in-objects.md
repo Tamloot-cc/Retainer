@@ -314,7 +314,9 @@ bindings: [
   non-empty `description`. The configure model reads the binding field's
   description to choose a destination, and the description of a created
   object or field becomes part of the workspace schema that agents and later
-  configure runs read. The format refuses a manifest without them.
+  configure runs read. The format refuses a manifest without them. A catalog
+  still loads an older release published before this rule, for installations
+  already on it, but refuses to plan a new install or downgrade from it.
 - `values` lists the extension's own values for a select. The installation
   maps each to an option of the chosen field (§5.3).
 - `target` makes a relation point at the object bound to another binding.

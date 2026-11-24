@@ -462,6 +462,11 @@ export class Extensions {
     >`select * from extension_installations where registration_id = ${input.registrationId}`;
     if (input.installationId && (!existing || existing.id !== input.installationId))
       throw notFound('extension installation');
+    if (this.catalog.isUndescribed(release.digest) && existing?.release_digest !== release.digest)
+      throw conflict(
+        'release_retired',
+        'this release predates required binding descriptions; install the newest release',
+      );
     if (
       existing?.state === 'configuring' &&
       (!input.turnOn ||
