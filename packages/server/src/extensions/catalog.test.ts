@@ -77,6 +77,39 @@ describe('release-owned catalog', () => {
     expect(listed?.digest).toBe(hash(exact));
     expect(listed?.manifest).not.toHaveProperty('serverRange');
   });
+  it('holds the newest release to required descriptions and loads older ones as published', () => {
+    const binding = {
+      key: 'order',
+      label: 'Orders',
+      description: 'Orders tracked by the app.',
+      class: 'entity' as const,
+      access: 'read' as const,
+      required: true,
+      fields: [{ key: 'orderId', label: 'Order ID', types: ['text' as const], required: true }],
+    };
+    const older = { ...manifest(), bindings: [binding] };
+    const newer = {
+      ...older,
+      version: '1.1.0',
+      bindings: [
+        { ...binding, fields: [{ ...binding.fields[0], description: "The order's ID." }] },
+      ],
+    };
+    const load = (...releases: object[]) =>
+      parseExtensionCatalog(
+        JSON.stringify(
+          releases.map((release) => ({ manifest: release, actorCeiling: 'integration' })),
+        ),
+      ).list();
+    const listed = load(older, newer).find((release) => release.manifest.version === '1.0.0');
+    expect(listed?.digest).toBe(hash(older));
+    expect(listed?.manifest.bindings?.[0]?.fields[0]).not.toHaveProperty('description');
+    expect(() => load(older)).toThrow('describe orderId in binding order');
+    // A higher release this server can't run leaves the older one the newest offered.
+    const { serverVersions: _, ...unversioned } = newer;
+    const incompatible = { ...unversioned, version: '2.0.0', serverRange: '>=99.0.0 <100.0.0' };
+    expect(() => load(older, incompatible)).toThrow('describe orderId in binding order');
+  });
   it("finds a run's release by digest, and answers a release it lacks with a retryable 503", () => {
     const m = manifest();
     const catalog = new ExtensionCatalog([{ manifest: m, actorCeiling: 'integration' }]);

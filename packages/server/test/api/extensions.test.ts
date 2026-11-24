@@ -30,7 +30,13 @@ const manifest = defineExtension({
   settings: { enabled: { type: 'boolean', label: 'Enabled', required: true } },
   bindings: [
     ownedTestFields('company', 'Companies', [
-      { universalId: fieldId, name: 'fixtureStatus', label: 'Fixture status', type: 'text' },
+      {
+        description: 'Fixture description.',
+        universalId: fieldId,
+        name: 'fixtureStatus',
+        label: 'Fixture status',
+        type: 'text',
+      },
     ]),
   ],
   views: [

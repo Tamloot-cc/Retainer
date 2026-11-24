@@ -445,14 +445,14 @@ payloads pass; raw-body tampering, mismatched signed event IDs and another
 release digest are refused. The test uses only disposable synthetic signing
 material and never reaches a provider account.
 
-## Company enrichment bundle
+## Exa enrichment bundle
 
 The artifact builder also emits `artifacts/extensions/enrichment/`. Build the
 Node 24 runner image with that directory's digest and `BUNDLE_ID=enrichment`,
 and select its catalog and executables as for Granola. It has no webhook
 verifier. Exa requests go to `api.exa.ai` over HTTPS. Set `EXA_API_KEY` in the
 Compose operator environment before starting the launcher. The launcher passes
-it only to Company Enrichment job containers. On the hosted service, Retainer
+it only to Exa Enrichment job containers. On the hosted service, Retainer
 configures the key on the dedicated enrichment Lambda and covers Exa usage.
 
 A workspace admin approves sending company names and websites, and people's

@@ -462,6 +462,20 @@ export class Extensions {
     >`select * from extension_installations where registration_id = ${input.registrationId}`;
     if (input.installationId && (!existing || existing.id !== input.installationId))
       throw notFound('extension installation');
+    // A release from before binding descriptions were required keeps running
+    // where it is installed, but nothing new is planned from it.
+    const retired = () =>
+      conflict(
+        'release_retired',
+        'this release predates required binding descriptions; install the newest release',
+      );
+    const undescribed = this.catalog.isUndescribed(release.digest);
+    if (
+      undescribed &&
+      (existing?.release_digest !== release.digest ||
+        ['configuring', 'uninstalled'].includes(existing.state))
+    )
+      throw retired();
     if (
       existing?.state === 'configuring' &&
       (!input.turnOn ||
@@ -716,6 +730,11 @@ export class Extensions {
       ? resolveBindingPlan(current, manifest, choices, existing?.bindings, people)
       : undefined;
     const operations = bound?.operations ?? [];
+    if (
+      undescribed &&
+      operations.some((op) => op.op === 'create_object' || op.op === 'create_field')
+    )
+      throw retired();
     const bindingNotices = bound?.notices ?? [];
     const planned = planSchemaChange(current, operations, 'workspace');
     if (bound && operations.length) {

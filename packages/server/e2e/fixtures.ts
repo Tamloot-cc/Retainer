@@ -49,6 +49,7 @@ export const browserExtensionManifest = manifestFixture({
   bindings: [
     ownedTestFields('company', 'Companies', [
       {
+        description: 'Fixture description.',
         universalId: '2384b956-709d-4edc-8aab-807c51027565',
         name: 'fixtureStatus',
         label: 'Fixture status',
@@ -78,7 +79,14 @@ export const browserMappingManifest = manifestFixture({
       access: 'write',
       required: true,
       fields: [
-        { key: 'domain', label: 'Domain', types: ['links'], required: true, lookup: true },
+        {
+          description: 'Fixture description.',
+          key: 'domain',
+          label: 'Domain',
+          types: ['links'],
+          required: true,
+          lookup: true,
+        },
         {
           key: 'employee_count',
           label: 'Employee count',
@@ -86,6 +94,7 @@ export const browserMappingManifest = manifestFixture({
           types: ['number'],
           description: 'Employees the provider finds, mostly from public profiles.',
           create: {
+            description: 'Fixture description.',
             universalId: '7d1a4c55-2b8e-4f0a-9c63-5e8f1a2b3c4d',
             name: 'employeeCount',
             label: 'Employee Count',
@@ -106,7 +115,7 @@ export const browserMappingManifest = manifestFixture({
 /** Exa's full field list, without a live provider connection. */
 export const browserExaMappingManifest = manifestFixture({
   universalId: ENRICHMENT.registration,
-  name: 'company-enrichment',
+  name: 'exa-enrichment',
   requestedActor: 'agent',
   scopes: ['read', 'write'],
   bindings: ENRICHMENT_BINDINGS,

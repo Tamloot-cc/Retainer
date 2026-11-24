@@ -226,7 +226,7 @@ calls Tamloot. Code: `packages/runner/src/tamloot-configure.ts`.
     key: 'meeting' | 'task' | 'person';
     label: string; description: string; required: boolean;
     fields: {                        // title, status, person; name, emails
-      key: string; label: string; description?: string;
+      key: string; label: string; description: string;
       types: FieldType[]; required: boolean;
       values?: string[];             // status: ['open', 'done']
       target?: string;               // task.person targets 'person'

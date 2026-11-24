@@ -107,6 +107,7 @@ export const TAMLOOT_BINDINGS: ExtensionBinding[] = [
       namePlural: 'meetings',
       labelSingular: 'Meeting',
       labelPlural: 'Meetings',
+      description: 'Meetings recorded in Tamloot, with their notes and participants.',
       fields: [],
     },
   },
@@ -122,6 +123,7 @@ export const TAMLOOT_BINDINGS: ExtensionBinding[] = [
       {
         key: 'title',
         label: 'Title',
+        description: 'The action item, in a short sentence.',
         types: ['text'],
         required: true,
         create: {
@@ -129,12 +131,14 @@ export const TAMLOOT_BINDINGS: ExtensionBinding[] = [
           name: 'title',
           label: 'Title',
           type: 'text',
+          description: 'What needs to be done.',
           isNullable: false,
         },
       },
       {
         key: 'status',
         label: 'Status',
+        description: 'Whether the action item is open or done.',
         types: ['select'],
         required: true,
         values: ['open', 'done'],
@@ -143,6 +147,7 @@ export const TAMLOOT_BINDINGS: ExtensionBinding[] = [
           name: 'status',
           label: 'Status',
           type: 'select',
+          description: 'Whether the task is still open or done.',
           isNullable: false,
           settings: {
             options: [
@@ -164,6 +169,7 @@ export const TAMLOOT_BINDINGS: ExtensionBinding[] = [
           name: 'person',
           label: 'Person',
           type: 'relation',
+          description: 'The contact the task concerns.',
         },
       },
     ],
@@ -173,6 +179,7 @@ export const TAMLOOT_BINDINGS: ExtensionBinding[] = [
       namePlural: 'tasks',
       labelSingular: 'Task',
       labelPlural: 'Tasks',
+      description: 'Action items from meetings.',
       labelField: 'title',
       fields: [],
     },
@@ -189,6 +196,7 @@ export const TAMLOOT_BINDINGS: ExtensionBinding[] = [
       {
         key: 'name',
         label: 'Name',
+        description: "A meeting participant's full name.",
         types: ['full_name', 'text'],
         required: false,
         create: {
@@ -196,11 +204,13 @@ export const TAMLOOT_BINDINGS: ExtensionBinding[] = [
           name: 'name',
           label: 'Name',
           type: 'full_name',
+          description: "The person's full name.",
         },
       },
       {
         key: 'emails',
         label: 'Emails',
+        description: "A meeting participant's email addresses, used to match them to a person.",
         types: ['emails'],
         required: true,
         create: {
@@ -208,6 +218,7 @@ export const TAMLOOT_BINDINGS: ExtensionBinding[] = [
           name: 'emails',
           label: 'Emails',
           type: 'emails',
+          description: "The person's email addresses.",
         },
       },
     ],
@@ -217,6 +228,7 @@ export const TAMLOOT_BINDINGS: ExtensionBinding[] = [
       namePlural: 'people',
       labelSingular: 'Person',
       labelPlural: 'People',
+      description: 'People the workspace works with.',
       labelField: 'name',
       fields: [],
     },

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+  compareVersions,
   defineExtension,
   type ExtensionManifest,
   runsHostedCode,
@@ -25,14 +26,38 @@ export class ExtensionCatalog {
   private readonly releases = new Map<string, ReviewedRelease & { digest: string }>();
   /** The same releases by digest, which identifies a release across registrations. */
   private readonly digests = new Map<string, ReviewedRelease & { digest: string }>();
+  /** Releases that predate required descriptions: they run only where installed. */
+  private readonly undescribed = new Set<string>();
   constructor(releases: readonly ReviewedRelease[] = []) {
     const actors = new Map<string, string>();
     const connections = new Map<string, string>();
     const locators = new Map<string, string>();
     const clients = new Map<string, string>(),
       clientOwners = new Map<string, string>();
-    for (const release of releases) {
-      const manifest = defineExtension(release.manifest);
+    const loaded = releases.map((release) => ({
+      release,
+      manifest: defineExtension(release.manifest, { retained: true }),
+    }));
+    const newest = new Map<string, string>();
+    for (const { manifest } of loaded) {
+      // A release this server can't run is never offered, so it isn't the newest.
+      if (!supportsServer(manifest, VERSION)) continue;
+      const prior = newest.get(manifest.universalId);
+      if (!prior || compareVersions(manifest.version, prior) > 0)
+        newest.set(manifest.universalId, manifest.version);
+    }
+    for (const { release, manifest: retained } of loaded) {
+      let manifest = retained,
+        described = true;
+      try {
+        manifest = defineExtension(release.manifest);
+      } catch (error) {
+        // New installs and upgrades get a registration's newest release this
+        // server runs, so it meets every rule. Older releases that
+        // installations still run may predate required descriptions.
+        if (newest.get(retained.universalId) === retained.version) throw error;
+        described = false;
+      }
       const connection = connections.get(manifest.universalId);
       if (connection && connection !== manifest.connection)
         throw new Error('registration connection mode cannot change across releases');
@@ -68,6 +93,7 @@ export class ExtensionCatalog {
       const key = `${manifest.universalId}:${manifest.version}`;
       if (this.releases.has(key)) throw new Error('duplicate or mutable extension release');
       const entry = structuredClone({ ...release, manifest, digest: hash(manifest) });
+      if (!described) this.undescribed.add(entry.digest);
       this.releases.set(key, entry);
       this.digests.set(entry.digest, entry);
     }
@@ -95,6 +121,14 @@ export class ExtensionCatalog {
     return [...this.releases.values()]
       .filter((r) => supportsServer(r.manifest, VERSION))
       .map((r) => structuredClone(r));
+  }
+  /**
+   * Whether a release was published before descriptions were required. It
+   * keeps running for installations already on it, but schema can't be newly
+   * planned from it.
+   */
+  isUndescribed(digest: string) {
+    return this.undescribed.has(digest);
   }
   /** The release if this catalog still holds it, for reads that must survive its removal. */
   find(id: string, version: string) {
@@ -178,7 +212,8 @@ export function parseExtensionCatalog(raw?: string): ExtensionCatalog {
         )
           return [];
       }
-      return [{ ...entry, manifest: defineExtension(manifest) }];
+      // The catalog holds each registration's newest release to every rule.
+      return [{ ...entry, manifest: defineExtension(manifest, { retained: true }) }];
     }),
   );
 }

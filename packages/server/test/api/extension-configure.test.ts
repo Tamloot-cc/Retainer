@@ -67,7 +67,15 @@ const mapped = extensionFixture({
       class: 'entity',
       access: 'write',
       required: true,
-      fields: [{ key: 'company_name', label: 'Company name', types: ['text'], required: true }],
+      fields: [
+        {
+          description: 'Fixture description.',
+          key: 'company_name',
+          label: 'Company name',
+          types: ['text'],
+          required: true,
+        },
+      ],
     },
   ],
 });

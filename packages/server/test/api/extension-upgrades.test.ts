@@ -15,14 +15,27 @@ const registrationId = randomUUID(),
   newFieldId = randomUUID(),
   viewId = randomUUID();
 const managedViewId = deriveUuid(`${viewId}:${objectId}`);
-const title = { universalId: titleId, name: 'name', label: 'Name', type: 'text' as const };
-const status = { universalId: fieldId, name: 'status', label: 'Status', type: 'text' as const };
+const title = {
+  universalId: titleId,
+  name: 'name',
+  label: 'Name',
+  type: 'text' as const,
+  description: 'Fixture description.',
+};
+const status = {
+  universalId: fieldId,
+  name: 'status',
+  label: 'Status',
+  type: 'text' as const,
+  description: 'Fixture description.',
+};
 const item = {
   universalId: objectId,
   nameSingular: 'fixtureItem',
   namePlural: 'fixtureItems',
   labelSingular: 'Fixture item',
   labelPlural: 'Fixture items',
+  description: 'Fixture description.',
   labelField: 'name',
   fields: [title, status],
 };
@@ -51,7 +64,13 @@ const next = extensionFixture({
       ...item,
       fields: [
         ...item.fields,
-        { universalId: newFieldId, name: 'extra', label: 'Extra', type: 'text' },
+        {
+          description: 'Fixture description.',
+          universalId: newFieldId,
+          name: 'extra',
+          label: 'Extra',
+          type: 'text',
+        },
       ],
     }),
   ],
@@ -104,16 +123,21 @@ const moved = extensionFixture({
   ],
   views: [{ universalId: viewId, binding: 'company', name: 'Moved', kind: 'table', fields: [] }],
 });
+// A release published before descriptions were required, as the catalog retains it.
+const undescribed = {
+  ...base,
+  version: '0.9.0',
+  bindings: [ownedTestObject({ ...item, fields: [title, { ...status, description: undefined }] })],
+};
+const catalog = new ExtensionCatalog(
+  [undescribed, base, next, bad, grant, renamed, reviewed, moved].map((manifest) => ({
+    manifest,
+    actorCeiling: 'integration',
+  })),
+);
 let t: TestApp;
 beforeAll(() => {
-  t = startTestApp(db, {
-    extensionCatalog: new ExtensionCatalog(
-      [base, next, bad, grant, renamed, reviewed, moved].map((manifest) => ({
-        manifest,
-        actorCeiling: 'integration',
-      })),
-    ),
-  });
+  t = startTestApp(db, { extensionCatalog: catalog });
 });
 async function setup() {
   const { workspace, keys } = await t.setupWorkspace(
@@ -177,6 +201,47 @@ describe('additive extension upgrades', () => {
       }),
     ]);
     expect((await sdk.extension(installed.id)).version).toBe('1.0.0');
+  });
+  it('plans no new install or downgrade from a release without descriptions', async () => {
+    const { sdk, installed, input } = await setup();
+    await expect(
+      sdk.previewExtension({ ...input, installationId: installed.id, version: '0.9.0' }),
+    ).rejects.toMatchObject({ code: 'release_retired' });
+    const { keys } = await t.setupWorkspace(
+      { name: `Fresh install ${randomUUID()}` },
+      { admin: { actor: { type: 'user', id: 'admin' }, scopes: ['admin'] } },
+    );
+    const fresh = new RetainerClient({
+      baseUrl: 'http://retainer.test/',
+      apiKey: keys.admin,
+      fetch: t.inProcessFetch,
+    });
+    await expect(fresh.previewExtension({ ...input, version: '0.9.0' })).rejects.toMatchObject({
+      code: 'release_retired',
+    });
+  });
+  it('lets an installation on a release without descriptions run, but create no schema', async () => {
+    const { sdk, installed, input } = await setup();
+    // As if installed before descriptions were required.
+    const retired = catalog.find(registrationId, '0.9.0');
+    await db.owner`update extension_installations set version = '0.9.0',
+      release_digest = ${retired?.digest ?? ''} where id = ${installed.id}`;
+    const pinned = { ...input, installationId: installed.id, version: '0.9.0' };
+    await expect(sdk.previewExtension(pinned)).resolves.toMatchObject({ operations: [] });
+    await expect(
+      sdk.previewExtension({
+        ...pinned,
+        bindings: {
+          fixtureItem: {
+            action: 'existing',
+            objects: ['fixtureItem'],
+            fields: { status: { action: 'create', name: 'statusTwo' } },
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'release_retired' });
+    await db.owner`update extension_installations set state = 'uninstalled' where id = ${installed.id}`;
+    await expect(sdk.previewExtension(pinned)).rejects.toMatchObject({ code: 'release_retired' });
   });
   it('keeps a workspace label over a publisher label change and updates only the base', async () => {
     const { sdk, installed, input } = await setup();

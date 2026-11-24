@@ -73,7 +73,15 @@ const manifest = defineExtension({
       access: 'write',
       required: true,
       creates: true,
-      fields: [{ key: 'name', label: 'Name', types: ['text'], required: true }],
+      fields: [
+        {
+          key: 'name',
+          label: 'Name',
+          description: "The fixture company's name.",
+          types: ['text'],
+          required: true,
+        },
+      ],
     },
   ],
   views: [],
@@ -228,6 +236,7 @@ if (development) {
           {
             key: 'transcript',
             label: 'Transcript',
+            description: "The fixture meeting's transcript.",
             types: ['files'],
             required: false,
             create: {
@@ -235,6 +244,7 @@ if (development) {
               name: 'transcript',
               label: 'Transcript',
               type: 'files',
+              description: "The meeting's transcript, as a file.",
             },
           },
         ],
@@ -244,6 +254,8 @@ if (development) {
           namePlural: 'conversations',
           labelSingular: 'Conversation',
           labelPlural: 'Conversations',
+          description:
+            'Meetings, calls, emails and chats with the people the workspace works with.',
           fields: [],
         },
       },
@@ -425,7 +437,7 @@ writeGranola(
   })),
 );
 
-// Company enrichment through Exa. Its hosted bundle id is `enrichment`: hosted
+// Exa enrichment. Its hosted bundle id is `enrichment`: hosted
 // bundle names are limited to 12 characters.
 const enrichment = enrichmentManifest({
   version,

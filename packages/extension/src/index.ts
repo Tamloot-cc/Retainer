@@ -80,6 +80,7 @@ const field = z.strictObject({
   name,
   label,
   type: z.enum(FIELD_TYPES),
+  /** What the field holds. Required; see `checkDescriptions`. */
   description: z.string().max(2000).optional(),
   isNullable: z.boolean().optional(),
   isUnique: z.boolean().optional(),
@@ -107,6 +108,7 @@ const object = z.strictObject({
   labelSingular: label,
   labelPlural: label,
   class: z.enum(['entity', 'event']).optional(),
+  /** What the object's records are. Required; see `checkDescriptions`. */
   description: z.string().max(2000).optional(),
   labelField: name.optional(),
   fields: z.array(field).max(200),
@@ -230,6 +232,7 @@ const toolDefinition = functionDefinition
 const bindingFieldSchema = z.strictObject({
   key: bindingKeySchema,
   label,
+  /** What the extension writes or reads here. Required; see `checkDescriptions`. */
   description: z.string().max(2000).optional(),
   types: z.array(z.enum(FIELD_TYPES)).min(1).max(FIELD_TYPES.length),
   required: z.boolean(),
@@ -809,7 +812,44 @@ function checkConnections(manifest: ExtensionManifest): void {
   if (!connect || !handshake.every((key) => functionSecrets(manifest, connect).includes(key)))
     throw new Error('unsupported_manifest: the connect hook must declare the OAuth secrets');
 }
-export function defineExtension(value: unknown): ExtensionManifest {
+/** What a binding adds to a workspace's schema: its object and the fields it creates. */
+function createdSchema(binding: ExtensionBinding) {
+  return [
+    ...(binding.create ? [binding.create] : []),
+    ...binding.fields.flatMap((field) => (field.create ? [field.create] : [])),
+    ...(binding.create?.fields ?? []),
+  ];
+}
+
+/**
+ * Every binding field, and every object and field a binding creates, says what
+ * it holds. The configure model reads these descriptions to choose where each
+ * value goes, and agents read the created ones in the workspace schema.
+ */
+function checkDescriptions(manifest: ExtensionManifest): void {
+  for (const binding of manifest.bindings ?? [])
+    for (const item of [...binding.fields, ...createdSchema(binding)])
+      if (!item.description?.trim()) {
+        const name = 'key' in item ? item.key : 'name' in item ? item.name : item.nameSingular;
+        throw new Error(`unsupported_manifest: describe ${name} in binding ${binding.key}`);
+      }
+}
+
+/**
+ * Validates a release manifest. With `retained`, used for a catalog's older
+ * releases that installations still run, a release published before
+ * descriptions were required loads as it was published.
+ */
+export function defineExtension(
+  value: unknown,
+  options: { retained?: boolean } = {},
+): ExtensionManifest {
+  const manifest = validManifest(value);
+  if (!options.retained) checkDescriptions(manifest);
+  return manifest;
+}
+
+function validManifest(value: unknown): ExtensionManifest {
   bounded(value);
   if (new TextEncoder().encode(JSON.stringify(value)).length > 1048576)
     throw new Error('unsupported_manifest: maximum size is 1 MiB');
@@ -860,11 +900,9 @@ export function defineExtension(value: unknown): ExtensionManifest {
     manifest.universalId,
     ...manifest.functions.map((f) => f.universalId),
     ...manifest.views.map((v) => v.universalId),
-    ...(manifest.bindings ?? []).flatMap((binding) => [
-      ...(binding.create ? [binding.create.universalId] : []),
-      ...binding.fields.flatMap((field) => (field.create ? [field.create.universalId] : [])),
-      ...(binding.create?.fields.map((field) => field.universalId) ?? []),
-    ]),
+    ...(manifest.bindings ?? []).flatMap((binding) =>
+      createdSchema(binding).map((item) => item.universalId),
+    ),
   ];
   if (manifest.functions.some((fn) => fn.universalId === SYSTEM_LIFECYCLE_FUNCTION_ID))
     throw new Error('unsupported_manifest: reserved lifecycle function ID');

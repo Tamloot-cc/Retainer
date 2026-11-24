@@ -100,6 +100,7 @@ export function lastContactManifest(build: {
           {
             key: 'lastContact',
             label: 'Last contact',
+            description: 'When the record last had a qualifying event, such as a meeting or email.',
             types: ['date_time'],
             required: true,
             owned: true,

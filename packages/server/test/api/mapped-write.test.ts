@@ -21,7 +21,14 @@ const manifest = extensionFixture({
       access: 'write',
       required: true,
       fields: [
-        { key: 'domain', label: 'Domain', types: ['links'], required: true, lookup: true },
+        {
+          description: 'Fixture description.',
+          key: 'domain',
+          label: 'Domain',
+          types: ['links'],
+          required: true,
+          lookup: true,
+        },
         {
           key: 'employee_count',
           label: 'Employee count',
@@ -29,6 +36,7 @@ const manifest = extensionFixture({
           types: ['number'],
           required: false,
           create: {
+            description: 'Fixture description.',
             universalId: randomUUID(),
             name: 'employeeCount',
             label: 'Employee Count',
@@ -42,6 +50,7 @@ const manifest = extensionFixture({
           types: ['links'],
           required: false,
           create: {
+            description: 'Fixture description.',
             universalId: randomUUID(),
             name: 'linkedinUrl',
             label: 'LinkedIn URL',
@@ -49,6 +58,7 @@ const manifest = extensionFixture({
           },
         },
         {
+          description: 'Fixture description.',
           key: 'website',
           label: 'Website',
           types: ['links'],

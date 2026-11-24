@@ -203,7 +203,7 @@ describe('extension pages and human approval', () => {
         { ...release, manifest: { ...release.manifest, universalId: granola, name: 'granola' } },
         {
           ...release,
-          manifest: { ...release.manifest, universalId: exa, name: 'company-enrichment' },
+          manifest: { ...release.manifest, universalId: exa, name: 'exa-enrichment' },
         },
       ],
     });
@@ -216,7 +216,7 @@ describe('extension pages and human approval', () => {
     expect(within(installedCard).getByText('Granola')).toBeTruthy();
     expect(installedCard.getAttribute('href')).toBe('/extensions/installation');
     expect(installedCard.querySelector('img[alt=""]')?.getAttribute('src')).toContain('granola');
-    const setup = screen.getByRole('link', { name: 'Set up Exa' });
+    const setup = screen.getByRole('link', { name: 'Set up Exa Enrichment' });
     expect(setup.getAttribute('href')).toBe(`/extensions/new/${exa}`);
     expect(setup.closest('li')?.querySelector('img[alt=""]')?.getAttribute('src')).toContain('exa');
   });
@@ -236,7 +236,7 @@ describe('extension pages and human approval', () => {
           manifest: {
             ...release.manifest,
             universalId: '9796c2c7-46f3-4006-8f35-059d5ef3553e',
-            name: 'company-enrichment',
+            name: 'exa-enrichment',
           },
         },
       ],
@@ -250,7 +250,7 @@ describe('extension pages and human approval', () => {
     // Part of the card, not news: one per card must not each be a live region.
     expect(note.closest('[role="status"]')).toBeNull();
     // An extension that imports nothing has no such note.
-    const exa = screen.getByRole('link', { name: 'Set up Exa' }).closest('li');
+    const exa = screen.getByRole('link', { name: 'Set up Exa Enrichment' }).closest('li');
     expect(within(exa as HTMLElement).queryByText(/visible to everyone/)).toBeNull();
   });
   it('lets the admin choose what happens to source deletions and shows the choice on review', async () => {
