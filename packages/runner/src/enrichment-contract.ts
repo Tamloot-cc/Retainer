@@ -51,10 +51,9 @@ export const EXA_ORIGIN = 'https://api.exa.ai';
 
 /**
  * The model enrichment calls, for mapping suggestions and for picking the
- * search result (model calls spec 6.6). Revisit it against the domain set
- * before changing it, including `claude-haiku-5-5`.
+ * search result (model calls spec 6.6, 6.7).
  */
-export const ENRICHMENT_MODEL = 'claude-opus-5-5';
+export const ENRICHMENT_MODEL = 'claude-haiku-5-5';
 
 const text = (max: number) => z.string().max(max).nullable().optional();
 /** A property this adapter can do without: a malformed one reads as null instead of dropping the result. */

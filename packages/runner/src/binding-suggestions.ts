@@ -179,7 +179,11 @@ async function configureInput(
   };
 }
 
-const nullable = (type: Record<string, unknown>) => ({ anyOf: [type, { type: 'null' }] });
+/**
+ * A name the model may leave empty. Not nullable: structured output allows at
+ * most 16 union-typed properties, and the bindings can declare more.
+ */
+const optionalName = { type: 'string', description: 'An API name, or an empty string for none.' };
 /** A JSON schema object whose every property is required, as structured output needs. */
 const strict = (properties: Record<string, unknown>) => ({
   type: 'object',
@@ -196,7 +200,7 @@ export function answerSchema(bindings: ExtensionBinding[]) {
   const choice = (required: boolean, target: string, extra: Record<string, unknown>) =>
     strict({
       action: { type: 'string', enum: actions(required) },
-      [target]: nullable({ type: 'string' }),
+      [target]: optionalName,
       reason: { type: 'string' },
       ...extra,
     });
@@ -206,9 +210,7 @@ export function answerSchema(bindings: ExtensionBinding[]) {
       'field',
       rule.values
         ? {
-            values: strict(
-              Object.fromEntries(rule.values.map((value) => [value, nullable({ type: 'string' })])),
-            ),
+            values: strict(Object.fromEntries(rule.values.map((value) => [value, optionalName]))),
           }
         : {},
     );
@@ -232,13 +234,13 @@ export function answerSchema(bindings: ExtensionBinding[]) {
 const action = z.enum(['existing', 'create', 'skip']);
 const fieldAnswer = z.strictObject({
   action,
-  field: z.string().nullable(),
+  field: z.string(),
   reason: z.string(),
-  values: z.record(z.string(), z.string().nullable()).optional(),
+  values: z.record(z.string(), z.string()).optional(),
 });
 const bindingAnswer = z.strictObject({
   action,
-  object: z.string().nullable(),
+  object: z.string(),
   reason: z.string(),
   fields: z.record(z.string(), fieldAnswer).optional(),
 });

@@ -23,7 +23,7 @@ For each binding, choose one action:
 - "create": create the binding's own object. Prefer a clearly matching existing object over creating one, and create over a doubtful match.
 - "skip": write nothing. Allowed only for bindings that are not required, and only when the workspace clearly has no use for them.
 
-For an existing object, choose each binding field the same way: "existing" with a field's API name from that object's candidate fields, "create" to add the binding's own field, or "skip" when the field is not required and nothing fits. A relation field must point at the object you chose for the binding it targets. For a field with values, map each of the integration's values to one of the chosen field's option values, or null to keep the integration's own value.
+For an existing object, choose each binding field the same way: "existing" with a field's API name from that object's candidate fields, "create" to add the binding's own field, or "skip" when the field is not required and nothing fits. A relation field must point at the object you chose for the binding it targets. For a field with values, map each of the integration's values to one of the chosen field's option values, or leave it empty to keep the integration's own value.
 
 When the current bindings are given, keep them unless they look wrong.
 

@@ -301,7 +301,7 @@ describe('Tamloot configure through the real API, Postgres and model proxy', () 
           fields: {
             name: { action: 'existing', field: 'name', ...why('Same meaning.') },
             // A new `emails` field clashes with the contact's text field of that name.
-            emails: { action: 'create', field: null, ...why('No email field fits.') },
+            emails: { action: 'create', field: '', ...why('No email field fits.') },
           },
         },
       }),

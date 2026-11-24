@@ -639,6 +639,16 @@ Choices the enrichment release made where §6 left them open:
   can't take (an incompatible or missing field, or Create for an output with
   no suggested field) keeps the name-and-type suggestion for that output.
   Reasons are cut to 500 characters.
+- **Model (2026-11-24).** Enrichment moved from `claude-opus-5-5` to
+  `claude-haiku-5-5` for cost, without a run of the domain set. Haiku 5.5 has
+  no server-side fallback: it accepts `fallbacks: 'default'` but a refused
+  pick, such as for a security or biotech company, stays refused and ends
+  `no_match_model_refused`.
+- **Configure answer schema.** Structured output allows at most 16
+  union-typed properties, and the Companies and People bindings together have
+  about 25 choices whose target can be empty. Each target is a plain string,
+  empty for none, so the schema has no unions however many outputs a binding
+  declares.
 
 ### 6.8 People and destinations (enrichment v2)
 

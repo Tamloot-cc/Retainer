@@ -1,9 +1,11 @@
 import type { Invocation } from '@retainer/extension';
 import { RetainerClient } from '@retainer/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { answerSchema } from './binding-suggestions.js';
 import { executeEnrichment, lookUp, MEDIUM_CONFIDENCE } from './enrichment.js';
 import {
   ENRICHMENT,
+  ENRICHMENT_BINDINGS,
   ENRICHMENT_MODEL,
   enrichmentManifest,
   exaSearchRequest,
@@ -295,7 +297,7 @@ describe('the lookup (spec 6.3-6.5)', () => {
     });
     const [call] = f.calls.model;
     expect(call).toMatchObject({
-      model: 'claude-opus-5-5',
+      model: ENRICHMENT_MODEL,
       max_tokens: 4000,
       fallbacks: 'default',
       output_config: { effort: 'low', format: { type: 'json_schema' } },
@@ -515,7 +517,7 @@ describe('configure (spec 6.1, enrichment spec 7.4)', () => {
       run: () => executeEnrichment(invocation, new AbortController().signal, transport),
     };
   }
-  const pick = (action: string, field: string | null, reason = 'Because.') => ({
+  const pick = (action: string, field: string, reason = 'Because.') => ({
     action,
     field,
     reason,
@@ -547,15 +549,15 @@ describe('configure (spec 6.1, enrichment spec 7.4)', () => {
           domain: pick('existing', 'domain'),
           name: pick('existing', 'name'),
           employee_count: pick('existing', 'size'),
-          linkedin_url: pick('create', null),
-          headquarters: pick('skip', null),
+          linkedin_url: pick('create', ''),
+          headquarters: pick('skip', ''),
         },
         {
           name: pick('existing', 'fullName'),
           email: pick('existing', 'emails'),
           company: pick('existing', 'employer'),
           job_title: pick('existing', 'title'),
-          seniority: pick('skip', null),
+          seniority: pick('skip', ''),
         },
       ),
     );
@@ -669,6 +671,13 @@ describe('configure (spec 6.1, enrichment spec 7.4)', () => {
       },
     });
     expect(Object.keys((c.saved[0] as { bindings: object }).bindings)).toEqual(['company']);
+  });
+});
+
+describe('configure answer schema', () => {
+  it('has no union-typed property, however many outputs the bindings declare', () => {
+    // Structured output allows at most 16 union-typed properties.
+    expect(JSON.stringify(answerSchema(ENRICHMENT_BINDINGS))).not.toMatch(/"anyOf"|"type":\[/);
   });
 });
 
