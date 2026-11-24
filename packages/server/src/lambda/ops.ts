@@ -80,6 +80,10 @@ const opsEvent = z.discriminatedUnion('command', [
     command: z.literal('migrate-online-tables'),
     protocol: z.literal(1),
     servingBuild: z.string().regex(/^[0-9a-f]{40}$/),
+    admittedBuilds: z
+      .array(z.string().regex(/^[0-9a-f]{40}$/))
+      .min(1)
+      .optional(),
     journal: journalProof,
   }),
   z.strictObject({
@@ -298,8 +302,17 @@ export function createOpsHandler(
           if (!lock?.acquired) throw new Error('Writer admission is busy; retry online migration.');
           const [admission] = await tx`select builds from retainer_deploy.admission
             where singleton and generation is not null and closed_at is null`;
-          if (admission?.builds?.length !== 1 || admission.builds[0] !== command.servingBuild)
-            throw new Error('Online migration requires the verified serving build.');
+          const approvedBuilds = command.admittedBuilds ?? [command.servingBuild];
+          const approved = new Set(approvedBuilds);
+          if (
+            approved.size !== approvedBuilds.length ||
+            !approved.has(command.servingBuild) ||
+            admission?.builds?.length !== approved.size ||
+            !admission.builds.every((build: string) => approved.has(build))
+          )
+            throw new Error(
+              'Online migration requires the verified serving build and admitted builds.',
+            );
           await applyOnlineTables(tx, command.journal, restrictedFixtureFolder);
           if ((await otherStopReasons(config, tx as unknown as Sql)).length)
             throw new Error('Additional migration work requires a stopped deployment.');
