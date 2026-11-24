@@ -1,5 +1,5 @@
 import type { Sql } from '../db/client.js';
-import { lockSchemaShared, type Tx } from '../db/tx.js';
+import { lockPrivacyShared, lockSchemaShared, type Tx } from '../db/tx.js';
 import { getSchema } from '../schema/compiled.js';
 import type { FieldState } from '../schema/types.js';
 import { searchTextOf } from './derive.js';
@@ -67,12 +67,27 @@ export async function rebuildSearchText(sql: Sql, { batch = 500 } = {}): Promise
   }
 }
 
-async function rebuildBatch(tx: Tx, workspaceId: string, batch: number): Promise<number> {
+/** One resumable batch while the workspace keeps serving. Locked rows remain pending. */
+export async function backfillSearchTextBatch(tx: Tx, workspaceId: string, batch: number) {
+  await lockPrivacyShared(tx, workspaceId);
+  const rebuilt = await rebuildBatch(tx, workspaceId, batch, true);
+  const [remaining] = await tx<{ pending: boolean }[]>`
+    select exists(select 1 from records where workspace_id = ${workspaceId}
+      and search is null and merged_into_id is null) as pending`;
+  return { rebuilt, pending: remaining?.pending ?? true };
+}
+
+async function rebuildBatch(
+  tx: Tx,
+  workspaceId: string,
+  batch: number,
+  skipLocked = false,
+): Promise<number> {
   await lockSchemaShared(tx, workspaceId);
   const rows = await tx<{ id: string; object_type_id: string; data: Record<string, unknown> }[]>`
     select id, object_type_id, data from records
     where workspace_id = ${workspaceId} and search is null and merged_into_id is null
-    order by id limit ${batch} for update`;
+    order by id limit ${batch} for update ${skipLocked ? tx`skip locked` : tx``}`;
   if (rows.length === 0) return 0;
   const schema = await getSchema(tx, workspaceId);
   const byObject = new Map<string, (typeof rows)[number][]>();

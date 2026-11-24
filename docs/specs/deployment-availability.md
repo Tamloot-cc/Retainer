@@ -74,6 +74,15 @@ The production rollout of the tooling used the rolling code path without a maint
 
 Rolling releases can leave multiple builds admitted. An online approval covers every admitted build that could still write. The deployer checks the live set before calling ops and ops rechecks it inside the migration transaction. Single-build approvals keep their original format.
 
+The hosted ops command `backfill-search-text` repairs stale search vectors one
+workspace at a time. Pass `protocol: 1`, the `workspaceId`, and an optional
+`batch` of up to 100 records. Run it from the admitted serving build after the
+journal is current. Each invocation commits one batch. The result reports
+`rebuilt` and `pending`. Retry with a delay when `pending` is true, including
+when skipped row locks leave an empty batch. The normal record write path
+continues maintaining vectors throughout. The stopped migration path handles
+incompatible search changes.
+
 The 24 November follow-up rehearsal applied an independent table with two builds admitted and kept serving through the candidate rollout. The five-second migration phase overlapped three REST reads, three MCP reads, three writes, and two read-backs, all successful. Across the release, 150 REST reads, 151 MCP reads, and 151 writes with read-back succeeded. The routine canary was observed queued during the migration and completed in 26 seconds. The run had probe gaps and no signed-in browser session fixture.
 
 **Deliverable.** Introduce an opt-in online path. The current ops migrate command applies the Drizzle journal, extension bindings, database logins, search rebuilds and workspace upgrades in sequence. Its status command returns early on pending SQL. Implement a narrowly scoped online command that can apply exactly the reviewed migration set, then rerun full status on the resulting schema before enabling new behavior. An unexpected follow-up reason goes through the applicable restricted or stopped path. Invalid candidate history still fails preflight before any traffic change. [Ops commands](../../packages/server/src/lambda/ops.ts) · [Migration runner](../../packages/server/src/db/migrate.ts)
