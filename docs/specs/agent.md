@@ -301,7 +301,10 @@ need longer. Two ways for the caller to wait:
 
 1. **Bounded (first version).** `ai.agent` creates the task with a deadline
    inside the caller's own: the caller's time left minus 20 seconds. The SDK
-   polls the task until it ends. A task past its deadline ends as `expired`,
+   asks the API for the task's status every 2 seconds until it ends
+   (polling). Long polling, where the API holds the request open until the
+   task ends, was not chosen: on the hosted service each held request keeps
+   an `api` function busy doing nothing. A task past its deadline ends as `expired`,
    and the call throws `agent_timeout`. This covers lookups of a few searches
    and reads. Both the caller and the agent function run while it waits.
 2. **Suspend and resume (later).** `ai.agent` ends the caller's run as
@@ -373,24 +376,28 @@ groups, in the release. An admin approves it like `model`
 
 ## 8. Budgets and cost
 
-Every task has limits. A caller may pass lower ones. Proposed defaults and
-maximums:
+Every task has limits. A caller may pass lower ones. They start generous on
+purpose (decided 2026-11-25): a routine that hits a wall in its first weeks
+is worse than a few expensive tasks, and the numbers get tightened from real
+usage, not guessed in advance.
 
-| Limit                 | Default                       | Maximum                    | Why                                            |
-| --------------------- | ----------------------------- | -------------------------- | ---------------------------------------------- |
-| Turns                 | 8                             | 20                         | Bounds model calls per task                    |
-| Output per turn       | 4,096                         | 4,096                      | Same as a routine model call                   |
-| Client tool calls     | 20                            | 50                         | Bounds load on Retainer and on extension tools |
-| Web searches          | 4                             | 10                         | Each search has its own price                  |
-| Web fetches           | 4                             | 10                         | Bounds pages read into the context             |
-| Time                  | Caller's time left minus 20 s | 15 min, once resume exists | §5.4                                           |
-| Tasks per routine run | 3                             | 3                          | One run can't fan out                          |
+| Limit                             | Default                       | Maximum                    | Why                                               |
+| --------------------------------- | ----------------------------- | -------------------------- | ------------------------------------------------- |
+| Turns                             | 25                            | 100                        | Bounds model calls per task                       |
+| Output per turn                   | 8,192                         | 32,000                     | Room for thinking and long answers                |
+| Client tool calls                 | 100                           | 500                        | Bounds load on Retainer and on extension tools    |
+| Web searches                      | 20                            | 100                        | Each search has its own price                     |
+| Web fetches                       | 20                            | 100                        | Bounds pages read into the context                |
+| Time                              | Caller's time left minus 20 s | 15 min, once resume exists | §5.4                                              |
+| Tasks per routine run             | 10                            | 10                         | One run can't fan out without end                 |
+| Agent turns per workspace per day | 10,000                        | Set by the operator        | A safety net against a runaway loop, not a budget |
 
 - **Reserved before each turn, not counted after it.** As for routine model
   calls (`routines.md` §6.3), the API reserves each turn in one atomic step
-  against the task's turns, the caller's run cap and the workspace's day cap,
-  and only then returns a model token. A turn counts as one model call
-  toward the routine caps. Web searches are reserved with the turn, up to the
+  against the task's turns and the workspace's daily agent turns, and only
+  then returns a model token. Agent turns don't count toward a routine's
+  model call caps (`routines.md` §4.6), so a routine that uses the agent
+  doesn't run out of `ai.generate` calls. Web searches are reserved with the turn, up to the
   task's remaining searches, which the proxy passes as the tool's `max_uses`.
 - Extensions have no workspace spend cap today
   (`extensions-model-calls.md` §2). Their tasks are bounded per task only,
@@ -398,8 +405,10 @@ maximums:
 - **Usage.** `ai_usage` rows from the agent have `kind: 'agent'` and carry the
   task and its caller, so a routine's or an extension's cost includes its
   tasks. Web search counts are in the stored `usage` object already.
-- Self-hosted operators can change the maximums with environment variables,
-  as with `RETAINER_ROUTINE_MODEL_CALLS_PER_DAY`.
+- Self-hosted operators can change the maximums and the daily turns with
+  environment variables, as with `RETAINER_ROUTINE_MODEL_CALLS_PER_DAY`. On
+  the hosted service, the Anthropic workspace's monthly spend limit stays the
+  last backstop (`extensions-model-calls.md` §2).
 
 ## 9. Hidden instructions
 
@@ -414,7 +423,9 @@ version limits the parts it can:
    or `send` are not available to the agent. The caller's code reads the
    agent's answer and decides what to send, as it does after `ai.generate`.
 2. **Retainer writes stay inside the workspace**, at agent rank, citing the
-   task. A person's values are never replaced (`routines.md` §6.4).
+   task. A person's values are never replaced (`routines.md` §6.4). A task
+   may search the web and write to Retainer in the same run (decided
+   2026-11-25).
 3. **Web search is still a channel.** A search query can carry workspace
    data out. The review says so (§7). Callers that need tighter limits pass
    `allowedDomains`. Anthropic's web fetch only fetches URLs already present
@@ -458,7 +469,7 @@ the extension list and the routine list (`model/allowlist.ts`):
 | Field                                                                                          | Allowed                                                                                                                                                            |
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `model`                                                                                        | The operator's agent model only                                                                                                                                    |
-| `max_tokens`                                                                                   | At most 4,096                                                                                                                                                      |
+| `max_tokens`                                                                                   | At most the task's output limit (§8)                                                                                                                               |
 | `messages`, `system`, `stream`, `stop_sequences`, `metadata`, `output_config`, `cache_control` | As for extensions                                                                                                                                                  |
 | `thinking`                                                                                     | Yes                                                                                                                                                                |
 | `tools`                                                                                        | Custom tools of any name, and server tools whose type is on a list: the current web search and web fetch versions. `max_uses` at most the turn's reserved searches |
@@ -509,7 +520,7 @@ everything that touches the database. Among them:
   or read `me`.
 - A fenced or erased caller run stops its task's token at once.
 - **Budget reservations run concurrently**: many turns reserving at once
-  never pass the task's, the run's or the day's cap.
+  never pass the task's limits or the day's agent turns.
 - A retried turn job doesn't repeat a Retainer write; a retried routine run
   reattaches to its task instead of creating another.
 - A task past its deadline ends as `expired`, and the caller gets
@@ -530,13 +541,16 @@ everything that touches the database. Among them:
 
 ## 16. Open questions
 
-1. **Model choice for extensions.** Extensions choose their model for model
-   calls (`extensions-model-calls.md` §2). Should an extension's task name
-   one from an allowed list, or always use the operator's?
-2. **Web and Retainer writes together.** §9 lets a task that searches the web
-   also write to Retainer at agent rank. Is that acceptable in v1, or should
-   a task with web be read-only?
-3. **The numbers in §8.** Defaults and maximums are guesses until the first
-   routines use the agent.
-4. **Polling or long polling** for the bounded wait. Polling is simpler; long
-   polling uses fewer requests.
+1. **Model choice for extensions.** The operator (whoever runs the server and
+   holds the model key: Retainer on the hosted service, the company running
+   Compose when self-hosted) sets the agent's model. Extensions choose their
+   own model for plain model calls (`extensions-model-calls.md` §2). Should
+   an extension's task name one from an allowed list, with the operator's as
+   the default, or always use the operator's? Proposed: an allowed list,
+   since extensions own their logic.
+
+Answered 2026-11-25:
+
+- **Web and Retainer writes in one task:** yes (§9).
+- **The limits in §8:** generous at first, tightened from real usage.
+- **How the caller waits in v1:** polling every 2 seconds (§5.4).
