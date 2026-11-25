@@ -128,29 +128,29 @@ would be thrown away once suspend and resume exists.
 
 ### 3.1 The table
 
-| Need                                 | Decision              | How                                                                                                                                |
-| ------------------------------------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| The agent loop                       | Built-in              | `Agent` with `stream()` and `generate()`                                                                                           |
-| Model access                         | Built-in              | An `@ai-sdk/anthropic` instance whose base URL is the model proxy, with a `fetch` that gets a model token per request (§10.2)      |
-| Anthropic options                    | Built-in              | `providerOptions.anthropic`: thinking, context management                                                                          |
-| Message history                      | Built-in, our storage | `Memory` with `lastMessages`/`messageHistory`, `savePerStep: true`, on the Retainer store (§5)                                     |
-| Semantic recall                      | Off                   | Retainer has no embeddings (`semanticRecall: false`, no vector store, no embedder)                                                 |
-| Working memory, observational memory | Off                   | Retainer's own memory (`me`, `workspace`, records) is the memory; the agent uses it through tools                                  |
-| Thread titles                        | Built-in              | `generateTitle`; its model call goes through the proxy and counts (§10)                                                            |
-| Streaming to a UI                    | Built-in              | `handleChatStream` from `@mastra/ai-sdk`: the AI SDK UI message stream that `useChat` reads, with `sendReasoning: true`            |
-| Approvals                            | Built-in, our storage | `requireApproval` and `requireToolApproval`, resumed with `resumeStream`; paused runs saved in the Retainer store (§6.4)           |
-| Per-request auth                     | Built-in              | `RequestContext`, read by tools; the token is never persisted (§7.3)                                                               |
-| Step and time limits                 | Built-in              | `maxSteps`, `modelSettings.timeout`, `maxOutputTokens`, `abortSignal`                                                              |
-| Tool call caps                       | Built on a hook       | `hooks.beforeToolCall` returns `{ proceed: false }` past the cap                                                                   |
-| Web search                           | Built-in              | `webSearchTool` (Anthropic's native search)                                                                                        |
-| Web fetch                            | Built-in, to confirm  | Anthropic's web fetch as an AI SDK provider tool; Mastra's own `webFetchTool` is not used: it fetches from the agent function (§8) |
-| Retainer tools                       | Ours                  | `createTool` over `@retainer/sdk` (§8)                                                                                             |
-| Storage                              | Ours, small           | One adapter for two storage domains, `memory` and `workflows`, over Retainer's API (§5)                                            |
-| Resumable streams                    | Off                   | They need a shared PubSub such as Redis. `durable: false`; reconnecting reads the saved history (§6.5)                             |
-| Durable agents                       | Evaluate in PR 2      | Beta. A candidate for long tasks (§9.3)                                                                                            |
-| Guardrail processors                 | Later                 | Built-in processors exist (`PromptInjectionDetector`, `PIIDetector`, `ToolCallFilter`, …); part of the study in §11                |
-| Tracing                              | Off for now           | The saved messages are the trace (§5.3). A custom exporter can send spans to Retainer later                                        |
-| Mastra's server, A2A, MCP server     | Not used              | Retainer's API is the only way in                                                                                                  |
+| Need                                 | Decision              | How                                                                                                                                                            |
+| ------------------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The agent loop                       | Built-in              | `Agent` with `stream()` and `generate()`                                                                                                                       |
+| Model access                         | Built-in              | Claude Sonnet 5.5 (§3.4) through an `@ai-sdk/anthropic` instance whose base URL is the model proxy, with a `fetch` that gets a model token per request (§10.2) |
+| Anthropic options                    | Built-in              | `providerOptions.anthropic`: adaptive thinking with summaries shown, effort, context management, refusal fallbacks (§3.4)                                      |
+| Message history                      | Built-in, our storage | `Memory` with `savePerStep: true` on the Retainer store (§5). No trimming: whole history each turn (§3.4)                                                      |
+| Semantic recall                      | Off                   | Retainer has no embeddings (`semanticRecall: false`, no vector store, no embedder)                                                                             |
+| Working memory, observational memory | Off                   | Retainer's own memory (`me`, `workspace`, records) is the memory; the agent uses it through tools                                                              |
+| Thread titles                        | Built-in              | `generateTitle`; its model call goes through the proxy and counts (§10)                                                                                        |
+| Streaming to a UI                    | Built-in              | `handleChatStream` from `@mastra/ai-sdk`: the AI SDK UI message stream that `useChat` reads, with `sendReasoning: true`                                        |
+| Approvals                            | Built-in, our storage | `requireApproval` and `requireToolApproval`, resumed with `resumeStream`; paused runs saved in the Retainer store (§6.4)                                       |
+| Per-request auth                     | Built-in              | `RequestContext`, read by tools; the token is never persisted (§7.3)                                                                                           |
+| Step and time limits                 | Built-in              | `maxSteps`, `modelSettings.timeout`, `maxOutputTokens`, `abortSignal`                                                                                          |
+| Tool call caps                       | Built on a hook       | `hooks.beforeToolCall` returns `{ proceed: false }` past the cap                                                                                               |
+| Web search                           | Built-in, AI SDK      | Anthropic's `web_search_20260209` as an AI SDK provider tool. Not Mastra's `webSearchTool`, which sends the older `web_search_20250305`                        |
+| Web fetch                            | Built-in, AI SDK      | Anthropic's `web_fetch_20260209` as an AI SDK provider tool. Not Mastra's `webFetchTool`, which fetches from the agent function (§8)                           |
+| Retainer tools                       | Ours                  | `createTool` over `@retainer/sdk` (§8)                                                                                                                         |
+| Storage                              | Ours, small           | One adapter for two storage domains, `memory` and `workflows`, over Retainer's API (§5)                                                                        |
+| Resumable streams                    | Off                   | They need a shared PubSub such as Redis. `durable: false`; reconnecting reads the saved history (§6.5)                                                         |
+| Durable agents                       | Evaluate in PR 2      | Beta. A candidate for long tasks (§9.3)                                                                                                                        |
+| Guardrail processors                 | Later                 | Built-in processors exist (`PromptInjectionDetector`, `PIIDetector`, `ToolCallFilter`, …); part of the study in §11                                            |
+| Tracing                              | Off for now           | The saved messages are the trace (§5.3). A custom exporter can send spans to Retainer later                                                                    |
+| Mastra's server, A2A, MCP server     | Not used              | Retainer's API is the only way in                                                                                                                              |
 
 ### 3.2 Why build the storage adapter
 
@@ -162,17 +162,79 @@ for `workflows` (the snapshots behind approvals and suspended runs). The
 alternative, building history and approvals ourselves, is more code than the
 adapter and loses `handleChatStream`'s native approval handling.
 
-### 3.3 Licence and versions
+### 3.3 Licence: staying free
 
-- Only Apache-2.0 packages: `@mastra/core`, `@mastra/memory`,
-  `@mastra/ai-sdk`. Nothing imported from `@mastra/core/auth/ee`,
-  `@mastra/core/agent-builder/ee` or `@mastra/editor/ee`, which need
-  Mastra's commercial licence in production. A lint rule refuses those
-  paths. (Some non-`ee` type files import types from `auth/ee`; no code we
-  call does. Recorded as an open question, §17.)
-- Mastra moves fast (core 1.86 on 2026-11-25). Versions are pinned, the
+Checked on 2026-11-25 against `@mastra/core` 1.86.0, its `LICENSE.md`, the
+`ee/LICENSE` in `mastra-ai/mastra` and the repository's source tree.
+
+- **The split.** Everything in Mastra is Apache-2.0 except what sits under a
+  folder named `ee/`, which is under the Mastra Enterprise Edition License.
+  Those features (fine-grained authorization, role-based access, Studio
+  sign-in, the agent builder, the editor) may be used for development and
+  testing for free; production use needs a written agreement with Mastra and
+  a licence key.
+- **What we use is all Apache-2.0**: `@mastra/core`'s agent, memory,
+  workflows and processors, `@mastra/memory` and `@mastra/ai-sdk`. None of
+  the Enterprise features is configured: no FGA or RBAC provider, no auth
+  provider, no Studio, no editor, no agent builder.
+- **One catch.** `@mastra/core` bundles code built from
+  `packages/_internals/auth/src/ee/` into its runtime, and the agent loop
+  calls one function from it, `requireFGA`, on every tool call. With no FGA
+  provider configured it returns at once. Loading it runs nothing else (it
+  defines constants). Our reading: running this no-op is not using the
+  Enterprise feature (fine-grained authorization), so the licence's
+  production-use terms don't apply. The licence lets Mastra designate more
+  code as Enterprise later (its §5.1), for future versions only.
+- **How we keep it free:**
+  - A lint rule refuses imports from any `ee/` path and any Mastra auth,
+    FGA, RBAC, editor or agent-builder export.
+  - A check runs on every Mastra upgrade: it lists the code from `ee/`
+    folders that the modules we load reach, and fails if that list grows
+    beyond `requireFGA` and the permission constants, or if either licence
+    file changes.
+  - We ask Mastra to confirm our reading in writing before PR 1 ships.
+  - **The way out stays short.** The storage adapter, the tools and the
+    session API are ours. If Mastra's terms change, the loop can move to the
+    Anthropic SDK's tool runner (`@anthropic-ai/sdk`, MIT), and the chat
+    stream to the AI SDK alone, without changing the API, the tables or the
+    clients.
+- **Versions** are pinned. Mastra moves fast (core 1.86 on 2026-11-25); the
   storage adapter has a conformance test against Mastra's domain contracts,
-  and an upgrade is a PR that runs it.
+  and an upgrade is a PR that runs it and the licence check.
+
+### 3.4 The model: Claude Sonnet 5.5
+
+Every agent session runs on **Claude Sonnet 5.5** (`claude-sonnet-5-5`):
+chats, tasks, titles and repairs. Callers never choose a model, extensions
+included (decided 2026-11-25). Routines' plain `ai.generate` calls keep their
+own model (`routines.md` §4.5). What it means for the harness:
+
+- **Thinking** is adaptive and always on (`thinking: { type: "disabled" }`
+  is refused on this model). The chat shows it, so the request sets
+  `display: "summarized"`; without it the reasoning streams as empty blocks.
+  Effort starts at `medium` and is tuned from use.
+- **Thinking blocks go back unchanged, and history only grows.** On Sonnet
+  5.5 a thinking block is valid only in the conversation that produced it,
+  and edits to earlier history can invalidate it. So Mastra's history
+  trimming (`lastMessages`) is off: each turn sends the session's whole
+  history, and long chats stay within the 1M context through Anthropic's
+  context management (clearing old tool results). PR 1 checks that Mastra
+  stores and replays thinking blocks with their signatures.
+- **No forced tool choice.** `tool_choice` `any` and `tool` are refused, so
+  a task's typed answer must use native structured output
+  (`output_config.format`), not a forced tool. PR 2 checks which one
+  Mastra's `structuredOutput` sends.
+- **Web tools** are the `20260209` versions, which filter results
+  dynamically. PR 1 checks that they pass the proxy without needing a
+  `container`.
+- **Refusals.** Requests carry `fallbacks: "default"` (beta
+  `server-side-fallback-2026-07-01`, already allowed by the proxy), so a
+  declined request is retried on a fallback model. A turn that is still
+  refused ends as `refused`.
+- **Output** up to 128K tokens a step; the limit in §10 is lower. Every
+  request streams.
+- **Caching.** The system prompt and the tool list are stable and marked
+  for prompt caching, so long sessions pay for them once.
 
 ## 4. Architecture
 
@@ -265,12 +327,11 @@ extension run list and the chat all read the same messages.
 - **A task's** messages are kept while the task runs, then for 7 days so a
   person can inspect it, then deleted, the rule for routine run results
   (`routines.md` §6.6).
-- **`forget`** deletes, in the same deletion, every tool result and every
-  agent message in every session in the workspace, keeps people's own chat
-  messages, deletes all snapshots, and fences every running turn, which ends
-  as `cancelled`. Retainer doesn't track which records a session read, so it
-  can't be narrower (the same reasoning as `routines.md` §6.6). Open question
-  in §17.
+- **`forget`** deletes every session in the workspace, chats and tasks,
+  with their messages and snapshots, in the same deletion, and fences every
+  running turn, which ends as `cancelled` (decided 2026-11-25, the simpler
+  option). Retainer doesn't track which records a session read, so it can't
+  be narrower (the same reasoning as `routines.md` §6.6).
 - This is an exception to "nothing the model saw is stored"
   (`extensions-model-calls.md` §3.3): a conversation can't continue without
   its history.
@@ -455,7 +516,7 @@ const { round } = await retainer.ai.agent({
 | `output`       | Yes      | A JSON schema for the answer, passed to Mastra's `structuredOutput`    |
 | `limits`       | No       | Lower limits than the defaults (§10)                                   |
 
-Code never names a model; the operator's agent model answers.
+Code never names a model; every task runs on Claude Sonnet 5.5 (§3.4).
 
 ### 9.2 Suspend and resume
 
@@ -581,14 +642,15 @@ sending workspace data out.
 A third list of allowed requests, for a model token of kind `agent`, next to
 the extension and routine lists (`model/allowlist.ts`):
 
-| Field                                                                                                                     | Allowed                                                                                                                                                                      |
-| ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`                                                                                                                   | The operator's agent model only                                                                                                                                              |
-| `max_tokens`                                                                                                              | At most the output limit (§10)                                                                                                                                               |
-| `messages`, `system`, `stream`, `stop_sequences`, `metadata`, `output_config`, `cache_control`, `thinking`, `tool_choice` | As for extensions                                                                                                                                                            |
-| `tools`                                                                                                                   | Custom tools of any name, and server tools whose type is on a list: the web search and web fetch versions Mastra and the AI SDK send. `max_uses` at most the turn's searches |
-| `context_management`                                                                                                      | Yes, with its beta flag                                                                                                                                                      |
-| `mcp_servers`, anything else                                                                                              | No                                                                                                                                                                           |
+| Field                                                                                                                     | Allowed                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`                                                                                                                   | `claude-sonnet-5-5` only                                                                                                                                   |
+| `max_tokens`                                                                                                              | At most the output limit (§10)                                                                                                                             |
+| `messages`, `system`, `stream`, `stop_sequences`, `metadata`, `output_config`, `cache_control`, `thinking`, `tool_choice` | As for extensions                                                                                                                                          |
+| `tools`                                                                                                                   | Custom tools of any name, and server tools whose type is on a list: `web_search_20260209` and `web_fetch_20260209`. `max_uses` at most the turn's searches |
+| `fallbacks`                                                                                                               | `"default"`, with its beta flag (§3.4)                                                                                                                     |
+| `context_management`                                                                                                      | Yes, with its beta flag                                                                                                                                    |
+| `mcp_servers`, anything else                                                                                              | No                                                                                                                                                         |
 
 A new server tool version is a server change with a test, like a new beta
 flag (`extensions-model-calls.md` §3.2.1). The proxy still runs no tools
@@ -651,23 +713,22 @@ everything that touches it. Among them:
 
 ## 17. Open questions
 
-1. **Model choice for extensions.** The operator (whoever runs the server
-   and holds the model key: Retainer on the hosted service, the company
-   running Compose when self-hosted) sets the agent's model. Extensions
-   choose their own model for plain model calls. Should an extension's task
-   name one from an allowed list, with the operator's as the default?
-   Proposed: yes, since extensions own their logic.
-2. **`forget` and chats.** §5.4 keeps people's own messages and deletes
-   everything the agent wrote or read. Acceptable, or delete whole chats?
-3. **The CLI login is read-only** (`scopes: ['read']`). Should a chat
-   started from `retainer agent chat` get the person's full role, or stay
-   read-only like the CLI?
-4. **`ee` type imports.** Some of `@mastra/core`'s non-`ee` type files
-   import types from `auth/ee`. No code we call does, but this needs a
-   licence check before PR 1 merges.
+1. **Chats from the CLI.** The CLI login only reads (`cli.md` §3: records
+   stay with MCP). A chat started with `retainer agent chat` on that login
+   would be read-only: the agent can search, read records, read `me` and
+   search the web, but can't write records, log events, remember facts or
+   call extension tools. Proposed: read-only by default, with the person's
+   full role for 30 minutes after `retainer elevate`, the CLI's existing
+   way to act for the person.
+2. **Mastra's written confirmation** of the reading in §3.3, before PR 1
+   ships.
 
 Answered 2026-11-25:
 
+- Model: Claude Sonnet 5.5 for every session; extensions don't choose (§3.4).
+- `forget`: deletes every session in the workspace (§5.4).
+- Licence: checked; free as long as no Enterprise feature is configured,
+  with the guards in §3.3.
 - Web and Retainer writes in one session: yes.
 - Limits: generous at first, tightened from real usage (§10).
 - Waiting: suspend and resume, no polling (§2.2).
